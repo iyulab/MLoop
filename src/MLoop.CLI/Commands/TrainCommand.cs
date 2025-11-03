@@ -15,9 +15,10 @@ public static class TrainCommand
 {
     public static Command Create()
     {
-        var dataFileArg = new Argument<string>("data-file")
+        var dataFileArg = new Argument<string?>("data-file")
         {
-            Description = "Path to the training data file (CSV)"
+            Description = "Path to training data (defaults to datasets/train.csv if omitted)",
+            Arity = ArgumentArity.ZeroOrOne
         };
 
         var labelOption = new Option<string?>("--label")
@@ -40,13 +41,19 @@ public static class TrainCommand
             Description = "Test data split ratio (0.0-1.0)"
         };
 
+        var noPromoteOption = new Option<bool>("--no-promote")
+        {
+            Description = "Skip automatic promotion to production"
+        };
+
         var command = new Command("train", "Train a model using AutoML")
         {
             dataFileArg,
             labelOption,
             timeOption,
             metricOption,
-            testSplitOption
+            testSplitOption,
+            noPromoteOption
         };
 
         command.SetHandler(
@@ -55,27 +62,22 @@ public static class TrainCommand
             labelOption,
             timeOption,
             metricOption,
-            testSplitOption);
+            testSplitOption,
+            noPromoteOption);
 
         return command;
     }
 
     private static async Task<int> ExecuteAsync(
-        string dataFile,
+        string? dataFile,
         string? label,
         int? time,
         string? metric,
-        double? testSplit)
+        double? testSplit,
+        bool noPromote)
     {
         try
         {
-            // Validate data file
-            if (!File.Exists(dataFile))
-            {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Data file not found: {dataFile}");
-                return 1;
-            }
-
             // Initialize components
             var fileSystem = new FileSystemManager();
             var projectDiscovery = new ProjectDiscovery(fileSystem);
@@ -91,6 +93,39 @@ public static class TrainCommand
                 AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
                 AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
                 return 1;
+            }
+
+            // Resolve data file path (Convention over Configuration)
+            string resolvedDataFile;
+
+            if (string.IsNullOrEmpty(dataFile))
+            {
+                // Auto-discover datasets/train.csv
+                var datasetDiscovery = new DatasetDiscovery(fileSystem);
+                var datasets = datasetDiscovery.FindDatasets(projectRoot);
+
+                if (datasets == null || string.IsNullOrEmpty(datasets.TrainPath))
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] No data file specified and datasets/train.csv not found.");
+                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/train.csv or specify a file: mloop train <data-file>");
+                    return 1;
+                }
+
+                resolvedDataFile = datasets.TrainPath;
+                AnsiConsole.MarkupLine($"[green]✓[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+            }
+            else
+            {
+                // Validate explicit data file
+                resolvedDataFile = Path.IsPathRooted(dataFile)
+                    ? dataFile
+                    : Path.Combine(projectRoot, dataFile);
+
+                if (!File.Exists(resolvedDataFile))
+                {
+                    AnsiConsole.MarkupLine($"[red]Error:[/] Data file not found: {resolvedDataFile}");
+                    return 1;
+                }
             }
 
             // Load and merge configuration
@@ -130,7 +165,7 @@ public static class TrainCommand
             }
 
             // Display training configuration
-            DisplayTrainingConfig(dataFile, finalConfig);
+            DisplayTrainingConfig(resolvedDataFile, finalConfig);
 
             // Initialize training components
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
@@ -138,7 +173,7 @@ public static class TrainCommand
 
             var trainingConfig = new TrainingConfig
             {
-                DataFile = Path.GetFullPath(dataFile),
+                DataFile = Path.GetFullPath(resolvedDataFile),
                 LabelColumn = finalConfig.LabelColumn,
                 Task = finalConfig.Task,
                 TimeLimitSeconds = finalConfig.Training?.TimeLimitSeconds ?? 300,
@@ -186,15 +221,50 @@ public static class TrainCommand
             // Display results
             DisplayResults(result);
 
+            // Auto-promote to production if enabled
+            if (!noPromote)
+            {
+                AnsiConsole.WriteLine();
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync("[yellow]Checking promotion eligibility...[/]", async ctx =>
+                    {
+                        var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
+                        var primaryMetric = trainingConfig.Metric;
+
+                        var promoted = await modelRegistry.AutoPromoteAsync(
+                            result.ExperimentId,
+                            primaryMetric,
+                            CancellationToken.None);
+
+                        if (promoted)
+                        {
+                            ctx.Status("[green]Model promoted to production![/]");
+                            AnsiConsole.MarkupLine("[green]🚀 Model promoted to production![/]");
+                            AnsiConsole.WriteLine($"   Better {primaryMetric} than current production model");
+                        }
+                        else
+                        {
+                            ctx.Status("[yellow]Model saved to staging[/]");
+                            AnsiConsole.MarkupLine("[yellow]ℹ️  Model saved to staging[/]");
+                            AnsiConsole.WriteLine($"   Current production model has better {primaryMetric}");
+                        }
+                    });
+
+                AnsiConsole.WriteLine();
+            }
+
             return 0;
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            AnsiConsole.Markup("[red]Error:[/] ");
+            AnsiConsole.WriteLine(ex.Message);
 
             if (ex.InnerException != null)
             {
-                AnsiConsole.MarkupLine($"[grey]Details:[/] {ex.InnerException.Message}");
+                AnsiConsole.Markup("[grey]Details:[/] ");
+                AnsiConsole.WriteLine(ex.InnerException.Message);
             }
 
             return 1;

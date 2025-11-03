@@ -1,7 +1,0 @@
-{
-  "dataFile": "D:\\data\\MLoop\\ml-test-project\\data\\processed\\train.csv",
-  "labelColumn": "Species",
-  "timeLimitSeconds": 25,
-  "metric": "accuracy",
-  "testSplit": 0.2
-}

@@ -16,7 +16,9 @@ internal class Program
             // Phase 1 Commands (MVP)
             InitCommand.Create(),
             TrainCommand.Create(),
-            // PredictCommand.Create(),
+            PredictCommand.Create(),
+            ListCommand.Create(),
+            PromoteCommand.Create(),
             // EvaluateCommand.Create(),
         };
 
@@ -46,7 +48,9 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]init[/]      Initialize a new ML project");
         AnsiConsole.MarkupLine("  [green]train[/]     Train a model using AutoML");
         AnsiConsole.MarkupLine("  [green]predict[/]   Make predictions with a trained model");
-        AnsiConsole.MarkupLine("  [green]evaluate[/]  Evaluate model performance");
+        AnsiConsole.MarkupLine("  [green]list[/]      List all experiments");
+        AnsiConsole.MarkupLine("  [green]promote[/]   Promote an experiment to production");
+        AnsiConsole.MarkupLine("  [green]evaluate[/]  Evaluate model performance (coming soon)");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("Use [blue]mloop [[command]] --help[/] for more information about a command.");
     }

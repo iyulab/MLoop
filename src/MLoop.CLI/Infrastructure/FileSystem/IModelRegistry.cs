@@ -29,6 +29,22 @@ public interface IModelRegistry
     /// Gets the model directory path for a stage
     /// </summary>
     string GetModelPath(ModelStage stage);
+
+    /// <summary>
+    /// Checks if a new experiment should be promoted to production
+    /// </summary>
+    Task<bool> ShouldPromoteToProductionAsync(
+        string experimentId,
+        string primaryMetric,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Automatically promotes experiment to production if it performs better
+    /// </summary>
+    Task<bool> AutoPromoteAsync(
+        string experimentId,
+        string primaryMetric,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

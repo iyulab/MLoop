@@ -95,7 +95,7 @@ public class ConfigMerger
             if (!string.IsNullOrEmpty(source.Training.Metric))
                 target.Training.Metric = source.Training.Metric;
 
-            if (source.Training.TestSplit > 0)
+            if (source.Training.TestSplit >= 0)
                 target.Training.TestSplit = source.Training.TestSplit;
         }
 

@@ -46,6 +46,7 @@ experiments/*/log.txt
 
 # 예측 결과
 data/predictions/
+predictions/
 
 # OS
 .DS_Store
@@ -54,6 +55,10 @@ Thumbs.db
 
 # Development docs (내부 문서)
 local-docs/
+
+# Testing resources
+ML-Resource/
+local-tests/
 
 # Serena (개발용)
 .serena/
