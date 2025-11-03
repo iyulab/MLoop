@@ -2,10 +2,12 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 
 /// <summary>
 /// Experiment storage with atomic ID generation and thread-safe operations
+/// MLOps convention: stores experiments in models/staging/
 /// </summary>
 public class ExperimentStore : IExperimentStore
 {
-    private const string ExperimentsDirectory = "experiments";
+    private const string ModelsDirectory = "models";
+    private const string StagingDirectory = "staging";
     private const string IndexFileName = "experiment-index.json";
     private const string MetadataFileName = "metadata.json";
     private const string MetricsFileName = "metrics.json";
@@ -25,7 +27,11 @@ public class ExperimentStore : IExperimentStore
         _projectDiscovery = projectDiscovery ?? throw new ArgumentNullException(nameof(projectDiscovery));
 
         _projectRoot = _projectDiscovery.FindRoot();
-        _experimentsPath = _fileSystem.CombinePath(_projectRoot, ExperimentsDirectory);
+
+        // MLOps convention: models/staging/
+        var modelsPath = _fileSystem.CombinePath(_projectRoot, ModelsDirectory);
+        _experimentsPath = _fileSystem.CombinePath(modelsPath, StagingDirectory);
+
         _indexPath = _fileSystem.CombinePath(
             _projectDiscovery.GetMLoopDirectory(_projectRoot),
             IndexFileName);

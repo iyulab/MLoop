@@ -105,8 +105,14 @@ public static class InitCommand
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
             AnsiConsole.MarkupLine($"  1. cd {projectName}");
-            AnsiConsole.MarkupLine("  2. Place your data in data/processed/train.csv");
-            AnsiConsole.MarkupLine("  3. mloop train data/processed/train.csv --label <your-label-column>");
+            AnsiConsole.MarkupLine("  2. Place your training data in datasets/train.csv");
+            AnsiConsole.MarkupLine("  3. Edit mloop.yaml to set your label column");
+            AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/train.csv[/]");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[grey]Folder structure:[/]");
+            AnsiConsole.MarkupLine("  datasets/       [cyan]# Training data (train.csv, validation.csv, test.csv)[/]");
+            AnsiConsole.MarkupLine("  models/staging/ [cyan]# Experimental models[/]");
+            AnsiConsole.MarkupLine("  models/production/ [cyan]# Auto-promoted best model[/]");
             AnsiConsole.WriteLine();
 
             return 0;
@@ -127,14 +133,10 @@ public static class InitCommand
         var mloopPath = fileSystem.CombinePath(projectPath, ".mloop");
         await fileSystem.CreateDirectoryAsync(mloopPath);
 
-        // Create data directories
-        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "data", "processed"));
-        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "data", "predictions"));
+        // MLOps convention: datasets/ folder for training data
+        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "datasets"));
 
-        // Create experiments directory
-        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "experiments"));
-
-        // Create models directories
+        // MLOps convention: models/ folder structure
         await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "models", "staging"));
         await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "models", "production"));
     }

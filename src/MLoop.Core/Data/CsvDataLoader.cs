@@ -84,10 +84,16 @@ public class CsvDataLoader : IDataProvider
         IDataView data,
         double testFraction = 0.2)
     {
-        if (testFraction <= 0 || testFraction >= 1)
+        // If testFraction is 0, use all data for both train and test (AutoML will use cross-validation)
+        if (testFraction <= 0)
+        {
+            return (data, data);
+        }
+
+        if (testFraction >= 1)
         {
             throw new ArgumentException(
-                "Test fraction must be between 0 and 1",
+                "Test fraction must be less than 1",
                 nameof(testFraction));
         }
 

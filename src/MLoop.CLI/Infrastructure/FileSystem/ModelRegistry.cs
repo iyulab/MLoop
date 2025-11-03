@@ -94,16 +94,38 @@ public class ModelRegistry : IModelRegistry
         }
 
         var entry = registry[stageName];
+
+        // Parse metrics from JSON (handles JsonElement from System.Text.Json)
+        Dictionary<string, double>? metrics = null;
+        if (entry.ContainsKey("metrics") && entry["metrics"] != null)
+        {
+            metrics = new Dictionary<string, double>();
+            var metricsObj = entry["metrics"];
+
+            if (metricsObj is System.Text.Json.JsonElement jsonElement && jsonElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (var prop in jsonElement.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    {
+                        metrics[prop.Name] = prop.Value.GetDouble();
+                    }
+                }
+            }
+            else if (metricsObj is Dictionary<string, object> dict)
+            {
+                metrics = dict.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => Convert.ToDouble(kvp.Value));
+            }
+        }
+
         return new ModelInfo
         {
             Stage = stage,
             ExperimentId = entry["experimentId"]?.ToString() ?? string.Empty,
             PromotedAt = DateTime.Parse(entry["promotedAt"]?.ToString() ?? DateTime.UtcNow.ToString()),
-            Metrics = entry.ContainsKey("metrics")
-                ? ((Dictionary<string, object>)entry["metrics"]).ToDictionary(
-                    kvp => kvp.Key,
-                    kvp => Convert.ToDouble(kvp.Value))
-                : null,
+            Metrics = metrics,
             ModelPath = GetModelPath(stage)
         };
     }
@@ -150,6 +172,63 @@ public class ModelRegistry : IModelRegistry
         CancellationToken cancellationToken)
     {
         await _fileSystem.WriteJsonAsync(_registryPath, registry, cancellationToken);
+    }
+
+    public async Task<bool> ShouldPromoteToProductionAsync(
+        string experimentId,
+        string primaryMetric,
+        CancellationToken cancellationToken = default)
+    {
+        // Load new experiment metrics
+        var experiment = await _experimentStore.LoadAsync(experimentId, cancellationToken);
+
+        if (experiment.Metrics == null || !experiment.Metrics.ContainsKey(primaryMetric))
+        {
+            return false; // Cannot promote without metrics
+        }
+
+        var newMetricValue = experiment.Metrics[primaryMetric];
+
+        // Get current production model
+        var currentProduction = await GetAsync(ModelStage.Production, cancellationToken);
+
+        if (currentProduction == null)
+        {
+            return true; // No production model yet, promote first model
+        }
+
+        if (currentProduction.Metrics == null || !currentProduction.Metrics.ContainsKey(primaryMetric))
+        {
+            return true; // Current production has no metrics, promote new model
+        }
+
+        var currentMetricValue = currentProduction.Metrics[primaryMetric];
+
+        // Promote if new model is better
+        // For most metrics (accuracy, r_squared, auc, f1), higher is better
+        // For error metrics (mae, rmse, mse), lower is better
+        var isErrorMetric = primaryMetric.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+                           primaryMetric.Contains("mae", StringComparison.OrdinalIgnoreCase) ||
+                           primaryMetric.Contains("mse", StringComparison.OrdinalIgnoreCase) ||
+                           primaryMetric.Contains("rmse", StringComparison.OrdinalIgnoreCase);
+
+        return isErrorMetric
+            ? newMetricValue < currentMetricValue  // Lower error is better
+            : newMetricValue > currentMetricValue; // Higher score is better
+    }
+
+    public async Task<bool> AutoPromoteAsync(
+        string experimentId,
+        string primaryMetric,
+        CancellationToken cancellationToken = default)
+    {
+        if (await ShouldPromoteToProductionAsync(experimentId, primaryMetric, cancellationToken))
+        {
+            await PromoteAsync(experimentId, ModelStage.Production, cancellationToken);
+            return true;
+        }
+
+        return false;
     }
 
     private async Task UpdateRegistryAsync(
