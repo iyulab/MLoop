@@ -1,0 +1,25 @@
+{
+  "experimentId": "exp-004",
+  "timestamp": "2025-11-03T11:59:00.8014246Z",
+  "status": "failed",
+  "task": "binary-classification",
+  "data": {
+    "dataFile": "D:\\data\\MLoop\\ml-test-project\\data\\processed\\train.csv",
+    "labelColumn": "Species"
+  },
+  "config": {
+    "dataFile": "D:\\data\\MLoop\\ml-test-project\\data\\processed\\train.csv",
+    "labelColumn": "Species",
+    "timeLimitSeconds": 25,
+    "metric": "accuracy",
+    "testSplit": 0.2
+  },
+  "result": {
+    "bestTrainer": "none",
+    "trainingTimeSeconds": 0.6356493
+  },
+  "versions": {
+    "mlNet": "4.0.0",
+    "mLoop": "0.1.0-alpha"
+  }
+}

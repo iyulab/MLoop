@@ -1,0 +1,7 @@
+{
+  "dataFile": "D:\\data\\MLoop\\ml-test-project\\data\\processed\\train.csv",
+  "labelColumn": "Label",
+  "timeLimitSeconds": 20,
+  "metric": "accuracy",
+  "testSplit": 0.15
+}
