@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.ML;
+using Microsoft.ML.AutoML;
 using MLoop.Core.Contracts;
 using MLoop.Core.Models;
 using MLoop.Core.Data;
@@ -48,6 +49,9 @@ public class TrainingEngine : ITrainingEngine
             // Create experiment directory
             await _fileSystem.CreateDirectoryAsync(experimentPath, cancellationToken);
 
+            // Capture input schema before training
+            var inputSchema = CaptureInputSchema(config.DataFile, config.LabelColumn);
+
             // Run AutoML
             var autoMLResult = await _autoMLRunner.RunAsync(config, progress, cancellationToken);
 
@@ -70,7 +74,8 @@ public class TrainingEngine : ITrainingEngine
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.Metric,
-                    TestSplit = config.TestSplit
+                    TestSplit = config.TestSplit,
+                    InputSchema = inputSchema
                 },
                 Result = new ExperimentResult
                 {
@@ -124,5 +129,120 @@ public class TrainingEngine : ITrainingEngine
                 $"Training failed for experiment {experimentId}: {ex.Message}",
                 ex);
         }
+    }
+
+    /// <summary>
+    /// Captures input schema information from the data file
+    /// </summary>
+    private InputSchemaInfo? CaptureInputSchema(string dataFile, string labelColumn)
+    {
+        try
+        {
+            // Infer column information
+            var columnInference = _mlContext.Auto().InferColumns(
+                dataFile,
+                labelColumnName: labelColumn,
+                separatorChar: ',');
+
+            if (columnInference == null || columnInference.ColumnInformation == null)
+            {
+                return null;
+            }
+
+            var columns = new List<ColumnSchema>();
+            var columnInfo = columnInference.ColumnInformation;
+
+            // Get all columns from the file
+            var firstLine = File.ReadLines(dataFile).FirstOrDefault();
+            if (string.IsNullOrEmpty(firstLine))
+            {
+                return null;
+            }
+
+            var columnNames = firstLine.Split(',');
+
+            // Read all data lines to collect categorical values
+            var allLines = File.ReadAllLines(dataFile);
+            var dataLines = allLines.Skip(1).ToArray(); // Skip header
+
+            foreach (var colName in columnNames)
+            {
+                var purpose = GetColumnPurpose(colName, columnInfo);
+                var dataType = GetColumnDataType(colName, columnInfo);
+
+                // For categorical columns, collect all unique values
+                List<string>? categoricalValues = null;
+                int? uniqueCount = null;
+
+                if (dataType == "Categorical" && purpose == "Feature")
+                {
+                    var colIndex = Array.IndexOf(columnNames, colName);
+                    if (colIndex >= 0)
+                    {
+                        var uniqueValues = new HashSet<string>();
+
+                        foreach (var line in dataLines)
+                        {
+                            var values = line.Split(',');
+                            if (colIndex < values.Length)
+                            {
+                                var value = values[colIndex].Trim();
+                                if (!string.IsNullOrEmpty(value))
+                                {
+                                    uniqueValues.Add(value);
+                                }
+                            }
+                        }
+
+                        categoricalValues = uniqueValues.OrderBy(v => v).ToList();
+                        uniqueCount = uniqueValues.Count;
+                    }
+                }
+
+                columns.Add(new ColumnSchema
+                {
+                    Name = colName,
+                    DataType = dataType,
+                    Purpose = purpose,
+                    CategoricalValues = categoricalValues,
+                    UniqueValueCount = uniqueCount
+                });
+            }
+
+            return new InputSchemaInfo
+            {
+                Columns = columns,
+                CapturedAt = DateTime.UtcNow
+            };
+        }
+        catch
+        {
+            // If schema capture fails, return null (non-critical)
+            return null;
+        }
+    }
+
+    private string GetColumnPurpose(string columnName, Microsoft.ML.AutoML.ColumnInformation columnInfo)
+    {
+        if (columnInfo.LabelColumnName == columnName)
+            return "Label";
+        if (columnInfo.IgnoredColumnNames?.Contains(columnName) == true)
+            return "Ignore";
+        if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true ||
+            columnInfo.NumericColumnNames?.Contains(columnName) == true ||
+            columnInfo.TextColumnNames?.Contains(columnName) == true)
+            return "Feature";
+        return "Unknown";
+    }
+
+    private string GetColumnDataType(string columnName, Microsoft.ML.AutoML.ColumnInformation columnInfo)
+    {
+        if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
+            return "Categorical";
+        if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
+            return "Numeric";
+        if (columnInfo.TextColumnNames?.Contains(columnName) == true)
+            return "Text";
+        return "Unknown";
     }
 }
