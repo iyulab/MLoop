@@ -1,0 +1,19 @@
+# MLoop Project Configuration
+project_name: ml-test-project
+task: binary-classification
+label_column: Label
+
+# Training settings (optional - defaults provided)
+training:
+  time_limit_seconds: 300
+  metric: accuracy
+  test_split: 0.2
+
+# Data paths (optional)
+data:
+  train: data/processed/train.csv
+  test: data/processed/test.csv
+
+# Model output (optional)
+model:
+  output_dir: models/staging

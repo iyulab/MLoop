@@ -1,7 +1,8 @@
 using System.CommandLine;
+using MLoop.CLI.Commands;
 using Spectre.Console;
 
-namespace MLoop;
+namespace MLoop.CLI;
 
 /// <summary>
 /// MLoop CLI Entry Point
@@ -13,8 +14,8 @@ internal class Program
         var rootCommand = new RootCommand("MLoop - A modern CLI tool for ML.NET with filesystem-based MLOps")
         {
             // Phase 1 Commands (MVP)
-            // InitCommand.Create(),
-            // TrainCommand.Create(),
+            InitCommand.Create(),
+            TrainCommand.Create(),
             // PredictCommand.Create(),
             // EvaluateCommand.Create(),
         };
