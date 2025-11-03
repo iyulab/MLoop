@@ -19,7 +19,8 @@ internal class Program
             PredictCommand.Create(),
             ListCommand.Create(),
             PromoteCommand.Create(),
-            // EvaluateCommand.Create(),
+            InfoCommand.Create(),
+            EvaluateCommand.Create(),
         };
 
         // Display banner
@@ -50,7 +51,8 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]predict[/]   Make predictions with a trained model");
         AnsiConsole.MarkupLine("  [green]list[/]      List all experiments");
         AnsiConsole.MarkupLine("  [green]promote[/]   Promote an experiment to production");
-        AnsiConsole.MarkupLine("  [green]evaluate[/]  Evaluate model performance (coming soon)");
+        AnsiConsole.MarkupLine("  [green]info[/]      Display dataset profiling information");
+        AnsiConsole.MarkupLine("  [green]evaluate[/]  Evaluate model performance on test data");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("Use [blue]mloop [[command]] --help[/] for more information about a command.");
     }

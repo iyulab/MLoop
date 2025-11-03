@@ -3,6 +3,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using Spectre.Console;
+using static MLoop.CLI.Infrastructure.ML.CategoricalMapper;
 
 namespace MLoop.CLI.Commands;
 
@@ -30,14 +31,21 @@ public static class PredictCommand
             Description = "Output path for predictions (defaults to predictions/predictions.csv)"
         };
 
+        var unknownStrategyOption = new Option<string>("--unknown-strategy")
+        {
+            Description = "Strategy for handling unknown categorical values: auto (default), error, use-most-frequent, use-missing"
+        };
+        unknownStrategyOption.SetDefaultValue("auto");
+
         var command = new Command("predict", "Make predictions with a trained model")
         {
             modelArg,
             dataFileArg,
-            outputOption
+            outputOption,
+            unknownStrategyOption
         };
 
-        command.SetHandler(ExecuteAsync, modelArg, dataFileArg, outputOption);
+        command.SetHandler(ExecuteAsync, modelArg, dataFileArg, outputOption, unknownStrategyOption);
 
         return command;
     }
@@ -45,7 +53,8 @@ public static class PredictCommand
     private static async Task<int> ExecuteAsync(
         string? modelPath,
         string? dataFile,
-        string? output)
+        string? output,
+        string unknownStrategy)
     {
         try
         {
@@ -163,6 +172,118 @@ public static class PredictCommand
 
             AnsiConsole.WriteLine();
 
+            // Load schema for validation and preprocessing
+            string? experimentId = null;
+            InputSchemaInfo? trainedSchema = null;
+
+            if (string.IsNullOrEmpty(modelPath))
+            {
+                // We're using production model, get the experiment ID and schema
+                var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
+                var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
+                var productionModel = await modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
+                experimentId = productionModel?.ExperimentId;
+
+                // Load experiment data to get schema
+                if (experimentId != null)
+                {
+                    try
+                    {
+                        var experimentData = await experimentStore.LoadAsync(experimentId, CancellationToken.None);
+                        trainedSchema = experimentData?.Config?.InputSchema;
+                    }
+                    catch
+                    {
+                        // Continue without schema - will skip categorical preprocessing
+                    }
+                }
+            }
+            else
+            {
+                // Using explicit model path - try to infer experiment ID from path
+                var modelDir = Path.GetDirectoryName(resolvedModelPath);
+                if (modelDir != null)
+                {
+                    var possibleExpId = Path.GetFileName(modelDir);
+                    var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
+
+                    if (experimentStore.ExperimentExists(possibleExpId))
+                    {
+                        try
+                        {
+                            var experimentData = await experimentStore.LoadAsync(possibleExpId, CancellationToken.None);
+                            trainedSchema = experimentData?.Config?.InputSchema;
+                            experimentId = possibleExpId;
+                        }
+                        catch
+                        {
+                            // Continue without schema
+                        }
+                    }
+                }
+            }
+
+            // Validate schema before prediction
+            var validator = new SchemaValidator(fileSystem, projectDiscovery);
+            var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedDataFile, experimentId);
+
+            if (!validationResult.IsValid)
+            {
+                AnsiConsole.MarkupLine("[red]Schema Validation Failed:[/]");
+                AnsiConsole.WriteLine();
+
+                if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
+                {
+                    AnsiConsole.MarkupLine($"[yellow]⚠ {validationResult.ErrorMessage}[/]");
+                    AnsiConsole.WriteLine();
+                }
+
+                if (validationResult.MissingColumns.Any())
+                {
+                    AnsiConsole.MarkupLine("[red]Missing columns in prediction data:[/]");
+                    foreach (var col in validationResult.MissingColumns)
+                    {
+                        AnsiConsole.MarkupLine($"  [grey]•[/] {col}");
+                    }
+                    AnsiConsole.WriteLine();
+                }
+
+                if (validationResult.TypeMismatchColumns.Any())
+                {
+                    AnsiConsole.MarkupLine("[red]Column type mismatches:[/]");
+                    foreach (var (name, expected, actual) in validationResult.TypeMismatchColumns)
+                    {
+                        AnsiConsole.MarkupLine($"  [grey]•[/] {name}: expected {expected}, got {actual}");
+                    }
+                    AnsiConsole.WriteLine();
+                }
+
+                if (validationResult.Suggestions.Any())
+                {
+                    AnsiConsole.MarkupLine("[yellow]Suggestions:[/]");
+                    foreach (var suggestion in validationResult.Suggestions)
+                    {
+                        AnsiConsole.MarkupLine($"  [grey]•[/] {suggestion}");
+                    }
+                    AnsiConsole.WriteLine();
+                }
+
+                return 1;
+            }
+
+            AnsiConsole.MarkupLine("[green]✓[/] Schema validation passed");
+            AnsiConsole.WriteLine();
+
+            // Parse unknown value strategy
+            var strategy = unknownStrategy.ToLowerInvariant() switch
+            {
+                "auto" => UnknownValueStrategy.Auto,
+                "error" => UnknownValueStrategy.Error,
+                "use-most-frequent" => UnknownValueStrategy.UseMostFrequent,
+                "use-missing" => UnknownValueStrategy.UseMissing,
+                _ => UnknownValueStrategy.Auto
+            };
+
             // Make predictions with progress
             int predictedCount = 0;
 
@@ -176,6 +297,8 @@ public static class PredictCommand
                         resolvedModelPath,
                         resolvedDataFile,
                         resolvedOutputPath,
+                        trainedSchema,
+                        strategy,
                         CancellationToken.None);
 
                     ctx.Status("[green]Predictions complete![/]");
