@@ -1,0 +1,19 @@
+# MLoop Project Template - Binary Classification
+project_name: {{PROJECT_NAME}}
+task: binary-classification
+label_column: {{LABEL_COLUMN}}
+
+# Training Configuration
+training:
+  time_limit_seconds: 300
+  metric: accuracy
+  test_split: 0.2
+
+# Data Paths
+data:
+  train: data/processed/train.csv
+  test: data/processed/test.csv
+
+# Model Configuration
+model:
+  output_dir: models/staging

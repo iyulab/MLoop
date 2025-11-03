@@ -1,0 +1,59 @@
+# .NET Build outputs
+bin/
+obj/
+nupkg/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.vspscc
+*.vssscc
+*.sln.docstates
+*.nupkg
+*.snupkg
+
+# Visual Studio
+.vs/
+*.userprefs
+.idea/
+*.DotSettings.user
+
+# Rider
+.idea/
+*.sln.iml
+
+# VSCode
+.vscode/
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+
+# MLoop 사용자 프로젝트 (사용자가 생성하는 프로젝트)
+.mloop/
+models/staging/
+models/production/
+data/raw/
+*.zip
+*.mlnet
+
+# 실험 결과 (선택적 - 팀 정책에 따라)
+experiments/*/model.zip
+experiments/*/log.txt
+
+# 예측 결과
+data/predictions/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# Development docs (내부 문서)
+local-docs/
+
+# Serena (개발용)
+.serena/
