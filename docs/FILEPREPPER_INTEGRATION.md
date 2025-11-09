@@ -723,11 +723,219 @@ public Pipeline ProcessInChunks(int chunkSize = 10000)
 
 ---
 
+## FilePrepper CLI Integration
+
+### CLI Command Reference
+
+FilePrepper provides powerful CLI commands for common preprocessing tasks. These can be used in shell scripts or integrated into MLoop workflows.
+
+#### Expression - Computed Columns
+
+Create computed columns from arithmetic expressions:
+
+```bash
+# Simple arithmetic
+fileprepper expression -i data.csv -o output.csv \
+  -e "total=price*quantity" --header
+
+# Multiple expressions
+fileprepper expression -i data.csv -o output.csv \
+  -e "total=price*quantity" "gap=required-stock" --header
+
+# Remove source columns
+fileprepper expression -i data.csv -o output.csv \
+  -e "bmi=weight/(height*height)" --remove-source --header
+```
+
+**Real Example - Dataset 005 (열처리 공급망최적화)**:
+```bash
+fileprepper expression \
+  -i "ML-Resource/005-열처리 공급망최적화/Dataset/data/data.csv" \
+  -o "ML-Resource/005-열처리 공급망최적화/Dataset/preprocessed/features.csv" \
+  -e "생산갭=생산필요량-재고" --header
+# Result: 688 records with computed 생산갭 column
+```
+
+#### Clean - Remove Thousand Separators
+
+Clean numeric data by removing thousand separators:
+
+```bash
+# Clean all columns
+fileprepper clean -i data.csv -o output.csv --header
+
+# Clean specific columns
+fileprepper clean -i data.csv -o output.csv \
+  -c "Amount" "Balance" "Quantity" --header
+
+# With validation
+fileprepper clean -i data.csv -o output.csv --validate --header
+```
+
+**Real Example - Dataset 006 (표면처리 공급망최적화)**:
+```bash
+fileprepper clean \
+  -i "ML-Resource/006-표면처리 공급망최적화/Dataset/data/일무사_표면처리.csv" \
+  -o "ML-Resource/006-표면처리 공급망최적화/Dataset/preprocessed/cleaned.csv" \
+  --header
+# Result: 1,160 values cleaned (1,000 → 1000, 2,500 → 2500, etc.)
+```
+
+#### Unpivot - Wide to Long Transformation
+
+Transform wide format data to long format:
+
+```bash
+# Basic unpivot
+fileprepper unpivot \
+  -i wide.csv -o long.csv --header \
+  -b "id" "name" "date" \
+  -g "Q1_sales" "Q1_units" "Q2_sales" "Q2_units" \
+  -idx "quarter" -vc "sales" "units" \
+  --skip-empty
+```
+
+**Real Example - Dataset 006 (표면처리 공급망최적화)**:
+```bash
+fileprepper unpivot \
+  -i "ML-Resource/006-표면처리 공급망최적화/Dataset/preprocessed/cleaned.csv" \
+  -o "ML-Resource/006-표면처리 공급망최적화/Dataset/preprocessed/unpivoted.csv" \
+  --header \
+  -b "생산일자" "작업지시번호" "제품코드" "시작" "종료" "생산량(Kg)" \
+  -g "1차 출고날짜" "1차 출고량" \
+     "2차 출고날짜" "2차 출고량" \
+     "3차 출고날짜" "3차 출고량" \
+     "4차 출고날짜" "4차 출고량" \
+     "5차 출고날짜" "5차 출고량" \
+     "6차 출고날짜" "6차 출고량" \
+     "7차 출고날짜" "7차 출고량" \
+     "8차 출고날짜" "8차 출고량" \
+     "9차 출고날짜" "9차 출고량" \
+     "10차 출고날짜" "10차 출고량" \
+  -idx "출고차수" -vc "출고날짜" "출고량" \
+  --skip-empty
+# Result: 177 wide rows → 655 long rows (skipped 1,115 empty rows)
+```
+
+### Complete Preprocessing Workflows
+
+#### Workflow 1: Dataset 005 (Computed Columns)
+
+```bash
+# Original custom C# preprocessing code: NO LONGER NEEDED!
+# New approach: Single CLI command
+
+fileprepper expression \
+  -i data/data.csv \
+  -o preprocessed/features.csv \
+  -e "생산갭=생산필요량-재고" \
+  --header --verbose
+```
+
+#### Workflow 2: Dataset 006 (Clean + Unpivot)
+
+```bash
+# Step 1: Clean thousand separators
+fileprepper clean \
+  -i data/일무사_표면처리.csv \
+  -o preprocessed/cleaned.csv \
+  --header
+
+# Step 2: Unpivot wide to long
+fileprepper unpivot \
+  -i preprocessed/cleaned.csv \
+  -o preprocessed/unpivoted.csv \
+  --header \
+  -b "생산일자" "작업지시번호" "제품코드" "시작" "종료" "생산량(Kg)" \
+  -g "1차 출고날짜" "1차 출고량" \
+     "2차 출고날짜" "2차 출고량" \
+     "3차 출고날짜" "3차 출고량" \
+     "4차 출고날짜" "4차 출고량" \
+     "5차 출고날짜" "5차 출고량" \
+     "6차 출고날짜" "6차 출고량" \
+     "7차 출고날짜" "7차 출고량" \
+     "8차 출고날짜" "8차 출고량" \
+     "9차 출고날짜" "9차 출고량" \
+     "10차 출고날짜" "10차 출고량" \
+  -idx "출고차수" -vc "출고날짜" "출고량" \
+  --skip-empty
+```
+
+### Integration with Shell Scripts
+
+Create reusable preprocessing scripts:
+
+**`preprocess_dataset_005.sh`**:
+```bash
+#!/bin/bash
+set -e
+
+INPUT="ML-Resource/005-열처리 공급망최적화/Dataset/data/data.csv"
+OUTPUT="ML-Resource/005-열처리 공급망최적화/Dataset/preprocessed/features-fileprepper.csv"
+
+echo "Preprocessing Dataset 005..."
+fileprepper expression \
+  -i "$INPUT" \
+  -o "$OUTPUT" \
+  -e "생산갭=생산필요량-재고" \
+  --header --verbose
+
+echo "✅ Dataset 005 preprocessed: $OUTPUT"
+```
+
+**`preprocess_dataset_006.sh`**:
+```bash
+#!/bin/bash
+set -e
+
+DATA_DIR="ML-Resource/006-표면처리 공급망최적화/Dataset"
+PREP_DIR="$DATA_DIR/preprocessed"
+
+echo "Step 1: Cleaning CSV..."
+fileprepper clean \
+  -i "$DATA_DIR/data/일무사_표면처리.csv" \
+  -o "$PREP_DIR/cleaned-fileprepper.csv" \
+  --header --verbose
+
+echo "Step 2: Unpivoting..."
+fileprepper unpivot \
+  -i "$PREP_DIR/cleaned-fileprepper.csv" \
+  -o "$PREP_DIR/unpivoted-fileprepper.csv" \
+  --header \
+  -b "생산일자" "작업지시번호" "제품코드" "시작" "종료" "생산량(Kg)" \
+  -g "1차 출고날짜" "1차 출고량" \
+     "2차 출고날짜" "2차 출고량" \
+     "3차 출고날짜" "3차 출고량" \
+     "4차 출고날짜" "4차 출고량" \
+     "5차 출고날짜" "5차 출고량" \
+     "6차 출고날짜" "6차 출고량" \
+     "7차 출고날짜" "7차 출고량" \
+     "8차 출고날짜" "8차 출고량" \
+     "9차 출고날짜" "9차 출고량" \
+     "10차 출고날짜" "10차 출고량" \
+  -idx "출고차수" -vc "출고날짜" "출고량" \
+  --skip-empty --verbose
+
+echo "✅ Dataset 006 preprocessed: $PREP_DIR/unpivoted-fileprepper.csv"
+```
+
+### CLI Benefits
+
+- **No Coding Required**: Command-line interface for non-programmers
+- **Shell Script Integration**: Easy to automate with bash/PowerShell scripts
+- **Reproducible Workflows**: Version-controlled preprocessing commands
+- **Fast Iteration**: Test preprocessing strategies quickly
+- **Production Ready**: Same quality as Pipeline API but CLI-driven
+
+---
+
 ## Summary
 
 FilePrepper integration enables powerful ML-focused data preprocessing in MLoop with:
 - ✅ Conditional Debug/Release references for flexible development
 - ✅ High-performance pipeline API (67-90% I/O reduction)
+- ✅ **CLI commands for no-code preprocessing workflows**
 - ✅ Hook-based integration for reusable preprocessing workflows
 - ✅ Active development model: extend FilePrepper as needed
 - ✅ Production-ready preprocessing for AutoML training
+- ✅ **Real-world tested with ML Datasets 004, 005, and 006**

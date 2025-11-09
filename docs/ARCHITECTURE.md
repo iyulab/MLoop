@@ -1234,9 +1234,153 @@ MLoop v0.2.0+ includes an **optional extensibility system** that allows users to
 - **Type-Safe**: Full C# type system with IDE support
 - **Convention-Based**: Automatic discovery via filesystem
 
-### 14.2 Extension Types (Phase 1)
+**⚠️ PRIORITY REVISION (2025-11-09):**
 
-#### Hooks (Lifecycle Extensions)
+Analysis of Datasets 004-006 revealed **Phase 0 (Preprocessing Scripts) is now P0 CRITICAL**, taking precedence over Phase 1 (Hooks & Metrics).
+
+**Finding**: Current MLoop/FilePrepper handles only **50% of datasets (3/6)**. Critical gaps:
+- Multi-file join (Dataset 004)
+- Wide-to-Long transformation (Dataset 006)
+- Feature engineering (Dataset 005)
+
+**Revised Timeline:**
+
+| Phase | Duration | Target | Priority |
+|-------|----------|--------|----------|
+| **Phase 0: Preprocessing** | Week 1-2 | Nov 11-22 | **P0 CRITICAL** |
+| Phase 1: Hooks & Metrics | Week 3-4 | Nov 25-Dec 6 | P1 HIGH |
+
+### 14.2 Extension Types
+
+#### Phase 0: Preprocessing Scripts (P0 CRITICAL - NEW)
+
+**Purpose**: Data transformation before AutoML training
+
+**Critical Use Cases** (from Dataset Analysis):
+- Multi-file operations (join, merge, concat)
+- Wide-to-Long transformations (unpivot)
+- Feature engineering (computed columns)
+- Complex data cleaning beyond FilePrepper
+
+**Interface:**
+```csharp
+public interface IPreprocessingScript
+{
+    /// <summary>
+    /// Executes preprocessing logic.
+    /// Scripts run sequentially: 01_*.cs → 02_*.cs → 03_*.cs
+    /// </summary>
+    /// <param name="context">Execution context with input/output paths</param>
+    /// <returns>Path to output CSV (becomes next script's input)</returns>
+    Task<string> ExecuteAsync(PreprocessContext context);
+}
+```
+
+**Example - Multi-file Join** (Dataset 004):
+```csharp
+// .mloop/scripts/preprocess/01_join_files.cs
+public class JoinMachineAndOrder : IPreprocessingScript
+{
+    public async Task<string> ExecuteAsync(PreprocessContext ctx)
+    {
+        var machines = await ctx.Csv.ReadAsync("datasets/raw/machine_info.csv");
+        var orders = await ctx.Csv.ReadAsync("datasets/raw/order_info.csv");
+
+        var joined = from m in machines
+                     join o in orders on m["item"] equals o["중산도면"]
+                     select new Dictionary<string, string>
+                     {
+                         ["설비명"] = m["설비명"],
+                         ["item"] = m["item"],
+                         ["재고"] = o["재고"],
+                         ["생산필요량"] = o["생산필요량"]
+                     };
+
+        return await ctx.Csv.WriteAsync(
+            Path.Combine(ctx.OutputDirectory, "01_joined.csv"),
+            joined.ToList());
+    }
+}
+```
+
+**Example - Wide-to-Long** (Dataset 006):
+```csharp
+// .mloop/scripts/preprocess/01_unpivot_shipments.cs
+public class UnpivotShipments : IPreprocessingScript
+{
+    public async Task<string> ExecuteAsync(PreprocessContext ctx)
+    {
+        var data = await ctx.Csv.ReadAsync(ctx.InputPath);
+        var longData = new List<Dictionary<string, string>>();
+
+        foreach (var row in data)
+        {
+            for (int i = 1; i <= 10; i++)
+            {
+                var dateCol = $"{i}차 출고날짜";
+                var qtyCol = $"{i}차 출고량";
+
+                if (!string.IsNullOrEmpty(row[dateCol]))
+                {
+                    longData.Add(new Dictionary<string, string>
+                    {
+                        ["작업지시번호"] = row["작업지시번호"],
+                        ["출고차수"] = i.ToString(),
+                        ["출고날짜"] = row[dateCol],
+                        ["출고량"] = row[qtyCol]
+                    });
+                }
+            }
+        }
+
+        return await ctx.Csv.WriteAsync(
+            Path.Combine(ctx.OutputDirectory, "01_unpivoted.csv"),
+            longData);
+    }
+}
+```
+
+**Execution Flow:**
+```
+User: mloop train datasets/raw.csv --label "quantity"
+  ↓
+1. CLI detects .mloop/scripts/preprocess/*.cs
+  ↓
+2. PreprocessingEngine executes sequentially:
+   - 01_join.cs: raw.csv → .mloop/temp/01_joined.csv
+   - 02_features.cs: 01_joined.csv → .mloop/temp/02_features.csv
+   - 03_datetime.cs: 02_features.csv → datasets/train.csv
+  ↓
+3. TrainingEngine trains on final output: datasets/train.csv
+```
+
+**PreprocessContext:**
+```csharp
+public class PreprocessContext
+{
+    public string InputPath { get; set; }          // Input CSV path
+    public string OutputDirectory { get; set; }     // Temp directory
+    public string ProjectRoot { get; set; }         // Project root
+    public CsvHelper Csv { get; set; }              // CSV helper
+    public IFilePrepper FilePrepper { get; set; }   // FilePrepper integration
+    public ILogger Logger { get; set; }             // Logger
+}
+```
+
+**CLI Commands:**
+```bash
+# Auto-preprocessing (recommended)
+mloop train datasets/raw.csv --label "quantity" --time 120
+# → Auto-detects scripts → Runs preprocessing → Trains
+
+# Manual preprocessing (debugging)
+mloop preprocess --input datasets/raw.csv --output datasets/train.csv
+
+# Validate scripts
+mloop validate --scripts
+```
+
+#### Phase 1: Hooks (Lifecycle Extensions)
 
 **Purpose**: Execute custom logic at specific pipeline points
 
@@ -1615,12 +1759,34 @@ $ mloop train data.csv --label target --no-extensions
 - v0.2.x: Hooks & Metrics (opt-in, zero breaking changes)
 - v0.3.x: Transforms & Pipelines (opt-in, compatible with v0.2.x)
 
-### 14.12 Documentation
+### 14.12 Implementation Roadmap
 
-**For detailed information, see:**
-- [`docs/EXTENSIBILITY.md`](EXTENSIBILITY.md) - Complete extensibility guide
-- [`docs/EXTENSIBILITY_ROADMAP.md`](EXTENSIBILITY_ROADMAP.md) - Implementation roadmap
-- `examples/extensions/` - Real-world extension examples
+**Timeline** (Revised 2025-11-09):
+
+| Phase | Duration | Target | Priority | Status |
+|-------|----------|--------|----------|--------|
+| **Phase 0.1** | Week 1 | Nov 11-15 | **P0 CRITICAL** | 📋 Planned |
+| **Phase 0.2** | Week 2 | Nov 18-22 | **P0 CRITICAL** | 📋 Planned |
+| **Phase 1.1** | Week 3 | Nov 25-29 | P1 HIGH | 📋 Planned |
+| **Phase 1.2** | Week 4 | Dec 2-6 | P1 HIGH | 📋 Planned |
+| **Release** | - | Dec 6 | - | 🎯 Target |
+
+**Phase 0: Preprocessing Scripts** (P0 CRITICAL - Weeks 1-2):
+- **Week 1**: Core infrastructure (IPreprocessingScript, ScriptCompiler, PreprocessingEngine)
+- **Week 2**: CLI integration (`mloop preprocess`, auto-run in `mloop train`)
+- **Goal**: Achieve 100% dataset coverage (6/6 datasets)
+
+**Phase 1: Hooks & Metrics** (P1 HIGH - Weeks 3-4):
+- **Week 3**: Hooks infrastructure (IMLoopHook, HookContext, TrainingEngine integration)
+- **Week 4**: Custom metrics (IMLoopMetric, AutoML integration)
+- **Goal**: Enable business-aligned optimization
+
+**Success Criteria**:
+- [ ] Dataset coverage: 100% (6/6 datasets trainable)
+- [ ] Backward compatibility: 100% (no breaking changes)
+- [ ] Extension overhead: < 1ms when not used
+- [ ] Test coverage: >90% for new code
+- [ ] Documentation complete with examples
 
 ---
 

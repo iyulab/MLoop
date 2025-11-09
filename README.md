@@ -53,6 +53,21 @@ mloop predict
 mloop predict models/staging/exp-001/model.zip datasets/predict.csv --output results.csv
 ```
 
+n## Data Preprocessing with FilePrepper
+
+MLoop integrates with **FilePrepper** for high-performance data preprocessing.
+
+**Quick Examples**:
+```bash
+# DateTime operations
+fileprepper datetime -i data.csv -o out.csv -c "DateTime" -m features --header
+
+# Expression calculations
+fileprepper expression -i data.csv -o out.csv -e "total=price*quantity" --header
+```
+
+**Performance**: 20x faster. See [examples/preprocessing/README.md](examples/preprocessing/README.md).
+
 ## Core Commands
 
 ### Available Now
