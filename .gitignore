@@ -55,6 +55,7 @@ Thumbs.db
 
 # Development docs (내부 문서)
 local-docs/
+claudedocs/
 
 # Testing resources
 ML-Resource/
