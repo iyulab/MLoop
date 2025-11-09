@@ -15,7 +15,8 @@
 11. [Technology Stack](#11-technology-stack)
 12. [Testing Strategy](#12-testing-strategy)
 13. [Long-Running Tasks](#13-long-running-tasks)
-14. [Future Extensibility](#14-future-extensibility)
+14. [Extensibility System](#14-extensibility-system)
+15. [Future Extensibility](#15-future-extensibility)
 
 ---
 
@@ -1218,9 +1219,414 @@ if (detach)
 
 ---
 
-## 14. Future Extensibility
+## 14. Extensibility System
 
-### 14.1 Why NOT Background Service (Phase 2)
+### 14.1 Overview
+
+**Design Philosophy**: Optional code-based customization while maintaining AutoML simplicity.
+
+MLoop v0.2.0+ includes an **optional extensibility system** that allows users to enhance AutoML with domain knowledge through C# scripts, without sacrificing the simplicity of the base workflow.
+
+**Key Principles:**
+- **Completely Optional**: Extensions never required for basic operation
+- **Zero-Overhead**: < 1ms performance impact when not used
+- **Graceful Degradation**: Extension failures don't break AutoML
+- **Type-Safe**: Full C# type system with IDE support
+- **Convention-Based**: Automatic discovery via filesystem
+
+### 14.2 Extension Types (Phase 1)
+
+#### Hooks (Lifecycle Extensions)
+
+**Purpose**: Execute custom logic at specific pipeline points
+
+```
+mloop train data.csv
+    ↓
+[pre-train hook]  ← Data validation, preprocessing checks
+    ↓
+AutoML Training
+    ↓
+[post-train hook] ← Model validation, deployment, logging
+    ↓
+Save Results
+```
+
+**Hook Points:**
+- `pre-train`: Before AutoML training (data validation)
+- `post-train`: After AutoML training (model validation, deployment)
+- `pre-predict`: Before batch prediction (input validation)
+- `post-evaluate`: After model evaluation (reporting, analysis)
+
+**Use Cases:**
+- Data quality validation
+- MLflow/W&B integration
+- Model performance gates
+- Automated deployment triggers
+
+#### Custom Metrics (Business-Aligned Evaluation)
+
+**Purpose**: Define business-specific optimization objectives for AutoML
+
+**Standard Metrics** (Built-in):
+```bash
+mloop train data.csv --label target --metric accuracy
+# Uses: Accuracy, F1, AUC, Precision, Recall
+```
+
+**Custom Business Metrics**:
+```bash
+mloop train data.csv --label target --metric profit-metric.cs
+# AutoML optimizes for: Expected Profit, Churn Cost, ROI, etc.
+```
+
+### 14.3 Architecture Integration
+
+#### Directory Structure
+
+```
+.mloop/
+├── scripts/                     # Extension scripts (Phase 1+)
+│   ├── hooks/                   # Lifecycle hooks
+│   │   ├── pre-train.cs
+│   │   ├── post-train.cs
+│   │   ├── pre-predict.cs
+│   │   └── post-evaluate.cs
+│   └── metrics/                 # Custom metrics
+│       ├── profit-metric.cs
+│       └── churn-cost.cs
+├── .cache/                      # Compiled DLLs (auto-generated)
+│   └── scripts/
+│       ├── hooks.pre-train.dll
+│       └── metrics.profit-metric.dll
+└── config.json
+```
+
+#### Component Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│  MLoop.Extensibility (New NuGet Package)            │
+│  ├─ Interfaces (IMLoopHook, IMLoopMetric)          │
+│  ├─ Context Classes (HookContext, MetricContext)   │
+│  └─ Result Classes (HookResult)                    │
+└────────────────────┬────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────┐
+│  MLoop.Core (Enhanced)                              │
+│  ├─ Scripting/                                      │
+│  │  ├─ ScriptLoader.cs (Hybrid compilation)        │
+│  │  ├─ ScriptDiscovery.cs (Auto-discovery)         │
+│  │  └─ ScriptCompiler.cs (Roslyn wrapper)          │
+│  └─ AutoML/                                         │
+│     └─ TrainingEngine.cs (Hook integration)        │
+└─────────────────────────────────────────────────────┘
+```
+
+### 14.4 Extension Discovery Flow
+
+```
+1. User runs: mloop train data.csv --label target
+       ↓
+2. Extension Check:
+   - .mloop/scripts/ exists? → Yes/No
+   - Overhead if No: < 1ms (directory check only)
+       ↓
+3. If Yes, Script Discovery:
+   - Scan .mloop/scripts/hooks/*.cs
+   - Scan .mloop/scripts/metrics/*.cs
+       ↓
+4. Hybrid Compilation:
+   - Check .cache/*.dll (cached?)
+   - If cached & up-to-date → Load DLL (fast: ~50ms)
+   - If not → Compile .cs → Cache DLL (first time: ~500ms)
+       ↓
+5. Validation:
+   - Implements required interface?
+   - No compilation errors?
+   - On failure → Warning + Continue with AutoML
+       ↓
+6. Execution:
+   - Hook: Execute at lifecycle point
+   - Metric: Pass to AutoML optimizer
+       ↓
+7. AutoML Training (always runs)
+```
+
+### 14.5 Hybrid Compilation Strategy
+
+**Challenge**: Balance flexibility (runtime .cs loading) with performance (pre-compiled DLLs)
+
+**Solution**: Hybrid approach combining Roslyn scripting with DLL caching
+
+```csharp
+// ScriptLoader implementation
+public async Task<T?> LoadScriptAsync<T>(string scriptPath)
+{
+    var dllPath = GetCachedDllPath(scriptPath);
+
+    // Fast path: Load cached DLL if up-to-date
+    if (IsCacheValid(scriptPath, dllPath))
+    {
+        return LoadFromDll<T>(dllPath);  // ~50ms
+    }
+
+    // Slow path: Compile .cs → Cache DLL
+    var assembly = await CompileScriptAsync(scriptPath);  // ~500ms
+    await SaveAssemblyAsync(assembly, dllPath);
+
+    return LoadFromDll<T>(dllPath);
+}
+
+private bool IsCacheValid(string scriptPath, string dllPath)
+{
+    return File.Exists(dllPath) &&
+           File.GetLastWriteTime(dllPath) >= File.GetLastWriteTime(scriptPath);
+}
+```
+
+**Benefits:**
+- ✅ Development: Edit .cs files with full IDE support (IntelliSense, debugging)
+- ✅ First Run: Automatic compilation and caching
+- ✅ Subsequent Runs: Fast DLL loading
+- ✅ Deployment: Pre-compiled DLLs can be included
+
+**Performance:**
+```
+Extension Check (no scripts):  < 1ms
+First Run (compile + cache):   ~500ms
+Cached Runs (load DLL):        ~50ms
+AutoML Training:               ~300s (unchanged)
+```
+
+### 14.6 Graceful Degradation
+
+**Design Goal**: Extension failures never break AutoML
+
+**Error Handling Strategy:**
+
+```csharp
+public async Task<IEnumerable<IMLoopHook>> DiscoverHooksAsync()
+{
+    var hooks = new List<IMLoopHook>();
+
+    if (!Directory.Exists(".mloop/scripts/hooks"))
+    {
+        // No hooks directory → No error, empty list
+        return hooks;
+    }
+
+    foreach (var scriptFile in Directory.GetFiles(scriptsDir, "*.cs"))
+    {
+        try
+        {
+            var hook = await _scriptLoader.LoadScriptAsync<IMLoopHook>(scriptFile);
+            if (hook != null)
+                hooks.Add(hook);
+        }
+        catch (CompilationException ex)
+        {
+            _logger.Warning($"⚠️  Compilation failed: {scriptFile}");
+            _logger.Warning(ex.Message);
+            // Continue with other scripts
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"❌ Unexpected error: {ex.Message}");
+            // Continue with other scripts
+        }
+    }
+
+    return hooks;  // Return whatever loaded successfully
+}
+```
+
+**User Experience:**
+```bash
+$ mloop train data.csv --label target
+
+🔍 Discovering extensions...
+   ⚠️  Compilation failed: pre-train.cs
+       Line 15: Syntax error
+   ✅ Loaded hook: post-train.cs (MLflow Logging)
+
+⚠️  Warning: Some extensions failed to load
+    Continuing with AutoML...
+
+🚀 Training started (AutoML only)
+✅ Training completed
+```
+
+### 14.7 Multi-Process Compatibility
+
+**Extensions work seamlessly with multi-process model:**
+
+```
+Terminal 1                     Terminal 2
+─────────────────────────────  ─────────────────────────────
+$ mloop train data.csv         $ mloop train data.csv
+  Process 1234 starts            Process 5678 starts
+
+  Load extensions (in-process)   Load extensions (in-process)
+  ├─ Compile/load hooks          ├─ Load from cache (shared .dll)
+  └─ Execute hooks               └─ Execute hooks
+
+  AutoML training                AutoML training
+  [exp-001]                      [exp-002]
+
+  Process 1234 exits             Process 5678 exits
+```
+
+**Key Points:**
+- Each process loads extensions independently
+- DLL cache is shared (filesystem-based)
+- No inter-process communication needed
+- Natural isolation via process boundaries
+
+### 14.8 Example: Data Validation Hook
+
+```csharp
+// .mloop/scripts/hooks/pre-train.cs
+using MLoop.Extensibility;
+
+public class DataValidationHook : IMLoopHook
+{
+    public string Name => "Data Quality Check";
+
+    public async Task<HookResult> ExecuteAsync(HookContext ctx)
+    {
+        var preview = ctx.DataView.Preview(maxRows: 1000);
+        var rowCount = preview.RowView.Length;
+
+        // Minimum row check
+        if (rowCount < 100)
+        {
+            return HookResult.Abort(
+                $"Insufficient data: {rowCount} < 100 rows");
+        }
+
+        // Class imbalance check
+        var labelCol = ctx.Metadata["LabelColumn"] as string;
+        var distribution = AnalyzeClassBalance(ctx.DataView, labelCol);
+
+        if (distribution.ImbalanceRatio > 20)
+        {
+            ctx.Logger.Warning(
+                $"⚠️  Severe class imbalance: {distribution.ImbalanceRatio:F1}:1");
+        }
+
+        ctx.Logger.Info($"✅ Validation passed: {rowCount} rows");
+        return HookResult.Continue();
+    }
+}
+```
+
+**Usage:**
+```bash
+$ mloop train data.csv --label target
+
+📊 Executing hook: Data Quality Check
+   ✅ Validation passed: 1,234 rows
+
+🚀 AutoML training...
+```
+
+### 14.9 Example: Custom Business Metric
+
+```csharp
+// .mloop/scripts/metrics/profit-metric.cs
+using MLoop.Extensibility;
+
+public class ProfitMetric : IMLoopMetric
+{
+    public string Name => "Expected Profit";
+    public bool HigherIsBetter => true;
+
+    private const double PROFIT_PER_TP = 100.0;
+    private const double LOSS_PER_FP = -50.0;
+
+    public async Task<double> CalculateAsync(MetricContext ctx)
+    {
+        var metrics = ctx.MLContext.BinaryClassification
+            .Evaluate(ctx.Predictions);
+
+        return (metrics.PositiveRecall * PROFIT_PER_TP) +
+               (metrics.FalsePositiveRate * LOSS_PER_FP);
+    }
+}
+```
+
+**Usage:**
+```bash
+$ mloop train data.csv --label target --metric profit-metric.cs
+
+🎯 Optimization metric: Expected Profit (higher is better)
+
+⏱️  AutoML searching...
+   Trial 1: LightGbm → $45.32
+   Trial 2: FastTree → $48.91 ⭐
+   Trial 3: SdcaLogistic → $43.17
+
+✅ Best model: FastTree ($48.91 expected profit)
+```
+
+### 14.10 CLI Commands
+
+```bash
+# Create new extension
+mloop new hook --name DataValidation --type pre-train
+mloop new metric --name ProfitMetric
+
+# Validate extension
+mloop validate .mloop/scripts/hooks/pre-train.cs
+# ✅ Compilation successful
+# ✅ Implements IMLoopHook
+
+# List extensions
+mloop extensions list
+# Hooks:
+#   ✅ pre-train.cs (Data Validation)
+#   ✅ post-train.cs (MLflow Logging)
+# Metrics:
+#   ✅ profit-metric.cs (Expected Profit)
+
+# Clean cache
+mloop extensions clean
+# Removed 5 cached DLLs
+```
+
+### 14.11 Backward Compatibility
+
+**Guarantee**: All existing workflows continue to work unchanged
+
+```bash
+# ✅ Still works perfectly (no extensions)
+$ mloop train data.csv --label target
+
+# ✅ Extensions auto-discovered if .mloop/scripts/ exists
+$ mloop train data.csv --label target
+
+# ✅ Force disable extensions
+$ mloop train data.csv --label target --no-extensions
+```
+
+**Version Policy:**
+- v0.1.x: Pure AutoML (no extensions)
+- v0.2.x: Hooks & Metrics (opt-in, zero breaking changes)
+- v0.3.x: Transforms & Pipelines (opt-in, compatible with v0.2.x)
+
+### 14.12 Documentation
+
+**For detailed information, see:**
+- [`docs/EXTENSIBILITY.md`](EXTENSIBILITY.md) - Complete extensibility guide
+- [`docs/EXTENSIBILITY_ROADMAP.md`](EXTENSIBILITY_ROADMAP.md) - Implementation roadmap
+- `examples/extensions/` - Real-world extension examples
+
+---
+
+## 15. Future Extensibility
+
+### 15.1 Why NOT Background Service (Phase 2)
 
 **Original concern**: "Long training blocks CLI"
 
@@ -1235,7 +1641,16 @@ if (detach)
 
 **If absolutely needed:** Add `--detach` flag (Phase 2), which internally uses `nohup`, not a daemon
 
-### 14.2 Plugin System (Future)
+### 15.2 Advanced Extensions (Phase 2)
+
+**Potential additions beyond Hooks & Metrics:**
+- Custom Transforms (feature engineering scripts)
+- Full Pipelines (complete workflow control)
+- Dependency management (NuGet references in scripts)
+
+**Note**: These will build on Phase 1 infrastructure (ScriptLoader, discovery, etc.)
+
+### 15.3 Plugin System (Future)
 
 **Potential Plugin Types:**
 - Custom Trainers
@@ -1260,7 +1675,7 @@ foreach (var plugin in plugins)
 }
 ```
 
-### 14.3 Remote Storage Support (Future)
+### 15.4 Remote Storage Support (Future)
 
 **Filesystem abstraction enables remote storage:**
 

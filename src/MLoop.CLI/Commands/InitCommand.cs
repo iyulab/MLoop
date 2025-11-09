@@ -95,7 +95,12 @@ public static class InitCommand
                     // Step 4: Create .gitignore
                     progressTask.Description = "[green]Creating .gitignore...[/]";
                     await CreateGitIgnore(fileSystem, projectPath);
-                    progressTask.Increment(20);
+                    progressTask.Increment(10);
+
+                    // Step 5: Create example extensibility scripts
+                    progressTask.Description = "[green]Creating example scripts...[/]";
+                    await CreateExampleScripts(fileSystem, projectPath);
+                    progressTask.Increment(10);
 
                     progressTask.Description = "[green]Project initialized![/]";
                 });
@@ -139,6 +144,10 @@ public static class InitCommand
         // MLOps convention: models/ folder structure
         await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "models", "staging"));
         await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "models", "production"));
+
+        // Extensibility: scripts/ folder structure for hooks and metrics
+        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(mloopPath, "scripts", "hooks"));
+        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(mloopPath, "scripts", "metrics"));
     }
 
     private static async Task CreateConfigurationFiles(
@@ -278,6 +287,7 @@ obj/
 
 # MLoop internal (keep metadata, ignore binaries)
 .mloop/cache/
+.mloop/.cache/
 
 # Model binaries (large files)
 experiments/*/model.zip
@@ -295,6 +305,100 @@ Thumbs.db
 
         var gitignorePath = fileSystem.CombinePath(projectPath, ".gitignore");
         await fileSystem.WriteTextAsync(gitignorePath, gitignore);
+    }
+
+    private static async Task CreateExampleScripts(IFileSystemManager fileSystem, string projectPath)
+    {
+        // Create example hook README
+        var hookReadme = @"# MLoop Hooks
+
+Place your custom hook scripts in this directory. Hooks execute at lifecycle points during training.
+
+## Example Hook
+
+```csharp
+using System.Threading.Tasks;
+using Microsoft.ML;
+using Microsoft.ML.Data;
+using MLoop.Extensibility;
+
+public class DataValidationHook : IMLoopHook
+{
+    public string Name => ""Data Validation"";
+
+    public async Task<HookResult> ExecuteAsync(HookContext ctx)
+    {
+        var preview = ctx.DataView.Preview(maxRows: 100);
+        var rowCount = preview.RowView.Length;
+
+        if (rowCount < 100)
+        {
+            return HookResult.Abort($""Insufficient data: {rowCount} rows, need at least 100"");
+        }
+
+        ctx.Logger.Info($""✅ Data validation passed: {rowCount} rows"");
+        return HookResult.Continue();
+    }
+}
+```
+
+## Usage
+
+1. Create a new .cs file in this directory
+2. Implement the `IMLoopHook` interface
+3. Run `mloop train` - hooks are auto-discovered and executed
+
+See: docs/EXTENSIBILITY.md for more information
+";
+
+        var hookReadmePath = fileSystem.CombinePath(projectPath, ".mloop", "scripts", "hooks", "README.md");
+        await fileSystem.WriteTextAsync(hookReadmePath, hookReadme);
+
+        // Create example metric README
+        var metricReadme = @"# MLoop Custom Metrics
+
+Place your custom metric scripts in this directory. Metrics evaluate model performance using business-specific logic.
+
+## Example Metric
+
+```csharp
+using System.Threading.Tasks;
+using Microsoft.ML;
+using Microsoft.ML.Data;
+using MLoop.Extensibility;
+
+public class ProfitMetric : IMLoopMetric
+{
+    public string Name => ""Expected Profit"";
+    public bool HigherIsBetter => true;
+
+    private const double PROFIT_PER_TP = 100.0;
+    private const double LOSS_PER_FP = -50.0;
+
+    public async Task<double> CalculateAsync(MetricContext ctx)
+    {
+        var metrics = ctx.MLContext.BinaryClassification.Evaluate(ctx.Predictions);
+
+        var profit = (metrics.PositiveRecall * PROFIT_PER_TP) +
+                     ((1 - metrics.NegativeRecall) * LOSS_PER_FP);
+
+        ctx.Logger.Info($""Calculated profit: ${profit:F2}"");
+        return await Task.FromResult(profit);
+    }
+}
+```
+
+## Usage
+
+1. Create a new .cs file in this directory
+2. Implement the `IMLoopMetric` interface
+3. Run `mloop train` - metrics are auto-discovered and calculated
+
+See: docs/EXTENSIBILITY.md for more information
+";
+
+        var metricReadmePath = fileSystem.CombinePath(projectPath, ".mloop", "scripts", "metrics", "README.md");
+        await fileSystem.WriteTextAsync(metricReadmePath, metricReadme);
     }
 
     private static string GetYamlTemplate(string projectName, string task)

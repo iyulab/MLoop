@@ -11,6 +11,8 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 - **Build Models**: Train ML.NET models using AutoML or custom configurations
 - **Run Predictions**: Execute batch and single predictions with trained models
 - **Filesystem-based MLOps**: Git-friendly experiment tracking and model versioning
+- **Data Preprocessing**: Integrated FilePrepper for ML-focused data cleaning and normalization
+- **Extensibility**: Code-based hooks and custom metrics for AutoML customization
 - **Pipeline Automation**: Define and execute reproducible ML workflows
 - **Model Registry**: Organize and manage model versions
 - **API Serving**: Deploy models as REST APIs
@@ -59,9 +61,12 @@ mloop predict models/staging/exp-001/model.zip datasets/predict.csv --output res
 - **`predict`** - Run predictions with auto-discovery of production models
 - **`list`** - List all experiments with status and metrics
 - **`promote`** - Manually promote experiments to production or staging
+- **`info`** - Display dataset profiling information
+- **`evaluate`** - Evaluate model performance on test data
+- **`validate`** - Validate extensibility scripts (hooks and metrics)
+- **`extensions`** - List all discovered hooks and metrics
 
 ### Coming Soon
-- `evaluate` - Evaluate model performance
 - `serve` - Deploy models as REST APIs
 - `pipeline` - Define and execute ML workflows
 
@@ -93,6 +98,9 @@ MLoop implements **Convention over Configuration** - intelligent defaults that w
 ```
 my-ml-project/
 ├── .mloop/                    # Project marker (like .git)
+│   └── scripts/              # Extensibility scripts
+│       ├── hooks/            # Pre/post-train hooks
+│       └── metrics/          # Custom metrics
 ├── datasets/                  # Training and prediction data
 │   ├── train.csv             # Required: training data
 │   ├── validation.csv        # Optional: validation split
@@ -184,6 +192,9 @@ mloop promote exp-002
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
+- [Data Tools Integration](docs/DATA_TOOLS_INTEGRATION.md) - FileFlux + FilePrepper pipeline
+- [Extensibility Guide](docs/EXTENSIBILITY.md) - Hooks and custom metrics
+- [FilePrepper Integration](docs/FILEPREPPER_INTEGRATION.md) - Detailed CSV preprocessing
 - [Configuration Reference](docs/configuration.md)
 - [Pipeline Guide](docs/pipelines.md)
 - [API Reference](docs/api-reference.md)

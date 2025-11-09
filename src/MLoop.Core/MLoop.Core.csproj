@@ -9,6 +9,21 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.ML" Version="4.0.3" />
     <PackageReference Include="Microsoft.ML.AutoML" Version="0.22.3" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.9.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MLoop.Extensibility\MLoop.Extensibility.csproj" />
+  </ItemGroup>
+
+  <!-- FilePrepper Integration: Debug (project) vs Release (package) -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <ProjectReference Include="..\..\..\FilePrepper\src\FilePrepper\FilePrepper.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <PackageReference Include="FilePrepper" Version="0.4.0" />
   </ItemGroup>
 
 </Project>
