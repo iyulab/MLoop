@@ -28,10 +28,11 @@ public class CsvHelperImpl : ICsvHelper
             HasHeaderRecord = hasHeader,
             MissingFieldFound = null, // Ignore missing fields
             BadDataFound = null, // Ignore bad data
-            TrimOptions = TrimOptions.Trim
+            TrimOptions = TrimOptions.Trim,
+            Encoding = System.Text.Encoding.UTF8 // Always use UTF-8 for international support
         };
 
-        using var reader = new StreamReader(filePath);
+        using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         using var csv = new CsvReader(reader, config);
 
         var records = new List<Dictionary<string, string>>();

@@ -79,8 +79,13 @@ public class SchemaValidator
                 return result;
             }
 
-            // Load input data to infer schema
-            var firstLine = File.ReadLines(inputDataPath).FirstOrDefault();
+            // Load input data to infer schema with UTF-8 encoding
+            string? firstLine;
+            using (var reader = new StreamReader(inputDataPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                firstLine = reader.ReadLine();
+            }
+
             if (string.IsNullOrEmpty(firstLine))
             {
                 result.IsValid = false;
@@ -222,8 +227,13 @@ public class SchemaValidator
 
         try
         {
-            // Load input data columns
-            var firstLine = File.ReadLines(inputDataPath).FirstOrDefault();
+            // Load input data columns with UTF-8 encoding
+            string? firstLine;
+            using (var reader = new StreamReader(inputDataPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                firstLine = reader.ReadLine();
+            }
+
             if (string.IsNullOrEmpty(firstLine))
             {
                 result.IsValid = false;
@@ -235,12 +245,33 @@ public class SchemaValidator
             var inputColumns = firstLine.Split(',');
             var missingColumns = new List<string>();
             var extraColumns = new List<string>();
+            var potentialEncodingIssues = new List<(string expected, string found)>();
 
             // Check for missing required columns (Features only, not Label)
             foreach (var savedCol in savedSchema.Columns.Where(c => c.Purpose == "Feature"))
             {
-                if (!inputColumns.Any(ic => ic.Equals(savedCol.Name, StringComparison.OrdinalIgnoreCase)))
+                // Use EXACT match for non-ASCII characters (encoding-sensitive)
+                var exactMatch = inputColumns.Any(ic => ic == savedCol.Name);
+
+                if (!exactMatch)
                 {
+                    // Try case-insensitive for ASCII-only columns
+                    var caseInsensitiveMatch = inputColumns.FirstOrDefault(ic =>
+                        ic.Equals(savedCol.Name, StringComparison.OrdinalIgnoreCase));
+
+                    if (caseInsensitiveMatch != null)
+                    {
+                        // ASCII column found with different case - OK
+                        continue;
+                    }
+
+                    // Check for potential encoding issue (garbled characters)
+                    var similarColumn = FindSimilarColumnWithEncodingIssue(savedCol.Name, inputColumns);
+                    if (similarColumn != null)
+                    {
+                        potentialEncodingIssues.Add((savedCol.Name, similarColumn));
+                    }
+
                     missingColumns.Add(savedCol.Name);
                 }
             }
@@ -248,7 +279,8 @@ public class SchemaValidator
             // Check for extra columns (warning only)
             foreach (var inputCol in inputColumns)
             {
-                if (!savedSchema.Columns.Any(sc => sc.Name.Equals(inputCol, StringComparison.OrdinalIgnoreCase)))
+                if (!savedSchema.Columns.Any(sc => sc.Name == inputCol ||
+                    sc.Name.Equals(inputCol, StringComparison.OrdinalIgnoreCase)))
                 {
                     extraColumns.Add(inputCol);
                 }
@@ -259,10 +291,32 @@ public class SchemaValidator
             {
                 result.IsValid = false;
                 result.MissingColumns = missingColumns;
-                result.ErrorMessage = $"필수 컬럼 누락: {string.Join(", ", missingColumns)}";
-                result.ErrorMessageEn = $"Missing required columns: {string.Join(", ", missingColumns)}";
-                result.Suggestions.Add("확인: 예측 데이터에 학습 시 사용된 모든 Feature 컬럼이 포함되어 있는지 확인하세요");
-                result.Suggestions.Add("Check: Ensure prediction data contains all Feature columns used during training");
+
+                // Enhanced error message with encoding issue detection
+                if (potentialEncodingIssues.Any())
+                {
+                    result.ErrorMessage = $"필수 컬럼 누락: {string.Join(", ", missingColumns)}\n\n" +
+                        "⚠️ 인코딩 이슈 감지:\n" +
+                        string.Join("\n", potentialEncodingIssues.Select(p =>
+                            $"  기대: '{p.expected}' → 발견: '{p.found}'"));
+
+                    result.ErrorMessageEn = $"Missing required columns: {string.Join(", ", missingColumns)}\n\n" +
+                        "⚠️ Encoding issue detected:\n" +
+                        string.Join("\n", potentialEncodingIssues.Select(p =>
+                            $"  Expected: '{p.expected}' → Found: '{p.found}'"));
+
+                    result.Suggestions.Add("❌ CSV 파일이 UTF-8 인코딩이 아닙니다.");
+                    result.Suggestions.Add("✅ 해결방법: 파일을 UTF-8로 변환하거나 UTF-8 BOM을 추가하세요.");
+                    result.Suggestions.Add("❌ CSV file is not UTF-8 encoded.");
+                    result.Suggestions.Add("✅ Solution: Convert file to UTF-8 or add UTF-8 BOM.");
+                }
+                else
+                {
+                    result.ErrorMessage = $"필수 컬럼 누락: {string.Join(", ", missingColumns)}";
+                    result.ErrorMessageEn = $"Missing required columns: {string.Join(", ", missingColumns)}";
+                    result.Suggestions.Add("확인: 예측 데이터에 학습 시 사용된 모든 Feature 컬럼이 포함되어 있는지 확인하세요");
+                    result.Suggestions.Add("Check: Ensure prediction data contains all Feature columns used during training");
+                }
             }
             else if (extraColumns.Any())
             {
@@ -281,6 +335,37 @@ public class SchemaValidator
             result.ErrorMessageEn = $"Error during schema validation: {ex.Message}";
             return result;
         }
+    }
+
+    /// <summary>
+    /// Find similar column name that might have encoding issues
+    /// </summary>
+    private static string? FindSimilarColumnWithEncodingIssue(string expectedName, string[] inputColumns)
+    {
+        // Check if expected name contains non-ASCII characters (Korean, Japanese, Chinese, etc.)
+        bool hasNonAscii = expectedName.Any(c => c > 127);
+
+        if (!hasNonAscii)
+            return null; // ASCII columns don't have encoding issues
+
+        // Look for columns with similar length (±2 chars) that might be garbled
+        foreach (var inputCol in inputColumns)
+        {
+            int lengthDiff = Math.Abs(inputCol.Length - expectedName.Length);
+
+            // Garbled UTF-8 text often has similar length
+            if (lengthDiff <= 2)
+            {
+                // Check if input column has replacement characters or garbled bytes
+                if (inputCol.Contains('\uFFFD') || // Replacement character
+                    inputCol.Any(c => c > 127 && c < 256)) // Latin-1/CP949 range
+                {
+                    return inputCol;
+                }
+            }
+        }
+
+        return null;
     }
 }
 

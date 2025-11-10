@@ -49,6 +49,25 @@ public class TrainingEngine : ITrainingEngine
             // Create experiment directory
             await _fileSystem.CreateDirectoryAsync(experimentPath, cancellationToken);
 
+            // Validate data quality before training (label column + dataset size)
+            var dataQualityValidator = new DataQualityValidator(_mlContext);
+            var qualityResult = dataQualityValidator.ValidateTrainingData(config.DataFile, config.LabelColumn);
+
+            if (!qualityResult.IsValid)
+            {
+                // Data quality issue detected - fail fast with clear error
+                throw new InvalidOperationException(
+                    $"{qualityResult.ErrorMessage}\n" +
+                    $"{qualityResult.ErrorMessageEn ?? ""}\n" +
+                    $"{string.Join("\n", qualityResult.Suggestions)}");
+            }
+
+            // Show warnings if any
+            foreach (var warning in qualityResult.Warnings)
+            {
+                Console.WriteLine($"[Warning] {warning}");
+            }
+
             // Capture input schema before training
             var inputSchema = CaptureInputSchema(config.DataFile, config.LabelColumn);
 
@@ -152,8 +171,13 @@ public class TrainingEngine : ITrainingEngine
             var columns = new List<ColumnSchema>();
             var columnInfo = columnInference.ColumnInformation;
 
-            // Get all columns from the file
-            var firstLine = File.ReadLines(dataFile).FirstOrDefault();
+            // Get all columns from the file with UTF-8 encoding
+            string? firstLine;
+            using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                firstLine = reader.ReadLine();
+            }
+
             if (string.IsNullOrEmpty(firstLine))
             {
                 return null;
@@ -161,8 +185,8 @@ public class TrainingEngine : ITrainingEngine
 
             var columnNames = firstLine.Split(',');
 
-            // Read all data lines to collect categorical values
-            var allLines = File.ReadAllLines(dataFile);
+            // Read all data lines to collect categorical values with UTF-8 encoding
+            var allLines = File.ReadAllLines(dataFile, System.Text.Encoding.UTF8);
             var dataLines = allLines.Skip(1).ToArray(); // Skip header
 
             foreach (var colName in columnNames)

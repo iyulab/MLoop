@@ -87,15 +87,44 @@ public class PredictionEngine : IPredictionEngine
             }
         }
 
+        // Create UTF-8 BOM version of the file for ML.NET
+        // ML.NET's InferColumns doesn't have encoding parameter and relies on BOM detection
+        string mlnetCompatiblePath = processedDataPath;
+        bool createdTempFile = false;
+
         try
         {
+            // Check if file has UTF-8 BOM
+            byte[] bom = new byte[3];
+            using (var fs = File.OpenRead(processedDataPath))
+            {
+                fs.Read(bom, 0, 3);
+            }
+
+            bool hasBom = bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF;
+
+            if (!hasBom)
+            {
+                // Create temp file with UTF-8 BOM for ML.NET compatibility
+                var tempFile = Path.GetTempFileName();
+                var allLines = File.ReadAllLines(processedDataPath, System.Text.Encoding.UTF8);
+                File.WriteAllLines(tempFile, allLines, new System.Text.UTF8Encoding(true)); // true = add BOM
+                mlnetCompatiblePath = tempFile;
+                createdTempFile = true;
+            }
+
             // Load the trained model
             DataViewSchema modelSchema;
             var trainedModel = _mlContext.Model.Load(modelPath, out modelSchema);
 
             // Load input data
-            // Read the header to get column names
-            var firstLine = File.ReadLines(processedDataPath).FirstOrDefault();
+            // Read the header to get column names with UTF-8 encoding
+            string firstLine;
+            using (var reader = new StreamReader(mlnetCompatiblePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                firstLine = reader.ReadLine() ?? string.Empty;
+            }
+
             if (string.IsNullOrEmpty(firstLine))
             {
                 throw new InvalidOperationException("Input file is empty");
@@ -108,12 +137,30 @@ public class PredictionEngine : IPredictionEngine
             var dummyLabel = columns.Length > 0 ? columns[0] : "dummy";
 
             var columnInference = _mlContext.Auto().InferColumns(
-                processedDataPath,
+                mlnetCompatiblePath,
                 labelColumnName: dummyLabel,
                 separatorChar: ',');
 
             var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
-            var inputData = textLoader.Load(processedDataPath);
+            var inputData = textLoader.Load(mlnetCompatiblePath);
+
+            // DEBUG: Print input data columns
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.WriteLine($"[DEBUG] Input DataView columns ({inputData.Schema.Count}):");
+            foreach (var col in inputData.Schema)
+            {
+                var typeName = col.Type != null ? col.Type.ToString() : "null";
+                Console.WriteLine($"  - '{col.Name}' ({typeName})");
+            }
+            Console.WriteLine($"[DEBUG] Model schema columns ({modelSchema?.Count ?? 0}):");
+            if (modelSchema != null)
+            {
+                foreach (var col in modelSchema)
+                {
+                    var typeName = col.Type != null ? col.Type.ToString() : "null";
+                    Console.WriteLine($"  - '{col.Name}' ({typeName})");
+                }
+            }
 
             // Make predictions
             var predictions = trainedModel.Transform(inputData);
@@ -144,12 +191,24 @@ public class PredictionEngine : IPredictionEngine
         }
         finally
         {
-            // Clean up temporary file if created
+            // Clean up temporary files if created
             if (useTempFile && File.Exists(processedDataPath))
             {
                 try
                 {
                     File.Delete(processedDataPath);
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
+
+            if (createdTempFile && File.Exists(mlnetCompatiblePath))
+            {
+                try
+                {
+                    File.Delete(mlnetCompatiblePath);
                 }
                 catch
                 {
