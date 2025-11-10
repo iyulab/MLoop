@@ -17,6 +17,7 @@ internal class Program
             InitCommand.Create(),
             TrainCommand.Create(),
             PredictCommand.Create(),
+            PreprocessCommand.Create(),
             ListCommand.Create(),
             PromoteCommand.Create(),
             InfoCommand.Create(),
@@ -48,15 +49,16 @@ internal class Program
         AnsiConsole.MarkupLine("Usage: [blue]mloop[/] [[command]] [[options]]");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("Commands:");
-        AnsiConsole.MarkupLine("  [green]init[/]       Initialize a new ML project");
-        AnsiConsole.MarkupLine("  [green]train[/]      Train a model using AutoML");
-        AnsiConsole.MarkupLine("  [green]predict[/]    Make predictions with a trained model");
-        AnsiConsole.MarkupLine("  [green]list[/]       List all experiments");
-        AnsiConsole.MarkupLine("  [green]promote[/]    Promote an experiment to production");
-        AnsiConsole.MarkupLine("  [green]info[/]       Display dataset profiling information");
-        AnsiConsole.MarkupLine("  [green]evaluate[/]   Evaluate model performance on test data");
-        AnsiConsole.MarkupLine("  [green]validate[/]   Validate extensibility scripts");
-        AnsiConsole.MarkupLine("  [green]extensions[/] List all hooks and metrics");
+        AnsiConsole.MarkupLine("  [green]init[/]        Initialize a new ML project");
+        AnsiConsole.MarkupLine("  [green]train[/]       Train a model using AutoML");
+        AnsiConsole.MarkupLine("  [green]predict[/]     Make predictions with a trained model");
+        AnsiConsole.MarkupLine("  [green]preprocess[/]  Execute preprocessing scripts on data");
+        AnsiConsole.MarkupLine("  [green]list[/]        List all experiments");
+        AnsiConsole.MarkupLine("  [green]promote[/]     Promote an experiment to production");
+        AnsiConsole.MarkupLine("  [green]info[/]        Display dataset profiling information");
+        AnsiConsole.MarkupLine("  [green]evaluate[/]    Evaluate model performance on test data");
+        AnsiConsole.MarkupLine("  [green]validate[/]    Validate extensibility scripts");
+        AnsiConsole.MarkupLine("  [green]extensions[/]  List all hooks and metrics");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("Use [blue]mloop [[command]] --help[/] for more information about a command.");
     }
