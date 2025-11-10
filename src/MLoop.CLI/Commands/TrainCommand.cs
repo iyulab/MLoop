@@ -167,9 +167,9 @@ public static class TrainCommand
                 LabelColumn = label,
                 Training = new TrainingSettings
                 {
-                    TimeLimitSeconds = time ?? 0,
-                    Metric = metric ?? string.Empty,
-                    TestSplit = testSplit ?? 0
+                    TimeLimitSeconds = time,    // null if not specified via CLI
+                    Metric = metric,             // null if not specified via CLI
+                    TestSplit = testSplit        // null if not specified via CLI
                 }
             };
 
@@ -314,9 +314,9 @@ public static class TrainCommand
         table.AddRow("Task", config.Task ?? "Unknown");
         table.AddRow("Data File", dataFile);
         table.AddRow("Label Column", config.LabelColumn ?? "Unknown");
-        table.AddRow("Time Limit", $"{config.Training?.TimeLimitSeconds ?? 0}s");
-        table.AddRow("Metric", config.Training?.Metric ?? "Unknown");
-        table.AddRow("Test Split", $"{(config.Training?.TestSplit ?? 0) * 100:F0}%");
+        table.AddRow("Time Limit", $"{config.Training?.TimeLimitSeconds ?? 300}s");
+        table.AddRow("Metric", config.Training?.Metric ?? "accuracy");
+        table.AddRow("Test Split", $"{(config.Training?.TestSplit ?? 0.2) * 100:F0}%");
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();

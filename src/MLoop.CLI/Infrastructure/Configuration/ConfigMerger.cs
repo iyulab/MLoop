@@ -60,7 +60,7 @@ public class ConfigMerger
             {
                 TimeLimitSeconds = 300,
                 Metric = "accuracy",
-                TestSplit = 0.2
+                TestSplit = 0.2  // Default 20% test split
             },
             Data = new DataSettings
             {
@@ -89,13 +89,13 @@ public class ConfigMerger
         // Apply training settings
         if (source.Training != null && target.Training != null)
         {
-            if (source.Training.TimeLimitSeconds > 0)
+            if (source.Training.TimeLimitSeconds.HasValue)
                 target.Training.TimeLimitSeconds = source.Training.TimeLimitSeconds;
 
             if (!string.IsNullOrEmpty(source.Training.Metric))
                 target.Training.Metric = source.Training.Metric;
 
-            if (source.Training.TestSplit >= 0)
+            if (source.Training.TestSplit.HasValue)
                 target.Training.TestSplit = source.Training.TestSplit;
         }
 
