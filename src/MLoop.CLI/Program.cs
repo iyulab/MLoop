@@ -24,6 +24,10 @@ internal class Program
             EvaluateCommand.Create(),
             ValidateCommand.Create(),
             ExtensionsCommand.Create(),
+
+            // Phase 2 Commands
+            new ServeCommand(),
+            new PipelineCommand(),
         };
 
         // Display banner
@@ -59,6 +63,8 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]evaluate[/]    Evaluate model performance on test data");
         AnsiConsole.MarkupLine("  [green]validate[/]    Validate extensibility scripts");
         AnsiConsole.MarkupLine("  [green]extensions[/]  List all hooks and metrics");
+        AnsiConsole.MarkupLine("  [green]serve[/]       Start REST API for model serving");
+        AnsiConsole.MarkupLine("  [green]pipeline[/]    Execute ML workflow from YAML");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("Use [blue]mloop [[command]] --help[/] for more information about a command.");
     }
