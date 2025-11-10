@@ -18,9 +18,9 @@ public class MLoopConfig
 /// </summary>
 public class TrainingSettings
 {
-    public int TimeLimitSeconds { get; set; } = 300;
-    public string Metric { get; set; } = "accuracy";
-    public double TestSplit { get; set; } = 0.2;
+    public int? TimeLimitSeconds { get; set; }
+    public string? Metric { get; set; }
+    public double? TestSplit { get; set; }
 }
 
 /// <summary>
