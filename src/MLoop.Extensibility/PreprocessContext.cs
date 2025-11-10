@@ -92,6 +92,92 @@ public class PreprocessContext
 }
 
 /// <summary>
+/// Extension methods for safer dictionary operations with better error messages.
+/// </summary>
+public static class DictionaryExtensions
+{
+    /// <summary>
+    /// Safely gets a value from a dictionary with helpful error messages if key is missing.
+    /// Includes available keys and fuzzy matching suggestions.
+    /// </summary>
+    public static string GetValueOrThrow(
+        this Dictionary<string, string> row,
+        string key,
+        ILogger? logger = null)
+    {
+        if (!row.ContainsKey(key))
+        {
+            var available = row.Keys.ToArray();
+            var suggestion = FindClosestMatch(key, available);
+
+            var errorMessage = $"Column '{key}' not found in CSV row.\n" +
+                             $"Available columns: {string.Join(", ", available)}";
+
+            if (suggestion != null)
+            {
+                errorMessage += $"\nDid you mean '{suggestion}'?";
+            }
+
+            logger?.Error(errorMessage);
+            throw new KeyNotFoundException(errorMessage);
+        }
+
+        return row[key];
+    }
+
+    /// <summary>
+    /// Finds the closest matching string using Levenshtein distance.
+    /// Returns null if no good match is found (distance > 3).
+    /// </summary>
+    private static string? FindClosestMatch(string target, string[] options)
+    {
+        if (options.Length == 0) return null;
+
+        var closest = options
+            .Select(opt => new { Option = opt, Distance = LevenshteinDistance(target, opt) })
+            .OrderBy(x => x.Distance)
+            .First();
+
+        // Only suggest if distance is reasonable (≤ 3 edits)
+        return closest.Distance <= 3 ? closest.Option : null;
+    }
+
+    /// <summary>
+    /// Calculates Levenshtein distance between two strings.
+    /// </summary>
+    private static int LevenshteinDistance(string source, string target)
+    {
+        if (string.IsNullOrEmpty(source))
+            return string.IsNullOrEmpty(target) ? 0 : target.Length;
+
+        if (string.IsNullOrEmpty(target))
+            return source.Length;
+
+        var distance = new int[source.Length + 1, target.Length + 1];
+
+        for (int i = 0; i <= source.Length; i++)
+            distance[i, 0] = i;
+
+        for (int j = 0; j <= target.Length; j++)
+            distance[0, j] = j;
+
+        for (int i = 1; i <= source.Length; i++)
+        {
+            for (int j = 1; j <= target.Length; j++)
+            {
+                var cost = target[j - 1] == source[i - 1] ? 0 : 1;
+
+                distance[i, j] = Math.Min(
+                    Math.Min(distance[i - 1, j] + 1, distance[i, j - 1] + 1),
+                    distance[i - 1, j - 1] + cost);
+            }
+        }
+
+        return distance[source.Length, target.Length];
+    }
+}
+
+/// <summary>
 /// Helper interface for CSV file operations.
 /// Provides high-performance reading and writing of CSV data.
 /// </summary>
