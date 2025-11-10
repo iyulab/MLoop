@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using CsvHelper;
 using CsvHelper.Configuration;
 using MLoop.Extensibility;
@@ -44,12 +45,38 @@ public class CsvHelperImpl : ICsvHelper
             var record = new Dictionary<string, string>();
             foreach (var header in headers)
             {
-                record[header] = csv.GetField(header) ?? string.Empty;
+                var value = csv.GetField(header) ?? string.Empty;
+                // Automatically clean comma-formatted numbers (e.g., "2,000" → "2000")
+                record[header] = CleanNumericString(value);
             }
             records.Add(record);
         }
 
         return records;
+    }
+
+    /// <summary>
+    /// Cleans numeric strings by removing thousand separators (commas).
+    /// This enables ML.NET to correctly infer numeric types from Korean-formatted numbers.
+    /// Examples: "1,000" → "1000", "2,000.5" → "2000.5"
+    /// </summary>
+    private static string CleanNumericString(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return input;
+        }
+
+        var trimmed = input.Trim();
+
+        // Detect comma-formatted numbers: "1,000", "2,000.5", "-1,000"
+        // Pattern: optional sign, digits with optional commas, optional decimal part
+        if (Regex.IsMatch(trimmed, @"^-?[\d,]+\.?\d*$"))
+        {
+            return trimmed.Replace(",", "");
+        }
+
+        return trimmed;
     }
 
     /// <summary>

@@ -22,18 +22,24 @@ public static class InitCommand
             getDefaultValue: () => "binary-classification",
             description: "ML task type: binary-classification, multiclass-classification, regression");
 
+        var forceOption = new Option<bool>(
+            "--force",
+            getDefaultValue: () => false,
+            description: "Reinitialize existing project (preserves .mloop/scripts/ directory)");
+
         var command = new Command("init", "Initialize a new ML project")
         {
             projectNameArg,
-            taskOption
+            taskOption,
+            forceOption
         };
 
-        command.SetHandler(ExecuteAsync, projectNameArg, taskOption);
+        command.SetHandler(ExecuteAsync, projectNameArg, taskOption, forceOption);
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(string projectName, string task)
+    private static async Task<int> ExecuteAsync(string projectName, string task, bool force)
     {
         try
         {
@@ -47,7 +53,7 @@ public static class InitCommand
                 return 1;
             }
 
-            if (projectName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            if (projectName != "." && projectName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             {
                 AnsiConsole.MarkupLine("[red]Error:[/] Project name contains invalid characters");
                 return 1;
@@ -61,12 +67,49 @@ public static class InitCommand
                 return 1;
             }
 
-            // Check if directory already exists
-            var projectPath = Path.Combine(Directory.GetCurrentDirectory(), projectName);
-            if (Directory.Exists(projectPath))
+            // Resolve project path (allow "." for current directory)
+            var projectPath = projectName == "."
+                ? Directory.GetCurrentDirectory()
+                : Path.Combine(Directory.GetCurrentDirectory(), projectName);
+
+            var mloopDir = Path.Combine(projectPath, ".mloop");
+            var isReinitialize = Directory.Exists(mloopDir);
+
+            // Check if directory/project already exists
+            if (projectName != "." && Directory.Exists(projectPath) && !force)
             {
                 AnsiConsole.MarkupLine($"[red]Error:[/] Directory '{projectName}' already exists");
+                AnsiConsole.MarkupLine("[yellow]Tip:[/] Use --force to reinitialize (preserves scripts/)");
                 return 1;
+            }
+
+            if (isReinitialize && !force)
+            {
+                AnsiConsole.MarkupLine($"[red]Error:[/] Project already initialized at {projectPath}");
+                AnsiConsole.MarkupLine("[yellow]Tip:[/] Use --force to reinitialize (preserves scripts/)");
+                return 1;
+            }
+
+            // Handle reinitialization with script preservation
+            string? scriptsBackupPath = null;
+            if (isReinitialize && force)
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠️  Reinitializing existing project[/]");
+
+                var scriptsDir = Path.Combine(mloopDir, "scripts");
+                if (Directory.Exists(scriptsDir))
+                {
+                    // Backup scripts to temp directory
+                    scriptsBackupPath = Path.Combine(Path.GetTempPath(), $"mloop_scripts_backup_{Guid.NewGuid()}");
+                    Directory.CreateDirectory(scriptsBackupPath);
+                    CopyDirectory(scriptsDir, scriptsBackupPath);
+                    AnsiConsole.MarkupLine($"[green]✓[/] Backed up scripts/ to temp location");
+                }
+
+                // Delete .mloop directory
+                Directory.Delete(mloopDir, recursive: true);
+                AnsiConsole.MarkupLine($"[green]✓[/] Cleaned .mloop directory");
+                AnsiConsole.WriteLine();
             }
 
             await AnsiConsole.Progress()
@@ -103,6 +146,16 @@ public static class InitCommand
                     progressTask.Increment(10);
 
                     progressTask.Description = "[green]Project initialized![/]";
+
+                    // Restore scripts if this was a reinitialize
+                    if (scriptsBackupPath != null && Directory.Exists(scriptsBackupPath))
+                    {
+                        progressTask.Description = "[green]Restoring scripts...[/]";
+                        var scriptsDir = Path.Combine(mloopDir, "scripts");
+                        CopyDirectory(scriptsBackupPath, scriptsDir);
+                        Directory.Delete(scriptsBackupPath, recursive: true);
+                        AnsiConsole.MarkupLine($"[green]✓[/] Restored scripts/ directory");
+                    }
                 });
 
             AnsiConsole.WriteLine();
@@ -431,5 +484,30 @@ data:
 model:
   output_dir: models/staging
 ";
+    }
+
+    /// <summary>
+    /// Recursively copies a directory and all its contents.
+    /// </summary>
+    private static void CopyDirectory(string sourceDir, string destDir)
+    {
+        // Create destination directory
+        Directory.CreateDirectory(destDir);
+
+        // Copy files
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var fileName = Path.GetFileName(file);
+            var destFile = Path.Combine(destDir, fileName);
+            File.Copy(file, destFile, overwrite: true);
+        }
+
+        // Recursively copy subdirectories
+        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        {
+            var dirName = Path.GetFileName(subDir);
+            var destSubDir = Path.Combine(destDir, dirName);
+            CopyDirectory(subDir, destSubDir);
+        }
     }
 }

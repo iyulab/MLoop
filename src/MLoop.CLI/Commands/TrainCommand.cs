@@ -192,6 +192,9 @@ public static class TrainCommand
             // Display training configuration
             DisplayTrainingConfig(resolvedDataFile, finalConfig);
 
+            // Validate label column exists in preprocessed data (before starting expensive training)
+            await ValidateLabelColumnAsync(resolvedDataFile, finalConfig.LabelColumn!);
+
             // Initialize training components
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
             var trainingEngine = new TrainingEngine(fileSystem, experimentStore);
@@ -358,6 +361,42 @@ public static class TrainCommand
         AnsiConsole.MarkupLine($"  2. mloop predict {result.ExperimentId}/model.zip new-data.csv");
         AnsiConsole.MarkupLine($"  3. mloop model promote {result.ExperimentId} staging");
         AnsiConsole.WriteLine();
+    }
+
+    /// <summary>
+    /// Validates that the label column exists in the preprocessed data.
+    /// Throws ArgumentException with helpful message if label column is missing.
+    /// </summary>
+    private static async Task ValidateLabelColumnAsync(string dataFilePath, string labelColumn)
+    {
+        // Read first row to get available columns
+        var csvHelper = new MLoop.Core.Data.CsvHelperImpl();
+        var data = await csvHelper.ReadAsync(dataFilePath);
+
+        if (data.Count == 0)
+        {
+            throw new InvalidOperationException($"Data file is empty: {dataFilePath}");
+        }
+
+        var firstRow = data[0];
+        var availableColumns = firstRow.Keys.ToArray();
+
+        if (!firstRow.ContainsKey(labelColumn))
+        {
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[red]Error:[/] Label column not found in data");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"  [yellow]Label specified:[/] '{labelColumn}'");
+            AnsiConsole.MarkupLine($"  [yellow]Available columns:[/] {string.Join(", ", availableColumns)}");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[yellow]Tip:[/] Update the label_column in mloop.yaml or use --label option");
+            AnsiConsole.WriteLine();
+
+            throw new ArgumentException(
+                $"Label column '{labelColumn}' not found in preprocessed data.\n" +
+                $"Available columns: {string.Join(", ", availableColumns)}",
+                nameof(labelColumn));
+        }
     }
 
     /// <summary>
