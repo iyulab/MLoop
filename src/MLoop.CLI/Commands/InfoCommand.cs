@@ -88,9 +88,19 @@ public static class InfoCommand
         {
             var mlContext = new MLContext(seed: 42);
 
-            // Read file info
+            // Read file info with UTF-8 encoding
             var fileInfo = new FileInfo(dataFile);
-            var lineCount = File.ReadLines(dataFile).Count() - 1; // Exclude header
+
+            // Count lines with UTF-8 encoding
+            int lineCount = 0;
+            using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                while (reader.ReadLine() != null)
+                {
+                    lineCount++;
+                }
+            }
+            lineCount--; // Exclude header
 
             AnsiConsole.Write(new Rule("[yellow]File Information[/]").LeftJustified());
             AnsiConsole.WriteLine();
@@ -106,8 +116,13 @@ public static class InfoCommand
             AnsiConsole.Write(fileTable);
             AnsiConsole.WriteLine();
 
-            // Infer columns
-            var firstLine = File.ReadLines(dataFile).FirstOrDefault();
+            // Infer columns with UTF-8 encoding
+            string? firstLine;
+            using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                firstLine = reader.ReadLine();
+            }
+
             if (string.IsNullOrEmpty(firstLine))
             {
                 AnsiConsole.MarkupLine("[red]File is empty[/]");

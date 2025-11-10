@@ -25,15 +25,21 @@ public class CsvDataLoader : IDataProvider
             throw new FileNotFoundException($"Data file not found: {filePath}");
         }
 
+        // Ensure UTF-8 BOM for ML.NET compatibility (ML.NET's InferColumns relies on BOM detection)
+        string mlnetCompatiblePath = EnsureUtf8Bom(filePath);
+
         // Infer columns from the file
         var columnInference = _mlContext.Auto().InferColumns(
-            filePath,
+            mlnetCompatiblePath,
             labelColumnName: labelColumn,
             separatorChar: ',');
 
         // Create text loader with inferred schema
         var loader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
-        var dataView = loader.Load(filePath);
+        var dataView = loader.Load(mlnetCompatiblePath);
+
+        // Note: Do NOT delete temp file here - ML.NET may lazily load data
+        // Temp files will be cleaned up by OS temp directory cleanup
 
         // Validate label column if specified
         if (!string.IsNullOrEmpty(labelColumn))
@@ -133,5 +139,37 @@ public class CsvDataLoader : IDataProvider
         }
 
         return rowCount;
+    }
+
+    /// <summary>
+    /// Ensures the CSV file has UTF-8 BOM for ML.NET compatibility.
+    /// ML.NET's InferColumns doesn't have encoding parameters and relies on BOM detection.
+    /// Creates a temporary UTF-8 BOM file if the original doesn't have BOM.
+    /// </summary>
+    private static string EnsureUtf8Bom(string filePath)
+    {
+        // Check if file has UTF-8 BOM
+        byte[] bom = new byte[3];
+        using (var fs = File.OpenRead(filePath))
+        {
+            if (fs.Length >= 3)
+            {
+                fs.Read(bom, 0, 3);
+            }
+        }
+
+        bool hasBom = bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF;
+
+        if (hasBom)
+        {
+            return filePath; // Already has BOM, use original
+        }
+
+        // Create temp file with UTF-8 BOM
+        var tempFile = Path.GetTempFileName();
+        var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+        File.WriteAllLines(tempFile, allLines, new System.Text.UTF8Encoding(true)); // true = add BOM
+
+        return tempFile;
     }
 }

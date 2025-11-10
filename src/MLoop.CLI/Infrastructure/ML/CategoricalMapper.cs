@@ -58,8 +58,8 @@ public class CategoricalMapper
 
         try
         {
-            // Read prediction data
-            var lines = File.ReadAllLines(predictionDataPath);
+            // Read prediction data with UTF-8 encoding
+            var lines = File.ReadAllLines(predictionDataPath, System.Text.Encoding.UTF8);
             if (lines.Length == 0)
             {
                 result.Success = false;
@@ -173,9 +173,9 @@ public class CategoricalMapper
                 }
             }
 
-            // Write processed data to temporary file
+            // Write processed data to temporary file with UTF-8 encoding
             var tempFile = Path.GetTempFileName();
-            File.WriteAllLines(tempFile, processedLines);
+            File.WriteAllLines(tempFile, processedLines, System.Text.Encoding.UTF8);
             result.TempFilePath = tempFile;
 
             return result;
