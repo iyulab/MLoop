@@ -1,0 +1,48 @@
+name: Complete ML Workflow
+description: End-to-end machine learning pipeline with preprocessing, training, evaluation, and deployment
+
+variables:
+  data_dir: datasets
+  model_dir: models
+  training_time: 120
+
+steps:
+  - name: preprocess_data
+    type: preprocess
+    parameters:
+      input_file: $data_dir/raw_data.csv
+      output_file: $data_dir/train.csv
+      script: .mloop/scripts/preprocess/clean_data.cs
+    continue_on_error: false
+
+  - name: train_model
+    type: train
+    parameters:
+      data_file: $data_dir/train.csv
+      label_column: price
+      training_time: $training_time
+      metric: r_squared
+    continue_on_error: false
+
+  - name: evaluate_model
+    type: evaluate
+    parameters:
+      model: $train_model.experiment_id
+      test_file: $data_dir/test.csv
+      label_column: price
+    continue_on_error: false
+
+  - name: promote_to_production
+    type: promote
+    parameters:
+      experiment_id: $train_model.experiment_id
+      stage: production
+    continue_on_error: false
+
+  - name: generate_predictions
+    type: predict
+    parameters:
+      model: production
+      input_file: $data_dir/predict.csv
+      output_file: predictions/forecast.csv
+    continue_on_error: true
