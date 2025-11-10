@@ -1,9 +1,11 @@
 using System.CommandLine;
 using Microsoft.ML;
 using MLoop.Core.Models;
+using MLoop.Core.Preprocessing;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Extensibility;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -124,6 +126,29 @@ public static class TrainCommand
                 if (!File.Exists(resolvedDataFile))
                 {
                     AnsiConsole.MarkupLine($"[red]Error:[/] Data file not found: {resolvedDataFile}");
+                    return 1;
+                }
+            }
+
+            // Execute preprocessing scripts if available (Phase 0)
+            var preprocessingEngine = new PreprocessingEngine(
+                projectRoot,
+                new TrainCommandLogger());
+
+            if (preprocessingEngine.HasPreprocessingScripts())
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[blue]🔄 Running preprocessing scripts...[/]");
+
+                try
+                {
+                    resolvedDataFile = await preprocessingEngine.ExecuteAsync(resolvedDataFile, label);
+                    AnsiConsole.WriteLine();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    AnsiConsole.MarkupLine("[red]Preprocessing failed:[/]");
+                    AnsiConsole.WriteLine(ex.Message);
                     return 1;
                 }
             }
@@ -333,5 +358,31 @@ public static class TrainCommand
         AnsiConsole.MarkupLine($"  2. mloop predict {result.ExperimentId}/model.zip new-data.csv");
         AnsiConsole.MarkupLine($"  3. mloop model promote {result.ExperimentId} staging");
         AnsiConsole.WriteLine();
+    }
+
+    /// <summary>
+    /// Logger implementation for preprocessing within TrainCommand
+    /// </summary>
+    private class TrainCommandLogger : ILogger
+    {
+        public void Debug(string message)
+        {
+            AnsiConsole.MarkupLine($"[grey]{message}[/]");
+        }
+
+        public void Info(string message)
+        {
+            AnsiConsole.WriteLine(message);
+        }
+
+        public void Warning(string message)
+        {
+            AnsiConsole.MarkupLine($"[yellow]{message}[/]");
+        }
+
+        public void Error(string message)
+        {
+            AnsiConsole.MarkupLine($"[red]{message}[/]");
+        }
     }
 }
