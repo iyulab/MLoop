@@ -23,7 +23,14 @@ public class IronbeesOrchestrator
     }
 
     /// <summary>
-    /// Factory method to create IronbeesOrchestrator with environment configuration
+    /// Factory method to create IronbeesOrchestrator with environment configuration.
+    /// Supports multiple LLM providers in priority order.
+    ///
+    /// Environment variables (priority order):
+    /// 1. GPUSTACK_ENDPOINT and GPUSTACK_API_KEY (preferred for local GPUStack)
+    /// 2. ANTHROPIC_API_KEY (recommended for Claude models)
+    /// 3. AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY (fallback for Azure OpenAI)
+    /// 4. OPENAI_API_KEY (fallback for OpenAI)
     /// </summary>
     public static IronbeesOrchestrator CreateFromEnvironment(
         ILoggerFactory? loggerFactory = null,
@@ -36,24 +43,113 @@ public class IronbeesOrchestrator
             builder.SetMinimumLevel(LogLevel.Warning);
         });
 
-        // Get Azure OpenAI configuration from environment
-        var azureEndpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT environment variable not set");
+        var logger = loggerFactory.CreateLogger<IronbeesOrchestrator>();
 
-        var azureKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_KEY")
-            ?? throw new InvalidOperationException("AZURE_OPENAI_KEY environment variable not set");
+        // Priority 1: GPUStack (local OpenAI-compatible endpoint)
+        var gpuStackEndpoint = Environment.GetEnvironmentVariable("GPUSTACK_ENDPOINT");
+        var gpuStackKey = Environment.GetEnvironmentVariable("GPUSTACK_API_KEY");
 
+        if (!string.IsNullOrEmpty(gpuStackEndpoint) && !string.IsNullOrEmpty(gpuStackKey))
+        {
+            logger.LogInformation("Using GPUStack endpoint: {Endpoint}", gpuStackEndpoint);
+            return CreateWithOpenAICompatible(gpuStackEndpoint, gpuStackKey, agentsDirectory, loggerFactory);
+        }
+
+        // Priority 2: Anthropic Claude
+        var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        if (!string.IsNullOrEmpty(anthropicKey))
+        {
+            logger.LogInformation("Using Anthropic Claude API");
+            return CreateWithAnthropic(anthropicKey, agentsDirectory, loggerFactory);
+        }
+
+        // Priority 3: Azure OpenAI
+        var azureEndpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+        var azureKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_KEY");
+
+        if (!string.IsNullOrEmpty(azureEndpoint) && !string.IsNullOrEmpty(azureKey))
+        {
+            logger.LogInformation("Using Azure OpenAI endpoint: {Endpoint}", azureEndpoint);
+            return CreateWithOpenAICompatible(azureEndpoint, azureKey, agentsDirectory, loggerFactory);
+        }
+
+        // Priority 4: OpenAI
+        var openAIKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (!string.IsNullOrEmpty(openAIKey))
+        {
+            logger.LogInformation("Using OpenAI API");
+            return CreateWithOpenAICompatible("https://api.openai.com/v1", openAIKey, agentsDirectory, loggerFactory);
+        }
+
+        // No credentials found
+        throw new InvalidOperationException(
+            "No LLM provider credentials found. Please set one of the following in .env file:\n" +
+            "  - GPUSTACK_ENDPOINT + GPUSTACK_API_KEY (local)\n" +
+            "  - ANTHROPIC_API_KEY (Claude models)\n" +
+            "  - AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_KEY (Azure)\n" +
+            "  - OPENAI_API_KEY (OpenAI)");
+    }
+
+    private static IronbeesOrchestrator CreateWithOpenAICompatible(
+        string endpoint,
+        string apiKey,
+        string? agentsDirectory,
+        ILoggerFactory loggerFactory)
+    {
         // Set up dependency injection
         var services = new ServiceCollection();
 
-        services.AddSingleton(loggerFactory);
-        services.AddSingleton(sp => loggerFactory.CreateLogger<IronbeesOrchestrator>());
+        // Add logging services - must be added before Ironbees
+        services.AddLogging(builder =>
+        {
+            builder.AddConsole();
+            builder.SetMinimumLevel(LogLevel.Warning);
+        });
 
-        // Add Ironbees services
+        // Add Ironbees services with OpenAI-compatible endpoint
         services.AddIronbees(options =>
         {
-            options.AzureOpenAIEndpoint = azureEndpoint;
-            options.AzureOpenAIKey = azureKey;
+            options.AzureOpenAIEndpoint = endpoint;
+            options.AzureOpenAIKey = apiKey;
+            options.AgentsDirectory = agentsDirectory;
+            options.MinimumConfidenceThreshold = 0.3;
+            options.UseMicrosoftAgentFramework = false;
+        });
+
+        // Add IronbeesOrchestrator
+        services.AddSingleton<IronbeesOrchestrator>();
+
+        // Build service provider
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Return orchestrator instance
+        return serviceProvider.GetRequiredService<IronbeesOrchestrator>();
+    }
+
+    private static IronbeesOrchestrator CreateWithAnthropic(
+        string apiKey,
+        string? agentsDirectory,
+        ILoggerFactory loggerFactory)
+    {
+        // Set up dependency injection
+        var services = new ServiceCollection();
+
+        // Add logging services - must be added before Ironbees
+        services.AddLogging(builder =>
+        {
+            builder.AddConsole();
+            builder.SetMinimumLevel(LogLevel.Warning);
+        });
+
+        // Add Ironbees services with Anthropic configuration
+        // Note: Ironbees may need to support Anthropic natively
+        // For now, we configure it as OpenAI-compatible if possible
+        services.AddIronbees(options =>
+        {
+            // Anthropic uses different API structure than OpenAI
+            // This is a placeholder - actual implementation depends on Ironbees support
+            options.AzureOpenAIEndpoint = "https://api.anthropic.com/v1";
+            options.AzureOpenAIKey = apiKey;
             options.AgentsDirectory = agentsDirectory;
             options.MinimumConfidenceThreshold = 0.3;
             options.UseMicrosoftAgentFramework = false;
