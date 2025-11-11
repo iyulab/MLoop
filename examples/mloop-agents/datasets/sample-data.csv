@@ -1,0 +1,11 @@
+Age,Income,Education,Purchased
+25,45000,Bachelor,Yes
+32,62000,Master,Yes
+45,80000,PhD,No
+28,50000,Bachelor,Yes
+52,95000,Master,No
+35,68000,Bachelor,Yes
+41,72000,Master,No
+29,48000,High School,Yes
+38,85000,PhD,No
+44,91000,Master,No

@@ -28,6 +28,9 @@ internal class Program
             // Phase 2 Commands
             new ServeCommand(),
             new PipelineCommand(),
+
+            // Phase 6: AI Agent Integration
+            AgentCommand.Create(),
         };
 
         // Display banner
