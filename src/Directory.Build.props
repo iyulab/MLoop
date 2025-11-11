@@ -8,12 +8,12 @@
 
     <!-- Package metadata -->
     <Authors>MLoop Contributors</Authors>
-    <Company>MLoop</Company>
+    <Company>iyulab</Company>
     <Product>MLoop</Product>
     <Copyright>Copyright © MLoop Contributors</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/yourusername/mloop</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/yourusername/mloop</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/iyulab/MLoop</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/iyulab/MLoop</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
     <!-- Version -->

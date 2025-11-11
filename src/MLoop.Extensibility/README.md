@@ -88,8 +88,8 @@ public class ProfitMetric : IMLoopMetric
 ## Documentation
 
 For complete documentation, see:
-- [EXTENSIBILITY.md](https://github.com/yourusername/mloop/blob/main/docs/EXTENSIBILITY.md)
-- [API Reference](https://github.com/yourusername/mloop/blob/main/docs/API_REFERENCE.md)
+- [EXTENSIBILITY.md](https://github.com/iyulab/MLoop/blob/main/docs/EXTENSIBILITY.md)
+- [API Reference](https://github.com/iyulab/MLoop/blob/main/docs/API_REFERENCE.md)
 
 ## License
 
