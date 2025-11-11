@@ -1,4 +1,5 @@
 using System.CommandLine;
+using DotNetEnv;
 using MLoop.CLI.Commands;
 using Spectre.Console;
 
@@ -11,6 +12,17 @@ internal class Program
 {
     static async Task<int> Main(string[] args)
     {
+        // Load .env file from project root (D:\data\MLoop\.env)
+        var projectRoot = FindProjectRoot();
+        if (projectRoot != null)
+        {
+            var envPath = Path.Combine(projectRoot, ".env");
+            if (File.Exists(envPath))
+            {
+                Env.Load(envPath);
+                // Console.WriteLine($"Loaded environment from {envPath}");
+            }
+        }
         var rootCommand = new RootCommand("MLoop - A modern CLI tool for ML.NET with filesystem-based MLOps")
         {
             // Phase 1 Commands (MVP)
@@ -70,5 +82,25 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]pipeline[/]    Execute ML workflow from YAML");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("Use [blue]mloop [[command]] --help[/] for more information about a command.");
+    }
+
+    /// <summary>
+    /// Find project root by looking for .env or .git directory
+    /// </summary>
+    private static string? FindProjectRoot()
+    {
+        var current = Directory.GetCurrentDirectory();
+        while (current != null)
+        {
+            if (File.Exists(Path.Combine(current, ".env")) ||
+                Directory.Exists(Path.Combine(current, ".git")))
+            {
+                return current;
+            }
+
+            var parent = Directory.GetParent(current);
+            current = parent?.FullName;
+        }
+        return null;
     }
 }

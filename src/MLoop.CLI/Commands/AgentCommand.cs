@@ -74,7 +74,10 @@ public static class AgentCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            // Escape markup characters in error message
+            var errorMessage = ex.Message.Replace("[", "[[").Replace("]", "]]");
+            AnsiConsole.MarkupLine($"[red]Error:[/] {errorMessage}");
+            AnsiConsole.WriteException(ex);
             return 1;
         }
     }
