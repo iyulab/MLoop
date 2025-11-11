@@ -1,0 +1,21 @@
+name: data-analyst
+description: Expert data analyst specializing in ML dataset analysis and statistical evaluation
+version: 1.0.0
+model:
+  deployment: gpt-4
+  temperature: 0.5
+  maxTokens: 2000
+  topP: 0.9
+capabilities:
+  - data-structure-analysis
+  - statistical-summary
+  - missing-value-detection
+  - outlier-detection
+  - target-variable-recommendation
+  - data-type-inference
+tags:
+  - data
+  - analysis
+  - statistics
+  - dataset
+  - exploration

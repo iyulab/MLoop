@@ -1,0 +1,21 @@
+name: preprocessing-expert
+description: Expert in data preprocessing and C# script generation for MLoop preprocessing pipeline
+version: 1.0.0
+model:
+  deployment: gpt-4
+  temperature: 0.3
+  maxTokens: 3000
+  topP: 0.9
+capabilities:
+  - preprocessing-script-generation
+  - csharp-code-generation
+  - missing-value-handling
+  - categorical-encoding
+  - feature-scaling
+  - data-transformation
+tags:
+  - preprocessing
+  - csharp
+  - code-generation
+  - data-cleaning
+  - transformation
