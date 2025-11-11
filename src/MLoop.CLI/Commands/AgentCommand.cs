@@ -1,8 +1,6 @@
 using System.CommandLine;
 using MLoop.AIAgent.Core;
 using MLoop.AIAgent.Infrastructure;
-using Ironbees.Core;
-using Ironbees.AgentFramework;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 

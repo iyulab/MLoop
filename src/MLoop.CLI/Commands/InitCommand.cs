@@ -321,7 +321,7 @@ Edit `mloop.yaml` to customize:
 
 ## Documentation
 
-For more information, see [MLoop documentation](https://github.com/yourusername/mloop).
+For more information, see [MLoop documentation](https://github.com/iyulab/MLoop).
 ";
 
         var readmePath = fileSystem.CombinePath(projectPath, "README.md");

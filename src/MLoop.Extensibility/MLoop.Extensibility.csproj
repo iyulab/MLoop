@@ -8,14 +8,8 @@
     <!-- NuGet Package Metadata -->
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>MLoop.Extensibility</PackageId>
-    <Version>1.0.0-alpha</Version>
-    <Authors>MLoop Team</Authors>
-    <Company>MLoop</Company>
-    <Product>MLoop</Product>
     <Description>Extensibility API for MLoop - enables optional code-based customization of AutoML pipeline through Hooks and Custom Metrics</Description>
     <PackageTags>mlnet;automl;ml;machine-learning;extensibility;hooks</PackageTags>
-    <RepositoryUrl>https://github.com/yourusername/mloop</RepositoryUrl>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
