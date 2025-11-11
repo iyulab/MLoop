@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>MLoop.AIAgent</RootNamespace>
+    <Description>AI Agent system for MLoop using Ironbees SDK</Description>
+  </PropertyGroup>
+
+  <!-- DEBUG: Local project references (for ironbees development/debugging) -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.Core\Ironbees.Core.csproj" />
+    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentFramework\Ironbees.AgentFramework.csproj" />
+  </ItemGroup>
+
+  <!-- RELEASE: NuGet package references (for deployment) -->
+  <!-- NOTE: Ironbees 0.1.5 not yet published to NuGet. Using 0.1.0 for now. -->
+  <!-- TODO: Update to 0.1.5 when published -->
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <PackageReference Include="Ironbees.Core" Version="0.1.0" />
+    <PackageReference Include="Ironbees.AgentFramework" Version="0.1.0-preview" />
+  </ItemGroup>
+
+  <!-- MLoop project references -->
+  <ItemGroup>
+    <ProjectReference Include="..\MLoop.Core\MLoop.Core.csproj" />
+    <ProjectReference Include="..\MLoop.Extensibility\MLoop.Extensibility.csproj" />
+  </ItemGroup>
+
+  <!-- Common dependencies -->
+  <ItemGroup>
+    <PackageReference Include="CsvHelper" Version="33.1.0" />
+    <PackageReference Include="Spectre.Console" Version="0.49.1" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+</Project>
