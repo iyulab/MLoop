@@ -1,30 +1,45 @@
-using Ironbees.Core;
-using Ironbees.AgentFramework;
+using System.Runtime.CompilerServices;
+using Ironbees.AgentMode.Configuration;
+using Ironbees.AgentMode.Providers;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace MLoop.AIAgent.Infrastructure;
 
 /// <summary>
-/// Orchestrates Ironbees agents for MLoop AI operations
+/// Orchestrates AI agents for MLoop using Ironbees Agent Mode LLM infrastructure
 /// </summary>
 public class IronbeesOrchestrator
 {
-    private readonly IAgentOrchestrator _orchestrator;
+    private readonly IChatClient _chatClient;
+    private readonly LLMConfiguration _llmConfig;
     private readonly ILogger<IronbeesOrchestrator> _logger;
+    private readonly Dictionary<string, AgentConfiguration> _agents = new();
     private bool _isInitialized;
 
     public IronbeesOrchestrator(
-        IAgentOrchestrator orchestrator,
+        IChatClient chatClient,
+        LLMConfiguration llmConfig,
         ILogger<IronbeesOrchestrator> logger)
     {
-        _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
+        _chatClient = chatClient ?? throw new ArgumentNullException(nameof(chatClient));
+        _llmConfig = llmConfig ?? throw new ArgumentNullException(nameof(llmConfig));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
+    /// Agent configuration loaded from YAML
+    /// </summary>
+    private record AgentConfiguration(
+        string Name,
+        string Description,
+        string SystemPrompt,
+        float Temperature = 0.0f,
+        int MaxTokens = 4096);
+
+    /// <summary>
     /// Factory method to create IronbeesOrchestrator with environment configuration.
-    /// Supports multiple LLM providers in priority order.
+    /// Uses Ironbees Agent Mode multi-provider LLM infrastructure.
     ///
     /// Environment variables (priority order):
     /// 1. GPUSTACK_ENDPOINT and GPUSTACK_API_KEY (preferred for local GPUStack)
@@ -45,130 +60,113 @@ public class IronbeesOrchestrator
 
         var logger = loggerFactory.CreateLogger<IronbeesOrchestrator>();
 
+        // Detect LLM configuration from environment
+        LLMConfiguration? config = null;
+        string? model = null;
+
         // Priority 1: GPUStack (local OpenAI-compatible endpoint)
         var gpuStackEndpoint = Environment.GetEnvironmentVariable("GPUSTACK_ENDPOINT");
         var gpuStackKey = Environment.GetEnvironmentVariable("GPUSTACK_API_KEY");
+        var gpuStackModel = Environment.GetEnvironmentVariable("GPUSTACK_MODEL");
 
         if (!string.IsNullOrEmpty(gpuStackEndpoint) && !string.IsNullOrEmpty(gpuStackKey))
         {
-            logger.LogInformation("Using GPUStack endpoint: {Endpoint}", gpuStackEndpoint);
-            return CreateWithOpenAICompatible(gpuStackEndpoint, gpuStackKey, agentsDirectory, loggerFactory);
+            model = gpuStackModel ?? "default";
+            logger.LogInformation("Using GPUStack endpoint: {Endpoint}, model: {Model}", gpuStackEndpoint, model);
+            config = new LLMConfiguration
+            {
+                Provider = LLMProvider.OpenAICompatible,
+                Model = model,
+                Endpoint = gpuStackEndpoint,
+                ApiKey = gpuStackKey
+            };
         }
 
         // Priority 2: Anthropic Claude
-        var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-        if (!string.IsNullOrEmpty(anthropicKey))
+        if (config == null)
         {
-            logger.LogInformation("Using Anthropic Claude API");
-            return CreateWithAnthropic(anthropicKey, agentsDirectory, loggerFactory);
+            var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+            var anthropicModel = Environment.GetEnvironmentVariable("ANTHROPIC_MODEL");
+
+            if (!string.IsNullOrEmpty(anthropicKey))
+            {
+                model = anthropicModel ?? "claude-3-5-sonnet-20241022";
+                logger.LogInformation("Using Anthropic Claude API, model: {Model}", model);
+                config = new LLMConfiguration
+                {
+                    Provider = LLMProvider.Anthropic,
+                    Model = model,
+                    ApiKey = anthropicKey
+                };
+            }
         }
 
         // Priority 3: Azure OpenAI
-        var azureEndpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
-        var azureKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_KEY");
-
-        if (!string.IsNullOrEmpty(azureEndpoint) && !string.IsNullOrEmpty(azureKey))
+        if (config == null)
         {
-            logger.LogInformation("Using Azure OpenAI endpoint: {Endpoint}", azureEndpoint);
-            return CreateWithOpenAICompatible(azureEndpoint, azureKey, agentsDirectory, loggerFactory);
+            var azureEndpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+            var azureKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_KEY");
+            var azureModel = Environment.GetEnvironmentVariable("AZURE_OPENAI_MODEL");
+
+            if (!string.IsNullOrEmpty(azureEndpoint) && !string.IsNullOrEmpty(azureKey))
+            {
+                model = azureModel ?? "gpt-4o";
+                logger.LogInformation("Using Azure OpenAI endpoint: {Endpoint}, model: {Model}",
+                    azureEndpoint, model);
+                config = new LLMConfiguration
+                {
+                    Provider = LLMProvider.AzureOpenAI,
+                    Model = model,
+                    Endpoint = azureEndpoint,
+                    ApiKey = azureKey
+                };
+            }
         }
 
         // Priority 4: OpenAI
-        var openAIKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-        if (!string.IsNullOrEmpty(openAIKey))
+        if (config == null)
         {
-            logger.LogInformation("Using OpenAI API");
-            return CreateWithOpenAICompatible("https://api.openai.com/v1", openAIKey, agentsDirectory, loggerFactory);
+            var openAIKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+            var openAIModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+
+            if (!string.IsNullOrEmpty(openAIKey))
+            {
+                model = openAIModel ?? "gpt-4o-mini";
+                logger.LogInformation("Using OpenAI API, model: {Model}", model);
+                config = new LLMConfiguration
+                {
+                    Provider = LLMProvider.OpenAI,
+                    Model = model,
+                    ApiKey = openAIKey
+                };
+            }
         }
 
         // No credentials found
-        throw new InvalidOperationException(
-            "No LLM provider credentials found. Please set one of the following in .env file:\n" +
-            "  - GPUSTACK_ENDPOINT + GPUSTACK_API_KEY (local)\n" +
-            "  - ANTHROPIC_API_KEY (Claude models)\n" +
-            "  - AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_KEY (Azure)\n" +
-            "  - OPENAI_API_KEY (OpenAI)");
+        if (config == null)
+        {
+            throw new InvalidOperationException(
+                "No LLM provider credentials found. Please set one of the following in .env file:\n" +
+                "  - GPUSTACK_ENDPOINT + GPUSTACK_API_KEY + GPUSTACK_MODEL (local)\n" +
+                "  - ANTHROPIC_API_KEY + ANTHROPIC_MODEL (Claude models)\n" +
+                "  - AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_KEY + AZURE_OPENAI_MODEL (Azure)\n" +
+                "  - OPENAI_API_KEY + OPENAI_MODEL (OpenAI)");
+        }
+
+        // Create IChatClient using Agent Mode factory pattern
+        var registry = LLMProviderFactoryRegistry.CreateDefault();
+        var factory = registry.GetFactory(config.Provider);
+        var chatClient = factory.CreateChatClient(config);
+
+        // Create orchestrator instance
+        return new IronbeesOrchestrator(chatClient, config, logger);
     }
 
-    private static IronbeesOrchestrator CreateWithOpenAICompatible(
-        string endpoint,
-        string apiKey,
-        string? agentsDirectory,
-        ILoggerFactory loggerFactory)
-    {
-        // Set up dependency injection
-        var services = new ServiceCollection();
-
-        // Add logging services - must be added before Ironbees
-        services.AddLogging(builder =>
-        {
-            builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Warning);
-        });
-
-        // Add Ironbees services with OpenAI-compatible endpoint
-        services.AddIronbees(options =>
-        {
-            options.AzureOpenAIEndpoint = endpoint;
-            options.AzureOpenAIKey = apiKey;
-            options.AgentsDirectory = agentsDirectory;
-            options.MinimumConfidenceThreshold = 0.3;
-            options.UseMicrosoftAgentFramework = false;
-        });
-
-        // Add IronbeesOrchestrator
-        services.AddSingleton<IronbeesOrchestrator>();
-
-        // Build service provider
-        var serviceProvider = services.BuildServiceProvider();
-
-        // Return orchestrator instance
-        return serviceProvider.GetRequiredService<IronbeesOrchestrator>();
-    }
-
-    private static IronbeesOrchestrator CreateWithAnthropic(
-        string apiKey,
-        string? agentsDirectory,
-        ILoggerFactory loggerFactory)
-    {
-        // Set up dependency injection
-        var services = new ServiceCollection();
-
-        // Add logging services - must be added before Ironbees
-        services.AddLogging(builder =>
-        {
-            builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Warning);
-        });
-
-        // Add Ironbees services with Anthropic configuration
-        // Note: Ironbees may need to support Anthropic natively
-        // For now, we configure it as OpenAI-compatible if possible
-        services.AddIronbees(options =>
-        {
-            // Anthropic uses different API structure than OpenAI
-            // This is a placeholder - actual implementation depends on Ironbees support
-            options.AzureOpenAIEndpoint = "https://api.anthropic.com/v1";
-            options.AzureOpenAIKey = apiKey;
-            options.AgentsDirectory = agentsDirectory;
-            options.MinimumConfidenceThreshold = 0.3;
-            options.UseMicrosoftAgentFramework = false;
-        });
-
-        // Add IronbeesOrchestrator
-        services.AddSingleton<IronbeesOrchestrator>();
-
-        // Build service provider
-        var serviceProvider = services.BuildServiceProvider();
-
-        // Return orchestrator instance
-        return serviceProvider.GetRequiredService<IronbeesOrchestrator>();
-    }
 
     /// <summary>
     /// Initialize and load all agents from filesystem
     /// </summary>
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(string? agentsDirectory = null)
     {
         if (_isInitialized)
         {
@@ -176,13 +174,40 @@ public class IronbeesOrchestrator
             return;
         }
 
-        _logger.LogInformation("Loading Ironbees agents...");
-        
+        agentsDirectory ??= Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".mloop", "agents");
+
+        _logger.LogInformation("Loading agents from {Directory}...", agentsDirectory);
+
         try
         {
-            await _orchestrator.LoadAgentsAsync();
+            if (!Directory.Exists(agentsDirectory))
+            {
+                _logger.LogWarning("Agents directory not found: {Directory}", agentsDirectory);
+                _isInitialized = true;
+                return;
+            }
+
+            var yamlFiles = Directory.GetFiles(agentsDirectory, "*.yaml", SearchOption.AllDirectories)
+                .Concat(Directory.GetFiles(agentsDirectory, "*.yml", SearchOption.AllDirectories));
+
+            foreach (var yamlFile in yamlFiles)
+            {
+                try
+                {
+                    var agent = await LoadAgentFromYamlAsync(yamlFile);
+                    _agents[agent.Name] = agent;
+                    _logger.LogInformation("Loaded agent: {Name}", agent.Name);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to load agent from {File}", yamlFile);
+                }
+            }
+
             _isInitialized = true;
-            _logger.LogInformation("Agents loaded successfully");
+            _logger.LogInformation("Loaded {Count} agents successfully", _agents.Count);
         }
         catch (Exception ex)
         {
@@ -191,19 +216,63 @@ public class IronbeesOrchestrator
         }
     }
 
+    private async Task<AgentConfiguration> LoadAgentFromYamlAsync(string yamlFilePath)
+    {
+        var yaml = await File.ReadAllTextAsync(yamlFilePath);
+        var deserializer = new YamlDotNet.Serialization.DeserializerBuilder().Build();
+        var dict = deserializer.Deserialize<Dictionary<string, object>>(yaml);
+
+        var name = dict.GetValueOrDefault("name")?.ToString()
+            ?? Path.GetFileNameWithoutExtension(yamlFilePath);
+        var description = dict.GetValueOrDefault("description")?.ToString() ?? "";
+        var systemPrompt = dict.GetValueOrDefault("system_prompt")?.ToString()
+            ?? dict.GetValueOrDefault("instructions")?.ToString() ?? "";
+
+        float temperature = 0.0f;
+        if (dict.TryGetValue("temperature", out var tempObj) && tempObj != null)
+        {
+            temperature = Convert.ToSingle(tempObj);
+        }
+
+        int maxTokens = 4096;
+        if (dict.TryGetValue("max_tokens", out var tokensObj) && tokensObj != null)
+        {
+            maxTokens = Convert.ToInt32(tokensObj);
+        }
+
+        return new AgentConfiguration(name, description, systemPrompt, temperature, maxTokens);
+    }
+
     /// <summary>
     /// Process user request with specific agent
     /// </summary>
     public async Task<string> ProcessAsync(string request, string agentName)
     {
         EnsureInitialized();
-        
+
+        if (!_agents.TryGetValue(agentName, out var agent))
+        {
+            throw new InvalidOperationException($"Agent '{agentName}' not found");
+        }
+
         _logger.LogInformation("Processing request with agent '{AgentName}'", agentName);
-        
+
         try
         {
-            var response = await _orchestrator.ProcessAsync(request, agentName);
-            return response;
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, agent.SystemPrompt),
+                new(ChatRole.User, request)
+            };
+
+            var options = new ChatOptions
+            {
+                Temperature = agent.Temperature,
+                MaxOutputTokens = agent.MaxTokens
+            };
+
+            var response = await _chatClient.GetResponseAsync(messages, options);
+            return response.ToString() ?? string.Empty;
         }
         catch (Exception ex)
         {
@@ -218,19 +287,19 @@ public class IronbeesOrchestrator
     public async Task<string> ProcessAsync(string request)
     {
         EnsureInitialized();
-        
-        _logger.LogInformation("Processing request with auto agent selection");
-        
-        try
+
+        if (_agents.Count == 0)
         {
-            var response = await _orchestrator.ProcessAsync(request);
-            return response;
+            throw new InvalidOperationException("No agents loaded");
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to process request with auto selection");
-            throw;
-        }
+
+        // Simple auto-selection: use first agent for now
+        // TODO: Implement intelligent agent selection based on request analysis
+        var selectedAgent = _agents.Values.First();
+
+        _logger.LogInformation("Auto-selected agent '{AgentName}' for request", selectedAgent.Name);
+
+        return await ProcessAsync(request, selectedAgent.Name);
     }
 
     /// <summary>
@@ -239,12 +308,32 @@ public class IronbeesOrchestrator
     public async IAsyncEnumerable<string> StreamAsync(string request, string agentName)
     {
         EnsureInitialized();
-        
-        _logger.LogInformation("Streaming request with agent '{AgentName}'", agentName);
-        
-        await foreach (var chunk in _orchestrator.StreamAsync(request, agentName))
+
+        if (!_agents.TryGetValue(agentName, out var agent))
         {
-            yield return chunk;
+            throw new InvalidOperationException($"Agent '{agentName}' not found");
+        }
+
+        _logger.LogInformation("Streaming request with agent '{AgentName}'", agentName);
+
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, agent.SystemPrompt),
+            new(ChatRole.User, request)
+        };
+
+        var options = new ChatOptions
+        {
+            Temperature = agent.Temperature,
+            MaxOutputTokens = agent.MaxTokens
+        };
+
+        await foreach (var update in _chatClient.GetStreamingResponseAsync(messages, options))
+        {
+            if (update.Text is not null)
+            {
+                yield return update.Text;
+            }
         }
     }
 
@@ -254,24 +343,20 @@ public class IronbeesOrchestrator
     public async IAsyncEnumerable<string> StreamWithAutoSelectionAsync(string request)
     {
         EnsureInitialized();
-        
-        _logger.LogInformation("Streaming request with auto selection");
-        
-        // First, select the best agent
-        var selection = await _orchestrator.SelectAgentAsync(request);
-        
-        if (selection.SelectedAgent == null)
+
+        if (_agents.Count == 0)
         {
-            _logger.LogWarning("No suitable agent found for request");
-            yield return "⚠️ No suitable agent found for this request.";
+            _logger.LogWarning("No agents loaded");
+            yield return "⚠️ No agents loaded";
             yield break;
         }
-        
-        _logger.LogInformation("Auto-selected agent: {AgentName} (confidence: {Confidence})", 
-            selection.SelectedAgent.Name, selection.ConfidenceScore);
-        
-        // Stream using the selected agent
-        await foreach (var chunk in _orchestrator.StreamAsync(request, selection.SelectedAgent.Name))
+
+        // Simple auto-selection: use first agent for now
+        var selectedAgent = _agents.Values.First();
+
+        _logger.LogInformation("Auto-selected agent '{AgentName}' for streaming", selectedAgent.Name);
+
+        await foreach (var chunk in StreamAsync(request, selectedAgent.Name))
         {
             yield return chunk;
         }
@@ -283,16 +368,7 @@ public class IronbeesOrchestrator
     public IEnumerable<string> GetAvailableAgents()
     {
         EnsureInitialized();
-        
-        // This would require extending Ironbees IAgentOrchestrator interface
-        // For now, return known agents
-        return new[] 
-        { 
-            "data-analyst", 
-            "preprocessing-expert", 
-            "model-architect", 
-            "mlops-manager" 
-        };
+        return _agents.Keys;
     }
 
     private void EnsureInitialized()

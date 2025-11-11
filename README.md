@@ -9,6 +9,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 ### Key Features
 
 - **AutoML Training**: Automatic model selection with ML.NET AutoML
+- **AI Agents**: Interactive ML assistance with multi-provider LLM support
 - **Smart Predictions**: Production model auto-discovery and batch processing
 - **Filesystem MLOps**: Git-friendly experiment tracking (no database required)
 - **Fast Preprocessing**: Integrated FilePrepper (20x faster than pandas)
@@ -97,9 +98,9 @@ mloop predict  # Auto-uses exp-003
 ## Documentation
 
 - **[User Guide](docs/GUIDE.md)** - Complete usage guide with concurrent job management
+- **[AI Agents](docs/AI-AGENTS.md)** - Multi-provider LLM agents for interactive ML assistance
 - **[Architecture](docs/ARCHITECTURE.md)** - Technical documentation
 - **[Examples](examples/)** - Sample workflows
-- **[LLM Provider Support](LLM-PROVIDER-SUPPORT.md)** - Multi-provider AI agent configuration
 - **[Job Management Scripts](examples/scripts/)** - Sequential and parallel execution tools
 
 ## Why MLoop?
