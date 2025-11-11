@@ -1,5 +1,7 @@
 using Ironbees.Core;
+using Ironbees.AgentFramework;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MLoop.AIAgent.Infrastructure;
 
@@ -18,6 +20,53 @@ public class IronbeesOrchestrator
     {
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Factory method to create IronbeesOrchestrator with environment configuration
+    /// </summary>
+    public static IronbeesOrchestrator CreateFromEnvironment(
+        ILoggerFactory? loggerFactory = null,
+        string? agentsDirectory = null)
+    {
+        // Use provided logger factory or create a default one
+        loggerFactory ??= LoggerFactory.Create(builder =>
+        {
+            builder.AddConsole();
+            builder.SetMinimumLevel(LogLevel.Warning);
+        });
+
+        // Get Azure OpenAI configuration from environment
+        var azureEndpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
+            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT environment variable not set");
+
+        var azureKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_KEY")
+            ?? throw new InvalidOperationException("AZURE_OPENAI_KEY environment variable not set");
+
+        // Set up dependency injection
+        var services = new ServiceCollection();
+
+        services.AddSingleton(loggerFactory);
+        services.AddSingleton(sp => loggerFactory.CreateLogger<IronbeesOrchestrator>());
+
+        // Add Ironbees services
+        services.AddIronbees(options =>
+        {
+            options.AzureOpenAIEndpoint = azureEndpoint;
+            options.AzureOpenAIKey = azureKey;
+            options.AgentsDirectory = agentsDirectory;
+            options.MinimumConfidenceThreshold = 0.3;
+            options.UseMicrosoftAgentFramework = false;
+        });
+
+        // Add IronbeesOrchestrator
+        services.AddSingleton<IronbeesOrchestrator>();
+
+        // Build service provider
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Return orchestrator instance
+        return serviceProvider.GetRequiredService<IronbeesOrchestrator>();
     }
 
     /// <summary>

@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MLoop.AIAgent\MLoop.AIAgent.csproj" />
+    <ProjectReference Include="..\..\src\MLoop.CLI\MLoop.CLI.csproj" />
   </ItemGroup>
 
 </Project>
