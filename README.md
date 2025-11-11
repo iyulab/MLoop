@@ -96,9 +96,11 @@ mloop predict  # Auto-uses exp-003
 
 ## Documentation
 
-- **[User Guide](docs/GUIDE.md)** - Complete usage guide
+- **[User Guide](docs/GUIDE.md)** - Complete usage guide with concurrent job management
 - **[Architecture](docs/ARCHITECTURE.md)** - Technical documentation
 - **[Examples](examples/)** - Sample workflows
+- **[LLM Provider Support](LLM-PROVIDER-SUPPORT.md)** - Multi-provider AI agent configuration
+- **[Job Management Scripts](examples/scripts/)** - Sequential and parallel execution tools
 
 ## Why MLoop?
 

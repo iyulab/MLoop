@@ -644,10 +644,217 @@ mloop train datasets/train.csv Price  # If column is 'Price'
 
 ---
 
+## Concurrent Job Management
+
+MLoop follows the Unix philosophy: each command runs as an independent process that exits when complete. This design provides natural isolation but requires external tools for managing multiple concurrent training jobs.
+
+### Problem: Resource Exhaustion
+
+When running multiple training jobs simultaneously, system resources (CPU/memory) can be exhausted:
+
+```bash
+# ❌ All 3 jobs compete for CPU → system slowdown
+$ mloop train dataset1.csv price --time 1800 &
+$ mloop train dataset2.csv price --time 1800 &
+$ mloop train dataset3.csv price --time 1800 &
+```
+
+### Solution 1: Sequential Wrapper Script (Recommended)
+
+Use the provided `mloop-queue.sh` script for simple sequential execution:
+
+```bash
+# ✅ Jobs run one after another
+$ examples/scripts/mloop-queue.sh \
+    "train dataset1.csv price --time 1800" \
+    "train dataset2.csv price --time 1800" \
+    "train dataset3.csv price --time 1800"
+
+# Output:
+# [1/3] Running: mloop train dataset1.csv price --time 1800
+# ✅ Job 1 complete (30 min)
+# [2/3] Running: mloop train dataset2.csv price --time 1800
+# ✅ Job 2 complete (30 min)
+# [3/3] Running: mloop train dataset3.csv price --time 1800
+# ✅ Job 3 complete (30 min)
+# 🎉 All jobs complete: 3/3 succeeded
+```
+
+**Features**:
+- Sequential execution (one at a time)
+- Progress tracking
+- Error handling
+- Total time reporting
+
+### Solution 2: GNU Parallel (Advanced)
+
+For advanced control, use [GNU Parallel](https://www.gnu.org/software/parallel/):
+
+```bash
+# Install GNU Parallel
+$ sudo apt-get install parallel  # Ubuntu/Debian
+$ brew install parallel           # macOS
+
+# Run jobs with control
+$ cat jobs.txt | parallel -j 1 --progress mloop {}
+
+# jobs.txt:
+# train dataset1.csv price --time 1800
+# train dataset2.csv price --time 1800
+# train dataset3.csv price --time 1800
+```
+
+**Advanced Options**:
+```bash
+# Limit to 2 concurrent jobs (if you have 2 GPUs)
+$ parallel -j 2 mloop train {} ::: dataset1.csv dataset2.csv dataset3.csv
+
+# Resume on failure
+$ parallel --resume --joblog jobs.log -j 1 mloop train {} ::: dataset*.csv
+
+# Different time budgets per job
+$ parallel --colsep ',' mloop train {1} price --time {2} :::: jobs.csv
+
+# jobs.csv:
+# dataset1.csv,1800
+# dataset2.csv,3600
+# dataset3.csv,900
+```
+
+See `examples/scripts/mloop-parallel.sh` for complete examples.
+
+### Solution 3: OS Job Control
+
+Use standard Unix tools for background job management:
+
+```bash
+# Schedule jobs with 'at'
+$ echo "mloop train dataset1.csv price --time 1800" | at now
+$ echo "mloop train dataset2.csv price --time 1800" | at now + 30 minutes
+$ echo "mloop train dataset3.csv price --time 1800" | at now + 60 minutes
+
+# Monitor with screen/tmux
+$ screen -S training1
+$ mloop train dataset1.csv price --time 1800
+# Ctrl+A, D to detach
+
+$ screen -S training2
+$ mloop train dataset2.csv price --time 1800
+# Ctrl+A, D to detach
+
+# List sessions
+$ screen -ls
+
+# Reattach
+$ screen -r training1
+```
+
+### Solution 4: CI/CD Pipeline Orchestration
+
+For production workflows, integrate with existing orchestration tools:
+
+**GitHub Actions**:
+```yaml
+# .github/workflows/train-models.yml
+jobs:
+  train:
+    strategy:
+      matrix:
+        dataset: [dataset1, dataset2, dataset3]
+      max-parallel: 1  # Sequential execution
+    steps:
+      - name: Train model
+        run: mloop train ${{ matrix.dataset }}.csv price --time 1800
+```
+
+**Kubernetes**:
+```yaml
+# k8s/training-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mloop-training
+spec:
+  parallelism: 1  # One job at a time
+  completions: 3   # Total jobs
+  template:
+    spec:
+      containers:
+      - name: mloop
+        image: mloop:latest
+        command: ["mloop", "train"]
+```
+
+**Airflow**:
+```python
+# dags/mloop_training.py
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+
+dag = DAG('mloop_training', schedule_interval='@daily')
+
+train1 = BashOperator(
+    task_id='train_dataset1',
+    bash_command='mloop train dataset1.csv price --time 1800',
+    dag=dag
+)
+
+train2 = BashOperator(
+    task_id='train_dataset2',
+    bash_command='mloop train dataset2.csv price --time 1800',
+    dag=dag
+)
+
+train1 >> train2  # Sequential execution
+```
+
+### Resource Monitoring
+
+Monitor resource usage during training:
+
+```bash
+# CPU/Memory monitoring
+$ watch -n 5 'ps aux | grep mloop'
+
+# System resources
+$ htop
+
+# GPU usage (if applicable)
+$ watch -n 1 nvidia-smi
+
+# Disk I/O
+$ iotop
+```
+
+### Best Practices
+
+1. **Estimate Resource Needs**: Run one job first to measure CPU/memory usage
+2. **Use Sequential Execution**: Default to sequential for safety (wrapper script)
+3. **Enable Parallel Only When Safe**: If you have multiple GPUs or low CPU usage
+4. **Monitor First Job**: Check resource usage before starting batch jobs
+5. **Use Absolute Paths**: Avoid issues with working directory in background jobs
+6. **Log Output**: Redirect stdout/stderr for debugging: `mloop train ... > job1.log 2>&1`
+
+### Performance Tips
+
+```bash
+# Reduce CPU usage with nice (lower priority)
+$ nice -n 19 mloop train dataset.csv price --time 1800
+
+# Pin to specific CPU cores (Linux)
+$ taskset -c 0-3 mloop train dataset.csv price --time 1800
+
+# Set memory limits (Linux)
+$ systemd-run --scope -p MemoryMax=4G mloop train dataset.csv price --time 1800
+```
+
+---
+
 ## Next Steps
 
 - **Architecture**: See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details
 - **Examples**: Check `examples/` directory for complete workflows
+- **Concurrent Execution**: See `examples/scripts/` for job management scripts
 - **Contributing**: Review development guidelines in [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ---
