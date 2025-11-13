@@ -116,7 +116,7 @@ With Microsoft discontinuing ML.NET CLI and Model Builder updates, MLoop provide
 ## Requirements
 
 - .NET 9.0+
-- ML.NET 4.0.3+
+- ML.NET 5.0.0+
 
 ## License
 
