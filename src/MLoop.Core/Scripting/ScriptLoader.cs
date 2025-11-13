@@ -7,6 +7,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using MLoop.Extensibility;
+using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.Core.Scripting;
 
@@ -32,14 +33,19 @@ public class ScriptLoader
         _scriptOptions = ScriptOptions.Default
             .AddReferences(
                 typeof(object).Assembly,                    // System
-                typeof(IMLoopHook).Assembly,                // MLoop.Extensibility
-                typeof(Microsoft.ML.MLContext).Assembly     // Microsoft.ML
+                typeof(IPreprocessingScript).Assembly,      // MLoop.Extensibility
+                typeof(Microsoft.ML.MLContext).Assembly,    // Microsoft.ML
+                typeof(FilePrepper.Pipeline.DataPipeline).Assembly  // FilePrepper
             )
             .AddImports(
                 "System",
+                "System.IO",
+                "System.Linq",
                 "System.Threading.Tasks",
                 "Microsoft.ML",
-                "MLoop.Extensibility"
+                "MLoop.Extensibility",
+                "MLoop.Extensibility.Preprocessing",
+                "FilePrepper.Pipeline"
             );
     }
 
@@ -99,13 +105,16 @@ public class ScriptLoader
 
         // Create compilation with necessary references
         var mlAssembly = typeof(Microsoft.ML.MLContext).Assembly;
+        var filePrepperAssembly = typeof(FilePrepper.Pipeline.DataPipeline).Assembly;
         var references = new[]
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(IMLoopHook).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(IPreprocessingScript).Assembly.Location),
             MetadataReference.CreateFromFile(mlAssembly.Location),
+            MetadataReference.CreateFromFile(filePrepperAssembly.Location),
             MetadataReference.CreateFromFile(typeof(System.Threading.Tasks.Task).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.IO.Path).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),
         };
 

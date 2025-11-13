@@ -26,11 +26,42 @@ MLoop is a lightweight MLOps platform built on ML.NET, designed with a **filesys
 
 ### 1.1 Core Mission
 
-**"Clean Data In, Trained Model Out - That's It."**
+**"Excellent MLOps with Minimum Cost"**
 
-MLoop fills the gap left by Microsoft's discontinued ML.NET CLI, providing .NET developers with a modern, production-ready tool for the complete ML lifecycle.
+MLoop enables anyone to achieve production-quality ML models with minimal coding and ML expertise, while maintaining flexibility for advanced customization. This is accomplished through:
 
-### 1.2 Design Principles
+1. **Minimal Development Cost**: 3-command workflow (`init` → `train` → `predict`) vs traditional multi-week ML projects
+2. **Minimal Knowledge Cost**: AutoML + AI Agent assistance eliminates need for ML expertise
+3. **Minimal Operational Cost**: Filesystem-based MLOps, no infrastructure complexity
+4. **Maximum Value**: Production-ready models with optional extensibility for expert users
+
+### 1.2 Design Philosophy
+
+**Convention Over Configuration**
+- Filesystem-based contracts: Drop CSV in `datasets/`, get trained model
+- Zero configuration required for 90% of use cases
+- Git-friendly MLOps: All state as files, no databases
+- Intelligent defaults that work immediately
+
+**AutoML-First, Minimal Coding**
+- One command trains production-ready models
+- Automatic algorithm selection via ML.NET AutoML
+- Optional FilePrepper integration for complex preprocessing
+- No manual feature engineering unless user chooses to customize
+
+**AI Agent Assistance**
+- Multi-provider LLM integration (OpenAI, Anthropic, Google, etc.)
+- Interactive guidance for users without ML expertise
+- Intelligent optimization suggestions (hyperparameters, features, algorithms)
+- Educational feedback: Agents explain decisions and teach ML concepts
+
+**Extensibility Through Dynamic Scripting**
+- Optional C# scripts for custom logic (hooks, metrics, preprocessing)
+- Automatic compilation and caching for performance
+- Zero overhead when extensions aren't used (<1ms impact)
+- Full IDE support (IntelliSense, debugging, type safety)
+
+### 1.3 Technical Design Principles
 
 - **Filesystem-First**: All state managed as files, perfect Git integration
 - **Multi-Process Casual**: Each command runs independently, no daemon required
@@ -39,7 +70,7 @@ MLoop fills the gap left by Microsoft's discontinued ML.NET CLI, providing .NET 
 - **Lightweight**: Independent operation without complex dependencies
 - **AutoML-Driven**: Automatic model selection over manual tuning
 
-### 1.3 Target Use Cases
+### 1.4 Target Use Cases
 
 **✅ Suitable For:**
 - Medium datasets (< 1GB)

@@ -3,6 +3,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Preprocessing;
 using MLoop.Extensibility;
+using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -197,5 +198,11 @@ internal class SpectreLogger : ILogger
     public void Error(string message)
     {
         AnsiConsole.MarkupLine($"[red]{message}[/]");
+    }
+
+    public void Error(string message, Exception exception)
+    {
+        AnsiConsole.MarkupLine($"[red]{message}[/]");
+        AnsiConsole.WriteException(exception);
     }
 }

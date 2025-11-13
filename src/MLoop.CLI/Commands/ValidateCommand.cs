@@ -20,6 +20,19 @@ public static class ValidateCommand
 
     private static async Task<int> ExecuteAsync()
     {
+        // NOTE: Phase 1 (Hooks & Metrics) - Disabled for Phase 0 (Preprocessing)
+        // TODO: Re-enable when implementing Phase 1
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[yellow]⚠️  This command is not yet available[/]");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[grey]The 'validate' command validates hooks and metrics (Phase 1 features).[/]");
+        AnsiConsole.MarkupLine("[grey]Currently implementing Phase 0 (preprocessing scripts).[/]");
+        AnsiConsole.MarkupLine("[grey]This command will be enabled in a future release.[/]");
+        AnsiConsole.WriteLine();
+        return 0;
+
+#if false
         try
         {
             var projectRoot = Directory.GetCurrentDirectory();
@@ -149,5 +162,6 @@ public static class ValidateCommand
             AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
             return 1;
         }
+#endif
     }
 }

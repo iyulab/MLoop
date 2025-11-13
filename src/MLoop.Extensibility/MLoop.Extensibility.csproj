@@ -1,24 +1,19 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <LangVersion>13</LangVersion>
 
     <!-- NuGet Package Metadata -->
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>MLoop.Extensibility</PackageId>
-    <Description>Extensibility API for MLoop - enables optional code-based customization of AutoML pipeline through Hooks and Custom Metrics</Description>
-    <PackageTags>mlnet;automl;ml;machine-learning;extensibility;hooks</PackageTags>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Version>0.2.0</Version>
+    <Authors>MLoop Contributors</Authors>
+    <Description>Extensibility interfaces for MLoop - preprocessing scripts, hooks, and custom metrics</Description>
+    <PackageTags>mlops;automl;mlnet;extensibility;preprocessing</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.ML" Version="4.0.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
 
 </Project>
