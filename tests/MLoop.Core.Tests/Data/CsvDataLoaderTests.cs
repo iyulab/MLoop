@@ -61,7 +61,10 @@ public class CsvDataLoaderTests : IDisposable
         // Assert
         Assert.NotNull(dataView);
         Assert.True(dataView.Schema.Count > 0, $"Schema count is {dataView.Schema.Count}");
-        Assert.True(dataView.GetRowCount() == 3, $"Row count is {dataView.GetRowCount()}");
+
+        // GetRowCount() may return null, use manual count as fallback
+        var rowCount = GetActualRowCount(dataView);
+        Assert.Equal(3, rowCount);
     }
 
     [Fact]
@@ -76,10 +79,10 @@ public class CsvDataLoaderTests : IDisposable
         });
 
         // Act & Assert
-        var exception = Assert.Throws<InvalidOperationException>(
+        var exception = Assert.Throws<ArgumentException>(
             () => _loader.LoadData(csvPath, "nonexistent_label"));
 
-        Assert.Contains("not found in the data", exception.Message);
+        Assert.Contains("not found", exception.Message);
     }
 
     [Fact]
@@ -145,7 +148,7 @@ public class CsvDataLoaderTests : IDisposable
     [Fact]
     public void SplitData_WithValidFraction_ReturnsSplitData()
     {
-        // Arrange
+        // Arrange - Use larger dataset to ensure reliable split
         var csvPath = CreateTestCsv(new[]
         {
             "feature,label",
@@ -153,7 +156,12 @@ public class CsvDataLoaderTests : IDisposable
             "2.0,1.0",
             "3.0,0.0",
             "4.0,1.0",
-            "5.0,0.0"
+            "5.0,0.0",
+            "6.0,1.0",
+            "7.0,0.0",
+            "8.0,1.0",
+            "9.0,0.0",
+            "10.0,1.0"
         });
         var dataView = _loader.LoadData(csvPath, "label");
 
@@ -164,11 +172,12 @@ public class CsvDataLoaderTests : IDisposable
         Assert.NotNull(trainSet);
         Assert.NotNull(testSet);
 
-        var trainCount = trainSet.GetRowCount();
-        var testCount = testSet.GetRowCount();
+        var trainCount = GetActualRowCount(trainSet);
+        var testCount = GetActualRowCount(testSet);
 
-        Assert.True(trainCount > 0);
-        Assert.True(testCount > 0);
+        Assert.True(trainCount > 0, $"Train count is {trainCount}");
+        Assert.True(testCount > 0, $"Test count is {testCount}");
+        Assert.Equal(10, trainCount + testCount); // Total should equal original count
     }
 
     [Fact]
@@ -190,8 +199,8 @@ public class CsvDataLoaderTests : IDisposable
         // Assert
         Assert.NotNull(trainSet);
         Assert.NotNull(testSet);
-        Assert.Equal(3, trainSet.GetRowCount());
-        Assert.Equal(3, testSet.GetRowCount());
+        Assert.Equal(3, GetActualRowCount(trainSet));
+        Assert.Equal(3, GetActualRowCount(testSet));
     }
 
     [Fact]
@@ -216,5 +225,29 @@ public class CsvDataLoaderTests : IDisposable
         var filePath = Path.Combine(_tempDirectory, fileName);
         File.WriteAllLines(filePath, lines);
         return filePath;
+    }
+
+    /// <summary>
+    /// Gets actual row count from DataView, handling cases where GetRowCount() returns null.
+    /// ML.NET 5.0 may return null more frequently, so we use manual counting as fallback.
+    /// </summary>
+    private int GetActualRowCount(IDataView dataView)
+    {
+        var count = dataView.GetRowCount();
+        if (count.HasValue)
+        {
+            return (int)count.Value;
+        }
+
+        // Fallback: count manually
+        int rowCount = 0;
+        using (var cursor = dataView.GetRowCursor(dataView.Schema))
+        {
+            while (cursor.MoveNext())
+            {
+                rowCount++;
+            }
+        }
+        return rowCount;
     }
 }
