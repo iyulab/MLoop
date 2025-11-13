@@ -22,25 +22,28 @@ public class ScriptDiscovery
         _scriptLoader = scriptLoader ?? new ScriptLoader();
     }
 
-    /// <summary>
-    /// Discovers all hooks from .mloop/scripts/hooks/*.cs
-    /// </summary>
-    /// <returns>List of discovered hook instances</returns>
-    public async Task<List<IMLoopHook>> DiscoverHooksAsync()
-    {
-        var hooksPath = Path.Combine(_projectRoot, ".mloop", "scripts", "hooks");
-        return await DiscoverScriptsAsync<IMLoopHook>(hooksPath, "hooks");
-    }
+    // NOTE: Phase 1 (Hooks & Metrics) - Disabled for Phase 0 (Preprocessing)
+    // TODO: Re-enable when implementing Phase 1
 
-    /// <summary>
-    /// Discovers all metrics from .mloop/scripts/metrics/*.cs
-    /// </summary>
-    /// <returns>List of discovered metric instances</returns>
-    public async Task<List<IMLoopMetric>> DiscoverMetricsAsync()
-    {
-        var metricsPath = Path.Combine(_projectRoot, ".mloop", "scripts", "metrics");
-        return await DiscoverScriptsAsync<IMLoopMetric>(metricsPath, "metrics");
-    }
+    ///// <summary>
+    ///// Discovers all hooks from .mloop/scripts/hooks/*.cs
+    ///// </summary>
+    ///// <returns>List of discovered hook instances</returns>
+    //public async Task<List<IMLoopHook>> DiscoverHooksAsync()
+    //{
+    //    var hooksPath = Path.Combine(_projectRoot, ".mloop", "scripts", "hooks");
+    //    return await DiscoverScriptsAsync<IMLoopHook>(hooksPath, "hooks");
+    //}
+
+    ///// <summary>
+    ///// Discovers all metrics from .mloop/scripts/metrics/*.cs
+    ///// </summary>
+    ///// <returns>List of discovered metric instances</returns>
+    //public async Task<List<IMLoopMetric>> DiscoverMetricsAsync()
+    //{
+    //    var metricsPath = Path.Combine(_projectRoot, ".mloop", "scripts", "metrics");
+    //    return await DiscoverScriptsAsync<IMLoopMetric>(metricsPath, "metrics");
+    //}
 
     /// <summary>
     /// Generic discovery method for any interface type.
@@ -103,17 +106,28 @@ public class ScriptDiscovery
         return instances;
     }
 
+    // NOTE: Phase 1 (Hooks & Metrics) - Disabled for Phase 0 (Preprocessing)
+    // TODO: Re-enable when implementing Phase 1
+
+    ///// <summary>
+    ///// Gets the display name of a hook or metric instance.
+    ///// </summary>
+    //private string GetInstanceName(object instance)
+    //{
+    //    return instance switch
+    //    {
+    //        IMLoopHook hook => hook.Name,
+    //        IMLoopMetric metric => metric.Name,
+    //        _ => instance.GetType().Name
+    //    };
+    //}
+
     /// <summary>
-    /// Gets the display name of a hook or metric instance.
+    /// Gets the display name of an instance.
     /// </summary>
     private string GetInstanceName(object instance)
     {
-        return instance switch
-        {
-            IMLoopHook hook => hook.Name,
-            IMLoopMetric metric => metric.Name,
-            _ => instance.GetType().Name
-        };
+        return instance.GetType().Name;
     }
 
     /// <summary>

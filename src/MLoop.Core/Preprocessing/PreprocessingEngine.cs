@@ -1,6 +1,7 @@
 using MLoop.Core.Data;
 using MLoop.Core.Scripting;
 using MLoop.Extensibility;
+using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.Core.Preprocessing;
 
@@ -13,6 +14,7 @@ public class PreprocessingEngine
     private readonly string _projectRoot;
     private readonly ScriptLoader _scriptLoader;
     private readonly ICsvHelper _csvHelper;
+    private readonly IFilePrepper _filePrepper;
     private readonly ILogger _logger;
 
     /// <summary>
@@ -22,16 +24,19 @@ public class PreprocessingEngine
     /// <param name="logger">Logger for user feedback</param>
     /// <param name="scriptLoader">Optional ScriptLoader instance</param>
     /// <param name="csvHelper">Optional CSV helper instance</param>
+    /// <param name="filePrepper">Optional FilePrepper instance</param>
     public PreprocessingEngine(
         string projectRoot,
         ILogger logger,
         ScriptLoader? scriptLoader = null,
-        ICsvHelper? csvHelper = null)
+        ICsvHelper? csvHelper = null,
+        IFilePrepper? filePrepper = null)
     {
         _projectRoot = projectRoot;
         _logger = logger;
         _scriptLoader = scriptLoader ?? new ScriptLoader();
         _csvHelper = csvHelper ?? new CsvHelperImpl();
+        _filePrepper = filePrepper ?? new FilePrepperImpl();
     }
 
     /// <summary>
@@ -98,21 +103,10 @@ public class PreprocessingEngine
                     var script = scripts[0];
 
                     // Create context
-                    var context = new PreprocessContext
-                    {
-                        InputPath = currentInputPath,
-                        OutputDirectory = tempDirectory,
-                        ProjectRoot = _projectRoot,
-                        Csv = _csvHelper,
-                        Logger = _logger
-                    };
-
-                    // Initialize metadata
                     var metadata = new Dictionary<string, object>
                     {
                         ["ScriptSequence"] = scriptIndex,
-                        ["TotalScripts"] = scriptFiles.Count,
-                        ["ScriptName"] = scriptName
+                        ["TotalScripts"] = scriptFiles.Count
                     };
 
                     if (!string.IsNullOrEmpty(labelColumn))
@@ -120,7 +114,18 @@ public class PreprocessingEngine
                         metadata["LabelColumn"] = labelColumn;
                     }
 
-                    context.InitializeMetadata(metadata);
+                    var context = new PreprocessContext
+                    {
+                        InputPath = currentInputPath,
+                        OutputDirectory = tempDirectory,
+                        ProjectRoot = _projectRoot,
+                        Csv = _csvHelper,
+                        FilePrepper = _filePrepper,
+                        Logger = _logger,
+                        ScriptIndex = scriptIndex - 1, // Zero-based index
+                        ScriptName = scriptName,
+                        Metadata = metadata
+                    };
 
                     // Execute script
                     var outputPath = await script.ExecuteAsync(context);

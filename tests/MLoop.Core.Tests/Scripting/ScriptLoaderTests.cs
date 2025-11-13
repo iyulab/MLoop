@@ -3,6 +3,10 @@ using MLoop.Extensibility;
 
 namespace MLoop.Core.Tests.Scripting;
 
+// NOTE: Phase 1 (Hooks & Metrics) tests - All disabled for Phase 0 (Preprocessing)
+// TODO: Re-enable when implementing Phase 1
+#if false
+
 public class ScriptLoaderTests : IDisposable
 {
     private readonly string _testDirectory;
@@ -271,3 +275,5 @@ public class ConcreteHook : AbstractHook
         Assert.Equal("Concrete Hook", hooks[0].Name);
     }
 }
+
+#endif

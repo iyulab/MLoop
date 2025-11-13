@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using CsvHelper;
 using CsvHelper.Configuration;
 using MLoop.Extensibility;
+using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.Core.Data;
 
@@ -16,23 +17,28 @@ public class CsvHelperImpl : ICsvHelper
     /// Reads a CSV file and returns the data as a list of dictionaries.
     /// Each dictionary represents a row, with column names as keys.
     /// </summary>
-    public async Task<List<Dictionary<string, string>>> ReadAsync(string filePath, bool hasHeader = true)
+    public async Task<List<Dictionary<string, string>>> ReadAsync(
+        string path,
+        System.Text.Encoding? encoding = null,
+        CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(filePath))
+        if (!File.Exists(path))
         {
-            throw new FileNotFoundException($"CSV file not found: {filePath}");
+            throw new FileNotFoundException($"CSV file not found: {path}");
         }
+
+        var targetEncoding = encoding ?? System.Text.Encoding.UTF8;
 
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
-            HasHeaderRecord = hasHeader,
+            HasHeaderRecord = true,
             MissingFieldFound = null, // Ignore missing fields
             BadDataFound = null, // Ignore bad data
             TrimOptions = TrimOptions.Trim,
-            Encoding = System.Text.Encoding.UTF8 // Always use UTF-8 for international support
+            Encoding = targetEncoding
         };
 
-        using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        using var reader = new StreamReader(path, targetEncoding, detectEncodingFromByteOrderMarks: true);
         using var csv = new CsvReader(reader, config);
 
         var records = new List<Dictionary<string, string>>();
@@ -84,27 +90,21 @@ public class CsvHelperImpl : ICsvHelper
     /// Writes data to a CSV file.
     /// Column names are taken from the dictionary keys in the first row.
     /// </summary>
-    public async Task<string> WriteAsync(string filePath, List<Dictionary<string, string>> data)
-    {
-        return await WriteAsync(filePath, data, ',', true);
-    }
-
-    /// <summary>
-    /// Writes data to a CSV file with custom options.
-    /// </summary>
     public async Task<string> WriteAsync(
-        string filePath,
+        string path,
         List<Dictionary<string, string>> data,
-        char delimiter = ',',
-        bool includeHeader = true)
+        System.Text.Encoding? encoding = null,
+        CancellationToken cancellationToken = default)
     {
         if (data == null || data.Count == 0)
         {
             throw new ArgumentException("Data cannot be null or empty", nameof(data));
         }
 
+        var targetEncoding = encoding ?? System.Text.Encoding.UTF8;
+
         // Ensure directory exists
-        var directory = Path.GetDirectoryName(filePath);
+        var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
@@ -112,25 +112,22 @@ public class CsvHelperImpl : ICsvHelper
 
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
-            Delimiter = delimiter.ToString(),
-            HasHeaderRecord = includeHeader
+            Delimiter = ",",
+            HasHeaderRecord = true
         };
 
-        using var writer = new StreamWriter(filePath);
+        using var writer = new StreamWriter(path, false, targetEncoding);
         using var csv = new CsvWriter(writer, config);
 
         // Get headers from first record
         var headers = data[0].Keys.ToList();
 
-        // Write header
-        if (includeHeader)
+        // Write header (always included)
+        foreach (var header in headers)
         {
-            foreach (var header in headers)
-            {
-                csv.WriteField(header);
-            }
-            await csv.NextRecordAsync();
+            csv.WriteField(header);
         }
+        await csv.NextRecordAsync();
 
         // Write records
         foreach (var record in data)
@@ -143,6 +140,40 @@ public class CsvHelperImpl : ICsvHelper
         }
 
         // Return absolute path
-        return Path.GetFullPath(filePath);
+        return Path.GetFullPath(path);
+    }
+
+    /// <summary>
+    /// Reads CSV file headers only (first row).
+    /// Useful for schema validation without loading entire file.
+    /// </summary>
+    public async Task<List<string>> ReadHeadersAsync(
+        string path,
+        System.Text.Encoding? encoding = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"CSV file not found: {path}");
+        }
+
+        var targetEncoding = encoding ?? System.Text.Encoding.UTF8;
+
+        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            HasHeaderRecord = true,
+            MissingFieldFound = null,
+            BadDataFound = null,
+            TrimOptions = TrimOptions.Trim,
+            Encoding = targetEncoding
+        };
+
+        using var reader = new StreamReader(path, targetEncoding, detectEncodingFromByteOrderMarks: true);
+        using var csv = new CsvReader(reader, config);
+
+        await csv.ReadAsync();
+        csv.ReadHeader();
+
+        return csv.HeaderRecord?.ToList() ?? new List<string>();
     }
 }

@@ -1,5 +1,6 @@
 using MLoop.Core.Preprocessing;
 using MLoop.Extensibility;
+using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.Core.Tests.Preprocessing;
 
@@ -147,6 +148,7 @@ public class PreprocessingEngineTests : IDisposable
         public void Info(string message) => InfoMessages.Add(message);
         public void Warning(string message) => WarningMessages.Add(message);
         public void Error(string message) => ErrorMessages.Add(message);
+        public void Error(string message, Exception exception) => ErrorMessages.Add($"{message}{Environment.NewLine}{exception}");
         public void Debug(string message) => DebugMessages.Add(message);
     }
 }
