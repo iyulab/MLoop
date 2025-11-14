@@ -17,37 +17,46 @@ public class PipelineCommand : Command
 {
     public PipelineCommand() : base("pipeline", "Execute ML workflow from YAML pipeline definition")
     {
-        var fileArg = new Argument<string>(
-            name: "file",
-            description: "Path to pipeline YAML file");
-
-        var variablesOption = new Option<string?>(
-            name: "--vars",
-            description: "Variables in JSON format to override pipeline variables");
-
-        var dryRunOption = new Option<bool>(
-            name: "--dry-run",
-            description: "Validate pipeline without executing",
-            getDefaultValue: () => false);
-
-        var saveResultOption = new Option<string?>(
-            name: "--save-result",
-            description: "Save pipeline result to JSON file");
-
-        AddArgument(fileArg);
-        AddOption(variablesOption);
-        AddOption(dryRunOption);
-        AddOption(saveResultOption);
-
-        this.SetHandler(async (file, vars, dryRun, saveResult) =>
+        var fileArg = new Argument<string>("file")
         {
+            Description = "Path to pipeline YAML file"
+        };
+
+        var variablesOption = new Option<string?>("--vars", "-v")
+        {
+            Description = "Variables in JSON format to override pipeline variables"
+        };
+
+        var dryRunOption = new Option<bool>("--dry-run")
+        {
+            Description = "Validate pipeline without executing",
+            DefaultValueFactory = _ => false
+        };
+
+        var saveResultOption = new Option<string?>("--save-result", "-s")
+        {
+            Description = "Save pipeline result to JSON file"
+        };
+
+        this.Arguments.Add(fileArg);
+        this.Options.Add(variablesOption);
+        this.Options.Add(dryRunOption);
+        this.Options.Add(saveResultOption);
+
+        this.SetAction((parseResult) =>
+        {
+            var file = parseResult.GetValue(fileArg)!;
+            var vars = parseResult.GetValue(variablesOption);
+            var dryRun = parseResult.GetValue(dryRunOption);
+            var saveResult = parseResult.GetValue(saveResultOption);
+
             // Initialize services
             var fileSystem = new FileSystemManager();
             var projectDiscovery = new ProjectDiscovery(fileSystem);
             var mlContext = new MLContext(seed: 42);
 
-            await ExecuteAsync(file, vars, dryRun, saveResult, projectDiscovery, mlContext);
-        }, fileArg, variablesOption, dryRunOption, saveResultOption);
+            return ExecuteAsync(file, vars, dryRun, saveResult, projectDiscovery, mlContext);
+        });
     }
 
     private static async Task ExecuteAsync(

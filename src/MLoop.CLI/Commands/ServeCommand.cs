@@ -13,33 +13,40 @@ public class ServeCommand : Command
 {
     public ServeCommand() : base("serve", "Start REST API server for model serving")
     {
-        var portOption = new Option<int>(
-            name: "--port",
-            description: "Port to run the server on",
-            getDefaultValue: () => 5000);
-
-        var hostOption = new Option<string>(
-            name: "--host",
-            description: "Host address to bind to",
-            getDefaultValue: () => "localhost");
-
-        var detachOption = new Option<bool>(
-            name: "--detach",
-            description: "Run server in background",
-            getDefaultValue: () => false);
-
-        AddOption(portOption);
-        AddOption(hostOption);
-        AddOption(detachOption);
-
-        this.SetHandler(async (port, host, detach) =>
+        var portOption = new Option<int>("--port", "-p")
         {
+            Description = "Port to run the server on",
+            DefaultValueFactory = _ => 5000
+        };
+
+        var hostOption = new Option<string>("--host", "-h")
+        {
+            Description = "Host address to bind to",
+            DefaultValueFactory = _ => "localhost"
+        };
+
+        var detachOption = new Option<bool>("--detach", "-d")
+        {
+            Description = "Run server in background",
+            DefaultValueFactory = _ => false
+        };
+
+        this.Options.Add(portOption);
+        this.Options.Add(hostOption);
+        this.Options.Add(detachOption);
+
+        this.SetAction((parseResult) =>
+        {
+            var port = parseResult.GetValue(portOption);
+            var host = parseResult.GetValue(hostOption)!;
+            var detach = parseResult.GetValue(detachOption);
+
             // Initialize services
             var fileSystem = new FileSystemManager();
             var projectDiscovery = new ProjectDiscovery(fileSystem);
 
-            await ExecuteAsync(port, host, detach, projectDiscovery);
-        }, portOption, hostOption, detachOption);
+            return ExecuteAsync(port, host, detach, projectDiscovery);
+        });
     }
 
     private static async Task ExecuteAsync(
@@ -155,8 +162,8 @@ public class ServeCommand : Command
             Path.Combine(AppContext.BaseDirectory, "..", "..", "MLoop.API", "MLoop.API.dll"),
             Path.Combine(AppContext.BaseDirectory, "..", "MLoop.API", "MLoop.API.dll"),
             Path.Combine(AppContext.BaseDirectory, "MLoop.API.dll"),
-            Path.Combine(Directory.GetCurrentDirectory(), "src", "MLoop.API", "bin", "Debug", "net9.0", "MLoop.API.dll"),
-            Path.Combine(Directory.GetCurrentDirectory(), "src", "MLoop.API", "bin", "Release", "net9.0", "MLoop.API.dll"),
+            Path.Combine(Directory.GetCurrentDirectory(), "src", "MLoop.API", "bin", "Debug", "net10.0", "MLoop.API.dll"),
+            Path.Combine(Directory.GetCurrentDirectory(), "src", "MLoop.API", "bin", "Release", "net10.0", "MLoop.API.dll"),
         };
 
         foreach (var path in searchPaths)

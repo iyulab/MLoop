@@ -26,19 +26,23 @@ public static class PreprocessCommand
             Description = "Output path for preprocessed data (defaults to .mloop/temp/preprocess/)"
         };
 
-        var labelOption = new Option<string?>("--label")
+        var labelOption = new Option<string?>("--label", "-l")
         {
             Description = "Label column name (optional, passes to preprocessing context)"
         };
 
-        var command = new Command("preprocess", "Execute preprocessing scripts on data")
-        {
-            inputFileArg,
-            outputOption,
-            labelOption
-        };
+        var command = new Command("preprocess", "Execute preprocessing scripts on data");
+        command.Arguments.Add(inputFileArg);
+        command.Options.Add(outputOption);
+        command.Options.Add(labelOption);
 
-        command.SetHandler(ExecuteAsync, inputFileArg, outputOption, labelOption);
+        command.SetAction((parseResult) =>
+        {
+            var inputFile = parseResult.GetValue(inputFileArg);
+            var output = parseResult.GetValue(outputOption);
+            var labelColumn = parseResult.GetValue(labelOption);
+            return ExecuteAsync(inputFile, output, labelColumn);
+        });
 
         return command;
     }

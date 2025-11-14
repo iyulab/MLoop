@@ -33,19 +33,24 @@ public static class PredictCommand
 
         var unknownStrategyOption = new Option<string>("--unknown-strategy")
         {
-            Description = "Strategy for handling unknown categorical values: auto (default), error, use-most-frequent, use-missing"
+            Description = "Strategy for handling unknown categorical values: auto (default), error, use-most-frequent, use-missing",
+            DefaultValueFactory = _ => "auto"
         };
-        unknownStrategyOption.SetDefaultValue("auto");
 
-        var command = new Command("predict", "Make predictions with a trained model")
+        var command = new Command("predict", "Make predictions with a trained model");
+        command.Arguments.Add(modelArg);
+        command.Arguments.Add(dataFileArg);
+        command.Options.Add(outputOption);
+        command.Options.Add(unknownStrategyOption);
+
+        command.SetAction((parseResult) =>
         {
-            modelArg,
-            dataFileArg,
-            outputOption,
-            unknownStrategyOption
-        };
-
-        command.SetHandler(ExecuteAsync, modelArg, dataFileArg, outputOption, unknownStrategyOption);
+            var modelPath = parseResult.GetValue(modelArg);
+            var dataFile = parseResult.GetValue(dataFileArg);
+            var output = parseResult.GetValue(outputOption);
+            var unknownStrategy = parseResult.GetValue(unknownStrategyOption)!;
+            return ExecuteAsync(modelPath, dataFile, output, unknownStrategy);
+        });
 
         return command;
     }

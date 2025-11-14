@@ -10,7 +10,7 @@ namespace MLoop.CLI;
 /// </summary>
 internal class Program
 {
-    static async Task<int> Main(string[] args)
+    static int Main(string[] args)
     {
         // Load .env file from project root (D:\data\MLoop\.env)
         var projectRoot = FindProjectRoot();
@@ -51,7 +51,8 @@ internal class Program
             DisplayBanner();
         }
 
-        return await rootCommand.InvokeAsync(args);
+        var parseResult = rootCommand.Parse(args);
+        return parseResult.Invoke();
     }
 
     private static void DisplayBanner()

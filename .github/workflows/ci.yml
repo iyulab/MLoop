@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        dotnet-version: ['9.0.x']
+        dotnet-version: ['10.0.x']
       fail-fast: false
 
     steps:
@@ -25,13 +25,13 @@ jobs:
         dotnet-version: ${{ matrix.dotnet-version }}
 
     - name: Restore dependencies
-      run: dotnet restore src/MLoop.sln
+      run: dotnet restore MLoop.sln
 
     - name: Build
-      run: dotnet build src/MLoop.sln --configuration Release --no-restore
+      run: dotnet build MLoop.sln --configuration Release --no-restore
 
     - name: Run tests
-      run: dotnet test src/MLoop.sln --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+      run: dotnet test MLoop.sln --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
 
     - name: Upload coverage reports to Codecov
       if: matrix.os == 'ubuntu-latest'
@@ -53,13 +53,13 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'
+        dotnet-version: '10.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore src/MLoop.sln
+      run: dotnet restore MLoop.sln
 
     - name: Check formatting
-      run: dotnet format src/MLoop.sln --verify-no-changes --verbosity diagnostic
+      run: dotnet format MLoop.sln --verify-no-changes --verbosity diagnostic
 
   security-scan:
     runs-on: ubuntu-latest
@@ -76,4 +76,4 @@ jobs:
 
     - name: Run Dependency Check
       run: |
-        dotnet list src/MLoop.sln package --vulnerable --include-transitive
+        dotnet list MLoop.sln package --vulnerable --include-transitive
