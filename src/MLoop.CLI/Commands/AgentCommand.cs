@@ -19,29 +19,37 @@ public static class AgentCommand
             Arity = ArgumentArity.ZeroOrOne
         };
 
-        var agentOption = new Option<string?>(
-            "--agent",
-            description: "Specific agent to use: data-analyst, preprocessing-expert, model-architect, mlops-manager");
-
-        var interactiveOption = new Option<bool>(
-            "--interactive",
-            getDefaultValue: () => false,
-            description: "Start interactive conversation mode");
-
-        var projectPathOption = new Option<string?>(
-            "--project",
-            getDefaultValue: () => Directory.GetCurrentDirectory(),
-            description: "Path to MLoop project directory");
-
-        var command = new Command("agent", "Conversational AI agent for ML project management")
+        var agentOption = new Option<string?>("--agent", "-a")
         {
-            queryArg,
-            agentOption,
-            interactiveOption,
-            projectPathOption
+            Description = "Specific agent to use: data-analyst, preprocessing-expert, model-architect, mlops-manager"
         };
 
-        command.SetHandler(ExecuteAsync, queryArg, agentOption, interactiveOption, projectPathOption);
+        var interactiveOption = new Option<bool>("--interactive", "-i")
+        {
+            Description = "Start interactive conversation mode",
+            DefaultValueFactory = _ => false
+        };
+
+        var projectPathOption = new Option<string?>("--project", "-p")
+        {
+            Description = "Path to MLoop project directory",
+            DefaultValueFactory = _ => Directory.GetCurrentDirectory()
+        };
+
+        var command = new Command("agent", "Conversational AI agent for ML project management");
+        command.Arguments.Add(queryArg);
+        command.Options.Add(agentOption);
+        command.Options.Add(interactiveOption);
+        command.Options.Add(projectPathOption);
+
+        command.SetAction((parseResult) =>
+        {
+            var query = parseResult.GetValue(queryArg);
+            var agentName = parseResult.GetValue(agentOption);
+            var interactive = parseResult.GetValue(interactiveOption);
+            var projectPath = parseResult.GetValue(projectPathOption);
+            return ExecuteAsync(query, agentName, interactive, projectPath);
+        });
 
         return command;
     }

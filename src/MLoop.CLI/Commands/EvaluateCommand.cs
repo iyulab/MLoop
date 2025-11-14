@@ -24,13 +24,16 @@ public static class EvaluateCommand
             Arity = ArgumentArity.ZeroOrOne
         };
 
-        var command = new Command("evaluate", "Evaluate model performance on test data")
-        {
-            experimentArg,
-            testDataArg
-        };
+        var command = new Command("evaluate", "Evaluate model performance on test data");
+        command.Arguments.Add(experimentArg);
+        command.Arguments.Add(testDataArg);
 
-        command.SetHandler(ExecuteAsync, experimentArg, testDataArg);
+        command.SetAction((parseResult) =>
+        {
+            var experimentId = parseResult.GetValue(experimentArg);
+            var testDataFile = parseResult.GetValue(testDataArg);
+            return ExecuteAsync(experimentId, testDataFile);
+        });
 
         return command;
     }

@@ -15,7 +15,7 @@ This document demonstrates the **complete MLOps workflow** using real equipment 
 ```bash
 # Verify .NET SDK
 dotnet --version
-# Expected: 9.0.x
+# Expected: 10.0.x
 
 # Verify .env file configuration (required for AI agents)
 cat D:\data\MLoop\.env

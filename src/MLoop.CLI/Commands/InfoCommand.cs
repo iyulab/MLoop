@@ -20,12 +20,14 @@ public static class InfoCommand
             Description = "Path to data file to analyze"
         };
 
-        var command = new Command("info", "Display dataset profiling information")
-        {
-            dataFileArg
-        };
+        var command = new Command("info", "Display dataset profiling information");
+        command.Arguments.Add(dataFileArg);
 
-        command.SetHandler(ExecuteAsync, dataFileArg);
+        command.SetAction((parseResult) =>
+        {
+            var dataFile = parseResult.GetValue(dataFileArg)!;
+            return ExecuteAsync(dataFile);
+        });
 
         return command;
     }

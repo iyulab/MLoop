@@ -13,7 +13,7 @@ public static class ValidateCommand
     {
         var command = new Command("validate", "Validate extensibility scripts (hooks and metrics)");
 
-        command.SetHandler(ExecuteAsync);
+        command.SetAction((parseResult) => ExecuteAsync());
 
         return command;
     }

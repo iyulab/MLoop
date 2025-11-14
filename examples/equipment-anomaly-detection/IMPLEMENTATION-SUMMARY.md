@@ -387,7 +387,7 @@ mloop serve --port 8080
 
 ### Prerequisites
 
-1. **.NET 9.0 SDK**
+1. **.NET 10.0 SDK**
 2. **Azure OpenAI credentials** (for AI agents)
    ```bash
    export AZURE_OPENAI_ENDPOINT="https://your-endpoint.openai.azure.com"

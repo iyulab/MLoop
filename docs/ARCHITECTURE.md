@@ -1058,7 +1058,7 @@ $ mloop experiment show exp-005  # Read metadata.json, metrics.json
 
 ### 11.1 Framework and Runtime
 
-- **.NET 9.0**: Latest LTS version
+- **.NET 10.0**: Latest LTS version
 - **C# 13**: Latest language features
 - **Nullable Reference Types**: Enabled
 - **Implicit Usings**: Enabled

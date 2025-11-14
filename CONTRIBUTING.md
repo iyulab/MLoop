@@ -99,8 +99,8 @@ experiments/exp-001/
 git clone https://github.com/yourusername/MLoop.git
 cd MLoop
 
-# Install .NET 9.0
-dotnet --version  # Should be 9.0+
+# Install .NET 10.0
+dotnet --version  # Should be 10.0+
 
 # Restore packages
 dotnet restore

@@ -14,10 +14,10 @@ public static class ExtensionsCommand
         var command = new Command("extensions", "List all discovered extensibility scripts");
 
         var listCommand = new Command("list", "List all hooks and metrics");
-        listCommand.SetHandler(ExecuteListAsync);
+        listCommand.SetAction((parseResult) => ExecuteListAsync());
 
-        command.AddCommand(listCommand);
-        command.SetHandler(ExecuteListAsync); // Default to list when no subcommand
+        command.Subcommands.Add(listCommand);
+        command.SetAction((parseResult) => ExecuteListAsync()); // Default to list when no subcommand
 
         return command;
     }

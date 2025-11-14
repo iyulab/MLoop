@@ -17,24 +17,30 @@ public static class InitCommand
             Description = "Name of the project to create"
         };
 
-        var taskOption = new Option<string>(
-            "--task",
-            getDefaultValue: () => "binary-classification",
-            description: "ML task type: binary-classification, multiclass-classification, regression");
-
-        var forceOption = new Option<bool>(
-            "--force",
-            getDefaultValue: () => false,
-            description: "Reinitialize existing project (preserves .mloop/scripts/ directory)");
-
-        var command = new Command("init", "Initialize a new ML project")
+        var taskOption = new Option<string>("--task", "-t")
         {
-            projectNameArg,
-            taskOption,
-            forceOption
+            Description = "ML task type: binary-classification, multiclass-classification, regression",
+            DefaultValueFactory = _ => "binary-classification"
         };
 
-        command.SetHandler(ExecuteAsync, projectNameArg, taskOption, forceOption);
+        var forceOption = new Option<bool>("--force", "-f")
+        {
+            Description = "Reinitialize existing project (preserves .mloop/scripts/ directory)",
+            DefaultValueFactory = _ => false
+        };
+
+        var command = new Command("init", "Initialize a new ML project");
+        command.Arguments.Add(projectNameArg);
+        command.Options.Add(taskOption);
+        command.Options.Add(forceOption);
+
+        command.SetAction((parseResult) =>
+        {
+            var projectName = parseResult.GetValue(projectNameArg)!;
+            var task = parseResult.GetValue(taskOption)!;
+            var force = parseResult.GetValue(forceOption);
+            return ExecuteAsync(projectName, task, force);
+        });
 
         return command;
     }

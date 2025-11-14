@@ -38,7 +38,7 @@ Demonstrate a **production-ready MLOps workflow** that combines:
 
 ### Prerequisites
 
-1. **.NET 9.0 SDK**
+1. **.NET 10.0 SDK**
 2. **LLM Provider** credentials (for AI agents):
    - **GPUStack** (local, recommended for on-premise)
    - **Anthropic Claude** (recommended for best AI quality)

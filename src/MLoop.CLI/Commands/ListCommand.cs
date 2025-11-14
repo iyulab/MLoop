@@ -14,15 +14,18 @@ public static class ListCommand
     {
         var allOption = new Option<bool>("--all", "-a")
         {
-            Description = "Show all experiments including failed ones (default: completed only)"
+            Description = "Show all experiments including failed ones (default: completed only)",
+            DefaultValueFactory = _ => false
         };
 
-        var command = new Command("list", "List all experiments")
+        var command = new Command("list", "List all experiments");
+        command.Options.Add(allOption);
+
+        command.SetAction((parseResult) =>
         {
-            allOption
-        };
-
-        command.SetHandler(ExecuteAsync, allOption);
+            var showAll = parseResult.GetValue(allOption);
+            return ExecuteAsync(showAll);
+        });
 
         return command;
     }

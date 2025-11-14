@@ -20,16 +20,19 @@ public static class PromoteCommand
         var stageOption = new Option<string>("--stage", "-s")
         {
             Description = "Target stage (production or staging)",
+            DefaultValueFactory = _ => "production"
         };
-        stageOption.SetDefaultValue("production");
 
-        var command = new Command("promote", "Promote an experiment to production or staging")
+        var command = new Command("promote", "Promote an experiment to production or staging");
+        command.Arguments.Add(experimentIdArg);
+        command.Options.Add(stageOption);
+
+        command.SetAction((parseResult) =>
         {
-            experimentIdArg,
-            stageOption
-        };
-
-        command.SetHandler(ExecuteAsync, experimentIdArg, stageOption);
+            var experimentId = parseResult.GetValue(experimentIdArg)!;
+            var stageInput = parseResult.GetValue(stageOption)!;
+            return ExecuteAsync(experimentId, stageInput);
+        });
 
         return command;
     }

@@ -24,17 +24,17 @@ public static class TrainCommand
             Arity = ArgumentArity.ZeroOrOne
         };
 
-        var labelOption = new Option<string?>("--label")
+        var labelOption = new Option<string?>("--label", "-l")
         {
             Description = "Name of the label column"
         };
 
-        var timeOption = new Option<int?>("--time")
+        var timeOption = new Option<int?>("--time", "-t")
         {
             Description = "Training time limit in seconds"
         };
 
-        var metricOption = new Option<string?>("--metric")
+        var metricOption = new Option<string?>("--metric", "-m")
         {
             Description = "Optimization metric (accuracy, auc, f1, etc.)"
         };
@@ -46,27 +46,28 @@ public static class TrainCommand
 
         var noPromoteOption = new Option<bool>("--no-promote")
         {
-            Description = "Skip automatic promotion to production"
+            Description = "Skip automatic promotion to production",
+            DefaultValueFactory = _ => false
         };
 
-        var command = new Command("train", "Train a model using AutoML")
+        var command = new Command("train", "Train a model using AutoML");
+        command.Arguments.Add(dataFileArg);
+        command.Options.Add(labelOption);
+        command.Options.Add(timeOption);
+        command.Options.Add(metricOption);
+        command.Options.Add(testSplitOption);
+        command.Options.Add(noPromoteOption);
+
+        command.SetAction((parseResult) =>
         {
-            dataFileArg,
-            labelOption,
-            timeOption,
-            metricOption,
-            testSplitOption,
-            noPromoteOption
-        };
-
-        command.SetHandler(
-            ExecuteAsync,
-            dataFileArg,
-            labelOption,
-            timeOption,
-            metricOption,
-            testSplitOption,
-            noPromoteOption);
+            var dataFile = parseResult.GetValue(dataFileArg);
+            var label = parseResult.GetValue(labelOption);
+            var time = parseResult.GetValue(timeOption);
+            var metric = parseResult.GetValue(metricOption);
+            var testSplit = parseResult.GetValue(testSplitOption);
+            var noPromote = parseResult.GetValue(noPromoteOption);
+            return ExecuteAsync(dataFile, label, time, metric, testSplit, noPromote);
+        });
 
         return command;
     }
