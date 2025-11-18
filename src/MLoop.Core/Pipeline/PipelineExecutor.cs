@@ -65,6 +65,9 @@ public class PipelineExecutor
 
         try
         {
+            // Check cancellation before starting
+            cancellationToken.ThrowIfCancellationRequested();
+
             // Group steps for parallel execution
             var stepGroups = GroupStepsForParallelExecution(pipeline.Steps);
 
@@ -73,6 +76,9 @@ public class PipelineExecutor
 
             foreach (var group in stepGroups)
             {
+                // Check cancellation before each step group
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (group.Count == 1)
                 {
                     // Sequential execution
@@ -146,6 +152,11 @@ public class PipelineExecutor
                         break;
                 }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Re-throw cancellation exceptions to allow proper handling
+            throw;
         }
         catch (Exception ex)
         {

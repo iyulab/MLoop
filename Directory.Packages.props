@@ -3,23 +3,19 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
-
   <ItemGroup>
     <!-- ML.NET Core Packages -->
     <PackageVersion Include="Microsoft.ML" Version="5.0.0" />
     <PackageVersion Include="Microsoft.ML.AutoML" Version="0.23.0" />
-
     <!-- ASP.NET Core Packages -->
     <PackageVersion Include="AspNetCoreRateLimit" Version="5.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
-
     <!-- Logging Packages -->
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
-
     <!-- Microsoft Extensions -->
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.0.0-preview.1.25560.10" />
@@ -27,27 +23,20 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
-
     <!-- Roslyn / Code Analysis -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.14.0" />
-
     <!-- Data Processing -->
     <PackageVersion Include="CsvHelper" Version="33.1.0" />
     <PackageVersion Include="YamlDotNet" Version="16.3.0" />
-
     <!-- CLI / Console -->
     <PackageVersion Include="Spectre.Console" Version="0.54.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.0" />
     <PackageVersion Include="DotNetEnv" Version="3.1.1" />
-
     <!-- Documentation / API -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.3.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.1" />
-
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.4.5" />
-
     <!-- Testing Packages -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
