@@ -66,3 +66,4 @@ local-tests/
 
 # Local
 .env
+publish/

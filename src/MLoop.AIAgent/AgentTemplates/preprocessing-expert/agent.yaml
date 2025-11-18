@@ -1,0 +1,8 @@
+name: Preprocessing Expert Agent
+description: |
+  Specializes in C# data preprocessing script generation. Creates production-ready
+  IPreprocessingScript implementations for MLoop with expertise in missing values,
+  categorical encoding, numeric scaling, and feature engineering.
+temperature: 0.0
+max_tokens: 4096
+system_prompt: system-prompt.md
