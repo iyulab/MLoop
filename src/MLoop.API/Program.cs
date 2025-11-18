@@ -10,7 +10,6 @@ using AspNetCoreRateLimit;
 using Serilog;
 using Serilog.Events;
 using System.Diagnostics;
-using Microsoft.OpenApi;
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -37,9 +36,9 @@ builder.Host.UseSerilog();
 
 // Add Swagger services
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
+builder.Services.AddSwaggerGen(c =>
 {
-    options.SwaggerDoc("v1", new OpenApiInfo
+    c.SwaggerDoc("v1", new()
     {
         Title = "MLoop Model Serving API",
         Version = "v1",
