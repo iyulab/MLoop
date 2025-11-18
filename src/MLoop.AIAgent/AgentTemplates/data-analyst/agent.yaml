@@ -1,0 +1,5 @@
+name: data-analyst
+description: Analyzes dataset characteristics, identifies data quality issues, and provides ML readiness assessment
+temperature: 0.0
+max_tokens: 4096
+system_prompt: system-prompt.md

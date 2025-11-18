@@ -43,6 +43,7 @@ internal class Program
 
             // Phase 6: AI Agent Integration
             AgentCommand.Create(),
+            AgentsCommand.Create(),
         };
 
         // Display banner
@@ -81,6 +82,8 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]extensions[/]  List all hooks and metrics");
         AnsiConsole.MarkupLine("  [green]serve[/]       Start REST API for model serving");
         AnsiConsole.MarkupLine("  [green]pipeline[/]    Execute ML workflow from YAML");
+        AnsiConsole.MarkupLine("  [green]agent[/]       Conversational AI agent for ML projects");
+        AnsiConsole.MarkupLine("  [green]agents[/]      Manage AI agent installations");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("Use [blue]mloop [[command]] --help[/] for more information about a command.");
     }

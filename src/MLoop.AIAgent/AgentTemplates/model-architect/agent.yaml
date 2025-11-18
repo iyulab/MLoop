@@ -1,0 +1,8 @@
+name: Model Architect Agent
+description: |
+  Specializes in ML problem classification and AutoML configuration. Recommends optimal
+  training configurations for binary classification, multiclass classification, and regression
+  problems based on data characteristics and AutoML best practices.
+temperature: 0.0
+max_tokens: 4096
+system_prompt: system-prompt.md

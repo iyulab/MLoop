@@ -183,7 +183,12 @@ public static class AgentCommand
                     // Display response
                     AnsiConsole.WriteLine();
                     AnsiConsole.MarkupLine("[blue]🤖 Agent:[/]");
-                    AnsiConsole.MarkupLine(responseBuilder.ToString());
+
+                    // Escape markup characters in agent response to prevent parsing errors
+                    var response = responseBuilder.ToString()
+                        .Replace("[", "[[")
+                        .Replace("]", "]]");
+                    AnsiConsole.MarkupLine(response);
                 });
 
             AnsiConsole.WriteLine();
@@ -260,7 +265,9 @@ public static class AgentCommand
                 {
                     await foreach (var chunk in orchestrator.StreamAsync(userInput, currentAgent))
                     {
-                        AnsiConsole.Markup(chunk);
+                        // Escape markup characters in streamed chunks
+                        var escapedChunk = chunk.Replace("[", "[[").Replace("]", "]]");
+                        AnsiConsole.Markup(escapedChunk);
                         responseBuilder.Append(chunk);
                     }
                 }
@@ -268,7 +275,9 @@ public static class AgentCommand
                 {
                     await foreach (var chunk in orchestrator.StreamWithAutoSelectionAsync(userInput))
                     {
-                        AnsiConsole.Markup(chunk);
+                        // Escape markup characters in streamed chunks
+                        var escapedChunk = chunk.Replace("[", "[[").Replace("]", "]]");
+                        AnsiConsole.Markup(escapedChunk);
                         responseBuilder.Append(chunk);
                     }
                 }

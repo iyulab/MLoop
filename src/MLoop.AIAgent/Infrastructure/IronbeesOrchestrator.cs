@@ -1,8 +1,10 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Ironbees.AgentMode.Configuration;
 using Ironbees.AgentMode.Providers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using MLoop.AIAgent.Agents;
 
 namespace MLoop.AIAgent.Infrastructure;
 
@@ -90,7 +92,7 @@ public class IronbeesOrchestrator
 
             if (!string.IsNullOrEmpty(anthropicKey))
             {
-                model = anthropicModel ?? "claude-3-5-sonnet-20241022";
+                model = anthropicModel ?? "claude-sonnet-4-20250514";  // Claude Sonnet 4.5 (latest)
                 logger.LogInformation("Using Anthropic Claude API, model: {Model}", model);
                 config = new LLMConfiguration
                 {
@@ -165,6 +167,8 @@ public class IronbeesOrchestrator
 
     /// <summary>
     /// Initialize and load all agents from filesystem
+    /// Auto-installs built-in agents if they don't exist
+    /// Checks for updates and warns about user modifications
     /// </summary>
     public async Task InitializeAsync(string? agentsDirectory = null)
     {
@@ -174,59 +178,147 @@ public class IronbeesOrchestrator
             return;
         }
 
-        agentsDirectory ??= Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".mloop", "agents");
-
-        _logger.LogInformation("Loading agents from {Directory}...", agentsDirectory);
-
         try
         {
+            // Determine agents directory
+            agentsDirectory ??= Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".mloop", "agents");
+
+            // Check if agents directory exists and has agents
+            if (!Directory.Exists(agentsDirectory) || !Directory.GetDirectories(agentsDirectory).Any())
+            {
+                _logger.LogInformation("No agents directory found: {Directory}", agentsDirectory);
+                _logger.LogInformation("Auto-installing built-in agents...");
+
+                // Auto-install built-in agents
+                using var loggerFactory = LoggerFactory.Create(builder =>
+                {
+                    builder.AddConsole();
+                    builder.SetMinimumLevel(LogLevel.Information);
+                });
+                var agentManager = new AgentManager(loggerFactory.CreateLogger<AgentManager>());
+                var result = await agentManager.InstallBuiltInAgentsAsync(force: false);
+
+                if (result.Success)
+                {
+                    _logger.LogInformation("Built-in agents installed successfully");
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to auto-install agents: {Message}", result.Message);
+                }
+            }
+
+            // Check for updates to built-in agents
+            await CheckForAgentUpdatesAsync();
+
+            // Load agents from filesystem
+            _logger.LogInformation("Loading agents from {Directory}...", agentsDirectory);
+
             if (!Directory.Exists(agentsDirectory))
             {
-                _logger.LogWarning("Agents directory not found: {Directory}", agentsDirectory);
+                _logger.LogWarning("Agents directory still doesn't exist after auto-install: {Directory}", agentsDirectory);
                 _isInitialized = true;
                 return;
             }
 
-            var yamlFiles = Directory.GetFiles(agentsDirectory, "*.yaml", SearchOption.AllDirectories)
-                .Concat(Directory.GetFiles(agentsDirectory, "*.yml", SearchOption.AllDirectories));
+            var agentDirs = Directory.GetDirectories(agentsDirectory);
 
-            foreach (var yamlFile in yamlFiles)
+            foreach (var agentDir in agentDirs)
             {
                 try
                 {
-                    var agent = await LoadAgentFromYamlAsync(yamlFile);
+                    var agent = await LoadAgentFromDirectoryAsync(agentDir);
                     _agents[agent.Name] = agent;
                     _logger.LogInformation("Loaded agent: {Name}", agent.Name);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to load agent from {File}", yamlFile);
+                    _logger.LogWarning(ex, "Failed to load agent from {Directory}", agentDir);
                 }
             }
 
+            if (_agents.Count == 0)
+            {
+                _logger.LogWarning("No agents loaded");
+            }
+
             _isInitialized = true;
-            _logger.LogInformation("Loaded {Count} agents successfully", _agents.Count);
+            _logger.LogInformation("Initialization complete. Total agents: {Count}", _agents.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to load agents");
+            _logger.LogError(ex, "Failed to initialize agents");
             throw;
         }
     }
 
-    private async Task<AgentConfiguration> LoadAgentFromYamlAsync(string yamlFilePath)
+    /// <summary>
+    /// Check for updates to built-in agents and warn if user has modified them
+    /// </summary>
+    private async Task CheckForAgentUpdatesAsync()
     {
-        var yaml = await File.ReadAllTextAsync(yamlFilePath);
+        try
+        {
+            using var loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.AddConsole();
+                builder.SetMinimumLevel(LogLevel.Warning);
+            });
+
+            var agentManager = new AgentManager(loggerFactory.CreateLogger<AgentManager>());
+            var statuses = await agentManager.CheckAgentStatusAsync();
+
+            var modifiedWithUpdates = statuses
+                .Where(s => s.UserModified && s.HasUpdate)
+                .ToList();
+
+            if (modifiedWithUpdates.Any())
+            {
+                _logger.LogWarning("⚠️ Updates available for modified agents:");
+                foreach (var agent in modifiedWithUpdates)
+                {
+                    _logger.LogWarning("  • {AgentName} - Run 'mloop agents install --agent {AgentName} --force' to update",
+                        agent.Name, agent.Name);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check for agent updates");
+        }
+    }
+
+    /// <summary>
+    /// Load agent from directory containing agent.yaml and system-prompt.md
+    /// </summary>
+    private async Task<AgentConfiguration> LoadAgentFromDirectoryAsync(string agentDir)
+    {
+        var agentName = Path.GetFileName(agentDir);
+        var yamlPath = Path.Combine(agentDir, "agent.yaml");
+        var promptPath = Path.Combine(agentDir, "system-prompt.md");
+
+        if (!File.Exists(yamlPath))
+        {
+            throw new FileNotFoundException($"agent.yaml not found in {agentDir}");
+        }
+
+        if (!File.Exists(promptPath))
+        {
+            throw new FileNotFoundException($"system-prompt.md not found in {agentDir}");
+        }
+
+        // Load YAML configuration
+        var yaml = await File.ReadAllTextAsync(yamlPath);
         var deserializer = new YamlDotNet.Serialization.DeserializerBuilder().Build();
         var dict = deserializer.Deserialize<Dictionary<string, object>>(yaml);
 
-        var name = dict.GetValueOrDefault("name")?.ToString()
-            ?? Path.GetFileNameWithoutExtension(yamlFilePath);
+        var name = dict.GetValueOrDefault("name")?.ToString() ?? agentName;
         var description = dict.GetValueOrDefault("description")?.ToString() ?? "";
-        var systemPrompt = dict.GetValueOrDefault("system_prompt")?.ToString()
-            ?? dict.GetValueOrDefault("instructions")?.ToString() ?? "";
+
+        // Load system prompt from markdown file
+        var systemPrompt = await File.ReadAllTextAsync(promptPath);
 
         float temperature = 0.0f;
         if (dict.TryGetValue("temperature", out var tempObj) && tempObj != null)

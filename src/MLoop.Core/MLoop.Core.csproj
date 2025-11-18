@@ -19,13 +19,16 @@
     <ProjectReference Include="..\MLoop.Extensibility\MLoop.Extensibility.csproj" />
   </ItemGroup>
 
-  <!-- FilePrepper Integration: Debug (project) vs Release (package) -->
-  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+  <!-- FilePrepper Integration: Always use project reference -->
+  <!-- Reason: FilePrepper NuGet package (0.4.5) only targets net9.0, causing namespace resolution issues in net10.0 projects -->
+  <ItemGroup>
     <ProjectReference Include="..\..\..\FilePrepper\src\FilePrepper\FilePrepper.csproj" />
   </ItemGroup>
 
+  <!-- TODO: Switch to package reference when FilePrepper adds net10.0 target:
   <ItemGroup Condition="'$(Configuration)' == 'Release'">
     <PackageReference Include="FilePrepper" />
   </ItemGroup>
+  -->
 
 </Project>

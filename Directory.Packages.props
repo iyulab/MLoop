@@ -23,6 +23,9 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
+    <!-- AI Dependencies -->
+    <PackageVersion Include="System.ClientModel" Version="1.8.1" />
+    <PackageVersion Include="OpenAI" Version="2.7.0" />
     <!-- Roslyn / Code Analysis -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.14.0" />
