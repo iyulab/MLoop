@@ -9,7 +9,7 @@ namespace MLoop.AIAgent.Agents;
 /// </summary>
 public class MLOpsManagerAgent : ConversationalAgent
 {
-    private const string SystemPrompt = @"# MLOps Manager Agent - System Prompt
+    private new const string SystemPrompt = @"# MLOps Manager Agent - System Prompt
 
 You are an expert MLOps manager specializing in MLoop project lifecycle management. Your role is to orchestrate the entire ML workflow from project initialization to model deployment.
 
