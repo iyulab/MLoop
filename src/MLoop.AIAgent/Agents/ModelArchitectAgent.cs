@@ -1,15 +1,22 @@
+using System.Text;
 using Ironbees.AgentMode.Agents;
 using Microsoft.Extensions.AI;
+using MLoop.AIAgent.Core;
+using MLoop.AIAgent.Core.Models;
 
 namespace MLoop.AIAgent.Agents;
 
 /// <summary>
 /// Model architect agent specializing in ML problem classification and AutoML configuration.
 /// Recommends optimal training configurations based on data characteristics.
+/// Integrates with ModelRecommender for automated model recommendations.
 /// </summary>
 public class ModelArchitectAgent : ConversationalAgent
 {
-    private const string SystemPrompt = @"# Model Architect Agent - System Prompt
+    private readonly ModelRecommender _modelRecommender;
+    private readonly DataAnalyzer _dataAnalyzer;
+
+    private new const string SystemPrompt = @"# Model Architect Agent - System Prompt
 
 You are an expert ML architect with deep knowledge of ML.NET, AutoML, and machine learning best practices. Your role is to classify ML problems and recommend optimal configurations for MLoop training.
 
@@ -163,6 +170,8 @@ Always explain your reasoning and provide alternatives when multiple valid appro
     public ModelArchitectAgent(IChatClient chatClient)
         : base(chatClient, SystemPrompt)
     {
+        _modelRecommender = new ModelRecommender();
+        _dataAnalyzer = new DataAnalyzer();
     }
 
     /// <summary>
@@ -173,5 +182,187 @@ Always explain your reasoning and provide alternatives when multiple valid appro
     public ModelArchitectAgent(IChatClient chatClient, string customSystemPrompt)
         : base(chatClient, customSystemPrompt)
     {
+        _modelRecommender = new ModelRecommender();
+        _dataAnalyzer = new DataAnalyzer();
+    }
+
+    /// <summary>
+    /// Analyzes a data file and generates model recommendations.
+    /// </summary>
+    /// <param name="filePath">Path to the CSV or JSON file to analyze.</param>
+    /// <param name="userQuery">Optional user query about the model configuration.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Model recommendation with LLM-enhanced explanation.</returns>
+    public async Task<string> RecommendModelAsync(
+        string filePath,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Perform data analysis first
+        var analysisReport = await _dataAnalyzer.AnalyzeAsync(filePath);
+
+        // Generate model recommendation
+        var recommendation = _modelRecommender.RecommendModel(analysisReport);
+
+        // Format the recommendation for the LLM
+        var recommendationContext = FormatRecommendationForLLM(recommendation, analysisReport);
+
+        // Create the message with recommendation context
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Based on the following model recommendation, provide your expert analysis and additional insights:\n\n{recommendationContext}"
+            : $"Based on this model recommendation:\n\n{recommendationContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Generates model recommendation from an existing data analysis report.
+    /// </summary>
+    /// <param name="analysisReport">Pre-computed data analysis report.</param>
+    /// <param name="userQuery">Optional user query about the model configuration.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Model recommendation with LLM-enhanced explanation.</returns>
+    public async Task<string> RecommendModelFromReportAsync(
+        DataAnalysisReport analysisReport,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Generate model recommendation
+        var recommendation = _modelRecommender.RecommendModel(analysisReport);
+
+        // Format the recommendation for the LLM
+        var recommendationContext = FormatRecommendationForLLM(recommendation, analysisReport);
+
+        // Create the message with recommendation context
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Based on the following model recommendation, provide your expert analysis and additional insights:\n\n{recommendationContext}"
+            : $"Based on this model recommendation:\n\n{recommendationContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the raw model recommendation for a data file.
+    /// </summary>
+    /// <param name="filePath">Path to the CSV or JSON file.</param>
+    /// <returns>The detailed model recommendation.</returns>
+    public async Task<ModelRecommendation> GetModelRecommendationAsync(string filePath)
+    {
+        var analysisReport = await _dataAnalyzer.AnalyzeAsync(filePath);
+        return _modelRecommender.RecommendModel(analysisReport);
+    }
+
+    /// <summary>
+    /// Gets the raw model recommendation from an existing analysis report.
+    /// </summary>
+    /// <param name="analysisReport">Pre-computed data analysis report.</param>
+    /// <returns>The detailed model recommendation.</returns>
+    public ModelRecommendation GetModelRecommendation(DataAnalysisReport analysisReport)
+    {
+        return _modelRecommender.RecommendModel(analysisReport);
+    }
+
+    /// <summary>
+    /// Formats a ModelRecommendation into a string suitable for LLM context.
+    /// </summary>
+    private static string FormatRecommendationForLLM(ModelRecommendation recommendation, DataAnalysisReport analysisReport)
+    {
+        var sb = new StringBuilder();
+
+        // Problem Analysis
+        sb.AppendLine("## 🎯 ML Problem Analysis");
+        sb.AppendLine();
+        sb.AppendLine($"**Problem Type**: {FormatProblemType(recommendation.ProblemType)}");
+        sb.AppendLine($"**Target Column**: {recommendation.TargetColumn}");
+        sb.AppendLine($"**Feature Columns**: {recommendation.FeatureColumns.Count} columns");
+        sb.AppendLine($"**Confidence**: {recommendation.Confidence:P0}");
+        sb.AppendLine();
+        sb.AppendLine($"**Reasoning**: {recommendation.Reasoning}");
+        sb.AppendLine();
+
+        // Dataset Overview
+        sb.AppendLine("## 📊 Dataset Overview");
+        sb.AppendLine();
+        sb.AppendLine($"- **Rows**: {analysisReport.RowCount:N0}");
+        sb.AppendLine($"- **Columns**: {analysisReport.ColumnCount}");
+        sb.AppendLine($"- **Feature Columns**: {string.Join(", ", recommendation.FeatureColumns.Take(5))}{(recommendation.FeatureColumns.Count > 5 ? "..." : "")}");
+        sb.AppendLine();
+
+        // Recommended Configuration
+        sb.AppendLine("## ⚙️ Recommended Configuration");
+        sb.AppendLine();
+        sb.AppendLine("**AutoML Settings**:");
+        sb.AppendLine($"- Time Limit: {recommendation.RecommendedTrainingTimeSeconds} seconds");
+        sb.AppendLine($"- Primary Metric: {recommendation.PrimaryMetric}");
+        sb.AppendLine($"- Optimization Metric: {recommendation.OptimizationMetric}");
+        if (recommendation.AdditionalMetrics.Count > 0)
+        {
+            sb.AppendLine($"- Additional Metrics: {string.Join(", ", recommendation.AdditionalMetrics)}");
+        }
+        sb.AppendLine();
+
+        // Recommended Trainers
+        if (recommendation.RecommendedTrainers.Count > 0)
+        {
+            sb.AppendLine("**Recommended Trainers**:");
+            foreach (var trainer in recommendation.RecommendedTrainers)
+            {
+                sb.AppendLine($"- {trainer}");
+            }
+            sb.AppendLine();
+        }
+
+        // MLoop Command
+        sb.AppendLine("## 🚀 MLoop Command");
+        sb.AppendLine();
+        sb.AppendLine("```bash");
+        sb.AppendLine($"mloop train {Path.GetFileName(analysisReport.FilePath)} \\");
+        sb.AppendLine($"  --label {recommendation.TargetColumn} \\");
+        sb.AppendLine($"  --time {recommendation.RecommendedTrainingTimeSeconds} \\");
+        sb.AppendLine($"  --metric {recommendation.OptimizationMetric} \\");
+        sb.AppendLine("  --test-split 0.2");
+        sb.AppendLine("```");
+        sb.AppendLine();
+
+        // Warnings
+        if (recommendation.Warnings.Count > 0)
+        {
+            sb.AppendLine("## ⚠️ Warnings");
+            sb.AppendLine();
+            foreach (var warning in recommendation.Warnings)
+            {
+                sb.AppendLine($"- {warning}");
+            }
+            sb.AppendLine();
+        }
+
+        // Preprocessing Recommendations
+        if (recommendation.PreprocessingRecommendations.Count > 0)
+        {
+            sb.AppendLine("## 🔧 Preprocessing Recommendations");
+            sb.AppendLine();
+            foreach (var rec in recommendation.PreprocessingRecommendations)
+            {
+                sb.AppendLine($"- {rec}");
+            }
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatProblemType(MLProblemType problemType)
+    {
+        return problemType switch
+        {
+            MLProblemType.BinaryClassification => "Binary Classification",
+            MLProblemType.MulticlassClassification => "Multiclass Classification",
+            MLProblemType.Regression => "Regression",
+            _ => problemType.ToString()
+        };
     }
 }
