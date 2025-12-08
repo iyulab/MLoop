@@ -2,15 +2,20 @@ using MLoop.CLI.Infrastructure.FileSystem;
 
 namespace MLoop.Tests.Infrastructure.FileSystem;
 
+[Collection("FileSystem")]
 public class ExperimentStoreTests : IDisposable
 {
     private readonly string _testProjectRoot;
+    private readonly string _originalDirectory;
     private readonly IFileSystemManager _fileSystem;
     private readonly IProjectDiscovery _projectDiscovery;
     private readonly ExperimentStore _experimentStore;
 
     public ExperimentStoreTests()
     {
+        // Store original directory first
+        _originalDirectory = Directory.GetCurrentDirectory();
+
         // Create temporary test directory with .mloop
         _testProjectRoot = Path.Combine(Path.GetTempPath(), "mloop-test-" + Guid.NewGuid());
         Directory.CreateDirectory(_testProjectRoot);
@@ -29,6 +34,24 @@ public class ExperimentStoreTests : IDisposable
 
     public void Dispose()
     {
+        // Restore original directory BEFORE deleting the temp directory
+        try
+        {
+            Directory.SetCurrentDirectory(_originalDirectory);
+        }
+        catch
+        {
+            // If original directory doesn't exist, try to set to temp path
+            try
+            {
+                Directory.SetCurrentDirectory(Path.GetTempPath());
+            }
+            catch
+            {
+                // Ignore if we can't restore directory
+            }
+        }
+
         // Cleanup test directory
         if (Directory.Exists(_testProjectRoot))
         {
