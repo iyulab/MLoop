@@ -6,7 +6,7 @@ using Spectre.Console;
 namespace MLoop.CLI.Commands;
 
 /// <summary>
-/// mloop promote - Manually promotes an experiment to production or staging
+/// mloop promote - Manually promotes an experiment to production
 /// </summary>
 public static class PromoteCommand
 {
@@ -17,21 +17,28 @@ public static class PromoteCommand
             Description = "Experiment ID to promote (e.g., exp-003)"
         };
 
-        var stageOption = new Option<string>("--stage", "-s")
+        var nameOption = new Option<string?>("--name", "-n")
         {
-            Description = "Target stage (production or staging)",
-            DefaultValueFactory = _ => "production"
+            Description = $"Model name (default: '{ConfigDefaults.DefaultModelName}')"
         };
 
-        var command = new Command("promote", "Promote an experiment to production or staging");
+        var forceOption = new Option<bool>("--force", "-f")
+        {
+            Description = "Skip confirmation when replacing existing production model",
+            DefaultValueFactory = _ => false
+        };
+
+        var command = new Command("promote", "Promote an experiment to production");
         command.Arguments.Add(experimentIdArg);
-        command.Options.Add(stageOption);
+        command.Options.Add(nameOption);
+        command.Options.Add(forceOption);
 
         command.SetAction((parseResult) =>
         {
             var experimentId = parseResult.GetValue(experimentIdArg)!;
-            var stageInput = parseResult.GetValue(stageOption)!;
-            return ExecuteAsync(experimentId, stageInput);
+            var name = parseResult.GetValue(nameOption);
+            var force = parseResult.GetValue(forceOption);
+            return ExecuteAsync(experimentId, name, force);
         });
 
         return command;
@@ -39,7 +46,8 @@ public static class PromoteCommand
 
     private static async Task<int> ExecuteAsync(
         string experimentId,
-        string stageInput)
+        string? modelName,
+        bool force)
     {
         try
         {
@@ -60,26 +68,24 @@ public static class PromoteCommand
                 return 1;
             }
 
+            // Resolve model name (defaults to "default")
+            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
+                ? ConfigDefaults.DefaultModelName
+                : modelName.Trim().ToLowerInvariant();
+
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
             var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
 
-            // Parse stage
-            if (!Enum.TryParse<ModelStage>(stageInput, ignoreCase: true, out var targetStage))
+            // Verify experiment exists for this model
+            if (!experimentStore.ExperimentExists(resolvedModelName, experimentId))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Invalid stage '{stageInput}'. Valid values: production, staging");
-                return 1;
-            }
-
-            // Verify experiment exists
-            if (!experimentStore.ExperimentExists(experimentId))
-            {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Experiment '{experimentId}' not found.");
-                AnsiConsole.MarkupLine("[yellow]Tip:[/] Run [blue]mloop list[/] to see all experiments.");
+                AnsiConsole.MarkupLine($"[red]Error:[/] Experiment '{experimentId}' not found for model '[cyan]{resolvedModelName}[/]'.");
+                AnsiConsole.MarkupLine($"[yellow]Tip:[/] Run [blue]mloop list --name {resolvedModelName}[/] to see all experiments.");
                 return 1;
             }
 
             // Load experiment to show details
-            var experiment = await experimentStore.LoadAsync(experimentId, CancellationToken.None);
+            var experiment = await experimentStore.LoadAsync(resolvedModelName, experimentId, CancellationToken.None);
 
             // Check if experiment is completed
             if (!experiment.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
@@ -91,7 +97,7 @@ public static class PromoteCommand
 
             // Show promotion details
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[bold]Promoting {experimentId} to {targetStage.ToString().ToLowerInvariant()}[/]");
+            AnsiConsole.Write(new Rule($"[bold]Promoting to Production[/]").LeftJustified());
             AnsiConsole.WriteLine();
 
             var table = new Table()
@@ -101,6 +107,7 @@ public static class PromoteCommand
             table.AddColumn("[bold]Property[/]");
             table.AddColumn("[bold]Value[/]");
 
+            table.AddRow("Model", $"[cyan]{resolvedModelName}[/]");
             table.AddRow("Experiment ID", $"[cyan]{experiment.ExperimentId}[/]");
             table.AddRow("Task", $"[yellow]{experiment.Task}[/]");
             table.AddRow("Timestamp", experiment.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
@@ -121,32 +128,44 @@ public static class PromoteCommand
             AnsiConsole.WriteLine();
 
             // Check if replacing existing production model
-            if (targetStage == ModelStage.Production)
+            var currentProduction = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
+            if (currentProduction != null)
             {
-                var currentProduction = await modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
-                if (currentProduction != null)
+                AnsiConsole.MarkupLine($"[yellow]Warning:[/] This will replace the current production model: [cyan]{currentProduction.ExperimentId}[/]");
+                AnsiConsole.WriteLine();
+
+                if (!force)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]⚠ This will replace the current production model:[/] [cyan]{currentProduction.ExperimentId}[/]");
+                    if (!AnsiConsole.Confirm("Continue with promotion?"))
+                    {
+                        AnsiConsole.MarkupLine("[grey]Promotion cancelled.[/]");
+                        return 0;
+                    }
                 }
             }
 
             // Promote with progress indicator
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
-                .StartAsync($"[yellow]Promoting to {targetStage.ToString().ToLowerInvariant()}...[/]", async ctx =>
+                .StartAsync("[yellow]Promoting to production...[/]", async ctx =>
                 {
-                    await modelRegistry.PromoteAsync(experimentId, targetStage, CancellationToken.None);
-                    ctx.Status($"[green]Promotion complete![/]");
+                    await modelRegistry.PromoteAsync(resolvedModelName, experimentId, CancellationToken.None);
+                    ctx.Status("[green]Promotion complete![/]");
                 });
 
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[green]✓[/] Successfully promoted [cyan]{experimentId}[/] to [green bold]{targetStage.ToString().ToLowerInvariant()}[/]!");
+            AnsiConsole.Write(new Rule("[green]Promotion Complete![/]").LeftJustified());
             AnsiConsole.WriteLine();
 
-            if (targetStage == ModelStage.Production)
-            {
-                AnsiConsole.MarkupLine("[grey]You can now use [blue]mloop predict[/] to make predictions with this model.[/]");
-            }
+            AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
+            AnsiConsole.MarkupLine($"[green]>[/] Experiment: [cyan]{experimentId}[/]");
+            AnsiConsole.MarkupLine($"[green]>[/] Status: [green bold]production[/]");
+            AnsiConsole.WriteLine();
+
+            AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
+            AnsiConsole.MarkupLine($"  mloop predict --name {resolvedModelName}");
+            AnsiConsole.MarkupLine($"  mloop info --name {resolvedModelName}");
+            AnsiConsole.WriteLine();
 
             return 0;
         }

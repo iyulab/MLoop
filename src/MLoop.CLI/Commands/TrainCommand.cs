@@ -12,7 +12,7 @@ using Spectre.Console;
 namespace MLoop.CLI.Commands;
 
 /// <summary>
-/// mloop train - Trains a model using AutoML
+/// mloop train - Trains a model using AutoML with multi-model support
 /// </summary>
 public static class TrainCommand
 {
@@ -24,19 +24,29 @@ public static class TrainCommand
             Arity = ArgumentArity.ZeroOrOne
         };
 
+        var nameOption = new Option<string?>("--name", "-n")
+        {
+            Description = $"Model name (default: '{ConfigDefaults.DefaultModelName}')"
+        };
+
         var labelOption = new Option<string?>("--label", "-l")
         {
             Description = "Name of the label column"
         };
 
-        var timeOption = new Option<int?>("--time", "-t")
+        var taskOption = new Option<string?>("--task", "-t")
+        {
+            Description = "ML task type (binary-classification, multiclass-classification, regression)"
+        };
+
+        var timeOption = new Option<int?>("--time")
         {
             Description = "Training time limit in seconds"
         };
 
         var metricOption = new Option<string?>("--metric", "-m")
         {
-            Description = "Optimization metric (accuracy, auc, f1, etc.)"
+            Description = "Optimization metric (accuracy, auc, f1, r_squared, etc.)"
         };
 
         var testSplitOption = new Option<double?>("--test-split")
@@ -52,7 +62,9 @@ public static class TrainCommand
 
         var command = new Command("train", "Train a model using AutoML");
         command.Arguments.Add(dataFileArg);
+        command.Options.Add(nameOption);
         command.Options.Add(labelOption);
+        command.Options.Add(taskOption);
         command.Options.Add(timeOption);
         command.Options.Add(metricOption);
         command.Options.Add(testSplitOption);
@@ -61,12 +73,14 @@ public static class TrainCommand
         command.SetAction((parseResult) =>
         {
             var dataFile = parseResult.GetValue(dataFileArg);
+            var name = parseResult.GetValue(nameOption);
             var label = parseResult.GetValue(labelOption);
+            var task = parseResult.GetValue(taskOption);
             var time = parseResult.GetValue(timeOption);
             var metric = parseResult.GetValue(metricOption);
             var testSplit = parseResult.GetValue(testSplitOption);
             var noPromote = parseResult.GetValue(noPromoteOption);
-            return ExecuteAsync(dataFile, label, time, metric, testSplit, noPromote);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote);
         });
 
         return command;
@@ -74,7 +88,9 @@ public static class TrainCommand
 
     private static async Task<int> ExecuteAsync(
         string? dataFile,
+        string? modelName,
         string? label,
+        string? task,
         int? time,
         string? metric,
         double? testSplit,
@@ -99,28 +115,76 @@ public static class TrainCommand
                 return 1;
             }
 
-            // Resolve data file path (Convention over Configuration)
+            // Resolve model name (defaults to "default")
+            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
+                ? ConfigDefaults.DefaultModelName
+                : modelName.Trim().ToLowerInvariant();
+
+            // Load configuration
+            var configLoader = new ConfigLoader(fileSystem, projectDiscovery);
+            var configMerger = new ConfigMerger();
+
+            var userConfig = await configLoader.LoadUserConfigAsync();
+
+            // Build CLI-provided training settings
+            TrainingSettings? cliTraining = null;
+            if (time.HasValue || !string.IsNullOrEmpty(metric) || testSplit.HasValue)
+            {
+                cliTraining = new TrainingSettings
+                {
+                    TimeLimitSeconds = time,
+                    Metric = metric,
+                    TestSplit = testSplit
+                };
+            }
+
+            // Get effective model definition (merges config with CLI overrides)
+            ModelDefinition effectiveDefinition;
+            try
+            {
+                effectiveDefinition = configMerger.GetEffectiveModelDefinition(
+                    userConfig,
+                    resolvedModelName,
+                    cliLabel: label,
+                    cliTask: task,
+                    cliTraining: cliTraining);
+            }
+            catch (InvalidOperationException ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+                return 1;
+            }
+
+            // Resolve data file path
             string resolvedDataFile;
 
             if (string.IsNullOrEmpty(dataFile))
             {
-                // Auto-discover datasets/train.csv
-                var datasetDiscovery = new DatasetDiscovery(fileSystem);
-                var datasets = datasetDiscovery.FindDatasets(projectRoot);
-
-                if (datasets == null || string.IsNullOrEmpty(datasets.TrainPath))
+                // Try config data path, then auto-discover
+                if (!string.IsNullOrEmpty(userConfig.Data?.Train))
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] No data file specified and datasets/train.csv not found.");
-                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/train.csv or specify a file: mloop train <data-file>");
-                    return 1;
+                    resolvedDataFile = Path.IsPathRooted(userConfig.Data.Train)
+                        ? userConfig.Data.Train
+                        : Path.Combine(projectRoot, userConfig.Data.Train);
                 }
+                else
+                {
+                    var datasetDiscovery = new DatasetDiscovery(fileSystem);
+                    var datasets = datasetDiscovery.FindDatasets(projectRoot);
 
-                resolvedDataFile = datasets.TrainPath;
-                AnsiConsole.MarkupLine($"[green]✓[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+                    if (datasets == null || string.IsNullOrEmpty(datasets.TrainPath))
+                    {
+                        AnsiConsole.MarkupLine("[red]Error:[/] No data file specified and datasets/train.csv not found.");
+                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/train.csv or specify a file: mloop train <data-file>");
+                        return 1;
+                    }
+
+                    resolvedDataFile = datasets.TrainPath;
+                }
+                AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
             }
             else
             {
-                // Validate explicit data file
                 resolvedDataFile = Path.IsPathRooted(dataFile)
                     ? dataFile
                     : Path.Combine(projectRoot, dataFile);
@@ -132,7 +196,7 @@ public static class TrainCommand
                 }
             }
 
-            // Execute preprocessing scripts if available (Phase 0)
+            // Execute preprocessing scripts if available
             var preprocessingEngine = new PreprocessingEngine(
                 projectRoot,
                 new TrainCommandLogger());
@@ -140,11 +204,11 @@ public static class TrainCommand
             if (preprocessingEngine.HasPreprocessingScripts())
             {
                 AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[blue]🔄 Running preprocessing scripts...[/]");
+                AnsiConsole.MarkupLine("[blue]Running preprocessing scripts...[/]");
 
                 try
                 {
-                    resolvedDataFile = await preprocessingEngine.ExecuteAsync(resolvedDataFile, label);
+                    resolvedDataFile = await preprocessingEngine.ExecuteAsync(resolvedDataFile, effectiveDefinition.Label);
                     AnsiConsole.WriteLine();
                 }
                 catch (InvalidOperationException ex)
@@ -155,60 +219,29 @@ public static class TrainCommand
                 }
             }
 
-            // Load and merge configuration
-            var configLoader = new ConfigLoader(fileSystem, projectDiscovery);
-            var configMerger = new ConfigMerger();
-
-            var projectConfig = await configLoader.LoadProjectConfigAsync();
-            var userConfig = await configLoader.LoadUserConfigAsync();
-            var defaults = ConfigMerger.CreateDefaults();
-
-            // CLI config from arguments
-            var cliConfig = new MLoopConfig
-            {
-                LabelColumn = label,
-                Training = new TrainingSettings
-                {
-                    TimeLimitSeconds = time,    // null if not specified via CLI
-                    Metric = metric,             // null if not specified via CLI
-                    TestSplit = testSplit        // null if not specified via CLI
-                }
-            };
-
-            var finalConfig = configMerger.Merge(cliConfig, userConfig, projectConfig, defaults);
-
-            // Validate final configuration
-            if (string.IsNullOrEmpty(finalConfig.LabelColumn))
-            {
-                AnsiConsole.MarkupLine("[red]Error:[/] Label column not specified.");
-                AnsiConsole.MarkupLine("Use --label option or set it in mloop.yaml");
-                return 1;
-            }
-
-            if (string.IsNullOrEmpty(finalConfig.Task))
-            {
-                AnsiConsole.MarkupLine("[red]Error:[/] Task type not specified in project config.");
-                return 1;
-            }
-
             // Display training configuration
-            DisplayTrainingConfig(resolvedDataFile, finalConfig);
+            DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition);
 
-            // Validate label column exists in preprocessed data (before starting expensive training)
-            await ValidateLabelColumnAsync(resolvedDataFile, finalConfig.LabelColumn!);
+            // Validate label column exists
+            await ValidateLabelColumnAsync(resolvedDataFile, effectiveDefinition.Label);
 
             // Initialize training components
+            var modelNameResolver = new ModelNameResolver(fileSystem, projectDiscovery, configLoader);
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
             var trainingEngine = new TrainingEngine(fileSystem, experimentStore);
 
+            // Ensure model directory structure exists
+            await modelNameResolver.EnsureModelDirectoryAsync(resolvedModelName);
+
             var trainingConfig = new TrainingConfig
             {
+                ModelName = resolvedModelName,
                 DataFile = Path.GetFullPath(resolvedDataFile),
-                LabelColumn = finalConfig.LabelColumn,
-                Task = finalConfig.Task,
-                TimeLimitSeconds = finalConfig.Training?.TimeLimitSeconds ?? 300,
-                Metric = finalConfig.Training?.Metric ?? "accuracy",
-                TestSplit = finalConfig.Training?.TestSplit ?? 0.2
+                LabelColumn = effectiveDefinition.Label,
+                Task = effectiveDefinition.Task,
+                TimeLimitSeconds = effectiveDefinition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
+                Metric = effectiveDefinition.Training?.Metric ?? ConfigDefaults.DefaultMetric,
+                TestSplit = effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit
             };
 
             // Train with progress display
@@ -224,22 +257,21 @@ public static class TrainCommand
                     new ElapsedTimeColumn())
                 .StartAsync(async ctx =>
                 {
-                    var task = ctx.AddTask("[green]Training model...[/]", maxValue: 100);
+                    var progressTask = ctx.AddTask($"[green]Training {resolvedModelName}...[/]", maxValue: 100);
 
                     var progress = new Progress<TrainingProgress>(p =>
                     {
-                        task.Description = $"[green]Trial {p.TrialNumber}:[/] {p.TrainerName} - {p.MetricName}={p.Metric:F4}";
+                        progressTask.Description = $"[green]Trial {p.TrialNumber}:[/] {p.TrainerName} - {p.MetricName}={p.Metric:F4}";
 
-                        // Estimate progress based on elapsed time
                         var progressPercent = Math.Min(
                             (p.ElapsedSeconds / trainingConfig.TimeLimitSeconds) * 100,
                             99);
-                        task.Value = progressPercent;
+                        progressTask.Value = progressPercent;
                     });
 
                     result = await trainingEngine.TrainAsync(trainingConfig, progress, CancellationToken.None);
-                    task.Value = 100;
-                    task.StopTask();
+                    progressTask.Value = 100;
+                    progressTask.StopTask();
                 });
 
             if (result == null)
@@ -249,7 +281,7 @@ public static class TrainCommand
             }
 
             // Display results
-            DisplayResults(result);
+            DisplayResults(result, resolvedModelName);
 
             // Auto-promote to production if enabled
             if (!noPromote)
@@ -263,6 +295,7 @@ public static class TrainCommand
                         var primaryMetric = trainingConfig.Metric;
 
                         var promoted = await modelRegistry.AutoPromoteAsync(
+                            resolvedModelName,
                             result.ExperimentId,
                             primaryMetric,
                             CancellationToken.None);
@@ -270,13 +303,13 @@ public static class TrainCommand
                         if (promoted)
                         {
                             ctx.Status("[green]Model promoted to production![/]");
-                            AnsiConsole.MarkupLine("[green]🚀 Model promoted to production![/]");
+                            AnsiConsole.MarkupLine($"[green]Model promoted to production![/]");
                             AnsiConsole.WriteLine($"   Better {primaryMetric} than current production model");
                         }
                         else
                         {
                             ctx.Status("[yellow]Model saved to staging[/]");
-                            AnsiConsole.MarkupLine("[yellow]ℹ️  Model saved to staging[/]");
+                            AnsiConsole.MarkupLine("[yellow]Model saved to staging[/]");
                             AnsiConsole.WriteLine($"   Current production model has better {primaryMetric}");
                         }
                     });
@@ -301,7 +334,7 @@ public static class TrainCommand
         }
     }
 
-    private static void DisplayTrainingConfig(string dataFile, MLoopConfig config)
+    private static void DisplayTrainingConfig(string dataFile, string modelName, ModelDefinition definition)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[blue]Training Configuration[/]").LeftJustified());
@@ -312,27 +345,28 @@ public static class TrainCommand
             .AddColumn("Setting")
             .AddColumn("Value");
 
-        table.AddRow("Project", config.ProjectName ?? "Unknown");
-        table.AddRow("Task", config.Task ?? "Unknown");
+        table.AddRow("Model", $"[cyan]{modelName}[/]");
+        table.AddRow("Task", definition.Task);
         table.AddRow("Data File", dataFile);
-        table.AddRow("Label Column", config.LabelColumn ?? "Unknown");
-        table.AddRow("Time Limit", $"{config.Training?.TimeLimitSeconds ?? 300}s");
-        table.AddRow("Metric", config.Training?.Metric ?? "accuracy");
-        table.AddRow("Test Split", $"{(config.Training?.TestSplit ?? 0.2) * 100:F0}%");
+        table.AddRow("Label Column", definition.Label);
+        table.AddRow("Time Limit", $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
+        table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
+        table.AddRow("Test Split", $"{(definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit) * 100:F0}%");
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
     }
 
-    private static void DisplayResults(TrainingResult result)
+    private static void DisplayResults(TrainingResult result, string modelName)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[green]Training Complete![/]").LeftJustified());
         AnsiConsole.WriteLine();
 
-        AnsiConsole.MarkupLine($"[green]✓[/] Experiment ID: [blue]{result.ExperimentId}[/]");
-        AnsiConsole.MarkupLine($"[green]✓[/] Best Trainer: [yellow]{result.BestTrainer}[/]");
-        AnsiConsole.MarkupLine($"[green]✓[/] Training Time: [cyan]{result.TrainingTimeSeconds:F2}s[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{modelName}[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Experiment ID: [blue]{result.ExperimentId}[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Best Trainer: [yellow]{result.BestTrainer}[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Training Time: [cyan]{result.TrainingTimeSeconds:F2}s[/]");
         AnsiConsole.WriteLine();
 
         // Metrics table
@@ -359,19 +393,14 @@ public static class TrainCommand
         AnsiConsole.MarkupLine($"[grey]Model saved to:[/] {result.ModelPath}");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
-        AnsiConsole.MarkupLine($"  1. mloop evaluate {result.ExperimentId}/model.zip test-data.csv");
-        AnsiConsole.MarkupLine($"  2. mloop predict {result.ExperimentId}/model.zip new-data.csv");
-        AnsiConsole.MarkupLine($"  3. mloop model promote {result.ExperimentId} staging");
+        AnsiConsole.MarkupLine($"  mloop list --name {modelName}");
+        AnsiConsole.MarkupLine($"  mloop predict data.csv --name {modelName}");
+        AnsiConsole.MarkupLine($"  mloop promote {result.ExperimentId} --name {modelName}");
         AnsiConsole.WriteLine();
     }
 
-    /// <summary>
-    /// Validates that the label column exists in the preprocessed data.
-    /// Throws ArgumentException with helpful message if label column is missing.
-    /// </summary>
     private static async Task ValidateLabelColumnAsync(string dataFilePath, string labelColumn)
     {
-        // Read first row to get available columns
         var csvHelper = new MLoop.Core.Data.CsvHelperImpl();
         var data = await csvHelper.ReadAsync(dataFilePath);
 
@@ -391,41 +420,22 @@ public static class TrainCommand
             AnsiConsole.MarkupLine($"  [yellow]Label specified:[/] '{labelColumn}'");
             AnsiConsole.MarkupLine($"  [yellow]Available columns:[/] {string.Join(", ", availableColumns)}");
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[yellow]Tip:[/] Update the label_column in mloop.yaml or use --label option");
+            AnsiConsole.MarkupLine("[yellow]Tip:[/] Update the label in mloop.yaml or use --label option");
             AnsiConsole.WriteLine();
 
             throw new ArgumentException(
-                $"Label column '{labelColumn}' not found in preprocessed data.\n" +
+                $"Label column '{labelColumn}' not found in data.\n" +
                 $"Available columns: {string.Join(", ", availableColumns)}",
                 nameof(labelColumn));
         }
     }
 
-    /// <summary>
-    /// Logger implementation for preprocessing within TrainCommand
-    /// </summary>
     private class TrainCommandLogger : ILogger
     {
-        public void Debug(string message)
-        {
-            AnsiConsole.MarkupLine($"[grey]{message}[/]");
-        }
-
-        public void Info(string message)
-        {
-            AnsiConsole.WriteLine(message);
-        }
-
-        public void Warning(string message)
-        {
-            AnsiConsole.MarkupLine($"[yellow]{message}[/]");
-        }
-
-        public void Error(string message)
-        {
-            AnsiConsole.MarkupLine($"[red]{message}[/]");
-        }
-
+        public void Debug(string message) => AnsiConsole.MarkupLine($"[grey]{message}[/]");
+        public void Info(string message) => AnsiConsole.WriteLine(message);
+        public void Warning(string message) => AnsiConsole.MarkupLine($"[yellow]{message}[/]");
+        public void Error(string message) => AnsiConsole.MarkupLine($"[red]{message}[/]");
         public void Error(string message, Exception exception)
         {
             AnsiConsole.MarkupLine($"[red]{message}[/]");

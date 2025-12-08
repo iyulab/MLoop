@@ -14,16 +14,20 @@ public static class PredictCommand
 {
     public static Command Create()
     {
-        var modelArg = new Argument<string?>("model-path")
-        {
-            Description = "Path to model file (defaults to production model if omitted)",
-            Arity = ArgumentArity.ZeroOrOne
-        };
-
         var dataFileArg = new Argument<string?>("data-file")
         {
             Description = "Path to prediction data (defaults to datasets/predict.csv if omitted)",
             Arity = ArgumentArity.ZeroOrOne
+        };
+
+        var nameOption = new Option<string?>("--name", "-n")
+        {
+            Description = $"Model name (default: '{ConfigDefaults.DefaultModelName}')"
+        };
+
+        var modelPathOption = new Option<string?>("--model", "-m")
+        {
+            Description = "Path to model file (overrides production model)"
         };
 
         var outputOption = new Option<string?>("--output", "-o")
@@ -38,26 +42,29 @@ public static class PredictCommand
         };
 
         var command = new Command("predict", "Make predictions with a trained model");
-        command.Arguments.Add(modelArg);
         command.Arguments.Add(dataFileArg);
+        command.Options.Add(nameOption);
+        command.Options.Add(modelPathOption);
         command.Options.Add(outputOption);
         command.Options.Add(unknownStrategyOption);
 
         command.SetAction((parseResult) =>
         {
-            var modelPath = parseResult.GetValue(modelArg);
             var dataFile = parseResult.GetValue(dataFileArg);
+            var name = parseResult.GetValue(nameOption);
+            var modelPath = parseResult.GetValue(modelPathOption);
             var output = parseResult.GetValue(outputOption);
             var unknownStrategy = parseResult.GetValue(unknownStrategyOption)!;
-            return ExecuteAsync(modelPath, dataFile, output, unknownStrategy);
+            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy);
         });
 
         return command;
     }
 
     private static async Task<int> ExecuteAsync(
-        string? modelPath,
         string? dataFile,
+        string? modelName,
+        string? modelPath,
         string? output,
         string unknownStrategy)
     {
@@ -80,26 +87,48 @@ public static class PredictCommand
                 return 1;
             }
 
+            // Resolve model name (defaults to "default")
+            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
+                ? ConfigDefaults.DefaultModelName
+                : modelName.Trim().ToLowerInvariant();
+
+            // Initialize stores
+            var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
+            var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
+
             // Resolve model path (Convention: use production model if not specified)
             string resolvedModelPath;
+            string? experimentId = null;
+            InputSchemaInfo? trainedSchema = null;
 
             if (string.IsNullOrEmpty(modelPath))
             {
-                // Auto-load production model
-                var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
-                var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
-
-                var productionModel = await modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
+                // Auto-load production model for the specified model name
+                var productionModel = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
 
                 if (productionModel == null)
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] No production model found.");
-                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Train a model first: [blue]mloop train[/]");
+                    AnsiConsole.MarkupLine($"[red]Error:[/] No production model found for '[cyan]{resolvedModelName}[/]'.");
+                    AnsiConsole.MarkupLine($"[yellow]Tip:[/] Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
                     return 1;
                 }
 
                 resolvedModelPath = fileSystem.CombinePath(productionModel.ModelPath, "model.zip");
-                AnsiConsole.MarkupLine($"[green]✓[/] Using production model: [cyan]{productionModel.ExperimentId}[/]");
+                experimentId = productionModel.ExperimentId;
+
+                AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Using production model: [cyan]{productionModel.ExperimentId}[/]");
+
+                // Load experiment data to get schema
+                try
+                {
+                    var experimentData = await experimentStore.LoadAsync(resolvedModelName, experimentId, CancellationToken.None);
+                    trainedSchema = experimentData?.Config?.InputSchema;
+                }
+                catch
+                {
+                    // Continue without schema - will skip categorical preprocessing
+                }
             }
             else
             {
@@ -114,7 +143,29 @@ public static class PredictCommand
                     return 1;
                 }
 
-                AnsiConsole.MarkupLine($"[green]✓[/] Using model: [cyan]{Path.GetRelativePath(projectRoot, resolvedModelPath)}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Using model file: [cyan]{Path.GetRelativePath(projectRoot, resolvedModelPath)}[/]");
+
+                // Try to infer experiment ID from path
+                var modelDir = Path.GetDirectoryName(resolvedModelPath);
+                if (modelDir != null)
+                {
+                    var possibleExpId = Path.GetFileName(modelDir);
+
+                    if (experimentStore.ExperimentExists(resolvedModelName, possibleExpId))
+                    {
+                        try
+                        {
+                            var experimentData = await experimentStore.LoadAsync(resolvedModelName, possibleExpId, CancellationToken.None);
+                            trainedSchema = experimentData?.Config?.InputSchema;
+                            experimentId = possibleExpId;
+                        }
+                        catch
+                        {
+                            // Continue without schema
+                        }
+                    }
+                }
             }
 
             // Resolve data file path (Convention: datasets/predict.csv)
@@ -129,12 +180,12 @@ public static class PredictCommand
                 if (datasets?.PredictPath == null)
                 {
                     AnsiConsole.MarkupLine("[red]Error:[/] No data file specified and datasets/predict.csv not found.");
-                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/predict.csv or specify a file: mloop predict <model> <data-file>");
+                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/predict.csv or specify a file: mloop predict <data-file>");
                     return 1;
                 }
 
                 resolvedDataFile = datasets.PredictPath;
-                AnsiConsole.MarkupLine($"[green]✓[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
             }
             else
             {
@@ -159,7 +210,7 @@ public static class PredictCommand
                 await fileSystem.CreateDirectoryAsync(predictionsDir, CancellationToken.None);
 
                 var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-                resolvedOutputPath = fileSystem.CombinePath(predictionsDir, $"predictions-{timestamp}.csv");
+                resolvedOutputPath = fileSystem.CombinePath(predictionsDir, $"{resolvedModelName}-predictions-{timestamp}.csv");
             }
             else
             {
@@ -177,60 +228,9 @@ public static class PredictCommand
 
             AnsiConsole.WriteLine();
 
-            // Load schema for validation and preprocessing
-            string? experimentId = null;
-            InputSchemaInfo? trainedSchema = null;
-
-            if (string.IsNullOrEmpty(modelPath))
-            {
-                // We're using production model, get the experiment ID and schema
-                var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
-                var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
-                var productionModel = await modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
-                experimentId = productionModel?.ExperimentId;
-
-                // Load experiment data to get schema
-                if (experimentId != null)
-                {
-                    try
-                    {
-                        var experimentData = await experimentStore.LoadAsync(experimentId, CancellationToken.None);
-                        trainedSchema = experimentData?.Config?.InputSchema;
-                    }
-                    catch
-                    {
-                        // Continue without schema - will skip categorical preprocessing
-                    }
-                }
-            }
-            else
-            {
-                // Using explicit model path - try to infer experiment ID from path
-                var modelDir = Path.GetDirectoryName(resolvedModelPath);
-                if (modelDir != null)
-                {
-                    var possibleExpId = Path.GetFileName(modelDir);
-                    var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
-
-                    if (experimentStore.ExperimentExists(possibleExpId))
-                    {
-                        try
-                        {
-                            var experimentData = await experimentStore.LoadAsync(possibleExpId, CancellationToken.None);
-                            trainedSchema = experimentData?.Config?.InputSchema;
-                            experimentId = possibleExpId;
-                        }
-                        catch
-                        {
-                            // Continue without schema
-                        }
-                    }
-                }
-            }
-
             // Validate schema before prediction
             var validator = new SchemaValidator(fileSystem, projectDiscovery);
-            var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedDataFile, experimentId);
+            var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedDataFile, resolvedModelName, experimentId);
 
             if (!validationResult.IsValid)
             {
@@ -239,7 +239,7 @@ public static class PredictCommand
 
                 if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
                 {
-                    AnsiConsole.MarkupLine($"[yellow]⚠ {validationResult.ErrorMessage}[/]");
+                    AnsiConsole.MarkupLine($"[yellow]Warning: {validationResult.ErrorMessage}[/]");
                     AnsiConsole.WriteLine();
                 }
 
@@ -248,7 +248,7 @@ public static class PredictCommand
                     AnsiConsole.MarkupLine("[red]Missing columns in prediction data:[/]");
                     foreach (var col in validationResult.MissingColumns)
                     {
-                        AnsiConsole.MarkupLine($"  [grey]•[/] {col}");
+                        AnsiConsole.MarkupLine($"  [grey]-[/] {col}");
                     }
                     AnsiConsole.WriteLine();
                 }
@@ -258,7 +258,7 @@ public static class PredictCommand
                     AnsiConsole.MarkupLine("[red]Column type mismatches:[/]");
                     foreach (var (name, expected, actual) in validationResult.TypeMismatchColumns)
                     {
-                        AnsiConsole.MarkupLine($"  [grey]•[/] {name}: expected {expected}, got {actual}");
+                        AnsiConsole.MarkupLine($"  [grey]-[/] {name}: expected {expected}, got {actual}");
                     }
                     AnsiConsole.WriteLine();
                 }
@@ -268,7 +268,7 @@ public static class PredictCommand
                     AnsiConsole.MarkupLine("[yellow]Suggestions:[/]");
                     foreach (var suggestion in validationResult.Suggestions)
                     {
-                        AnsiConsole.MarkupLine($"  [grey]•[/] {suggestion}");
+                        AnsiConsole.MarkupLine($"  [grey]-[/] {suggestion}");
                     }
                     AnsiConsole.WriteLine();
                 }
@@ -276,7 +276,7 @@ public static class PredictCommand
                 return 1;
             }
 
-            AnsiConsole.MarkupLine("[green]✓[/] Schema validation passed");
+            AnsiConsole.MarkupLine("[green]>[/] Schema validation passed");
             AnsiConsole.WriteLine();
 
             // Parse unknown value strategy
@@ -310,9 +310,12 @@ public static class PredictCommand
                 });
 
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[green]✓[/] Predictions complete!");
-            AnsiConsole.MarkupLine($"[green]✓[/] Predicted: [yellow]{predictedCount}[/] rows");
-            AnsiConsole.MarkupLine($"[green]✓[/] Output saved to: [cyan]{Path.GetRelativePath(projectRoot, resolvedOutputPath)}[/]");
+            AnsiConsole.Write(new Rule("[green]Predictions Complete![/]").LeftJustified());
+            AnsiConsole.WriteLine();
+
+            AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
+            AnsiConsole.MarkupLine($"[green]>[/] Predicted: [yellow]{predictedCount}[/] rows");
+            AnsiConsole.MarkupLine($"[green]>[/] Output saved to: [cyan]{Path.GetRelativePath(projectRoot, resolvedOutputPath)}[/]");
             AnsiConsole.WriteLine();
 
             return 0;

@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -42,7 +43,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "MLoop Model Serving API",
         Version = "v1",
-        Description = "REST API for serving ML.NET models trained with MLoop"
+        Description = "REST API for serving ML.NET models trained with MLoop. Supports multiple models with the 'name' query parameter."
     });
 });
 
@@ -109,6 +110,8 @@ builder.Services.AddCors(options =>
 // Register MLoop services
 builder.Services.AddSingleton<IFileSystemManager, FileSystemManager>();
 builder.Services.AddSingleton<IProjectDiscovery, ProjectDiscovery>();
+builder.Services.AddSingleton<ConfigLoader>();
+builder.Services.AddSingleton<IModelNameResolver, ModelNameResolver>();
 builder.Services.AddSingleton<IExperimentStore, ExperimentStore>();
 builder.Services.AddSingleton<IModelRegistry, ModelRegistry>();
 builder.Services.AddSingleton<MLContext>();
@@ -151,7 +154,7 @@ app.MapGet("/health", (ILogger<Program> logger) =>
     {
         status = "healthy",
         timestamp = DateTime.UtcNow,
-        version = "0.1.0-alpha"
+        version = "0.2.0-alpha"
     });
 })
 .WithName("HealthCheck")
@@ -159,21 +162,27 @@ app.MapGet("/health", (ILogger<Program> logger) =>
 .Produces<object>(StatusCodes.Status200OK);
 
 // Model info endpoint (secured)
-app.MapGet("/info", async (IModelRegistry registry, ILogger<Program> logger, CancellationToken ct) =>
+app.MapGet("/info", async (
+    [FromQuery] string? name,
+    IModelRegistry registry,
+    ILogger<Program> logger,
+    CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
+    var modelName = string.IsNullOrWhiteSpace(name) ? ConfigDefaults.DefaultModelName : name.Trim().ToLowerInvariant();
+
     try
     {
-        logger.LogInformation("Retrieving production model information");
-        var productionModel = await registry.GetAsync(ModelStage.Production, ct);
+        logger.LogInformation("Retrieving model information for '{ModelName}'", modelName);
+        var productionModel = await registry.GetProductionAsync(modelName, ct);
 
         if (productionModel == null)
         {
-            logger.LogWarning("No production model found");
-            return Results.NotFound(new { error = "No production model found. Train and promote a model first." });
+            logger.LogWarning("No production model found for '{ModelName}'", modelName);
+            return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first." });
         }
 
-        var modelPath = registry.GetModelPath(ModelStage.Production);
+        var modelPath = registry.GetProductionPath(modelName);
         var modelFile = Path.Combine(modelPath, "model.zip");
         var metadataFile = Path.Combine(modelPath, "metadata.json");
 
@@ -184,21 +193,25 @@ app.MapGet("/info", async (IModelRegistry registry, ILogger<Program> logger, Can
             metadata = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
         }
 
-        logger.LogInformation("Model information retrieved successfully for experiment {ExperimentId} in {ElapsedMs}ms",
-            productionModel.ExperimentId, stopwatch.ElapsedMilliseconds);
+        logger.LogInformation("Model information retrieved for '{ModelName}' experiment {ExperimentId} in {ElapsedMs}ms",
+            modelName, productionModel.ExperimentId, stopwatch.ElapsedMilliseconds);
 
         return Results.Ok(new
         {
+            modelName = modelName,
             experimentId = productionModel.ExperimentId,
             promotedAt = productionModel.PromotedAt,
             metrics = productionModel.Metrics,
+            task = productionModel.Task,
+            bestTrainer = productionModel.BestTrainer,
             modelPath = modelFile,
             metadata
         });
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Failed to retrieve model information after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+        logger.LogError(ex, "Failed to retrieve model information for '{ModelName}' after {ElapsedMs}ms",
+            modelName, stopwatch.ElapsedMilliseconds);
         return Results.Problem(
             title: "Failed to retrieve model information",
             detail: ex.Message,
@@ -215,6 +228,7 @@ app.MapGet("/info", async (IModelRegistry registry, ILogger<Program> logger, Can
 
 // Prediction endpoint (secured)
 app.MapPost("/predict", async (
+    [FromQuery] string? name,
     JsonElement input,
     IModelRegistry registry,
     MLContext mlContext,
@@ -222,21 +236,22 @@ app.MapPost("/predict", async (
     CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
+    var modelName = string.IsNullOrWhiteSpace(name) ? ConfigDefaults.DefaultModelName : name.Trim().ToLowerInvariant();
     var predictionCount = input.ValueKind == JsonValueKind.Array ? input.GetArrayLength() : 1;
 
     try
     {
-        logger.LogInformation("Prediction request received for {Count} input(s)", predictionCount);
+        logger.LogInformation("Prediction request for '{ModelName}' with {Count} input(s)", modelName, predictionCount);
 
-        var productionModel = await registry.GetAsync(ModelStage.Production, ct);
+        var productionModel = await registry.GetProductionAsync(modelName, ct);
 
         if (productionModel == null)
         {
-            logger.LogWarning("Prediction failed: No production model found");
-            return Results.NotFound(new { error = "No production model found. Train and promote a model first." });
+            logger.LogWarning("Prediction failed: No production model found for '{ModelName}'", modelName);
+            return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first." });
         }
 
-        var modelPath = Path.Combine(registry.GetModelPath(ModelStage.Production), "model.zip");
+        var modelPath = Path.Combine(registry.GetProductionPath(modelName), "model.zip");
 
         if (!File.Exists(modelPath))
         {
@@ -251,7 +266,7 @@ app.MapPost("/predict", async (
         {
             model = mlContext.Model.Load(stream, out var modelSchema);
         }
-        logger.LogDebug("Model loaded in {LoadTimeMs}ms", loadStart.ElapsedMilliseconds);
+        logger.LogDebug("Model '{ModelName}' loaded in {LoadTimeMs}ms", modelName, loadStart.ElapsedMilliseconds);
 
         // Handle both single object and array of objects
         var predictions = new List<Dictionary<string, object>>();
@@ -272,12 +287,13 @@ app.MapPost("/predict", async (
             predictions.Add(prediction);
         }
 
-        logger.LogInformation("Predictions completed successfully: {Count} predictions in {ElapsedMs}ms (avg: {AvgMs}ms/prediction)",
-            predictions.Count, stopwatch.ElapsedMilliseconds,
+        logger.LogInformation("Predictions completed for '{ModelName}': {Count} predictions in {ElapsedMs}ms (avg: {AvgMs}ms/prediction)",
+            modelName, predictions.Count, stopwatch.ElapsedMilliseconds,
             stopwatch.ElapsedMilliseconds / (double)predictions.Count);
 
         return Results.Ok(new
         {
+            modelName = modelName,
             experimentId = productionModel.ExperimentId,
             predictedAt = DateTime.UtcNow,
             count = predictions.Count,
@@ -286,8 +302,8 @@ app.MapPost("/predict", async (
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Prediction failed for {Count} input(s) after {ElapsedMs}ms",
-            predictionCount, stopwatch.ElapsedMilliseconds);
+        logger.LogError(ex, "Prediction failed for '{ModelName}' with {Count} input(s) after {ElapsedMs}ms",
+            modelName, predictionCount, stopwatch.ElapsedMilliseconds);
         return Results.Problem(
             title: "Prediction failed",
             detail: ex.Message,
@@ -303,25 +319,34 @@ app.MapPost("/predict", async (
 .RequireAuthorization();
 
 // List all models endpoint (secured)
-app.MapGet("/models", async (IModelRegistry registry, ILogger<Program> logger, CancellationToken ct) =>
+app.MapGet("/models", async (
+    [FromQuery] string? name,
+    IModelRegistry registry,
+    ILogger<Program> logger,
+    CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
+    var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
+
     try
     {
-        logger.LogInformation("Listing all models");
-        var models = await registry.ListAsync(ct);
+        logger.LogInformation("Listing models (filter: '{ModelName}')", modelName ?? "all");
+        var models = await registry.ListAsync(modelName, ct);
         var modelList = models.ToList();
 
-        logger.LogInformation("Retrieved {Count} models in {ElapsedMs}ms", modelList.Count, stopwatch.ElapsedMilliseconds);
+        logger.LogInformation("Retrieved {Count} model(s) in {ElapsedMs}ms", modelList.Count, stopwatch.ElapsedMilliseconds);
 
         return Results.Ok(new
         {
             count = modelList.Count,
+            filter = modelName,
             models = modelList.Select(m => new
             {
-                stage = m.Stage.ToString().ToLowerInvariant(),
+                modelName = m.ModelName,
                 experimentId = m.ExperimentId,
                 promotedAt = m.PromotedAt,
+                task = m.Task,
+                bestTrainer = m.BestTrainer,
                 metrics = m.Metrics,
                 modelPath = m.ModelPath
             })

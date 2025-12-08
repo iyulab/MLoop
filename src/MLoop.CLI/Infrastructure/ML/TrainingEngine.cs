@@ -39,10 +39,11 @@ public class TrainingEngine : ITrainingEngine
         CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
+        var modelName = config.ModelName;
 
-        // Generate experiment ID
-        var experimentId = await _experimentStore.GenerateIdAsync(cancellationToken);
-        var experimentPath = _experimentStore.GetExperimentPath(experimentId);
+        // Generate experiment ID for this model
+        var experimentId = await _experimentStore.GenerateIdAsync(modelName, cancellationToken);
+        var experimentPath = _experimentStore.GetExperimentPath(modelName, experimentId);
 
         try
         {
@@ -83,6 +84,7 @@ public class TrainingEngine : ITrainingEngine
             // Prepare experiment data
             var experimentData = new ExperimentData
             {
+                ModelName = modelName,
                 ExperimentId = experimentId,
                 Timestamp = DateTime.UtcNow,
                 Status = "completed",
@@ -105,7 +107,7 @@ public class TrainingEngine : ITrainingEngine
             };
 
             // Save experiment metadata
-            await _experimentStore.SaveAsync(experimentData, cancellationToken);
+            await _experimentStore.SaveAsync(modelName, experimentData, cancellationToken);
 
             return new TrainingResult
             {
@@ -123,6 +125,7 @@ public class TrainingEngine : ITrainingEngine
             // Save failed experiment
             var experimentData = new ExperimentData
             {
+                ModelName = modelName,
                 ExperimentId = experimentId,
                 Timestamp = DateTime.UtcNow,
                 Status = "failed",
@@ -142,10 +145,10 @@ public class TrainingEngine : ITrainingEngine
                 }
             };
 
-            await _experimentStore.SaveAsync(experimentData, cancellationToken);
+            await _experimentStore.SaveAsync(modelName, experimentData, cancellationToken);
 
             throw new InvalidOperationException(
-                $"Training failed for experiment {experimentId}: {ex.Message}",
+                $"Training failed for experiment {modelName}/{experimentId}: {ex.Message}",
                 ex);
         }
     }

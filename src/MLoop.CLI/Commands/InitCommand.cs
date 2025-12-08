@@ -6,7 +6,7 @@ using Spectre.Console;
 namespace MLoop.CLI.Commands;
 
 /// <summary>
-/// mloop init - Initializes a new MLoop project
+/// mloop init - Initializes a new MLoop project with multi-model support
 /// </summary>
 public static class InitCommand
 {
@@ -14,7 +14,7 @@ public static class InitCommand
     {
         var projectNameArg = new Argument<string>("project-name")
         {
-            Description = "Name of the project to create"
+            Description = "Name of the project to create (use '.' for current directory)"
         };
 
         var taskOption = new Option<string>("--task", "-t")
@@ -23,29 +23,50 @@ public static class InitCommand
             DefaultValueFactory = _ => "binary-classification"
         };
 
+        var modelOption = new Option<string>("--model", "-m")
+        {
+            Description = "Initial model name (default: 'default')",
+            DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
+        };
+
+        var labelOption = new Option<string>("--label", "-l")
+        {
+            Description = "Label column name (can be set later in mloop.yaml)",
+            DefaultValueFactory = _ => "Label"
+        };
+
         var forceOption = new Option<bool>("--force", "-f")
         {
             Description = "Reinitialize existing project (preserves .mloop/scripts/ directory)",
             DefaultValueFactory = _ => false
         };
 
-        var command = new Command("init", "Initialize a new ML project");
+        var command = new Command("init", "Initialize a new ML project with multi-model support");
         command.Arguments.Add(projectNameArg);
         command.Options.Add(taskOption);
+        command.Options.Add(modelOption);
+        command.Options.Add(labelOption);
         command.Options.Add(forceOption);
 
         command.SetAction((parseResult) =>
         {
             var projectName = parseResult.GetValue(projectNameArg)!;
             var task = parseResult.GetValue(taskOption)!;
+            var model = parseResult.GetValue(modelOption)!;
+            var label = parseResult.GetValue(labelOption)!;
             var force = parseResult.GetValue(forceOption);
-            return ExecuteAsync(projectName, task, force);
+            return ExecuteAsync(projectName, task, model, label, force);
         });
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(string projectName, string task, bool force)
+    private static async Task<int> ExecuteAsync(
+        string projectName,
+        string task,
+        string modelName,
+        string labelColumn,
+        bool force)
     {
         try
         {
@@ -70,6 +91,14 @@ public static class InitCommand
             if (!validTasks.Contains(task))
             {
                 AnsiConsole.MarkupLine($"[red]Error:[/] Invalid task type. Valid options: {string.Join(", ", validTasks)}");
+                return 1;
+            }
+
+            // Validate model name
+            if (!IsValidModelName(modelName))
+            {
+                AnsiConsole.MarkupLine($"[red]Error:[/] Invalid model name '{modelName}'. " +
+                    "Model names must be lowercase alphanumeric with hyphens, 2-50 characters.");
                 return 1;
             }
 
@@ -100,45 +129,44 @@ public static class InitCommand
             string? scriptsBackupPath = null;
             if (isReinitialize && force)
             {
-                AnsiConsole.MarkupLine("[yellow]⚠️  Reinitializing existing project[/]");
+                AnsiConsole.MarkupLine("[yellow]Reinitializing existing project[/]");
 
                 var scriptsDir = Path.Combine(mloopDir, "scripts");
                 if (Directory.Exists(scriptsDir))
                 {
-                    // Backup scripts to temp directory
                     scriptsBackupPath = Path.Combine(Path.GetTempPath(), $"mloop_scripts_backup_{Guid.NewGuid()}");
                     Directory.CreateDirectory(scriptsBackupPath);
                     CopyDirectory(scriptsDir, scriptsBackupPath);
-                    AnsiConsole.MarkupLine($"[green]✓[/] Backed up scripts/ to temp location");
+                    AnsiConsole.MarkupLine($"[green]>[/] Backed up scripts/ to temp location");
                 }
 
-                // Delete .mloop directory
                 Directory.Delete(mloopDir, recursive: true);
-                AnsiConsole.MarkupLine($"[green]✓[/] Cleaned .mloop directory");
+                AnsiConsole.MarkupLine($"[green]>[/] Cleaned .mloop directory");
                 AnsiConsole.WriteLine();
             }
+
+            var displayName = projectName == "." ? Path.GetFileName(projectPath) : projectName;
 
             await AnsiConsole.Progress()
                 .StartAsync(async ctx =>
                 {
                     var progressTask = ctx.AddTask("[green]Setting up project...[/]");
 
-                    // Initialize filesystem and config
                     var fileSystem = new FileSystemManager();
 
                     // Step 1: Create directory structure
                     progressTask.Description = "[green]Creating directory structure...[/]";
-                    await CreateDirectoryStructure(fileSystem, projectPath);
+                    await CreateDirectoryStructure(fileSystem, projectPath, modelName);
                     progressTask.Increment(30);
 
                     // Step 2: Create configuration files
                     progressTask.Description = "[green]Creating configuration files...[/]";
-                    await CreateConfigurationFiles(fileSystem, projectPath, projectName, task);
+                    await CreateConfigurationFiles(fileSystem, projectPath, displayName, task, modelName, labelColumn);
                     progressTask.Increment(30);
 
                     // Step 3: Create documentation
                     progressTask.Description = "[green]Creating documentation...[/]";
-                    await CreateDocumentation(fileSystem, projectPath, projectName, task);
+                    await CreateDocumentation(fileSystem, projectPath, displayName, task, modelName);
                     progressTask.Increment(20);
 
                     // Step 4: Create .gitignore
@@ -160,23 +188,46 @@ public static class InitCommand
                         var scriptsDir = Path.Combine(mloopDir, "scripts");
                         CopyDirectory(scriptsBackupPath, scriptsDir);
                         Directory.Delete(scriptsBackupPath, recursive: true);
-                        AnsiConsole.MarkupLine($"[green]✓[/] Restored scripts/ directory");
+                        AnsiConsole.MarkupLine($"[green]>[/] Restored scripts/ directory");
                     }
                 });
 
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[green]✓[/] Project '{projectName}' created successfully!");
+            AnsiConsole.MarkupLine($"[green]>[/] Project '{displayName}' created successfully!");
             AnsiConsole.WriteLine();
+
+            // Display configuration summary
+            var table = new Table()
+                .BorderColor(Color.Grey)
+                .AddColumn("Setting")
+                .AddColumn("Value");
+
+            table.AddRow("Project", displayName);
+            table.AddRow("Model", $"[cyan]{modelName}[/]");
+            table.AddRow("Task", task);
+            table.AddRow("Label Column", labelColumn);
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
+
             AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
-            AnsiConsole.MarkupLine($"  1. cd {projectName}");
+            if (projectName != ".")
+            {
+                AnsiConsole.MarkupLine($"  1. cd {projectName}");
+            }
             AnsiConsole.MarkupLine("  2. Place your training data in datasets/train.csv");
             AnsiConsole.MarkupLine("  3. Edit mloop.yaml to set your label column");
             AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/train.csv[/]");
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[grey]Folder structure:[/]");
-            AnsiConsole.MarkupLine("  datasets/       [cyan]# Training data (train.csv, validation.csv, test.csv)[/]");
-            AnsiConsole.MarkupLine("  models/staging/ [cyan]# Experimental models[/]");
-            AnsiConsole.MarkupLine("  models/production/ [cyan]# Auto-promoted best model[/]");
+            AnsiConsole.MarkupLine("  datasets/                   [cyan]# Training data (train.csv)[/]");
+            AnsiConsole.MarkupLine($"  models/{modelName}/staging/    [cyan]# Experimental models[/]");
+            AnsiConsole.MarkupLine($"  models/{modelName}/production/ [cyan]# Promoted production model[/]");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[grey]Multi-model support:[/]");
+            AnsiConsole.MarkupLine("  mloop train --name churn     [cyan]# Train different model[/]");
+            AnsiConsole.MarkupLine("  mloop list --name churn      [cyan]# List model experiments[/]");
+            AnsiConsole.MarkupLine("  mloop predict --name churn   [cyan]# Predict with specific model[/]");
             AnsiConsole.WriteLine();
 
             return 0;
@@ -188,7 +239,10 @@ public static class InitCommand
         }
     }
 
-    private static async Task CreateDirectoryStructure(IFileSystemManager fileSystem, string projectPath)
+    private static async Task CreateDirectoryStructure(
+        IFileSystemManager fileSystem,
+        string projectPath,
+        string modelName)
     {
         // Create main project directory
         await fileSystem.CreateDirectoryAsync(projectPath);
@@ -200,9 +254,10 @@ public static class InitCommand
         // MLOps convention: datasets/ folder for training data
         await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "datasets"));
 
-        // MLOps convention: models/ folder structure
-        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "models", "staging"));
-        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "models", "production"));
+        // MLOps convention: models/{modelName}/ folder structure
+        var modelPath = fileSystem.CombinePath(projectPath, "models", modelName);
+        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(modelPath, "staging"));
+        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(modelPath, "production"));
 
         // Extensibility: scripts/ folder structure for hooks and metrics
         await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(mloopPath, "scripts", "hooks"));
@@ -213,50 +268,24 @@ public static class InitCommand
         IFileSystemManager fileSystem,
         string projectPath,
         string projectName,
-        string task)
+        string task,
+        string modelName,
+        string labelColumn)
     {
-        // Create .mloop/config.json
-        var config = new MLoopConfig
-        {
-            ProjectName = projectName,
-            Task = task,
-            Training = new TrainingSettings
-            {
-                TimeLimitSeconds = 300,
-                Metric = "accuracy",
-                TestSplit = 0.2
-            }
-        };
-
+        // Create .mloop/config.json (project metadata)
         var configData = new
         {
-            project_name = projectName,
-            version = "0.1.0",
-            task,
+            project = projectName,
+            version = "0.2.0",
             created_at = DateTime.UtcNow,
-            mloop_version = "0.1.0-alpha"
+            mloop_version = "0.2.0-alpha"
         };
 
         var configPath = fileSystem.CombinePath(projectPath, ".mloop", "config.json");
         await fileSystem.WriteJsonAsync(configPath, configData);
 
-        // Initialize experiment index
-        var experimentIndex = new
-        {
-            next_id = 1,
-            experiments = Array.Empty<object>()
-        };
-
-        var indexPath = fileSystem.CombinePath(projectPath, ".mloop", "experiment-index.json");
-        await fileSystem.WriteJsonAsync(indexPath, experimentIndex);
-
-        // Initialize model registry
-        var registry = new Dictionary<string, object>();
-        var registryPath = fileSystem.CombinePath(projectPath, ".mloop", "registry.json");
-        await fileSystem.WriteJsonAsync(registryPath, registry);
-
-        // Create mloop.yaml from template
-        var yamlContent = GetYamlTemplate(projectName, task);
+        // Create mloop.yaml with new multi-model schema
+        var yamlContent = GetYamlTemplate(projectName, task, modelName, labelColumn);
         var yamlPath = fileSystem.CombinePath(projectPath, "mloop.yaml");
         await fileSystem.WriteTextAsync(yamlPath, yamlContent);
     }
@@ -265,7 +294,8 @@ public static class InitCommand
         IFileSystemManager fileSystem,
         string projectPath,
         string projectName,
-        string task)
+        string task,
+        string modelName)
     {
         var readme = $@"# {projectName}
 
@@ -275,7 +305,7 @@ MLoop machine learning project for {task}.
 
 ### 1. Prepare Your Data
 
-Place your training data in `data/processed/train.csv`:
+Place your training data in `datasets/train.csv`:
 
 ```bash
 # Your CSV should have:
@@ -286,13 +316,42 @@ Place your training data in `data/processed/train.csv`:
 ### 2. Train a Model
 
 ```bash
-mloop train data/processed/train.csv --label <your-label-column>
+# Train the default model
+mloop train --label <your-label-column>
+
+# Train with specific model name
+mloop train --name {modelName} --label <your-label-column>
 ```
 
 ### 3. Make Predictions
 
 ```bash
-mloop predict experiments/exp-001/model.zip data/new-data.csv
+# Predict using default model
+mloop predict new-data.csv
+
+# Predict using specific model
+mloop predict new-data.csv --name {modelName}
+```
+
+## Multi-Model Support
+
+MLoop supports multiple models per project. Each model has its own:
+- Experiments (staging)
+- Production deployment
+- Metrics history
+
+```bash
+# Train different models for different targets
+mloop train --name churn --label Churned --task binary-classification
+mloop train --name revenue --label Revenue --task regression
+
+# List experiments per model
+mloop list --name churn
+mloop list --name revenue
+
+# Promote and predict
+mloop promote exp-001 --name churn
+mloop predict new-data.csv --name churn
 ```
 
 ## Project Structure
@@ -300,30 +359,29 @@ mloop predict experiments/exp-001/model.zip data/new-data.csv
 ```
 {projectName}/
 ├── .mloop/              # Internal MLoop metadata (gitignored)
+│   └── scripts/         # Hooks and custom metrics
 ├── mloop.yaml           # User configuration
-├── data/
-│   ├── processed/       # Your training/test data
-│   └── predictions/     # Prediction outputs
-├── experiments/         # Training experiments
-├── models/
-│   ├── staging/         # Staging models
-│   └── production/      # Production models
-└── README.md
+├── datasets/            # Training data (train.csv)
+└── models/
+    └── {modelName}/
+        ├── staging/     # Experimental models (exp-001, exp-002, ...)
+        └── production/  # Promoted production model
 ```
 
 ## Configuration
 
-Edit `mloop.yaml` to customize:
-- Training time limit
-- Evaluation metric
-- Test split ratio
+Edit `mloop.yaml` to configure:
+- Model definitions (task, label, training settings)
+- Default data paths
 
 ## Commands
 
+- `mloop init` - Initialize a new project
 - `mloop train` - Train a model
 - `mloop predict` - Make predictions
+- `mloop list` - List experiments
+- `mloop promote` - Promote experiment to production
 - `mloop evaluate` - Evaluate model performance
-- `mloop experiment list` - List all experiments
 
 ## Documentation
 
@@ -349,12 +407,12 @@ obj/
 .mloop/.cache/
 
 # Model binaries (large files)
-experiments/*/model.zip
-experiments/*/training.log
-models/*/model.zip
+models/*/staging/*/model.zip
+models/*/production/model.zip
+models/*/staging/*/training.log
 
 # Prediction outputs
-data/predictions/
+predictions/
 
 # OS
 .DS_Store
@@ -395,7 +453,7 @@ public class DataValidationHook : IMLoopHook
             return HookResult.Abort($""Insufficient data: {rowCount} rows, need at least 100"");
         }
 
-        ctx.Logger.Info($""✅ Data validation passed: {rowCount} rows"");
+        ctx.Logger.Info($""Data validation passed: {rowCount} rows"");
         return HookResult.Continue();
     }
 }
@@ -460,36 +518,64 @@ See: docs/EXTENSIBILITY.md for more information
         await fileSystem.WriteTextAsync(metricReadmePath, metricReadme);
     }
 
-    private static string GetYamlTemplate(string projectName, string task)
+    private static string GetYamlTemplate(string projectName, string task, string modelName, string labelColumn)
     {
-        var labelColumnExample = task switch
+        var metricExample = task switch
         {
-            "binary-classification" => "Label",
-            "multiclass-classification" => "Category",
-            "regression" => "Target",
-            _ => "Label"
+            "binary-classification" => "accuracy",
+            "multiclass-classification" => "macro_accuracy",
+            "regression" => "r_squared",
+            _ => "auto"
         };
 
         return $@"# MLoop Project Configuration
-project_name: {projectName}
-task: {task}
-label_column: {labelColumnExample}
+# Multi-model MLOps with minimal cost
 
-# Training settings (optional - defaults provided)
-training:
-  time_limit_seconds: 300
-  metric: accuracy
-  test_split: 0.2
+project: {projectName}
 
-# Data paths (optional)
+# Model definitions
+# Each model has its own experiment namespace and production slot
+models:
+  {modelName}:
+    task: {task}
+    label: {labelColumn}
+    description: Default model for {task}
+    training:
+      time_limit_seconds: 300
+      metric: {metricExample}
+      test_split: 0.2
+
+# Add more models as needed:
+# models:
+#   churn:
+#     task: binary-classification
+#     label: Churned
+#   revenue:
+#     task: regression
+#     label: Revenue
+
+# Default data paths
 data:
-  train: data/processed/train.csv
-  test: data/processed/test.csv
-
-# Model output (optional)
-model:
-  output_dir: models/staging
+  train: datasets/train.csv
+  test: datasets/test.csv
 ";
+    }
+
+    private static bool IsValidModelName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        if (name.Length < 2 || name.Length > 50)
+            return false;
+
+        // Reserved names
+        var reserved = new[] { "staging", "production", "temp", "cache", "index", "registry" };
+        if (reserved.Contains(name, StringComparer.OrdinalIgnoreCase))
+            return false;
+
+        // Must be lowercase alphanumeric with hyphens
+        return System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-z][a-z0-9]*(-[a-z0-9]+)*$");
     }
 
     /// <summary>
@@ -497,10 +583,8 @@ model:
     /// </summary>
     private static void CopyDirectory(string sourceDir, string destDir)
     {
-        // Create destination directory
         Directory.CreateDirectory(destDir);
 
-        // Copy files
         foreach (var file in Directory.GetFiles(sourceDir))
         {
             var fileName = Path.GetFileName(file);
@@ -508,7 +592,6 @@ model:
             File.Copy(file, destFile, overwrite: true);
         }
 
-        // Recursively copy subdirectories
         foreach (var subDir in Directory.GetDirectories(sourceDir))
         {
             var dirName = Path.GetFileName(subDir);

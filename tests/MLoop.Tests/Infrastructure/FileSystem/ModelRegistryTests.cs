@@ -11,6 +11,7 @@ public class ModelRegistryTests : IDisposable
     private readonly IProjectDiscovery _projectDiscovery;
     private readonly IExperimentStore _experimentStore;
     private readonly ModelRegistry _modelRegistry;
+    private const string DefaultModelName = "default";
 
     public ModelRegistryTests()
     {
@@ -69,16 +70,17 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
-    public async Task ShouldPromoteToProduction_WhenNoProductionModel_ReturnsTrue()
+    public async Task ShouldPromoteAsync_WhenNoProductionModel_ReturnsTrue()
     {
         // Arrange
-        var experimentId = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
         {
             ["accuracy"] = 0.85
         });
 
         // Act
-        var result = await _modelRegistry.ShouldPromoteToProductionAsync(
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
             experimentId,
             "accuracy",
             CancellationToken.None);
@@ -88,24 +90,25 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
-    public async Task ShouldPromoteToProduction_WhenNewModelBetter_ReturnsTrue()
+    public async Task ShouldPromoteAsync_WhenNewModelBetter_ReturnsTrue()
     {
         // Arrange
         // Create and promote first model
-        var exp1 = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
         {
             ["r_squared"] = 0.80
         });
-        await _modelRegistry.PromoteAsync(exp1, ModelStage.Production, CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
 
         // Create better model
-        var exp2 = await CreateDummyExperimentAsync("exp-002", new Dictionary<string, double>
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double>
         {
             ["r_squared"] = 0.85
         });
 
         // Act
-        var result = await _modelRegistry.ShouldPromoteToProductionAsync(
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
             exp2,
             "r_squared",
             CancellationToken.None);
@@ -115,24 +118,25 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
-    public async Task ShouldPromoteToProduction_WhenNewModelWorse_ReturnsFalse()
+    public async Task ShouldPromoteAsync_WhenNewModelWorse_ReturnsFalse()
     {
         // Arrange
         // Create and promote first model
-        var exp1 = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
         {
             ["r_squared"] = 0.85
         });
-        await _modelRegistry.PromoteAsync(exp1, ModelStage.Production, CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
 
         // Create worse model
-        var exp2 = await CreateDummyExperimentAsync("exp-002", new Dictionary<string, double>
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double>
         {
             ["r_squared"] = 0.80
         });
 
         // Act
-        var result = await _modelRegistry.ShouldPromoteToProductionAsync(
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
             exp2,
             "r_squared",
             CancellationToken.None);
@@ -142,24 +146,25 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
-    public async Task ShouldPromoteToProduction_WithErrorMetric_LowerIsBetter()
+    public async Task ShouldPromoteAsync_WithErrorMetric_LowerIsBetter()
     {
         // Arrange
         // Create and promote first model
-        var exp1 = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
         {
             ["rmse"] = 50.0
         });
-        await _modelRegistry.PromoteAsync(exp1, ModelStage.Production, CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
 
         // Create model with lower error (better)
-        var exp2 = await CreateDummyExperimentAsync("exp-002", new Dictionary<string, double>
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double>
         {
             ["rmse"] = 40.0
         });
 
         // Act
-        var result = await _modelRegistry.ShouldPromoteToProductionAsync(
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
             exp2,
             "rmse",
             CancellationToken.None);
@@ -169,24 +174,25 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
-    public async Task ShouldPromoteToProduction_WithErrorMetric_HigherIsWorse()
+    public async Task ShouldPromoteAsync_WithErrorMetric_HigherIsWorse()
     {
         // Arrange
         // Create and promote first model
-        var exp1 = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
         {
             ["mae"] = 20.0
         });
-        await _modelRegistry.PromoteAsync(exp1, ModelStage.Production, CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
 
         // Create model with higher error (worse)
-        var exp2 = await CreateDummyExperimentAsync("exp-002", new Dictionary<string, double>
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double>
         {
             ["mae"] = 25.0
         });
 
         // Act
-        var result = await _modelRegistry.ShouldPromoteToProductionAsync(
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
             exp2,
             "mae",
             CancellationToken.None);
@@ -199,13 +205,14 @@ public class ModelRegistryTests : IDisposable
     public async Task AutoPromoteAsync_WhenShouldPromote_PromotesAndReturnsTrue()
     {
         // Arrange
-        var experimentId = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
         {
             ["accuracy"] = 0.90
         });
 
         // Act
         var result = await _modelRegistry.AutoPromoteAsync(
+            DefaultModelName,
             experimentId,
             "accuracy",
             CancellationToken.None);
@@ -213,7 +220,7 @@ public class ModelRegistryTests : IDisposable
         // Assert
         Assert.True(result);
 
-        var productionModel = await _modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
+        var productionModel = await _modelRegistry.GetProductionAsync(DefaultModelName, CancellationToken.None);
         Assert.NotNull(productionModel);
         Assert.Equal(experimentId, productionModel.ExperimentId);
     }
@@ -222,38 +229,19 @@ public class ModelRegistryTests : IDisposable
     public async Task PromoteAsync_ToProduction_CreatesProductionModel()
     {
         // Arrange
-        var experimentId = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
         {
             ["r_squared"] = 0.85
         });
 
         // Act
-        await _modelRegistry.PromoteAsync(experimentId, ModelStage.Production, CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, experimentId, CancellationToken.None);
 
         // Assert
-        var productionModel = await _modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
+        var productionModel = await _modelRegistry.GetProductionAsync(DefaultModelName, CancellationToken.None);
         Assert.NotNull(productionModel);
         Assert.Equal(experimentId, productionModel.ExperimentId);
-        Assert.Equal(ModelStage.Production, productionModel.Stage);
-    }
-
-    [Fact]
-    public async Task PromoteAsync_ToStaging_CreatessStagingModel()
-    {
-        // Arrange
-        var experimentId = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
-        {
-            ["r_squared"] = 0.85
-        });
-
-        // Act
-        await _modelRegistry.PromoteAsync(experimentId, ModelStage.Staging, CancellationToken.None);
-
-        // Assert
-        var stagingModel = await _modelRegistry.GetAsync(ModelStage.Staging, CancellationToken.None);
-        Assert.NotNull(stagingModel);
-        Assert.Equal(experimentId, stagingModel.ExperimentId);
-        Assert.Equal(ModelStage.Staging, stagingModel.Stage);
+        Assert.Equal(DefaultModelName, productionModel.ModelName);
     }
 
     [Fact]
@@ -261,29 +249,29 @@ public class ModelRegistryTests : IDisposable
     {
         // Act & Assert
         await Assert.ThrowsAsync<FileNotFoundException>(
-            () => _modelRegistry.PromoteAsync("exp-999", ModelStage.Production, CancellationToken.None));
+            () => _modelRegistry.PromoteAsync(DefaultModelName, "exp-999", CancellationToken.None));
     }
 
     [Fact]
     public async Task PromoteAsync_ReplacesExistingProductionModel()
     {
         // Arrange
-        var exp1 = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
         {
             ["r_squared"] = 0.80
         });
-        var exp2 = await CreateDummyExperimentAsync("exp-002", new Dictionary<string, double>
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double>
         {
             ["r_squared"] = 0.90
         });
 
-        await _modelRegistry.PromoteAsync(exp1, ModelStage.Production, CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
 
         // Act
-        await _modelRegistry.PromoteAsync(exp2, ModelStage.Production, CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp2, CancellationToken.None);
 
         // Assert
-        var productionModel = await _modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
+        var productionModel = await _modelRegistry.GetProductionAsync(DefaultModelName, CancellationToken.None);
         Assert.NotNull(productionModel);
         Assert.Equal(exp2, productionModel.ExperimentId);
     }
@@ -292,52 +280,119 @@ public class ModelRegistryTests : IDisposable
     public async Task ListAsync_NoModels_ReturnsEmptyList()
     {
         // Act
-        var models = await _modelRegistry.ListAsync(CancellationToken.None);
+        var models = await _modelRegistry.ListAsync(null, CancellationToken.None);
 
         // Assert
         Assert.Empty(models);
     }
 
     [Fact]
-    public async Task ListAsync_WithProductionAndStaging_ReturnsBothModels()
+    public async Task ListAsync_WithMultipleModels_ReturnsAllModels()
     {
         // Arrange
-        var exp1 = await CreateDummyExperimentAsync("exp-001", new Dictionary<string, double>
+        var exp1 = await CreateDummyExperimentAsync("default", "exp-001", new Dictionary<string, double>
         {
             ["r_squared"] = 0.85
         });
-        var exp2 = await CreateDummyExperimentAsync("exp-002", new Dictionary<string, double>
+        var exp2 = await CreateDummyExperimentAsync("churn", "exp-001", new Dictionary<string, double>
         {
-            ["r_squared"] = 0.90
+            ["accuracy"] = 0.90
         });
 
-        await _modelRegistry.PromoteAsync(exp1, ModelStage.Staging, CancellationToken.None);
-        await _modelRegistry.PromoteAsync(exp2, ModelStage.Production, CancellationToken.None);
+        await _modelRegistry.PromoteAsync("default", exp1, CancellationToken.None);
+        await _modelRegistry.PromoteAsync("churn", exp2, CancellationToken.None);
 
         // Act
-        var models = await _modelRegistry.ListAsync(CancellationToken.None);
+        var models = await _modelRegistry.ListAsync(null, CancellationToken.None);
         var modelsList = models.ToList();
 
         // Assert
         Assert.Equal(2, modelsList.Count);
-        Assert.Contains(modelsList, m => m.Stage == ModelStage.Production && m.ExperimentId == exp2);
-        Assert.Contains(modelsList, m => m.Stage == ModelStage.Staging && m.ExperimentId == exp1);
+        Assert.Contains(modelsList, m => m.ModelName == "default" && m.ExperimentId == exp1);
+        Assert.Contains(modelsList, m => m.ModelName == "churn" && m.ExperimentId == exp2);
     }
 
     [Fact]
-    public async Task GetAsync_NonExistingStage_ReturnsNull()
+    public async Task ListAsync_WithModelFilter_ReturnsOnlyMatchingModel()
+    {
+        // Arrange
+        var exp1 = await CreateDummyExperimentAsync("default", "exp-001", new Dictionary<string, double>
+        {
+            ["r_squared"] = 0.85
+        });
+        var exp2 = await CreateDummyExperimentAsync("churn", "exp-001", new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.90
+        });
+
+        await _modelRegistry.PromoteAsync("default", exp1, CancellationToken.None);
+        await _modelRegistry.PromoteAsync("churn", exp2, CancellationToken.None);
+
+        // Act
+        var models = await _modelRegistry.ListAsync("churn", CancellationToken.None);
+        var modelsList = models.ToList();
+
+        // Assert
+        Assert.Single(modelsList);
+        Assert.Equal("churn", modelsList[0].ModelName);
+        Assert.Equal(exp2, modelsList[0].ExperimentId);
+    }
+
+    [Fact]
+    public async Task GetProductionAsync_NonExistingModel_ReturnsNull()
     {
         // Act
-        var model = await _modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
+        var model = await _modelRegistry.GetProductionAsync(DefaultModelName, CancellationToken.None);
 
         // Assert
         Assert.Null(model);
     }
 
-    private async Task<string> CreateDummyExperimentAsync(string experimentId, Dictionary<string, double> metrics)
+    [Fact]
+    public async Task PromoteAsync_DifferentModels_IndependentProductionModels()
+    {
+        // Arrange
+        var defaultExp = await CreateDummyExperimentAsync("default", "exp-001", new Dictionary<string, double>
+        {
+            ["r_squared"] = 0.85
+        });
+        var churnExp = await CreateDummyExperimentAsync("churn", "exp-001", new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.90
+        });
+
+        // Act
+        await _modelRegistry.PromoteAsync("default", defaultExp, CancellationToken.None);
+        await _modelRegistry.PromoteAsync("churn", churnExp, CancellationToken.None);
+
+        // Assert
+        var defaultProduction = await _modelRegistry.GetProductionAsync("default", CancellationToken.None);
+        var churnProduction = await _modelRegistry.GetProductionAsync("churn", CancellationToken.None);
+
+        Assert.NotNull(defaultProduction);
+        Assert.NotNull(churnProduction);
+        Assert.Equal("default", defaultProduction.ModelName);
+        Assert.Equal("churn", churnProduction.ModelName);
+        Assert.Equal(defaultExp, defaultProduction.ExperimentId);
+        Assert.Equal(churnExp, churnProduction.ExperimentId);
+    }
+
+    [Fact]
+    public void GetProductionPath_ReturnsCorrectPath()
+    {
+        // Act
+        var path = _modelRegistry.GetProductionPath(DefaultModelName);
+
+        // Assert
+        Assert.Contains("models", path);
+        Assert.Contains(DefaultModelName, path);
+        Assert.Contains("production", path);
+    }
+
+    private async Task<string> CreateDummyExperimentAsync(string modelName, string experimentId, Dictionary<string, double> metrics)
     {
         // Create experiment directory
-        var experimentPath = _experimentStore.GetExperimentPath(experimentId);
+        var experimentPath = _experimentStore.GetExperimentPath(modelName, experimentId);
         Directory.CreateDirectory(experimentPath);
 
         // Create dummy model file
@@ -347,6 +402,7 @@ public class ModelRegistryTests : IDisposable
         // Create experiment data
         var experimentData = new ExperimentData
         {
+            ModelName = modelName,
             ExperimentId = experimentId,
             Timestamp = DateTime.UtcNow,
             Status = "Completed",
@@ -362,7 +418,7 @@ public class ModelRegistryTests : IDisposable
             Metrics = metrics
         };
 
-        await _experimentStore.SaveAsync(experimentData, CancellationToken.None);
+        await _experimentStore.SaveAsync(modelName, experimentData, CancellationToken.None);
 
         return experimentId;
     }

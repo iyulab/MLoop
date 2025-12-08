@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.CLI.Infrastructure.Configuration;
 
 namespace MLoop.Tests.Infrastructure.FileSystem;
 
@@ -10,6 +11,7 @@ public class ExperimentStoreTests : IDisposable
     private readonly IFileSystemManager _fileSystem;
     private readonly IProjectDiscovery _projectDiscovery;
     private readonly ExperimentStore _experimentStore;
+    private const string DefaultModelName = "default";
 
     public ExperimentStoreTests()
     {
@@ -67,10 +69,10 @@ public class ExperimentStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task GenerateIdAsync_FirstId_ReturnsExp000()
+    public async Task GenerateIdAsync_FirstId_ReturnsExp001()
     {
         // Act
-        var experimentId = await _experimentStore.GenerateIdAsync(CancellationToken.None);
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
 
         // Assert
         Assert.Equal("exp-001", experimentId);
@@ -80,9 +82,9 @@ public class ExperimentStoreTests : IDisposable
     public async Task GenerateIdAsync_Sequential_ReturnsIncrementingIds()
     {
         // Act
-        var id1 = await _experimentStore.GenerateIdAsync(CancellationToken.None);
-        var id2 = await _experimentStore.GenerateIdAsync(CancellationToken.None);
-        var id3 = await _experimentStore.GenerateIdAsync(CancellationToken.None);
+        var id1 = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        var id2 = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        var id3 = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
 
         // Assert
         Assert.Equal("exp-001", id1);
@@ -91,29 +93,43 @@ public class ExperimentStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task GenerateIdAsync_DifferentModels_IndependentIds()
+    {
+        // Act
+        var defaultId = await _experimentStore.GenerateIdAsync("default", CancellationToken.None);
+        var churnId = await _experimentStore.GenerateIdAsync("churn", CancellationToken.None);
+        var revenueId = await _experimentStore.GenerateIdAsync("revenue", CancellationToken.None);
+
+        // Assert - each model starts from exp-001
+        Assert.Equal("exp-001", defaultId);
+        Assert.Equal("exp-001", churnId);
+        Assert.Equal("exp-001", revenueId);
+    }
+
+    [Fact]
     public async Task SaveAsync_ValidExperiment_SavesSuccessfully()
     {
         // Arrange
-        var experimentId = await _experimentStore.GenerateIdAsync(CancellationToken.None);
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
         var experimentData = CreateExperimentData(experimentId);
 
         // Act
-        await _experimentStore.SaveAsync(experimentData, CancellationToken.None);
+        await _experimentStore.SaveAsync(DefaultModelName, experimentData, CancellationToken.None);
 
         // Assert
-        Assert.True(_experimentStore.ExperimentExists(experimentId));
+        Assert.True(_experimentStore.ExperimentExists(DefaultModelName, experimentId));
     }
 
     [Fact]
     public async Task LoadAsync_ExistingExperiment_ReturnsExperimentData()
     {
         // Arrange
-        var experimentId = await _experimentStore.GenerateIdAsync(CancellationToken.None);
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
         var originalData = CreateExperimentData(experimentId);
-        await _experimentStore.SaveAsync(originalData, CancellationToken.None);
+        await _experimentStore.SaveAsync(DefaultModelName, originalData, CancellationToken.None);
 
         // Act
-        var loadedData = await _experimentStore.LoadAsync(experimentId, CancellationToken.None);
+        var loadedData = await _experimentStore.LoadAsync(DefaultModelName, experimentId, CancellationToken.None);
 
         // Assert
         Assert.NotNull(loadedData);
@@ -128,14 +144,14 @@ public class ExperimentStoreTests : IDisposable
     {
         // Act & Assert
         await Assert.ThrowsAsync<FileNotFoundException>(
-            () => _experimentStore.LoadAsync("exp-999", CancellationToken.None));
+            () => _experimentStore.LoadAsync(DefaultModelName, "exp-999", CancellationToken.None));
     }
 
     [Fact]
     public async Task ListAsync_NoExperiments_ReturnsEmptyList()
     {
         // Act
-        var experiments = await _experimentStore.ListAsync(CancellationToken.None);
+        var experiments = await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None);
 
         // Assert
         Assert.Empty(experiments);
@@ -150,7 +166,7 @@ public class ExperimentStoreTests : IDisposable
         var exp3 = await CreateAndSaveExperimentAsync("exp-003", "Failed", null);
 
         // Act
-        var experiments = await _experimentStore.ListAsync(CancellationToken.None);
+        var experiments = await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None);
         var experimentsList = experiments.ToList();
 
         // Assert
@@ -161,13 +177,30 @@ public class ExperimentStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ListAsync_AllModels_ReturnsExperimentsFromAllModels()
+    {
+        // Arrange
+        await CreateAndSaveExperimentAsync("exp-001", "Completed", 0.85, "default");
+        await CreateAndSaveExperimentAsync("exp-001", "Completed", 0.90, "churn");
+
+        // Act
+        var experiments = await _experimentStore.ListAsync(null, CancellationToken.None);
+        var experimentsList = experiments.ToList();
+
+        // Assert
+        Assert.Equal(2, experimentsList.Count);
+        Assert.Contains(experimentsList, e => e.ModelName == "default");
+        Assert.Contains(experimentsList, e => e.ModelName == "churn");
+    }
+
+    [Fact]
     public async Task ListAsync_WithMetrics_IncludesMetricsInSummary()
     {
         // Arrange
         await CreateAndSaveExperimentAsync("exp-001", "Completed", 0.95);
 
         // Act
-        var experiments = await _experimentStore.ListAsync(CancellationToken.None);
+        var experiments = await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None);
         var experiment = experiments.FirstOrDefault();
 
         // Assert
@@ -182,7 +215,7 @@ public class ExperimentStoreTests : IDisposable
         var experimentId = await CreateAndSaveExperimentAsync("exp-001", "Completed", 0.85);
 
         // Act
-        var exists = _experimentStore.ExperimentExists(experimentId);
+        var exists = _experimentStore.ExperimentExists(DefaultModelName, experimentId);
 
         // Assert
         Assert.True(exists);
@@ -192,7 +225,7 @@ public class ExperimentStoreTests : IDisposable
     public void ExperimentExists_NonExistingExperiment_ReturnsFalse()
     {
         // Act
-        var exists = _experimentStore.ExperimentExists("exp-999");
+        var exists = _experimentStore.ExperimentExists(DefaultModelName, "exp-999");
 
         // Assert
         Assert.False(exists);
@@ -205,25 +238,28 @@ public class ExperimentStoreTests : IDisposable
         var experimentId = "exp-001";
 
         // Act
-        var path = _experimentStore.GetExperimentPath(experimentId);
+        var path = _experimentStore.GetExperimentPath(DefaultModelName, experimentId);
 
         // Assert
         Assert.Contains("models", path);
+        Assert.Contains(DefaultModelName, path);
         Assert.Contains("staging", path);
         Assert.Contains(experimentId, path);
     }
 
-    private async Task<string> CreateAndSaveExperimentAsync(string experimentId, string status, double? metric)
+    private async Task<string> CreateAndSaveExperimentAsync(string experimentId, string status, double? metric, string? modelName = null)
     {
-        var experimentData = CreateExperimentData(experimentId, status, metric);
-        await _experimentStore.SaveAsync(experimentData, CancellationToken.None);
+        var resolvedModelName = modelName ?? DefaultModelName;
+        var experimentData = CreateExperimentData(experimentId, status, metric, resolvedModelName);
+        await _experimentStore.SaveAsync(resolvedModelName, experimentData, CancellationToken.None);
         return experimentId;
     }
 
-    private ExperimentData CreateExperimentData(string experimentId, string status = "Completed", double? metric = 0.85)
+    private ExperimentData CreateExperimentData(string experimentId, string status = "Completed", double? metric = 0.85, string? modelName = null)
     {
         return new ExperimentData
         {
+            ModelName = modelName ?? DefaultModelName,
             ExperimentId = experimentId,
             Timestamp = DateTime.UtcNow,
             Status = status,
