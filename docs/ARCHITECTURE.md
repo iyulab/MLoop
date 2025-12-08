@@ -617,7 +617,7 @@ public class FileSystemManager : IFileSystemManager
 ```
 MLoop/
 ├── src/
-│   ├── MLoop.sln                        # .NET 9 Solution
+│   ├── MLoop.sln                        # .NET 10 Solution
 │   └── MLoop/                           # Main CLI project
 │       ├── MLoop.csproj                 # Global tool configuration
 │       ├── Program.cs                   # Entry point
@@ -627,9 +627,9 @@ MLoop/
 │       │   ├── TrainCommand.cs         # mloop train
 │       │   ├── PredictCommand.cs       # mloop predict
 │       │   ├── EvaluateCommand.cs      # mloop evaluate
-│       │   ├── ExperimentCommand.cs    # mloop experiment
-│       │   ├── ModelCommand.cs         # mloop model
-│       │   └── ServeCommand.cs         # mloop serve (Phase 2)
+│       │   ├── ListCommand.cs          # mloop list
+│       │   ├── PromoteCommand.cs       # mloop promote
+│       │   └── ServeCommand.cs         # mloop serve
 │       │
 │       ├── Core/                        # Core business logic
 │       │   ├── AutoML/                  # AutoML engine
@@ -690,15 +690,15 @@ MLoop/
 │       └── EndToEndTests.cs
 │
 ├── examples/                            # Example projects
-│   ├── sentiment-analysis/
-│   ├── iris-classification/
-│   └── housing-prices/
+│   ├── customer-churn/
+│   ├── equipment-anomaly-detection/
+│   └── mloop-agents/
 │
 ├── docs/                                # Documentation
 │   ├── ARCHITECTURE.md                  # This file
-│   ├── getting-started.md
-│   ├── cli-reference.md
-│   └── long-running-tasks.md           # nohup, screen guide
+│   ├── GUIDE.md
+│   ├── AI-AGENTS.md
+│   └── MIGRATION.md                     # Multi-model migration guide
 │
 ├── Directory.Build.props                # Common build properties
 ├── .editorconfig                        # Code style
@@ -706,44 +706,107 @@ MLoop/
 └── .gitignore                           # Git ignore rules
 ```
 
-### 6.2 User Project Structure
+### 6.2 User Project Structure (Multi-Model)
 
-When users run `mloop init my-project --task binary-classification`:
+MLoop v0.2.0+ supports **multiple models** within a single project. When users run `mloop init my-project --task binary-classification`:
 
 ```
 my-project/
 ├── .mloop/                              # Internal (Git ignored)
 │   ├── config.json                      # Project settings
-│   ├── registry.json                    # Model registry index
-│   └── experiment-index.json            # Experiment index
+│   └── models.json                      # Model name registry
 │
-├── mloop.yaml                           # User config (optional, Git)
+├── mloop.yaml                           # User config (Git)
 ├── .gitignore                           # MLoop gitignore
 ├── README.md                            # Project guide
 │
-├── data/                                # User data (Git)
-│   ├── processed/
-│   │   ├── train.csv
-│   │   └── test.csv
-│   └── predictions/                     # Prediction outputs
+├── datasets/                            # Training data (Git)
+│   ├── train.csv
+│   ├── test.csv
+│   └── predict.csv
 │
-├── experiments/                         # Experiment results
-│   ├── exp-001/
-│   │   ├── model.zip                    # Trained model (ignored)
-│   │   ├── metadata.json                # Experiment metadata (Git)
-│   │   ├── metrics.json                 # Performance metrics (Git)
-│   │   ├── config.json                  # Training config (Git)
-│   │   └── training.log                 # Training log (ignored)
-│   ├── exp-002/
-│   └── exp-003/
+├── models/                              # Per-model directories
+│   ├── default/                         # Default model (--name omitted)
+│   │   ├── staging/                     # Experiments
+│   │   │   ├── exp-001/
+│   │   │   │   ├── model.zip           # Trained model (ignored)
+│   │   │   │   ├── experiment.json     # Experiment metadata (Git)
+│   │   │   │   └── training.log        # Training log (ignored)
+│   │   │   └── exp-002/
+│   │   ├── production/                  # Promoted model
+│   │   │   ├── model.zip               # (ignored)
+│   │   │   └── metadata.json           # (Git)
+│   │   └── registry.json               # Model-specific registry
+│   │
+│   ├── churn/                           # Named model example
+│   │   ├── staging/
+│   │   ├── production/
+│   │   └── registry.json
+│   │
+│   └── revenue/                         # Another named model
+│       ├── staging/
+│       ├── production/
+│       └── registry.json
 │
-└── models/                              # Promoted models
-    ├── staging/
-    │   ├── model.zip                    # (ignored)
-    │   └── metadata.json                # (Git)
-    └── production/
-        ├── model.zip                    # (ignored)
-        └── metadata.json                # (Git)
+└── predictions/                         # Prediction outputs
+    ├── default/
+    ├── churn/
+    └── revenue/
+```
+
+### 6.3 Multi-Model Configuration
+
+#### mloop.yaml Schema
+
+```yaml
+# Project-level settings
+project: customer-analytics
+
+# Model definitions
+models:
+  default:                      # Required: default model
+    task: binary-classification
+    label: Churn
+    description: Customer churn prediction
+    training:
+      time_limit_seconds: 300
+      metric: F1Score
+      test_split: 0.2
+
+  revenue:                      # Optional: named models
+    task: regression
+    label: Revenue
+    description: Revenue prediction model
+    training:
+      time_limit_seconds: 600
+      metric: RSquared
+
+# Shared data settings
+data:
+  train: datasets/train.csv
+  test: datasets/test.csv
+```
+
+### 6.4 Multi-Model CLI Usage
+
+```bash
+# Default model (--name omitted)
+mloop train datasets/train.csv Churn --time 60
+mloop predict
+mloop promote exp-001
+
+# Named model
+mloop train datasets/train.csv Revenue --name revenue --time 60
+mloop predict --name revenue
+mloop promote exp-001 --name revenue
+
+# List experiments across models
+mloop list                    # All models
+mloop list --name default     # Specific model
+
+# Multi-model serving
+mloop serve                   # Serves all production models
+# Routes: /predict?name=default, /predict?name=revenue
 ```
 
 ---
@@ -755,119 +818,117 @@ my-project/
 #### .mloop/config.json
 ```json
 {
-  "project_name": "my-ml-project",
-  "version": "0.1.0",
-  "task": "binary-classification",
-  "label_column": "Sentiment",
-  "created_at": "2024-11-03T20:00:00Z",
-  "mloop_version": "0.1.0-alpha"
+  "project": "my-ml-project",
+  "version": "0.2.0",
+  "created_at": "2025-12-08T10:00:00Z",
+  "mloop_version": "0.2.0"
 }
 ```
 
-#### .mloop/experiment-index.json
+#### .mloop/models.json (Model Registry Index)
 ```json
 {
-  "next_id": 7,
-  "experiments": [
-    {
-      "id": "exp-001",
-      "timestamp": "2024-11-03T10:00:00Z",
-      "status": "completed",
-      "best_metric": 0.85
+  "models": {
+    "default": {
+      "created_at": "2025-12-08T10:00:00Z",
+      "task": "binary-classification",
+      "label": "Churn",
+      "experiment_count": 5,
+      "production_experiment": "exp-003"
     },
-    {
-      "id": "exp-002",
-      "timestamp": "2024-11-03T11:00:00Z",
-      "status": "completed",
-      "best_metric": 0.89
+    "revenue": {
+      "created_at": "2025-12-08T11:00:00Z",
+      "task": "regression",
+      "label": "Revenue",
+      "experiment_count": 3,
+      "production_experiment": "exp-002"
     }
-  ]
+  }
 }
 ```
 
-#### .mloop/registry.json
+#### models/{name}/registry.json (Per-Model Registry)
 ```json
 {
+  "next_id": 6,
   "production": {
-    "experiment_id": "exp-005",
-    "promoted_at": "2024-11-03T21:00:00Z",
+    "experiment_id": "exp-003",
+    "promoted_at": "2025-12-08T14:00:00Z",
     "metrics": {
-      "accuracy": 0.913,
-      "f1_score": 0.897
+      "F1Score": 0.897,
+      "Accuracy": 0.913
     }
-  },
-  "staging": {
-    "experiment_id": "exp-006",
-    "promoted_at": "2024-11-03T22:00:00Z"
   }
 }
 ```
 
 ### 7.2 Experiment Files
 
-#### experiments/exp-XXX/metadata.json
+#### models/{name}/staging/exp-XXX/experiment.json
 ```json
 {
+  "model_name": "default",
   "experiment_id": "exp-001",
-  "timestamp": "2024-11-03T12:00:00Z",
+  "timestamp": "2025-12-08T12:00:00Z",
   "status": "completed",
   "task": "binary-classification",
   "data": {
-    "train_file": "data/processed/train.csv",
+    "train_file": "datasets/train.csv",
     "rows": 10000,
     "features": 15,
-    "label": "Sentiment"
+    "label": "Churn"
   },
   "config": {
     "time_limit_seconds": 300,
-    "metric": "accuracy",
+    "metric": "F1Score",
     "test_split": 0.2
   },
   "result": {
     "best_trainer": "LightGbmBinary",
-    "training_time_seconds": 287
+    "training_time_seconds": 287,
+    "metrics": {
+      "F1Score": 0.897,
+      "Accuracy": 0.913,
+      "AUC": 0.945
+    }
   },
   "versions": {
-    "mlnet": "4.0.0",
-    "mloop": "0.1.0-alpha"
+    "mlnet": "5.0.0",
+    "mloop": "0.2.0"
   }
-}
-```
-
-#### experiments/exp-XXX/metrics.json
-```json
-{
-  "accuracy": 0.913,
-  "f1_score": 0.897,
-  "auc": 0.945,
-  "precision": 0.901,
-  "recall": 0.893
 }
 ```
 
 ### 7.3 User Configuration File
 
-#### mloop.yaml (optional)
+#### mloop.yaml (Multi-Model Format)
 ```yaml
-# MLoop Project Configuration
-project_name: sentiment-analyzer
-task: binary-classification
-label_column: Sentiment
+# MLoop Project Configuration (v0.2.0+)
+project: customer-analytics
 
-# Training settings (optional - defaults provided)
-training:
-  time_limit_seconds: 300
-  metric: accuracy
-  test_split: 0.2
+# Model definitions
+models:
+  default:
+    task: binary-classification
+    label: Churn
+    description: Customer churn prediction model
+    training:
+      time_limit_seconds: 300
+      metric: F1Score
+      test_split: 0.2
 
-# Data paths (optional)
+  revenue:
+    task: regression
+    label: Revenue
+    description: Revenue prediction model
+    training:
+      time_limit_seconds: 600
+      metric: RSquared
+
+# Shared data paths
 data:
-  train: data/processed/train.csv
-  test: data/processed/test.csv
-
-# Model output (optional)
-model:
-  output_dir: models/staging
+  train: datasets/train.csv
+  test: datasets/test.csv
 ```
 
 ---
@@ -2044,7 +2105,8 @@ Terminal 2: cd project-B && mloop train ...
 
 ---
 
-**Version**: 0.1.0-alpha
-**Last Updated**: 2024-11-03
+**Version**: 0.2.0
+**Last Updated**: 2025-12-08
 **Status**: Living Document
-**Process Model**: Multi-Process Casual (Phase 1+)
+**Process Model**: Multi-Process Casual
+**Multi-Model Support**: Yes (v0.2.0+)

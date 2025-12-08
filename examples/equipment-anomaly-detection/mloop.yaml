@@ -1,90 +1,62 @@
 # Equipment Anomaly Detection - MLoop Project Configuration
+# Multi-model format (v0.2.0+)
 
-project_name: equipment-anomaly-detection
-task: binary-classification
-label_column: IsError
+project: equipment-anomaly-detection
 
-# Training settings
-training:
-  time_limit_seconds: 600  # 10 minutes for better results with time-series data
-  metric: F1Score  # F1-score for imbalanced anomaly detection
-  test_split: 0.3  # 30% for validation (time-series requires larger validation set)
+# Model definitions
+models:
+  default:
+    task: binary-classification
+    label: IsError
+    description: Equipment anomaly detection model
+    training:
+      time_limit_seconds: 600  # 10 minutes for better results with time-series data
+      metric: F1Score  # F1-score for imbalanced anomaly detection
+      test_split: 0.3  # 30% for validation (time-series requires larger validation set)
 
-# Data paths
+# Example: Multiple anomaly detection models
+# models:
+#   temperature:
+#     task: binary-classification
+#     label: TempAnomaly
+#     description: Temperature anomaly detection
+#   current:
+#     task: binary-classification
+#     label: CurrentAnomaly
+#     description: Current anomaly detection
+
+# Shared data paths
 data:
   train: datasets/train.csv
-  validation: datasets/validation.csv
   test: datasets/test.csv
 
-# Model output
-model:
-  output_dir: models/staging
+# Feature engineering hints (informational)
+# features:
+#   numerical:
+#     - Temp
+#     - Current
+#     - Hour
+#     - Minute
+#   categorical:
+#     - Process
+#
+#   # Time-series specific considerations:
+#   # - Rolling statistics (mean, std over time windows)
+#   # - Lag features (previous N measurements)
+#   # - Rate of change (delta Temp, delta Current)
 
-# Feature engineering hints
-features:
-  numerical:
-    - Temp
-    - Current
-    - Hour
-    - Minute
-  categorical:
-    - Process
+# Model recommendations (informational)
+# model_selection:
+#   preferred_trainers:
+#     - LightGBM        # Best for complex patterns
+#     - FastTree        # Good for feature importance
+#     - FastForest      # Robust to outliers
 
-  # Time-series specific
-  # Consider adding:
-  # - Rolling statistics (mean, std over time windows)
-  # - Lag features (previous N measurements)
-  # - Rate of change (delta Temp, delta Current)
-
-# Preprocessing recommendations
-preprocessing:
-  missing_values:
-    strategy: "forward_fill"  # Time-series appropriate
-
-  normalization:
-    enabled: true
-    method: "min_max"  # Better for bounded sensor ranges
-
-  feature_engineering:
-    time_features: true  # Extract hour, minute from Time
-    rolling_stats: true  # Add rolling mean/std for Temp and Current
-    lag_features: true   # Add previous measurements
-
-# Model recommendations
-model_selection:
-  # For time-series anomaly detection:
-  preferred_trainers:
-    - LightGBM        # Best for complex patterns
-    - FastTree        # Good for feature importance
-    - FastForest      # Robust to outliers
-
-  # Training strategy
-  strategy:
-    # Use longer training time for better accuracy
-    # Consider ensemble of multiple trainers
-    # Focus on F1-score to balance precision and recall
-
-# Production deployment
-deployment:
-  # Real-time prediction latency target: <100ms
-  # Batch prediction for historical analysis
-  # Monitor for data drift (sensor value ranges)
-
-  monitoring:
-    - metric: "F1Score"
-      threshold: 0.75
-    - metric: "Precision"
-      threshold: 0.70
-    - metric: "Recall"
-      threshold: 0.70
-
-# MLOps workflow
-mlops:
-  experiment_tracking: true
-  model_versioning: true
-
-  # Retraining triggers
-  retraining:
-    - condition: "F1Score < 0.75"
-    - condition: "Data drift detected"
-    - schedule: "weekly"
+# Production deployment notes (informational)
+# deployment:
+#   latency_target: "<100ms"
+#   monitoring:
+#     - metric: "F1Score"
+#       threshold: 0.75
+#     - metric: "Precision"
+#       threshold: 0.70

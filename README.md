@@ -56,6 +56,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 ### Key Features
 
 - **AutoML Training**: Automatic model selection with ML.NET AutoML
+- **Multi-Model Projects**: Manage multiple models (churn, revenue, etc.) in one project
 - **AI Agents**: Interactive ML assistance with multi-provider LLM support
 - **Smart Predictions**: Production model auto-discovery and batch processing
 - **Filesystem MLOps**: Git-friendly experiment tracking (no database required)
@@ -111,10 +112,12 @@ MLoop uses **Convention over Configuration** - intelligent defaults that work ou
 ```
 my-ml-project/
 ├── .mloop/           # Project marker (like .git)
+├── mloop.yaml        # Project configuration
 ├── datasets/         # Training data → train.csv, predict.csv
 ├── models/
-│   ├── staging/      # All experiments (exp-001, exp-002, ...)
-│   └── production/   # Promoted model (symlink)
+│   └── {model-name}/ # Per-model namespace (default, churn, revenue, etc.)
+│       ├── staging/      # Experiments (exp-001, exp-002, ...)
+│       └── production/   # Promoted model
 └── predictions/      # Outputs (timestamped CSVs)
 ```
 
@@ -140,6 +143,44 @@ mloop list
 
 # Use production model
 mloop predict  # Auto-uses exp-003
+```
+
+### Multi-Model Support
+
+Manage multiple models within a single project - perfect for complex ML systems.
+
+```bash
+# Train different models for different targets
+mloop train --name churn --label Churned --task binary-classification
+mloop train --name revenue --label Revenue --task regression
+mloop train --name ltv --label LifetimeValue --task regression
+
+# Each model has independent experiments
+mloop list --name churn     # Shows churn experiments only
+mloop list --name revenue   # Shows revenue experiments only
+mloop list                  # Shows all experiments across models
+
+# Promote and predict per model
+mloop promote exp-001 --name churn
+mloop predict data.csv --name churn
+
+# Serve multiple models via API
+mloop serve
+# GET /predict?name=churn
+# GET /predict?name=revenue
+```
+
+**Directory Structure with Multiple Models:**
+```
+models/
+├── churn/
+│   ├── staging/exp-001/
+│   └── production/
+├── revenue/
+│   ├── staging/exp-001/
+│   └── production/
+└── default/
+    └── staging/exp-001/
 ```
 
 ## Documentation

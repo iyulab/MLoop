@@ -223,7 +223,7 @@ public static class TrainCommand
             DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition);
 
             // Validate label column exists
-            await ValidateLabelColumnAsync(resolvedDataFile, effectiveDefinition.Label);
+            await ValidateLabelColumnAsync(resolvedDataFile, effectiveDefinition.Label, resolvedModelName);
 
             // Initialize training components
             var modelNameResolver = new ModelNameResolver(fileSystem, projectDiscovery, configLoader);
@@ -276,7 +276,7 @@ public static class TrainCommand
 
             if (result == null)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Training failed");
+                AnsiConsole.MarkupLine($"[red]Error:[/] Training failed for model '[cyan]{resolvedModelName}[/]'");
                 return 1;
             }
 
@@ -399,7 +399,7 @@ public static class TrainCommand
         AnsiConsole.WriteLine();
     }
 
-    private static async Task ValidateLabelColumnAsync(string dataFilePath, string labelColumn)
+    private static async Task ValidateLabelColumnAsync(string dataFilePath, string labelColumn, string modelName)
     {
         var csvHelper = new MLoop.Core.Data.CsvHelperImpl();
         var data = await csvHelper.ReadAsync(dataFilePath);
@@ -415,16 +415,16 @@ public static class TrainCommand
         if (!firstRow.ContainsKey(labelColumn))
         {
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[red]Error:[/] Label column not found in data");
+            AnsiConsole.MarkupLine($"[red]Error:[/] Label column not found in data for model '[cyan]{modelName}[/]'");
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine($"  [yellow]Label specified:[/] '{labelColumn}'");
             AnsiConsole.MarkupLine($"  [yellow]Available columns:[/] {string.Join(", ", availableColumns)}");
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[yellow]Tip:[/] Update the label in mloop.yaml or use --label option");
+            AnsiConsole.MarkupLine($"[yellow]Tip:[/] Update the label in mloop.yaml or use --label option for --name {modelName}");
             AnsiConsole.WriteLine();
 
             throw new ArgumentException(
-                $"Label column '{labelColumn}' not found in data.\n" +
+                $"Label column '{labelColumn}' not found in data for model '{modelName}'.\n" +
                 $"Available columns: {string.Join(", ", availableColumns)}",
                 nameof(labelColumn));
         }

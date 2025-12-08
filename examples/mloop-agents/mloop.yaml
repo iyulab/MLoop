@@ -1,19 +1,20 @@
 # MLoop AI Agent Example Project Configuration
-project_name: mloop-agents-example
-task: binary-classification
-label_column: Purchased
+# Multi-model format (v0.2.0+)
 
-# Training settings (optional - defaults provided)
-training:
-  time_limit_seconds: 300
-  metric: F1Score
-  test_split: 0.2
+project: mloop-agents-example
 
-# Data paths (optional)
+# Model definitions
+models:
+  default:
+    task: binary-classification
+    label: Purchased
+    description: Purchase prediction model for AI agent demonstration
+    training:
+      time_limit_seconds: 300
+      metric: F1Score
+      test_split: 0.2
+
+# Shared data paths
 data:
   train: datasets/sample-data.csv
   test: datasets/sample-data.csv
-
-# Model output (optional)
-model:
-  output_dir: models/staging
