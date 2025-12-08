@@ -96,7 +96,7 @@ experiments/exp-001/
 #### 1. Setup Development Environment
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/MLoop.git
+git clone https://github.com/iyulab/MLoop.git
 cd MLoop
 
 # Install .NET 10.0

@@ -67,3 +67,4 @@ local-tests/
 # Local
 .env
 publish/
+nul

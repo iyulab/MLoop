@@ -35,7 +35,7 @@ public class FilePrepperImpl : IFilePrepper
         // See: FilePrepper_Gaps_Response.md - Gap #1 resolution
         // Current: Using FilterRows workaround for Pipeline API consistency
         // Future: Request DropDuplicates() addition to DataPipeline fluent API
-        // Issue: https://github.com/yourusername/FilePrepper/issues/XXX
+        // Issue: https://github.com/iyulab/FilePrepper/issues/XXX
 
         var pipeline = await DataPipeline.FromCsvAsync(inputPath);
         var beforeCount = pipeline.RowCount;

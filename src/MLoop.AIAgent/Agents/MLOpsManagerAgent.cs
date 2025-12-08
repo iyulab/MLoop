@@ -1,14 +1,19 @@
 using Ironbees.AgentMode.Agents;
 using Microsoft.Extensions.AI;
+using MLoop.AIAgent.Core;
+using MLoop.AIAgent.Core.Models;
+using System.Text;
 
 namespace MLoop.AIAgent.Agents;
 
 /// <summary>
 /// MLOps manager agent specializing in MLoop project lifecycle orchestration.
-/// Executes training, evaluation, and prediction workflows.
+/// Executes training, evaluation, and prediction workflows using MLoopProjectManager.
 /// </summary>
 public class MLOpsManagerAgent : ConversationalAgent
 {
+    private readonly MLoopProjectManager _projectManager;
+
     private new const string SystemPrompt = @"# MLOps Manager Agent - System Prompt
 
 You are an expert MLOps manager specializing in MLoop project lifecycle management. Your role is to orchestrate the entire ML workflow from project initialization to model deployment.
@@ -214,6 +219,7 @@ Always execute commands safely, validate inputs, and provide clear, actionable f
     public MLOpsManagerAgent(IChatClient chatClient)
         : base(chatClient, SystemPrompt)
     {
+        _projectManager = new MLoopProjectManager();
     }
 
     /// <summary>
@@ -224,5 +230,650 @@ Always execute commands safely, validate inputs, and provide clear, actionable f
     public MLOpsManagerAgent(IChatClient chatClient, string customSystemPrompt)
         : base(chatClient, customSystemPrompt)
     {
+        _projectManager = new MLoopProjectManager();
     }
+
+    /// <summary>
+    /// Initializes a new instance of the MLOpsManagerAgent with custom project manager.
+    /// </summary>
+    /// <param name="chatClient">The chat client for LLM interactions.</param>
+    /// <param name="projectManager">Custom MLoopProjectManager instance.</param>
+    public MLOpsManagerAgent(IChatClient chatClient, MLoopProjectManager projectManager)
+        : base(chatClient, SystemPrompt)
+    {
+        _projectManager = projectManager;
+    }
+
+    #region Project Initialization
+
+    /// <summary>
+    /// Initializes a new MLoop project and returns LLM-generated insights.
+    /// </summary>
+    /// <param name="config">Project configuration.</param>
+    /// <param name="userQuery">Optional user query about the project setup.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>LLM response with project initialization insights.</returns>
+    public async Task<string> InitializeProjectAsync(
+        MLoopProjectConfig config,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _projectManager.InitializeProjectAsync(config);
+        var resultContext = FormatInitResultForLLM(result, config);
+
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Please analyze this project initialization result and provide guidance:\n\n{resultContext}"
+            : $"Based on this project initialization result:\n\n{resultContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the raw project initialization result.
+    /// </summary>
+    public async Task<MLoopOperationResult> GetInitializeResultAsync(MLoopProjectConfig config)
+    {
+        return await _projectManager.InitializeProjectAsync(config);
+    }
+
+    #endregion
+
+    #region Model Training
+
+    /// <summary>
+    /// Trains a model and returns LLM-generated insights.
+    /// </summary>
+    /// <param name="config">Training configuration.</param>
+    /// <param name="projectPath">Optional project path.</param>
+    /// <param name="userQuery">Optional user query about the training.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>LLM response with training insights.</returns>
+    public async Task<string> TrainModelAsync(
+        MLoopTrainingConfig config,
+        string? projectPath = null,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _projectManager.TrainModelAsync(config, projectPath);
+        var resultContext = FormatTrainResultForLLM(result, config);
+
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Please analyze this model training result and provide insights:\n\n{resultContext}"
+            : $"Based on this model training result:\n\n{resultContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the raw training result.
+    /// </summary>
+    public async Task<MLoopOperationResult> GetTrainResultAsync(
+        MLoopTrainingConfig config,
+        string? projectPath = null)
+    {
+        return await _projectManager.TrainModelAsync(config, projectPath);
+    }
+
+    #endregion
+
+    #region Model Evaluation
+
+    /// <summary>
+    /// Evaluates a model and returns LLM-generated insights.
+    /// </summary>
+    /// <param name="experimentId">Optional experiment ID.</param>
+    /// <param name="testDataPath">Optional test data path.</param>
+    /// <param name="projectPath">Optional project path.</param>
+    /// <param name="userQuery">Optional user query about the evaluation.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>LLM response with evaluation insights.</returns>
+    public async Task<string> EvaluateModelAsync(
+        string? experimentId = null,
+        string? testDataPath = null,
+        string? projectPath = null,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _projectManager.EvaluateModelAsync(experimentId, testDataPath, projectPath);
+        var resultContext = FormatEvaluateResultForLLM(result, experimentId);
+
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Please analyze this model evaluation result and provide recommendations:\n\n{resultContext}"
+            : $"Based on this model evaluation result:\n\n{resultContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the raw evaluation result.
+    /// </summary>
+    public async Task<MLoopOperationResult> GetEvaluateResultAsync(
+        string? experimentId = null,
+        string? testDataPath = null,
+        string? projectPath = null)
+    {
+        return await _projectManager.EvaluateModelAsync(experimentId, testDataPath, projectPath);
+    }
+
+    #endregion
+
+    #region Predictions
+
+    /// <summary>
+    /// Makes predictions and returns LLM-generated insights.
+    /// </summary>
+    /// <param name="inputDataPath">Path to input data.</param>
+    /// <param name="outputPath">Path for output predictions.</param>
+    /// <param name="experimentId">Optional experiment ID.</param>
+    /// <param name="projectPath">Optional project path.</param>
+    /// <param name="userQuery">Optional user query about the predictions.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>LLM response with prediction insights.</returns>
+    public async Task<string> PredictAsync(
+        string inputDataPath,
+        string outputPath,
+        string? experimentId = null,
+        string? projectPath = null,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _projectManager.PredictAsync(inputDataPath, outputPath, experimentId, projectPath);
+        var resultContext = FormatPredictResultForLLM(result, inputDataPath, outputPath);
+
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Please analyze this prediction result and provide insights:\n\n{resultContext}"
+            : $"Based on this prediction result:\n\n{resultContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the raw prediction result.
+    /// </summary>
+    public async Task<MLoopOperationResult> GetPredictResultAsync(
+        string inputDataPath,
+        string outputPath,
+        string? experimentId = null,
+        string? projectPath = null)
+    {
+        return await _projectManager.PredictAsync(inputDataPath, outputPath, experimentId, projectPath);
+    }
+
+    #endregion
+
+    #region Preprocessing
+
+    /// <summary>
+    /// Executes preprocessing scripts and returns LLM-generated insights.
+    /// </summary>
+    /// <param name="projectPath">Path to the project.</param>
+    /// <param name="userQuery">Optional user query about preprocessing.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>LLM response with preprocessing insights.</returns>
+    public async Task<string> PreprocessDataAsync(
+        string projectPath,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _projectManager.PreprocessDataAsync(projectPath);
+        var resultContext = FormatPreprocessResultForLLM(result);
+
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Please analyze this preprocessing result and provide guidance:\n\n{resultContext}"
+            : $"Based on this preprocessing result:\n\n{resultContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the raw preprocessing result.
+    /// </summary>
+    public async Task<MLoopOperationResult> GetPreprocessResultAsync(string projectPath)
+    {
+        return await _projectManager.PreprocessDataAsync(projectPath);
+    }
+
+    #endregion
+
+    #region Experiment Management
+
+    /// <summary>
+    /// Lists experiments and returns LLM-generated summary.
+    /// </summary>
+    /// <param name="projectPath">Optional project path.</param>
+    /// <param name="userQuery">Optional user query about experiments.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>LLM response with experiment summary.</returns>
+    public async Task<string> ListExperimentsAsync(
+        string? projectPath = null,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var experiments = await _projectManager.ListExperimentsAsync(projectPath);
+        var resultContext = FormatExperimentsForLLM(experiments);
+
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Please summarize these experiments and provide recommendations:\n\n{resultContext}"
+            : $"Based on these experiments:\n\n{resultContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the raw experiment list.
+    /// </summary>
+    public async Task<List<MLoopExperiment>> GetExperimentsAsync(string? projectPath = null)
+    {
+        return await _projectManager.ListExperimentsAsync(projectPath);
+    }
+
+    /// <summary>
+    /// Promotes an experiment to production and returns LLM insights.
+    /// </summary>
+    /// <param name="experimentId">Experiment ID to promote.</param>
+    /// <param name="projectPath">Optional project path.</param>
+    /// <param name="userQuery">Optional user query.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>LLM response about promotion.</returns>
+    public async Task<string> PromoteExperimentAsync(
+        string experimentId,
+        string? projectPath = null,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _projectManager.PromoteExperimentAsync(experimentId, projectPath);
+        var resultContext = FormatPromoteResultForLLM(result, experimentId);
+
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Please analyze this promotion result:\n\n{resultContext}"
+            : $"Based on this promotion result:\n\n{resultContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the raw promotion result.
+    /// </summary>
+    public async Task<MLoopOperationResult> GetPromoteResultAsync(
+        string experimentId,
+        string? projectPath = null)
+    {
+        return await _projectManager.PromoteExperimentAsync(experimentId, projectPath);
+    }
+
+    #endregion
+
+    #region Dataset Information
+
+    /// <summary>
+    /// Gets dataset information and returns LLM-generated summary.
+    /// </summary>
+    /// <param name="dataPath">Path to the dataset.</param>
+    /// <param name="projectPath">Optional project path.</param>
+    /// <param name="userQuery">Optional user query about the dataset.</param>
+    /// <param name="options">Optional chat options.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>LLM response with dataset information.</returns>
+    public async Task<string> GetDatasetInfoAsync(
+        string dataPath,
+        string? projectPath = null,
+        string? userQuery = null,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _projectManager.GetDatasetInfoAsync(dataPath, projectPath);
+        var resultContext = FormatDatasetInfoForLLM(result, dataPath);
+
+        var userMessage = string.IsNullOrWhiteSpace(userQuery)
+            ? $"Please analyze this dataset information:\n\n{resultContext}"
+            : $"Based on this dataset information:\n\n{resultContext}\n\nUser question: {userQuery}";
+
+        return await RespondAsync(userMessage, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the raw dataset info result.
+    /// </summary>
+    public async Task<MLoopOperationResult> GetDatasetInfoResultAsync(
+        string dataPath,
+        string? projectPath = null)
+    {
+        return await _projectManager.GetDatasetInfoAsync(dataPath, projectPath);
+    }
+
+    #endregion
+
+    #region Result Formatting
+
+    private static string FormatInitResultForLLM(MLoopOperationResult result, MLoopProjectConfig config)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("## Project Initialization Result");
+        sb.AppendLine();
+        sb.AppendLine($"- **Project Name**: {config.ProjectName}");
+        sb.AppendLine($"- **Task Type**: {config.TaskType}");
+        sb.AppendLine($"- **Data Path**: {config.DataPath}");
+        sb.AppendLine($"- **Label Column**: {config.LabelColumn}");
+        sb.AppendLine();
+        sb.AppendLine($"### Execution Status");
+        sb.AppendLine($"- **Success**: {(result.Success ? "✅ Yes" : "❌ No")}");
+        sb.AppendLine($"- **Exit Code**: {result.ExitCode}");
+
+        if (result.Data.TryGetValue("ProjectDirectory", out var projectDir))
+        {
+            sb.AppendLine($"- **Project Directory**: {projectDir}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Output))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Output");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Output);
+            sb.AppendLine("```");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Error))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Errors");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Error);
+            sb.AppendLine("```");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatTrainResultForLLM(MLoopOperationResult result, MLoopTrainingConfig config)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("## Model Training Result");
+        sb.AppendLine();
+        sb.AppendLine("### Configuration");
+        sb.AppendLine($"- **Time Limit**: {config.TimeSeconds} seconds");
+        sb.AppendLine($"- **Metric**: {config.Metric}");
+        sb.AppendLine($"- **Test Split**: {config.TestSplit:P0}");
+
+        if (!string.IsNullOrEmpty(config.ExperimentName))
+        {
+            sb.AppendLine($"- **Experiment Name**: {config.ExperimentName}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("### Execution Status");
+        sb.AppendLine($"- **Success**: {(result.Success ? "✅ Yes" : "❌ No")}");
+        sb.AppendLine($"- **Exit Code**: {result.ExitCode}");
+
+        // Extract metrics from result data
+        if (result.Data.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Training Results");
+
+            if (result.Data.TryGetValue("ExperimentId", out var expId))
+            {
+                sb.AppendLine($"- **Experiment ID**: {expId}");
+            }
+
+            if (result.Data.TryGetValue("BestTrainer", out var trainer))
+            {
+                sb.AppendLine($"- **Best Trainer**: {trainer}");
+            }
+
+            if (result.Data.TryGetValue("MetricValue", out var metricVal))
+            {
+                sb.AppendLine($"- **Metric Value**: {metricVal}");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Output))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Output");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Output);
+            sb.AppendLine("```");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Error))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Errors");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Error);
+            sb.AppendLine("```");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatEvaluateResultForLLM(MLoopOperationResult result, string? experimentId)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("## Model Evaluation Result");
+        sb.AppendLine();
+
+        if (!string.IsNullOrEmpty(experimentId))
+        {
+            sb.AppendLine($"- **Experiment ID**: {experimentId}");
+        }
+
+        sb.AppendLine($"- **Success**: {(result.Success ? "✅ Yes" : "❌ No")}");
+        sb.AppendLine($"- **Exit Code**: {result.ExitCode}");
+
+        // Extract evaluation metrics
+        if (result.Data.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Evaluation Metrics");
+
+            foreach (var (key, value) in result.Data)
+            {
+                sb.AppendLine($"- **{key}**: {value}");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Output))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Output");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Output);
+            sb.AppendLine("```");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Error))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Errors");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Error);
+            sb.AppendLine("```");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatPredictResultForLLM(
+        MLoopOperationResult result,
+        string inputPath,
+        string outputPath)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("## Prediction Result");
+        sb.AppendLine();
+        sb.AppendLine($"- **Input Data**: {inputPath}");
+        sb.AppendLine($"- **Output Path**: {outputPath}");
+        sb.AppendLine($"- **Success**: {(result.Success ? "✅ Yes" : "❌ No")}");
+        sb.AppendLine($"- **Exit Code**: {result.ExitCode}");
+
+        if (!string.IsNullOrWhiteSpace(result.Output))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Output");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Output);
+            sb.AppendLine("```");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Error))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Errors");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Error);
+            sb.AppendLine("```");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatPreprocessResultForLLM(MLoopOperationResult result)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("## Preprocessing Result");
+        sb.AppendLine();
+        sb.AppendLine($"- **Success**: {(result.Success ? "✅ Yes" : "❌ No")}");
+        sb.AppendLine($"- **Exit Code**: {result.ExitCode}");
+
+        if (!string.IsNullOrWhiteSpace(result.Output))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Output");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Output);
+            sb.AppendLine("```");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Error))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Errors");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Error);
+            sb.AppendLine("```");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatExperimentsForLLM(List<MLoopExperiment> experiments)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("## Experiments");
+        sb.AppendLine();
+
+        if (experiments.Count == 0)
+        {
+            sb.AppendLine("No experiments found in this project.");
+            return sb.ToString();
+        }
+
+        sb.AppendLine($"Total experiments: {experiments.Count}");
+        sb.AppendLine();
+
+        sb.AppendLine("| ID | Name | Trainer | Metric | Value | Date | Production |");
+        sb.AppendLine("|-----|------|---------|--------|-------|------|------------|");
+
+        foreach (var exp in experiments.OrderByDescending(e => e.Timestamp))
+        {
+            var prod = exp.IsProduction ? "✅" : "";
+            sb.AppendLine($"| {exp.Id[..8]}... | {exp.Name} | {exp.Trainer} | {exp.MetricName} | {exp.MetricValue:F4} | {exp.Timestamp:yyyy-MM-dd} | {prod} |");
+        }
+
+        // Highlight best experiment
+        var best = experiments.OrderByDescending(e => e.MetricValue).FirstOrDefault();
+        if (best != null)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"**Best Experiment**: {best.Name} ({best.Trainer}) - {best.MetricName}: {best.MetricValue:F4}");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatPromoteResultForLLM(MLoopOperationResult result, string experimentId)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("## Promotion Result");
+        sb.AppendLine();
+        sb.AppendLine($"- **Experiment ID**: {experimentId}");
+        sb.AppendLine($"- **Success**: {(result.Success ? "✅ Yes" : "❌ No")}");
+        sb.AppendLine($"- **Exit Code**: {result.ExitCode}");
+
+        if (!string.IsNullOrWhiteSpace(result.Output))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Output");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Output);
+            sb.AppendLine("```");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Error))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Errors");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Error);
+            sb.AppendLine("```");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatDatasetInfoForLLM(MLoopOperationResult result, string dataPath)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("## Dataset Information");
+        sb.AppendLine();
+        sb.AppendLine($"- **Data Path**: {dataPath}");
+        sb.AppendLine($"- **Success**: {(result.Success ? "✅ Yes" : "❌ No")}");
+        sb.AppendLine($"- **Exit Code**: {result.ExitCode}");
+
+        if (!string.IsNullOrWhiteSpace(result.Output))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Details");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Output);
+            sb.AppendLine("```");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Error))
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Errors");
+            sb.AppendLine("```");
+            sb.AppendLine(result.Error);
+            sb.AppendLine("```");
+        }
+
+        return sb.ToString();
+    }
+
+    #endregion
 }
