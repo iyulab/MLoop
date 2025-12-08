@@ -268,7 +268,7 @@ Solution: Provide more context in your question:
 ## 📖 Additional Resources
 
 - [MLoop Documentation](../../README.md)
-- [Ironbees Agent Framework](https://github.com/your-org/ironbees)
+- [Ironbees Agent Framework](https://github.com/iyulab/ironbees)
 - [ML.NET Documentation](https://docs.microsoft.com/dotnet/machine-learning/)
 
 ## 🤝 Contributing

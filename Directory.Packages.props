@@ -13,7 +13,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
     <!-- Logging Packages -->
-    <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <!-- Microsoft Extensions -->
@@ -27,8 +27,8 @@
     <PackageVersion Include="System.ClientModel" Version="1.8.1" />
     <PackageVersion Include="OpenAI" Version="2.7.0" />
     <!-- Roslyn / Code Analysis -->
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.14.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.0.0" />
     <!-- Data Processing -->
     <PackageVersion Include="CsvHelper" Version="33.1.0" />
     <PackageVersion Include="YamlDotNet" Version="16.3.0" />
@@ -40,11 +40,15 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.1" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.4.5" />
+    <!-- Resilience / Polly -->
+    <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Testing Packages -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="FluentAssertions" Version="8.8.0" />
+    <!-- Source Link for debugging -->
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
   </ItemGroup>
 </Project>

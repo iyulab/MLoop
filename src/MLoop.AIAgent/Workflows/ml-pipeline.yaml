@@ -1,0 +1,68 @@
+# ML Pipeline Workflow
+# Complete machine learning pipeline from data analysis to deployment
+
+name: MLPipelineWorkflow
+version: "1.0"
+description: "Complete ML training pipeline with data analysis, preprocessing, model selection, training, and evaluation"
+
+agents:
+  - ref: data-analyst
+    alias: analyst
+  - ref: preprocessing-expert
+    alias: preprocessor
+  - ref: model-architect
+    alias: architect
+  - ref: mlops-manager
+    alias: manager
+
+states:
+  # Entry point
+  - id: START
+    type: Start
+    next: ANALYZE
+
+  # Step 1: Data Analysis
+  - id: ANALYZE
+    type: Agent
+    executor: analyst
+    next: PREPROCESS
+
+  # Step 2: Data Preprocessing
+  - id: PREPROCESS
+    type: Agent
+    executor: preprocessor
+    next: RECOMMEND
+
+  # Step 3: Model Recommendation
+  - id: RECOMMEND
+    type: Agent
+    executor: architect
+    next: TRAIN
+
+  # Step 4: Model Training
+  - id: TRAIN
+    type: Agent
+    executor: manager
+    timeout: PT30M  # 30 minutes max for training
+    next: EVALUATE
+
+  # Step 5: Model Evaluation
+  - id: EVALUATE
+    type: Agent
+    executor: manager
+    conditions:
+      - if: "success"
+        then: END
+      - if: "failure"
+        then: RECOMMEND
+    maxIterations: 3
+
+  # Terminal state
+  - id: END
+    type: Terminal
+
+settings:
+  defaultTimeout: PT10M  # 10 minutes default
+  defaultMaxIterations: 5
+  enableCheckpointing: true
+  checkpointDirectory: ".mloop/checkpoints"

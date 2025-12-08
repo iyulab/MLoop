@@ -211,13 +211,23 @@ public static class AgentCommand
         AnsiConsole.MarkupLine("[grey]Type '/switch <agent-name>' to switch agent[/]");
         AnsiConsole.WriteLine();
 
+        // Initialize conversation service with file-based persistence
+        var conversationsDir = !string.IsNullOrEmpty(projectPath)
+            ? Path.Combine(projectPath, ".mloop", "conversations")
+            : Path.Combine(Directory.GetCurrentDirectory(), ".mloop", "conversations");
+
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        var conversationManager = new ConversationManager(
-            loggerFactory.CreateLogger<ConversationManager>());
+        using var conversationService = new ConversationService(
+            conversationsDir,
+            loggerFactory.CreateLogger<ConversationService>());
+
+        // Start a new conversation with unique ID
+        var conversationId = $"session_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
+        await conversationService.StartOrResumeAsync(conversationId);
 
         if (!string.IsNullOrEmpty(projectPath))
         {
-            conversationManager.SetProjectContext(projectPath);
+            conversationService.SetProjectContext(projectPath);
         }
 
         string? currentAgent = null;
@@ -240,7 +250,9 @@ public static class AgentCommand
             // Check for exit commands
             if (userInput.Trim().ToLower() is "exit" or "quit")
             {
-                AnsiConsole.MarkupLine("[yellow]👋 Goodbye![/]");
+                // Save conversation before exit
+                await conversationService.SaveCurrentAsync();
+                AnsiConsole.MarkupLine("[yellow]👋 Goodbye! Conversation saved.[/]");
                 break;
             }
 
@@ -252,7 +264,7 @@ public static class AgentCommand
             }
 
             // Add to conversation history
-            conversationManager.AddUserMessage(userInput);
+            conversationService.AddUserMessage(userInput);
 
             try
             {
@@ -283,9 +295,7 @@ public static class AgentCommand
                 }
 
                 // Add agent response to history
-                conversationManager.AddAgentResponse(
-                    currentAgent ?? "auto",
-                    responseBuilder.ToString());
+                conversationService.AddAgentResponse(responseBuilder.ToString());
 
                 AnsiConsole.WriteLine();
                 AnsiConsole.WriteLine();
