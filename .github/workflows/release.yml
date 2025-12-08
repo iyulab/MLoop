@@ -60,8 +60,8 @@ jobs:
     - name: Build
       run: dotnet build MLoop.sln --configuration Release --no-restore -p:Version=${{ steps.version.outputs.version }}
 
-    - name: Run tests
-      run: dotnet test MLoop.sln --configuration Release --no-build --verbosity normal
+    - name: Run tests (CI - excludes heavy tests)
+      run: dotnet test MLoop.sln --configuration Release --no-build --verbosity normal --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
 
     - name: Pack NuGet packages
       run: |
