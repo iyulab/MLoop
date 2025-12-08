@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -19,16 +19,15 @@
     <ProjectReference Include="..\MLoop.Extensibility\MLoop.Extensibility.csproj" />
   </ItemGroup>
 
-  <!-- FilePrepper Integration: Always use project reference -->
-  <!-- Reason: FilePrepper NuGet package (0.4.5) only targets net9.0, causing namespace resolution issues in net10.0 projects -->
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\FilePrepper\src\FilePrepper\FilePrepper.csproj" />
-  </ItemGroup>
-
-  <!-- TODO: Switch to package reference when FilePrepper adds net10.0 target:
-  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+  <!-- FilePrepper Integration: Conditional references for CI vs Local -->
+  <!-- CI environment: Use NuGet package -->
+  <ItemGroup Condition="'$(CI)' == 'true'">
     <PackageReference Include="FilePrepper" />
   </ItemGroup>
-  -->
+
+  <!-- Local development: Use project reference for latest features -->
+  <ItemGroup Condition="'$(CI)' != 'true'">
+    <ProjectReference Include="..\..\..\FilePrepper\src\FilePrepper\FilePrepper.csproj" />
+  </ItemGroup>
 
 </Project>

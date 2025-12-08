@@ -40,6 +40,11 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.1" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.4.5" />
+    <!-- Ironbees SDK (for CI builds when local project references are not available) -->
+    <PackageVersion Include="Ironbees.Core" Version="0.1.8" />
+    <PackageVersion Include="Ironbees.AgentMode.Core" Version="0.1.8" />
+    <PackageVersion Include="Ironbees.AgentMode.Providers" Version="0.1.8" />
+    <PackageVersion Include="Ironbees.AgentMode.Agents" Version="0.1.8" />
     <!-- Resilience / Polly -->
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Testing Packages -->

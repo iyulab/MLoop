@@ -6,32 +6,22 @@
     <Description>AI Agent system for MLoop using Ironbees SDK</Description>
   </PropertyGroup>
 
-  <!-- DEBUG: Local project references (for ironbees development/debugging) -->
-  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+  <!-- Ironbees SDK: Conditional references for CI vs Local -->
+  <!-- CI environment: Use NuGet packages -->
+  <ItemGroup Condition="'$(CI)' == 'true'">
+    <PackageReference Include="Ironbees.Core" />
+    <PackageReference Include="Ironbees.AgentMode.Core" />
+    <PackageReference Include="Ironbees.AgentMode.Providers" />
+    <PackageReference Include="Ironbees.AgentMode.Agents" />
+  </ItemGroup>
+
+  <!-- Local development: Use project references for latest features -->
+  <ItemGroup Condition="'$(CI)' != 'true'">
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.Core\Ironbees.Core.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Core\Ironbees.AgentMode.Core.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Providers\Ironbees.AgentMode.Providers.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Agents\Ironbees.AgentMode.Agents.csproj" />
   </ItemGroup>
-
-  <!-- RELEASE: NuGet package references (for deployment) -->
-  <!-- NOTE: ConversationalAgent requires Ironbees unreleased version (0.1.5+) -->
-  <!-- Current stable: v0.1.2 (does not include ConversationalAgent) -->
-  <!-- For now, use project references in both Debug and Release -->
-  <ItemGroup Condition="'$(Configuration)' == 'Release'">
-    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.Core\Ironbees.Core.csproj" />
-    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Core\Ironbees.AgentMode.Core.csproj" />
-    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Providers\Ironbees.AgentMode.Providers.csproj" />
-    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Agents\Ironbees.AgentMode.Agents.csproj" />
-  </ItemGroup>
-
-  <!-- TODO: Switch to package references when Ironbees v0.1.5+ is published:
-  <ItemGroup Condition="'$(Configuration)' == 'Release'">
-    <PackageReference Include="Ironbees.AgentMode.Core" Version="0.1.5" />
-    <PackageReference Include="Ironbees.AgentMode.Providers" Version="0.1.5" />
-    <PackageReference Include="Ironbees.AgentMode.Agents" Version="0.1.5" />
-  </ItemGroup>
-  -->
 
   <!-- MLoop project references -->
   <ItemGroup>
