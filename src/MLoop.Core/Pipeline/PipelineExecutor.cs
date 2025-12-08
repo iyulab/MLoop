@@ -384,10 +384,10 @@ public class PipelineExecutor
         {
             ConditionOperator.Equals => actualStr.Equals(expectedValue, StringComparison.OrdinalIgnoreCase),
             ConditionOperator.NotEquals => !actualStr.Equals(expectedValue, StringComparison.OrdinalIgnoreCase),
-            ConditionOperator.GreaterThan => CompareNumeric(actualValue, expectedValue) > 0,
-            ConditionOperator.LessThan => CompareNumeric(actualValue, expectedValue) < 0,
-            ConditionOperator.GreaterThanOrEqual => CompareNumeric(actualValue, expectedValue) >= 0,
-            ConditionOperator.LessThanOrEqual => CompareNumeric(actualValue, expectedValue) <= 0,
+            ConditionOperator.GreaterThan => actualValue is not null && CompareNumeric(actualValue, expectedValue) > 0,
+            ConditionOperator.LessThan => actualValue is not null && CompareNumeric(actualValue, expectedValue) < 0,
+            ConditionOperator.GreaterThanOrEqual => actualValue is not null && CompareNumeric(actualValue, expectedValue) >= 0,
+            ConditionOperator.LessThanOrEqual => actualValue is not null && CompareNumeric(actualValue, expectedValue) <= 0,
             ConditionOperator.Contains => actualStr.Contains(expectedValue, StringComparison.OrdinalIgnoreCase),
             ConditionOperator.NotContains => !actualStr.Contains(expectedValue, StringComparison.OrdinalIgnoreCase),
             _ => false

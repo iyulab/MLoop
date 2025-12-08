@@ -98,7 +98,7 @@ public class PredictionEngine : IPredictionEngine
             byte[] bom = new byte[3];
             using (var fs = File.OpenRead(processedDataPath))
             {
-                fs.Read(bom, 0, 3);
+                fs.ReadExactly(bom, 0, 3);
             }
 
             bool hasBom = bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF;

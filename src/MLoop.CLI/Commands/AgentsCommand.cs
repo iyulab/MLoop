@@ -233,6 +233,12 @@ public static class AgentsCommand
         {
             var agentName = parseResult.GetValue(agentArg);
 
+            if (string.IsNullOrEmpty(agentName))
+            {
+                AnsiConsole.MarkupLine("[red]Agent name is required.[/]");
+                return 1;
+            }
+
             try
             {
                 using var loggerFactory = LoggerFactory.Create(builder =>

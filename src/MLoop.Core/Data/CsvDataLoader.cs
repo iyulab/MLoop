@@ -154,7 +154,7 @@ public class CsvDataLoader : IDataProvider
         {
             if (fs.Length >= 3)
             {
-                fs.Read(bom, 0, 3);
+                fs.ReadExactly(bom, 0, 3);
             }
         }
 

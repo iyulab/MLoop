@@ -8,6 +8,7 @@
 
   <!-- DEBUG: Local project references (for ironbees development/debugging) -->
   <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.Core\Ironbees.Core.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Core\Ironbees.AgentMode.Core.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Providers\Ironbees.AgentMode.Providers.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Agents\Ironbees.AgentMode.Agents.csproj" />
@@ -18,6 +19,7 @@
   <!-- Current stable: v0.1.2 (does not include ConversationalAgent) -->
   <!-- For now, use project references in both Debug and Release -->
   <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.Core\Ironbees.Core.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Core\Ironbees.AgentMode.Core.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Providers\Ironbees.AgentMode.Providers.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Agents\Ironbees.AgentMode.Agents.csproj" />
@@ -51,6 +53,8 @@
     <!-- Explicit versions to resolve conflicts with Ironbees dependencies -->
     <PackageReference Include="System.ClientModel" />
     <PackageReference Include="OpenAI" />
+    <!-- Resilience middleware dependency -->
+    <PackageReference Include="Polly.Core" />
   </ItemGroup>
 
   <!-- Copy AgentTemplates directory to output for built-in agent installation -->

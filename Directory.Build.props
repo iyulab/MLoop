@@ -16,9 +16,10 @@
     <RepositoryUrl>https://github.com/iyulab/MLoop</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
-    <!-- Version -->
-    <VersionPrefix>0.1.1</VersionPrefix>
-    <VersionSuffix>alpha</VersionSuffix>
+    <!-- Version: Can be overridden via -p:Version=x.y.z from CI/CD -->
+    <!-- Default version for local development -->
+    <VersionPrefix Condition="'$(Version)' == ''">0.1.2</VersionPrefix>
+    <VersionSuffix Condition="'$(Version)' == ''">alpha</VersionSuffix>
 
     <!-- Build settings -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
@@ -28,5 +29,16 @@
     <!-- Deterministic build -->
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Source Link for debugging NuGet packages -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <!-- Source Link package for GitHub -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+  </ItemGroup>
 </Project>

@@ -1,0 +1,187 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish_nuget:
+        description: 'Publish to NuGet'
+        required: true
+        default: 'true'
+        type: boolean
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Extract version from tag
+      id: version
+      run: |
+        if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          VERSION="${GITHUB_REF#refs/tags/v}"
+        else
+          VERSION="0.0.0-dev"
+        fi
+
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+        # Check if prerelease (contains -, e.g., 1.0.0-alpha)
+        if [[ "$VERSION" == *-* ]]; then
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        fi
+
+        echo "Version: $VERSION"
+
+    - name: Restore dependencies
+      run: dotnet restore MLoop.sln
+
+    - name: Build
+      run: dotnet build MLoop.sln --configuration Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+
+    - name: Run tests
+      run: dotnet test MLoop.sln --configuration Release --no-build --verbosity normal
+
+    - name: Pack NuGet packages
+      run: |
+        dotnet pack src/MLoop.Core/MLoop.Core.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }} -o ./artifacts
+        dotnet pack src/MLoop.Extensibility/MLoop.Extensibility.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }} -o ./artifacts
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget-packages
+        path: ./artifacts/*.nupkg
+        retention-days: 5
+
+  publish-nuget:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_nuget)
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: nuget-packages
+        path: ./artifacts
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Publish to NuGet
+      run: |
+        for package in ./artifacts/*.nupkg; do
+          echo "Publishing $package"
+          dotnet nuget push "$package" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        done
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: nuget-packages
+        path: ./artifacts
+
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        VERSION="${{ needs.build.outputs.version }}"
+
+        cat << 'EOF' > release_notes.md
+        ## What's Changed
+
+        See [CHANGELOG](https://github.com/iyulab/MLoop/blob/main/CHANGELOG.md) for details.
+
+        ## Installation
+
+        ### NuGet Packages
+        ```bash
+        dotnet add package MLoop.Core --version $VERSION
+        dotnet add package MLoop.Extensibility --version $VERSION
+        ```
+
+        ### CLI Tool
+        ```bash
+        dotnet tool install --global MLoop.CLI --version $VERSION
+        ```
+
+        ## Checksums
+        EOF
+
+        echo "" >> release_notes.md
+        echo '```' >> release_notes.md
+        for file in ./artifacts/*.nupkg; do
+          sha256sum "$file" | awk '{print $1 "  " $2}' >> release_notes.md
+        done
+        echo '```' >> release_notes.md
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: MLoop v${{ needs.build.outputs.version }}
+        body_path: release_notes.md
+        draft: false
+        prerelease: ${{ needs.build.outputs.is_prerelease == 'true' }}
+        files: |
+          ./artifacts/*.nupkg
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-cli-tool:
+    needs: [build, publish-nuget]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_nuget)
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore MLoop.sln
+
+    - name: Pack CLI tool
+      run: |
+        dotnet pack src/MLoop.CLI/MLoop.CLI.csproj --configuration Release -p:Version=${{ needs.build.outputs.version }} -o ./artifacts
+
+    - name: Publish CLI to NuGet
+      run: |
+        dotnet nuget push ./artifacts/MLoop.CLI.*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
