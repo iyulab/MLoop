@@ -23,9 +23,9 @@ public static class InitCommand
             DefaultValueFactory = _ => "binary-classification"
         };
 
-        var modelOption = new Option<string>("--model", "-m")
+        var nameOption = new Option<string>("--name", "-n")
         {
-            Description = "Initial model name (default: 'default')",
+            Description = $"Initial model name (default: '{ConfigDefaults.DefaultModelName}')",
             DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
         };
 
@@ -44,7 +44,7 @@ public static class InitCommand
         var command = new Command("init", "Initialize a new ML project with multi-model support");
         command.Arguments.Add(projectNameArg);
         command.Options.Add(taskOption);
-        command.Options.Add(modelOption);
+        command.Options.Add(nameOption);
         command.Options.Add(labelOption);
         command.Options.Add(forceOption);
 
@@ -52,7 +52,7 @@ public static class InitCommand
         {
             var projectName = parseResult.GetValue(projectNameArg)!;
             var task = parseResult.GetValue(taskOption)!;
-            var model = parseResult.GetValue(modelOption)!;
+            var model = parseResult.GetValue(nameOption)!;
             var label = parseResult.GetValue(labelOption)!;
             var force = parseResult.GetValue(forceOption);
             return ExecuteAsync(projectName, task, model, label, force);
