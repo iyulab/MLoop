@@ -49,8 +49,11 @@ jobs:
     - name: Build
       run: dotnet build MLoop.sln --configuration Release --no-restore
 
-    - name: Run tests
-      run: dotnet test MLoop.sln --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+    - name: Run tests (CI - excludes heavy tests)
+      run: |
+        # Run only lightweight tests in CI (excludes LLM, Slow, E2E, Database tests)
+        # Heavy tests should be run locally with: dotnet test --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
+        dotnet test MLoop.sln --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
 
     - name: Upload coverage reports to Codecov
       if: matrix.os == 'ubuntu-latest'

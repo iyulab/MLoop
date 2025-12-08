@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\MLoop.Core\MLoop.Core.csproj" />
     <ProjectReference Include="..\..\src\MLoop.Extensibility\MLoop.Extensibility.csproj" />
+    <ProjectReference Include="..\MLoop.Tests.Common\MLoop.Tests.Common.csproj" />
   </ItemGroup>
 
 </Project>
