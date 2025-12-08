@@ -1,0 +1,20 @@
+# MLoop generated files
+.mloop/cache/
+.mloop/.cache/
+experiments/*/model.zip
+experiments/*/training.log
+models/*/model.zip
+outputs/
+
+# Environment files
+.env
+.env.local
+
+# IDE
+.vs/
+.vscode/
+*.user
+
+# OS
+.DS_Store
+Thumbs.db

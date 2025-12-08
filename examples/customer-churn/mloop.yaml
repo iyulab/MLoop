@@ -1,0 +1,19 @@
+# MLoop Project Configuration - Customer Churn Prediction
+
+project_name: customer-churn
+task: binary-classification
+label_column: Churn
+
+# Training settings
+training:
+  time_limit_seconds: 300
+  metric: F1Score
+  test_split: 0.2
+
+# Data paths
+data:
+  train: datasets/customers.csv
+
+# Model output
+model:
+  output_dir: models/staging

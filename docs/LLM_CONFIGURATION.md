@@ -79,7 +79,7 @@ GPUSTACK_MODEL=llama-3.1-70b-instruct
 
 ### Setup Guide
 
-See [Ironbees SELF_HOSTED_LLMS.md](https://github.com/yourusername/ironbees/blob/main/docs/SELF_HOSTED_LLMS.md) for GPUStack installation instructions.
+See [Ironbees SELF_HOSTED_LLMS.md](https://github.com/iyulab/ironbees/blob/main/docs/SELF_HOSTED_LLMS.md) for GPUStack installation instructions.
 
 ---
 
@@ -394,7 +394,7 @@ MLoop 1.0+ uses file-based agents in `~/.mloop/agents/`. To customize:
 
 ### From OpenAI to Self-Hosted
 
-1. **Setup GPUStack** (see [SELF_HOSTED_LLMS.md](https://github.com/yourusername/ironbees/blob/main/docs/SELF_HOSTED_LLMS.md))
+1. **Setup GPUStack** (see [SELF_HOSTED_LLMS.md](https://github.com/iyulab/ironbees/blob/main/docs/SELF_HOSTED_LLMS.md))
 
 2. **Deploy a model** (e.g., Llama 3.1 8B)
 
@@ -443,9 +443,9 @@ MLoop 1.0+ uses file-based agents in `~/.mloop/agents/`. To customize:
 
 ## References
 
-- [Ironbees AgentMode Documentation](https://github.com/yourusername/ironbees/tree/main/docs)
-- [Ironbees PROVIDERS.md](https://github.com/yourusername/ironbees/blob/main/docs/PROVIDERS.md)
-- [Ironbees SELF_HOSTED_LLMS.md](https://github.com/yourusername/ironbees/blob/main/docs/SELF_HOSTED_LLMS.md)
+- [Ironbees AgentMode Documentation](https://github.com/iyulab/ironbees/tree/main/docs)
+- [Ironbees PROVIDERS.md](https://github.com/iyulab/ironbees/blob/main/docs/PROVIDERS.md)
+- [Ironbees SELF_HOSTED_LLMS.md](https://github.com/iyulab/ironbees/blob/main/docs/SELF_HOSTED_LLMS.md)
 - [Microsoft.Extensions.AI](https://learn.microsoft.com/en-us/dotnet/ai/how-to/chat-client)
 
 ---
