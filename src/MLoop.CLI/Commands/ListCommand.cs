@@ -12,6 +12,11 @@ public static class ListCommand
 {
     public static Command Create()
     {
+        var nameOption = new Option<string?>("--name", "-n")
+        {
+            Description = "Filter by model name (shows all models if omitted)"
+        };
+
         var allOption = new Option<bool>("--all", "-a")
         {
             Description = "Show all experiments including failed ones (default: completed only)",
@@ -19,18 +24,20 @@ public static class ListCommand
         };
 
         var command = new Command("list", "List all experiments");
+        command.Options.Add(nameOption);
         command.Options.Add(allOption);
 
         command.SetAction((parseResult) =>
         {
+            var name = parseResult.GetValue(nameOption);
             var showAll = parseResult.GetValue(allOption);
-            return ExecuteAsync(showAll);
+            return ExecuteAsync(name, showAll);
         });
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(bool showAll)
+    private static async Task<int> ExecuteAsync(string? modelName, bool showAll)
     {
         try
         {
@@ -51,15 +58,21 @@ public static class ListCommand
                 return 1;
             }
 
+            // Resolve model name (null means all models)
+            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
+                ? null
+                : modelName.Trim().ToLowerInvariant();
+
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
             var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
 
-            // Get all experiments
-            var experiments = await experimentStore.ListAsync(CancellationToken.None);
+            // Get experiments (filtered by model if specified)
+            var experiments = await experimentStore.ListAsync(resolvedModelName, CancellationToken.None);
             var experimentsList = experiments.ToList();
 
-            // Get production model
-            var productionModel = await modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
+            // Get production models for display
+            var productionModels = await modelRegistry.ListAsync(null, CancellationToken.None);
+            var productionDict = productionModels.ToDictionary(m => m.ModelName, m => m.ExperimentId);
 
             // Filter if needed
             if (!showAll)
@@ -71,8 +84,16 @@ public static class ListCommand
 
             if (!experimentsList.Any())
             {
-                AnsiConsole.MarkupLine("[yellow]No experiments found.[/]");
-                AnsiConsole.MarkupLine("[grey]Run [blue]mloop train[/] to create your first experiment.[/]");
+                if (resolvedModelName != null)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]No experiments found for model '[cyan]{resolvedModelName}[/]'.[/]");
+                    AnsiConsole.MarkupLine($"[grey]Run [blue]mloop train --name {resolvedModelName}[/] to create an experiment.[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[yellow]No experiments found.[/]");
+                    AnsiConsole.MarkupLine("[grey]Run [blue]mloop train[/] to create your first experiment.[/]");
+                }
                 return 0;
             }
 
@@ -80,13 +101,24 @@ public static class ListCommand
             experimentsList = experimentsList.OrderByDescending(e => e.Timestamp).ToList();
 
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[bold]Experiments in {Path.GetFileName(projectRoot)}[/]");
+
+            var title = resolvedModelName != null
+                ? $"[bold]Experiments for model '[cyan]{resolvedModelName}[/]'[/]"
+                : $"[bold]All Experiments in {Path.GetFileName(projectRoot)}[/]";
+
+            AnsiConsole.Write(new Rule(title).LeftJustified());
             AnsiConsole.WriteLine();
 
             // Create table
             var table = new Table()
                 .Border(TableBorder.Rounded)
                 .BorderColor(Color.Grey);
+
+            // Add model column only when showing all models
+            if (resolvedModelName == null)
+            {
+                table.AddColumn(new TableColumn("[bold]Model[/]"));
+            }
 
             table.AddColumn(new TableColumn("[bold]ID[/]").Centered());
             table.AddColumn(new TableColumn("[bold]Timestamp[/]"));
@@ -96,7 +128,8 @@ public static class ListCommand
 
             foreach (var exp in experimentsList)
             {
-                var isProduction = productionModel != null && exp.ExperimentId == productionModel.ExperimentId;
+                var expModelName = exp.ModelName ?? ConfigDefaults.DefaultModelName;
+                var isProduction = productionDict.TryGetValue(expModelName, out var prodExpId) && exp.ExperimentId == prodExpId;
 
                 var id = isProduction
                     ? $"[green bold]{exp.ExperimentId}[/]"
@@ -105,9 +138,9 @@ public static class ListCommand
                 var timestamp = exp.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
                 var status = exp.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)
-                    ? "[green]✓ Completed[/]"
+                    ? "[green]Completed[/]"
                     : exp.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase)
-                        ? "[red]✗ Failed[/]"
+                        ? "[red]Failed[/]"
                         : $"[yellow]{exp.Status}[/]";
 
                 var metric = exp.BestMetric.HasValue
@@ -115,10 +148,17 @@ public static class ListCommand
                     : "[grey]-[/]";
 
                 var stage = isProduction
-                    ? "[green bold]★ Production[/]"
-                    : "[grey]Staging[/]";
+                    ? "[green bold]Production[/]"
+                    : "[grey]-[/]";
 
-                table.AddRow(id, timestamp, status, metric, stage);
+                if (resolvedModelName == null)
+                {
+                    table.AddRow($"[blue]{expModelName}[/]", id, timestamp, status, metric, stage);
+                }
+                else
+                {
+                    table.AddRow(id, timestamp, status, metric, stage);
+                }
             }
 
             AnsiConsole.Write(table);
@@ -131,13 +171,25 @@ public static class ListCommand
 
             AnsiConsole.MarkupLine($"[grey]Total: {totalCount} | Completed: [green]{completedCount}[/] | Failed: [red]{failedCount}[/][/]");
 
-            if (productionModel != null)
+            // Show production info
+            if (resolvedModelName != null)
             {
-                AnsiConsole.MarkupLine($"[grey]Production model: [green]{productionModel.ExperimentId}[/] (promoted {productionModel.PromotedAt.ToLocalTime():yyyy-MM-dd HH:mm})[/]");
+                // Single model - show its production status
+                if (productionDict.TryGetValue(resolvedModelName, out var prodId))
+                {
+                    AnsiConsole.MarkupLine($"[grey]Production model: [green]{prodId}[/][/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"[grey]No production model for '{resolvedModelName}'. Use [blue]mloop promote <exp-id> --name {resolvedModelName}[/][/]");
+                }
             }
             else
             {
-                AnsiConsole.MarkupLine("[grey]No production model. Train a model to auto-promote to production.[/]");
+                // All models - show all production models
+                var distinctModels = experimentsList.Select(e => e.ModelName ?? ConfigDefaults.DefaultModelName).Distinct().ToList();
+                var prodCount = distinctModels.Count(m => productionDict.ContainsKey(m));
+                AnsiConsole.MarkupLine($"[grey]Models: {distinctModels.Count} | Production: {prodCount}[/]");
             }
 
             AnsiConsole.WriteLine();

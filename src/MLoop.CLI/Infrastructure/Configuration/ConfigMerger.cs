@@ -7,40 +7,32 @@ namespace MLoop.CLI.Infrastructure.Configuration;
 public class ConfigMerger
 {
     /// <summary>
-    /// Merges configurations with priority
+    /// Merges project-level configurations
     /// </summary>
     public MLoopConfig Merge(
         MLoopConfig? cliConfig = null,
         MLoopConfig? userConfig = null,
-        MLoopConfig? projectConfig = null,
-        MLoopConfig? defaults = null)
+        MLoopConfig? projectConfig = null)
     {
         var merged = new MLoopConfig
         {
-            Training = new TrainingSettings(),
-            Data = new DataSettings(),
-            Model = new ModelSettings()
+            Models = new Dictionary<string, ModelDefinition>(),
+            Data = new DataSettings()
         };
 
-        // Apply defaults
-        if (defaults != null)
-        {
-            ApplyConfig(merged, defaults);
-        }
-
-        // Apply project config (.mloop/config.json)
+        // Apply project config (.mloop/config.json) - lowest priority
         if (projectConfig != null)
         {
             ApplyConfig(merged, projectConfig);
         }
 
-        // Apply user config (mloop.yaml)
+        // Apply user config (mloop.yaml) - medium priority
         if (userConfig != null)
         {
             ApplyConfig(merged, userConfig);
         }
 
-        // Apply CLI args (highest priority)
+        // Apply CLI args - highest priority
         if (cliConfig != null)
         {
             ApplyConfig(merged, cliConfig);
@@ -50,70 +42,137 @@ public class ConfigMerger
     }
 
     /// <summary>
-    /// Creates default configuration
+    /// Gets effective model definition by merging model-specific settings with defaults
     /// </summary>
-    public static MLoopConfig CreateDefaults()
+    public ModelDefinition GetEffectiveModelDefinition(
+        MLoopConfig config,
+        string modelName,
+        string? cliLabel = null,
+        string? cliTask = null,
+        TrainingSettings? cliTraining = null)
     {
-        return new MLoopConfig
+        // Get base model definition or create new one
+        ModelDefinition? baseDefinition = null;
+        config.Models.TryGetValue(modelName, out baseDefinition);
+
+        // Determine final values with CLI override priority
+        var task = cliTask
+            ?? baseDefinition?.Task
+            ?? throw new InvalidOperationException($"Task not specified for model '{modelName}'. Use --task or define in mloop.yaml");
+
+        var label = cliLabel
+            ?? baseDefinition?.Label
+            ?? throw new InvalidOperationException($"Label not specified for model '{modelName}'. Use <label> argument or define in mloop.yaml");
+
+        var training = MergeTrainingSettings(
+            ConfigDefaults.CreateDefaultTrainingSettings(),
+            baseDefinition?.Training,
+            cliTraining);
+
+        return new ModelDefinition
         {
-            Training = new TrainingSettings
-            {
-                TimeLimitSeconds = 300,
-                Metric = "accuracy",
-                TestSplit = 0.2  // Default 20% test split
-            },
-            Data = new DataSettings
-            {
-                Train = "data/processed/train.csv",
-                Test = "data/processed/test.csv"
-            },
-            Model = new ModelSettings
-            {
-                OutputDir = "models/staging"
-            }
+            Task = task,
+            Label = label,
+            Training = training,
+            Description = baseDefinition?.Description
         };
+    }
+
+    /// <summary>
+    /// Merges training settings with priority: cli > model > defaults
+    /// </summary>
+    public TrainingSettings MergeTrainingSettings(
+        TrainingSettings? defaults,
+        TrainingSettings? modelSettings,
+        TrainingSettings? cliSettings)
+    {
+        var merged = new TrainingSettings
+        {
+            TimeLimitSeconds = ConfigDefaults.DefaultTimeLimitSeconds,
+            Metric = ConfigDefaults.DefaultMetric,
+            TestSplit = ConfigDefaults.DefaultTestSplit
+        };
+
+        // Apply defaults
+        if (defaults != null)
+        {
+            ApplyTrainingSettings(merged, defaults);
+        }
+
+        // Apply model-specific settings
+        if (modelSettings != null)
+        {
+            ApplyTrainingSettings(merged, modelSettings);
+        }
+
+        // Apply CLI settings (highest priority)
+        if (cliSettings != null)
+        {
+            ApplyTrainingSettings(merged, cliSettings);
+        }
+
+        return merged;
     }
 
     private void ApplyConfig(MLoopConfig target, MLoopConfig source)
     {
-        // Apply top-level properties
-        if (!string.IsNullOrEmpty(source.ProjectName))
-            target.ProjectName = source.ProjectName;
-
-        if (!string.IsNullOrEmpty(source.Task))
-            target.Task = source.Task;
-
-        if (!string.IsNullOrEmpty(source.LabelColumn))
-            target.LabelColumn = source.LabelColumn;
-
-        // Apply training settings
-        if (source.Training != null && target.Training != null)
+        // Apply project name
+        if (!string.IsNullOrEmpty(source.Project))
         {
-            if (source.Training.TimeLimitSeconds.HasValue)
-                target.Training.TimeLimitSeconds = source.Training.TimeLimitSeconds;
+            target.Project = source.Project;
+        }
 
-            if (!string.IsNullOrEmpty(source.Training.Metric))
-                target.Training.Metric = source.Training.Metric;
-
-            if (source.Training.TestSplit.HasValue)
-                target.Training.TestSplit = source.Training.TestSplit;
+        // Merge model definitions
+        foreach (var (name, definition) in source.Models)
+        {
+            if (target.Models.TryGetValue(name, out var existing))
+            {
+                // Merge with existing definition
+                target.Models[name] = MergeModelDefinitions(existing, definition);
+            }
+            else
+            {
+                // Add new definition
+                target.Models[name] = definition;
+            }
         }
 
         // Apply data settings
-        if (source.Data != null && target.Data != null)
+        if (source.Data != null)
         {
+            target.Data ??= new DataSettings();
+
             if (!string.IsNullOrEmpty(source.Data.Train))
                 target.Data.Train = source.Data.Train;
 
             if (!string.IsNullOrEmpty(source.Data.Test))
                 target.Data.Test = source.Data.Test;
-        }
 
-        // Apply model settings
-        if (source.Model != null && target.Model != null)
-        {
-            if (!string.IsNullOrEmpty(source.Model.OutputDir))
-                target.Model.OutputDir = source.Model.OutputDir;
+            if (!string.IsNullOrEmpty(source.Data.Predict))
+                target.Data.Predict = source.Data.Predict;
         }
+    }
+
+    private ModelDefinition MergeModelDefinitions(ModelDefinition existing, ModelDefinition source)
+    {
+        return new ModelDefinition
+        {
+            Task = !string.IsNullOrEmpty(source.Task) ? source.Task : existing.Task,
+            Label = !string.IsNullOrEmpty(source.Label) ? source.Label : existing.Label,
+            Training = MergeTrainingSettings(existing.Training, source.Training, null),
+            Description = !string.IsNullOrEmpty(source.Description) ? source.Description : existing.Description
+        };
+    }
+
+    private void ApplyTrainingSettings(TrainingSettings target, TrainingSettings source)
+    {
+        if (source.TimeLimitSeconds.HasValue)
+            target.TimeLimitSeconds = source.TimeLimitSeconds;
+
+        if (!string.IsNullOrEmpty(source.Metric))
+            target.Metric = source.Metric;
+
+        if (source.TestSplit.HasValue)
+            target.TestSplit = source.TestSplit;
     }
 }

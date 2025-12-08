@@ -1,4 +1,5 @@
 using System.CommandLine;
+using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using Spectre.Console;
@@ -24,15 +25,22 @@ public static class EvaluateCommand
             Arity = ArgumentArity.ZeroOrOne
         };
 
+        var nameOption = new Option<string?>("--name", "-n")
+        {
+            Description = $"Model name (default: '{ConfigDefaults.DefaultModelName}')"
+        };
+
         var command = new Command("evaluate", "Evaluate model performance on test data");
         command.Arguments.Add(experimentArg);
         command.Arguments.Add(testDataArg);
+        command.Options.Add(nameOption);
 
         command.SetAction((parseResult) =>
         {
             var experimentId = parseResult.GetValue(experimentArg);
             var testDataFile = parseResult.GetValue(testDataArg);
-            return ExecuteAsync(experimentId, testDataFile);
+            var name = parseResult.GetValue(nameOption);
+            return ExecuteAsync(experimentId, testDataFile, name);
         });
 
         return command;
@@ -40,7 +48,8 @@ public static class EvaluateCommand
 
     private static async Task<int> ExecuteAsync(
         string? experimentId,
-        string? testDataFile)
+        string? testDataFile,
+        string? modelName)
     {
         try
         {
@@ -61,6 +70,11 @@ public static class EvaluateCommand
                 return 1;
             }
 
+            // Resolve model name (defaults to "default")
+            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
+                ? ConfigDefaults.DefaultModelName
+                : modelName.Trim().ToLowerInvariant();
+
             // Resolve experiment and model path
             string resolvedModelPath;
             string resolvedExperimentId;
@@ -71,38 +85,41 @@ public static class EvaluateCommand
 
             if (string.IsNullOrEmpty(experimentId))
             {
-                // Use production model
-                var productionModel = await modelRegistry.GetAsync(ModelStage.Production, CancellationToken.None);
+                // Use production model for the specified model name
+                var productionModel = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
 
                 if (productionModel == null)
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] No production model found.");
-                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Train a model first: [blue]mloop train[/]");
+                    AnsiConsole.MarkupLine($"[red]Error:[/] No production model found for '[cyan]{resolvedModelName}[/]'.");
+                    AnsiConsole.MarkupLine($"[yellow]Tip:[/] Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
                     return 1;
                 }
 
                 resolvedExperimentId = productionModel.ExperimentId;
                 resolvedModelPath = fileSystem.CombinePath(productionModel.ModelPath, "model.zip");
-                experimentData = await experimentStore.LoadAsync(resolvedExperimentId, CancellationToken.None);
+                experimentData = await experimentStore.LoadAsync(resolvedModelName, resolvedExperimentId, CancellationToken.None);
 
-                AnsiConsole.MarkupLine($"[green]✓[/] Using production model: [cyan]{resolvedExperimentId}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Using production model: [cyan]{resolvedExperimentId}[/]");
             }
             else
             {
                 // Use specified experiment
                 resolvedExperimentId = experimentId;
 
-                if (!experimentStore.ExperimentExists(resolvedExperimentId))
+                if (!experimentStore.ExperimentExists(resolvedModelName, resolvedExperimentId))
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Experiment not found: {resolvedExperimentId}");
+                    AnsiConsole.MarkupLine($"[red]Error:[/] Experiment not found: {resolvedExperimentId} for model '{resolvedModelName}'");
+                    AnsiConsole.MarkupLine($"[yellow]Tip:[/] Run [blue]mloop list --name {resolvedModelName}[/] to see all experiments.");
                     return 1;
                 }
 
-                experimentData = await experimentStore.LoadAsync(resolvedExperimentId, CancellationToken.None);
-                var experimentPath = experimentStore.GetExperimentPath(resolvedExperimentId);
+                experimentData = await experimentStore.LoadAsync(resolvedModelName, resolvedExperimentId, CancellationToken.None);
+                var experimentPath = experimentStore.GetExperimentPath(resolvedModelName, resolvedExperimentId);
                 resolvedModelPath = fileSystem.CombinePath(experimentPath, "model.zip");
 
-                AnsiConsole.MarkupLine($"[green]✓[/] Using experiment: [cyan]{resolvedExperimentId}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Using experiment: [cyan]{resolvedExperimentId}[/]");
             }
 
             if (!File.Exists(resolvedModelPath))
@@ -128,7 +145,7 @@ public static class EvaluateCommand
                 }
 
                 resolvedTestDataFile = datasets.TestPath;
-                AnsiConsole.MarkupLine($"[green]✓[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
             }
             else
             {
@@ -143,14 +160,14 @@ public static class EvaluateCommand
                     return 1;
                 }
 
-                AnsiConsole.MarkupLine($"[green]✓[/] Using test data: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
+                AnsiConsole.MarkupLine($"[green]>[/] Using test data: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
             }
 
             AnsiConsole.WriteLine();
 
             // Validate schema before evaluation
             var validator = new SchemaValidator(fileSystem, projectDiscovery);
-            var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedTestDataFile, resolvedExperimentId);
+            var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedTestDataFile, resolvedModelName, resolvedExperimentId);
 
             if (!validationResult.IsValid)
             {
@@ -159,7 +176,7 @@ public static class EvaluateCommand
 
                 if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
                 {
-                    AnsiConsole.MarkupLine($"[yellow]⚠ {validationResult.ErrorMessage}[/]");
+                    AnsiConsole.MarkupLine($"[yellow]Warning: {validationResult.ErrorMessage}[/]");
                     AnsiConsole.WriteLine();
                 }
 
@@ -168,7 +185,7 @@ public static class EvaluateCommand
                     AnsiConsole.MarkupLine("[red]Missing columns in test data:[/]");
                     foreach (var col in validationResult.MissingColumns)
                     {
-                        AnsiConsole.MarkupLine($"  [grey]•[/] {col}");
+                        AnsiConsole.MarkupLine($"  [grey]-[/] {col}");
                     }
                     AnsiConsole.WriteLine();
                 }
@@ -176,7 +193,7 @@ public static class EvaluateCommand
                 return 1;
             }
 
-            AnsiConsole.MarkupLine("[green]✓[/] Schema validation passed");
+            AnsiConsole.MarkupLine("[green]>[/] Schema validation passed");
             AnsiConsole.WriteLine();
 
             // Perform evaluation with progress indicator
@@ -198,6 +215,8 @@ public static class EvaluateCommand
                     ctx.Status("[green]Evaluation complete![/]");
                 });
 
+            AnsiConsole.WriteLine();
+            AnsiConsole.Write(new Rule("[green]Evaluation Results[/]").LeftJustified());
             AnsiConsole.WriteLine();
 
             // Display results in table
@@ -249,7 +268,7 @@ public static class EvaluateCommand
                     var r2Diff = Math.Abs(trainingMetrics["r_squared"] - testMetrics["r_squared"]);
                     if (r2Diff > 0.1)
                     {
-                        AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] Large R² difference detected. Model may be overfitting.");
+                        AnsiConsole.MarkupLine("[yellow]Warning:[/] Large R-squared difference detected. Model may be overfitting.");
                         AnsiConsole.WriteLine();
                     }
                 }
@@ -261,13 +280,15 @@ public static class EvaluateCommand
                     var accDiff = Math.Abs(trainingMetrics["accuracy"] - testMetrics["accuracy"]);
                     if (accDiff > 0.1)
                     {
-                        AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] Large accuracy difference detected. Model may be overfitting.");
+                        AnsiConsole.MarkupLine("[yellow]Warning:[/] Large accuracy difference detected. Model may be overfitting.");
                         AnsiConsole.WriteLine();
                     }
                 }
             }
 
-            AnsiConsole.MarkupLine("[green]✓[/] Evaluation complete!");
+            AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
+            AnsiConsole.MarkupLine($"[green]>[/] Experiment: [cyan]{resolvedExperimentId}[/]");
+            AnsiConsole.MarkupLine("[green]>[/] Evaluation complete!");
             AnsiConsole.WriteLine();
 
             return 0;

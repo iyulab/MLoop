@@ -1,11 +1,16 @@
+using MLoop.CLI.Infrastructure.Configuration;
+
 namespace MLoop.CLI.Infrastructure.FileSystem;
 
 /// <summary>
-/// Model registry implementation with staging and production support
+/// Model registry implementation for multi-model production deployment.
+/// Each model has its own production slot at models/{modelName}/production/.
+/// Registry stored per model at models/{modelName}/registry.json.
 /// </summary>
 public class ModelRegistry : IModelRegistry
 {
     private const string ModelsDirectory = "models";
+    private const string ProductionDirectory = "production";
     private const string RegistryFileName = "registry.json";
     private const string ModelFileName = "model.zip";
     private const string MetadataFileName = "metadata.json";
@@ -15,7 +20,6 @@ public class ModelRegistry : IModelRegistry
     private readonly IExperimentStore _experimentStore;
     private readonly string _projectRoot;
     private readonly string _modelsPath;
-    private readonly string _registryPath;
 
     public ModelRegistry(
         IFileSystemManager fileSystem,
@@ -28,34 +32,34 @@ public class ModelRegistry : IModelRegistry
 
         _projectRoot = _projectDiscovery.FindRoot();
         _modelsPath = _fileSystem.CombinePath(_projectRoot, ModelsDirectory);
-        _registryPath = _fileSystem.CombinePath(
-            _projectDiscovery.GetMLoopDirectory(_projectRoot),
-            RegistryFileName);
     }
 
+    /// <inheritdoc />
     public async Task PromoteAsync(
+        string modelName,
         string experimentId,
-        ModelStage stage,
         CancellationToken cancellationToken = default)
     {
+        var resolvedName = ResolveModelName(modelName);
+
         // Verify experiment exists
-        if (!_experimentStore.ExperimentExists(experimentId))
+        if (!_experimentStore.ExperimentExists(resolvedName, experimentId))
         {
-            throw new FileNotFoundException($"Experiment not found: {experimentId}");
+            throw new FileNotFoundException($"Experiment not found: {resolvedName}/{experimentId}");
         }
 
-        var experimentPath = _experimentStore.GetExperimentPath(experimentId);
+        var experimentPath = _experimentStore.GetExperimentPath(resolvedName, experimentId);
         var sourceModelPath = _fileSystem.CombinePath(experimentPath, ModelFileName);
 
         if (!_fileSystem.FileExists(sourceModelPath))
         {
             throw new FileNotFoundException(
-                $"Model file not found for experiment {experimentId}. " +
+                $"Model file not found for experiment {resolvedName}/{experimentId}. " +
                 $"Expected: {sourceModelPath}");
         }
 
         // Create target directory
-        var targetPath = GetModelPath(stage);
+        var targetPath = GetProductionPath(resolvedName);
         await _fileSystem.CreateDirectoryAsync(targetPath, cancellationToken);
 
         // Copy model
@@ -63,124 +67,122 @@ public class ModelRegistry : IModelRegistry
         await _fileSystem.CopyFileAsync(sourceModelPath, targetModelPath, overwrite: true, cancellationToken);
 
         // Load experiment metadata
-        var experiment = await _experimentStore.LoadAsync(experimentId, cancellationToken);
+        var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
 
         // Save metadata
         var metadataPath = _fileSystem.CombinePath(targetPath, MetadataFileName);
         await _fileSystem.WriteJsonAsync(metadataPath, new
         {
-            Stage = stage.ToString().ToLowerInvariant(),
+            ModelName = resolvedName,
             experiment.ExperimentId,
             PromotedAt = DateTime.UtcNow,
             experiment.Metrics,
             experiment.Task,
-            BestTrainer = experiment.Result?.BestTrainer
+            BestTrainer = experiment.Result?.BestTrainer,
+            LabelColumn = experiment.Config.LabelColumn
         }, cancellationToken);
 
         // Update registry
-        await UpdateRegistryAsync(stage, experimentId, experiment.Metrics, cancellationToken);
+        await UpdateRegistryAsync(resolvedName, experimentId, experiment, cancellationToken);
     }
 
-    public async Task<ModelInfo?> GetAsync(
-        ModelStage stage,
+    /// <inheritdoc />
+    public async Task<ModelInfo?> GetProductionAsync(
+        string modelName,
         CancellationToken cancellationToken = default)
     {
-        var registry = await LoadOrCreateRegistryAsync(cancellationToken);
+        var resolvedName = ResolveModelName(modelName);
+        var registry = await LoadRegistryAsync(resolvedName, cancellationToken);
 
-        var stageName = stage.ToString().ToLowerInvariant();
-        if (!registry.ContainsKey(stageName))
+        if (registry == null || !registry.TryGetValue("production", out var entry))
         {
             return null;
         }
 
-        var entry = registry[stageName];
-
-        // Parse metrics from JSON (handles JsonElement from System.Text.Json)
-        Dictionary<string, double>? metrics = null;
-        if (entry.ContainsKey("metrics") && entry["metrics"] != null)
-        {
-            metrics = new Dictionary<string, double>();
-            var metricsObj = entry["metrics"];
-
-            if (metricsObj is System.Text.Json.JsonElement jsonElement && jsonElement.ValueKind == System.Text.Json.JsonValueKind.Object)
-            {
-                foreach (var prop in jsonElement.EnumerateObject())
-                {
-                    if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number)
-                    {
-                        metrics[prop.Name] = prop.Value.GetDouble();
-                    }
-                }
-            }
-            else if (metricsObj is Dictionary<string, object> dict)
-            {
-                metrics = dict.ToDictionary(
-                    kvp => kvp.Key,
-                    kvp => Convert.ToDouble(kvp.Value));
-            }
-        }
-
-        return new ModelInfo
-        {
-            Stage = stage,
-            ExperimentId = entry["experimentId"]?.ToString() ?? string.Empty,
-            PromotedAt = DateTime.Parse(entry["promotedAt"]?.ToString() ?? DateTime.UtcNow.ToString()),
-            Metrics = metrics,
-            ModelPath = GetModelPath(stage)
-        };
+        return ParseModelInfo(resolvedName, entry);
     }
 
-    public async Task<IEnumerable<ModelInfo>> ListAsync(CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<IEnumerable<ModelInfo>> ListAsync(
+        string? modelName = null,
+        CancellationToken cancellationToken = default)
     {
         var models = new List<ModelInfo>();
 
-        foreach (ModelStage stage in Enum.GetValues<ModelStage>())
+        if (!string.IsNullOrEmpty(modelName))
         {
-            var model = await GetAsync(stage, cancellationToken);
+            // List production for specific model
+            var model = await GetProductionAsync(modelName, cancellationToken);
             if (model != null)
             {
                 models.Add(model);
             }
         }
-
-        return models;
-    }
-
-    public string GetModelPath(ModelStage stage)
-    {
-        var stageName = stage.ToString().ToLowerInvariant();
-        return _fileSystem.CombinePath(_modelsPath, stageName);
-    }
-
-    private async Task<Dictionary<string, Dictionary<string, object>>> LoadOrCreateRegistryAsync(
-        CancellationToken cancellationToken)
-    {
-        if (!_fileSystem.FileExists(_registryPath))
+        else
         {
-            var newRegistry = new Dictionary<string, Dictionary<string, object>>();
-            await SaveRegistryAsync(newRegistry, cancellationToken);
-            return newRegistry;
+            // List production across all models
+            if (!_fileSystem.DirectoryExists(_modelsPath))
+            {
+                return models;
+            }
+
+            var modelDirs = Directory.GetDirectories(_modelsPath);
+            foreach (var modelDir in modelDirs)
+            {
+                var name = Path.GetFileName(modelDir);
+                try
+                {
+                    var model = await GetProductionAsync(name, cancellationToken);
+                    if (model != null)
+                    {
+                        models.Add(model);
+                    }
+                }
+                catch
+                {
+                    // Skip models with invalid registry
+                }
+            }
         }
 
-        return await _fileSystem.ReadJsonAsync<Dictionary<string, Dictionary<string, object>>>(
-            _registryPath,
-            cancellationToken);
+        return models.OrderBy(m => m.ModelName == ConfigDefaults.DefaultModelName ? 0 : 1)
+                     .ThenBy(m => m.ModelName);
     }
 
-    private async Task SaveRegistryAsync(
-        Dictionary<string, Dictionary<string, object>> registry,
-        CancellationToken cancellationToken)
+    /// <inheritdoc />
+    public string GetProductionPath(string modelName)
     {
-        await _fileSystem.WriteJsonAsync(_registryPath, registry, cancellationToken);
+        var resolvedName = ResolveModelName(modelName);
+        var modelPath = _fileSystem.CombinePath(_modelsPath, resolvedName);
+        return _fileSystem.CombinePath(modelPath, ProductionDirectory);
     }
 
-    public async Task<bool> ShouldPromoteToProductionAsync(
+    /// <inheritdoc />
+    public bool HasProduction(string modelName)
+    {
+        var productionPath = GetProductionPath(modelName);
+        var modelFilePath = _fileSystem.CombinePath(productionPath, ModelFileName);
+        return _fileSystem.FileExists(modelFilePath);
+    }
+
+    /// <inheritdoc />
+    public string GetProductionModelFile(string modelName)
+    {
+        var productionPath = GetProductionPath(modelName);
+        return _fileSystem.CombinePath(productionPath, ModelFileName);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> ShouldPromoteAsync(
+        string modelName,
         string experimentId,
         string primaryMetric,
         CancellationToken cancellationToken = default)
     {
+        var resolvedName = ResolveModelName(modelName);
+
         // Load new experiment metrics
-        var experiment = await _experimentStore.LoadAsync(experimentId, cancellationToken);
+        var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
 
         if (experiment.Metrics == null || !experiment.Metrics.ContainsKey(primaryMetric))
         {
@@ -190,7 +192,7 @@ public class ModelRegistry : IModelRegistry
         var newMetricValue = experiment.Metrics[primaryMetric];
 
         // Get current production model
-        var currentProduction = await GetAsync(ModelStage.Production, cancellationToken);
+        var currentProduction = await GetProductionAsync(resolvedName, cancellationToken);
 
         if (currentProduction == null)
         {
@@ -207,50 +209,184 @@ public class ModelRegistry : IModelRegistry
         // Promote if new model is better
         // For most metrics (accuracy, r_squared, auc, f1), higher is better
         // For error metrics (mae, rmse, mse), lower is better
-        var isErrorMetric = primaryMetric.Contains("error", StringComparison.OrdinalIgnoreCase) ||
-                           primaryMetric.Contains("mae", StringComparison.OrdinalIgnoreCase) ||
-                           primaryMetric.Contains("mse", StringComparison.OrdinalIgnoreCase) ||
-                           primaryMetric.Contains("rmse", StringComparison.OrdinalIgnoreCase);
+        var isErrorMetric = IsErrorMetric(primaryMetric);
 
         return isErrorMetric
             ? newMetricValue < currentMetricValue  // Lower error is better
             : newMetricValue > currentMetricValue; // Higher score is better
     }
 
+    /// <inheritdoc />
     public async Task<bool> AutoPromoteAsync(
+        string modelName,
         string experimentId,
         string primaryMetric,
         CancellationToken cancellationToken = default)
     {
-        if (await ShouldPromoteToProductionAsync(experimentId, primaryMetric, cancellationToken))
+        if (await ShouldPromoteAsync(modelName, experimentId, primaryMetric, cancellationToken))
         {
-            await PromoteAsync(experimentId, ModelStage.Production, cancellationToken);
+            await PromoteAsync(modelName, experimentId, cancellationToken);
             return true;
         }
 
         return false;
     }
 
-    private async Task UpdateRegistryAsync(
-        ModelStage stage,
-        string experimentId,
-        Dictionary<string, double>? metrics,
+    private string GetRegistryPath(string modelName)
+    {
+        var modelPath = _fileSystem.CombinePath(_modelsPath, modelName);
+        return _fileSystem.CombinePath(modelPath, RegistryFileName);
+    }
+
+    private async Task<Dictionary<string, Dictionary<string, object?>>?> LoadRegistryAsync(
+        string modelName,
         CancellationToken cancellationToken)
     {
-        var registry = await LoadOrCreateRegistryAsync(cancellationToken);
+        var registryPath = GetRegistryPath(modelName);
 
-        var stageName = stage.ToString().ToLowerInvariant();
-        registry[stageName] = new Dictionary<string, object>
+        if (!_fileSystem.FileExists(registryPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _fileSystem.ReadJsonAsync<Dictionary<string, Dictionary<string, object?>>>(
+                registryPath,
+                cancellationToken);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task SaveRegistryAsync(
+        string modelName,
+        Dictionary<string, Dictionary<string, object?>> registry,
+        CancellationToken cancellationToken)
+    {
+        // Ensure model directory exists
+        var modelPath = _fileSystem.CombinePath(_modelsPath, modelName);
+        await _fileSystem.CreateDirectoryAsync(modelPath, cancellationToken);
+
+        var registryPath = GetRegistryPath(modelName);
+        await _fileSystem.WriteJsonAsync(registryPath, registry, cancellationToken);
+    }
+
+    private async Task UpdateRegistryAsync(
+        string modelName,
+        string experimentId,
+        ExperimentData experiment,
+        CancellationToken cancellationToken)
+    {
+        var registry = await LoadRegistryAsync(modelName, cancellationToken)
+            ?? new Dictionary<string, Dictionary<string, object?>>();
+
+        registry["production"] = new Dictionary<string, object?>
         {
             ["experimentId"] = experimentId,
             ["promotedAt"] = DateTime.UtcNow,
+            ["task"] = experiment.Task,
+            ["bestTrainer"] = experiment.Result?.BestTrainer,
+            ["labelColumn"] = experiment.Config.LabelColumn,
+            ["metrics"] = experiment.Metrics
         };
 
-        if (metrics != null)
+        await SaveRegistryAsync(modelName, registry, cancellationToken);
+    }
+
+    private ModelInfo? ParseModelInfo(string modelName, Dictionary<string, object?> entry)
+    {
+        if (!entry.TryGetValue("experimentId", out var expIdObj) || expIdObj == null)
         {
-            registry[stageName]["metrics"] = metrics;
+            return null;
         }
 
-        await SaveRegistryAsync(registry, cancellationToken);
+        // Parse metrics from JSON (handles JsonElement from System.Text.Json)
+        Dictionary<string, double>? metrics = null;
+        if (entry.TryGetValue("metrics", out var metricsObj) && metricsObj != null)
+        {
+            metrics = ParseMetrics(metricsObj);
+        }
+
+        // Parse promoted date
+        DateTime promotedAt = DateTime.UtcNow;
+        if (entry.TryGetValue("promotedAt", out var promotedAtObj) && promotedAtObj != null)
+        {
+            if (promotedAtObj is DateTime dt)
+            {
+                promotedAt = dt;
+            }
+            else if (DateTime.TryParse(promotedAtObj.ToString(), out var parsed))
+            {
+                promotedAt = parsed;
+            }
+        }
+
+        return new ModelInfo
+        {
+            ModelName = modelName,
+            ExperimentId = expIdObj.ToString() ?? string.Empty,
+            PromotedAt = promotedAt,
+            Metrics = metrics,
+            ModelPath = GetProductionPath(modelName),
+            Task = entry.TryGetValue("task", out var taskObj) ? taskObj?.ToString() : null,
+            BestTrainer = entry.TryGetValue("bestTrainer", out var trainerObj) ? trainerObj?.ToString() : null
+        };
+    }
+
+    private static Dictionary<string, double>? ParseMetrics(object metricsObj)
+    {
+        if (metricsObj is System.Text.Json.JsonElement jsonElement)
+        {
+            if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                var metrics = new Dictionary<string, double>();
+                foreach (var prop in jsonElement.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    {
+                        metrics[prop.Name] = prop.Value.GetDouble();
+                    }
+                }
+                return metrics.Count > 0 ? metrics : null;
+            }
+        }
+        else if (metricsObj is Dictionary<string, object> dict)
+        {
+            var metrics = new Dictionary<string, double>();
+            foreach (var kvp in dict)
+            {
+                if (double.TryParse(kvp.Value?.ToString(), out var value))
+                {
+                    metrics[kvp.Key] = value;
+                }
+            }
+            return metrics.Count > 0 ? metrics : null;
+        }
+        else if (metricsObj is Dictionary<string, double> directMetrics)
+        {
+            return directMetrics.Count > 0 ? directMetrics : null;
+        }
+
+        return null;
+    }
+
+    private static bool IsErrorMetric(string metricName)
+    {
+        var lower = metricName.ToLowerInvariant();
+        return lower.Contains("error") ||
+               lower.Contains("mae") ||
+               lower.Contains("mse") ||
+               lower.Contains("rmse") ||
+               lower.Contains("loss");
+    }
+
+    private static string ResolveModelName(string? name)
+    {
+        return string.IsNullOrWhiteSpace(name)
+            ? ConfigDefaults.DefaultModelName
+            : name.Trim().ToLowerInvariant();
     }
 }

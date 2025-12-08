@@ -25,7 +25,15 @@ public class SchemaValidator
     /// <summary>
     /// Validates that the prediction data schema matches the model's expected input schema
     /// </summary>
-    public async Task<SchemaValidationResult> ValidateAsync(string modelPath, string inputDataPath, string? experimentId = null)
+    /// <param name="modelPath">Path to the model file</param>
+    /// <param name="inputDataPath">Path to the prediction data file</param>
+    /// <param name="modelName">Model name for loading experiment data</param>
+    /// <param name="experimentId">Experiment ID for loading schema</param>
+    public async Task<SchemaValidationResult> ValidateAsync(
+        string modelPath,
+        string inputDataPath,
+        string modelName,
+        string? experimentId = null)
     {
         var result = new SchemaValidationResult { IsValid = true };
 
@@ -38,7 +46,7 @@ public class SchemaValidator
                 try
                 {
                     var experimentStore = new ExperimentStore(_fileSystem, _projectDiscovery);
-                    var experimentData = await experimentStore.LoadAsync(experimentId, CancellationToken.None);
+                    var experimentData = await experimentStore.LoadAsync(modelName, experimentId, CancellationToken.None);
                     savedSchema = experimentData?.Config?.InputSchema;
                 }
                 catch
