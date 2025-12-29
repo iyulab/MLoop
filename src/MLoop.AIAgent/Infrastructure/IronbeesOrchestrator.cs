@@ -23,6 +23,7 @@ public class IronbeesOrchestrator
     private readonly ILogger<IronbeesOrchestrator> _logger;
     private readonly IConversationStore _conversationStore;
     private readonly Dictionary<string, AgentConfiguration> _agents = new();
+    private IList<AITool>? _tools;
     private bool _isInitialized;
 
     /// <summary>
@@ -34,6 +35,11 @@ public class IronbeesOrchestrator
     /// Gets the underlying chat client with full middleware pipeline.
     /// </summary>
     public IChatClient ChatClient => _chatClient;
+
+    /// <summary>
+    /// Gets the registered tools for function calling.
+    /// </summary>
+    public IList<AITool>? Tools => _tools;
 
     public IronbeesOrchestrator(
         IChatClient chatClient,
@@ -198,8 +204,8 @@ public class IronbeesOrchestrator
     }
 
     /// <summary>
-    /// Builds the full Ironbees middleware pipeline.
-    /// Order: Rate Limiting -> Resilience -> Caching -> Token Tracking -> Base Client
+    /// Builds the full Ironbees middleware pipeline with function invocation support.
+    /// Order: Function Invocation -> Rate Limiting -> Resilience -> Caching -> Token Tracking -> Base Client
     /// </summary>
     private static IChatClient BuildMiddlewarePipeline(
         IChatClient baseChatClient,
@@ -238,7 +244,7 @@ public class IronbeesOrchestrator
             SizeLimit = 100 // Max 100 cached responses
         });
 
-        // Build pipeline: Rate Limiting -> Resilience -> Caching -> Token Tracking -> Base
+        // Build pipeline: Function Invocation -> Rate Limiting -> Resilience -> Caching -> Token Tracking -> Base
         // Note: Middleware wraps from inner to outer, so we add in reverse order
         var withTokenTracking = new TokenTrackingMiddleware(
             baseChatClient,
@@ -262,7 +268,13 @@ public class IronbeesOrchestrator
             rateLimitOptions,
             loggerFactory.CreateLogger<RateLimitingMiddleware>());
 
-        return withRateLimiting;
+        // Add function invocation support using ChatClientBuilder
+        // This enables automatic tool calling when tools are provided in ChatOptions
+        var withFunctionInvocation = new ChatClientBuilder(withRateLimiting)
+            .UseFunctionInvocation()
+            .Build();
+
+        return withFunctionInvocation;
     }
 
     /// <summary>
@@ -502,12 +514,18 @@ public class IronbeesOrchestrator
             {
                 Temperature = agent.Temperature,
                 MaxOutputTokens = agent.MaxTokens,
+                Tools = _tools,  // Include registered tools for function calling
                 AdditionalProperties = new AdditionalPropertiesDictionary
                 {
                     ["AgentName"] = agentName,
                     ["SessionId"] = conversationId ?? Guid.NewGuid().ToString()
                 }
             };
+
+            if (HasTools)
+            {
+                _logger.LogDebug("Processing request with {ToolCount} tools available", _tools!.Count);
+            }
 
             var response = await _chatClient.GetResponseAsync(messages, options);
             var responseText = response.ToString() ?? string.Empty;
@@ -596,6 +614,7 @@ public class IronbeesOrchestrator
         {
             Temperature = agent.Temperature,
             MaxOutputTokens = agent.MaxTokens,
+            Tools = _tools,  // Include registered tools for function calling
             AdditionalProperties = new AdditionalPropertiesDictionary
             {
                 ["AgentName"] = agentName,
@@ -703,6 +722,7 @@ public class IronbeesOrchestrator
         {
             Temperature = agent.Temperature,
             MaxOutputTokens = agent.MaxTokens,
+            Tools = _tools,  // Include registered tools for function calling
             AdditionalProperties = new AdditionalPropertiesDictionary
             {
                 ["AgentName"] = agentName,
@@ -859,6 +879,33 @@ public class IronbeesOrchestrator
         EnsureInitialized();
         return _agents.Keys;
     }
+
+    /// <summary>
+    /// Register tools for function calling capability.
+    /// Tools will be included in ChatOptions when processing requests.
+    /// </summary>
+    /// <param name="tools">List of AITools created via AIFunctionFactory.</param>
+    public void RegisterTools(IList<AITool> tools)
+    {
+        _tools = tools ?? throw new ArgumentNullException(nameof(tools));
+        _logger.LogInformation("Registered {Count} tools for function calling", tools.Count);
+
+        foreach (var tool in tools)
+        {
+            if (tool is AIFunction function)
+            {
+                var desc = function.Description ?? "";
+                _logger.LogDebug("  - {ToolName}: {Description}",
+                    function.Name,
+                    desc.Length > 50 ? desc[..50] + "..." : desc);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Check if tools are registered for function calling.
+    /// </summary>
+    public bool HasTools => _tools != null && _tools.Count > 0;
 
     private void EnsureInitialized()
     {
