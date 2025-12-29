@@ -13,7 +13,8 @@ Comprehensive technical documentation for MLoop's AI Agent system built on Ironb
 7. [Data Flow](#7-data-flow)
 8. [Extensibility](#8-extensibility)
 9. [Testing Strategy](#9-testing-strategy)
-10. [Performance Considerations](#10-performance-considerations)
+10. [Advanced Features](#10-advanced-features)
+11. [Performance Considerations](#11-performance-considerations)
 
 ---
 
@@ -855,21 +856,88 @@ public async Task TrainModelAsync_ValidConfig_ReturnsResult()
 
 ---
 
-## 10. Performance Considerations
+## 10. Advanced Features
 
-### 10.1 LLM API Optimization
+### 10.1 Tool Use Integration
+
+MLoop supports automatic tool calling through the Ironbees middleware stack:
+
+```csharp
+// Register tools with the orchestrator
+var tools = MLOpsTools.CreateTools(projectRoot, fileSystem, experimentStore, modelRegistry);
+orchestrator.RegisterTools(tools);
+
+// Tools are automatically available during chat
+var response = await orchestrator.ProcessAsync("Train a model on my dataset", cancellationToken);
+```
+
+**Available Tools**:
+| Tool | Description |
+|------|-------------|
+| `initialize_project` | Create new MLoop project |
+| `train_model` | Execute AutoML training |
+| `evaluate_model` | Assess model performance |
+| `predict` | Generate batch predictions |
+| `list_experiments` | List all experiments |
+| `promote_experiment` | Deploy model to production |
+| `get_dataset_info` | Analyze dataset statistics |
+| `preprocess_data` | Execute preprocessing scripts |
+
+### 10.2 Smart Agent Selection
+
+Keyword-based agent routing for optimal task matching:
+
+```csharp
+// Auto-select agent based on request content
+var response = await orchestrator.ProcessWithAutoSelectionAsync(
+    "Analyze the dataset quality and check for missing values",
+    cancellationToken);
+// → Routes to data-analyst agent
+```
+
+**Agent Keywords Mapping**:
+| Agent | Keywords |
+|-------|----------|
+| data-analyst | analyze, analysis, dataset, statistics, quality |
+| mlops-manager | train, training, evaluate, prediction, promote |
+| model-architect | model, algorithm, classification, regression |
+| preprocessing-expert | preprocess, transform, feature, encoding |
+
+### 10.3 Ironbees Middleware Stack
+
+The orchestrator uses a composable middleware pipeline:
+
+```
+IChatClient (base)
+    │
+    ├── Rate Limiting (request throttling)
+    │
+    ├── Resilience (retry with exponential backoff)
+    │
+    ├── Response Caching (distributed cache)
+    │
+    ├── Token Tracking (usage monitoring)
+    │
+    └── Function Invocation (tool calling)
+```
+
+---
+
+## 11. Performance Considerations
+
+### 11.1 LLM API Optimization
 
 - **Streaming**: Use `StreamAsync` for real-time feedback on long responses
 - **Context Management**: Keep system prompts focused and concise
-- **Caching**: Consider caching common analysis results
+- **Caching**: Response caching middleware for repeated queries
 
-### 10.2 CLI Execution
+### 11.2 CLI Execution
 
 - **Process Isolation**: Each MLoop CLI call runs in separate process
 - **Timeout Handling**: Implement appropriate timeouts for long operations
 - **Output Parsing**: Efficient parsing of CLI output
 
-### 10.3 Memory Management
+### 11.3 Memory Management
 
 ```csharp
 // Dispose pattern for agents
@@ -883,7 +951,7 @@ public class AgentCommand : Command
 }
 ```
 
-### 10.4 Metrics
+### 11.4 Metrics
 
 | Operation | Expected Time | Notes |
 |-----------|---------------|-------|
@@ -972,6 +1040,10 @@ OPENAI_MODEL=gpt-4o-mini
 
 ---
 
-**Version**: 1.0.0
-**Last Updated**: 2024-12-08
+**Version**: 1.1.0
+**Last Updated**: 2024-12-30
 **Status**: Production Ready
+
+**Changelog v1.1.0**:
+- Added Section 10: Advanced Features (Tool Use, Smart Agent Selection, Middleware Stack)
+- Updated performance considerations with caching middleware details
