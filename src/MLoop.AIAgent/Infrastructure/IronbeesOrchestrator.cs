@@ -67,6 +67,38 @@ public class IronbeesOrchestrator
         int ContextWindowTokens = 8192);
 
     /// <summary>
+    /// Agent selection keywords mapping.
+    /// Maps keywords to agent names for content-based routing.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> AgentKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["data-analyst"] =
+        [
+            "analyze", "analysis", "dataset", "data quality", "statistics", "distribution",
+            "correlation", "missing", "outlier", "describe", "summary", "explore", "EDA",
+            "readiness", "profiling", "columns", "types", "characteristics"
+        ],
+        ["mlops-manager"] =
+        [
+            "train", "training", "evaluate", "evaluation", "predict", "prediction",
+            "promote", "production", "experiment", "workflow", "pipeline", "deploy",
+            "list", "status", "init", "initialize", "project", "run", "execute", "mlops"
+        ],
+        ["model-architect"] =
+        [
+            "model", "algorithm", "classification", "regression", "binary", "multiclass",
+            "automl", "hyperparameter", "configuration", "recommend", "optimal", "best",
+            "architecture", "tuning", "metrics", "time limit"
+        ],
+        ["preprocessing-expert"] =
+        [
+            "preprocess", "preprocessing", "transform", "feature", "encoding", "scaling",
+            "normalization", "imputation", "missing values", "categorical", "numeric",
+            "script", "pipeline", "clean", "engineer"
+        ]
+    };
+
+    /// <summary>
     /// Factory method to create IronbeesOrchestrator with environment configuration.
     /// Uses Ironbees Agent Mode multi-provider LLM infrastructure with full middleware stack.
     ///
@@ -552,6 +584,7 @@ public class IronbeesOrchestrator
 
     /// <summary>
     /// Process user request with automatic agent selection.
+    /// Uses keyword-based content analysis for intelligent routing.
     /// </summary>
     public async Task<string> ProcessAsync(string request, string? conversationId = null)
     {
@@ -562,12 +595,58 @@ public class IronbeesOrchestrator
             throw new InvalidOperationException("No agents loaded");
         }
 
-        // Simple auto-selection: use first agent for now
-        var selectedAgent = _agents.Values.First();
+        var selectedAgent = SelectAgentForRequest(request);
 
-        _logger.LogInformation("Auto-selected agent '{AgentName}' for request", selectedAgent.Name);
+        _logger.LogInformation("Smart-selected agent '{AgentName}' for request (score-based)", selectedAgent.Name);
 
         return await ProcessAsync(request, selectedAgent.Name, conversationId);
+    }
+
+    /// <summary>
+    /// Select the most appropriate agent based on request content analysis.
+    /// Uses keyword matching against agent descriptions for intelligent routing.
+    /// </summary>
+    private AgentConfiguration SelectAgentForRequest(string request)
+    {
+        var requestLower = request.ToLowerInvariant();
+        var scores = new Dictionary<string, int>();
+
+        // Score each agent based on keyword matches
+        foreach (var (agentKey, keywords) in AgentKeywords)
+        {
+            var score = keywords.Count(keyword =>
+                requestLower.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+
+            if (score > 0)
+            {
+                scores[agentKey] = score;
+            }
+        }
+
+        // Find best matching agent
+        if (scores.Count > 0)
+        {
+            var bestMatch = scores.OrderByDescending(kv => kv.Value).First();
+
+            // Try to find the agent with matching key (case-insensitive)
+            var matchedAgent = _agents.Values.FirstOrDefault(a =>
+                a.Name.Contains(bestMatch.Key, StringComparison.OrdinalIgnoreCase) ||
+                bestMatch.Key.Contains(a.Name.Replace(" ", "-").ToLowerInvariant(), StringComparison.OrdinalIgnoreCase));
+
+            if (matchedAgent != null)
+            {
+                _logger.LogDebug("Agent selection: '{Agent}' matched with score {Score}",
+                    matchedAgent.Name, bestMatch.Value);
+                return matchedAgent;
+            }
+        }
+
+        // Fallback: Default to mlops-manager if available, otherwise first agent
+        var defaultAgent = _agents.Values.FirstOrDefault(a =>
+            a.Name.Contains("mlops", StringComparison.OrdinalIgnoreCase) ||
+            a.Name.Contains("manager", StringComparison.OrdinalIgnoreCase));
+
+        return defaultAgent ?? _agents.Values.First();
     }
 
     /// <summary>
@@ -649,6 +728,7 @@ public class IronbeesOrchestrator
 
     /// <summary>
     /// Stream response from agent with automatic selection.
+    /// Uses keyword-based content analysis for intelligent routing.
     /// </summary>
     public async IAsyncEnumerable<string> StreamWithAutoSelectionAsync(
         string request,
@@ -664,9 +744,9 @@ public class IronbeesOrchestrator
             yield break;
         }
 
-        var selectedAgent = _agents.Values.First();
+        var selectedAgent = SelectAgentForRequest(request);
 
-        _logger.LogInformation("Auto-selected agent '{AgentName}' for streaming", selectedAgent.Name);
+        _logger.LogInformation("Smart-selected agent '{AgentName}' for streaming (score-based)", selectedAgent.Name);
 
         await foreach (var chunk in StreamAsync(request, selectedAgent.Name, conversationId, cancellationToken))
         {
@@ -796,6 +876,7 @@ public class IronbeesOrchestrator
 
     /// <summary>
     /// Stream response from agent with automatic selection and typed StreamChunk events.
+    /// Uses keyword-based content analysis for intelligent routing.
     /// </summary>
     public async IAsyncEnumerable<StreamChunk> StreamWithAutoSelectionEventsAsync(
         string request,
@@ -811,9 +892,9 @@ public class IronbeesOrchestrator
             yield break;
         }
 
-        var selectedAgent = _agents.Values.First();
+        var selectedAgent = SelectAgentForRequest(request);
 
-        _logger.LogInformation("Auto-selected agent '{AgentName}' for event streaming", selectedAgent.Name);
+        _logger.LogInformation("Smart-selected agent '{AgentName}' for event streaming (score-based)", selectedAgent.Name);
 
         // Emit metadata about agent selection
         yield return new MetadataChunk("selected_agent", selectedAgent.Name);
