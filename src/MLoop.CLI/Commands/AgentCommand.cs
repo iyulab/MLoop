@@ -42,6 +42,9 @@ public static class AgentCommand
         command.Options.Add(interactiveOption);
         command.Options.Add(projectPathOption);
 
+        // Add workflow subcommand
+        command.Subcommands.Add(AgentWorkflowCommand.Create());
+
         command.SetAction((parseResult) =>
         {
             var query = parseResult.GetValue(queryArg);
