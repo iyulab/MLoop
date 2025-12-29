@@ -6,6 +6,7 @@ using Ironbees.Core.Conversation;
 using Ironbees.Core.Middleware;
 using Ironbees.Core.Streaming;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using MLoop.AIAgent.Agents;
 
@@ -198,7 +199,7 @@ public class IronbeesOrchestrator
 
     /// <summary>
     /// Builds the full Ironbees middleware pipeline.
-    /// Order: Rate Limiting -> Resilience -> Token Tracking -> Base Client
+    /// Order: Rate Limiting -> Resilience -> Caching -> Token Tracking -> Base Client
     /// </summary>
     private static IChatClient BuildMiddlewarePipeline(
         IChatClient baseChatClient,
@@ -214,13 +215,30 @@ public class IronbeesOrchestrator
             ? ResilienceOptions.Production
             : ResilienceOptions.Development;
 
+        var cachingOptions = useProductionSettings
+            ? CachingOptions.Production
+            : CachingOptions.Development;
+
+        // Check if caching is disabled via environment variable
+        var cachingEnabled = Environment.GetEnvironmentVariable("MLOOP_CACHING_ENABLED");
+        if (cachingEnabled?.Equals("false", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            cachingOptions = CachingOptions.Disabled;
+        }
+
         // Create token usage store (filesystem-based for observability)
         var tokenStoreDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".mloop", "token-usage");
         var tokenStore = new FileSystemTokenUsageStore(tokenStoreDirectory);
 
-        // Build pipeline: Rate Limiting -> Resilience -> Token Tracking -> Base
+        // Create memory cache for response caching
+        var memoryCache = new MemoryCache(new MemoryCacheOptions
+        {
+            SizeLimit = 100 // Max 100 cached responses
+        });
+
+        // Build pipeline: Rate Limiting -> Resilience -> Caching -> Token Tracking -> Base
         // Note: Middleware wraps from inner to outer, so we add in reverse order
         var withTokenTracking = new TokenTrackingMiddleware(
             baseChatClient,
@@ -228,8 +246,14 @@ public class IronbeesOrchestrator
             new TokenTrackingOptions { LogUsage = true },
             loggerFactory.CreateLogger<TokenTrackingMiddleware>());
 
-        var withResilience = new ResilienceMiddleware(
+        var withCaching = new CachingMiddleware(
             withTokenTracking,
+            memoryCache,
+            cachingOptions,
+            loggerFactory.CreateLogger<CachingMiddleware>());
+
+        var withResilience = new ResilienceMiddleware(
+            withCaching,
             resilienceOptions,
             loggerFactory.CreateLogger<ResilienceMiddleware>());
 
