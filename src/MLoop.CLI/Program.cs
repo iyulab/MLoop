@@ -37,6 +37,7 @@ internal class Program
             EvaluateCommand.Create(),
             ValidateCommand.Create(),
             ExtensionsCommand.Create(),
+            StatusCommand.Create(),
 
             // Phase 2 Commands
             new ServeCommand(),
@@ -82,6 +83,7 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]evaluate[/]    Evaluate model performance on test data");
         AnsiConsole.MarkupLine("  [green]validate[/]    Validate extensibility scripts");
         AnsiConsole.MarkupLine("  [green]extensions[/]  List all hooks and metrics");
+        AnsiConsole.MarkupLine("  [green]status[/]      Show project status at a glance");
         AnsiConsole.MarkupLine("  [green]serve[/]       Start REST API for model serving");
         AnsiConsole.MarkupLine("  [green]pipeline[/]    Execute ML workflow from YAML");
         AnsiConsole.MarkupLine("  [green]agent[/]       Conversational AI agent for ML projects");
