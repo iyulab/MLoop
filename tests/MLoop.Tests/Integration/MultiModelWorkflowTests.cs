@@ -111,8 +111,8 @@ public class MultiModelWorkflowTests : IDisposable
         // Assert
         Assert.Equal(4, allExperiments.Count);
         Assert.Equal(2, allExperiments.Count(e => e.ModelName == "churn"));
-        Assert.Single(allExperiments.Where(e => e.ModelName == "revenue"));
-        Assert.Single(allExperiments.Where(e => e.ModelName == "default"));
+        Assert.Single(allExperiments, e => e.ModelName == "revenue");
+        Assert.Single(allExperiments, e => e.ModelName == "default");
     }
 
     #endregion

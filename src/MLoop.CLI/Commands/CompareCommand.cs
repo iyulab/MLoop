@@ -59,25 +59,8 @@ public static class CompareCommand
     {
         try
         {
-            // Initialize components
-            var fileSystem = new FileSystemManager();
-            var projectDiscovery = new ProjectDiscovery(fileSystem);
-
-            // Find project root
-            string projectRoot;
-            try
-            {
-                projectRoot = projectDiscovery.FindRoot();
-            }
-            catch (InvalidOperationException)
-            {
-                AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
-                AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
-                return 1;
-            }
-
-            var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
-            var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
+            var ctx = CommandContext.TryCreate();
+            if (ctx == null) return 1;
 
             // Determine which experiments to compare
             List<ExperimentData> experimentsToCompare;
@@ -85,16 +68,14 @@ public static class CompareCommand
             if (experimentIds.Length > 0)
             {
                 // Specific experiments provided
-                var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                    ? ConfigDefaults.DefaultModelName
-                    : modelName.Trim().ToLowerInvariant();
+                var resolvedModelName = CommandContext.ResolveModelName(modelName);
 
                 experimentsToCompare = [];
                 foreach (var expId in experimentIds)
                 {
                     try
                     {
-                        var exp = await experimentStore.LoadAsync(resolvedModelName, expId, CancellationToken.None);
+                        var exp = await ctx.ExperimentStore.LoadAsync(resolvedModelName, expId, CancellationToken.None);
                         experimentsToCompare.Add(exp);
                     }
                     catch (FileNotFoundException)
@@ -113,8 +94,8 @@ public static class CompareCommand
                     return 1;
                 }
 
-                var resolvedModelName = modelName.Trim().ToLowerInvariant();
-                var summaries = await experimentStore.ListAsync(resolvedModelName, CancellationToken.None);
+                var resolvedModelName = CommandContext.ResolveModelName(modelName);
+                var summaries = await ctx.ExperimentStore.ListAsync(resolvedModelName, CancellationToken.None);
                 var completedSummaries = summaries
                     .Where(s => s.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
                     .OrderByDescending(s => s.BestMetric ?? 0)
@@ -128,7 +109,7 @@ public static class CompareCommand
                 experimentsToCompare = [];
                 foreach (var summary in completedSummaries)
                 {
-                    var exp = await experimentStore.LoadAsync(resolvedModelName, summary.ExperimentId, CancellationToken.None);
+                    var exp = await ctx.ExperimentStore.LoadAsync(resolvedModelName, summary.ExperimentId, CancellationToken.None);
                     experimentsToCompare.Add(exp);
                 }
             }
@@ -146,7 +127,7 @@ public static class CompareCommand
             }
 
             // Get production model for highlighting
-            var productionModels = await modelRegistry.ListAsync(null, CancellationToken.None);
+            var productionModels = await ctx.ModelRegistry.ListAsync(null, CancellationToken.None);
             var productionDict = productionModels.ToDictionary(m => m.ModelName, m => m.ExperimentId);
 
             // Collect all metrics across experiments

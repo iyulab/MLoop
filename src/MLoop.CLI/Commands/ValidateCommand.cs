@@ -48,23 +48,9 @@ public static class ValidateCommand
     {
         try
         {
-            var fileSystem = new FileSystemManager();
-            var projectDiscovery = new ProjectDiscovery(fileSystem);
+            var ctx = CommandContext.TryCreate();
+            if (ctx == null) return 1;
 
-            // Find project root
-            string projectRoot;
-            try
-            {
-                projectRoot = projectDiscovery.FindRoot();
-            }
-            catch (InvalidOperationException)
-            {
-                AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
-                AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
-                return 1;
-            }
-
-            var configLoader = new ConfigLoader(fileSystem, projectDiscovery);
             var errors = new List<ValidationError>();
             var warnings = new List<ValidationWarning>();
 
@@ -73,8 +59,8 @@ public static class ValidateCommand
             AnsiConsole.WriteLine();
 
             // Check mloop.yaml exists
-            var yamlPath = fileSystem.CombinePath(projectRoot, "mloop.yaml");
-            if (!fileSystem.FileExists(yamlPath))
+            var yamlPath = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "mloop.yaml");
+            if (!ctx.FileSystem.FileExists(yamlPath))
             {
                 errors.Add(new ValidationError("mloop.yaml", "Configuration file not found"));
                 DisplayResults(errors, warnings, verbose);
@@ -91,7 +77,7 @@ public static class ValidateCommand
             MLoopConfig config;
             try
             {
-                config = await configLoader.LoadUserConfigAsync();
+                config = await ctx.ConfigLoader.LoadUserConfigAsync();
             }
             catch (Exception ex)
             {
@@ -122,7 +108,7 @@ public static class ValidateCommand
             // Validate data paths
             if (config.Data != null)
             {
-                ValidateDataPaths(config.Data, projectRoot, fileSystem, errors, warnings);
+                ValidateDataPaths(config.Data, ctx.ProjectRoot, ctx.FileSystem, errors, warnings);
             }
 
             // Display results
