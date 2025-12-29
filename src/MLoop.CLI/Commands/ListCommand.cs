@@ -1,6 +1,5 @@
 using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
-using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -41,37 +40,17 @@ public static class ListCommand
     {
         try
         {
-            // Initialize components
-            var fileSystem = new FileSystemManager();
-            var projectDiscovery = new ProjectDiscovery(fileSystem);
+            var ctx = CommandContext.TryCreate();
+            if (ctx == null) return 1;
 
-            // Find project root
-            string projectRoot;
-            try
-            {
-                projectRoot = projectDiscovery.FindRoot();
-            }
-            catch (InvalidOperationException)
-            {
-                AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
-                AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
-                return 1;
-            }
-
-            // Resolve model name (null means all models)
-            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                ? null
-                : modelName.Trim().ToLowerInvariant();
-
-            var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
-            var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
+            var resolvedModelName = CommandContext.ResolveOptionalModelName(modelName);
 
             // Get experiments (filtered by model if specified)
-            var experiments = await experimentStore.ListAsync(resolvedModelName, CancellationToken.None);
+            var experiments = await ctx.ExperimentStore.ListAsync(resolvedModelName, CancellationToken.None);
             var experimentsList = experiments.ToList();
 
             // Get production models for display
-            var productionModels = await modelRegistry.ListAsync(null, CancellationToken.None);
+            var productionModels = await ctx.ModelRegistry.ListAsync(null, CancellationToken.None);
             var productionDict = productionModels.ToDictionary(m => m.ModelName, m => m.ExperimentId);
 
             // Filter if needed
@@ -104,7 +83,7 @@ public static class ListCommand
 
             var title = resolvedModelName != null
                 ? $"[bold]Experiments for model '[cyan]{resolvedModelName}[/]'[/]"
-                : $"[bold]All Experiments in {Path.GetFileName(projectRoot)}[/]";
+                : $"[bold]All Experiments in {Path.GetFileName(ctx.ProjectRoot)}[/]";
 
             AnsiConsole.Write(new Rule(title).LeftJustified());
             AnsiConsole.WriteLine();
