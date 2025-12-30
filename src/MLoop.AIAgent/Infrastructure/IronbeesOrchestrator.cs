@@ -3,6 +3,7 @@ using System.Text.Json;
 using Ironbees.AgentMode.Configuration;
 using Ironbees.AgentMode.Providers;
 using Ironbees.Core.Conversation;
+using Ironbees.Core.Guardrails;
 using Ironbees.Core.Middleware;
 using Ironbees.Core.Streaming;
 using Microsoft.Extensions.AI;
@@ -14,7 +15,7 @@ namespace MLoop.AIAgent.Infrastructure;
 
 /// <summary>
 /// Orchestrates AI agents for MLoop using Ironbees Agent Mode LLM infrastructure.
-/// Integrates full middleware stack: Rate Limiting, Resilience, Token Tracking.
+/// Integrates full middleware stack: Rate Limiting, Resilience, Token Tracking, Guardrails.
 /// </summary>
 public class IronbeesOrchestrator
 {
@@ -24,6 +25,7 @@ public class IronbeesOrchestrator
     private readonly IConversationStore _conversationStore;
     private readonly Dictionary<string, AgentConfiguration> _agents = new();
     private IList<AITool>? _tools;
+    private GuardrailPipeline? _guardrailPipeline;
     private bool _isInitialized;
 
     /// <summary>
@@ -40,6 +42,16 @@ public class IronbeesOrchestrator
     /// Gets the registered tools for function calling.
     /// </summary>
     public IList<AITool>? Tools => _tools;
+
+    /// <summary>
+    /// Gets the guardrail pipeline for content validation.
+    /// </summary>
+    public GuardrailPipeline? GuardrailPipeline => _guardrailPipeline;
+
+    /// <summary>
+    /// Gets a value indicating whether guardrails are enabled.
+    /// </summary>
+    public bool HasGuardrails => _guardrailPipeline != null;
 
     public IronbeesOrchestrator(
         IChatClient chatClient,
@@ -517,6 +529,18 @@ public class IronbeesOrchestrator
 
         _logger.LogInformation("Processing request with agent '{AgentName}'", agentName);
 
+        // Validate input against guardrails if enabled
+        if (_guardrailPipeline != null)
+        {
+            var inputResult = await _guardrailPipeline.ValidateInputAsync(request);
+            if (!inputResult.IsAllowed)
+            {
+                var violations = string.Join("; ", inputResult.AllViolations.Select(v => v.Description));
+                _logger.LogWarning("Input blocked by guardrails: {Violations}", violations);
+                return $"[Guardrail Violation] Your request was blocked: {violations}";
+            }
+        }
+
         try
         {
             var messages = new List<ChatMessage>
@@ -561,6 +585,18 @@ public class IronbeesOrchestrator
 
             var response = await _chatClient.GetResponseAsync(messages, options);
             var responseText = response.ToString() ?? string.Empty;
+
+            // Validate output against guardrails if enabled
+            if (_guardrailPipeline != null)
+            {
+                var outputResult = await _guardrailPipeline.ValidateOutputAsync(responseText);
+                if (!outputResult.IsAllowed)
+                {
+                    var violations = string.Join("; ", outputResult.AllViolations.Select(v => v.Description));
+                    _logger.LogWarning("Output blocked by guardrails: {Violations}", violations);
+                    responseText = "[Content Filtered] The response was filtered due to policy violations.";
+                }
+            }
 
             // Save conversation history if enabled for this agent and conversationId specified
             if (agent.ConversationEnabled && !string.IsNullOrEmpty(conversationId))
@@ -666,6 +702,19 @@ public class IronbeesOrchestrator
         }
 
         _logger.LogInformation("Streaming request with agent '{AgentName}'", agentName);
+
+        // Validate input against guardrails if enabled
+        if (_guardrailPipeline != null)
+        {
+            var inputResult = await _guardrailPipeline.ValidateInputAsync(request, cancellationToken);
+            if (!inputResult.IsAllowed)
+            {
+                var violations = string.Join("; ", inputResult.AllViolations.Select(v => v.Description));
+                _logger.LogWarning("Input blocked by guardrails: {Violations}", violations);
+                yield return $"[Guardrail Violation] Your request was blocked: {violations}";
+                yield break;
+            }
+        }
 
         var messages = new List<ChatMessage>
         {
@@ -775,6 +824,19 @@ public class IronbeesOrchestrator
         }
 
         _logger.LogInformation("Streaming request with events using agent '{AgentName}'", agentName);
+
+        // Validate input against guardrails if enabled
+        if (_guardrailPipeline != null)
+        {
+            var inputResult = await _guardrailPipeline.ValidateInputAsync(request, cancellationToken);
+            if (!inputResult.IsAllowed)
+            {
+                var violations = string.Join("; ", inputResult.AllViolations.Select(v => v.Description));
+                _logger.LogWarning("Input blocked by guardrails: {Violations}", violations);
+                yield return new ErrorChunk($"Guardrail Violation: {violations}", IsFatal: true);
+                yield break;
+            }
+        }
 
         var messages = new List<ChatMessage>
         {
@@ -987,6 +1049,82 @@ public class IronbeesOrchestrator
     /// Check if tools are registered for function calling.
     /// </summary>
     public bool HasTools => _tools != null && _tools.Count > 0;
+
+    /// <summary>
+    /// Enables guardrails for content validation using the provided pipeline.
+    /// </summary>
+    /// <param name="pipeline">The guardrail pipeline to use.</param>
+    public void UseGuardrails(GuardrailPipeline pipeline)
+    {
+        _guardrailPipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+        _logger.LogInformation(
+            "Guardrails enabled: {InputCount} input, {OutputCount} output guardrails",
+            pipeline.InputGuardrailCount,
+            pipeline.OutputGuardrailCount);
+    }
+
+    /// <summary>
+    /// Enables standard ML guardrails with PII, injection, and length validation.
+    /// </summary>
+    /// <param name="enablePII">Enable PII detection.</param>
+    /// <param name="enableInjection">Enable injection detection.</param>
+    /// <param name="enableLength">Enable length validation.</param>
+    /// <param name="maxInputLength">Maximum input length.</param>
+    public void UseStandardGuardrails(
+        bool enablePII = true,
+        bool enableInjection = true,
+        bool enableLength = true,
+        int maxInputLength = 100000)
+    {
+        var pipeline = MLGuardrails.CreateStandardPipeline(
+            enablePII, enableInjection, enableLength, maxInputLength);
+        UseGuardrails(pipeline);
+    }
+
+    /// <summary>
+    /// Enables strict guardrails for production environments.
+    /// </summary>
+    public void UseStrictGuardrails()
+    {
+        var pipeline = MLGuardrails.CreateStrictPipeline();
+        UseGuardrails(pipeline);
+    }
+
+    /// <summary>
+    /// Validates input content against registered guardrails.
+    /// </summary>
+    /// <param name="input">The input to validate.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The validation result, or null if guardrails are disabled.</returns>
+    public async Task<GuardrailPipelineResult?> ValidateInputAsync(
+        string input,
+        CancellationToken cancellationToken = default)
+    {
+        if (_guardrailPipeline == null)
+        {
+            return null;
+        }
+
+        return await _guardrailPipeline.ValidateInputAsync(input, cancellationToken);
+    }
+
+    /// <summary>
+    /// Validates output content against registered guardrails.
+    /// </summary>
+    /// <param name="output">The output to validate.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The validation result, or null if guardrails are disabled.</returns>
+    public async Task<GuardrailPipelineResult?> ValidateOutputAsync(
+        string output,
+        CancellationToken cancellationToken = default)
+    {
+        if (_guardrailPipeline == null)
+        {
+            return null;
+        }
+
+        return await _guardrailPipeline.ValidateOutputAsync(output, cancellationToken);
+    }
 
     private void EnsureInitialized()
     {

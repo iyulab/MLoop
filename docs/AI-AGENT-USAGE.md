@@ -383,6 +383,65 @@ for time in 60 120 300; do
 done
 ```
 
+### 5.5 Content Guardrails (v1.2.0+)
+
+MLoop integrates Ironbees v0.2.0 Guardrails for content validation and security.
+
+#### Enabling Guardrails (Programmatic)
+
+```csharp
+// Create orchestrator
+var orchestrator = IronbeesOrchestrator.CreateFromEnvironment();
+await orchestrator.InitializeAsync();
+
+// Enable standard ML guardrails (PII, injection, length)
+orchestrator.UseStandardGuardrails();
+
+// Or enable strict guardrails for production
+orchestrator.UseStrictGuardrails();
+
+// Or create custom pipeline
+orchestrator.UseGuardrails(MLGuardrails.CreateStandardPipeline(
+    enablePII: true,
+    enableInjection: true,
+    enableLength: true,
+    maxInputLength: 50000));
+```
+
+#### Built-in Guardrail Types
+
+| Guardrail | Purpose | Default |
+|-----------|---------|---------|
+| **PII Detector** | Email, SSN, credit card, phone detection | Input + Output |
+| **Injection Detector** | SQL, command, path traversal prevention | Input only |
+| **Length Validator** | DoS prevention via length limits | Input only |
+| **ML Keyword Filter** | Blocks sensitive ML operations | Input only |
+
+#### Custom Guardrails
+
+```csharp
+// Create individual guardrails
+var piiGuardrail = MLGuardrails.CreatePIIGuardrail();
+var injectionGuardrail = MLGuardrails.CreateInjectionGuardrail();
+var lengthGuardrail = MLGuardrails.CreateLengthGuardrail(maxLength: 10000);
+var keywordGuardrail = MLGuardrails.CreateMLKeywordGuardrail(
+    new[] { "custom-blocked-term" });
+
+// Manual validation
+var result = await orchestrator.ValidateInputAsync("user query");
+if (!result?.IsAllowed ?? true)
+{
+    // Handle violation
+    Console.WriteLine($"Blocked: {result.AllViolations.First().Description}");
+}
+```
+
+#### Guardrail Response Handling
+
+When guardrails block content:
+- **Input Blocked**: Returns `[Guardrail Violation] Your request was blocked: {reason}`
+- **Output Filtered**: Returns `[Content Filtered] The response was filtered due to policy violations.`
+
 ---
 
 ## 6. Workflows
