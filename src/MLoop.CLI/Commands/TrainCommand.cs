@@ -1,10 +1,10 @@
 using System.CommandLine;
 using Microsoft.ML;
-using MLoop.Core.Models;
-using MLoop.Core.Preprocessing;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Models;
+using MLoop.Core.Preprocessing;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;

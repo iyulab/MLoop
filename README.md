@@ -101,7 +101,31 @@ mloop predict [model] [data]          # Run predictions
 mloop list                             # View experiments
 mloop promote <exp-id>                # Promote to production
 mloop evaluate <model> <test> <label> # Evaluate performance
+mloop orchestrate <data>               # End-to-end MLOps automation with AI
 ```
+
+### AI-Powered Orchestration (New!)
+
+Automate the entire ML lifecycle with a single command:
+
+```bash
+# Fully automated ML pipeline with human-in-the-loop checkpoints
+mloop orchestrate customer_churn.csv --target Churned
+
+# Skip all checkpoints for non-interactive execution
+mloop orchestrate data.csv --skip-hitl
+
+# Auto-approve high-confidence decisions
+mloop orchestrate data.csv --auto-approve --threshold 0.8
+
+# Resume a paused session
+mloop orchestrate --resume <session-id>
+
+# List all orchestration sessions
+mloop orchestrate --list-sessions
+```
+
+The orchestrator coordinates 4 specialized AI agents (DataAnalyst, ModelArchitect, PreprocessingExpert, MLOpsManager) with 5 HITL checkpoints for human oversight at critical decision points.
 
 **Full documentation**: [docs/GUIDE.md](docs/GUIDE.md)
 

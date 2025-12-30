@@ -1,5 +1,5 @@
-using MLoop.AIAgent.Core.Models;
 using System.Text;
+using MLoop.AIAgent.Core.Models;
 
 namespace MLoop.AIAgent.Core;
 

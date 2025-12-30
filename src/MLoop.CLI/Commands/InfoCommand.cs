@@ -1,10 +1,10 @@
 using System.CommandLine;
-using MLoop.CLI.Infrastructure.Configuration;
-using MLoop.CLI.Infrastructure.FileSystem;
-using Spectre.Console;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
+using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.FileSystem;
+using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
 

@@ -1,8 +1,8 @@
+using System.ComponentModel;
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 using MLoop.AIAgent.Core;
 using MLoop.AIAgent.Core.Models;
-using System.ComponentModel;
-using System.Text.Json;
 
 namespace MLoop.AIAgent.Tools;
 
