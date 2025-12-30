@@ -1,9 +1,9 @@
+using System.Text;
 using Ironbees.AgentMode.Agents;
 using Microsoft.Extensions.AI;
 using MLoop.AIAgent.Core;
 using MLoop.AIAgent.Core.Models;
 using MLoop.AIAgent.Tools;
-using System.Text;
 
 namespace MLoop.AIAgent.Agents;
 

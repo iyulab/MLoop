@@ -1,9 +1,9 @@
+using System.Runtime.CompilerServices;
 using Ironbees.AgentMode.Core.Workflow;
 using Ironbees.AgentMode.Core.Workflow.Triggers;
 using Ironbees.AgentMode.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using System.Runtime.CompilerServices;
 
 namespace MLoop.AIAgent.Infrastructure;
 

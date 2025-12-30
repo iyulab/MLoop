@@ -79,9 +79,9 @@ public class ColumnAnalysis
     /// <summary>
     /// Percentage of missing values (0-100)
     /// </summary>
-    public double MissingPercentage => 
-        NonNullCount + NullCount > 0 
-            ? (NullCount / (double)(NonNullCount + NullCount)) * 100.0 
+    public double MissingPercentage =>
+        NonNullCount + NullCount > 0
+            ? (NullCount / (double)(NonNullCount + NullCount)) * 100.0
             : 0.0;
 
     /// <summary>
@@ -182,9 +182,9 @@ public class DataQualityIssues
     public List<string> ConstantColumns { get; init; } = new(); // All values the same
     public List<string> DuplicateColumns { get; init; } = new();
     public int DuplicateRowCount { get; init; }
-    
-    public bool HasIssues => 
-        ColumnsWithMissingValues.Count > 0 || 
+
+    public bool HasIssues =>
+        ColumnsWithMissingValues.Count > 0 ||
         ColumnsWithOutliers.Count > 0 ||
         HighCardinalityColumns.Count > 0 ||
         ConstantColumns.Count > 0 ||

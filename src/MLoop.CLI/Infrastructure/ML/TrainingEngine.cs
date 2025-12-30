@@ -1,11 +1,11 @@
 using System.Diagnostics;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
-using MLoop.Core.Contracts;
-using MLoop.Core.Models;
-using MLoop.Core.Data;
-using MLoop.Core.AutoML;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.AutoML;
+using MLoop.Core.Contracts;
+using MLoop.Core.Data;
+using MLoop.Core.Models;
 
 namespace MLoop.CLI.Infrastructure.ML;
 

@@ -1,0 +1,374 @@
+# MLOps Orchestration Workflow
+#
+# End-to-end ML lifecycle workflow that takes a data file and produces
+# a deployed model with HITL checkpoints for human oversight.
+#
+# Usage: mloop orchestrate <data-file> [options]
+#
+# This workflow integrates with ironbees agentic patterns for
+# progressive sampling, confidence-based auto-approval, and HITL policies.
+
+id: mlops-orchestration
+name: "MLOps End-to-End Orchestration"
+description: |
+  Complete MLOps workflow from raw data to deployed model.
+  Automatically analyzes data, recommends models, preprocesses,
+  trains, evaluates, and deploys with human oversight at key checkpoints.
+
+version: "1.0"
+workflowTemplate: agentic-loop
+
+# Agentic pattern configuration (ironbees integration)
+agentic:
+  sampling:
+    strategy: progressive
+    initialBatchSize: 1000
+    growthFactor: 2
+    maxSamples: 50000
+    minSamplesForConfidence: 100
+
+  confidence:
+    threshold: 0.85
+    stabilityWindow: 3
+    minConfidenceForHitl: 0.7
+    trackHistory: true
+
+  hitl:
+    policy: on-uncertainty
+    uncertaintyThreshold: 0.7
+    checkpoints:
+      - data-analysis-review
+      - model-selection-review
+      - preprocessing-review
+      - training-review
+      - deployment-review
+    responseTimeout: PT1H  # ISO 8601: 1 hour
+    timeoutAction: pause
+
+# Workflow parameters
+parameters:
+  dataFile:
+    type: string
+    required: true
+    description: "Path to input data file (CSV, TSV, or Parquet)"
+
+  targetColumn:
+    type: string
+    required: false
+    description: "Target column name (auto-detected if not specified)"
+
+  taskType:
+    type: string
+    required: false
+    enum: [BinaryClassification, MulticlassClassification, Regression]
+    description: "ML task type (auto-inferred if not specified)"
+
+  maxTrainingTime:
+    type: integer
+    default: 300
+    description: "Maximum training time in seconds"
+
+  autoApprove:
+    type: boolean
+    default: true
+    description: "Auto-approve high-confidence decisions"
+
+  skipHitl:
+    type: boolean
+    default: false
+    description: "Skip all HITL checkpoints (fully automated)"
+
+  outputDirectory:
+    type: string
+    required: false
+    description: "Output directory for artifacts"
+
+# Execution constraints
+constraints:
+  maxIterations: 10
+  maxTokens: 200000
+  allowedAgents:
+    - DataAnalystAgent
+    - ModelArchitectAgent
+    - PreprocessingExpertAgent
+    - IncrementalPreprocessingAgent
+    - MLOpsManagerAgent
+
+# Success criteria
+successCriteria:
+  - id: model-trained
+    description: "Model has been successfully trained"
+    type: Condition
+    condition: "training.success == true"
+    required: true
+    weight: 0.4
+
+  - id: acceptable-performance
+    description: "Model meets minimum performance threshold"
+    type: Condition
+    condition: "training.primaryMetricValue >= 0.7"
+    required: false
+    weight: 0.3
+
+  - id: deployment-complete
+    description: "Model has been deployed"
+    type: Condition
+    condition: "deployment.success == true"
+    required: false
+    weight: 0.3
+
+# Workflow states
+states:
+  # ========================================
+  # Initialization
+  # ========================================
+  - id: START
+    type: start
+    next: INITIALIZE
+
+  - id: INITIALIZE
+    type: setup
+    description: "Initialize orchestration session"
+    emitEvent: OrchestrationStarted
+    actions:
+      - validateDataFile
+      - createSession
+      - loadAgenticSettings
+    next: DATA_ANALYSIS
+
+  # ========================================
+  # Phase 1: Data Analysis
+  # ========================================
+  - id: DATA_ANALYSIS
+    type: action
+    description: "Analyze dataset structure and quality"
+    agent: DataAnalystAgent
+    emitEvent: PhaseStarted
+    metadata:
+      phaseNumber: 1
+      phaseName: "Data Analysis"
+    next: DATA_ANALYSIS_REVIEW
+
+  - id: DATA_ANALYSIS_REVIEW
+    type: hitl
+    description: "Review data analysis results"
+    emitEvent: HitlRequested
+    requestType: Review
+    checkpointName: "data-analysis-review"
+    context:
+      analysisResults: "{{state.dataAnalysis}}"
+      detectedTarget: "{{state.dataAnalysis.detectedTargetColumn}}"
+      taskType: "{{state.dataAnalysis.inferredTaskType}}"
+      dataQuality: "{{state.dataAnalysis.dataQualityScore}}"
+    options:
+      - id: approve
+        label: "Approve"
+        description: "Accept analysis and proceed"
+        isDefault: true
+      - id: modify
+        label: "Modify"
+        description: "Adjust target or task type"
+      - id: cancel
+        label: "Cancel"
+        description: "Cancel orchestration"
+    waitForResponse: true
+    timeout: "{{agentic.hitl.responseTimeout}}"
+    next:
+      approve: MODEL_RECOMMENDATION
+      modify: DATA_ANALYSIS
+      cancel: CANCELLED
+
+  # ========================================
+  # Phase 2: Model Recommendation
+  # ========================================
+  - id: MODEL_RECOMMENDATION
+    type: action
+    description: "Recommend models and AutoML configuration"
+    agent: ModelArchitectAgent
+    emitEvent: PhaseStarted
+    metadata:
+      phaseNumber: 2
+      phaseName: "Model Recommendation"
+    next: MODEL_SELECTION_REVIEW
+
+  - id: MODEL_SELECTION_REVIEW
+    type: hitl
+    description: "Review model recommendations"
+    emitEvent: HitlRequested
+    requestType: Review
+    checkpointName: "model-selection-review"
+    context:
+      taskType: "{{state.modelRecommendation.taskType}}"
+      metric: "{{state.modelRecommendation.primaryMetric}}"
+      trainers: "{{state.modelRecommendation.recommendedTrainers}}"
+    options:
+      - id: approve
+        label: "Approve"
+        isDefault: true
+      - id: modify
+        label: "Modify"
+      - id: cancel
+        label: "Cancel"
+    next:
+      approve: PREPROCESSING
+      modify: MODEL_RECOMMENDATION
+      cancel: CANCELLED
+
+  # ========================================
+  # Phase 3: Preprocessing
+  # ========================================
+  - id: PREPROCESSING
+    type: action
+    description: "Preprocess data for training"
+    agent: "{{selectPreprocessingAgent(state.dataAnalysis.rowCount)}}"
+    emitEvent: PhaseStarted
+    metadata:
+      phaseNumber: 3
+      phaseName: "Preprocessing"
+    next: PREPROCESSING_REVIEW
+
+  - id: PREPROCESSING_REVIEW
+    type: hitl
+    description: "Review preprocessing pipeline"
+    emitEvent: HitlRequested
+    requestType: Review
+    checkpointName: "preprocessing-review"
+    next:
+      approve: TRAINING
+      modify: PREPROCESSING
+      skip: TRAINING
+      cancel: CANCELLED
+
+  # ========================================
+  # Phase 4: Training
+  # ========================================
+  - id: TRAINING
+    type: action
+    description: "Train machine learning models"
+    emitEvent: PhaseStarted
+    metadata:
+      phaseNumber: 4
+      phaseName: "Training"
+    actions:
+      - executeAutoML
+      - evaluateModels
+    next: TRAINING_REVIEW
+
+  - id: TRAINING_REVIEW
+    type: hitl
+    description: "Review training results"
+    emitEvent: HitlRequested
+    requestType: Approval
+    checkpointName: "training-review"
+    context:
+      bestModel: "{{state.training.bestModelName}}"
+      metrics: "{{state.training.metrics}}"
+    options:
+      - id: approve
+        label: "Approve"
+        isDefault: true
+      - id: retrain
+        label: "Retrain"
+        description: "Retrain with different parameters"
+      - id: cancel
+        label: "Cancel"
+    next:
+      approve: EVALUATION
+      retrain: TRAINING
+      cancel: CANCELLED
+
+  # ========================================
+  # Phase 5: Evaluation & Deployment
+  # ========================================
+  - id: EVALUATION
+    type: action
+    description: "Evaluate model on test set"
+    emitEvent: ProgressUpdate
+    next: DEPLOYMENT_REVIEW
+
+  - id: DEPLOYMENT_REVIEW
+    type: hitl
+    description: "Final deployment approval"
+    emitEvent: HitlRequested
+    requestType: Approval
+    checkpointName: "deployment-review"
+    context:
+      model: "{{state.training.bestModelName}}"
+      performance: "{{state.training.metrics}}"
+    options:
+      - id: deploy
+        label: "Deploy"
+        description: "Deploy to production"
+        isDefault: true
+      - id: export
+        label: "Export Only"
+        description: "Export model without deploying"
+      - id: save
+        label: "Save for Later"
+    next:
+      deploy: DEPLOYMENT
+      export: EXPORT_MODEL
+      save: SUCCESS
+
+  - id: DEPLOYMENT
+    type: action
+    description: "Deploy model to production"
+    agent: MLOpsManagerAgent
+    emitEvent: PhaseStarted
+    metadata:
+      phaseNumber: 5
+      phaseName: "Deployment"
+    next: SUCCESS
+
+  - id: EXPORT_MODEL
+    type: action
+    description: "Export model without deployment"
+    actions:
+      - exportModel
+    next: SUCCESS
+
+  # ========================================
+  # Terminal States
+  # ========================================
+  - id: SUCCESS
+    type: terminal
+    status: completed
+    emitEvent: OrchestrationCompleted
+
+  - id: CANCELLED
+    type: terminal
+    status: cancelled
+    emitEvent: OrchestrationCancelled
+
+  - id: FAILED
+    type: terminal
+    status: failed
+    emitEvent: OrchestrationFailed
+
+# Helper functions (evaluated by execution engine)
+#
+# selectPreprocessingAgent(rowCount):
+#   Returns IncrementalPreprocessingAgent if rowCount >= 100000,
+#   otherwise returns PreprocessingExpertAgent.
+#
+# shouldAutoApprove(confidence, threshold):
+#   Returns true if confidence >= threshold and autoApprove is enabled.
+
+# Checkpointing
+checkpoint:
+  enabled: true
+  afterEachPhase: true
+  checkpointDirectory: ".mloop/orchestration/checkpoints"
+
+# Metadata
+tags:
+  - mlops
+  - end-to-end
+  - automated-ml
+  - hitl
+
+metadata:
+  category: ml-lifecycle
+  complexity: high
+  estimatedDuration: PT30M
+  author: MLoop Team

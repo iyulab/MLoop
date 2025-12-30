@@ -1,7 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
-using MLoop.Core.Contracts;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Contracts;
 
 namespace MLoop.CLI.Infrastructure.ML;
 

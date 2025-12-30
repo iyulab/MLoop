@@ -1,8 +1,8 @@
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
-using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.FileSystem;
 
 namespace MLoop.CLI.Infrastructure.ML;
 

@@ -1,7 +1,7 @@
 using System.CommandLine;
+using Microsoft.Extensions.Logging;
 using MLoop.AIAgent.Core;
 using MLoop.AIAgent.Infrastructure;
-using Microsoft.Extensions.Logging;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;

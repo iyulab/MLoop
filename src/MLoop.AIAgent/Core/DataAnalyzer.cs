@@ -1,8 +1,8 @@
+using System.Globalization;
+using System.Text.Json;
 using CsvHelper;
 using CsvHelper.Configuration;
 using MLoop.AIAgent.Core.Models;
-using System.Globalization;
-using System.Text.Json;
 
 namespace MLoop.AIAgent.Core;
 
@@ -27,7 +27,7 @@ public class DataAnalyzer
         }
 
         var extension = Path.GetExtension(filePath).ToLowerInvariant();
-        
+
         return extension switch
         {
             ".csv" => await AnalyzeCsvAsync(filePath),
@@ -73,10 +73,10 @@ public class DataAnalyzer
     {
         var fileInfo = new FileInfo(filePath);
         var content = await File.ReadAllTextAsync(filePath);
-        
+
         // Try to parse as JSON array
         List<Dictionary<string, string>> records;
-        
+
         try
         {
             var jsonArray = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(content);
@@ -97,7 +97,7 @@ public class DataAnalyzer
             // Try JSONL format (one JSON object per line)
             var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Take(MaxSampleSize);
-            
+
             records = lines
                 .Select(line =>
                 {
@@ -113,8 +113,8 @@ public class DataAnalyzer
     }
 
     private DataAnalysisReport BuildReport(
-        string filePath, 
-        long fileSize, 
+        string filePath,
+        long fileSize,
         List<Dictionary<string, string>> records)
     {
         if (records.Count == 0)
@@ -148,10 +148,10 @@ public class DataAnalyzer
         foreach (var header in headers)
         {
             var values = records.Select(r => r.TryGetValue(header, out var v) ? v : string.Empty).ToList();
-            
+
             var nonNullValues = values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList();
             var nullCount = values.Count - nonNullValues.Count;
-            
+
             var inferredType = InferDataType(nonNullValues);
             var uniqueCount = nonNullValues.Distinct().Count();
 
@@ -209,7 +209,7 @@ public class DataAnalyzer
         }
 
         // Check if boolean
-        var booleanValues = new HashSet<string>(StringComparer.OrdinalIgnoreCase) 
+        var booleanValues = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { "true", "false", "yes", "no", "1", "0", "y", "n" };
         var distinctValues = sample.Select(v => v.ToLowerInvariant()).Distinct().ToList();
         if (distinctValues.Count == 2 && distinctValues.All(v => booleanValues.Contains(v)))
@@ -241,8 +241,14 @@ public class DataAnalyzer
         {
             return new NumericStatistics
             {
-                Mean = 0, Median = 0, StandardDeviation = 0, Variance = 0,
-                Min = 0, Max = 0, Q1 = 0, Q3 = 0
+                Mean = 0,
+                Median = 0,
+                StandardDeviation = 0,
+                Variance = 0,
+                Min = 0,
+                Max = 0,
+                Q1 = 0,
+                Q3 = 0
             };
         }
 
@@ -296,19 +302,19 @@ public class DataAnalyzer
     private double CalculatePercentile(List<double> sortedNumbers, double percentile)
     {
         if (sortedNumbers.Count == 0) return 0;
-        
+
         var index = percentile * (sortedNumbers.Count - 1);
         var lower = (int)Math.Floor(index);
         var upper = (int)Math.Ceiling(index);
-        
+
         if (lower == upper) return sortedNumbers[lower];
-        
+
         var weight = index - lower;
         return sortedNumbers[lower] * (1 - weight) + sortedNumbers[upper] * weight;
     }
 
     private DataQualityIssues DetectQualityIssues(
-        List<ColumnAnalysis> columns, 
+        List<ColumnAnalysis> columns,
         List<Dictionary<string, string>> records)
     {
         var issues = new DataQualityIssues
@@ -360,7 +366,7 @@ public class DataAnalyzer
     {
         // Prefer columns with low cardinality for classification
         var candidates = columns
-            .Where(c => c.InferredType == DataType.Categorical || 
+            .Where(c => c.InferredType == DataType.Categorical ||
                        c.InferredType == DataType.Boolean ||
                        c.InferredType == DataType.Numeric)
             .OrderBy(c => c.MissingPercentage)
@@ -384,8 +390,8 @@ public class DataAnalyzer
             }
 
             // Multiclass classification
-            if (candidate.InferredType == DataType.Categorical && 
-                candidate.UniqueCount > 2 && 
+            if (candidate.InferredType == DataType.Categorical &&
+                candidate.UniqueCount > 2 &&
                 candidate.UniqueCount < 20)
             {
                 return new TargetRecommendation
@@ -416,7 +422,7 @@ public class DataAnalyzer
     }
 
     private MLReadinessAssessment AssessMLReadiness(
-        List<ColumnAnalysis> columns, 
+        List<ColumnAnalysis> columns,
         DataQualityIssues issues)
     {
         var blockingIssues = new List<string>();
