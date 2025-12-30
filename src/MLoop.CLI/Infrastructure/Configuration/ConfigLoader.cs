@@ -42,7 +42,7 @@ public class ConfigLoader
     }
 
     /// <summary>
-    /// Loads mloop.yaml (user configuration)
+    /// Loads mloop.yaml (user configuration) with backward compatibility for old format
     /// </summary>
     public async Task<MLoopConfig> LoadUserConfigAsync(
         CancellationToken cancellationToken = default)
@@ -59,9 +59,91 @@ public class ConfigLoader
 
         var deserializer = new DeserializerBuilder()
             .WithNamingConvention(UnderscoredNamingConvention.Instance)
+            .IgnoreUnmatchedProperties()
             .Build();
 
-        return deserializer.Deserialize<MLoopConfig>(yamlContent) ?? new MLoopConfig();
+        // Try loading as new multi-model format first
+        var config = deserializer.Deserialize<MLoopConfig>(yamlContent);
+
+        // Check if it's valid new format (has project and models)
+        if (config != null && !string.IsNullOrEmpty(config.Project) && config.Models.Count > 0)
+        {
+            return config;
+        }
+
+        // Try loading as old single-model format and convert
+        var oldConfig = TryLoadOldFormat(yamlContent, deserializer);
+        if (oldConfig != null)
+        {
+            Console.WriteLine("[Warning] Detected old mloop.yaml format. Consider migrating to new multi-model format.");
+            return oldConfig;
+        }
+
+        return config ?? new MLoopConfig();
+    }
+
+    /// <summary>
+    /// Old mloop.yaml format (v1) for backward compatibility
+    /// </summary>
+    private class MLoopConfigV1
+    {
+        public string? ProjectName { get; set; }
+        public string? Task { get; set; }
+        public string? LabelColumn { get; set; }
+        public int? TimeLimitSeconds { get; set; }
+        public string? Metric { get; set; }
+        public double? TestSplit { get; set; }
+    }
+
+    /// <summary>
+    /// Tries to load old format and convert to new format
+    /// </summary>
+    private MLoopConfig? TryLoadOldFormat(string yamlContent, IDeserializer deserializer)
+    {
+        try
+        {
+            var oldConfig = deserializer.Deserialize<MLoopConfigV1>(yamlContent);
+
+            if (oldConfig == null)
+                return null;
+
+            // Check if it has old format fields
+            bool hasOldFields = !string.IsNullOrEmpty(oldConfig.ProjectName) ||
+                               !string.IsNullOrEmpty(oldConfig.Task) ||
+                               !string.IsNullOrEmpty(oldConfig.LabelColumn);
+
+            if (!hasOldFields)
+                return null;
+
+            // Convert to new format
+            var newConfig = new MLoopConfig
+            {
+                Project = oldConfig.ProjectName ?? "unnamed-project",
+                Models = new Dictionary<string, ModelDefinition>()
+            };
+
+            // Only add default model if we have task and label
+            if (!string.IsNullOrEmpty(oldConfig.Task) && !string.IsNullOrEmpty(oldConfig.LabelColumn))
+            {
+                newConfig.Models[ConfigDefaults.DefaultModelName] = new ModelDefinition
+                {
+                    Task = oldConfig.Task,
+                    Label = oldConfig.LabelColumn,
+                    Training = new TrainingSettings
+                    {
+                        TimeLimitSeconds = oldConfig.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
+                        Metric = oldConfig.Metric ?? ConfigDefaults.DefaultMetric,
+                        TestSplit = oldConfig.TestSplit ?? ConfigDefaults.DefaultTestSplit
+                    }
+                };
+            }
+
+            return newConfig;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>

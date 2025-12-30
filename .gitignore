@@ -68,3 +68,5 @@ local-tests/
 .env
 publish/
 nulcoverage/
+nul
+CLAUDE.md

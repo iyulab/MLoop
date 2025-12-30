@@ -132,38 +132,58 @@ public class PredictionEngine : IPredictionEngine
 
             var columns = firstLine.Split(',');
 
-            // Use column inference with a dummy label (it won't be used for prediction)
-            // We need to provide a label column name to satisfy InferColumns
-            var dummyLabel = columns.Length > 0 ? columns[0] : "dummy";
+            // Find the label column from trained schema to exclude it from features
+            string? labelColumn = null;
+            if (trainedSchema != null)
+            {
+                var labelInfo = trainedSchema.Columns.FirstOrDefault(c => c.Purpose == "Label");
+                if (labelInfo != null)
+                {
+                    labelColumn = labelInfo.Name;
+                }
+            }
+
+            // Use column inference with the correct label (or dummy if unknown)
+            var dummyLabel = labelColumn ?? (columns.Length > 0 ? columns[0] : "dummy");
 
             var columnInference = _mlContext.Auto().InferColumns(
                 mlnetCompatiblePath,
                 labelColumnName: dummyLabel,
                 separatorChar: ',');
 
+            // If we have the label column, ensure it's marked as ignored/label in inference
+            if (!string.IsNullOrEmpty(labelColumn) && columnInference.ColumnInformation != null)
+            {
+                // Remove from feature columns if present
+                columnInference.ColumnInformation.NumericColumnNames.Remove(labelColumn);
+                columnInference.ColumnInformation.CategoricalColumnNames.Remove(labelColumn);
+                columnInference.ColumnInformation.TextColumnNames.Remove(labelColumn);
+            }
+
             var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
             var inputData = textLoader.Load(mlnetCompatiblePath);
 
-            // DEBUG: Print input data columns
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
-            Console.WriteLine($"[DEBUG] Input DataView columns ({inputData.Schema.Count}):");
-            foreach (var col in inputData.Schema)
+            // Drop label column from input data if it exists (it shouldn't be used for prediction)
+            IDataView processedData = inputData;
+            if (!string.IsNullOrEmpty(labelColumn) && inputData.Schema.GetColumnOrNull(labelColumn) != null)
             {
-                var typeName = col.Type != null ? col.Type.ToString() : "null";
-                Console.WriteLine($"  - '{col.Name}' ({typeName})");
-            }
-            Console.WriteLine($"[DEBUG] Model schema columns ({modelSchema?.Count ?? 0}):");
-            if (modelSchema != null)
-            {
-                foreach (var col in modelSchema)
+                // Create a column dropping transform to exclude the label
+                var columnsToKeep = inputData.Schema
+                    .Where(col => col.Name != labelColumn)
+                    .Select(col => col.Name)
+                    .ToArray();
+
+                if (columnsToKeep.Length < inputData.Schema.Count)
                 {
-                    var typeName = col.Type != null ? col.Type.ToString() : "null";
-                    Console.WriteLine($"  - '{col.Name}' ({typeName})");
+                    // Use ChooseColumns to keep only non-label columns
+                    processedData = _mlContext.Transforms.SelectColumns(columnsToKeep)
+                        .Fit(inputData)
+                        .Transform(inputData);
                 }
             }
 
             // Make predictions
-            var predictions = trainedModel.Transform(inputData);
+            var predictions = trainedModel.Transform(processedData);
 
             // Count rows before saving
             long? count = predictions.GetRowCount();

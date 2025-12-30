@@ -69,8 +69,8 @@ public class TrainingEngine : ITrainingEngine
                 Console.WriteLine($"[Warning] {warning}");
             }
 
-            // Capture input schema before training
-            var inputSchema = CaptureInputSchema(config.DataFile, config.LabelColumn);
+            // Capture input schema before training (using enhanced detection)
+            var inputSchema = CaptureInputSchemaEnhanced(config.DataFile, config.LabelColumn);
 
             // Run AutoML
             var autoMLResult = await _autoMLRunner.RunAsync(config, progress, cancellationToken);
@@ -259,7 +259,9 @@ public class TrainingEngine : ITrainingEngine
             columnInfo.NumericColumnNames?.Contains(columnName) == true ||
             columnInfo.TextColumnNames?.Contains(columnName) == true)
             return "Feature";
-        return "Unknown";
+
+        // Fallback: treat as Feature if not explicitly ignored or label
+        return "Feature";
     }
 
     private string GetColumnDataType(string columnName, Microsoft.ML.AutoML.ColumnInformation columnInfo)
@@ -270,6 +272,195 @@ public class TrainingEngine : ITrainingEngine
             return "Numeric";
         if (columnInfo.TextColumnNames?.Contains(columnName) == true)
             return "Text";
+
+        // ML.NET InferColumns may not populate column lists correctly
+        // Return Unknown and let CaptureInputSchema infer from actual data
         return "Unknown";
+    }
+
+    /// <summary>
+    /// Captures input schema with enhanced type detection using actual data values
+    /// </summary>
+    private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn)
+    {
+        try
+        {
+            // Get all columns from the file with UTF-8 encoding
+            string? firstLine;
+            using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                firstLine = reader.ReadLine();
+            }
+
+            if (string.IsNullOrEmpty(firstLine))
+            {
+                return null;
+            }
+
+            var columnNames = firstLine.Split(',');
+
+            // Read sample of data lines for type inference
+            var allLines = File.ReadAllLines(dataFile, System.Text.Encoding.UTF8);
+            var dataLines = allLines.Skip(1).Take(1000).ToArray(); // Sample first 1000 rows
+
+            // Try ML.NET InferColumns first
+            Microsoft.ML.AutoML.ColumnInformation? columnInfo = null;
+            try
+            {
+                var columnInference = _mlContext.Auto().InferColumns(
+                    dataFile,
+                    labelColumnName: labelColumn,
+                    separatorChar: ',');
+                columnInfo = columnInference?.ColumnInformation;
+            }
+            catch
+            {
+                // InferColumns may fail for complex data
+            }
+
+            var columns = new List<ColumnSchema>();
+
+            foreach (var colName in columnNames)
+            {
+                var colIndex = Array.IndexOf(columnNames, colName);
+                var purpose = GetColumnPurposeEnhanced(colName, labelColumn, columnInfo);
+                var (dataType, categoricalValues, uniqueCount) = InferColumnTypeFromData(
+                    colName, colIndex, dataLines, columnInfo);
+
+                columns.Add(new ColumnSchema
+                {
+                    Name = colName,
+                    DataType = dataType,
+                    Purpose = purpose,
+                    CategoricalValues = categoricalValues,
+                    UniqueValueCount = uniqueCount
+                });
+            }
+
+            return new InputSchemaInfo
+            {
+                Columns = columns,
+                CapturedAt = DateTime.UtcNow
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private string GetColumnPurposeEnhanced(
+        string columnName,
+        string labelColumn,
+        Microsoft.ML.AutoML.ColumnInformation? columnInfo)
+    {
+        // Exact match for label
+        if (columnName == labelColumn)
+            return "Label";
+
+        // Check ML.NET inference
+        if (columnInfo != null)
+        {
+            if (columnInfo.LabelColumnName == columnName)
+                return "Label";
+            if (columnInfo.IgnoredColumnNames?.Contains(columnName) == true)
+                return "Ignore";
+        }
+
+        // Default: treat as Feature
+        return "Feature";
+    }
+
+    private (string DataType, List<string>? CategoricalValues, int? UniqueCount) InferColumnTypeFromData(
+        string columnName,
+        int colIndex,
+        string[] dataLines,
+        Microsoft.ML.AutoML.ColumnInformation? columnInfo)
+    {
+        // First check ML.NET inference
+        if (columnInfo != null)
+        {
+            if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
+            {
+                var (values, count) = CollectCategoricalValues(colIndex, dataLines);
+                return ("Categorical", values, count);
+            }
+            if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
+                return ("Numeric", null, null);
+            if (columnInfo.TextColumnNames?.Contains(columnName) == true)
+                return ("Text", null, null);
+        }
+
+        // Fallback: Infer type from actual values
+        if (colIndex < 0 || dataLines.Length == 0)
+            return ("Unknown", null, null);
+
+        var uniqueValues = new HashSet<string>();
+        int numericCount = 0;
+        int totalCount = 0;
+
+        foreach (var line in dataLines)
+        {
+            var values = line.Split(',');
+            if (colIndex >= values.Length)
+                continue;
+
+            var value = values[colIndex].Trim();
+            if (string.IsNullOrEmpty(value))
+                continue;
+
+            totalCount++;
+            uniqueValues.Add(value);
+
+            // Check if value is numeric
+            if (double.TryParse(value, out _))
+            {
+                numericCount++;
+            }
+        }
+
+        if (totalCount == 0)
+            return ("Unknown", null, null);
+
+        // Determine type based on data analysis
+        double numericRatio = (double)numericCount / totalCount;
+        int uniqueCount = uniqueValues.Count;
+
+        // High numeric ratio (>90%) = Numeric column
+        if (numericRatio > 0.9)
+        {
+            return ("Numeric", null, null);
+        }
+
+        // Low unique count relative to total = likely Categorical
+        // Or explicit non-numeric values = Categorical
+        if (uniqueCount <= 100 || (numericRatio < 0.5 && uniqueCount < totalCount * 0.1))
+        {
+            var categoricalValues = uniqueValues.OrderBy(v => v).ToList();
+            return ("Categorical", categoricalValues, uniqueCount);
+        }
+
+        // High cardinality text
+        return ("Text", null, uniqueCount);
+    }
+
+    private (List<string>? Values, int Count) CollectCategoricalValues(int colIndex, string[] dataLines)
+    {
+        var uniqueValues = new HashSet<string>();
+
+        foreach (var line in dataLines)
+        {
+            var values = line.Split(',');
+            if (colIndex < values.Length)
+            {
+                var value = values[colIndex].Trim();
+                if (!string.IsNullOrEmpty(value))
+                {
+                    uniqueValues.Add(value);
+                }
+            }
+        }
+
+        return (uniqueValues.OrderBy(v => v).ToList(), uniqueValues.Count);
     }
 }
