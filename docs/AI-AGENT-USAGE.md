@@ -444,6 +444,80 @@ mloop agent "Promote exp-003 to production" -a mlops-manager
 mloop agent "Verify production model is updated" -a mlops-manager
 ```
 
+### 6.4 Automated Workflows (YAML)
+
+MLoop supports automated multi-agent workflows defined in YAML files.
+
+**Create a workflow file** (`.mloop/workflows/ml-pipeline.yaml`):
+
+```yaml
+name: MLPipeline
+version: "1.0"
+description: End-to-end ML workflow
+
+agents:
+  - ref: data-analyst
+    alias: analyst
+  - ref: preprocessing-expert
+    alias: prepper
+  - ref: model-architect
+    alias: architect
+
+states:
+  - id: START
+    type: Start
+    next: ANALYZE
+
+  - id: ANALYZE
+    type: Agent
+    executor: analyst
+    next: PREPROCESS
+
+  - id: PREPROCESS
+    type: Agent
+    executor: prepper
+    next: CONFIGURE
+
+  - id: CONFIGURE
+    type: Agent
+    executor: architect
+    next: REVIEW
+
+  - id: REVIEW
+    type: HumanGate
+    approvalMessage: "Review configuration before training?"
+    next: END
+
+  - id: END
+    type: Terminal
+
+settings:
+  defaultTimeout: PT10M
+  enableCheckpointing: true
+```
+
+**Execute the workflow**:
+
+```bash
+# List available workflows
+mloop agent workflow list
+
+# Validate workflow syntax before running
+mloop agent workflow validate .mloop/workflows/ml-pipeline.yaml
+
+# Run the workflow
+mloop agent workflow run .mloop/workflows/ml-pipeline.yaml --input "Analyze customer-data.csv"
+
+# Check execution status
+mloop agent workflow status
+```
+
+**Workflow features**:
+- **Agent States**: Execute specific agents with defined roles
+- **Human Gates**: Pause for manual approval before continuing
+- **Checkpointing**: Resume workflows after interruption
+- **State Transitions**: Define execution flow between states
+
 ---
 
 ## 7. Troubleshooting
