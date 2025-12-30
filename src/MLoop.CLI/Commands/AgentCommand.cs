@@ -30,6 +30,12 @@ public static class AgentCommand
             DefaultValueFactory = _ => false
         };
 
+        var listAgentsOption = new Option<bool>("--list-agents", "-l")
+        {
+            Description = "List available AI agents and exit",
+            DefaultValueFactory = _ => false
+        };
+
         var projectPathOption = new Option<string?>("--project", "-p")
         {
             Description = "Path to MLoop project directory",
@@ -40,6 +46,7 @@ public static class AgentCommand
         command.Arguments.Add(queryArg);
         command.Options.Add(agentOption);
         command.Options.Add(interactiveOption);
+        command.Options.Add(listAgentsOption);
         command.Options.Add(projectPathOption);
 
         // Add workflow subcommand
@@ -50,8 +57,9 @@ public static class AgentCommand
             var query = parseResult.GetValue(queryArg);
             var agentName = parseResult.GetValue(agentOption);
             var interactive = parseResult.GetValue(interactiveOption);
+            var listAgents = parseResult.GetValue(listAgentsOption);
             var projectPath = parseResult.GetValue(projectPathOption);
-            return ExecuteAsync(query, agentName, interactive, projectPath);
+            return ExecuteAsync(query, agentName, interactive, listAgents, projectPath);
         });
 
         return command;
@@ -61,10 +69,17 @@ public static class AgentCommand
         string? query,
         string? agentName,
         bool interactive,
+        bool listAgents,
         string? projectPath)
     {
         try
         {
+            // Handle --list-agents first (before full initialization)
+            if (listAgents)
+            {
+                return await ListAvailableAgentsAsync(projectPath);
+            }
+
             // Display welcome banner
             DisplayWelcomeBanner();
 
@@ -405,5 +420,77 @@ public static class AgentCommand
 
         AnsiConsole.Write(panel);
         AnsiConsole.WriteLine();
+    }
+
+    private static async Task<int> ListAvailableAgentsAsync(string? projectPath)
+    {
+        try
+        {
+            AnsiConsole.MarkupLine("[blue]🤖 MLoop AI Agents[/]");
+            AnsiConsole.WriteLine();
+
+            // Initialize orchestrator to get agent list
+            IronbeesOrchestrator? orchestrator = null;
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("blue"))
+                .StartAsync("[blue]Loading agents...[/]", async ctx =>
+                {
+                    var agentsDirectory = !string.IsNullOrEmpty(projectPath)
+                        ? Path.Combine(projectPath, ".mloop", "agents")
+                        : Path.Combine(Directory.GetCurrentDirectory(), ".mloop", "agents");
+
+                    orchestrator = IronbeesOrchestrator.CreateFromEnvironment(agentsDirectory: agentsDirectory);
+                    await orchestrator.InitializeAsync();
+                });
+
+            if (orchestrator == null)
+            {
+                AnsiConsole.MarkupLine("[red]Failed to initialize agents[/]");
+                return 1;
+            }
+
+            var agents = orchestrator.GetAvailableAgents();
+
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .AddColumn("[blue]Agent Name[/]")
+                .AddColumn("[blue]Description[/]")
+                .AddColumn("[blue]Use Case[/]");
+
+            foreach (var agent in agents)
+            {
+                var (description, useCase) = agent switch
+                {
+                    "data-analyst" => ("Analyzes dataset characteristics and provides insights",
+                                       "Dataset analysis, ML readiness assessment"),
+                    "preprocessing-expert" => ("Generates preprocessing scripts for data cleaning",
+                                               "C# script generation, data transformation"),
+                    "model-architect" => ("Recommends ML models based on task and data",
+                                          "Problem classification, AutoML configuration"),
+                    "mlops-manager" => ("Manages ML project lifecycle and operations",
+                                        "Workflow orchestration, training execution"),
+                    _ => ("AI agent for MLoop tasks", "General assistance")
+                };
+
+                table.AddRow(agent, description, useCase);
+            }
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[grey]Total: {agents.Count()} agent(s) available[/]");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[grey]Usage: mloop agent \"your question\" --agent <agent-name>[/]");
+            AnsiConsole.MarkupLine("[grey]       mloop agent --interactive[/]");
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            var errorMessage = ex.Message.Replace("[", "[[").Replace("]", "]]");
+            AnsiConsole.MarkupLine($"[red]Error:[/] {errorMessage}");
+            return 1;
+        }
     }
 }

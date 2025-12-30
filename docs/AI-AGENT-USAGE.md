@@ -46,6 +46,7 @@ mloop agent --interactive
 | `mloop agent "query" --agent <name>` | Single query to specific agent |
 | `mloop agent "query"` | Auto-select agent based on query |
 | `mloop agent --interactive` | Interactive conversation mode |
+| `mloop agent --list-agents` | List all available agents |
 | `mloop agent workflow run <file>` | Execute workflow definition |
 | `mloop agent workflow list` | List available workflows |
 
@@ -477,7 +478,10 @@ docker run -d -p 8080:8080 --gpus all gpustack/gpustack:latest
 
 **Error: "Unknown agent: xyz"**
 ```bash
-# Solution: Check available agents in interactive mode
+# Solution: List available agents
+mloop agent --list-agents
+
+# Or check in interactive mode
 mloop agent --interactive
 # Then type: /agents
 
@@ -609,6 +613,10 @@ mloop agent -i
 
 # Interactive with specific agent
 mloop agent --interactive --agent <agent-name>
+
+# List all available agents
+mloop agent --list-agents
+mloop agent -l
 
 # Help
 mloop agent --help
