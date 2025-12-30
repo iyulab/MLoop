@@ -9,8 +9,14 @@ MLoop provides AI-powered agents for interactive ML workflow assistance using Ir
 export ANTHROPIC_API_KEY=sk-ant-your-key
 export ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 
-# Chat with agent
-mloop agent chat data-analyst "Analyze my dataset"
+# Query with specific agent
+mloop agent "Analyze my dataset" --agent data-analyst
+
+# Interactive mode
+mloop agent --interactive
+
+# Auto-select agent (based on query)
+mloop agent "What preprocessing is needed for train.csv?"
 ```
 
 ## Available Agents
@@ -72,7 +78,7 @@ Only one provider is needed. MLoop automatically selects based on available cred
 
 ### Data Analysis
 ```bash
-mloop agent chat data-analyst "Analyze datasets/train.csv. What preprocessing is needed?"
+mloop agent "Analyze datasets/train.csv. What preprocessing is needed?" --agent data-analyst
 ```
 
 **Response includes**:
@@ -84,7 +90,7 @@ mloop agent chat data-analyst "Analyze datasets/train.csv. What preprocessing is
 
 ### Preprocessing Scripts
 ```bash
-mloop agent chat preprocessing-expert "Generate scripts to handle missing values in Age column"
+mloop agent "Generate scripts to handle missing values in Age column" --agent preprocessing-expert
 ```
 
 **Response includes**:
@@ -94,7 +100,7 @@ mloop agent chat preprocessing-expert "Generate scripts to handle missing values
 
 ### Model Configuration
 ```bash
-mloop agent chat model-architect "Recommend AutoML settings for binary classification with 10K rows"
+mloop agent "Recommend AutoML settings for binary classification with 10K rows" --agent model-architect
 ```
 
 **Response includes**:
@@ -106,7 +112,7 @@ mloop agent chat model-architect "Recommend AutoML settings for binary classific
 
 ### Workflow Orchestration
 ```bash
-mloop agent chat mlops-manager "Train model on datasets/customer-churn.csv with target 'Churned'"
+mloop agent "Train model on datasets/customer-churn.csv with target 'Churned'" --agent mlops-manager
 ```
 
 **Response includes**:
@@ -115,12 +121,13 @@ mloop agent chat mlops-manager "Train model on datasets/customer-churn.csv with 
 - Expected outputs
 - Next steps
 
-## Streaming Responses
+## Response Streaming
 
-For real-time feedback:
+Responses are streamed in real-time by default. For long analyses:
 
 ```bash
-mloop agent stream data-analyst "Detailed analysis of large-dataset.csv"
+# Streaming is automatic - responses appear as they are generated
+mloop agent "Detailed analysis of large-dataset.csv" --agent data-analyst
 ```
 
 ## GPUStack Setup
