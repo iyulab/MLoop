@@ -29,20 +29,25 @@ Complete guide for using MLoop's AI-powered agents for interactive ML workflow a
 export ANTHROPIC_API_KEY=sk-ant-your-key
 export ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 
-# Step 2: Chat with an agent
-mloop agent chat data-analyst "What can you help me with?"
+# Step 2: Query with specific agent
+mloop agent "What can you help me with?" --agent data-analyst
 
 # Step 3: Analyze your data
-mloop agent chat data-analyst "Analyze datasets/train.csv"
+mloop agent "Analyze datasets/train.csv" --agent data-analyst
+
+# Step 4: Interactive conversation mode
+mloop agent --interactive
 ```
 
 ### 1.3 Available Commands
 
 | Command | Description |
 |---------|-------------|
-| `mloop agent chat <agent> <query>` | Single query to agent |
-| `mloop agent stream <agent> <query>` | Streaming response |
-| `mloop agent list` | List available agents |
+| `mloop agent "query" --agent <name>` | Single query to specific agent |
+| `mloop agent "query"` | Auto-select agent based on query |
+| `mloop agent --interactive` | Interactive conversation mode |
+| `mloop agent workflow run <file>` | Execute workflow definition |
+| `mloop agent workflow list` | List available workflows |
 
 ---
 
@@ -60,10 +65,10 @@ mloop agent chat data-analyst "Analyze datasets/train.csv"
 
 **Example Queries**:
 ```bash
-mloop agent chat data-analyst "Analyze datasets/customer-data.csv"
-mloop agent chat data-analyst "What's the distribution of the target column?"
-mloop agent chat data-analyst "Are there any missing values or outliers?"
-mloop agent chat data-analyst "Is this dataset ready for ML training?"
+mloop agent "Analyze datasets/customer-data.csv" --agent data-analyst
+mloop agent "What's the distribution of the target column?" -a data-analyst
+mloop agent "Are there any missing values or outliers?" -a data-analyst
+mloop agent "Is this dataset ready for ML training?" -a data-analyst
 ```
 
 **Capabilities**:
@@ -87,10 +92,10 @@ mloop agent chat data-analyst "Is this dataset ready for ML training?"
 
 **Example Queries**:
 ```bash
-mloop agent chat preprocessing-expert "Handle missing values in the Age column"
-mloop agent chat preprocessing-expert "Join customer.csv and orders.csv on customer_id"
-mloop agent chat preprocessing-expert "Create feature: days_since_last_purchase"
-mloop agent chat preprocessing-expert "Convert wide format to long format"
+mloop agent "Handle missing values in the Age column" --agent preprocessing-expert
+mloop agent "Join customer.csv and orders.csv on customer_id" -a preprocessing-expert
+mloop agent "Create feature: days_since_last_purchase" -a preprocessing-expert
+mloop agent "Convert wide format to long format" -a preprocessing-expert
 ```
 
 **Capabilities**:
@@ -127,10 +132,10 @@ public class HandleMissingValues : IPreprocessingScript
 
 **Example Queries**:
 ```bash
-mloop agent chat model-architect "I have customer data and want to predict churn"
-mloop agent chat model-architect "What metric should I use for imbalanced classification?"
-mloop agent chat model-architect "Recommend training time for 100K rows"
-mloop agent chat model-architect "Which trainers work best for regression?"
+mloop agent "I have customer data and want to predict churn" --agent model-architect
+mloop agent "What metric should I use for imbalanced classification?" -a model-architect
+mloop agent "Recommend training time for 100K rows" -a model-architect
+mloop agent "Which trainers work best for regression?" -a model-architect
 ```
 
 **Capabilities**:
@@ -154,10 +159,10 @@ mloop agent chat model-architect "Which trainers work best for regression?"
 
 **Example Queries**:
 ```bash
-mloop agent chat mlops-manager "Initialize a new project for customer churn prediction"
-mloop agent chat mlops-manager "Train a model on datasets/train.csv with target 'Churned'"
-mloop agent chat mlops-manager "List all experiments and their metrics"
-mloop agent chat mlops-manager "Promote experiment exp-003 to production"
+mloop agent "Initialize a new project for customer churn prediction" --agent mlops-manager
+mloop agent "Train a model on datasets/train.csv with target 'Churned'" -a mlops-manager
+mloop agent "List all experiments and their metrics" -a mlops-manager
+mloop agent "Promote experiment exp-003 to production" -a mlops-manager
 ```
 
 **Capabilities**:
@@ -238,7 +243,7 @@ curl http://localhost:8080/health
 
 ```bash
 # Step 1: Quick overview
-mloop agent chat data-analyst "Give me an overview of datasets/customers.csv"
+mloop agent "Give me an overview of datasets/customers.csv" --agent data-analyst
 
 # Response includes:
 # - Row/column count
@@ -247,26 +252,26 @@ mloop agent chat data-analyst "Give me an overview of datasets/customers.csv"
 # - Basic statistics
 
 # Step 2: Detailed analysis
-mloop agent chat data-analyst "Analyze the target column 'Churned' for class imbalance"
+mloop agent "Analyze the target column 'Churned' for class imbalance" -a data-analyst
 
 # Step 3: ML readiness check
-mloop agent chat data-analyst "Is this dataset ready for ML? What preprocessing is needed?"
+mloop agent "Is this dataset ready for ML? What preprocessing is needed?" -a data-analyst
 ```
 
 ### 4.2 Preprocessing Workflow
 
 ```bash
 # Step 1: Identify needs
-mloop agent chat data-analyst "What preprocessing does datasets/raw.csv need?"
+mloop agent "What preprocessing does datasets/raw.csv need?" --agent data-analyst
 
 # Step 2: Generate scripts
-mloop agent chat preprocessing-expert "Handle missing values: fill numeric with median, categorical with mode"
+mloop agent "Handle missing values: fill numeric with median, categorical with mode" -a preprocessing-expert
 
 # Step 3: Save script
 # Copy the generated code to .mloop/scripts/preprocess/01_handle_missing.cs
 
 # Step 4: Generate next script
-mloop agent chat preprocessing-expert "Encode categorical columns: Gender, Country, ProductType"
+mloop agent "Encode categorical columns: Gender, Country, ProductType" -a preprocessing-expert
 
 # Step 5: Run preprocessing
 mloop preprocess --input datasets/raw.csv --output datasets/train.csv
@@ -276,82 +281,83 @@ mloop preprocess --input datasets/raw.csv --output datasets/train.csv
 
 ```bash
 # Step 1: Get recommendations
-mloop agent chat model-architect "Binary classification with 50K rows, imbalanced classes"
+mloop agent "Binary classification with 50K rows, imbalanced classes" --agent model-architect
 
 # Step 2: Initialize project
-mloop agent chat mlops-manager "Initialize project 'churn-prediction' for binary classification"
+mloop agent "Initialize project 'churn-prediction' for binary classification" -a mlops-manager
 
 # Step 3: Train model
-mloop agent chat mlops-manager "Train model on datasets/train.csv, target 'Churned', 5 minutes"
+mloop agent "Train model on datasets/train.csv, target 'Churned', 5 minutes" -a mlops-manager
 
 # Step 4: Evaluate
-mloop agent chat mlops-manager "Evaluate the latest experiment"
+mloop agent "Evaluate the latest experiment" -a mlops-manager
 
 # Step 5: Promote if good
-mloop agent chat mlops-manager "Promote exp-001 to production"
+mloop agent "Promote exp-001 to production" -a mlops-manager
 ```
 
 ### 4.4 Complete E2E Workflow
 
 ```bash
 # Analysis phase
-mloop agent chat data-analyst "Analyze datasets/sales.csv for predicting 'Revenue'"
+mloop agent "Analyze datasets/sales.csv for predicting 'Revenue'" --agent data-analyst
 
 # Preprocessing phase
-mloop agent chat preprocessing-expert "Generate all preprocessing scripts based on the analysis"
+mloop agent "Generate all preprocessing scripts based on the analysis" -a preprocessing-expert
 
 # Configuration phase
-mloop agent chat model-architect "Recommend configuration for this regression problem"
+mloop agent "Recommend configuration for this regression problem" -a model-architect
 
-# Execution phase
-mloop agent chat mlops-manager "Execute complete training workflow:
-- Initialize project 'sales-forecast'
-- Run preprocessing
-- Train model for 10 minutes
-- Evaluate and report results"
+# Execution phase (use interactive mode for complex multi-step tasks)
+mloop agent --interactive --agent mlops-manager
+# Then: Execute complete training workflow:
+# - Initialize project 'sales-forecast'
+# - Run preprocessing
+# - Train model for 10 minutes
+# - Evaluate and report results
 ```
 
 ---
 
 ## 5. Advanced Usage
 
-### 5.1 Streaming Responses
+### 5.1 Response Streaming
 
-For long responses or real-time feedback:
+Responses are streamed in real-time by default. This provides better UX for long analyses:
 
 ```bash
-# Stream analysis results
-mloop agent stream data-analyst "Detailed statistical analysis of datasets/large-dataset.csv"
+# Responses stream automatically as they're generated
+mloop agent "Detailed statistical analysis of datasets/large-dataset.csv" --agent data-analyst
 
-# Stream preprocessing script generation
-mloop agent stream preprocessing-expert "Generate comprehensive preprocessing pipeline"
+# Long preprocessing script generation
+mloop agent "Generate comprehensive preprocessing pipeline" -a preprocessing-expert
 ```
 
 ### 5.2 Complex Queries
 
 ```bash
 # Multi-step analysis
-mloop agent chat data-analyst "
+mloop agent "
 1. Analyze datasets/customers.csv
 2. Identify top 5 most important features for predicting 'Churned'
 3. Check for multicollinearity
 4. Recommend feature engineering
-"
+" --agent data-analyst
 
 # Conditional workflow
-mloop agent chat mlops-manager "
+mloop agent "
 If datasets/train.csv exists, train model on it.
 Otherwise, preprocess datasets/raw.csv first.
 Use binary classification with F1 score optimization.
 Time limit: 5 minutes.
-"
+" -a mlops-manager
 ```
 
 ### 5.3 Context Building
 
 ```bash
 # Provide context in query
-mloop agent chat model-architect "
+mloop agent "
 Dataset: 100K rows, 50 features, 5% positive class
 Problem: Predict customer churn
 Constraints:
@@ -359,7 +365,7 @@ Constraints:
 - Model must be explainable
 - Training time limit: 10 minutes
 Recommend the best configuration.
-"
+" --agent model-architect
 ```
 
 ### 5.4 Batch Operations
@@ -367,12 +373,12 @@ Recommend the best configuration.
 ```bash
 # Multiple datasets
 for dataset in datasets/*.csv; do
-    mloop agent chat data-analyst "Quick analysis of $dataset" >> analysis_report.md
+    mloop agent "Quick analysis of $dataset" --agent data-analyst >> analysis_report.md
 done
 
 # Multiple experiments
 for time in 60 120 300; do
-    mloop agent chat mlops-manager "Train with time=$time seconds, name=exp-${time}s"
+    mloop agent "Train with time=$time seconds, name=exp-${time}s" -a mlops-manager
 done
 ```
 
@@ -390,10 +396,10 @@ mkdir my-ml-project && cd my-ml-project
 cp /path/to/data.csv datasets/
 
 # 3. Analyze data
-mloop agent chat data-analyst "Analyze datasets/data.csv and recommend ML approach"
+mloop agent "Analyze datasets/data.csv and recommend ML approach" --agent data-analyst
 
 # 4. Generate preprocessing (if needed)
-mloop agent chat preprocessing-expert "Create preprocessing scripts based on analysis"
+mloop agent "Create preprocessing scripts based on analysis" -a preprocessing-expert
 
 # 5. Initialize MLoop project
 mloop init my-project --task binary-classification --label target
@@ -406,35 +412,35 @@ mloop train datasets/data.csv --label target --time 300
 
 ```bash
 # 1. Analyze current results
-mloop agent chat mlops-manager "List all experiments with metrics"
+mloop agent "List all experiments with metrics" --agent mlops-manager
 
 # 2. Get improvement suggestions
-mloop agent chat model-architect "Current best F1 is 0.75. How can I improve?"
+mloop agent "Current best F1 is 0.75. How can I improve?" -a model-architect
 
 # 3. Try feature engineering
-mloop agent chat preprocessing-expert "Create interaction features for top 5 predictors"
+mloop agent "Create interaction features for top 5 predictors" -a preprocessing-expert
 
 # 4. Retrain with new features
-mloop agent chat mlops-manager "Train new model with enhanced features, 10 minutes"
+mloop agent "Train new model with enhanced features, 10 minutes" -a mlops-manager
 
 # 5. Compare results
-mloop agent chat mlops-manager "Compare exp-001 vs exp-002"
+mloop agent "Compare exp-001 vs exp-002" -a mlops-manager
 ```
 
 ### 6.3 Production Deployment
 
 ```bash
 # 1. Evaluate production candidate
-mloop agent chat mlops-manager "Detailed evaluation of exp-003"
+mloop agent "Detailed evaluation of exp-003" --agent mlops-manager
 
 # 2. Compare with current production
-mloop agent chat mlops-manager "Compare exp-003 with current production model"
+mloop agent "Compare exp-003 with current production model" -a mlops-manager
 
 # 3. Promote if better
-mloop agent chat mlops-manager "Promote exp-003 to production"
+mloop agent "Promote exp-003 to production" -a mlops-manager
 
 # 4. Verify deployment
-mloop agent chat mlops-manager "Verify production model is updated"
+mloop agent "Verify production model is updated" -a mlops-manager
 ```
 
 ---
@@ -471,8 +477,9 @@ docker run -d -p 8080:8080 --gpus all gpustack/gpustack:latest
 
 **Error: "Unknown agent: xyz"**
 ```bash
-# Solution: Check available agents
-mloop agent list
+# Solution: Check available agents in interactive mode
+mloop agent --interactive
+# Then type: /agents
 
 # Valid agents: data-analyst, preprocessing-expert, model-architect, mlops-manager
 ```
@@ -483,14 +490,14 @@ mloop agent list
 ls -la datasets/
 
 # Use absolute path if needed
-mloop agent chat data-analyst "Analyze /full/path/to/data.csv"
+mloop agent "Analyze /full/path/to/data.csv" --agent data-analyst
 ```
 
 ### 7.2 Debugging
 
 ```bash
-# Verbose output
-mloop agent chat data-analyst "test" --verbose
+# Test with simple query
+mloop agent "test" --agent data-analyst
 
 # Check provider detection
 env | grep -E "(ANTHROPIC|OPENAI|AZURE|GPUSTACK)"
@@ -506,7 +513,7 @@ curl -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
 **Slow responses**:
 - Use GPUStack for local deployment
 - Try smaller models (gpt-4o-mini vs gpt-4o)
-- Use streaming for long responses
+- Responses are streamed by default for better UX
 
 **High costs**:
 - Switch to GPUStack (local)
@@ -522,29 +529,29 @@ curl -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
 **DO**:
 ```bash
 # Be specific
-mloop agent chat data-analyst "Analyze missing values in columns: Age, Income, Score"
+mloop agent "Analyze missing values in columns: Age, Income, Score" --agent data-analyst
 
 # Provide context
-mloop agent chat model-architect "Binary classification, 10K rows, 3% positive class"
+mloop agent "Binary classification, 10K rows, 3% positive class" -a model-architect
 
 # Use structured queries
-mloop agent chat preprocessing-expert "
+mloop agent "
 Task: Handle missing values
 Columns: Age (numeric), City (categorical)
 Strategy: median for numeric, mode for categorical
-"
+" -a preprocessing-expert
 ```
 
 **DON'T**:
 ```bash
 # Too vague
-mloop agent chat data-analyst "analyze data"
+mloop agent "analyze data" -a data-analyst
 
 # Missing context
-mloop agent chat model-architect "what's a good metric?"
+mloop agent "what's a good metric?" -a model-architect
 
 # Too complex in one query
-mloop agent chat mlops-manager "do everything"
+mloop agent "do everything" -a mlops-manager
 ```
 
 ### 8.2 Workflow Organization
@@ -559,14 +566,14 @@ mloop agent chat mlops-manager "do everything"
 ### 8.3 Cost Management
 
 ```bash
-# Use streaming for exploration (same cost, better UX)
-mloop agent stream data-analyst "detailed analysis..."
+# Streaming is automatic (same cost, better UX)
+mloop agent "detailed analysis..." --agent data-analyst
 
 # Use specific queries (fewer tokens)
-mloop agent chat data-analyst "missing value count per column"
+mloop agent "missing value count per column" -a data-analyst
 
 # Cache results locally
-mloop agent chat data-analyst "analyze data.csv" > analysis.md
+mloop agent "analyze data.csv" -a data-analyst > analysis.md
 ```
 
 ### 8.4 Security
@@ -589,40 +596,77 @@ echo '.env' >> .gitignore
 ### Agent Commands
 
 ```bash
-# Chat (single query)
-mloop agent chat <agent-name> "<query>"
+# Single query with specific agent
+mloop agent "query" --agent <agent-name>
+mloop agent "query" -a <agent-name>
 
-# Stream (real-time response)
-mloop agent stream <agent-name> "<query>"
+# Auto-select agent based on query
+mloop agent "query"
 
-# List agents
-mloop agent list
+# Interactive conversation mode
+mloop agent --interactive
+mloop agent -i
+
+# Interactive with specific agent
+mloop agent --interactive --agent <agent-name>
 
 # Help
 mloop agent --help
 ```
 
+### Workflow Commands
+
+```bash
+# Run a workflow definition
+mloop agent workflow run <workflow-file.yaml>
+
+# List available workflows
+mloop agent workflow list
+
+# Validate workflow syntax
+mloop agent workflow validate <workflow-file.yaml>
+
+# Check workflow execution status
+mloop agent workflow status <execution-id>
+```
+
 ### Agent Names
 
-| Name | Alias | Description |
-|------|-------|-------------|
-| `data-analyst` | `da` | Dataset analysis |
-| `preprocessing-expert` | `pe` | Script generation |
-| `model-architect` | `ma` | ML configuration |
-| `mlops-manager` | `mm` | Workflow orchestration |
+| Name | Description |
+|------|-------------|
+| `data-analyst` | Dataset analysis |
+| `preprocessing-expert` | Script generation |
+| `model-architect` | ML configuration |
+| `mlops-manager` | Workflow orchestration |
 
 ### Examples
 
 ```bash
-# Full name
-mloop agent chat data-analyst "analyze data"
+# Query with specific agent (--agent or -a)
+mloop agent "analyze data" --agent data-analyst
+mloop agent "generate script" -a preprocessing-expert
 
-# With streaming
-mloop agent stream preprocessing-expert "generate script"
+# Auto-select agent (no --agent flag)
+mloop agent "What preprocessing is needed for train.csv?"
+
+# Interactive mode for multi-turn conversations
+mloop agent --interactive
 
 # Complex query
-mloop agent chat mlops-manager "train model on train.csv with target=Label time=300"
+mloop agent "train model on train.csv with target=Label time=300" -a mlops-manager
 ```
+
+### Interactive Mode Commands
+
+When in interactive mode (`mloop agent -i`):
+
+| Command | Description |
+|---------|-------------|
+| `/agents` | List available agents |
+| `/switch <name>` | Switch to specific agent |
+| `/auto` | Enable auto agent selection |
+| `/help` | Show available commands |
+| `exit` or `quit` | End conversation |
 
 ---
 
@@ -657,6 +701,6 @@ mloop agent chat mlops-manager "train model on train.csv with target=Label time=
 
 ---
 
-**Version**: 1.0.0
-**Last Updated**: 2024-12-08
+**Version**: 1.1.0
+**Last Updated**: 2024-12-30
 **Related**: [AI-AGENT-ARCHITECTURE.md](AI-AGENT-ARCHITECTURE.md), [AI-AGENTS.md](AI-AGENTS.md)
