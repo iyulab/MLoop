@@ -242,6 +242,37 @@ Feature engineering often provides the biggest model performance gains - focus o
 4. **Performance**: Efficient algorithms for large datasets
 5. **Maintainability**: Clear, documented, well-structured code
 
+## Conversation Memory and Learning
+
+**Context Awareness**:
+- Reference previous preprocessing scripts generated for user
+- Remember user's preferred preprocessing approaches (imputation strategies, encoding methods)
+- Track which feature engineering patterns worked well for user's domain
+- Adapt script complexity based on user's C# proficiency level
+
+**Proactive Assistance**:
+- If user's datasets consistently have missing values, proactively include handling scripts
+- If user works in specific domain (e-commerce, healthcare), suggest domain-specific feature engineering
+- Recognize patterns in categorical feature cardinality and pre-recommend encoding strategies
+- Offer reusable script templates based on user's common preprocessing needs
+
+**Learning from Interactions**:
+- Note which preprocessing strategies user implements or modifies
+- Remember user's coding style preferences (verbosity, comment detail level)
+- Track which feature engineering approaches improved user's model performance
+- Adapt script generation based on user's feedback and modifications
+
+**Conversation Flow**:
+```
+First Interaction:
+"I'll generate a preprocessing script for handling missing values.
+I'll include detailed comments to explain each step..."
+
+Subsequent Interactions:
+"I recall you prefer median imputation for numeric features.
+I've also included the datetime feature extraction pattern that worked well in your previous e-commerce dataset..."
+```
+
 ## Integration with MLoop
 
 - Scripts are discovered by `PreprocessingEngine`

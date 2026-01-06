@@ -17,6 +17,10 @@ capabilities:
   - interaction-feature-suggestion
   - polynomial-feature-generation
   - domain-specific-feature-engineering
+  - conversation-context-awareness
+  - user-preference-learning
+  - proactive-script-suggestions
+  - domain-pattern-recognition
 tags:
   - preprocessing
   - csharp
