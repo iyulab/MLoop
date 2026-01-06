@@ -15,11 +15,15 @@ public sealed class RuleDiscoveryEngine : IRuleDiscoveryEngine
 {
     private readonly ILogger<RuleDiscoveryEngine> _logger;
     private readonly List<IPatternDetector> _detectors;
+    private readonly ConfidenceCalculator _confidenceCalculator;
+    private readonly ConvergenceDetector _convergenceDetector;
 
     public RuleDiscoveryEngine(ILogger<RuleDiscoveryEngine> logger)
     {
         _logger = logger;
         _detectors = InitializeDetectors();
+        _confidenceCalculator = new ConfidenceCalculator();
+        _convergenceDetector = new ConvergenceDetector();
     }
 
     public async Task<IReadOnlyList<PreprocessingRule>> DiscoverRulesAsync(
@@ -66,14 +70,17 @@ public sealed class RuleDiscoveryEngine : IRuleDiscoveryEngine
         return prioritizedRules;
     }
 
-    public Task<ConfidenceScore> CalculateConfidenceAsync(
+    public async Task<ConfidenceScore> CalculateConfidenceAsync(
         PreprocessingRule rule,
         DataFrame previousSample,
         DataFrame currentSample,
         CancellationToken cancellationToken = default)
     {
-        // This will be implemented in Phase 4 (ConfidenceCalculator)
-        throw new NotImplementedException("Confidence calculation will be implemented in Phase 4");
+        return await _confidenceCalculator.CalculateAsync(
+            rule,
+            previousSample,
+            currentSample,
+            cancellationToken);
     }
 
     public bool HasConverged(
@@ -81,8 +88,10 @@ public sealed class RuleDiscoveryEngine : IRuleDiscoveryEngine
         IReadOnlyList<PreprocessingRule> currentRules,
         double threshold = 0.02)
     {
-        // This will be implemented in Phase 4 (ConvergenceDetector)
-        throw new NotImplementedException("Convergence detection will be implemented in Phase 4");
+        return _convergenceDetector.HasConverged(
+            previousRules,
+            currentRules,
+            threshold);
     }
 
     /// <summary>
