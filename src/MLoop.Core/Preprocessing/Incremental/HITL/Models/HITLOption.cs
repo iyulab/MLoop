@@ -28,5 +28,5 @@ public sealed class HITLOption
     /// <summary>
     /// Indicates if this is the recommended option.
     /// </summary>
-    public bool IsRecommended { get; init; }
+    public bool IsRecommended { get; set; }
 }
