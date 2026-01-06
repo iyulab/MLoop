@@ -18,14 +18,21 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - ✅ Batch prediction with auto-discovery
 - ✅ CLI with comprehensive command set
 
-**AI Agent System**
+**AI Agent System** (Ironbees v0.4.1)
 - ✅ Multi-provider LLM support (OpenAI, Anthropic, Google, AWS, Azure, Ollama)
 - ✅ Interactive ML assistance and guidance
 - ✅ Context-aware experiment analysis
-- ✅ Conversation history management
+- ✅ Conversation history management via FileSystemConversationStore
+- ✅ YAML-based agent templates (agent.yaml + system-prompt.md)
+- ✅ Enhanced agents (MLOOP-006):
+  - data-analyst: Dataset analysis with preprocessing strategy recommendations
+  - model-architect: Intelligent AutoML configuration with complexity-based time budgets
+  - preprocessing-expert: Feature engineering assistant with domain-specific patterns
+  - All agents: Conversation memory, context awareness, proactive assistance
 
 **Quality & Testing**
-- ✅ 60/60 tests passing (Core + API + AIAgent)
+- ✅ 436 tests passing (Core + API + AIAgent + Pipeline)
+- ✅ 15 LLM integration tests for AI agents (data-analyst, model-architect, preprocessing-expert)
 - ✅ Real-world integration testing validated
 - ✅ .NET 10.0 + C# 13 modern codebase
 
@@ -158,20 +165,28 @@ Current MLoop/FilePrepper handles only **50% of real-world datasets** (3/6 from 
 **Goal**: Reduce knowledge cost further through intelligent assistance
 
 ### Week 5: Intelligent Optimization
-- [ ] **T2.1**: Dataset analysis and recommendations
+- [x] **T2.1**: Dataset analysis and recommendations (✅ Completed MLOOP-006)
   - Auto-detect data quality issues (missing values, outliers, imbalance)
   - Suggest preprocessing strategies
   - Recommend appropriate ML task type (classification, regression)
+  - Added capabilities: preprocessing-strategy-recommendation, class-imbalance-detection, ml-task-type-recommendation
+  - Created DataAnalystAgentTests with 5 LLM integration tests
 
-- [ ] **T2.2**: Hyperparameter suggestion system
+- [x] **T2.2**: Hyperparameter suggestion system (✅ Completed MLOOP-006)
   - Analyze dataset characteristics (size, features, task)
   - Suggest AutoML time budget based on complexity
   - Recommend metric optimization based on problem type
+  - Implemented complexity-based time budget calculation with feature count multipliers, data quality adjustments
+  - Added capabilities: complexity-based-time-budget, dataset-characteristics-analysis, intelligent-configuration-recommendation
+  - Created ModelArchitectAgentTests with 5 LLM integration tests
 
-- [ ] **T2.3**: Feature engineering assistance
-  - Identify datetime columns → suggest time-based features
-  - Detect categorical features → suggest encoding strategies
+- [x] **T2.3**: Feature engineering assistance (✅ Completed MLOOP-006)
+  - Identify datetime columns → suggest time-based features (temporal components, cyclical encoding)
+  - Detect categorical features → suggest encoding strategies (target/frequency/hash encoding, interactions)
   - Recommend interaction features for high cardinality
+  - Added domain-specific patterns (e-commerce, healthcare, finance, real estate)
+  - Added capabilities: datetime-feature-extraction, interaction-feature-suggestion, polynomial-feature-generation, domain-specific-feature-engineering
+  - Created PreprocessingExpertAgentTests with 5 LLM integration tests
 
 ### Week 6: Learning and Explanation
 - [ ] **T2.4**: Experiment analysis and explanation
@@ -184,10 +199,12 @@ Current MLoop/FilePrepper handles only **50% of real-world datasets** (3/6 from 
   - "What does F1 score mean?" explanations
   - "How do I improve my model?" guidance
 
-- [ ] **T2.6**: Agent memory and context
-  - Remember user's ML experience level
+- [x] **T2.6**: Agent memory and context (✅ Completed MLOOP-006)
+  - Remember user's ML experience level and preferences
   - Track common issues and provide proactive help
   - Learn from user's dataset patterns
+  - Enhanced all agents with conversation context awareness, proactive assistance, learning from interactions
+  - Added capabilities: conversation-context-awareness, user-experience-level-adaptation, proactive-assistance, pattern-learning-from-history
 
 **Success Criteria**:
 - AI agents reduce "time to first model" by 50%
@@ -370,6 +387,11 @@ Submit proposals via GitHub Issues with `roadmap` label.
 
 ---
 
-**Last Updated**: November 13, 2025
+**Last Updated**: January 7, 2026
 **Version**: 0.2.0-draft
-**Next Review**: December 1, 2025
+**Next Review**: January 31, 2026
+
+**Recent Changes**:
+- MLOOP-006: Enhanced AI agents with intelligent analysis, configuration, feature engineering, and memory (T2.1, T2.2, T2.3, T2.6)
+- Added 15 LLM integration tests for agent validation
+- Updated agent architecture to Ironbees v0.4.1 with YAML-based templates
