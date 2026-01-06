@@ -32,6 +32,7 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.0.0" />
     <!-- Data Processing -->
     <PackageVersion Include="CsvHelper" Version="33.1.0" />
+    <PackageVersion Include="Microsoft.Data.Analysis" Version="0.21.1" />
     <PackageVersion Include="YamlDotNet" Version="16.3.0" />
     <!-- CLI / Console -->
     <PackageVersion Include="Spectre.Console" Version="0.54.0" />
@@ -41,11 +42,9 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.0" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.4.5" />
-    <!-- Ironbees SDK (for CI builds when local project references are not available) -->
-    <PackageVersion Include="Ironbees.Core" Version="0.1.8" />
-    <PackageVersion Include="Ironbees.AgentMode.Core" Version="0.1.8" />
-    <PackageVersion Include="Ironbees.AgentMode.Providers" Version="0.1.8" />
-    <PackageVersion Include="Ironbees.AgentMode.Agents" Version="0.1.8" />
+    <!-- Ironbees SDK v0.4.1 (for CI builds when local project references are not available) -->
+    <PackageVersion Include="Ironbees.Core" Version="0.4.1" />
+    <PackageVersion Include="Ironbees.AgentMode" Version="0.4.1" />
     <!-- Resilience / Polly -->
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Testing Packages -->
