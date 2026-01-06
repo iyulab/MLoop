@@ -1,5 +1,5 @@
 using Ironbees.AgentMode.Configuration;
-using Ironbees.AgentMode.Core.Workflow;
+using Ironbees.AgentMode.Workflow;
 using Ironbees.AgentMode.Models;
 using Ironbees.Core.Conversation;
 using Microsoft.Extensions.AI;
