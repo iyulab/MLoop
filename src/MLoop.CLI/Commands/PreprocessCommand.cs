@@ -298,12 +298,22 @@ public static class PreprocessCommand
             new HITLDecisionLogger(outputDir, new SpectreGenericLogger<HITLDecisionLogger>()),
             new SpectreGenericLogger<HITLWorkflowService>());
 
+        var ruleApplier = new RuleApplier(new SpectreGenericLogger<RuleApplier>());
+        var scriptGenerator = new ScriptGenerator(new SpectreGenericLogger<ScriptGenerator>());
+        var reportGenerator = new ReportGenerator(new SpectreGenericLogger<ReportGenerator>());
+        var deliverableGenerator = new DeliverableGenerator(
+            scriptGenerator,
+            reportGenerator,
+            new SpectreGenericLogger<DeliverableGenerator>());
+
         var orchestrator = new IncrementalWorkflowOrchestrator(
             samplingEngine,
             sampleAnalyzer,
             ruleDiscoveryEngine,
             hitlWorkflowService,
-            new SpectreGenericLogger<IncrementalWorkflowOrchestrator>());
+            new SpectreGenericLogger<IncrementalWorkflowOrchestrator>(),
+            ruleApplier,
+            deliverableGenerator);
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[blue]Incremental Preprocessing Workflow[/]");

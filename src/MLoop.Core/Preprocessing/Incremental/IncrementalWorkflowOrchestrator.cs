@@ -2,9 +2,11 @@ using System.Text.Json;
 using Microsoft.Data.Analysis;
 using Microsoft.Extensions.Logging;
 using MLoop.Core.Preprocessing.Incremental.Contracts;
+using MLoop.Core.Preprocessing.Incremental.Deliverables.Contracts;
 using MLoop.Core.Preprocessing.Incremental.HITL;
 using MLoop.Core.Preprocessing.Incremental.HITL.Models;
 using MLoop.Core.Preprocessing.Incremental.Models;
+using MLoop.Core.Preprocessing.Incremental.RuleApplication.Contracts;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models;
 
@@ -21,19 +23,25 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
     private readonly IRuleDiscoveryEngine _ruleDiscoveryEngine;
     private readonly HITLWorkflowService _hitlWorkflowService;
     private readonly ILogger<IncrementalWorkflowOrchestrator> _logger;
+    private readonly IRuleApplier? _ruleApplier;
+    private readonly IDeliverableGenerator? _deliverableGenerator;
 
     public IncrementalWorkflowOrchestrator(
         ISamplingEngine samplingEngine,
         ISampleAnalyzer sampleAnalyzer,
         IRuleDiscoveryEngine ruleDiscoveryEngine,
         HITLWorkflowService hitlWorkflowService,
-        ILogger<IncrementalWorkflowOrchestrator> logger)
+        ILogger<IncrementalWorkflowOrchestrator> logger,
+        IRuleApplier? ruleApplier = null,
+        IDeliverableGenerator? deliverableGenerator = null)
     {
         _samplingEngine = samplingEngine ?? throw new ArgumentNullException(nameof(samplingEngine));
         _sampleAnalyzer = sampleAnalyzer ?? throw new ArgumentNullException(nameof(sampleAnalyzer));
         _ruleDiscoveryEngine = ruleDiscoveryEngine ?? throw new ArgumentNullException(nameof(ruleDiscoveryEngine));
         _hitlWorkflowService = hitlWorkflowService ?? throw new ArgumentNullException(nameof(hitlWorkflowService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _ruleApplier = ruleApplier;
+        _deliverableGenerator = deliverableGenerator;
     }
 
     /// <inheritdoc />
@@ -62,6 +70,44 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
         await SaveCheckpointIfEnabledAsync(state, config);
 
         await ExecuteStage5Async(state, progress, cancellationToken);
+
+        // Generate deliverables if applier and generator are available
+        if (_ruleApplier != null && _deliverableGenerator != null && state.ApprovedRules.Count > 0)
+        {
+            _logger.LogInformation("Generating deliverables...");
+            ReportProgress(progress, WorkflowStage.BulkProcessing, 0.9, "Generating deliverables", state);
+
+            // Load full dataset
+            var fullData = LoadDataFrame(state.DatasetPath);
+
+            // Apply approved rules to generate cleaned data (modifies DataFrame in place)
+            var applicationResult = await _ruleApplier.ApplyRulesAsync(
+                fullData,
+                state.ApprovedRules,
+                null,
+                cancellationToken);
+
+            _logger.LogInformation("Rules applied: {Successful}/{Total} successful",
+                applicationResult.SuccessfulRules, applicationResult.TotalRules);
+
+            // Generate all deliverables (cleaned data, script, report, metadata)
+            var manifest = await _deliverableGenerator.GenerateAllAsync(
+                state,
+                fullData,
+                config.OutputDirectory,
+                cancellationToken);
+
+            _logger.LogInformation("Deliverables generated: {CleanedDataPath}", manifest.CleanedDataPath);
+            ReportProgress(progress, WorkflowStage.BulkProcessing, 1.0, "Deliverables generated", state);
+        }
+        else if (state.ApprovedRules.Count == 0)
+        {
+            _logger.LogWarning("No approved rules to apply, skipping deliverable generation");
+        }
+        else
+        {
+            _logger.LogWarning("RuleApplier or DeliverableGenerator not available, skipping deliverable generation");
+        }
 
         // Mark workflow as completed
         state.CompletedAt = DateTime.UtcNow;
@@ -519,7 +565,28 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
     {
         try
         {
-            return DataFrame.LoadCsv(csvPath);
+            // First attempt: Try automatic type inference with default guessRows
+            try
+            {
+                return DataFrame.LoadCsv(csvPath);
+            }
+            catch (FormatException)
+            {
+                // Second attempt: If auto-inference fails, read header to get column names
+                // and force all columns as StringDataFrameColumn, then convert as needed
+                _logger.LogWarning("Auto type inference failed, loading all columns as strings");
+
+                var lines = File.ReadLines(csvPath).Take(1).ToList();
+                if (lines.Count == 0)
+                {
+                    throw new InvalidOperationException("CSV file is empty");
+                }
+
+                var columnNames = lines[0].Split(',');
+                var dataTypes = Enumerable.Repeat(typeof(string), columnNames.Length).ToArray();
+
+                return DataFrame.LoadCsv(csvPath, dataTypes: dataTypes);
+            }
         }
         catch (Exception ex)
         {
