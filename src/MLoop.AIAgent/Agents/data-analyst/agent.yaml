@@ -13,6 +13,9 @@ capabilities:
   - outlier-detection
   - target-variable-recommendation
   - data-type-inference
+  - preprocessing-strategy-recommendation
+  - class-imbalance-detection
+  - ml-task-type-recommendation
 tags:
   - data
   - analysis
