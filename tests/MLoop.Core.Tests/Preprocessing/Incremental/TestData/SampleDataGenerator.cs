@@ -42,9 +42,18 @@ public static class SampleDataGenerator
             Enumerable.Range(0, rowCount).Select(_ =>
                 new[] { "A", "B", "C", "D", "E" }[random.Next(0, 5)]).ToArray());
 
+        // Additional test columns for HITL scenarios
+        var age = new PrimitiveDataFrameColumn<int>("Age",
+            Enumerable.Range(0, rowCount).Select(_ => random.Next(18, 80)).ToArray());
+
+        var salary = new PrimitiveDataFrameColumn<double>("Salary",
+            Enumerable.Range(0, rowCount).Select(_ => random.NextDouble() * 100000 + 30000).ToArray());
+
         dataFrame.Columns.Add(numericColumn1);
         dataFrame.Columns.Add(numericColumn2);
         dataFrame.Columns.Add(numericColumn3);
+        dataFrame.Columns.Add(age);
+        dataFrame.Columns.Add(salary);
         dataFrame.Columns.Add(categories);
         dataFrame.Columns.Add(labels);
 

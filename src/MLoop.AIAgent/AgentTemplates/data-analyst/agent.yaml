@@ -1,10 +1,20 @@
 name: data-analyst
-description: Analyzes dataset characteristics, identifies data quality issues, and provides ML readiness assessment
-temperature: 0.0
-max_tokens: 4096
-system_prompt: system-prompt.md
-
-# Conversation history settings
-conversation_enabled: true
-max_history_turns: 10
-context_window_tokens: 8192
+description: Expert data analyst specializing in ML dataset analysis and validation
+model:
+  deployment: gpt-4o
+  temperature: 0.0
+  maxTokens: 4096
+capabilities:
+  - data-analysis
+  - statistics
+  - ml-readiness
+  - data-quality
+  - automated-profiling
+conversation:
+  enabled: true
+  max_history_turns: 10
+tools:
+  - name: analyze_dataset
+    description: Perform automated statistical analysis on datasets
+  - name: check_data_quality
+    description: Validate data quality and identify issues

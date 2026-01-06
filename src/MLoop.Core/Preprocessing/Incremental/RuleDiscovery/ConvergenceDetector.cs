@@ -29,7 +29,8 @@ public sealed class ConvergenceDetector
         // Calculate change metrics
         var newRulesCount = CountNewRules(previousRules, currentRules);
         var modifiedRulesCount = CountModifiedRules(previousRules, currentRules);
-        var totalChange = newRulesCount + modifiedRulesCount;
+        var removedRulesCount = CountRemovedRules(previousRules, currentRules);
+        var totalChange = newRulesCount + modifiedRulesCount + removedRulesCount;
 
         // Calculate change rate
         var baselineCount = Math.Max(previousRules.Count, 1);

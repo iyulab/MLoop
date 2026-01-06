@@ -198,8 +198,8 @@ public sealed class RuleDiscoveryEngineTests
         {
             Id = id,
             Type = PreprocessingRuleType.MissingValueStrategy,
-            ColumnNames = new[] { "TestColumn" },
-            Description = "Test rule",
+            ColumnNames = new[] { $"TestColumn_{id}" }, // Unique column name for unique signature
+            Description = $"Test rule for {id}",  // Unique description for unique signature
             PatternType = PatternType.MissingValue,
             RequiresHITL = true,
             Priority = 5,

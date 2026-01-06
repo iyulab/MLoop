@@ -22,7 +22,7 @@ public class SampleAnalyzerTests
         Assert.NotNull(analysis);
         Assert.Equal(1, analysis.StageNumber);
         Assert.Equal(1000, analysis.RowCount);
-        Assert.Equal(5, analysis.ColumnCount); // Feature1, Feature2, Feature3, Category, Label
+        Assert.Equal(7, analysis.ColumnCount); // Feature1, Feature2, Feature3, Age, Salary, Category, Label
         Assert.NotEmpty(analysis.Columns);
     }
 
