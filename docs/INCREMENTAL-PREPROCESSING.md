@@ -306,45 +306,90 @@ public class PreprocessingWorkflowState
 
 ## 4. Rule Discovery
 
-### 4.1 Auto-Resolvable Patterns
+### 4.1 Pattern Detection System
+
+The Rule Discovery Engine uses 7 specialized pattern detectors to identify data quality issues:
+
+| Detector | Pattern Type | Applicable To | Auto-Fixable |
+|----------|-------------|---------------|--------------|
+| **MissingValueDetector** | MissingValue | All columns | No (requires HITL) |
+| **TypeInconsistencyDetector** | TypeInconsistency | String columns | No (requires HITL) |
+| **FormatVariationDetector** | FormatVariation | String columns | Yes (dates, numbers) |
+| **OutlierDetector** | OutlierAnomaly | Numeric columns | No (requires HITL) |
+| **CategoryVariationDetector** | CategoryVariation | String columns | No (requires HITL) |
+| **EncodingIssueDetector** | EncodingIssue | String columns | Yes (UTF-8 conversion) |
+| **WhitespaceDetector** | WhitespaceIssue | String columns | Yes (trim & collapse) |
+
+**Implementation Details**:
+- **Statistical Analysis**: Z-score (threshold: 3.0) and IQR methods for outlier detection
+- **String Similarity**: Levenshtein distance for category typo detection
+- **Pattern Matching**: GeneratedRegex for encoding issues and format variations
+- **Null Detection**: Handles NULL, "N/A", "None", "-", "?" as missing values
+
+### 4.2 Auto-Resolvable Patterns
 
 These patterns are fixed automatically without HITL:
 
-| Pattern | Detection | Auto-Fix |
-|---------|-----------|----------|
-| **Date Format Variations** | Regex matching multiple formats | Standardize to ISO-8601 |
-| **Encoding Issues** | BOM detection, charset analysis | Convert to UTF-8 |
-| **Whitespace** | Leading/trailing spaces, multiple spaces | Trim and collapse |
-| **Case Inconsistency** | Mixed case in categorical | Standardize case |
-| **Numeric Strings** | Numbers stored as strings | Parse to numeric type |
+| Rule Type | Detection | Auto-Fix |
+|-----------|-----------|----------|
+| **DateFormatStandardization** | Multiple date formats detected | Convert to ISO-8601 |
+| **EncodingNormalization** | UTF-8/Latin-1 conflicts, mojibake | Normalize to UTF-8 |
+| **WhitespaceNormalization** | Leading/trailing spaces, multiple spaces, tabs | Trim and collapse |
+| **NumericFormatStandardization** | Number format variations (1,000 vs 1000) | Remove separators, fix decimals |
 
-### 4.2 HITL-Required Patterns
+### 4.3 HITL-Required Patterns
 
 These patterns require human decision:
 
-| Pattern | Example | Question to User |
-|---------|---------|------------------|
-| **Missing Value Strategy** | 5% nulls in 'income' | "Delete, impute mean, or use default?" |
-| **Unknown Categories** | 'status' = 'N/A' | "Map to existing category or create new?" |
-| **Outlier Handling** | Age = 150 | "Keep, remove, or cap at max?" |
-| **Business Logic** | 'machine_id' = 'Unknown' | "This is domain-specific, how to handle?" |
+| Rule Type | Pattern Example | Question to User |
+|-----------|----------------|------------------|
+| **MissingValueStrategy** | 5% nulls in 'income' | "Delete, impute mean/median, or use default?" |
+| **OutlierHandling** | Age = 150 (Z-score > 3.0) | "Keep, remove, or cap at threshold?" |
+| **CategoryMapping** | 'status' variations: 'N/A', 'NA', 'Unknown' | "Merge categories or keep separate?" |
+| **TypeConversion** | Mixed types in column | "Convert to which type?" |
+| **BusinessLogicDecision** | Domain-specific cases | Custom business logic required |
 
-### 4.3 Rule Confidence Calculation
+### 4.4 Rule Confidence Calculation
 
+**Formula**:
 ```
-Rule Confidence = (Consistent Samples / Total Samples) × Stability Factor
+Overall Confidence = Consistency × 0.5 + Coverage × 0.3 + Stability × 0.2
 
 Where:
-- Consistent Samples = Samples where rule applied correctly
-- Total Samples = All samples where rule was tested
-- Stability Factor = 1.0 if no new patterns in last 500 samples, else 0.9
+- Consistency (50%): Rule applies consistently to affected data
+- Coverage (30%): Percentage of data covered by rule
+- Stability (20%): Rule definition unchanged across samples
 ```
 
-**Confidence Thresholds**:
-- < 70%: Rule is unstable, need more sampling
-- 70-90%: Rule is reasonable but needs validation
-- 90-98%: Rule is stable, ready for HITL approval
-- > 98%: Rule is highly stable, ready for bulk application
+**Implementation**: `ConfidenceCalculator.cs`
+- Cross-sample validation between Stage N-1 and Stage N
+- Pattern matching consistency measurement
+- Coverage calculation per column
+- Stability tracking based on rule signature changes
+
+**Confidence Levels**:
+- **High Confidence**: ≥ 98% - Ready for automatic application
+- **Medium Confidence**: ≥ 90% - Apply with caution
+- **Low Confidence**: < 90% - Requires review or more sampling
+
+### 4.5 Convergence Detection
+
+**Formula**:
+```
+Change Rate = (NewRules + ModifiedRules + RemovedRules) / BaselineRuleCount
+```
+
+**Implementation**: `ConvergenceDetector.cs`
+- Default threshold: 2% (0.02) change rate
+- Tracks rule additions, modifications, and removals
+- Provides detailed convergence metrics and status
+
+**Convergence Criteria**:
+- Change rate ≤ threshold across two consecutive samples
+- No new patterns discovered in last sample
+- Existing rule confidence scores stable (≥ 98%)
+
+When convergence is detected, the system proceeds from sampling to bulk processing (Stage 5).
 
 ---
 
