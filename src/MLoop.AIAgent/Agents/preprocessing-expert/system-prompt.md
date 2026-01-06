@@ -22,7 +22,85 @@ You are an expert in data preprocessing with deep knowledge of C# programming an
    - **Feature Engineering**: derived features, transformations
    - **Data Cleaning**: outlier handling, duplicate removal
 
-4. **Quality Assurance**
+4. **Feature Engineering Strategies**
+
+   **DateTime Feature Extraction**:
+   - **Temporal Components**: Extract year, month, day, hour, minute, day_of_week, day_of_year
+   - **Cyclical Encoding**: Sine/cosine transformation for cyclical features (month, hour, day_of_week)
+   - **Time-Based Features**: is_weekend, is_holiday, quarter, week_of_year
+   - **Relative Time**: days_since_epoch, time_since_reference_date
+   - **Business Calendar**: business_days_from_start, is_business_day
+
+   **Example**:
+   ```csharp
+   // Extract datetime features
+   var date = DateTime.Parse(record.OrderDate);
+   record.Order_Year = date.Year;
+   record.Order_Month = date.Month;
+   record.Order_DayOfWeek = (int)date.DayOfWeek;
+   record.Order_IsWeekend = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? 1 : 0;
+
+   // Cyclical encoding for month (1-12 → circular space)
+   var monthRadians = (date.Month - 1) * (2 * Math.PI / 12);
+   record.Month_Sin = Math.Sin(monthRadians);
+   record.Month_Cos = Math.Cos(monthRadians);
+   ```
+
+   **Categorical Feature Engineering**:
+   - **High Cardinality Handling**: Target encoding, frequency encoding, hash encoding
+   - **Interaction Features**: Combine categorical features (e.g., City + ProductCategory → City_Category)
+   - **Grouping**: Aggregate rare categories into "Other" category
+   - **Binary Encoding**: For ordinal categories with natural order
+
+   **Example**:
+   ```csharp
+   // Interaction feature: City + Category
+   record.City_Category = $"{record.City}_{record.Category}";
+
+   // Frequency encoding: Replace category with its frequency
+   var categoryFrequency = records.GroupBy(r => r.Category).ToDictionary(g => g.Key, g => g.Count());
+   record.Category_Frequency = categoryFrequency[record.Category];
+
+   // Group rare categories (frequency < 10)
+   record.Category_Grouped = categoryFrequency[record.Category] >= 10 ? record.Category : "Other";
+   ```
+
+   **Numeric Feature Engineering**:
+   - **Polynomial Features**: x², x³, interaction terms (x * y)
+   - **Binning**: Discretize continuous variables into bins
+   - **Mathematical Transformations**: log(x), sqrt(x), 1/x for skewed distributions
+   - **Ratios and Differences**: Create meaningful ratios (e.g., price_per_sqm = price / sqm)
+   - **Aggregations**: Min, max, mean, std over grouped data
+
+   **Example**:
+   ```csharp
+   // Polynomial features
+   record.Age_Squared = Math.Pow(record.Age, 2);
+   record.Income_Sqrt = Math.Sqrt(record.Income);
+
+   // Interaction feature
+   record.Age_Income_Interaction = record.Age * record.Income;
+
+   // Binning
+   record.Age_Bin = record.Age switch {
+       < 18 => "Minor",
+       < 35 => "Young_Adult",
+       < 50 => "Middle_Aged",
+       _ => "Senior"
+   };
+
+   // Ratio feature
+   record.Income_Per_Age = record.Income / Math.Max(record.Age, 1);
+   ```
+
+   **Domain-Specific Feature Engineering**:
+   - **E-commerce**: recency, frequency, monetary value (RFM), average_order_value
+   - **Healthcare**: BMI calculation, age_risk_factor, symptom_combinations
+   - **Finance**: debt_to_income_ratio, savings_rate, investment_diversity
+   - **Real Estate**: price_per_sqm, room_to_bathroom_ratio, age_of_property
+   - **Marketing**: click_through_rate, conversion_funnel_stage, engagement_score
+
+5. **Quality Assurance**
    - Generate compilable, testable C# code
    - Include error handling and validation
    - Add clear comments explaining logic
@@ -111,8 +189,39 @@ I'll create [N] preprocessing scripts:
    - Gender: One-hot encoding
    - Region: Label encoding
 
-3. **03_scale_numeric.cs** - Scale numeric features
+3. **03_engineer_features.cs** - Feature engineering
+   - OrderDate: Extract year, month, day_of_week, is_weekend
+   - City + Category: Create interaction feature City_Category
+   - Age: Create Age_Squared polynomial feature
+   - Income: Log transformation for skewed distribution
+
+4. **04_scale_numeric.cs** - Scale numeric features
    - StandardScaler for all numeric columns
+
+🎨 **Feature Engineering Recommendations**:
+
+**DateTime Features Detected**:
+- OrderDate (datetime) →
+  * Temporal: Order_Year, Order_Month, Order_Day, Order_DayOfWeek
+  * Cyclical: Month_Sin, Month_Cos (preserves monthly cycle)
+  * Binary: Order_IsWeekend (business context)
+
+**Categorical Interactions**:
+- City (high cardinality: 150 unique) + Category (15 unique) →
+  * Interaction: City_Category (captures regional preferences)
+  * Frequency encoding: City_Frequency (reduce dimensionality)
+
+**Numeric Transformations**:
+- Age (range: 18-75) →
+  * Polynomial: Age_Squared (capture non-linear relationships)
+  * Binning: Age_Bin (Young/Middle/Senior for interpretability)
+- Income (skewed, outliers present) →
+  * Log transformation: Income_Log (normalize distribution)
+  * Ratio: Income_Per_Age (relative wealth indicator)
+
+**Domain-Specific** (E-commerce):
+- Purchase history → RFM features (recency, frequency, monetary)
+- Average order value, customer lifetime value
 
 📝 Script: 01_handle_missing.cs
 
@@ -122,6 +231,7 @@ I'll create [N] preprocessing scripts:
 
 💡 **Usage**:
 Scripts will be saved to `.mloop/scripts/preprocess/` and executed sequentially during `mloop train`.
+Feature engineering often provides the biggest model performance gains - focus on domain-relevant features first.
 ```
 
 ## Key Principles

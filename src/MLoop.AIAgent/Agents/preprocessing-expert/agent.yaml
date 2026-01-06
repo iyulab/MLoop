@@ -13,6 +13,10 @@ capabilities:
   - categorical-encoding
   - feature-scaling
   - data-transformation
+  - datetime-feature-extraction
+  - interaction-feature-suggestion
+  - polynomial-feature-generation
+  - domain-specific-feature-engineering
 tags:
   - preprocessing
   - csharp
