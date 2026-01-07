@@ -306,19 +306,20 @@ Current MLoop/FilePrepper handles only **50% of real-world datasets** (3/6 from 
 **Goal**: Minimize learning cost through excellent documentation
 
 ### Tasks
-- [ ] **T5.1**: End-to-end tutorials
-  - [ ] Binary classification: Sentiment analysis
-  - [ ] Regression: Housing price prediction
-  - [ ] Multiclass: Iris classification
-  - [ ] Time series: Sales forecasting
-  - [ ] With preprocessing: Multi-file join workflow
-  - [ ] With AI agent: Complete beginner walkthrough
+- [x] **T5.1**: End-to-end tutorials ✅
+  - [x] Binary classification: Sentiment analysis (96% accuracy, 10 min)
+  - [x] Regression: Housing price prediction (R²=0.91, 10 min)
+  - [x] Multiclass: Iris classification (93% accuracy, 5 min)
+  - [ ] Time series: Sales forecasting (deferred - limited ML.NET support)
+  - [ ] With preprocessing: Multi-file join workflow (deferred)
+  - [ ] With AI agent: Complete beginner walkthrough (covered in tutorials)
 
-- [ ] **T5.2**: Recipe library
-  - [ ] Common preprocessing patterns
-  - [ ] Useful hook examples
-  - [ ] Business metric templates
-  - [ ] Deployment configurations
+- [x] **T5.2**: Recipe library ✅
+  - [x] Common preprocessing patterns (7 recipes: cleaning, encoding, imputation, outliers)
+  - [x] Useful hook examples (4 hooks: validation, MLflow, gates, deployment)
+  - [x] Business metric templates (3 metrics: profit, churn, ROI)
+  - [x] Deployment configurations (covered in tutorials + hooks)
+  - [x] Comprehensive RECIPE-INDEX.md with 22 recipes organized by difficulty and use case
 
 - [ ] **T5.3**: Video content
   - [ ] "MLoop in 5 minutes" quickstart
@@ -436,5 +437,9 @@ Submit proposals via GitHub Issues with `roadmap` label.
   - T3.1: DataQualityAnalyzer for automatic CSV issue detection (encoding, duplicates, outliers, etc.)
   - T3.2: PreprocessingScriptGenerator + TrainCommand CLI (--analyze-data, --generate-script)
   - T3.3: 4 preprocessing recipe examples (encoding, imputation, outliers, cleaning)
+- Phase 5 (Enhanced Documentation) ⏳ IN PROGRESS: T5.1-T5.2 complete
+  - T5.1: 3 end-to-end tutorials (Iris, Sentiment Analysis, Housing Prices) - 0 code required!
+  - T5.2: RECIPE-INDEX.md with 22 organized recipes (preprocessing, hooks, metrics, agents)
+  - T5.3-T5.4: Video content and API reference (deferred)
 - Added 15 LLM integration tests for agent validation
 - Updated agent architecture to Ironbees v0.4.1 with YAML-based templates
