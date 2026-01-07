@@ -243,19 +243,23 @@ Current MLoop/FilePrepper handles only **50% of real-world datasets** (3/6 from 
 **Goal**: Simplify data preparation for common cases
 
 ### Tasks
-- [ ] **T3.1**: Automatic FilePrepper detection
-  - Detect when CSV needs preprocessing (encoding issues, missing values)
-  - Auto-suggest FilePrepper transformations
+- [x] **T3.1**: Automatic FilePrepper detection ✅
+  - Detect when CSV needs preprocessing (encoding issues, missing values, duplicates)
+  - Auto-suggest FilePrepper transformations via DataQualityAnalyzer
+  - Implementation: `MLoop.Core.DataQuality.DataQualityAnalyzer` with 7 issue types
 
-- [ ] **T3.2**: FilePrepper → Preprocessing script bridge
-  - Generate preprocessing script from FilePrepper operations
-  - Allow users to customize auto-generated scripts
+- [x] **T3.2**: FilePrepper → Preprocessing script bridge ✅
+  - Generate preprocessing script from quality issue analysis
+  - `PreprocessingScriptGenerator` creates executable C# scripts from DataQualityIssue
+  - TrainCommand CLI integration: `--analyze-data` and `--generate-script <path>` options
+  - Implementation: `MLoop.Core.DataQuality.PreprocessingScriptGenerator` + TrainCommand enhancement
 
-- [ ] **T3.3**: Common preprocessing recipes
-  - CSV encoding normalization (UTF-8 conversion)
-  - Missing value imputation strategies
-  - Outlier detection and handling
-  - Duplicate row removal
+- [x] **T3.3**: Common preprocessing recipes ✅
+  - CSV encoding normalization (UTF-8 conversion) - 05_encoding_normalization.cs
+  - Missing value imputation strategies (median/mode) - 06_missing_value_imputation.cs
+  - Outlier detection and handling (IQR method) - 07_outlier_detection.cs
+  - Duplicate row removal and whitespace trimming - 04_data_cleaning.cs
+  - Implementation: `examples/preprocessing-scripts/` (4 recipe scripts)
 
 **Success Criteria**:
 - 80% of datasets trainable without manual preprocessing
@@ -428,5 +432,9 @@ Submit proposals via GitHub Issues with `roadmap` label.
 - Phase 2 (AI Agent Enhancements) ✅ COMPLETE: All tasks finished
   - Week 5 (Intelligent Optimization) T2.1-T2.3, T2.6: data-analyst, model-architect, preprocessing-expert agents
   - Week 6 (Learning & Explanation) T2.4-T2.5: experiment-explainer, ml-tutor agents
+- Phase 3 (FilePrepper Integration) ✅ COMPLETE: T3.1-T3.3 all tasks finished
+  - T3.1: DataQualityAnalyzer for automatic CSV issue detection (encoding, duplicates, outliers, etc.)
+  - T3.2: PreprocessingScriptGenerator + TrainCommand CLI (--analyze-data, --generate-script)
+  - T3.3: 4 preprocessing recipe examples (encoding, imputation, outliers, cleaning)
 - Added 15 LLM integration tests for agent validation
 - Updated agent architecture to Ironbees v0.4.1 with YAML-based templates
