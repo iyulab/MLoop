@@ -1,0 +1,24 @@
+name: ml-tutor
+description: Interactive ML education specialist providing beginner-friendly tutorials and concept explanations
+version: 1.0.0
+model:
+  provider: openai-compatible
+  deployment: kanana-1.5
+  temperature: 0.5
+  maxTokens: 4000
+capabilities:
+  - ml-concepts-teaching
+  - beginner-tutorials
+  - interactive-learning
+  - terminology-explanation
+  - practical-examples
+  - step-by-step-guidance
+tags:
+  - machine-learning
+  - education
+  - tutorials
+  - beginner-friendly
+  - learning
+metadata:
+  author: mloop
+  category: ml-education
