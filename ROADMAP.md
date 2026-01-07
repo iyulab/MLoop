@@ -62,32 +62,41 @@ Current MLoop/FilePrepper handles only **50% of real-world datasets** (3/6 from 
 ### Tasks
 
 #### Week 1: Core Infrastructure
-- [ ] **T0.1**: Design `IPreprocessingScript` interface and execution model
+- [x] **T0.1**: Design `IPreprocessingScript` interface and execution model ✅
   - Input: CSV path, Output: Transformed CSV path
   - Sequential execution: `01_*.cs` → `02_*.cs` → `03_*.cs`
   - Context API: File I/O, FilePrepper integration, logging
+  - Implementation: `MLoop.Extensibility.Preprocessing.IPreprocessingScript`
 
-- [ ] **T0.2**: Implement `ScriptCompiler` with Roslyn integration
+- [x] **T0.2**: Implement `ScriptCompiler` with Roslyn integration ✅
   - Compile `.cs` scripts with full ML.NET and MLoop.Core references
   - Cache compiled DLLs for performance (<50ms cached load)
   - Graceful degradation: Script failure doesn't break AutoML
+  - Implementation: `MLoop.Core.Scripting.ScriptLoader`
 
-- [ ] **T0.3**: Build `PreprocessingEngine` orchestration layer
+- [x] **T0.3**: Build `PreprocessingEngine` orchestration layer ✅
   - Script discovery and execution ordering
   - Temporary file management (`.mloop/temp/`)
   - Progress reporting and error handling
+  - Implementation: `MLoop.Core.Preprocessing.PreprocessingEngine`
 
-- [ ] **T0.4**: Unit tests for preprocessing system (>90% coverage)
+- [x] **T0.4**: Unit tests for preprocessing system (>90% coverage) ✅
+  - PreprocessingEngine tests: 13 tests
+  - ScriptLoader tests: 9 tests
+  - CsvHelper tests: 14 tests
+  - Total: 36 tests, all passing
 
 #### Week 2: CLI Integration & Examples
-- [ ] **T0.5**: CLI command: `mloop preprocess`
+- [x] **T0.5**: CLI command: `mloop preprocess` ✅
   - Manual preprocessing for debugging: `mloop preprocess --input raw.csv --output train.csv`
   - Validation mode: `mloop preprocess --validate`
+  - Implementation: `MLoop.CLI.Commands.PreprocessCommand` (traditional + incremental workflows)
 
-- [ ] **T0.6**: Auto-preprocessing in `mloop train`
+- [x] **T0.6**: Auto-preprocessing in `mloop train` ✅
   - Detect `.mloop/scripts/preprocess/*.cs`
   - Execute preprocessing pipeline before AutoML training
   - Transparent to user: Just works™
+  - Implementation: `MLoop.CLI.Commands.TrainCommand` (lines 200-220)
 
 - [ ] **T0.7**: Example preprocessing scripts
   - Multi-file join example (Dataset 004 pattern)
