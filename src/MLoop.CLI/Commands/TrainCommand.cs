@@ -228,7 +228,11 @@ public static class TrainCommand
             // Initialize training components
             var modelNameResolver = new ModelNameResolver(fileSystem, projectDiscovery, configLoader);
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
-            var trainingEngine = new TrainingEngine(fileSystem, experimentStore);
+            var trainingEngine = new TrainingEngine(
+                fileSystem,
+                experimentStore,
+                projectRoot,
+                new TrainCommandLogger());
 
             // Ensure model directory structure exists
             await modelNameResolver.EnsureModelDirectoryAsync(resolvedModelName);

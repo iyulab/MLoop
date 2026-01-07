@@ -1,11 +1,15 @@
 using System.Diagnostics;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
+using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.AutoML;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
+using MLoop.Core.Hooks;
 using MLoop.Core.Models;
+using MLoop.Extensibility.Hooks;
+using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
@@ -19,18 +23,29 @@ public class TrainingEngine : ITrainingEngine
     private readonly IExperimentStore _experimentStore;
     private readonly IFileSystemManager _fileSystem;
     private readonly AutoMLRunner _autoMLRunner;
+    private readonly HookEngine? _hookEngine;
+    private readonly string? _projectRoot;
 
     public TrainingEngine(
         IFileSystemManager fileSystem,
-        IExperimentStore experimentStore)
+        IExperimentStore experimentStore,
+        string? projectRoot = null,
+        ILogger? logger = null)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _experimentStore = experimentStore ?? throw new ArgumentNullException(nameof(experimentStore));
+        _projectRoot = projectRoot;
 
         // Initialize ML.NET components
         _mlContext = new MLContext(seed: 42);
         _dataLoader = new CsvDataLoader(_mlContext);
         _autoMLRunner = new AutoMLRunner(_mlContext, _dataLoader);
+
+        // Initialize HookEngine if project root provided
+        if (!string.IsNullOrEmpty(projectRoot) && logger != null)
+        {
+            _hookEngine = new HookEngine(projectRoot, logger);
+        }
     }
 
     public async Task<TrainingResult> TrainAsync(
@@ -72,6 +87,44 @@ public class TrainingEngine : ITrainingEngine
             // Capture input schema before training (using enhanced detection)
             var inputSchema = CaptureInputSchemaEnhanced(config.DataFile, config.LabelColumn);
 
+            // Execute PreTrain hooks
+            if (_hookEngine != null && _hookEngine.HasHooks(HookType.PreTrain))
+            {
+                // Load training data for hook context
+                var loader = _mlContext.Data.CreateTextLoader(
+                    new[] { new TextLoader.Column("Features", DataKind.Single, 0, int.MaxValue) },
+                    separatorChar: ',',
+                    hasHeader: true);
+                var trainData = loader.Load(config.DataFile);
+
+                var hookContext = new HookContext
+                {
+                    HookType = HookType.PreTrain,
+                    HookName = string.Empty,  // Will be set by HookEngine
+                    MLContext = _mlContext,
+                    DataView = trainData,
+                    Model = null,
+                    ExperimentResult = null,
+                    Metrics = null,
+                    ProjectRoot = _projectRoot!,
+                    Logger = new TrainingEngineLogger(),
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["LabelColumn"] = config.LabelColumn,
+                        ["TaskType"] = config.Task,
+                        ["ModelName"] = modelName,
+                        ["ExperimentId"] = experimentId,
+                        ["TimeLimit"] = config.TimeLimitSeconds
+                    }
+                };
+
+                var hooksPassed = await _hookEngine.ExecuteHooksAsync(HookType.PreTrain, hookContext);
+                if (!hooksPassed)
+                {
+                    throw new InvalidOperationException("Training aborted by PreTrain hook");
+                }
+            }
+
             // Run AutoML
             var autoMLResult = await _autoMLRunner.RunAsync(config, progress, cancellationToken);
 
@@ -80,6 +133,40 @@ public class TrainingEngine : ITrainingEngine
             // Save model
             var modelPath = _fileSystem.CombinePath(experimentPath, "model.zip");
             _mlContext.Model.Save(autoMLResult.Model, null, modelPath);
+
+            // Execute PostTrain hooks
+            if (_hookEngine != null && _hookEngine.HasHooks(HookType.PostTrain))
+            {
+                var hookContext = new HookContext
+                {
+                    HookType = HookType.PostTrain,
+                    HookName = string.Empty,  // Will be set by HookEngine
+                    MLContext = _mlContext,
+                    DataView = null,
+                    Model = autoMLResult.Model,
+                    ExperimentResult = autoMLResult,
+                    Metrics = autoMLResult.Metrics,
+                    ProjectRoot = _projectRoot!,
+                    Logger = new TrainingEngineLogger(),
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["LabelColumn"] = config.LabelColumn,
+                        ["TaskType"] = config.Task,
+                        ["ModelName"] = modelName,
+                        ["ExperimentId"] = experimentId,
+                        ["TimeLimit"] = config.TimeLimitSeconds,
+                        ["BestTrainer"] = autoMLResult.BestTrainer,
+                        ["ModelPath"] = modelPath
+                    }
+                };
+
+                var hooksPassed = await _hookEngine.ExecuteHooksAsync(HookType.PostTrain, hookContext);
+                if (!hooksPassed)
+                {
+                    // PostTrain hooks can't abort (model already trained), just log warning
+                    Console.WriteLine("[Warning] PostTrain hook requested abort, but model is already trained");
+                }
+            }
 
             // Prepare experiment data
             var experimentData = new ExperimentData
@@ -462,5 +549,18 @@ public class TrainingEngine : ITrainingEngine
         }
 
         return (uniqueValues.OrderBy(v => v).ToList(), uniqueValues.Count);
+    }
+
+    private class TrainingEngineLogger : ILogger
+    {
+        public void Debug(string message) { } // Silent during training
+        public void Info(string message) => Console.WriteLine(message);
+        public void Warning(string message) => Console.WriteLine($"[Warning] {message}");
+        public void Error(string message) => Console.WriteLine($"[Error] {message}");
+        public void Error(string message, Exception exception)
+        {
+            Console.WriteLine($"[Error] {message}");
+            Console.WriteLine($"  {exception.Message}");
+        }
     }
 }
