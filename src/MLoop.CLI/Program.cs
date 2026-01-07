@@ -37,6 +37,7 @@ internal class Program
             EvaluateCommand.Create(),
             ValidateCommand.Create(),
             ExtensionsCommand.Create(),
+            NewCommand.Create(),
             StatusCommand.Create(),
 
             // Phase 2 Commands
