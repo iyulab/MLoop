@@ -3,6 +3,7 @@ using Microsoft.ML;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.DataQuality;
 using MLoop.Core.Hooks;
 using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
@@ -62,6 +63,17 @@ public static class TrainCommand
             DefaultValueFactory = _ => false
         };
 
+        var analyzeDataOption = new Option<bool>("--analyze-data")
+        {
+            Description = "Analyze data quality without training (shows preprocessing recommendations)",
+            DefaultValueFactory = _ => false
+        };
+
+        var generateScriptOption = new Option<string?>("--generate-script")
+        {
+            Description = "Generate preprocessing script from data quality analysis at specified path"
+        };
+
         var command = new Command("train", "Train a model using AutoML");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
@@ -71,6 +83,8 @@ public static class TrainCommand
         command.Options.Add(metricOption);
         command.Options.Add(testSplitOption);
         command.Options.Add(noPromoteOption);
+        command.Options.Add(analyzeDataOption);
+        command.Options.Add(generateScriptOption);
 
         command.SetAction((parseResult) =>
         {
@@ -82,7 +96,9 @@ public static class TrainCommand
             var metric = parseResult.GetValue(metricOption);
             var testSplit = parseResult.GetValue(testSplitOption);
             var noPromote = parseResult.GetValue(noPromoteOption);
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote);
+            var analyzeData = parseResult.GetValue(analyzeDataOption);
+            var generateScript = parseResult.GetValue(generateScriptOption);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript);
         });
 
         return command;
@@ -96,7 +112,9 @@ public static class TrainCommand
         int? time,
         string? metric,
         double? testSplit,
-        bool noPromote)
+        bool noPromote,
+        bool analyzeData,
+        string? generateScript)
     {
         try
         {
@@ -195,6 +213,101 @@ public static class TrainCommand
                 {
                     AnsiConsole.MarkupLine($"[red]Error:[/] Data file not found: {resolvedDataFile}");
                     return 1;
+                }
+            }
+
+            // Data quality analysis if requested
+            if (analyzeData || !string.IsNullOrEmpty(generateScript))
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.Write(new Rule("[blue]Data Quality Analysis[/]").LeftJustified());
+                AnsiConsole.WriteLine();
+
+                var analyzer = new DataQualityAnalyzer(new TrainCommandLogger());
+                var issues = await analyzer.AnalyzeAsync(resolvedDataFile, effectiveDefinition.Label);
+
+                if (issues.Count == 0)
+                {
+                    AnsiConsole.MarkupLine("[green]✓[/] No data quality issues detected!");
+                    AnsiConsole.WriteLine();
+                }
+                else
+                {
+                    // Display issues grouped by severity
+                    var criticalIssues = issues.Where(i => i.Severity == IssueSeverity.Critical).ToList();
+                    var highIssues = issues.Where(i => i.Severity == IssueSeverity.High).ToList();
+                    var mediumIssues = issues.Where(i => i.Severity == IssueSeverity.Medium).ToList();
+                    var lowIssues = issues.Where(i => i.Severity == IssueSeverity.Low).ToList();
+
+                    if (criticalIssues.Any())
+                    {
+                        AnsiConsole.MarkupLine("[red]CRITICAL Issues:[/]");
+                        foreach (var issue in criticalIssues)
+                        {
+                            AnsiConsole.MarkupLine($"  [red]•[/] {issue.Description}");
+                            if (!string.IsNullOrEmpty(issue.SuggestedFix))
+                            {
+                                AnsiConsole.MarkupLine($"    [grey]Fix: {issue.SuggestedFix.Replace("\n", "\n    ")}[/]");
+                            }
+                        }
+                        AnsiConsole.WriteLine();
+                    }
+
+                    if (highIssues.Any())
+                    {
+                        AnsiConsole.MarkupLine("[yellow]HIGH Priority Issues:[/]");
+                        foreach (var issue in highIssues)
+                        {
+                            AnsiConsole.MarkupLine($"  [yellow]•[/] {issue.Description}");
+                            if (!string.IsNullOrEmpty(issue.SuggestedFix))
+                            {
+                                AnsiConsole.MarkupLine($"    [grey]Fix: {issue.SuggestedFix.Replace("\n", "\n    ")}[/]");
+                            }
+                        }
+                        AnsiConsole.WriteLine();
+                    }
+
+                    if (mediumIssues.Any())
+                    {
+                        AnsiConsole.MarkupLine("[blue]MEDIUM Priority Issues:[/]");
+                        foreach (var issue in mediumIssues)
+                        {
+                            AnsiConsole.MarkupLine($"  [blue]•[/] {issue.Description}");
+                        }
+                        AnsiConsole.WriteLine();
+                    }
+
+                    if (lowIssues.Any())
+                    {
+                        AnsiConsole.MarkupLine("[grey]LOW Priority Issues: {0}[/]", lowIssues.Count);
+                        AnsiConsole.WriteLine();
+                    }
+                }
+
+                // Generate preprocessing script if requested
+                if (!string.IsNullOrEmpty(generateScript))
+                {
+                    var scriptGenerator = new PreprocessingScriptGenerator(new TrainCommandLogger());
+                    var generated = await scriptGenerator.AnalyzeAndGenerateAsync(
+                        resolvedDataFile,
+                        generateScript,
+                        effectiveDefinition.Label);
+
+                    if (generated)
+                    {
+                        AnsiConsole.MarkupLine($"[green]✓[/] Generated preprocessing script: [cyan]{generateScript}[/]");
+                        AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
+                        AnsiConsole.MarkupLine($"  1. Review the generated script: {generateScript}");
+                        AnsiConsole.MarkupLine($"  2. Move it to .mloop/scripts/preprocess/ directory");
+                        AnsiConsole.MarkupLine($"  3. Run 'mloop train' again to apply preprocessing automatically");
+                        AnsiConsole.WriteLine();
+                    }
+                }
+
+                // If only analyzing (not training), exit here
+                if (analyzeData)
+                {
+                    return 0;
                 }
             }
 
