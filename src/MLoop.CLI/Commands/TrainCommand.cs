@@ -3,9 +3,11 @@ using Microsoft.ML;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Hooks;
 using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
 using MLoop.Extensibility;
+using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
 
@@ -248,6 +250,40 @@ public static class TrainCommand
                 TestSplit = effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit
             };
 
+            // Initialize hook engine
+            var hookEngine = new HookEngine(projectRoot, new TrainCommandLogger());
+
+            // Execute PreTrain hooks
+            var mlContext = new MLContext(seed: 0);
+
+            var preTrainContext = new HookContext
+            {
+                HookType = HookType.PreTrain,
+                HookName = "pre-train",
+                MLContext = mlContext,
+                DataView = null,  // Hooks can load data themselves using DataFile from metadata
+                Model = null,
+                ExperimentResult = null,
+                Metrics = null,
+                ProjectRoot = projectRoot,
+                Logger = new TrainCommandLogger(),
+                Metadata = new Dictionary<string, object>
+                {
+                    ["DataFile"] = trainingConfig.DataFile,
+                    ["LabelColumn"] = trainingConfig.LabelColumn,
+                    ["TaskType"] = trainingConfig.Task,
+                    ["ModelName"] = trainingConfig.ModelName,
+                    ["TimeLimit"] = trainingConfig.TimeLimitSeconds
+                }
+            };
+
+            var preTrainSuccess = await hookEngine.ExecuteHooksAsync(HookType.PreTrain, preTrainContext);
+            if (!preTrainSuccess)
+            {
+                AnsiConsole.MarkupLine("[red]Training aborted by pre-train hook[/]");
+                return 1;
+            }
+
             // Train with progress display
             TrainingResult? result = null;
 
@@ -282,6 +318,37 @@ public static class TrainCommand
             {
                 AnsiConsole.MarkupLine($"[red]Error:[/] Training failed for model '[cyan]{resolvedModelName}[/]'");
                 return 1;
+            }
+
+            // Execute PostTrain hooks
+            var postTrainContext = new HookContext
+            {
+                HookType = HookType.PostTrain,
+                HookName = "post-train",
+                MLContext = mlContext,
+                DataView = null,  // Training data not needed for post-train
+                Model = null,  // Model not directly available, use ModelPath from metadata
+                ExperimentResult = result,
+                Metrics = result.Metrics,
+                ProjectRoot = projectRoot,
+                Logger = new TrainCommandLogger(),
+                Metadata = new Dictionary<string, object>
+                {
+                    ["LabelColumn"] = trainingConfig.LabelColumn,
+                    ["TaskType"] = trainingConfig.Task,
+                    ["ModelName"] = trainingConfig.ModelName,
+                    ["ExperimentId"] = result.ExperimentId,
+                    ["BestTrainer"] = result.BestTrainer,
+                    ["ModelPath"] = result.ModelPath,
+                    ["TrainingTimeSeconds"] = result.TrainingTimeSeconds
+                }
+            };
+
+            var postTrainSuccess = await hookEngine.ExecuteHooksAsync(HookType.PostTrain, postTrainContext);
+            if (!postTrainSuccess)
+            {
+                AnsiConsole.MarkupLine("[yellow]Warning:[/] Post-train hook aborted, but model was saved successfully");
+                // Don't return 1 here - training succeeded, only post-processing failed
             }
 
             // Display results
