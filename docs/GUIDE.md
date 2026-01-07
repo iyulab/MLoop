@@ -408,20 +408,33 @@ Each script receives the output of the previous script as input.
 **Example Script** (`01_datetime.cs`):
 ```csharp
 using MLoop.Extensibility;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 public class DateTimePreprocessor : IPreprocessingScript
 {
     public async Task<string> ExecuteAsync(PreprocessContext context)
     {
-        var outputPath = Path.Combine(context.OutputDirectory, "01_datetime.csv");
+        // Read input CSV
+        var data = await context.Csv.ReadAsync(context.InputPath);
 
-        // Use FilePrepper for fast processing
-        await context.Csv.ExtractDateTimeFeaturesAsync(
-            inputPath: context.InputPath,
-            outputPath: outputPath,
-            columnName: "OrderDate",
-            mode: DateTimeMode.Features
-        );
+        // Add datetime features
+        var processed = data.Select(row =>
+        {
+            var newRow = new Dictionary<string, string>(row);
+            if (row.ContainsKey("OrderDate") && DateTime.TryParse(row["OrderDate"], out var dt))
+            {
+                newRow["Year"] = dt.Year.ToString();
+                newRow["Month"] = dt.Month.ToString();
+                newRow["DayOfWeek"] = ((int)dt.DayOfWeek).ToString();
+            }
+            return newRow;
+        }).ToList();
+
+        // Write output CSV
+        var outputPath = Path.Combine(context.OutputDirectory, "01_datetime.csv");
+        await context.Csv.WriteAsync(outputPath, processed);
 
         return outputPath;
     }
