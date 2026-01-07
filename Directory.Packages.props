@@ -45,6 +45,9 @@
     <!-- Ironbees SDK v0.4.1 (for CI builds when local project references are not available) -->
     <PackageVersion Include="Ironbees.Core" Version="0.4.1" />
     <PackageVersion Include="Ironbees.AgentMode" Version="0.4.1" />
+    <!-- Memory Indexer SDK v0.3.0 (Cognitive Memory System for LLMs) -->
+    <PackageVersion Include="MemoryIndexer" Version="0.3.0" />
+    <PackageVersion Include="MemoryIndexer.Sdk" Version="0.3.0" />
     <!-- Resilience / Polly -->
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Testing Packages -->

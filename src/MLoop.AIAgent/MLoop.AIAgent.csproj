@@ -11,12 +11,14 @@
   <ItemGroup Condition="'$(CI)' == 'true'">
     <PackageReference Include="Ironbees.Core" />
     <PackageReference Include="Ironbees.AgentMode" />
+    <PackageReference Include="MemoryIndexer.Sdk" />
   </ItemGroup>
 
   <!-- Local development: Use project references for latest features -->
   <ItemGroup Condition="'$(CI)' != 'true'">
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.Core\Ironbees.Core.csproj" />
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode\Ironbees.AgentMode.csproj" />
+    <ProjectReference Include="..\..\..\memory-indexer\src\MemoryIndexer.Sdk\MemoryIndexer.Sdk.csproj" />
   </ItemGroup>
 
   <!-- MLoop project references -->
