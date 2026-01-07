@@ -98,16 +98,18 @@ Current MLoop/FilePrepper handles only **50% of real-world datasets** (3/6 from 
   - Transparent to user: Just works™
   - Implementation: `MLoop.CLI.Commands.TrainCommand` (lines 200-220)
 
-- [ ] **T0.7**: Example preprocessing scripts
-  - Multi-file join example (Dataset 004 pattern)
-  - Wide-to-Long unpivot example (Dataset 006 pattern)
-  - Feature engineering example (Dataset 005 pattern)
-  - DateTime extraction and encoding
+- [x] **T0.7**: Example preprocessing scripts ✅
+  - DateTime extraction example (01_datetime_features.cs) - Dataset 005 pattern
+  - Wide-to-Long unpivot example (02_unpivot_shipments.cs) - Dataset 006 pattern
+  - Feature engineering example (03_feature_engineering.cs) - Production efficiency metrics
+  - Comprehensive README.md with patterns, testing, debugging tips
+  - Implementation: `examples/preprocessing-scripts/` directory (all scripts verified)
 
-- [ ] **T0.8**: Documentation: Preprocessing guide
-  - Tutorial: "Your First Preprocessing Script"
-  - API reference for `PreprocessContext`
-  - Common patterns and recipes
+- [x] **T0.8**: Documentation: Preprocessing guide ✅
+  - Fixed GUIDE.md incorrect API example (replaced ExtractDateTimeFeaturesAsync with correct ReadAsync/WriteAsync)
+  - examples/preprocessing-scripts/README.md provides comprehensive guide
+  - Covers: Script structure, sequential execution, context APIs, testing patterns, best practices
+  - Implementation: `docs/GUIDE.md` (lines 395-442), `examples/preprocessing-scripts/README.md` (348 lines)
 
 **Success Criteria**:
 - 100% dataset coverage (6/6 datasets trainable)
@@ -401,6 +403,12 @@ Submit proposals via GitHub Issues with `roadmap` label.
 **Next Review**: January 31, 2026
 
 **Recent Changes**:
+- Phase 0 (Data Preparation Excellence) ✅ COMPLETE: T0.1-T0.8 all tasks finished
+  - T0.1-T0.3: Core preprocessing infrastructure (IPreprocessingScript, ScriptLoader, PreprocessingEngine)
+  - T0.4: 36 unit tests (PreprocessingEngine, ScriptLoader, CsvHelper) - all passing
+  - T0.5-T0.6: CLI integration (mloop preprocess, auto-preprocessing in mloop train)
+  - T0.7: Example scripts (datetime, unpivot, feature engineering)
+  - T0.8: Documentation (GUIDE.md fix, comprehensive README.md)
 - MLOOP-006: Enhanced AI agents with intelligent analysis, configuration, feature engineering, and memory (T2.1, T2.2, T2.3, T2.6)
 - Added 15 LLM integration tests for agent validation
 - Updated agent architecture to Ironbees v0.4.1 with YAML-based templates
