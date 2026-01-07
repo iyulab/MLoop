@@ -278,10 +278,11 @@ Current MLoop/FilePrepper handles only **50% of real-world datasets** (3/6 from 
   - Health check endpoint for monitoring
   - Request/response logging
 
-- [ ] **T4.2**: Containerization support
-  - Generate Dockerfile for model serving
-  - Docker Compose for multi-model serving
-  - Kubernetes deployment manifests (optional)
+- [x] **T4.2**: Containerization support ✅
+  - ✅ Generate Dockerfile for model serving (DockerCommand with .NET 10, health checks)
+  - ✅ Docker Compose for multi-model serving (docker-compose.yml generation)
+  - ✅ .dockerignore for clean container builds
+  - ⏳ Kubernetes deployment manifests (deferred)
 
 - [ ] **T4.3**: Model monitoring
   - Prediction drift detection
@@ -437,7 +438,10 @@ Submit proposals via GitHub Issues with `roadmap` label.
   - T3.1: DataQualityAnalyzer for automatic CSV issue detection (encoding, duplicates, outliers, etc.)
   - T3.2: PreprocessingScriptGenerator + TrainCommand CLI (--analyze-data, --generate-script)
   - T3.3: 4 preprocessing recipe examples (encoding, imputation, outliers, cleaning)
-- Phase 5 (Enhanced Documentation) ⏳ IN PROGRESS: T5.1-T5.2 complete
+- Phase 4 (Production Deployment) ⏳ IN PROGRESS: T4.2 complete
+  - T4.2: DockerCommand implementation (mloop docker) - generates Dockerfile, .dockerignore, docker-compose.yml
+  - T4.1, T4.3, T4.4: mloop serve enhancements, monitoring, A/B testing (deferred)
+- Phase 5 (Enhanced Documentation) ✅ COMPLETE: T5.1-T5.2 finished
   - T5.1: 3 end-to-end tutorials (Iris, Sentiment Analysis, Housing Prices) - 0 code required!
   - T5.2: RECIPE-INDEX.md with 22 organized recipes (preprocessing, hooks, metrics, agents)
   - T5.3-T5.4: Video content and API reference (deferred)
