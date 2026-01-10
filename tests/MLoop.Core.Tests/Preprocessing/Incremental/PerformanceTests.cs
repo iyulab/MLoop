@@ -14,6 +14,7 @@ namespace MLoop.Core.Tests.Preprocessing.Incremental;
 public class PerformanceTests
 {
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task RandomSampling_100KRows_CompletesWithin1Second()
     {
         // Arrange
@@ -32,6 +33,7 @@ public class PerformanceTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task StratifiedSampling_100KRows_CompletesWithin2Seconds()
     {
         // Arrange
@@ -51,6 +53,7 @@ public class PerformanceTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task AdaptiveSampling_100KRows_CompletesWithin2Seconds()
     {
         // Arrange
@@ -74,6 +77,7 @@ public class PerformanceTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task SampleAnalyzer_100KRows_CompletesWithin2Seconds()
     {
         // Arrange
@@ -152,6 +156,7 @@ public class PerformanceTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void MemoryFootprint_100KRows_StaysUnder100MB()
     {
         // Arrange
@@ -194,6 +199,7 @@ public class PerformanceTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task ConcurrentSampling_MultipleEngines_HandlesParallelism()
     {
         // Arrange
@@ -216,6 +222,7 @@ public class PerformanceTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task Scalability_VaryingDataSizes_ScalesLinearly()
     {
         // Arrange
@@ -242,6 +249,7 @@ public class PerformanceTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task ReproducibilityOverhead_SameRandomSeed_MinimalImpact()
     {
         // Arrange
