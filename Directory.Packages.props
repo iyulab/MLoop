@@ -41,7 +41,7 @@
     <!-- Documentation / API -->
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.0" />
     <!-- External Dependencies -->
-    <PackageVersion Include="FilePrepper" Version="0.4.5" />
+    <PackageVersion Include="FilePrepper" Version="0.4.9" />
     <!-- Ironbees SDK v0.4.1 (for CI builds when local project references are not available) -->
     <PackageVersion Include="Ironbees.Core" Version="0.4.1" />
     <PackageVersion Include="Ironbees.AgentMode" Version="0.4.1" />
