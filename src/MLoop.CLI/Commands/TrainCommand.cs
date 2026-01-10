@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
+using MLoop.Core.Diagnostics;
 using MLoop.Core.Hooks;
 using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
@@ -403,6 +404,58 @@ public static class TrainCommand
                 }
             }
 
+            // T4.5: Class distribution analysis for classification tasks
+            if (isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
+            {
+                var csvHelperForDistribution = new CsvHelperImpl();
+                var distributionAnalyzer = new ClassDistributionAnalyzer(csvHelperForDistribution);
+
+                try
+                {
+                    var distributionResult = await distributionAnalyzer.AnalyzeAsync(
+                        resolvedDataFile,
+                        effectiveDefinition.Label);
+
+                    if (distributionResult.Error == null)
+                    {
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.Write(new Rule("[blue]Class Distribution[/]").LeftJustified());
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.WriteLine(distributionResult.DistributionVisualization);
+                        AnsiConsole.WriteLine();
+
+                        if (distributionResult.NeedsAttention)
+                        {
+                            AnsiConsole.MarkupLine($"[yellow]⚠ {distributionResult.Summary}[/]");
+
+                            foreach (var warning in distributionResult.Warnings)
+                            {
+                                AnsiConsole.MarkupLine($"[yellow]  • {warning}[/]");
+                            }
+
+                            if (distributionResult.Suggestions.Count > 0)
+                            {
+                                AnsiConsole.MarkupLine("[grey]Suggestions:[/]");
+                                foreach (var suggestion in distributionResult.Suggestions)
+                                {
+                                    AnsiConsole.MarkupLine($"[grey]  • {suggestion}[/]");
+                                }
+                            }
+                            AnsiConsole.WriteLine();
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine($"[green]✓[/] {distributionResult.Summary}");
+                            AnsiConsole.WriteLine();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] Class distribution analysis failed: {ex.Message}");
+                }
+            }
+
             // Data quality analysis if requested
             if (analyzeData || !string.IsNullOrEmpty(generateScript))
             {
@@ -654,6 +707,49 @@ public static class TrainCommand
             // Display results
             DisplayResults(result, resolvedModelName);
 
+            // T4.4: Performance diagnostics
+            var performanceDiagnostics = new PerformanceDiagnostics();
+            var diagnosticResult = performanceDiagnostics.Analyze(
+                trainingConfig.Task,
+                result.Metrics);
+
+            if (diagnosticResult.NeedsAttention)
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.Write(new Rule("[yellow]Performance Diagnostics[/]").LeftJustified());
+                AnsiConsole.WriteLine();
+
+                var levelColor = diagnosticResult.OverallAssessment switch
+                {
+                    PerformanceLevel.Poor => "red",
+                    PerformanceLevel.Low => "yellow",
+                    _ => "orange1"
+                };
+
+                AnsiConsole.MarkupLine($"[{levelColor}]⚠ {diagnosticResult.Summary}[/]");
+                AnsiConsole.WriteLine();
+
+                if (diagnosticResult.Warnings.Count > 0)
+                {
+                    AnsiConsole.MarkupLine("[yellow]Warnings:[/]");
+                    foreach (var warning in diagnosticResult.Warnings)
+                    {
+                        AnsiConsole.MarkupLine($"  [yellow]•[/] {warning}");
+                    }
+                    AnsiConsole.WriteLine();
+                }
+
+                if (diagnosticResult.Suggestions.Count > 0)
+                {
+                    AnsiConsole.MarkupLine("[blue]Suggestions to improve performance:[/]");
+                    foreach (var suggestion in diagnosticResult.Suggestions)
+                    {
+                        AnsiConsole.MarkupLine($"  [grey]•[/] {suggestion}");
+                    }
+                    AnsiConsole.WriteLine();
+                }
+            }
+
             // Auto-promote to production if enabled
             if (!noPromote)
             {
@@ -686,6 +782,56 @@ public static class TrainCommand
                     });
 
                 AnsiConsole.WriteLine();
+            }
+
+            // T4.6: Unused data warning
+            var dataDirectory = Path.GetDirectoryName(resolvedDataFile);
+            if (!string.IsNullOrEmpty(dataDirectory) && Directory.Exists(dataDirectory))
+            {
+                var unusedDataScanner = new UnusedDataScanner();
+                var usedFiles = new List<string> { resolvedDataFile };
+
+                var scanResult = unusedDataScanner.Scan(dataDirectory, usedFiles);
+
+                if (scanResult.HasUnusedFiles)
+                {
+                    AnsiConsole.Write(new Rule("[grey]Data Directory Summary[/]").LeftJustified());
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine($"[grey]{scanResult.Summary}[/]");
+
+                    // Show warnings if any
+                    foreach (var warning in scanResult.Warnings.Take(3))
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]  ⚠ {warning}[/]");
+                    }
+
+                    // Show suggestions if any
+                    foreach (var suggestion in scanResult.Suggestions.Take(2))
+                    {
+                        AnsiConsole.MarkupLine($"[grey]  💡 {suggestion}[/]");
+                    }
+
+                    // List unused files (limit to 5)
+                    if (scanResult.UnusedFiles.Count <= 5)
+                    {
+                        AnsiConsole.MarkupLine("[grey]  Unused files:[/]");
+                        foreach (var file in scanResult.UnusedFiles)
+                        {
+                            AnsiConsole.MarkupLine($"[grey]    • {file.FileName} ({file.SizeFormatted})[/]");
+                        }
+                    }
+                    else
+                    {
+                        var remaining = scanResult.UnusedFiles.Count - 3;
+                        AnsiConsole.MarkupLine("[grey]  Unused files:[/]");
+                        foreach (var file in scanResult.UnusedFiles.Take(3))
+                        {
+                            AnsiConsole.MarkupLine($"[grey]    • {file.FileName} ({file.SizeFormatted})[/]");
+                        }
+                        AnsiConsole.MarkupLine($"[grey]    ... and {remaining} more[/]");
+                    }
+                    AnsiConsole.WriteLine();
+                }
             }
 
             return 0;

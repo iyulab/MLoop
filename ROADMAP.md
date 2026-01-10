@@ -17,11 +17,12 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - CLI with comprehensive command set
 - .NET 10.0 + C# 13 modern codebase
 
-### AI Agent System (Ironbees v0.4.1)
-- Multi-provider LLM support (OpenAI, Anthropic, Google, AWS, Azure, Ollama)
-- YAML-based agent templates (agent.yaml + system-prompt.md)
-- 5 specialized agents: data-analyst, model-architect, preprocessing-expert, experiment-explainer, ml-tutor
-- Semantic conversation memory (MemoryIndexer v0.6.0)
+### AI Agent System
+- **Ironbees v0.4.1** (Infrastructure): Multi-provider LLM, YAML templates, AgenticSettings
+- **MemoryIndexer v0.6.0** (Infrastructure): Semantic memory, Tags/Metadata, vector search
+- **MLoop Agents** (Domain Logic): 5 specialized agents in `agents/` directory
+  - data-analyst, model-architect, preprocessing-expert, experiment-explainer, ml-tutor
+- Architecture: External libs provide infrastructure, MLoop implements ML-specific logic
 
 ### Quality
 - 464+ tests passing (Core + API + AIAgent + Pipeline)
@@ -83,6 +84,201 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
+## Phase 4: Autonomous MLOps (In Progress)
+**Goal**: Enable LLM agents to build production models with minimal human intervention
+
+**Background**: ML-Resource simulation testing (10/25 datasets) revealed clear patterns:
+- Single clean CSV → L3 autonomy (100% autonomous)
+- Multi-CSV scenarios → L2 or lower (human intervention required)
+- Label missing values → Classification failure
+- Average autonomy: L2.3 (target: L3+)
+
+### Tier 1: Critical (L2→L3 Autonomy) ✅
+
+#### T4.1 Multi-CSV Auto-Merge ✅
+**Problem**: 60% of datasets require manual CSV concatenation
+**Solution**: Automatic detection and merge of same-schema files
+```
+Current: User manually merges normal.csv + outlier.csv
+Target:  MLoop auto-detects pattern and merges
+```
+- [x] Schema similarity detection (SHA256 hash of normalized columns)
+- [x] Filename pattern recognition (dates, normal/outlier, sequence)
+- [x] `mloop train --auto-merge` option
+- [x] CsvMerger with schema validation
+
+#### T4.2 Label Missing Value Handling ✅
+**Problem**: Classification fails when label column has empty values
+**Solution**: Automatic detection and handling of label nulls
+```
+Current: Schema mismatch error (015 dataset failure)
+Target:  Auto-drop rows with missing labels + warning
+```
+- [x] Pre-training label column validation
+- [x] `--drop-missing-labels` option (default: true for classification)
+- [x] Warning with statistics (e.g., "Dropped 113/5161 rows with empty labels")
+
+#### T4.3 External Data Path ✅
+**Problem**: Data must be copied to datasets/ folder
+**Solution**: Support direct external file paths
+```
+Current: cp data.csv mloop-project/datasets/train.csv
+Target:  mloop train --data /path/to/external/data.csv
+```
+- [x] `--data` option for train command
+- [x] Relative and absolute path support
+- [x] Multiple file support with auto-merge
+
+### Tier 2: High Priority (UX & Diagnostics) ✅
+
+#### T4.4 Low Performance Diagnostics ✅
+**Problem**: No guidance when model performance is poor (R² < 0.5)
+**Solution**: Automatic diagnosis and improvement suggestions
+- [x] Performance threshold detection (R², AUC, Accuracy thresholds)
+- [x] Warnings and suggestions based on performance level
+- [x] Data characteristics warnings (samples-to-features ratio, small dataset)
+
+#### T4.5 Class Distribution Analysis ✅
+**Problem**: Users unaware of class imbalance
+**Solution**: Automatic class distribution report at init/train
+- [x] Class balance visualization (bar chart)
+- [x] Imbalance warnings with ratio (e.g., "ratio: 20:1")
+- [x] Sampling strategy suggestions (ClassWeights, SMOTE, CombinedSampling)
+
+#### T4.6 Unused Data Warning ✅
+**Problem**: When N CSV files exist but only M used
+**Solution**: Alert users about potentially unused data
+- [x] Data directory scan for CSV files
+- [x] File categorization (backup, temp, merged, reserved)
+- [x] Summary report with suggestions (e.g., use --auto-merge)
+
+### Tier 3: FilePrepper Integration (v0.4.9 Available)
+
+> **Status**: FilePrepper v0.4.9 released with all requested features.
+> MLoop needs to integrate these APIs into preprocessing pipeline.
+
+#### T4.7 Wide→Long Auto-Transform
+**Problem**: Wide format data requires manual unpivot (006 dataset)
+**Solution**: ✅ FilePrepper v0.4.9 `Unpivot()` / `UnpivotSimple()` API
+```csharp
+pipeline.UnpivotSimple(
+    baseColumns: new[] { "Region" },
+    unpivotColumns: new[] { "Q1", "Q2", "Q3", "Q4" },
+    indexColumn: "Quarter",
+    valueColumn: "Sales");
+```
+- [x] Multi-column group support (FilePrepper)
+- [x] Empty row skipping (FilePrepper)
+- [ ] MLoop preprocessing script integration
+- [ ] Auto-detection heuristics in MLoop
+
+#### T4.8 Korean DateTime Parsing
+**Problem**: "오전/오후" format not supported (010 dataset)
+**Solution**: ✅ FilePrepper v0.4.3 `ParseKoreanTime()` API
+```csharp
+pipeline.ParseKoreanTime("Time", "ParsedTime")
+    .ExtractDateFeatures("ParsedTime", DateFeatures.Hour | DateFeatures.Minute);
+```
+- [x] 오전/오후 pattern recognition (FilePrepper v0.4.3)
+- [x] DateTime conversion (FilePrepper)
+- [ ] MLoop preprocessing script integration
+
+#### T4.9 Filename Metadata Extraction
+**Problem**: Date info in filenames lost after merge (010 dataset)
+**Solution**: ✅ FilePrepper v0.4.9 `FilenameMetadataOptions` API
+```csharp
+DataPipeline.ConcatCsvAsync("data_*.csv", dir, hasHeader: true,
+    new FilenameMetadataOptions { Preset = FilenameMetadataPreset.SensorDate });
+```
+- [x] Date extraction from filenames (FilePrepper)
+- [x] Preset patterns: DateOnly, SensorDate, Manufacturing, Category (FilePrepper)
+- [x] Custom regex patterns (FilePrepper)
+- [ ] MLoop `--auto-merge` integration
+
+### Tier 4: MLoop Agent System (Internal Implementation)
+
+> **Architecture Decision**: External projects (Ironbees, MemoryIndexer) provide infrastructure,
+> MLoop implements domain-specific logic. See `claudedocs/issues/*-response.md` for details.
+
+#### T4.10 Multi-CSV Strategy Agent
+**Problem**: Agent doesn't know how to handle multiple CSV files
+**Solution**: MLoop agent using Ironbees infrastructure
+```
+MLoop/
+├── agents/multi-csv-strategy/    # Ironbees loads (agent.yaml)
+└── src/MLoop.Agents/             # MLoop implements logic
+    └── MultiCSVStrategyAgent.cs
+```
+- [ ] File schema comparison logic
+- [ ] Merge strategy recommendation (concat, join, ignore)
+- [ ] Filename pattern recognition (normal/outlier, dates)
+- [ ] Confidence-based HITL using AgenticSettings
+
+#### T4.11 Domain-Based Label Inference Agent
+**Problem**: Label column selection requires domain knowledge
+**Solution**: MLoop agent with domain pattern library
+```
+MLoop/
+├── agents/label-inference/       # Ironbees loads
+└── src/MLoop.Agents/
+    ├── DomainLabelInferenceAgent.cs
+    └── Patterns/
+        ├── ManufacturingPatterns.cs
+        └── PredictiveMaintenancePatterns.cs
+```
+- [ ] Column name analysis (Status, Label, Target, etc.)
+- [ ] Data type analysis (binary, categorical, continuous)
+- [ ] Domain-specific patterns (manufacturing: defect, anomaly, etc.)
+
+#### T4.12 Dataset Pattern Memory
+**Problem**: Agent starts from scratch without leveraging past learnings
+**Solution**: MLoop service using MemoryIndexer API
+```csharp
+// Uses MemoryIndexer's MemoryType.Procedural + semantic search
+public class DatasetPatternMemory
+{
+    Task StorePatternAsync(DatasetInfo info, ProjectOutcome outcome);
+    Task<List<DatasetPattern>> FindSimilarPatternsAsync(DatasetInfo newDataset);
+}
+```
+- [ ] Dataset fingerprinting (columns, types, domain keywords)
+- [ ] Success pattern storage with Tags/Metadata
+- [ ] Semantic similarity search for new datasets
+- [ ] Strategy recommendation from past successes
+
+#### T4.13 Failure Case Learning
+**Problem**: Failure debugging knowledge lost after session ends
+**Solution**: MLoop service using MemoryIndexer API
+```csharp
+// Uses MemoryIndexer's MemoryType.Episodic + semantic search
+public class FailureCaseLearning
+{
+    Task StoreFailureAsync(FailureContext ctx);
+    Task<List<FailureWarning>> CheckForSimilarFailuresAsync(DatasetInfo info);
+}
+```
+- [ ] Failure pattern capture with root cause
+- [ ] Proactive warning for similar data quality issues
+- [ ] Prevention advice from past resolutions
+
+### Success Metrics
+
+| Metric | Baseline | Target | Method |
+|--------|----------|--------|--------|
+| Average Autonomy Level | L2.3 | L3.0+ | ML-Resource simulation |
+| L3 Achievement Rate | 40% | 80% | Single + Multi-CSV datasets |
+| Classification Success | 67% | 95% | Automatic label handling |
+| Human Interventions/Dataset | 0.9 | 0.2 | Multi-CSV auto-merge |
+
+### Simulation Reference
+Full simulation results: `ML-Resource/SIMULATION_PROGRESS.md`
+
+Individual reports:
+- Regression: 005-011 (7 datasets, 100% success)
+- Classification: 015, 017, 019 (3 datasets, 67% success)
+
+---
+
 ## Future Considerations (P3 LOW)
 
 ### Advanced Features
@@ -111,6 +307,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 |---------|------|-------|--------|
 | **v0.1.0** | Nov 2025 | ML.NET 5.0 + Core | ✅ Complete |
 | **v0.2.0** | Jan 2026 | Preprocessing + Extensibility + AI Agents | ✅ Complete |
+| **v0.3.0** | Q1 2026 | Autonomous MLOps (Phase 4 Tier 1-2) | 🔄 In Progress |
 | **v1.0.0** | TBD | Production-Ready Release | 🎯 Target |
 
 ---
@@ -126,6 +323,15 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 | Operational Cost | Docker + K8s + MLOps | CLI + filesystem | ✅ Achieved |
 | Time to Production | Weeks | Hours | ✅ Achieved |
 
+**Autonomy Mission: LLM-Driven Autonomous Model Building**
+
+| Metric | Baseline | Target | Status |
+|--------|----------|--------|--------|
+| Autonomy Level | L2.3 | L3.0+ | 🔄 In Progress |
+| L3 Achievement Rate | 40% | 80% | 🔄 In Progress |
+| Human Interventions | 0.9/dataset | <0.2/dataset | 🔄 In Progress |
+| Classification Success | 67% | 95% | 🔄 In Progress |
+
 ---
 
 ## Contributing
@@ -140,5 +346,5 @@ Submit proposals via GitHub Issues with `roadmap` label.
 
 ---
 
-**Last Updated**: January 10, 2026
-**Version**: 0.2.0
+**Last Updated**: January 11, 2026
+**Version**: 0.2.0 (Phase 4 Planning - Architecture Clarified)
