@@ -3,6 +3,7 @@ using Microsoft.ML;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
 using MLoop.Core.Hooks;
 using MLoop.Core.Models;
@@ -74,6 +75,23 @@ public static class TrainCommand
             Description = "Generate preprocessing script from data quality analysis at specified path"
         };
 
+        var autoMergeOption = new Option<bool>("--auto-merge")
+        {
+            Description = "Automatically detect and merge CSV files with same schema in datasets/ directory",
+            DefaultValueFactory = _ => false
+        };
+
+        var dropMissingLabelsOption = new Option<bool?>("--drop-missing-labels")
+        {
+            Description = "Drop rows with missing label values (default: true for classification, false for regression)"
+        };
+
+        var dataOption = new Option<string[]?>("--data", "-d")
+        {
+            Description = "Path(s) to training data file(s). Supports external paths and multiple files for auto-merge",
+            AllowMultipleArgumentsPerToken = true
+        };
+
         var command = new Command("train", "Train a model using AutoML");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
@@ -85,6 +103,9 @@ public static class TrainCommand
         command.Options.Add(noPromoteOption);
         command.Options.Add(analyzeDataOption);
         command.Options.Add(generateScriptOption);
+        command.Options.Add(autoMergeOption);
+        command.Options.Add(dropMissingLabelsOption);
+        command.Options.Add(dataOption);
 
         command.SetAction((parseResult) =>
         {
@@ -98,7 +119,10 @@ public static class TrainCommand
             var noPromote = parseResult.GetValue(noPromoteOption);
             var analyzeData = parseResult.GetValue(analyzeDataOption);
             var generateScript = parseResult.GetValue(generateScriptOption);
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript);
+            var autoMerge = parseResult.GetValue(autoMergeOption);
+            var dropMissingLabels = parseResult.GetValue(dropMissingLabelsOption);
+            var dataPaths = parseResult.GetValue(dataOption);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths);
         });
 
         return command;
@@ -114,7 +138,10 @@ public static class TrainCommand
         double? testSplit,
         bool noPromote,
         bool analyzeData,
-        string? generateScript)
+        string? generateScript,
+        bool autoMerge,
+        bool? dropMissingLabels,
+        string[]? dataPaths)
     {
         try
         {
@@ -176,43 +203,203 @@ public static class TrainCommand
             }
 
             // Resolve data file path
-            string resolvedDataFile;
+            string? resolvedDataFile;
+            var datasetDiscovery = new DatasetDiscovery(fileSystem);
 
-            if (string.IsNullOrEmpty(dataFile))
+            // T4.3: Handle --data option for external data paths
+            if (dataPaths is { Length: > 0 })
             {
-                // Try config data path, then auto-discover
-                if (!string.IsNullOrEmpty(userConfig.Data?.Train))
+                var csvHelper = new CsvHelperImpl();
+
+                // Resolve all paths (support relative and absolute)
+                var resolvedPaths = new List<string>();
+                foreach (var path in dataPaths)
                 {
-                    resolvedDataFile = Path.IsPathRooted(userConfig.Data.Train)
-                        ? userConfig.Data.Train
-                        : Path.Combine(projectRoot, userConfig.Data.Train);
+                    var resolved = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(projectRoot, path));
+                    if (!File.Exists(resolved))
+                    {
+                        AnsiConsole.MarkupLine($"[red]Error:[/] Data file not found: {path}");
+                        return 1;
+                    }
+                    resolvedPaths.Add(resolved);
+                }
+
+                if (resolvedPaths.Count == 1)
+                {
+                    // Single file - use directly
+                    resolvedDataFile = resolvedPaths[0];
+                    AnsiConsole.MarkupLine($"[green]>[/] Using external data: [cyan]{dataPaths[0]}[/]");
                 }
                 else
                 {
-                    var datasetDiscovery = new DatasetDiscovery(fileSystem);
-                    var datasets = datasetDiscovery.FindDatasets(projectRoot);
+                    // Multiple files - validate and merge
+                    AnsiConsole.MarkupLine($"[blue]Merging {resolvedPaths.Count} external data files...[/]");
 
-                    if (datasets == null || string.IsNullOrEmpty(datasets.TrainPath))
+                    foreach (var file in resolvedPaths)
                     {
-                        AnsiConsole.MarkupLine("[red]Error:[/] No data file specified and datasets/train.csv not found.");
-                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/train.csv or specify a file: mloop train <data-file>");
+                        AnsiConsole.MarkupLine($"    [grey]• {Path.GetFileName(file)}[/]");
+                    }
+
+                    var csvMerger = new CsvMerger(csvHelper);
+
+                    // Validate schemas
+                    var validation = await csvMerger.ValidateSchemaCompatibilityAsync(resolvedPaths);
+                    if (!validation.IsCompatible)
+                    {
+                        AnsiConsole.MarkupLine($"[red]Error:[/] Schema mismatch between files: {validation.Message}");
                         return 1;
                     }
 
-                    resolvedDataFile = datasets.TrainPath;
+                    // Merge to temp file in datasets directory
+                    var datasetsPath = datasetDiscovery.GetDatasetsPath(projectRoot);
+                    if (!Directory.Exists(datasetsPath))
+                    {
+                        Directory.CreateDirectory(datasetsPath);
+                    }
+
+                    var mergedPath = Path.Combine(datasetsPath, "merged_train.csv");
+                    var mergeResult = await csvMerger.MergeAsync(resolvedPaths, mergedPath);
+
+                    if (!mergeResult.Success)
+                    {
+                        AnsiConsole.MarkupLine($"[red]Error:[/] Failed to merge files: {mergeResult.Error}");
+                        return 1;
+                    }
+
+                    AnsiConsole.MarkupLine($"[green]✓[/] Merged [cyan]{mergeResult.TotalRows}[/] rows from {resolvedPaths.Count} files");
+                    foreach (var (fileName, rowCount) in mergeResult.RowsPerFile)
+                    {
+                        AnsiConsole.MarkupLine($"    [grey]• {fileName}: {rowCount} rows[/]");
+                    }
+                    AnsiConsole.WriteLine();
+
+                    resolvedDataFile = mergedPath;
                 }
-                AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+            }
+            // Auto-merge if requested and no specific data file provided
+            else if (autoMerge && string.IsNullOrEmpty(dataFile))
+            {
+                var datasetsPath = datasetDiscovery.GetDatasetsPath(projectRoot);
+                if (Directory.Exists(datasetsPath))
+                {
+                    var csvHelper = new CsvHelperImpl();
+                    var csvMerger = new CsvMerger(csvHelper);
+
+                    AnsiConsole.MarkupLine("[blue]Scanning for mergeable CSV files...[/]");
+                    var mergeGroups = await csvMerger.DiscoverMergeableCsvsAsync(datasetsPath);
+
+                    if (mergeGroups.Count > 0)
+                    {
+                        var primaryGroup = mergeGroups.First();
+                        AnsiConsole.MarkupLine($"[green]>[/] Found [cyan]{primaryGroup.FilePaths.Count}[/] files with same schema (pattern: [yellow]{primaryGroup.DetectedPattern}[/])");
+
+                        foreach (var file in primaryGroup.FilePaths)
+                        {
+                            AnsiConsole.MarkupLine($"    [grey]• {Path.GetFileName(file)}[/]");
+                        }
+
+                        // Merge to train.csv
+                        var mergedPath = Path.Combine(datasetsPath, "train.csv");
+                        var mergeResult = await csvMerger.MergeAsync(primaryGroup.FilePaths, mergedPath);
+
+                        if (mergeResult.Success)
+                        {
+                            AnsiConsole.MarkupLine($"[green]✓[/] Merged [cyan]{mergeResult.TotalRows}[/] rows into [cyan]train.csv[/]");
+                            foreach (var (fileName, rowCount) in mergeResult.RowsPerFile)
+                            {
+                                AnsiConsole.MarkupLine($"    [grey]• {fileName}: {rowCount} rows[/]");
+                            }
+                            AnsiConsole.WriteLine();
+
+                            resolvedDataFile = mergedPath;
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine($"[yellow]Warning:[/] Auto-merge failed: {mergeResult.Error}");
+                            AnsiConsole.MarkupLine("[yellow]Falling back to standard discovery...[/]");
+                            resolvedDataFile = await ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
+                        }
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine("[grey]No mergeable CSV groups found, using standard discovery[/]");
+                        resolvedDataFile = await ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
+                    }
+                }
+                else
+                {
+                    resolvedDataFile = await ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
+                }
             }
             else
             {
-                resolvedDataFile = Path.IsPathRooted(dataFile)
-                    ? dataFile
-                    : Path.Combine(projectRoot, dataFile);
+                resolvedDataFile = await ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
+            }
 
-                if (!File.Exists(resolvedDataFile))
+            if (resolvedDataFile == null)
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] No data file specified and datasets/train.csv not found.");
+                AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/train.csv or specify a file: mloop train <data-file>");
+                return 1;
+            }
+
+            AnsiConsole.MarkupLine($"[green]>[/] Using data: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+
+            // Handle missing label values (T4.2)
+            // Default behavior: drop missing labels for classification tasks
+            var isClassificationTask = effectiveDefinition.Task?.ToLowerInvariant() switch
+            {
+                "binaryclassification" => true,
+                "multiclassclassification" => true,
+                "classification" => true,
+                _ => false
+            };
+
+            // Use explicit parameter if provided, otherwise default to true for classification
+            var shouldDropMissingLabels = dropMissingLabels ?? isClassificationTask;
+
+            if (shouldDropMissingLabels && !string.IsNullOrEmpty(effectiveDefinition.Label))
+            {
+                var csvHelper = new CsvHelperImpl();
+                var labelHandler = new LabelValueHandler(csvHelper, new TrainCommandLogger());
+
+                var labelAnalysis = await labelHandler.AnalyzeLabelColumnAsync(
+                    resolvedDataFile,
+                    effectiveDefinition.Label);
+
+                if (!string.IsNullOrEmpty(labelAnalysis.Error))
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Data file not found: {resolvedDataFile}");
-                    return 1;
+                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label analysis error: {labelAnalysis.Error}");
+                }
+                else if (labelAnalysis.HasMissingValues)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] Found {labelAnalysis.MissingCount}/{labelAnalysis.TotalRows} rows ({labelAnalysis.MissingPercentage:F1}%) with missing labels");
+
+                    // Create cleaned data file
+                    var cleanedDataPath = Path.Combine(
+                        Path.GetDirectoryName(resolvedDataFile)!,
+                        $"{Path.GetFileNameWithoutExtension(resolvedDataFile)}_cleaned{Path.GetExtension(resolvedDataFile)}");
+
+                    var cleanResult = await labelHandler.DropMissingLabelsAsync(
+                        resolvedDataFile,
+                        cleanedDataPath,
+                        effectiveDefinition.Label);
+
+                    if (cleanResult.Success)
+                    {
+                        AnsiConsole.MarkupLine($"[green]>[/] Dropped {cleanResult.DroppedRowCount} rows with missing labels");
+                        AnsiConsole.MarkupLine($"[green]>[/] Using cleaned data: [cyan]{Path.GetRelativePath(projectRoot, cleanResult.OutputPath!)}[/]");
+                        resolvedDataFile = cleanResult.OutputPath!;
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"[red]Error:[/] Failed to clean label data: {cleanResult.Error}");
+                        return 1;
+                    }
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"[green]✓[/] Label column '{effectiveDefinition.Label}' has no missing values ({labelAnalysis.ValidCount} rows, {labelAnalysis.UniqueValueCount} unique values)");
                 }
             }
 
@@ -612,6 +799,45 @@ public static class TrainCommand
                 $"Available columns: {string.Join(", ", availableColumns)}",
                 nameof(labelColumn));
         }
+    }
+
+    /// <summary>
+    /// Resolves the data file path from various sources (explicit path, config, or auto-discovery).
+    /// </summary>
+    private static Task<string?> ResolveDataFileAsync(
+        string? dataFile,
+        MLoopConfig userConfig,
+        string projectRoot,
+        IDatasetDiscovery datasetDiscovery,
+        IFileSystemManager fileSystem)
+    {
+        if (!string.IsNullOrEmpty(dataFile))
+        {
+            var resolvedPath = Path.IsPathRooted(dataFile)
+                ? dataFile
+                : Path.Combine(projectRoot, dataFile);
+
+            return File.Exists(resolvedPath)
+                ? Task.FromResult<string?>(resolvedPath)
+                : Task.FromResult<string?>(null);
+        }
+
+        // Try config data path
+        if (!string.IsNullOrEmpty(userConfig.Data?.Train))
+        {
+            var configPath = Path.IsPathRooted(userConfig.Data.Train)
+                ? userConfig.Data.Train
+                : Path.Combine(projectRoot, userConfig.Data.Train);
+
+            if (File.Exists(configPath))
+            {
+                return Task.FromResult<string?>(configPath);
+            }
+        }
+
+        // Auto-discover datasets/train.csv
+        var datasets = datasetDiscovery.FindDatasets(projectRoot);
+        return Task.FromResult(datasets?.TrainPath);
     }
 
     private class TrainCommandLogger : ILogger
