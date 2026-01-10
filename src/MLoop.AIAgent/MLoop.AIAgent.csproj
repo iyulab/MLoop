@@ -6,21 +6,19 @@
     <Description>AI Agent system for MLoop using Ironbees SDK</Description>
   </PropertyGroup>
 
-  <!-- Ironbees SDK: Conditional references for CI vs Local -->
+  <!-- Ironbees SDK v0.4.1: Conditional references for CI vs Local -->
   <!-- CI environment: Use NuGet packages -->
   <ItemGroup Condition="'$(CI)' == 'true'">
     <PackageReference Include="Ironbees.Core" />
-    <PackageReference Include="Ironbees.AgentMode.Core" />
-    <PackageReference Include="Ironbees.AgentMode.Providers" />
-    <PackageReference Include="Ironbees.AgentMode.Agents" />
+    <PackageReference Include="Ironbees.AgentMode" />
+    <PackageReference Include="MemoryIndexer.Sdk" />
   </ItemGroup>
 
   <!-- Local development: Use project references for latest features -->
   <ItemGroup Condition="'$(CI)' != 'true'">
     <ProjectReference Include="..\..\..\ironbees\src\Ironbees.Core\Ironbees.Core.csproj" />
-    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Core\Ironbees.AgentMode.Core.csproj" />
-    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Providers\Ironbees.AgentMode.Providers.csproj" />
-    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode.Agents\Ironbees.AgentMode.Agents.csproj" />
+    <ProjectReference Include="..\..\..\ironbees\src\Ironbees.AgentMode\Ironbees.AgentMode.csproj" />
+    <ProjectReference Include="..\..\..\memory-indexer\src\MemoryIndexer.Sdk\MemoryIndexer.Sdk.csproj" />
   </ItemGroup>
 
   <!-- MLoop project references -->

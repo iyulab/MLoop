@@ -34,6 +34,7 @@ TestResults/
 
 # MLoop 사용자 프로젝트 (사용자가 생성하는 프로젝트)
 .mloop/
+!examples/**/.mloop/
 models/staging/
 models/production/
 data/raw/

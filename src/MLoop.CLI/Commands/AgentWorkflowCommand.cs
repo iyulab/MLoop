@@ -1,5 +1,6 @@
 using System.CommandLine;
-using Ironbees.AgentMode.Core.Workflow;
+using Ironbees.AgentMode.Workflow;
+using Ironbees.AgentMode.Models;
 using Microsoft.Extensions.Logging;
 using MLoop.AIAgent.Infrastructure;
 using Spectre.Console;

@@ -1,13 +1,32 @@
-name: MLOps Manager Agent
-description: |
-  Specializes in MLoop project lifecycle orchestration. Executes training, evaluation, and
-  prediction workflows. Manages project initialization, experiment tracking, and provides
-  comprehensive status updates and error recovery.
-temperature: 0.0
-max_tokens: 4096
-system_prompt: system-prompt.md
-
-# Conversation history settings
-conversation_enabled: true
-max_history_turns: 15
-context_window_tokens: 16384
+name: mlops-manager
+description: MLOps manager specializing in MLoop project lifecycle orchestration
+model:
+  deployment: gpt-4o
+  temperature: 0.0
+  maxTokens: 4096
+capabilities:
+  - project-management
+  - ml-workflow
+  - automl
+  - model-deployment
+  - experiment-tracking
+conversation:
+  enabled: true
+  max_history_turns: 15
+tools:
+  - name: initialize_project
+    description: Create new MLoop projects
+  - name: train_model
+    description: Train ML models using AutoML
+  - name: evaluate_model
+    description: Evaluate model performance
+  - name: predict
+    description: Make predictions with trained models
+  - name: list_experiments
+    description: View experiment history
+  - name: promote_experiment
+    description: Deploy models to production
+  - name: get_dataset_info
+    description: Analyze dataset statistics
+  - name: preprocess_data
+    description: Run preprocessing pipelines

@@ -1,8 +1,13 @@
 using System.CommandLine;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using MLoop.AIAgent.Core;
 using MLoop.AIAgent.Infrastructure;
+using MLoop.AIAgent.Tools;
+using MLoop.CLI.Infrastructure.Configuration;
 using Spectre.Console;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace MLoop.CLI.Commands;
 
@@ -93,7 +98,7 @@ public static class AgentCommand
             }
             else
             {
-                return await RunSingleQueryModeAsync(orchestrator, query, agentName);
+                return await RunSingleQueryModeAsync(orchestrator, query, agentName, projectPath);
             }
         }
         catch (Exception ex)
@@ -122,6 +127,7 @@ public static class AgentCommand
     private static async Task<IronbeesOrchestrator> InitializeOrchestratorAsync(string? projectPath)
     {
         IronbeesOrchestrator? orchestrator = null;
+        var effectiveProjectPath = projectPath ?? Directory.GetCurrentDirectory();
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
@@ -142,7 +148,45 @@ public static class AgentCommand
                     // Load agents
                     await orchestrator.InitializeAsync();
 
+                    // Register MLOps tools for function calling (fixes hallucination issue)
+                    ctx.Status("[blue]Registering MLOps tools...[/]");
+                    var projectManager = new MLoopProjectManager();
+                    var mlopsTools = new MLOpsTools(projectManager, effectiveProjectPath);
+                    orchestrator.RegisterTools(mlopsTools.CreateTools());
+
                     ctx.Status("[green]AI agents loaded successfully[/]");
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("LLM provider"))
+                {
+                    ctx.Status("[red]LLM provider not configured[/]");
+                    throw new InvalidOperationException(
+                        "No LLM provider configured. Please set environment variables.\n" +
+                        "Options:\n" +
+                        "  GPUSTACK_ENDPOINT + GPUSTACK_API_KEY + GPUSTACK_MODEL\n" +
+                        "  AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_KEY + AZURE_OPENAI_MODEL\n" +
+                        "  OPENAI_API_KEY + OPENAI_MODEL\n\n" +
+                        "Or create a .env file in the project directory.", ex);
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    ctx.Status("[red]LLM endpoint not reachable[/]");
+                    throw new InvalidOperationException(
+                        $"LLM endpoint returned 404 (Not Found).\n" +
+                        "Possible causes:\n" +
+                        "  - Incorrect endpoint URL\n" +
+                        "  - Model name not found on server\n" +
+                        "  - API version mismatch\n\n" +
+                        "Please verify your LLM configuration in .env file.", ex);
+                }
+                catch (HttpRequestException ex)
+                {
+                    ctx.Status("[red]LLM connection failed[/]");
+                    throw new InvalidOperationException(
+                        $"Failed to connect to LLM provider: {ex.Message}\n" +
+                        "Please check:\n" +
+                        "  - Network connectivity\n" +
+                        "  - Endpoint URL is correct\n" +
+                        "  - API key is valid", ex);
                 }
                 catch (Exception ex)
                 {
@@ -157,6 +201,7 @@ public static class AgentCommand
         }
 
         AnsiConsole.MarkupLine("[green]✓[/] AI agents loaded successfully");
+        AnsiConsole.MarkupLine("[green]✓[/] MLOps tools registered for function calling");
         AnsiConsole.WriteLine();
 
         return orchestrator;
@@ -165,12 +210,37 @@ public static class AgentCommand
     private static async Task<int> RunSingleQueryModeAsync(
         IronbeesOrchestrator orchestrator,
         string query,
-        string? agentName)
+        string? agentName,
+        string? projectPath = null)
     {
         try
         {
+            // Load project context for auto-injection
+            var effectivePath = projectPath ?? Directory.GetCurrentDirectory();
+            var projectContext = LoadProjectContext(effectivePath);
+
+            // Display context info if available
+            if (projectContext.HasMLoopConfig || projectContext.DataFiles.Count > 0)
+            {
+                AnsiConsole.MarkupLine("[grey]📁 Project context auto-detected[/]");
+                if (projectContext.HasMLoopConfig)
+                {
+                    AnsiConsole.MarkupLine($"[grey]   Project: {projectContext.ProjectName ?? "Unnamed"}[/]");
+                    if (!string.IsNullOrEmpty(projectContext.LabelColumn))
+                        AnsiConsole.MarkupLine($"[grey]   Label: {projectContext.LabelColumn}[/]");
+                }
+                if (projectContext.DataFiles.Count > 0)
+                {
+                    AnsiConsole.MarkupLine($"[grey]   Data files: {projectContext.DataFiles.Count} found[/]");
+                }
+                AnsiConsole.WriteLine();
+            }
+
             AnsiConsole.MarkupLine($"[blue]❓ Query:[/] {query}");
             AnsiConsole.WriteLine();
+
+            // Enhance query with project context
+            var enhancedQuery = EnhanceQueryWithContext(query, projectContext);
 
             // Stream response
             await AnsiConsole.Status()
@@ -183,14 +253,14 @@ public static class AgentCommand
                     if (!string.IsNullOrEmpty(agentName))
                     {
                         AnsiConsole.MarkupLine($"[grey]Using agent: {agentName}[/]");
-                        await foreach (var chunk in orchestrator.StreamAsync(query, agentName))
+                        await foreach (var chunk in orchestrator.StreamAsync(enhancedQuery, agentName))
                         {
                             responseBuilder.Append(chunk);
                         }
                     }
                     else
                     {
-                        await foreach (var chunk in orchestrator.StreamWithAutoSelectionAsync(query))
+                        await foreach (var chunk in orchestrator.StreamWithAutoSelectionAsync(enhancedQuery))
                         {
                             responseBuilder.Append(chunk);
                         }
@@ -223,10 +293,38 @@ public static class AgentCommand
         IronbeesOrchestrator orchestrator,
         string? projectPath)
     {
+        // Load project context for auto-injection
+        var effectivePath = projectPath ?? Directory.GetCurrentDirectory();
+        var projectContext = LoadProjectContext(effectivePath);
+
         AnsiConsole.MarkupLine("[yellow]💬 Interactive mode[/]");
+
+        // Display auto-detected context
+        if (projectContext.HasMLoopConfig || projectContext.DataFiles.Count > 0)
+        {
+            AnsiConsole.MarkupLine("[grey]📁 Project context auto-detected[/]");
+            if (projectContext.HasMLoopConfig)
+            {
+                AnsiConsole.MarkupLine($"[grey]   Project: {projectContext.ProjectName ?? "Unnamed"}[/]");
+                if (!string.IsNullOrEmpty(projectContext.LabelColumn))
+                    AnsiConsole.MarkupLine($"[grey]   Label: {projectContext.LabelColumn}[/]");
+                if (!string.IsNullOrEmpty(projectContext.TaskType))
+                    AnsiConsole.MarkupLine($"[grey]   Task: {projectContext.TaskType}[/]");
+            }
+            if (projectContext.DataFiles.Count > 0)
+            {
+                AnsiConsole.MarkupLine($"[grey]   Data files: {projectContext.DataFiles.Count} found[/]");
+            }
+            if (projectContext.RecentExperiments.Count > 0)
+            {
+                AnsiConsole.MarkupLine($"[grey]   Experiments: {string.Join(", ", projectContext.RecentExperiments.Take(3))}[/]");
+            }
+        }
+
         AnsiConsole.MarkupLine("[grey]Type 'exit' or 'quit' to end conversation[/]");
         AnsiConsole.MarkupLine("[grey]Type '/agents' to list available agents[/]");
         AnsiConsole.MarkupLine("[grey]Type '/switch <agent-name>' to switch agent[/]");
+        AnsiConsole.MarkupLine("[grey]Type '/context' to show project context[/]");
         AnsiConsole.WriteLine();
 
         // Initialize conversation service with file-based persistence
@@ -277,12 +375,15 @@ public static class AgentCommand
             // Check for special commands
             if (userInput.StartsWith('/'))
             {
-                HandleSpecialCommand(userInput, orchestrator, ref currentAgent);
+                HandleSpecialCommand(userInput, orchestrator, ref currentAgent, projectContext);
                 continue;
             }
 
             // Add to conversation history
             conversationService.AddUserMessage(userInput);
+
+            // Enhance query with project context
+            var enhancedQuery = EnhanceQueryWithContext(userInput, projectContext);
 
             try
             {
@@ -293,7 +394,7 @@ public static class AgentCommand
 
                 if (!string.IsNullOrEmpty(currentAgent))
                 {
-                    await foreach (var chunk in orchestrator.StreamAsync(userInput, currentAgent))
+                    await foreach (var chunk in orchestrator.StreamAsync(enhancedQuery, currentAgent))
                     {
                         // Escape markup characters in streamed chunks
                         var escapedChunk = chunk.Replace("[", "[[").Replace("]", "]]");
@@ -303,7 +404,7 @@ public static class AgentCommand
                 }
                 else
                 {
-                    await foreach (var chunk in orchestrator.StreamWithAutoSelectionAsync(userInput))
+                    await foreach (var chunk in orchestrator.StreamWithAutoSelectionAsync(enhancedQuery))
                     {
                         // Escape markup characters in streamed chunks
                         var escapedChunk = chunk.Replace("[", "[[").Replace("]", "]]");
@@ -331,7 +432,8 @@ public static class AgentCommand
     private static void HandleSpecialCommand(
         string command,
         IronbeesOrchestrator orchestrator,
-        ref string? currentAgent)
+        ref string? currentAgent,
+        ProjectContext? projectContext = null)
     {
         var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var cmd = parts[0].ToLower();
@@ -359,6 +461,10 @@ public static class AgentCommand
                 AnsiConsole.MarkupLine("[green]✓[/] Switched to auto agent selection");
                 break;
 
+            case "/context":
+                DisplayProjectContext(projectContext);
+                break;
+
             case "/help":
                 DisplayInteractiveHelp();
                 break;
@@ -370,6 +476,59 @@ public static class AgentCommand
         }
 
         AnsiConsole.WriteLine();
+    }
+
+    private static void DisplayProjectContext(ProjectContext? context)
+    {
+        if (context == null)
+        {
+            AnsiConsole.MarkupLine("[yellow]No project context available[/]");
+            return;
+        }
+
+        AnsiConsole.MarkupLine("[blue]📁 Project Context[/]");
+        AnsiConsole.WriteLine();
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("[blue]Property[/]")
+            .AddColumn("[blue]Value[/]");
+
+        table.AddRow("Project Path", context.ProjectPath);
+        table.AddRow("Project Name", context.ProjectName ?? "[grey]Not set[/]");
+        table.AddRow("MLoop Config", context.HasMLoopConfig ? "[green]Found[/]" : "[grey]Not found[/]");
+        table.AddRow("Label Column", context.LabelColumn ?? "[grey]Not set[/]");
+        table.AddRow("Task Type", context.TaskType ?? "[grey]Not set[/]");
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        if (context.DataFiles.Count > 0)
+        {
+            AnsiConsole.MarkupLine($"[blue]📊 Data Files ({context.DataFiles.Count}):[/]");
+            var dataTable = new Table()
+                .Border(TableBorder.Simple)
+                .AddColumn("File")
+                .AddColumn("Size");
+
+            foreach (var file in context.DataFiles)
+            {
+                var sizeKb = file.SizeBytes / 1024.0;
+                dataTable.AddRow(file.RelativePath, $"{sizeKb:F1} KB");
+            }
+
+            AnsiConsole.Write(dataTable);
+            AnsiConsole.WriteLine();
+        }
+
+        if (context.RecentExperiments.Count > 0)
+        {
+            AnsiConsole.MarkupLine($"[blue]🧪 Recent Experiments:[/]");
+            foreach (var exp in context.RecentExperiments)
+            {
+                AnsiConsole.MarkupLine($"  - {exp}");
+            }
+        }
     }
 
     private static void DisplayAvailableAgents(IronbeesOrchestrator orchestrator)
@@ -411,6 +570,7 @@ public static class AgentCommand
             "[grey]/agents[/]          - List available AI agents\n" +
             "[grey]/switch <name>[/]   - Switch to specific agent\n" +
             "[grey]/auto[/]            - Enable auto agent selection\n" +
+            "[grey]/context[/]         - Show auto-detected project context\n" +
             "[grey]/help[/]            - Show this help message\n" +
             "[grey]exit / quit[/]      - Exit interactive mode"))
         {
@@ -492,5 +652,168 @@ public static class AgentCommand
             AnsiConsole.MarkupLine($"[red]Error:[/] {errorMessage}");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// Loads project context from mloop.yaml and scans for data files.
+    /// This context is injected into agent queries for automatic project awareness.
+    /// </summary>
+    private static ProjectContext LoadProjectContext(string projectPath)
+    {
+        var context = new ProjectContext { ProjectPath = projectPath };
+
+        // 1. Load mloop.yaml configuration
+        var yamlPath = Path.Combine(projectPath, "mloop.yaml");
+        if (File.Exists(yamlPath))
+        {
+            try
+            {
+                var yamlContent = File.ReadAllText(yamlPath);
+                var deserializer = new DeserializerBuilder()
+                    .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                    .IgnoreUnmatchedProperties()
+                    .Build();
+
+                var config = deserializer.Deserialize<MLoopConfig>(yamlContent);
+                if (config?.Models != null && config.Models.TryGetValue(ConfigDefaults.DefaultModelName, out var defaultModel))
+                {
+                    context.LabelColumn = defaultModel.Label;
+                    context.TaskType = defaultModel.Task;
+                    context.ProjectName = config.Project;
+                }
+                else
+                {
+                    // Try old format
+                    var oldConfig = deserializer.Deserialize<Dictionary<string, object?>>(yamlContent);
+                    if (oldConfig != null)
+                    {
+                        context.LabelColumn = oldConfig.TryGetValue("label_column", out var label) ? label?.ToString() : null;
+                        context.TaskType = oldConfig.TryGetValue("task", out var task) ? task?.ToString() : null;
+                        context.ProjectName = oldConfig.TryGetValue("name", out var name) ? name?.ToString() : null;
+                    }
+                }
+
+                context.HasMLoopConfig = true;
+            }
+            catch
+            {
+                // Ignore YAML parse errors
+            }
+        }
+
+        // 2. Scan for data files
+        var dataDirectories = new[] { "data", "datasets", "data/raw", "data/processed" };
+        foreach (var dir in dataDirectories)
+        {
+            var fullPath = Path.Combine(projectPath, dir);
+            if (Directory.Exists(fullPath))
+            {
+                var csvFiles = Directory.GetFiles(fullPath, "*.csv", SearchOption.TopDirectoryOnly);
+                foreach (var file in csvFiles.Take(10)) // Limit to first 10 files
+                {
+                    var relativePath = Path.GetRelativePath(projectPath, file);
+                    var fileInfo = new FileInfo(file);
+                    context.DataFiles.Add(new DataFileInfo
+                    {
+                        RelativePath = relativePath,
+                        FileName = fileInfo.Name,
+                        SizeBytes = fileInfo.Length
+                    });
+                }
+            }
+        }
+
+        // 3. Check for experiments
+        var experimentsDir = Path.Combine(projectPath, ".mloop", "experiments");
+        if (Directory.Exists(experimentsDir))
+        {
+            var experiments = Directory.GetDirectories(experimentsDir)
+                .Select(Path.GetFileName)
+                .Where(n => n != null)
+                .Cast<string>()
+                .OrderByDescending(n => n)
+                .Take(5)
+                .ToList();
+
+            context.RecentExperiments = experiments;
+        }
+
+        return context;
+    }
+
+    /// <summary>
+    /// Formats project context as a prefix for user queries.
+    /// </summary>
+    private static string FormatContextPrefix(ProjectContext context)
+    {
+        if (!context.HasMLoopConfig && context.DataFiles.Count == 0 && context.RecentExperiments.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("[Project Context - Auto-detected]");
+
+        if (context.HasMLoopConfig)
+        {
+            sb.AppendLine($"Project: {context.ProjectName ?? "Unnamed"}");
+            if (!string.IsNullOrEmpty(context.LabelColumn))
+                sb.AppendLine($"Label Column: {context.LabelColumn}");
+            if (!string.IsNullOrEmpty(context.TaskType))
+                sb.AppendLine($"Task Type: {context.TaskType}");
+        }
+
+        if (context.DataFiles.Count > 0)
+        {
+            sb.AppendLine($"Data Files ({context.DataFiles.Count} found):");
+            foreach (var file in context.DataFiles.Take(5))
+            {
+                var sizeKb = file.SizeBytes / 1024.0;
+                sb.AppendLine($"  - {file.RelativePath} ({sizeKb:F1} KB)");
+            }
+            if (context.DataFiles.Count > 5)
+                sb.AppendLine($"  ... and {context.DataFiles.Count - 5} more files");
+        }
+
+        if (context.RecentExperiments.Count > 0)
+        {
+            sb.AppendLine($"Recent Experiments: {string.Join(", ", context.RecentExperiments)}");
+        }
+
+        sb.AppendLine("[End Context]");
+        sb.AppendLine();
+        sb.AppendLine("User Query:");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Enhances a user query with project context.
+    /// </summary>
+    private static string EnhanceQueryWithContext(string query, ProjectContext context)
+    {
+        var prefix = FormatContextPrefix(context);
+        if (string.IsNullOrEmpty(prefix))
+            return query;
+
+        return prefix + query;
+    }
+
+    private class ProjectContext
+    {
+        public string ProjectPath { get; set; } = string.Empty;
+        public string? ProjectName { get; set; }
+        public string? LabelColumn { get; set; }
+        public string? TaskType { get; set; }
+        public bool HasMLoopConfig { get; set; }
+        public List<DataFileInfo> DataFiles { get; set; } = [];
+        public List<string> RecentExperiments { get; set; } = [];
+    }
+
+    private class DataFileInfo
+    {
+        public string RelativePath { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public long SizeBytes { get; set; }
     }
 }

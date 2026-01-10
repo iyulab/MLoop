@@ -5,7 +5,10 @@ using System.CommandLine;
 using Microsoft.Extensions.Logging;
 using MLoop.AIAgent.Core.Orchestration;
 using MLoop.AIAgent.Infrastructure;
+using MLoop.CLI.Infrastructure.Configuration;
 using Spectre.Console;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace MLoop.CLI.Commands;
 
@@ -148,11 +151,28 @@ public static class OrchestrateCommand
                 return 1;
             }
 
+            // Load project config (mloop.yaml) for fallback values
+            var (configLabelColumn, configTaskType) = LoadProjectConfig();
+
+            // Use CLI options first, then fall back to mloop.yaml config
+            var effectiveTarget = target ?? configLabelColumn;
+            var effectiveTaskType = taskType ?? configTaskType;
+
+            if (!string.IsNullOrEmpty(configLabelColumn) && string.IsNullOrEmpty(target))
+            {
+                AnsiConsole.MarkupLine($"[grey]Using label column from mloop.yaml:[/] [blue]{configLabelColumn}[/]");
+            }
+
+            if (!string.IsNullOrEmpty(configTaskType) && string.IsNullOrEmpty(taskType))
+            {
+                AnsiConsole.MarkupLine($"[grey]Using task type from mloop.yaml:[/] [blue]{configTaskType}[/]");
+            }
+
             // Build options
             var options = new OrchestrationOptions
             {
-                TargetColumn = target,
-                TaskType = taskType,
+                TargetColumn = effectiveTarget,
+                TaskType = effectiveTaskType,
                 MaxTrainingTimeSeconds = maxTime,
                 SkipHitl = skipHitl,
                 AutoApproveHighConfidence = autoApprove,
@@ -288,7 +308,15 @@ public static class OrchestrateCommand
             }
             else if (evt is HitlRequestedEvent hitlRequest)
             {
-                await PromptHitlDecisionAsync(hitlRequest);
+                // Auto-approve if --auto-approve flag is set (fixes non-interactive terminal issue)
+                if (options.AutoApproveHighConfidence)
+                {
+                    AnsiConsole.MarkupLine($"  [yellow]Auto-approved:[/] {hitlRequest.CheckpointName}");
+                }
+                else
+                {
+                    await PromptHitlDecisionAsync(hitlRequest);
+                }
             }
         }
 
@@ -457,5 +485,53 @@ public static class OrchestrateCommand
         }
 
         return "..." + path[^(maxLength - 3)..];
+    }
+
+    /// <summary>
+    /// Loads mloop.yaml configuration from the current directory.
+    /// Returns the default model's label and task type if available.
+    /// </summary>
+    private static (string? LabelColumn, string? TaskType) LoadProjectConfig()
+    {
+        var yamlPath = Path.Combine(Directory.GetCurrentDirectory(), "mloop.yaml");
+
+        if (!File.Exists(yamlPath))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var yamlContent = File.ReadAllText(yamlPath);
+
+            var deserializer = new DeserializerBuilder()
+                .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                .IgnoreUnmatchedProperties()
+                .Build();
+
+            // Try loading as new multi-model format
+            var config = deserializer.Deserialize<MLoopConfig>(yamlContent);
+
+            if (config?.Models != null && config.Models.TryGetValue(ConfigDefaults.DefaultModelName, out var defaultModel))
+            {
+                return (defaultModel.Label, defaultModel.Task);
+            }
+
+            // Try loading as old single-model format
+            var oldConfig = deserializer.Deserialize<Dictionary<string, object?>>(yamlContent);
+            if (oldConfig != null)
+            {
+                var labelColumn = oldConfig.TryGetValue("label_column", out var label) ? label?.ToString() : null;
+                var taskType = oldConfig.TryGetValue("task", out var task) ? task?.ToString() : null;
+                return (labelColumn, taskType);
+            }
+
+            return (null, null);
+        }
+        catch (Exception)
+        {
+            // Silently ignore config loading errors
+            return (null, null);
+        }
     }
 }

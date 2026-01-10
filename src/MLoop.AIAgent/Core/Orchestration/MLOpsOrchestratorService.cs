@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using Ironbees.Core.Goals;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using MLoop.AIAgent.Core.Models;
 
 namespace MLoop.AIAgent.Core.Orchestration;
 
@@ -23,6 +24,7 @@ public class MLOpsOrchestratorService
     private readonly OrchestrationSessionStore _sessionStore;
     private readonly AgentCoordinator _agentCoordinator;
     private readonly HITLCheckpointManager _hitlManager;
+    private readonly MLoopProjectManager _projectManager;
     private readonly ILogger<MLOpsOrchestratorService>? _logger;
 
     /// <summary>
@@ -36,12 +38,14 @@ public class MLOpsOrchestratorService
         IChatClient chatClient,
         OrchestrationSessionStore? sessionStore = null,
         AgenticSettings? agenticSettings = null,
+        MLoopProjectManager? projectManager = null,
         ILogger<MLOpsOrchestratorService>? logger = null)
     {
         _chatClient = chatClient;
         _sessionStore = sessionStore ?? new OrchestrationSessionStore();
         _agentCoordinator = new AgentCoordinator(chatClient, logger as ILogger<AgentCoordinator>);
         _hitlManager = new HITLCheckpointManager(agenticSettings);
+        _projectManager = projectManager ?? new MLoopProjectManager();
         _logger = logger;
     }
 
@@ -559,27 +563,107 @@ public class MLOpsOrchestratorService
             Description = "Training machine learning models"
         };
 
-        // TODO: Integrate with MLoop AutoML pipeline
-        // For now, create placeholder result
-        context.Training = new TrainingResult
+        yield return new ProgressUpdateEvent
         {
-            BestModelName = context.ModelRecommendation?.RecommendedTrainers.FirstOrDefault()?.TrainerName ?? "FastForest",
-            PrimaryMetricName = context.ModelRecommendation?.PrimaryMetric ?? "AUC",
-            PrimaryMetricValue = 0.85,
-            Metrics = new Dictionary<string, double>
-            {
-                ["AUC"] = 0.85,
-                ["Accuracy"] = 0.82,
-                ["F1Score"] = 0.80
-            },
-            TrainingDuration = TimeSpan.FromMinutes(5),
-            ModelsEvaluated = 10,
-            TopModels = [
-                new ModelSummary { ModelName = "FastForest", Score = 0.85, TrainingTime = TimeSpan.FromSeconds(30), Rank = 1 },
-                new ModelSummary { ModelName = "LightGbm", Score = 0.84, TrainingTime = TimeSpan.FromSeconds(25), Rank = 2 }
-            ],
-            Confidence = 0.80
+            SessionId = context.SessionId,
+            Percentage = 70,
+            CurrentOperation = "Executing AutoML training..."
         };
+
+        // Get training configuration from context
+        var metric = context.ModelRecommendation?.PrimaryMetric ?? "Accuracy";
+        var maxTime = context.Options.MaxTrainingTimeSeconds ?? 300;
+
+        // Use preprocessed data if available, otherwise use original data
+        var trainingDataPath = context.Preprocessing?.OutputFilePath ?? context.DataFilePath;
+
+        // Get project directory from data file path
+        var projectPath = Path.GetDirectoryName(Path.GetFullPath(context.DataFilePath));
+
+        // Build training config
+        var trainingConfig = new MLoopTrainingConfig
+        {
+            TimeSeconds = maxTime,
+            Metric = metric,
+            TestSplit = 0.2,
+            DataPath = trainingDataPath,
+            ExperimentName = $"exp-{context.SessionId}"
+        };
+
+        _logger?.LogInformation("Starting training: DataPath={DataPath}, Metric={Metric}, Time={Time}s",
+            trainingDataPath, metric, maxTime);
+
+        // Execute actual training via MLoopProjectManager
+        var trainingResult = await _projectManager.TrainModelAsync(trainingConfig, projectPath);
+
+        if (!trainingResult.Success)
+        {
+            _logger?.LogError("Training failed: {Error}", trainingResult.Error ?? trainingResult.Output);
+
+            context.Training = new TrainingResult
+            {
+                BestModelName = "None",
+                PrimaryMetricName = metric,
+                PrimaryMetricValue = 0,
+                TrainingDuration = DateTimeOffset.UtcNow - startTime,
+                ModelsEvaluated = 0,
+                Confidence = 0
+            };
+
+            context.Errors.Add(new OrchestrationError
+            {
+                State = OrchestrationState.Training,
+                Message = $"Training failed: {trainingResult.Error ?? "Unknown error"}",
+                Details = trainingResult.Output,
+                IsRecoverable = true
+            });
+        }
+        else
+        {
+            // Parse training results
+            var experimentId = trainingResult.Data.TryGetValue("ExperimentId", out var expId)
+                ? expId.ToString()
+                : null;
+            var bestTrainer = trainingResult.Data.TryGetValue("BestTrainer", out var trainer)
+                ? trainer.ToString() ?? "Unknown"
+                : context.ModelRecommendation?.RecommendedTrainers.FirstOrDefault()?.TrainerName ?? "FastForest";
+            var metricValue = trainingResult.Data.TryGetValue("MetricValue", out var mv) && mv is double d
+                ? d
+                : 0.0;
+
+            _logger?.LogInformation("Training completed: ExperimentId={ExperimentId}, BestTrainer={Trainer}, Metric={MetricValue}",
+                experimentId, bestTrainer, metricValue);
+
+            context.Training = new TrainingResult
+            {
+                BestModelName = bestTrainer,
+                PrimaryMetricName = metric,
+                PrimaryMetricValue = metricValue,
+                Metrics = new Dictionary<string, double>
+                {
+                    [metric] = metricValue
+                },
+                TrainingDuration = DateTimeOffset.UtcNow - startTime,
+                ModelsEvaluated = 1, // MLoop AutoML evaluates multiple internally
+                ExperimentId = experimentId,
+                TopModels = [
+                    new ModelSummary
+                    {
+                        ModelName = bestTrainer,
+                        Score = metricValue,
+                        TrainingTime = DateTimeOffset.UtcNow - startTime,
+                        Rank = 1
+                    }
+                ],
+                Confidence = metricValue > 0 ? 0.85 : 0.0
+            };
+
+            // Store experiment ID as artifact
+            if (!string.IsNullOrEmpty(experimentId))
+            {
+                context.Artifacts["experiment_id"] = experimentId;
+            }
+        }
 
         session.CreateCheckpoint("training-complete");
         await _sessionStore.SaveSessionAsync(session, cancellationToken);
@@ -594,7 +678,8 @@ public class MLOpsOrchestratorService
             {
                 ["best_model"] = context.Training.BestModelName,
                 ["score"] = context.Training.PrimaryMetricValue,
-                ["models_evaluated"] = context.Training.ModelsEvaluated
+                ["experiment_id"] = context.Training.ExperimentId ?? "N/A",
+                ["success"] = trainingResult.Success
             }
         };
     }

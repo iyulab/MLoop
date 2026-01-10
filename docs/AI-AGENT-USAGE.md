@@ -83,29 +83,57 @@ mloop agent "Is this dataset ready for ML training?" -a data-analyst
 
 ### 2.2 PreprocessingExpertAgent
 
-**Purpose**: Generate C# preprocessing scripts for MLoop
+**Purpose**: Generate C# preprocessing scripts and orchestrate incremental preprocessing workflows
 
 **Best For**:
 - Creating data transformation scripts
+- Incremental preprocessing for large datasets (100K+ records)
 - Handling complex preprocessing needs
 - Multi-file operations (join, merge)
 - Feature engineering
 
 **Example Queries**:
 ```bash
+# Standard preprocessing
 mloop agent "Handle missing values in the Age column" --agent preprocessing-expert
 mloop agent "Join customer.csv and orders.csv on customer_id" -a preprocessing-expert
 mloop agent "Create feature: days_since_last_purchase" -a preprocessing-expert
-mloop agent "Convert wide format to long format" -a preprocessing-expert
+
+# Incremental preprocessing (large datasets)
+mloop agent "Preprocess datasets/large-logs.csv incrementally" -a preprocessing-expert
+mloop preprocess data.csv --incremental --confidence-threshold 0.98
 ```
 
 **Capabilities**:
-- Generate `IPreprocessingScript` implementations
-- Sequential naming (01_*, 02_*, 03_*)
-- Multi-file join/merge operations
-- Wide-to-long transformations
-- Feature engineering scripts
-- Data cleaning transformations
+- **Script Generation**: Generate `IPreprocessingScript` implementations with sequential naming (01_*, 02_*, 03_*)
+- **Incremental Preprocessing**: 5-stage progressive sampling workflow for large datasets
+  - Stage 1 (0.1%): Initial exploration and schema discovery
+  - Stage 2 (0.5%): Pattern validation and auto-fix application
+  - Stage 3 (1.5%): Human-in-the-loop decisions for business logic
+  - Stage 4 (2.5%): Confidence checkpoint and final approval
+  - Stage 5 (100%): Bulk processing with validated rules
+- **Rule Discovery**: Automatic detection of 8 pattern types (missing values, outliers, encoding issues, etc.)
+- **Confidence Scoring**: Statistical validation with 98%+ confidence before bulk application
+- **Multi-file Operations**: Join, merge, and transformation scripts
+- **Feature Engineering**: Custom feature creation scripts
+
+**Incremental Preprocessing Workflow**:
+```bash
+# Start incremental preprocessing
+mloop agent "preprocess manufacturing-logs.csv incrementally" --agent preprocessing-expert
+
+# The agent will:
+# 1. Analyze 0.1% sample (100 records) → discover patterns
+# 2. Validate with 0.5% sample → apply auto-fixes
+# 3. Request human decisions for business logic
+# 4. Confirm 98%+ confidence at 2.5% sample
+# 5. Apply validated rules to all 100% records
+
+# Options:
+# --confidence-threshold 0.98    # Minimum confidence for auto-apply
+# --max-error-rate 0.01          # Stop if error rate exceeds 1%
+# --skip-hitl                     # Use defaults (no prompts)
+```
 
 **Output Format**:
 ```csharp
@@ -120,6 +148,12 @@ public class HandleMissingValues : IPreprocessingScript
     }
 }
 ```
+
+**Deliverables** (Incremental Mode):
+- `cleaned_data.csv` - Preprocessed dataset
+- `01_preprocess_*.cs` - Reusable preprocessing script
+- `exceptions.json` - Records that didn't fit rules
+- `preprocessing_report.md` - Detailed analysis report
 
 ### 2.3 ModelArchitectAgent
 

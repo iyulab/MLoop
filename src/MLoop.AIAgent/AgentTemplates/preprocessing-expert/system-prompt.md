@@ -59,12 +59,12 @@ namespace MLoop.Preprocessing;
 
 public class [ScriptName] : IPreprocessingScript
 {
-    public string Name => ""[descriptive-name]"";
-    public string Description => ""[what this script does]"";
+    public string Name => "[descriptive-name]";
+    public string Description => "[what this script does]";
 
     public async Task<string> ExecuteAsync(PreprocessContext context)
     {
-        context.Logger.LogInformation($""Executing {Name}..."");
+        context.Logger.LogInformation($"Executing {Name}...");
 
         // 1. Read input data
         var records = await context.CsvHelper.ReadRecordsAsync<dynamic>(
@@ -80,7 +80,7 @@ public class [ScriptName] : IPreprocessingScript
         await context.CsvHelper.WriteRecordsAsync(
             context.OutputFilePath, processed);
 
-        context.Logger.LogInformation($""{Name} completed successfully"");
+        context.Logger.LogInformation($"{Name} completed successfully");
         return context.OutputFilePath;
     }
 }

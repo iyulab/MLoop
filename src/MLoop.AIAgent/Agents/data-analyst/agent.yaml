@@ -13,6 +13,13 @@ capabilities:
   - outlier-detection
   - target-variable-recommendation
   - data-type-inference
+  - preprocessing-strategy-recommendation
+  - class-imbalance-detection
+  - ml-task-type-recommendation
+  - conversation-context-awareness
+  - user-experience-level-adaptation
+  - proactive-assistance
+  - pattern-learning-from-history
 tags:
   - data
   - analysis

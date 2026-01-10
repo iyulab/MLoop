@@ -1,7 +1,8 @@
+using System.ClientModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Ironbees.AgentMode.Configuration;
-using Ironbees.AgentMode.Providers;
+using Ironbees.AgentMode;
 using Ironbees.Core.Conversation;
 using Ironbees.Core.Guardrails;
 using Ironbees.Core.Middleware;
@@ -9,7 +10,7 @@ using Ironbees.Core.Streaming;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
-using MLoop.AIAgent.Agents;
+using OpenAI;
 
 namespace MLoop.AIAgent.Infrastructure;
 
@@ -135,9 +136,11 @@ public class IronbeesOrchestrator
 
         var logger = loggerFactory.CreateLogger<IronbeesOrchestrator>();
 
-        // Detect LLM configuration from environment
-        var config = DetectLLMConfiguration(logger);
+        // Create IChatClient using Microsoft.Extensions.AI ChatClientBuilder pattern
+        var chatClient = CreateChatClientFromEnvironment(loggerFactory, logger, useProductionSettings);
 
+        // Detect configuration for logging purposes
+        var config = DetectLLMConfiguration(logger);
         if (config == null)
         {
             throw new InvalidOperationException(
@@ -147,17 +150,6 @@ public class IronbeesOrchestrator
                 "  - AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_KEY + AZURE_OPENAI_MODEL (Azure)\n" +
                 "  - OPENAI_API_KEY + OPENAI_MODEL (OpenAI)");
         }
-
-        // Create base IChatClient using Agent Mode factory pattern
-        var registry = LLMProviderFactoryRegistry.CreateDefault();
-        var factory = registry.GetFactory(config.Provider);
-        var baseChatClient = factory.CreateChatClient(config);
-
-        // Build middleware pipeline (Ironbees middleware stack integration)
-        var chatClient = BuildMiddlewarePipeline(
-            baseChatClient,
-            loggerFactory,
-            useProductionSettings);
 
         // Create conversation store
         conversationsDirectory ??= Path.Combine(
@@ -245,6 +237,102 @@ public class IronbeesOrchestrator
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Creates an IChatClient from environment variables using Microsoft.Extensions.AI ChatClientBuilder pattern.
+    /// This replaces the deprecated LLMProviderFactoryRegistry pattern.
+    /// </summary>
+    private static IChatClient CreateChatClientFromEnvironment(
+        ILoggerFactory loggerFactory,
+        ILogger logger,
+        bool useProductionSettings)
+    {
+        IChatClient baseChatClient;
+
+        // Priority 1: GPUStack (local OpenAI-compatible endpoint)
+        var gpuStackEndpoint = Environment.GetEnvironmentVariable("GPUSTACK_ENDPOINT");
+        var gpuStackKey = Environment.GetEnvironmentVariable("GPUSTACK_API_KEY");
+        var gpuStackModel = Environment.GetEnvironmentVariable("GPUSTACK_MODEL") ?? "default";
+
+        if (!string.IsNullOrEmpty(gpuStackEndpoint) && !string.IsNullOrEmpty(gpuStackKey))
+        {
+            logger.LogInformation("Creating ChatClient for GPUStack: {Endpoint}, model: {Model}", gpuStackEndpoint, gpuStackModel);
+
+            var openAIClient = new OpenAIClient(new ApiKeyCredential(gpuStackKey), new OpenAIClientOptions
+            {
+                Endpoint = new Uri(gpuStackEndpoint)
+            });
+
+            baseChatClient = new ChatClientBuilder(
+                openAIClient.GetChatClient(gpuStackModel).AsIChatClient())
+                .UseFunctionInvocation()
+                .Build();
+        }
+        // Priority 2: Anthropic Claude
+        else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")))
+        {
+            var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!;
+            var anthropicModel = Environment.GetEnvironmentVariable("ANTHROPIC_MODEL") ?? "claude-sonnet-4-20250514";
+
+            logger.LogInformation("Creating ChatClient for Anthropic: model: {Model}", anthropicModel);
+
+            // TODO: Microsoft.Extensions.AI doesn't have native Anthropic support yet
+            // For now, use OpenAI-compatible wrapper or throw
+            // Issue reported to ironbees: https://github.com/iyulab-rnd/ironbees/issues/TBD
+            throw new NotSupportedException(
+                "Anthropic provider is not yet supported in Microsoft.Extensions.AI v10.x.\n" +
+                "Workaround: Use OPENAI_API_KEY or AZURE_OPENAI_* instead.\n" +
+                "Tracked in: https://github.com/iyulab-rnd/ironbees/issues/TBD");
+        }
+        // Priority 3: Azure OpenAI
+        else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")) &&
+                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AZURE_OPENAI_KEY")))
+        {
+            var azureEndpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")!;
+            var azureKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_KEY")!;
+            var azureModel = Environment.GetEnvironmentVariable("AZURE_OPENAI_MODEL") ?? "gpt-4o";
+
+            logger.LogInformation("Creating ChatClient for Azure OpenAI: {Endpoint}, deployment: {Model}", azureEndpoint, azureModel);
+
+            // Use OpenAIClient with Azure-specific endpoint configuration
+            var azureClient = new OpenAIClient(new ApiKeyCredential(azureKey), new OpenAIClientOptions
+            {
+                Endpoint = new Uri(azureEndpoint)
+            });
+
+            baseChatClient = new ChatClientBuilder(
+                azureClient.GetChatClient(azureModel).AsIChatClient())
+                .UseFunctionInvocation()
+                .Build();
+        }
+        // Priority 4: OpenAI
+        else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OPENAI_API_KEY")))
+        {
+            var openAIKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY")!;
+            var openAIModel = Environment.GetEnvironmentVariable("OPENAI_MODEL") ?? "gpt-4o-mini";
+
+            logger.LogInformation("Creating ChatClient for OpenAI: model: {Model}", openAIModel);
+
+            baseChatClient = new ChatClientBuilder(
+                new OpenAIClient(openAIKey)
+                    .GetChatClient(openAIModel)
+                    .AsIChatClient())
+                .UseFunctionInvocation()
+                .Build();
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "No LLM provider credentials found. Please set one of the following in .env file:\n" +
+                "  - GPUSTACK_ENDPOINT + GPUSTACK_API_KEY + GPUSTACK_MODEL (local)\n" +
+                "  - ANTHROPIC_API_KEY + ANTHROPIC_MODEL (Claude models - not yet supported)\n" +
+                "  - AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_KEY + AZURE_OPENAI_MODEL (Azure)\n" +
+                "  - OPENAI_API_KEY + OPENAI_MODEL (OpenAI)");
+        }
+
+        // Build middleware pipeline (Ironbees middleware stack integration)
+        return BuildMiddlewarePipeline(baseChatClient, loggerFactory, useProductionSettings);
     }
 
     /// <summary>

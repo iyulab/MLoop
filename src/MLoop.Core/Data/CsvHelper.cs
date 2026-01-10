@@ -144,6 +144,61 @@ public class CsvHelperImpl : ICsvHelper
     }
 
     /// <summary>
+    /// Writes data to CSV file with specified column order.
+    /// </summary>
+    public async Task<string> WriteAsync(
+        string path,
+        List<Dictionary<string, string>> data,
+        List<string>? columnOrder,
+        CancellationToken cancellationToken = default)
+    {
+        if (data == null || data.Count == 0)
+        {
+            throw new ArgumentException("Data cannot be null or empty", nameof(data));
+        }
+
+        var targetEncoding = System.Text.Encoding.UTF8;
+
+        // Ensure directory exists
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            Delimiter = ",",
+            HasHeaderRecord = true
+        };
+
+        using var writer = new StreamWriter(path, false, targetEncoding);
+        using var csv = new CsvWriter(writer, config);
+
+        // Use specified column order or get from first record
+        var headers = columnOrder ?? data[0].Keys.ToList();
+
+        // Write header
+        foreach (var header in headers)
+        {
+            csv.WriteField(header);
+        }
+        await csv.NextRecordAsync();
+
+        // Write records
+        foreach (var record in data)
+        {
+            foreach (var header in headers)
+            {
+                csv.WriteField(record.TryGetValue(header, out var value) ? value : string.Empty);
+            }
+            await csv.NextRecordAsync();
+        }
+
+        return Path.GetFullPath(path);
+    }
+
+    /// <summary>
     /// Reads CSV file headers only (first row).
     /// Useful for schema validation without loading entire file.
     /// </summary>

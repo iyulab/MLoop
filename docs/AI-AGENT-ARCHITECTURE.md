@@ -36,8 +36,8 @@ MLoop's AI Agent system provides intelligent ML workflow assistance through spec
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Ironbees Agent Mode | 0.1.5+ | Agent framework with ConversationalAgent |
-| Microsoft.Extensions.AI | 9.3.0 | LLM provider abstraction |
+| Ironbees Agent Mode | 0.4.1 | Agent framework with YAML-based templates |
+| Microsoft.Extensions.AI | 9.3.0+ | LLM provider abstraction |
 | .NET 10.0 | 10.0 | Runtime platform |
 | ML.NET | 5.0.0 | ML operations and model management |
 
@@ -177,10 +177,75 @@ ConversationalAgent (Ironbees)
 
 | Agent | Primary Role | Engine Integration |
 |-------|--------------|-------------------|
-| DataAnalystAgent | Dataset analysis & ML readiness | DataLoaderFactory |
-| PreprocessingExpertAgent | C# preprocessing script generation | FilePrepperImpl |
-| ModelArchitectAgent | Problem classification & AutoML config | ML.NET AutoML |
-| MLOpsManagerAgent | End-to-end workflow orchestration | MLoopProjectManager |
+| data-analyst | Dataset analysis & ML readiness | DataLoaderFactory |
+| preprocessing-expert | C# preprocessing script generation | FilePrepperImpl |
+| model-architect | Problem classification & AutoML config | ML.NET AutoML |
+| mlops-manager | End-to-end workflow orchestration | MLoopProjectManager |
+
+### 3.4 YAML-Based Agent Architecture (v0.4.1)
+
+Starting with Ironbees v0.4.1, agents are defined using YAML templates rather than C# classes:
+
+**Agent Directory Structure**:
+```
+src/MLoop.AIAgent/Agents/
+├── data-analyst/
+│   ├── agent.yaml           # Agent metadata and capabilities
+│   └── system-prompt.md     # System instructions
+├── model-architect/
+│   ├── agent.yaml
+│   └── system-prompt.md
+└── preprocessing-expert/
+    ├── agent.yaml
+    └── system-prompt.md
+```
+
+**agent.yaml Format**:
+```yaml
+name: data-analyst
+description: Expert data analyst specializing in ML dataset analysis
+version: 1.0.0
+model:
+  deployment: gpt-4
+  temperature: 0.5
+  maxTokens: 2000
+  topP: 0.9
+capabilities:
+  - data-structure-analysis
+  - statistical-summary
+  - conversation-context-awareness
+  - proactive-assistance
+tags:
+  - data
+  - analysis
+  - statistics
+```
+
+**Agent Orchestration**:
+```csharp
+// IronbeesOrchestrator loads agents from YAML templates
+var orchestrator = new IronbeesOrchestrator(
+    chatClient,
+    llmConfiguration,
+    conversationStore,
+    logger);
+
+// Initialize with agent directory
+await orchestrator.InitializeAsync(agentsDirectory);
+
+// Process requests with conversationId for memory
+var response = await orchestrator.ProcessAsync(
+    userMessage,
+    agentName: "data-analyst",
+    conversationId: conversationId);
+```
+
+**Benefits of YAML-Based Agents**:
+- **No Code Changes**: Update agent behavior by editing markdown/YAML
+- **Version Control**: Track agent evolution through git history
+- **Easy Experimentation**: Test different prompts without recompiling
+- **Clear Separation**: System prompts separate from orchestration logic
+- **Conversation Memory**: Built-in conversation persistence via FileSystemConversationStore
 
 ---
 
@@ -1040,9 +1105,17 @@ OPENAI_MODEL=gpt-4o-mini
 
 ---
 
-**Version**: 1.1.0
-**Last Updated**: 2024-12-30
+**Version**: 1.2.0
+**Last Updated**: 2026-01-07
 **Status**: Production Ready
+
+**Changelog v1.2.0**:
+- Updated to Ironbees v0.4.1 with YAML-based agent architecture
+- Added Section 3.4: YAML-Based Agent Architecture
+- Enhanced agents with conversation memory and context awareness
+- Added intelligent AutoML configuration with complexity-based time budgets
+- Enhanced feature engineering capabilities with domain-specific patterns
+- Added 15 LLM integration tests for agent validation
 
 **Changelog v1.1.0**:
 - Added Section 10: Advanced Features (Tool Use, Smart Agent Selection, Middleware Stack)

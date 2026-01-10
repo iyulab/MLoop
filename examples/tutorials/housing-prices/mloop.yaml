@@ -1,0 +1,12 @@
+project: housing-prices
+
+models:
+  default:
+    task: regression
+    label: Price
+    training:
+      time_limit_seconds: 45
+      metric: r_squared
+
+data:
+  train: datasets/houses.csv

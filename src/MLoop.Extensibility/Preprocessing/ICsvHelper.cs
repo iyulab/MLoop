@@ -69,6 +69,20 @@ public interface ICsvHelper
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Writes data to CSV file with specified column order.
+    /// </summary>
+    /// <param name="path">Output file path</param>
+    /// <param name="data">Data to write (list of dictionaries)</param>
+    /// <param name="columnOrder">Ordered list of column names to write (determines header and data order)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Path to written file</returns>
+    Task<string> WriteAsync(
+        string path,
+        List<Dictionary<string, string>> data,
+        List<string>? columnOrder,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reads CSV file headers only (first row).
     /// Useful for schema validation without loading entire file.
     /// </summary>

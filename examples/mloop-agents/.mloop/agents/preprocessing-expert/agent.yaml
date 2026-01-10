@@ -1,0 +1,22 @@
+name: preprocessing-expert
+description: Data preprocessing specialist for generating ML.NET preprocessing scripts
+version: 1.0.0
+model:
+  provider: openai-compatible
+  deployment: kanana-1.5
+  temperature: 0.4
+  maxTokens: 4000
+capabilities:
+  - preprocessing-script-generation
+  - data-cleaning-strategies
+  - feature-transformation
+  - encoding-recommendations
+  - normalization-strategies
+tags:
+  - machine-learning
+  - preprocessing
+  - data-cleaning
+  - feature-engineering
+metadata:
+  author: mloop
+  category: ml-preprocessing

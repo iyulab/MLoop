@@ -37,11 +37,15 @@ internal class Program
             EvaluateCommand.Create(),
             ValidateCommand.Create(),
             ExtensionsCommand.Create(),
+            NewCommand.Create(),
             StatusCommand.Create(),
 
             // Phase 2 Commands
             new ServeCommand(),
             new PipelineCommand(),
+
+            // Phase 4: Production Deployment
+            DockerCommand.Create(),
 
             // Phase 6: AI Agent Integration
             AgentCommand.Create(),
@@ -88,6 +92,7 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]extensions[/]  List all hooks and metrics");
         AnsiConsole.MarkupLine("  [green]status[/]      Show project status at a glance");
         AnsiConsole.MarkupLine("  [green]serve[/]       Start REST API for model serving");
+        AnsiConsole.MarkupLine("  [green]docker[/]      Generate Docker configuration for deployment");
         AnsiConsole.MarkupLine("  [green]pipeline[/]    Execute ML workflow from YAML");
         AnsiConsole.MarkupLine("  [green]agent[/]       Conversational AI agent for ML projects");
         AnsiConsole.MarkupLine("  [green]agents[/]      Manage AI agent installations");

@@ -260,7 +260,10 @@ public static class InitCommand
         await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(modelPath, "production"));
 
         // Extensibility: scripts/ folder structure for hooks and metrics
-        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(mloopPath, "scripts", "hooks"));
+        // Initialize hook directories (pre-train, post-train, pre-predict, post-evaluate)
+        var hookEngine = new MLoop.Core.Hooks.HookEngine(projectPath, new NullLogger());
+        hookEngine.InitializeDirectories();
+
         await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(mloopPath, "scripts", "metrics"));
     }
 
@@ -598,5 +601,14 @@ data:
             var destSubDir = Path.Combine(destDir, dirName);
             CopyDirectory(subDir, destSubDir);
         }
+    }
+
+    private class NullLogger : MLoop.Extensibility.Preprocessing.ILogger
+    {
+        public void Debug(string message) { }
+        public void Info(string message) { }
+        public void Warning(string message) { }
+        public void Error(string message) { }
+        public void Error(string message, Exception exception) { }
     }
 }

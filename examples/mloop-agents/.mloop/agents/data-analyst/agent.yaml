@@ -1,0 +1,23 @@
+name: data-analyst
+description: ML dataset analysis expert specializing in data profiling and feature engineering guidance
+version: 1.0.0
+model:
+  provider: openai-compatible
+  deployment: kanana-1.5
+  temperature: 0.3
+  maxTokens: 4000
+capabilities:
+  - dataset-profiling
+  - statistical-analysis
+  - feature-analysis
+  - data-quality-assessment
+  - missing-value-analysis
+  - outlier-detection
+tags:
+  - machine-learning
+  - data-analysis
+  - feature-engineering
+  - data-quality
+metadata:
+  author: mloop
+  category: ml-data-analysis

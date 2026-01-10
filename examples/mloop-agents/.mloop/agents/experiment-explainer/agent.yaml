@@ -1,0 +1,23 @@
+name: experiment-explainer
+description: ML experiment results interpreter and model performance advisor
+version: 1.0.0
+model:
+  provider: openai-compatible
+  deployment: kanana-1.5
+  temperature: 0.4
+  maxTokens: 4000
+capabilities:
+  - automl-algorithm-explanation
+  - metric-interpretation
+  - performance-analysis
+  - model-comparison
+  - improvement-suggestions
+  - beginner-friendly-explanations
+tags:
+  - machine-learning
+  - model-evaluation
+  - experiment-analysis
+  - ml-education
+metadata:
+  author: mloop
+  category: ml-experiment-analysis

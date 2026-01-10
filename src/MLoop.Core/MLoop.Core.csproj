@@ -12,7 +12,9 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" />
     <PackageReference Include="CsvHelper" />
+    <PackageReference Include="Microsoft.Data.Analysis" />
     <PackageReference Include="YamlDotNet" />
+    <PackageReference Include="Spectre.Console" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,7 +4,6 @@
 using Ironbees.Core.Goals;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using MLoop.AIAgent.Agents;
 using MLoop.AIAgent.Core.Models;
 
 namespace MLoop.AIAgent.Core.Orchestration;
@@ -30,7 +29,7 @@ public class AgentCoordinator
     }
 
     /// <summary>
-    /// Executes the data analysis phase using DataAnalystAgent.
+    /// Executes the data analysis phase using DataAnalyzer service.
     /// </summary>
     public async Task<DataAnalysisResult> ExecuteDataAnalysisAsync(
         OrchestrationContext context,
@@ -38,10 +37,9 @@ public class AgentCoordinator
     {
         _logger?.LogInformation("Starting data analysis for {DataFilePath}", context.DataFilePath);
 
-        var agent = new DataAnalystAgent(_chatClient);
-
-        // Use the agent's built-in analysis capability
-        var analysisReport = await agent.GetAnalysisReportAsync(context.DataFilePath);
+        // Use DataAnalyzer service directly (no longer using DataAnalystAgent wrapper)
+        var dataAnalyzer = new DataAnalyzer();
+        var analysisReport = await dataAnalyzer.AnalyzeAsync(context.DataFilePath);
 
         // Convert report to our result format
         var result = ConvertToDataAnalysisResult(analysisReport, context);
@@ -53,7 +51,7 @@ public class AgentCoordinator
     }
 
     /// <summary>
-    /// Executes the model recommendation phase using ModelArchitectAgent.
+    /// Executes the model recommendation phase using ModelRecommender service.
     /// </summary>
     public async Task<ModelRecommendationResult> ExecuteModelRecommendationAsync(
         OrchestrationContext context,
@@ -61,35 +59,19 @@ public class AgentCoordinator
     {
         _logger?.LogInformation("Starting model recommendation");
 
-        var agent = new ModelArchitectAgent(_chatClient);
+        // Use ModelRecommender service directly (no longer using ModelArchitectAgent wrapper)
+        var modelRecommender = new ModelRecommender();
 
         var analysis = context.DataAnalysis!;
-        var request = $"""
-            Based on the following data analysis, recommend models and AutoML configuration:
 
-            Dataset Summary:
-            - Rows: {analysis.RowCount:N0}
-            - Columns: {analysis.ColumnCount}
-            - Target: {analysis.DetectedTargetColumn}
-            - Task Type: {analysis.InferredTaskType}
-            - Data Quality: {analysis.DataQualityScore:P0}
+        // Convert DataAnalysisResult back to DataAnalysisReport for ModelRecommender
+        var analysisReport = ConvertToDataAnalysisReport(analysis);
 
-            Column Details:
-            {string.Join("\n", analysis.Columns.Select(c => $"- {c.Name}: {c.DataType} ({(c.IsCategorical ? "Categorical" : "Numeric")}, {c.MissingPercentage:P1} missing)"))}
+        // Get model recommendation from the service
+        var recommendation = modelRecommender.RecommendModel(analysisReport);
 
-            Please provide:
-            1. Recommended ML task type confirmation
-            2. Primary evaluation metric
-            3. Top 3-5 trainer/algorithm recommendations with rationale
-            4. AutoML configuration (training time, max models, etc.)
-            5. Any special considerations
-
-            {(context.Options.MaxTrainingTimeSeconds.HasValue ? $"Note: Maximum training time is {context.Options.MaxTrainingTimeSeconds}s" : "")}
-            """;
-
-        var response = await agent.RespondAsync(request, cancellationToken: cancellationToken);
-
-        var result = ParseModelRecommendationResponse(response, analysis);
+        // Convert to our result format
+        var result = ConvertToModelRecommendationResult(recommendation, analysis);
 
         _logger?.LogInformation("Model recommendation completed. Task: {TaskType}, Metric: {Metric}, Trainers: {Trainers}",
             result.TaskType, result.PrimaryMetric, string.Join(", ", result.RecommendedTrainers.Select(t => t.TrainerName)));
@@ -121,85 +103,48 @@ public class AgentCoordinator
         OrchestrationContext context,
         CancellationToken cancellationToken)
     {
-        var agent = new PreprocessingExpertAgent(_chatClient);
+        // Use PreprocessingScriptGenerator service directly (no longer using PreprocessingExpertAgent wrapper)
+        var scriptGenerator = new PreprocessingScriptGenerator();
 
         var analysis = context.DataAnalysis!;
-        var request = $"""
-            Create a preprocessing pipeline for the dataset:
 
-            Dataset: {context.DataFilePath}
-            Target: {analysis.DetectedTargetColumn}
-            Task Type: {analysis.InferredTaskType}
+        // Convert DataAnalysisResult back to DataAnalysisReport for PreprocessingScriptGenerator
+        var analysisReport = ConvertToDataAnalysisReport(analysis);
 
-            Issues to Address:
-            {string.Join("\n", analysis.Issues.Select(i => $"- {i}"))}
+        // Generate preprocessing scripts from the service
+        var generationResult = scriptGenerator.GenerateScripts(analysisReport);
 
-            Recommendations:
-            {string.Join("\n", analysis.Recommendations.Select(r => $"- {r}"))}
+        // Convert to our result format
+        var result = ConvertToPreprocessingResult(generationResult, context, useIncremental: false);
 
-            Column Information:
-            {string.Join("\n", analysis.Columns.Select(c => $"- {c.Name}: {c.DataType}, Missing: {c.MissingPercentage:P1}"))}
+        _logger?.LogInformation("Preprocessing pipeline generated. Scripts: {ScriptCount}",
+            generationResult.Scripts.Count);
 
-            Please provide:
-            1. Step-by-step preprocessing pipeline
-            2. Handling for missing values
-            3. Feature encoding strategies
-            4. Feature scaling if needed
-            5. Output file path suggestion
-            """;
-
-        var response = await agent.RespondAsync(request, cancellationToken: cancellationToken);
-
-        return ParsePreprocessingResponse(response, context, useIncremental: false);
+        return await Task.FromResult(result);
     }
 
     private async Task<PreprocessingResult> ExecuteIncrementalPreprocessingAsync(
         OrchestrationContext context,
         CancellationToken cancellationToken)
     {
-        var analysis = context.DataAnalysis!;
+        // TODO: Implement incremental preprocessing using IncrementalPreprocessingAgent.yaml
+        // For now, use standard preprocessing
+        // In future: Invoke via IronbeesOrchestrator.StreamAsync("incremental-preprocessing", ...)
 
-        // Use ironbees AgenticSettings if available, otherwise create default
-        var agenticSettings = context.AgenticSettings ?? new AgenticSettings
-        {
-            Sampling = new SamplingSettings
-            {
-                Strategy = SamplingStrategy.Progressive,
-                InitialBatchSize = 1000,
-                GrowthFactor = 2,
-                MaxSamples = 50000
-            },
-            Confidence = new ConfidenceSettings
-            {
-                Threshold = 0.95,
-                StabilityWindow = 3
-            }
-        };
-
-        var agent = new IncrementalPreprocessingAgent(_chatClient, agenticSettings);
-
-        var request = $"""
-            Process this large dataset incrementally:
-
-            Dataset: {context.DataFilePath}
-            Rows: {analysis.RowCount:N0}
-            Target: {analysis.DetectedTargetColumn}
-
-            Use progressive sampling to discover preprocessing rules efficiently.
-            Apply discovered rules to the full dataset after validation.
-            """;
-
-        var response = await agent.RespondAsync(request, cancellationToken: cancellationToken);
-
-        return ParsePreprocessingResponse(response, context, useIncremental: true);
+        _logger?.LogWarning("Incremental preprocessing temporarily using standard preprocessing. Full implementation pending.");
+        return await ExecuteStandardPreprocessingAsync(context, cancellationToken);
     }
 
     /// <summary>
-    /// Creates the MLOps manager agent for deployment tasks.
+    /// Gets the chat client for creating custom agent interactions.
     /// </summary>
-    public MLOpsManagerAgent CreateMLOpsManager()
+    /// <remarks>
+    /// MLOps manager functionality should now be invoked via IronbeesOrchestrator.StreamAsync("mlops-manager", ...)
+    /// using the mlops-manager agent.yaml template.
+    /// </remarks>
+    public IChatClient GetChatClient()
     {
-        return new MLOpsManagerAgent(_chatClient);
+        return _chatClient;
     }
 
     // ========================================
@@ -345,25 +290,154 @@ public class AgentCoordinator
         };
     }
 
-    private PreprocessingResult ParsePreprocessingResponse(string response, OrchestrationContext context, bool useIncremental)
+    // ========================================
+    // Conversion Helper Methods
+    // ========================================
+
+    private static DataAnalysisReport ConvertToDataAnalysisReport(DataAnalysisResult result)
+    {
+        // Convert ColumnInfo back to ColumnAnalysis
+        var columns = result.Columns.Select(c => new ColumnAnalysis
+        {
+            Name = c.Name,
+            InferredType = c.DataType switch
+            {
+                "Categorical" => Models.DataType.Categorical,
+                "Numeric" => Models.DataType.Numeric,
+                "Boolean" => Models.DataType.Boolean,
+                "DateTime" => Models.DataType.DateTime,
+                "Text" => Models.DataType.Text,
+                _ => Models.DataType.Unknown
+            },
+            NonNullCount = result.RowCount - c.MissingCount,
+            NullCount = c.MissingCount,
+            UniqueCount = c.UniqueCount,
+            NumericStats = c.IsNumeric ? new NumericStatistics
+            {
+                Min = 0, Max = 0, Mean = 0, Median = 0,
+                StandardDeviation = 0, Variance = 0,
+                Q1 = 0, Q3 = 0
+            } : null,
+            CategoricalStats = c.IsCategorical ? new CategoricalStatistics
+            {
+                MostFrequentValue = "Unknown",
+                MostFrequentCount = 0,
+                ValueCounts = new Dictionary<string, int>()
+            } : null
+        }).ToList();
+
+        // Extract quality issues from result.Issues
+        var qualityIssues = new DataQualityIssues
+        {
+            ColumnsWithMissingValues = result.Issues
+                .Where(i => i.Contains("Missing values"))
+                .Select(i => i.Replace("Missing values in '", "").Replace("'", ""))
+                .ToList(),
+            ColumnsWithOutliers = result.Issues
+                .Where(i => i.Contains("Outliers"))
+                .Select(i => i.Replace("Outliers detected in '", "").Replace("'", ""))
+                .ToList(),
+            HighCardinalityColumns = result.Recommendations
+                .Where(r => r.Contains("High cardinality"))
+                .SelectMany(r => r.Split(':').Skip(1).FirstOrDefault()?.Split(',') ?? [])
+                .Select(s => s.Trim())
+                .ToList(),
+            DuplicateRowCount = 0,
+            ConstantColumns = new List<string>()
+        };
+
+        // Create target recommendation if target column is detected
+        TargetRecommendation? targetRecommendation = null;
+        if (!string.IsNullOrEmpty(result.DetectedTargetColumn))
+        {
+            targetRecommendation = new TargetRecommendation
+            {
+                ColumnName = result.DetectedTargetColumn,
+                ProblemType = result.InferredTaskType switch
+                {
+                    "BinaryClassification" => MLProblemType.BinaryClassification,
+                    "MulticlassClassification" => MLProblemType.MulticlassClassification,
+                    "Regression" => MLProblemType.Regression,
+                    _ => MLProblemType.BinaryClassification
+                },
+                Confidence = result.Confidence,
+                Reason = $"Inferred as {result.InferredTaskType} based on column characteristics"
+            };
+        }
+
+        return new DataAnalysisReport
+        {
+            FilePath = string.Empty, // Not available in DataAnalysisResult
+            RowCount = result.RowCount,
+            ColumnCount = result.ColumnCount,
+            FileSizeBytes = 0, // Not available
+            Columns = columns,
+            RecommendedTarget = targetRecommendation,
+            QualityIssues = qualityIssues,
+            MLReadiness = new MLReadinessAssessment
+            {
+                IsReady = result.DataQualityScore >= 0.6,
+                ReadinessScore = result.DataQualityScore,
+                BlockingIssues = result.Issues.Where(i => i.Contains("missing") || i.Contains("required")).ToList(),
+                Warnings = result.Issues.Except(result.Issues.Where(i => i.Contains("missing") || i.Contains("required"))).ToList(),
+                Recommendations = result.Recommendations
+            },
+            AnalyzedAt = DateTime.UtcNow
+        };
+    }
+
+    private static ModelRecommendationResult ConvertToModelRecommendationResult(
+        ModelRecommendation recommendation,
+        DataAnalysisResult analysis)
+    {
+        // Convert string list of trainers to TrainerRecommendation objects for orchestration
+        var trainers = recommendation.RecommendedTrainers.Select((trainerName, index) => new TrainerRecommendation
+        {
+            TrainerName = trainerName,
+            Reason = $"Recommended for {recommendation.ProblemType}",
+            Priority = index + 1
+        }).ToList();
+
+        return new ModelRecommendationResult
+        {
+            TaskType = recommendation.ProblemType.ToString(),
+            PrimaryMetric = recommendation.PrimaryMetric,
+            RecommendedTrainers = trainers,
+            AutoMLConfig = new AutoMLConfiguration
+            {
+                MaxTrainingTimeSeconds = recommendation.RecommendedTrainingTimeSeconds,
+                MaxModels = recommendation.RecommendedTrainers.Count
+            },
+            Rationale = recommendation.Reasoning,
+            Confidence = recommendation.Confidence
+        };
+    }
+
+    private static PreprocessingResult ConvertToPreprocessingResult(
+        PreprocessingScriptGenerationResult generationResult,
+        OrchestrationContext context,
+        bool useIncremental)
     {
         var analysis = context.DataAnalysis!;
+
+        // Convert PreprocessingScriptInfo to PreprocessingStep
+        var steps = generationResult.Scripts.Select(script => new PreprocessingStep
+        {
+            Name = script.Name,
+            Description = script.Description
+        }).ToList();
 
         return new PreprocessingResult
         {
             OutputFilePath = GetPreprocessedOutputPath(context),
-            Steps = [
-                new PreprocessingStep { Name = "Missing Value Handling", Description = "Impute or remove missing values" },
-                new PreprocessingStep { Name = "Feature Encoding", Description = "Encode categorical variables" },
-                new PreprocessingStep { Name = "Feature Scaling", Description = "Normalize numeric features" }
-            ],
+            Steps = steps,
             RowsBefore = analysis.RowCount,
-            RowsAfter = analysis.RowCount, // May change after preprocessing
+            RowsAfter = analysis.RowCount, // May change after preprocessing execution
             ColumnsBefore = analysis.ColumnCount,
-            ColumnsAfter = analysis.ColumnCount, // May change
+            ColumnsAfter = analysis.ColumnCount, // May change after preprocessing execution
             UsedIncrementalProcessing = useIncremental,
-            Confidence = 0.80,
-            PipelineDefinition = response
+            Confidence = 0.90, // High confidence for rule-based script generation
+            PipelineDefinition = generationResult.Summary
         };
     }
 

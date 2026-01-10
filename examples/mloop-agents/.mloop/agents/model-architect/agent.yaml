@@ -1,0 +1,22 @@
+name: model-architect
+description: ML model selection and architecture advisor for ML.NET AutoML
+version: 1.0.0
+model:
+  provider: openai-compatible
+  deployment: kanana-1.5
+  temperature: 0.5
+  maxTokens: 4000
+capabilities:
+  - model-recommendation
+  - algorithm-selection
+  - hyperparameter-guidance
+  - performance-optimization
+  - architecture-design
+tags:
+  - machine-learning
+  - model-selection
+  - automl
+  - architecture
+metadata:
+  author: mloop
+  category: ml-modeling
