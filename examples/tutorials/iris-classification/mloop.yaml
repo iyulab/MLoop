@@ -1,0 +1,12 @@
+project: iris-classification
+
+models:
+  default:
+    task: multiclass-classification
+    label: Species
+    training:
+      time_limit_seconds: 30
+      metric: micro_accuracy
+
+data:
+  train: datasets/iris.csv

@@ -1,13 +1,22 @@
-name: Model Architect Agent
-description: |
-  Specializes in ML problem classification and AutoML configuration. Recommends optimal
-  training configurations for binary classification, multiclass classification, and regression
-  problems based on data characteristics and AutoML best practices.
-temperature: 0.0
-max_tokens: 4096
-system_prompt: system-prompt.md
-
-# Conversation history settings
-conversation_enabled: true
-max_history_turns: 10
-context_window_tokens: 8192
+name: model-architect
+description: ML architect specializing in problem classification and AutoML configuration
+model:
+  deployment: gpt-4o
+  temperature: 0.0
+  maxTokens: 4096
+capabilities:
+  - problem-classification
+  - model-recommendation
+  - automl-configuration
+  - metric-selection
+  - ml-architecture
+conversation:
+  enabled: true
+  max_history_turns: 10
+tools:
+  - name: classify_ml_problem
+    description: Identify problem type (binary/multiclass/regression)
+  - name: recommend_model
+    description: Recommend optimal ML.NET trainers
+  - name: configure_automl
+    description: Generate AutoML configuration

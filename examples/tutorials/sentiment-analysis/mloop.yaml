@@ -1,0 +1,12 @@
+project: sentiment-analysis
+
+models:
+  default:
+    task: binary-classification
+    label: Sentiment
+    training:
+      time_limit_seconds: 60
+      metric: accuracy
+
+data:
+  train: datasets/reviews.csv

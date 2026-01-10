@@ -16,4 +16,9 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- ML.NET required for hook contexts -->
+    <PackageReference Include="Microsoft.ML" />
+  </ItemGroup>
+
 </Project>

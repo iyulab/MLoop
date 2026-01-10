@@ -12,6 +12,13 @@ capabilities:
   - automl-configuration
   - metric-selection
   - hyperparameter-suggestion
+  - complexity-based-time-budget
+  - dataset-characteristics-analysis
+  - intelligent-configuration-recommendation
+  - conversation-context-awareness
+  - training-outcome-learning
+  - proactive-optimization-suggestions
+  - user-preference-adaptation
 tags:
   - ml
   - modeling

@@ -1,0 +1,22 @@
+name: mlops-manager
+description: MLOps and ML project lifecycle management expert for MLoop projects
+version: 1.0.0
+model:
+  provider: openai-compatible
+  deployment: kanana-1.5
+  temperature: 0.6
+  maxTokens: 4000
+capabilities:
+  - project-management
+  - workflow-orchestration
+  - experiment-tracking
+  - model-deployment
+  - production-monitoring
+tags:
+  - mlops
+  - project-management
+  - deployment
+  - monitoring
+metadata:
+  author: mloop
+  category: ml-operations
