@@ -152,12 +152,12 @@ Target:  mloop train --data /path/to/external/data.csv
 - [x] File categorization (backup, temp, merged, reserved)
 - [x] Summary report with suggestions (e.g., use --auto-merge)
 
-### Tier 3: FilePrepper Integration (v0.4.9 Available)
+### Tier 3: FilePrepper Integration ✅
 
-> **Status**: FilePrepper v0.4.9 released with all requested features.
-> MLoop needs to integrate these APIs into preprocessing pipeline.
+> **Status**: FilePrepper v0.4.9 features integrated into MLoop preprocessing APIs.
+> All FilePrepper transformations available through IFilePrepper and ICsvMerger interfaces.
 
-#### T4.7 Wide→Long Auto-Transform
+#### T4.7 Wide→Long Auto-Transform ✅
 **Problem**: Wide format data requires manual unpivot (006 dataset)
 **Solution**: ✅ FilePrepper v0.4.9 `Unpivot()` / `UnpivotSimple()` API
 ```csharp
@@ -169,10 +169,10 @@ pipeline.UnpivotSimple(
 ```
 - [x] Multi-column group support (FilePrepper)
 - [x] Empty row skipping (FilePrepper)
-- [ ] MLoop preprocessing script integration
-- [ ] Auto-detection heuristics in MLoop
+- [x] MLoop preprocessing script integration (IFilePrepper.UnpivotSimpleAsync)
+- [x] Auto-detection heuristics in MLoop
 
-#### T4.8 Korean DateTime Parsing
+#### T4.8 Korean DateTime Parsing ✅
 **Problem**: "오전/오후" format not supported (010 dataset)
 **Solution**: ✅ FilePrepper v0.4.3 `ParseKoreanTime()` API
 ```csharp
@@ -181,9 +181,9 @@ pipeline.ParseKoreanTime("Time", "ParsedTime")
 ```
 - [x] 오전/오후 pattern recognition (FilePrepper v0.4.3)
 - [x] DateTime conversion (FilePrepper)
-- [ ] MLoop preprocessing script integration
+- [x] MLoop preprocessing script integration (IFilePrepper.ParseKoreanTimeAsync)
 
-#### T4.9 Filename Metadata Extraction
+#### T4.9 Filename Metadata Extraction ✅
 **Problem**: Date info in filenames lost after merge (010 dataset)
 **Solution**: ✅ FilePrepper v0.4.9 `FilenameMetadataOptions` API
 ```csharp
@@ -193,7 +193,7 @@ DataPipeline.ConcatCsvAsync("data_*.csv", dir, hasHeader: true,
 - [x] Date extraction from filenames (FilePrepper)
 - [x] Preset patterns: DateOnly, SensorDate, Manufacturing, Category (FilePrepper)
 - [x] Custom regex patterns (FilePrepper)
-- [ ] MLoop `--auto-merge` integration
+- [x] MLoop `--auto-merge` integration (ICsvMerger.MergeWithMetadataAsync)
 
 ### Tier 4: MLoop Agent System (Internal Implementation)
 

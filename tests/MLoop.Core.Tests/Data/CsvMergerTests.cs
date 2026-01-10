@@ -220,4 +220,157 @@ public class CsvMergerTests : IDisposable
         Assert.Equal(2, groups[0].FilePaths.Count);
         Assert.Equal("date_series", groups[0].DetectedPattern);
     }
+
+    #region MergeWithMetadataAsync Tests
+
+    [Fact]
+    public async Task MergeWithMetadataAsync_AddsSourceColumn()
+    {
+        // Arrange
+        var csv1 = Path.Combine(_tempDirectory, "batch_001.csv");
+        var csv2 = Path.Combine(_tempDirectory, "batch_002.csv");
+        var output = Path.Combine(_tempDirectory, "merged.csv");
+
+        await File.WriteAllTextAsync(csv1, "Value\n100\n110");
+        await File.WriteAllTextAsync(csv2, "Value\n200\n210");
+
+        var options = new FilenameMetadataOptions
+        {
+            AddSourceColumn = true,
+            SourceColumnName = "SourceFile"
+        };
+
+        // Act
+        var result = await _csvMerger.MergeWithMetadataAsync([csv1, csv2], output, options);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Equal(4, result.TotalRows);
+
+        var mergedData = await _csvHelper.ReadAsync(output);
+        Assert.Equal(4, mergedData.Count);
+        Assert.Contains("SourceFile", mergedData[0].Keys);
+        Assert.Equal("batch_001.csv", mergedData[0]["SourceFile"]);
+        Assert.Equal("batch_002.csv", mergedData[2]["SourceFile"]);
+    }
+
+    [Fact]
+    public async Task MergeWithMetadataAsync_ExtractsDateFromFilename()
+    {
+        // Arrange
+        var csv1 = Path.Combine(_tempDirectory, "sensor_2024.01.15.csv");
+        var csv2 = Path.Combine(_tempDirectory, "sensor_2024.01.16.csv");
+        var output = Path.Combine(_tempDirectory, "merged.csv");
+
+        await File.WriteAllTextAsync(csv1, "Reading\n100");
+        await File.WriteAllTextAsync(csv2, "Reading\n200");
+
+        var options = new FilenameMetadataOptions
+        {
+            AddSourceColumn = false,
+            Preset = FilenameMetadataPreset.SensorDate
+        };
+
+        // Act
+        var result = await _csvMerger.MergeWithMetadataAsync([csv1, csv2], output, options);
+
+        // Assert
+        Assert.True(result.Success);
+
+        var mergedData = await _csvHelper.ReadAsync(output);
+        Assert.Equal(2, mergedData.Count);
+        Assert.Contains("FileDate", mergedData[0].Keys);
+        Assert.Equal("2024.01.15", mergedData[0]["FileDate"]);
+        Assert.Equal("2024.01.16", mergedData[1]["FileDate"]);
+    }
+
+    [Fact]
+    public async Task MergeWithMetadataAsync_WithCategoryPreset_ExtractsCategory()
+    {
+        // Arrange
+        var csv1 = Path.Combine(_tempDirectory, "normal.csv");
+        var csv2 = Path.Combine(_tempDirectory, "outlier.csv");
+        var output = Path.Combine(_tempDirectory, "merged.csv");
+
+        await File.WriteAllTextAsync(csv1, "Feature\n1.0\n1.1");
+        await File.WriteAllTextAsync(csv2, "Feature\n9.0\n9.1");
+
+        var options = new FilenameMetadataOptions
+        {
+            AddSourceColumn = false,
+            Preset = FilenameMetadataPreset.Category
+        };
+
+        // Act
+        var result = await _csvMerger.MergeWithMetadataAsync([csv1, csv2], output, options);
+
+        // Assert
+        Assert.True(result.Success);
+
+        var mergedData = await _csvHelper.ReadAsync(output);
+        Assert.Equal(4, mergedData.Count);
+        Assert.Contains("Category", mergedData[0].Keys);
+        Assert.Equal("normal", mergedData[0]["Category"]);
+        Assert.Equal("outlier", mergedData[2]["Category"]);
+    }
+
+    [Fact]
+    public async Task MergeWithMetadataAsync_WithCustomPattern_ExtractsMetadata()
+    {
+        // Arrange
+        var csv1 = Path.Combine(_tempDirectory, "machine_A1_001.csv");
+        var csv2 = Path.Combine(_tempDirectory, "machine_B2_002.csv");
+        var output = Path.Combine(_tempDirectory, "merged.csv");
+
+        await File.WriteAllTextAsync(csv1, "Value\n100");
+        await File.WriteAllTextAsync(csv2, "Value\n200");
+
+        var options = new FilenameMetadataOptions
+        {
+            AddSourceColumn = false,
+            CustomPatterns = new Dictionary<string, string>
+            {
+                ["MachineId"] = @"machine_([A-Z]\d+)_",
+                ["BatchNum"] = @"_(\d+)\.csv$"
+            }
+        };
+
+        // Act
+        var result = await _csvMerger.MergeWithMetadataAsync([csv1, csv2], output, options);
+
+        // Assert
+        Assert.True(result.Success);
+
+        var mergedData = await _csvHelper.ReadAsync(output);
+        Assert.Equal(2, mergedData.Count);
+        Assert.Contains("MachineId", mergedData[0].Keys);
+        Assert.Contains("BatchNum", mergedData[0].Keys);
+        Assert.Equal("A1", mergedData[0]["MachineId"]);
+        Assert.Equal("001", mergedData[0]["BatchNum"]);
+        Assert.Equal("B2", mergedData[1]["MachineId"]);
+        Assert.Equal("002", mergedData[1]["BatchNum"]);
+    }
+
+    [Fact]
+    public async Task MergeWithMetadataAsync_WithSchemaMismatch_ReturnsError()
+    {
+        // Arrange
+        var csv1 = Path.Combine(_tempDirectory, "file1.csv");
+        var csv2 = Path.Combine(_tempDirectory, "file2.csv");
+        var output = Path.Combine(_tempDirectory, "merged.csv");
+
+        await File.WriteAllTextAsync(csv1, "A,B\n1,2");
+        await File.WriteAllTextAsync(csv2, "X,Y\n3,4"); // Different schema
+
+        var options = new FilenameMetadataOptions();
+
+        // Act
+        var result = await _csvMerger.MergeWithMetadataAsync([csv1, csv2], output, options);
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.NotNull(result.Error);
+    }
+
+    #endregion
 }

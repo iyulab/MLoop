@@ -38,6 +38,21 @@ public interface ICsvMerger
     Task<CsvSchemaValidation> ValidateSchemaCompatibilityAsync(
         IEnumerable<string> paths,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Merges multiple CSV files with filename metadata extraction.
+    /// Extracts date, category, or custom patterns from filenames and adds as columns.
+    /// </summary>
+    /// <param name="sourcePaths">Paths to source CSV files</param>
+    /// <param name="outputPath">Path for merged output file</param>
+    /// <param name="metadataOptions">Options for filename metadata extraction</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Merge result with statistics</returns>
+    Task<CsvMergeResult> MergeWithMetadataAsync(
+        IEnumerable<string> sourcePaths,
+        string outputPath,
+        FilenameMetadataOptions metadataOptions,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -136,4 +151,84 @@ public class CsvSchemaValidation
     /// Validation message describing the result.
     /// </summary>
     public string? Message { get; init; }
+}
+
+/// <summary>
+/// Configuration for filename metadata extraction during merge.
+/// Extracts structured information from filenames and adds as columns.
+/// </summary>
+public class FilenameMetadataOptions
+{
+    /// <summary>
+    /// Whether to add a source filename column (default: true).
+    /// </summary>
+    public bool AddSourceColumn { get; set; } = true;
+
+    /// <summary>
+    /// Name for the source filename column (default: "SourceFile").
+    /// </summary>
+    public string SourceColumnName { get; set; } = "SourceFile";
+
+    /// <summary>
+    /// Whether to extract date from filename (default: false).
+    /// </summary>
+    public bool ExtractDate { get; set; } = false;
+
+    /// <summary>
+    /// Name for the extracted date column (default: "FileDate").
+    /// </summary>
+    public string DateColumnName { get; set; } = "FileDate";
+
+    /// <summary>
+    /// Regex pattern for date extraction. First capture group is used.
+    /// Example: @"(\d{4}[.\-]?\d{2}[.\-]?\d{2})"
+    /// </summary>
+    public string? DatePattern { get; set; }
+
+    /// <summary>
+    /// Custom regex patterns for metadata extraction.
+    /// Key: output column name, Value: regex pattern with capture group.
+    /// Example: { "BatchId", @"batch[_-]?(\d+)" }
+    /// </summary>
+    public Dictionary<string, string>? CustomPatterns { get; set; }
+
+    /// <summary>
+    /// Preset pattern for common filename formats.
+    /// </summary>
+    public FilenameMetadataPreset Preset { get; set; } = FilenameMetadataPreset.None;
+}
+
+/// <summary>
+/// Preset patterns for common filename metadata formats.
+/// </summary>
+public enum FilenameMetadataPreset
+{
+    /// <summary>
+    /// No preset pattern.
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// Date pattern: yyyy.MM.dd or yyyy-MM-dd or yyyyMMdd.
+    /// Extracts: FileDate
+    /// </summary>
+    DateOnly,
+
+    /// <summary>
+    /// Sensor data pattern: sensor-yyyy.MM.dd.csv.
+    /// Extracts: FileDate
+    /// </summary>
+    SensorDate,
+
+    /// <summary>
+    /// Manufacturing data pattern: batch_123_normal.csv.
+    /// Extracts: BatchId, Category
+    /// </summary>
+    Manufacturing,
+
+    /// <summary>
+    /// Category pattern: train.csv, test.csv, normal.csv, outlier.csv.
+    /// Extracts: Category
+    /// </summary>
+    Category
 }

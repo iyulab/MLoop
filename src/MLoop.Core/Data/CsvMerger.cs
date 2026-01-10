@@ -265,6 +265,241 @@ public class CsvMerger : ICsvMerger
         return Convert.ToHexString(hash)[..16];
     }
 
+    /// <inheritdoc />
+    public async Task<CsvMergeResult> MergeWithMetadataAsync(
+        IEnumerable<string> sourcePaths,
+        string outputPath,
+        FilenameMetadataOptions metadataOptions,
+        CancellationToken cancellationToken = default)
+    {
+        var paths = sourcePaths.ToList();
+        if (paths.Count == 0)
+        {
+            return new CsvMergeResult
+            {
+                Success = false,
+                Error = "No source files provided"
+            };
+        }
+
+        try
+        {
+            // Validate schema compatibility first
+            var validation = await ValidateSchemaCompatibilityAsync(paths, cancellationToken);
+            if (!validation.IsCompatible)
+            {
+                return new CsvMergeResult
+                {
+                    Success = false,
+                    Error = validation.Message ?? "Schema mismatch between files"
+                };
+            }
+
+            var allData = new List<Dictionary<string, string>>();
+            var rowsPerFile = new Dictionary<string, int>();
+
+            // Build metadata columns list
+            var metadataColumns = GetMetadataColumns(metadataOptions);
+            List<string>? columnOrder = null;
+
+            foreach (var path in paths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var fileName = Path.GetFileName(path);
+                var metadata = ExtractFilenameMetadata(fileName, metadataOptions);
+
+                var data = await _csvHelper.ReadAsync(path, cancellationToken: cancellationToken);
+                rowsPerFile[fileName] = data.Count;
+
+                if (columnOrder == null && data.Count > 0)
+                {
+                    columnOrder = data[0].Keys.ToList();
+                    // Add metadata columns to the front
+                    columnOrder = metadataColumns.Concat(columnOrder).ToList();
+                }
+
+                // Add metadata to each row
+                foreach (var row in data)
+                {
+                    foreach (var (key, value) in metadata)
+                    {
+                        row[key] = value;
+                    }
+                    allData.Add(row);
+                }
+            }
+
+            if (allData.Count == 0)
+            {
+                return new CsvMergeResult
+                {
+                    Success = false,
+                    Error = "No data found in source files"
+                };
+            }
+
+            // Write merged data with metadata columns first
+            await _csvHelper.WriteAsync(outputPath, allData, columnOrder, cancellationToken);
+
+            return new CsvMergeResult
+            {
+                Success = true,
+                OutputPath = Path.GetFullPath(outputPath),
+                TotalRows = allData.Count,
+                SourceFileCount = paths.Count,
+                RowsPerFile = rowsPerFile
+            };
+        }
+        catch (Exception ex)
+        {
+            return new CsvMergeResult
+            {
+                Success = false,
+                Error = $"Merge failed: {ex.Message}"
+            };
+        }
+    }
+
+    /// <summary>
+    /// Gets the list of metadata columns that will be added based on options.
+    /// </summary>
+    private static List<string> GetMetadataColumns(FilenameMetadataOptions options)
+    {
+        var columns = new List<string>();
+
+        if (options.AddSourceColumn)
+        {
+            columns.Add(options.SourceColumnName);
+        }
+
+        if (options.ExtractDate || options.Preset is FilenameMetadataPreset.DateOnly or FilenameMetadataPreset.SensorDate)
+        {
+            columns.Add(options.DateColumnName);
+        }
+
+        // Add preset-specific columns
+        var presetPatterns = GetPresetPatterns(options.Preset);
+        foreach (var (columnName, _) in presetPatterns)
+        {
+            if (!columns.Contains(columnName))
+            {
+                columns.Add(columnName);
+            }
+        }
+
+        // Add custom pattern columns
+        if (options.CustomPatterns != null)
+        {
+            foreach (var columnName in options.CustomPatterns.Keys)
+            {
+                if (!columns.Contains(columnName))
+                {
+                    columns.Add(columnName);
+                }
+            }
+        }
+
+        return columns;
+    }
+
+    /// <summary>
+    /// Extracts metadata from filename based on options.
+    /// </summary>
+    private static Dictionary<string, string> ExtractFilenameMetadata(string filename, FilenameMetadataOptions options)
+    {
+        var metadata = new Dictionary<string, string>();
+
+        // Add source filename
+        if (options.AddSourceColumn)
+        {
+            metadata[options.SourceColumnName] = filename;
+        }
+
+        // Extract date if configured
+        if (options.ExtractDate || options.Preset is FilenameMetadataPreset.DateOnly or FilenameMetadataPreset.SensorDate)
+        {
+            var datePattern = options.DatePattern ?? GetDefaultDatePattern(options.Preset);
+            if (!string.IsNullOrEmpty(datePattern))
+            {
+                var match = Regex.Match(filename, datePattern);
+                if (match.Success && match.Groups.Count > 1)
+                {
+                    metadata[options.DateColumnName] = match.Groups[1].Value;
+                }
+                else
+                {
+                    metadata[options.DateColumnName] = "";
+                }
+            }
+        }
+
+        // Apply preset patterns
+        var presetPatterns = GetPresetPatterns(options.Preset);
+        foreach (var (columnName, pattern) in presetPatterns)
+        {
+            if (metadata.ContainsKey(columnName)) continue;
+
+            var match = Regex.Match(filename, pattern, RegexOptions.IgnoreCase);
+            metadata[columnName] = match.Success && match.Groups.Count > 1 ? match.Groups[1].Value : "";
+        }
+
+        // Apply custom patterns
+        if (options.CustomPatterns != null)
+        {
+            foreach (var (columnName, pattern) in options.CustomPatterns)
+            {
+                if (metadata.ContainsKey(columnName)) continue;
+
+                var match = Regex.Match(filename, pattern, RegexOptions.IgnoreCase);
+                metadata[columnName] = match.Success && match.Groups.Count > 1 ? match.Groups[1].Value : "";
+            }
+        }
+
+        return metadata;
+    }
+
+    /// <summary>
+    /// Gets the default date pattern for a preset.
+    /// </summary>
+    private static string? GetDefaultDatePattern(FilenameMetadataPreset preset)
+    {
+        return preset switch
+        {
+            FilenameMetadataPreset.DateOnly => @"(\d{4}[.\-]?\d{2}[.\-]?\d{2})",
+            FilenameMetadataPreset.SensorDate => @"(\d{4}\.\d{2}\.\d{2})",
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Gets regex patterns for preset metadata types.
+    /// </summary>
+    private static List<(string ColumnName, string Pattern)> GetPresetPatterns(FilenameMetadataPreset preset)
+    {
+        return preset switch
+        {
+            FilenameMetadataPreset.DateOnly => new List<(string, string)>
+            {
+                ("FileDate", @"(\d{4}[.\-]?\d{2}[.\-]?\d{2})")
+            },
+            FilenameMetadataPreset.SensorDate => new List<(string, string)>
+            {
+                ("FileDate", @"(\d{4}\.\d{2}\.\d{2})")
+            },
+            FilenameMetadataPreset.Manufacturing => new List<(string, string)>
+            {
+                ("BatchId", @"batch[_\-]?(\d+)"),
+                ("Category", @"(normal|outlier|train|test|valid)")
+            },
+            FilenameMetadataPreset.Category => new List<(string, string)>
+            {
+                ("Category", @"(normal|outlier|train|test|valid)")
+            },
+            _ => new List<(string, string)>()
+        };
+    }
+
     /// <summary>
     /// Detects merge pattern from filenames.
     /// </summary>
