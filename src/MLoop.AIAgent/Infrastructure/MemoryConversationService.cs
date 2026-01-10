@@ -8,42 +8,42 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace MLoop.AIAgent.Infrastructure;
 
 /// <summary>
-/// Enhanced conversation service with memory-indexer integration.
-/// Combines Ironbees FileSystemConversationStore with VirtualContextManager for semantic memory.
+/// Conversation service with semantic memory integration.
+/// Combines Ironbees ConversationService with VirtualContextManager for semantic memory.
 /// </summary>
-public class EnhancedConversationService : IDisposable
+public class MemoryConversationService : IDisposable
 {
     private readonly IVirtualContextManager _vcm;
-    private readonly IRecentlyBuffer _recentlyBuffer;
-    private readonly ConversationService _legacyStore;
-    private readonly ILogger<EnhancedConversationService> _logger;
+    private readonly IBuffer _buffer;
+    private readonly ConversationService _fileStore;
+    private readonly ILogger<MemoryConversationService> _logger;
     private string? _currentUserId;
     private string? _currentSessionId;
     private bool _memoryEnabled;
     private bool _disposed;
 
     /// <summary>
-    /// Initializes EnhancedConversationService with memory-indexer VCM.
+    /// Initializes MemoryConversationService with memory-indexer VCM.
     /// </summary>
     /// <param name="vcm">Virtual Context Manager for semantic memory.</param>
-    /// <param name="recentlyBuffer">Recently buffer for conversation staging.</param>
-    /// <param name="conversationsDirectory">Directory for legacy conversation storage.</param>
+    /// <param name="buffer">Buffer for conversation staging.</param>
+    /// <param name="conversationsDirectory">Directory for file-based conversation storage.</param>
     /// <param name="memoryEnabled">Enable memory-indexer features (default: true).</param>
     /// <param name="logger">Optional logger.</param>
-    public EnhancedConversationService(
+    public MemoryConversationService(
         IVirtualContextManager vcm,
-        IRecentlyBuffer recentlyBuffer,
+        IBuffer buffer,
         string conversationsDirectory,
         bool memoryEnabled = true,
-        ILogger<EnhancedConversationService>? logger = null)
+        ILogger<MemoryConversationService>? logger = null)
     {
         _vcm = vcm ?? throw new ArgumentNullException(nameof(vcm));
-        _recentlyBuffer = recentlyBuffer ?? throw new ArgumentNullException(nameof(recentlyBuffer));
-        _legacyStore = new ConversationService(conversationsDirectory);
+        _buffer = buffer ?? throw new ArgumentNullException(nameof(buffer));
+        _fileStore = new ConversationService(conversationsDirectory);
         _memoryEnabled = memoryEnabled;
-        _logger = logger ?? NullLogger<EnhancedConversationService>.Instance;
+        _logger = logger ?? NullLogger<MemoryConversationService>.Instance;
 
-        _logger.LogInformation("EnhancedConversationService initialized (memory: {Enabled})", _memoryEnabled);
+        _logger.LogInformation("MemoryConversationService initialized (memory: {Enabled})", _memoryEnabled);
     }
 
     #region Conversation Management
@@ -67,8 +67,8 @@ public class EnhancedConversationService : IDisposable
         _currentUserId = userId;
         _currentSessionId = conversationId;
 
-        // Legacy conversation store
-        await _legacyStore.StartOrResumeAsync(conversationId, agentName, cancellationToken);
+        // File-based conversation store
+        await _fileStore.StartOrResumeAsync(conversationId, agentName, cancellationToken);
 
         // Initialize VCM session if memory enabled
         if (_memoryEnabled)
@@ -93,10 +93,10 @@ public class EnhancedConversationService : IDisposable
         if (string.IsNullOrWhiteSpace(message))
             return;
 
-        // Legacy store
-        _legacyStore.AddUserMessage(message);
+        // File store
+        _fileStore.AddUserMessage(message);
 
-        // Memory-indexer: Add to Recently Buffer
+        // Memory-indexer: Add to Buffer
         if (_memoryEnabled && _currentUserId != null && _currentSessionId != null)
         {
             var metadata = new Dictionary<string, string>
@@ -104,7 +104,7 @@ public class EnhancedConversationService : IDisposable
                 ["timestamp"] = DateTimeOffset.UtcNow.ToString("O")
             };
 
-            await _recentlyBuffer.EnqueueAsync(
+            await _buffer.EnqueueAsync(
                 message,
                 _currentUserId,
                 _currentSessionId,
@@ -112,7 +112,7 @@ public class EnhancedConversationService : IDisposable
                 metadata,
                 cancellationToken);
 
-            _logger.LogDebug("Added user message to Recently Buffer");
+            _logger.LogDebug("Added user message to Buffer");
         }
     }
 
@@ -128,10 +128,10 @@ public class EnhancedConversationService : IDisposable
         if (string.IsNullOrWhiteSpace(response))
             return;
 
-        // Legacy store
-        _legacyStore.AddAgentResponse(response);
+        // File store
+        _fileStore.AddAgentResponse(response);
 
-        // Memory-indexer: Add to Recently Buffer
+        // Memory-indexer: Add to Buffer
         if (_memoryEnabled && _currentUserId != null && _currentSessionId != null)
         {
             var metadata = new Dictionary<string, string>
@@ -139,7 +139,7 @@ public class EnhancedConversationService : IDisposable
                 ["timestamp"] = DateTimeOffset.UtcNow.ToString("O")
             };
 
-            await _recentlyBuffer.EnqueueAsync(
+            await _buffer.EnqueueAsync(
                 response,
                 _currentUserId,
                 _currentSessionId,
@@ -147,7 +147,7 @@ public class EnhancedConversationService : IDisposable
                 metadata,
                 cancellationToken);
 
-            _logger.LogDebug("Added agent response to Recently Buffer");
+            _logger.LogDebug("Added agent response to Buffer");
         }
     }
 
@@ -157,18 +157,18 @@ public class EnhancedConversationService : IDisposable
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task SaveCurrentAsync(CancellationToken cancellationToken = default)
     {
-        await _legacyStore.SaveCurrentAsync(cancellationToken);
+        await _fileStore.SaveCurrentAsync(cancellationToken);
         _logger.LogDebug("Saved conversation state");
     }
 
     /// <summary>
     /// Gets current conversation history.
     /// </summary>
-    public IReadOnlyList<ChatMessage> CurrentHistory => _legacyStore.CurrentHistory;
+    public IReadOnlyList<ChatMessage> CurrentHistory => _fileStore.CurrentHistory;
 
     #endregion
 
-    #region Memory-Enhanced Features
+    #region Memory Features
 
     /// <summary>
     /// Retrieves relevant memories for the given query using semantic search.
@@ -213,13 +213,13 @@ public class EnhancedConversationService : IDisposable
     }
 
     /// <summary>
-    /// Builds enhanced prompt with memory context.
+    /// Builds prompt with memory context.
     /// </summary>
     /// <param name="userQuery">Current user query.</param>
     /// <param name="systemPrompt">Base system prompt.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Enhanced system prompt with memory context.</returns>
-    public async Task<string> BuildMemoryEnhancedPromptAsync(
+    /// <returns>System prompt with memory context.</returns>
+    public async Task<string> BuildMemoryPromptAsync(
         string userQuery,
         string systemPrompt,
         CancellationToken cancellationToken = default)
@@ -243,9 +243,9 @@ public class EnhancedConversationService : IDisposable
         memoryContext.AppendLine();
 
         // Group memories by tier
-        var workingMemories = memories.Where(m => m.Tier == MemoryTier.Working).ToList();
-        var sessionMemories = memories.Where(m => m.Tier == MemoryTier.Session).ToList();
-        var userMemories = memories.Where(m => m.Tier == MemoryTier.User).ToList();
+        var workingMemories = memories.Where(m => m.Tier == Tier.Short).ToList();
+        var sessionMemories = memories.Where(m => m.Tier == Tier.Long).ToList();
+        var userMemories = memories.Where(m => m.Tier == Tier.Archive).ToList();
 
         // User profile facts (Tier 3)
         if (userMemories.Count > 0)
@@ -284,7 +284,7 @@ public class EnhancedConversationService : IDisposable
     }
 
     /// <summary>
-    /// Chat with automatic memory enhancement.
+    /// Chat with automatic memory integration.
     /// </summary>
     /// <param name="userMessage">User message.</param>
     /// <param name="systemPrompt">Base system prompt.</param>
@@ -292,7 +292,7 @@ public class EnhancedConversationService : IDisposable
     /// <param name="options">Chat options.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Agent response.</returns>
-    public async Task<string> ChatWithMemoryAsync(
+    public async Task<string> ChatAsync(
         string userMessage,
         string systemPrompt,
         IChatClient chatClient,
@@ -302,14 +302,14 @@ public class EnhancedConversationService : IDisposable
         // Add user message
         await AddUserMessageAsync(userMessage, cancellationToken);
 
-        // Build enhanced prompt with memories
-        var enhancedPrompt = await BuildMemoryEnhancedPromptAsync(
+        // Build prompt with memories
+        var prompt = await BuildMemoryPromptAsync(
             userMessage,
             systemPrompt,
             cancellationToken);
 
         // Get messages for LLM
-        var messages = _legacyStore.GetMessagesForLLM(enhancedPrompt).ToList();
+        var messages = _fileStore.GetMessagesForLLM(prompt).ToList();
 
         // Get response
         var response = await chatClient.GetResponseAsync(messages, options, cancellationToken);
@@ -333,7 +333,7 @@ public class EnhancedConversationService : IDisposable
     /// </summary>
     public void SetProjectContext(string projectPath)
     {
-        _legacyStore.SetProjectContext(projectPath);
+        _fileStore.SetProjectContext(projectPath);
     }
 
     /// <summary>
@@ -341,7 +341,7 @@ public class EnhancedConversationService : IDisposable
     /// </summary>
     public void SetDataFileContext(string dataFile)
     {
-        _legacyStore.SetDataFileContext(dataFile);
+        _fileStore.SetDataFileContext(dataFile);
     }
 
     /// <summary>
@@ -349,16 +349,16 @@ public class EnhancedConversationService : IDisposable
     /// </summary>
     public async Task<string> GetContextSummaryAsync(CancellationToken cancellationToken = default)
     {
-        var legacySummary = _legacyStore.GetContextSummary();
+        var summary = _fileStore.GetContextSummary();
 
         if (!_memoryEnabled || !IsVcmInitialized())
         {
-            return legacySummary;
+            return summary;
         }
 
         var stats = await GetWorkingMemoryAsync(cancellationToken);
 
-        return $"{legacySummary}\n" +
+        return $"{summary}\n" +
                $"Working Memory: {stats.WorkingMemoryCount} items ({stats.WorkingMemoryTokens} tokens)\n" +
                $"Saturation: {stats.SaturationPercentage:F1}% ({stats.SaturationLevel})";
     }
@@ -406,7 +406,7 @@ public class EnhancedConversationService : IDisposable
 
         if (disposing)
         {
-            _legacyStore?.Dispose();
+            _fileStore?.Dispose();
         }
 
         _disposed = true;

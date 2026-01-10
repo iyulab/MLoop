@@ -75,26 +75,26 @@ public static class MemoryServiceExtensions
     }
 
     /// <summary>
-    /// Adds EnhancedConversationService with memory integration.
+    /// Adds MemoryConversationService with memory integration.
     /// </summary>
     /// <param name="services">Service collection.</param>
-    /// <param name="conversationsDirectory">Directory for legacy conversation storage.</param>
+    /// <param name="conversationsDirectory">Directory for conversation storage.</param>
     /// <param name="memoryEnabled">Enable memory features.</param>
     /// <returns>Service collection for chaining.</returns>
-    public static IServiceCollection AddEnhancedConversationService(
+    public static IServiceCollection AddMemoryConversationService(
         this IServiceCollection services,
         string conversationsDirectory,
         bool memoryEnabled = true)
     {
-        services.AddScoped<EnhancedConversationService>(sp =>
+        services.AddScoped<MemoryConversationService>(sp =>
         {
             var vcm = sp.GetRequiredService<IVirtualContextManager>();
-            var recentlyBuffer = sp.GetRequiredService<IRecentlyBuffer>();
-            var logger = sp.GetService<ILogger<EnhancedConversationService>>();
+            var buffer = sp.GetRequiredService<IBuffer>();
+            var logger = sp.GetService<ILogger<MemoryConversationService>>();
 
-            return new EnhancedConversationService(
+            return new MemoryConversationService(
                 vcm,
-                recentlyBuffer,
+                buffer,
                 conversationsDirectory,
                 memoryEnabled,
                 logger);
