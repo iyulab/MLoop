@@ -292,9 +292,73 @@ public class FailureCaseLearningService
 | DI Integration | No | Yes | ✅ AddIntelligentMemoryServices() |
 
 ### Future Enhancements (Post v0.4.0)
-- Agent integration (DataAnalyzer using pattern memory)
+- Agent integration (DataAnalyzer using pattern memory) → Phase 6 T6.1
 - CLI commands for memory visibility
 - Pattern reuse rate and failure prevention metrics tracking
+
+---
+
+## Phase 6: Agent Intelligence & Data Quality (v0.5.0)
+**Goal**: Polish and stabilize through intelligent data handling and agent memory integration
+
+**Background**: ML-Resource simulation analysis (10/25 datasets) revealed:
+- Remaining datasets have fundamental incompatibilities (no labels, wrong format)
+- Encoding issues block 018-열처리 예지보전 (CP949/EUC-KR)
+- Better guidance needed when data doesn't fit supervised learning paradigm
+
+**Philosophy Alignment**: Focus on POLISH, not new features
+- Use existing Phase 5 infrastructure (memory services already built)
+- Add low-cost, high-value improvements (encoding detection)
+- Improve error messages instead of complex workarounds
+
+### T6.1 Agent Memory Integration 🔄
+**Problem**: Phase 5 memory services exist but agents don't use them
+**Solution**: Connect DataAnalyzer to pattern memory for recommendations
+```csharp
+// DataAnalyzer enhanced with memory lookup
+var similar = await _patternMemory.FindSimilarPatternsAsync(fingerprint);
+if (similar.Any())
+{
+    // Recommend based on past successes
+    return similar.First().RecommendedStrategy;
+}
+```
+- [ ] DataAnalyzer uses DatasetPatternMemoryService
+- [ ] Proactive warning integration via FailureCaseLearningService
+- [ ] Memory-based preprocessing recommendations
+
+### T6.2 Encoding Auto-Detection 🔄
+**Problem**: CP949/EUC-KR encoded files cause garbled text (018 dataset)
+**Solution**: Automatic charset detection and UTF-8 conversion
+```
+Current: 㿀₩Ý¢Àà§°ü¬÷Àú¥ó (garbled)
+Target:  설비명,설비번호,공정명 (correct Korean)
+```
+- [ ] Charset detection using UTF8Encoding.GetBytes heuristics
+- [ ] CP949/EUC-KR to UTF-8 conversion
+- [ ] `--encoding auto` option (default: auto)
+- [ ] Warning when encoding conversion occurs
+
+### T6.3 Dataset Compatibility Check 🔄
+**Problem**: Unclear error when data lacks required structure
+**Solution**: Pre-training compatibility validation with clear guidance
+```
+Warning: Dataset may not be compatible with supervised learning.
+- No clear label column detected
+- Consider: Anomaly detection tools, manual label creation
+- MLoop requires: Explicit label column for classification/regression
+```
+- [ ] Label column detection heuristics
+- [ ] Clear incompatibility messages
+- [ ] Suggestions for alternative approaches
+
+### Success Metrics (Phase 6)
+
+| Metric | Baseline | Target | Method |
+|--------|----------|--------|--------|
+| Agent Memory Usage | 0% | 100% | DataAnalyzer integration |
+| Encoding Issues | Manual fix | Auto-detect | UTF-8 conversion |
+| Error Message Quality | Generic | Actionable | Compatibility checks |
 
 ---
 
@@ -328,6 +392,7 @@ public class FailureCaseLearningService
 | **v0.2.0** | Jan 2026 | Preprocessing + Extensibility + AI Agents | ✅ Complete |
 | **v0.3.0** | Jan 2026 | Autonomous MLOps (Phase 4 Tier 1-3) | ✅ Complete |
 | **v0.4.0** | Jan 2026 | Intelligent Memory System (Phase 5) | ✅ Complete |
+| **v0.5.0** | TBD | Agent Intelligence & Data Quality (Phase 6) | 🔄 In Progress |
 | **v1.0.0** | TBD | Production-Ready Release | 🎯 Target |
 
 ---
@@ -367,4 +432,4 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: January 11, 2026
-**Version**: 0.4.0 (Phase 5 Complete - Intelligent Memory System)
+**Version**: 0.5.0-dev (Phase 6 In Progress - Agent Intelligence & Data Quality)
