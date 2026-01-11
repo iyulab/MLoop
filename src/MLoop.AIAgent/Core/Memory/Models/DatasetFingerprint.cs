@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Analysis;
+using MLoop.AIAgent.Core.Models;
 
 namespace MLoop.AIAgent.Core.Memory.Models;
 
@@ -113,6 +114,76 @@ public sealed class DatasetFingerprint
             < 1_000_000 => "Large",
             _ => "VeryLarge"
         };
+
+        fingerprint.DomainKeywords = ExtractDomainKeywords(fingerprint.ColumnNames);
+        fingerprint.Hash = fingerprint.ComputeHash();
+
+        return fingerprint;
+    }
+
+    /// <summary>
+    /// Creates a fingerprint from a DataAnalysisReport.
+    /// Used to bridge analysis results with memory-based pattern matching.
+    /// </summary>
+    public static DatasetFingerprint FromAnalysisReport(DataAnalysisReport report, string? labelColumn = null)
+    {
+        var fingerprint = new DatasetFingerprint
+        {
+            ColumnNames = report.Columns.Select(c => c.Name).ToList(),
+            RowCount = report.RowCount,
+            LabelColumn = labelColumn ?? report.RecommendedTarget?.ColumnName
+        };
+
+        int numericCount = 0;
+        int categoricalCount = 0;
+        long totalMissing = 0;
+        long totalCells = report.RowCount * report.ColumnCount;
+
+        foreach (var col in report.Columns)
+        {
+            // Map DataType enum to string type name
+            var typeName = col.InferredType switch
+            {
+                DataType.Numeric => "Double",
+                DataType.DateTime => "DateTime",
+                DataType.Boolean => "Boolean",
+                DataType.Categorical => "String",
+                DataType.Text => "String",
+                _ => "Object"
+            };
+            fingerprint.ColumnTypes[col.Name] = typeName;
+
+            if (col.InferredType == DataType.Numeric)
+                numericCount++;
+            else if (col.InferredType is DataType.Categorical or DataType.Text or DataType.Boolean)
+                categoricalCount++;
+
+            totalMissing += col.NullCount;
+        }
+
+        fingerprint.NumericRatio = report.ColumnCount > 0
+            ? (double)numericCount / report.ColumnCount
+            : 0;
+        fingerprint.CategoricalRatio = report.ColumnCount > 0
+            ? (double)categoricalCount / report.ColumnCount
+            : 0;
+        fingerprint.MissingValueRatio = totalCells > 0
+            ? (double)totalMissing / totalCells
+            : 0;
+
+        fingerprint.SizeCategory = report.RowCount switch
+        {
+            < 1_000 => "Small",
+            < 100_000 => "Medium",
+            < 1_000_000 => "Large",
+            _ => "VeryLarge"
+        };
+
+        // Infer task type from recommended target if available
+        if (report.RecommendedTarget != null && report.RecommendedTarget.ProblemType != MLProblemType.Unknown)
+        {
+            fingerprint.DetectedTaskType = report.RecommendedTarget.ProblemType.ToString().ToLowerInvariant();
+        }
 
         fingerprint.DomainKeywords = ExtractDomainKeywords(fingerprint.ColumnNames);
         fingerprint.Hash = fingerprint.ComputeHash();
