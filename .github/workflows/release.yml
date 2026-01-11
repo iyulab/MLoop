@@ -180,8 +180,19 @@ jobs:
 
     - name: Pack CLI tool
       run: |
+        mkdir -p ./artifacts
         dotnet pack src/MLoop.CLI/MLoop.CLI.csproj --configuration Release -p:Version=${{ needs.build.outputs.version }} -o ./artifacts
+        echo "Packed CLI tool:"
+        ls -la ./artifacts/
 
     - name: Publish CLI to NuGet
       run: |
-        dotnet nuget push ./artifacts/MLoop.CLI.*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        for package in ./artifacts/MLoop.CLI.*.nupkg; do
+          if [ -f "$package" ]; then
+            echo "Publishing $package"
+            dotnet nuget push "$package" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+          else
+            echo "No CLI package found matching pattern"
+            exit 1
+          fi
+        done
