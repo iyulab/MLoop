@@ -60,14 +60,31 @@ public class TrainingEngine : ITrainingEngine
         var experimentId = await _experimentStore.GenerateIdAsync(modelName, cancellationToken);
         var experimentPath = _experimentStore.GetExperimentPath(modelName, experimentId);
 
+        // Track original data file and temp file for cleanup (encoding conversion)
+        string originalDataFile = config.DataFile;
+        string? tempEncodingFile = null;
+
         try
         {
             // Create experiment directory
             await _fileSystem.CreateDirectoryAsync(experimentPath, cancellationToken);
 
+            // Handle encoding detection/conversion for non-UTF8 files (e.g., CP949/EUC-KR)
+            // This ensures Korean and other non-ASCII text is read correctly throughout training
+            var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(config.DataFile);
+
+            // Use converted path for all training operations, original path for metadata
+            string dataFilePath = config.DataFile;
+            if (detection.WasConverted)
+            {
+                tempEncodingFile = convertedPath;
+                dataFilePath = convertedPath;
+                Console.WriteLine($"[Info] Converted {detection.EncodingName} → UTF-8: {Path.GetFileName(originalDataFile)}");
+            }
+
             // Validate data quality before training (label column + dataset size)
             var dataQualityValidator = new DataQualityValidator(_mlContext);
-            var qualityResult = dataQualityValidator.ValidateTrainingData(config.DataFile, config.LabelColumn);
+            var qualityResult = dataQualityValidator.ValidateTrainingData(dataFilePath, config.LabelColumn);
 
             if (!qualityResult.IsValid)
             {
@@ -85,7 +102,7 @@ public class TrainingEngine : ITrainingEngine
             }
 
             // Capture input schema before training (using enhanced detection)
-            var inputSchema = CaptureInputSchemaEnhanced(config.DataFile, config.LabelColumn);
+            var inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn);
 
             // Execute PreTrain hooks
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PreTrain))
@@ -95,7 +112,7 @@ public class TrainingEngine : ITrainingEngine
                     new[] { new TextLoader.Column("Features", DataKind.Single, 0, int.MaxValue) },
                     separatorChar: ',',
                     hasHeader: true);
-                var trainData = loader.Load(config.DataFile);
+                var trainData = loader.Load(dataFilePath);
 
                 var hookContext = new HookContext
                 {
@@ -178,7 +195,7 @@ public class TrainingEngine : ITrainingEngine
                 Task = config.Task,
                 Config = new ExperimentConfig
                 {
-                    DataFile = config.DataFile,
+                    DataFile = originalDataFile, // Store original path, not converted temp file
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.Metric,
@@ -223,7 +240,7 @@ public class TrainingEngine : ITrainingEngine
                 Task = config.Task,
                 Config = new ExperimentConfig
                 {
-                    DataFile = config.DataFile,
+                    DataFile = originalDataFile, // Store original path, not converted temp file
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.Metric,
@@ -241,6 +258,15 @@ public class TrainingEngine : ITrainingEngine
             throw new InvalidOperationException(
                 $"Training failed for experiment {modelName}/{experimentId}: {ex.Message}",
                 ex);
+        }
+        finally
+        {
+            // Clean up temp file from encoding conversion
+            // ML.NET may have lazily loaded data, but by now training is complete
+            if (tempEncodingFile != null && File.Exists(tempEncodingFile))
+            {
+                try { File.Delete(tempEncodingFile); } catch { /* Ignore cleanup errors */ }
+            }
         }
     }
 
