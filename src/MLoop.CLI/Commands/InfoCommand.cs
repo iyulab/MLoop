@@ -4,6 +4,7 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -90,7 +91,17 @@ public static class InfoCommand
         {
             var mlContext = new MLContext(seed: 42);
 
-            // Read file info with UTF-8 encoding
+            // Detect and convert encoding to UTF-8 with BOM for ML.NET compatibility
+            var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(dataFile);
+            if (detection.WasConverted && detection.EncodingName != "UTF-8")
+            {
+                AnsiConsole.MarkupLine($"[green]Info:[/] Converted {detection.EncodingName} → UTF-8");
+            }
+
+            // Use converted path for all operations
+            dataFile = convertedPath;
+
+            // Read file info
             var fileInfo = new FileInfo(dataFile);
 
             // Count lines with UTF-8 encoding
