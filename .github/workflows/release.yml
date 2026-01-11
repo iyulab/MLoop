@@ -187,7 +187,7 @@ jobs:
 
     - name: Publish CLI to NuGet
       run: |
-        for package in ./artifacts/MLoop.CLI.*.nupkg; do
+        for package in ./artifacts/mloop.*.nupkg; do
           if [ -f "$package" ]; then
             echo "Publishing $package"
             dotnet nuget push "$package" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
