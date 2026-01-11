@@ -444,6 +444,73 @@ Target:  Simulation correctly uses --data file1.csv file2.csv
 
 ---
 
+## Phase 8: Polish & Documentation (v1.1.0)
+**Goal**: Maximize user success with minimal new complexity
+
+**Background**: v1.0.0 provides solid ML training foundation. Phase 8 focuses on:
+- Documentation excellence to reduce knowledge cost
+- Background infrastructure for future insights features
+- Error message improvements for better debugging
+- Example projects demonstrating real-world usage
+
+**Philosophy Alignment**: "Minimum Cost" = Polish existing features, not add new ones
+
+**Critical Review Decision**: T7.1 (CLI Insights) deferred to v1.2.0 because memory services are empty initially and provide no immediate value. Extended E2E tests deferred indefinitely due to maintenance cost.
+
+### T8.1 User Documentation
+**Problem**: Users lack comprehensive guides for MLoop workflows
+**Solution**: Create detailed user-facing documentation
+```
+Target:
+- USER_GUIDE.md with step-by-step workflows
+- Troubleshooting guide for common errors
+- Quick-start examples in README.md
+- Best practices for data preparation
+```
+- [ ] Create docs/USER_GUIDE.md with comprehensive workflows
+- [ ] Add troubleshooting section for common errors
+- [ ] Update README.md quick-start examples
+- [ ] Document all CLI commands with examples
+
+### T8.2 Background Memory Infrastructure
+**Problem**: Memory services exist but never collect data
+**Solution**: Silently collect patterns during training for future insights
+```
+Current: Memory services are empty
+Target:  Background collection during mloop train
+```
+- [ ] TrainCommand stores DatasetFingerprint after successful training
+- [ ] FailureCaseLearningService captures errors automatically
+- [ ] No CLI flags, no UI changes (pure infrastructure)
+- [ ] Prepare for v1.2.0 `--insights` feature
+
+### T8.3 Error Message Improvement
+**Problem**: Error messages are generic, lack actionable guidance
+**Solution**: Add context-specific suggestions to all error messages
+- [ ] Review common error scenarios from simulation testing
+- [ ] Add actionable suggestions (e.g., "Try using --drop-missing-labels")
+- [ ] Improve encoding detection failure messages
+- [ ] Better handling of unsupported data formats
+
+### T8.4 Example Projects Update
+**Problem**: Example projects don't demonstrate v1.0.0 features
+**Solution**: Update and expand examples with real-world scenarios
+- [ ] Update examples/ with v1.0.0 CLI options
+- [ ] Add multi-CSV merge example
+- [ ] Add Korean encoding example (CP949 handling)
+- [ ] Ensure all examples work out-of-box with `mloop train`
+
+### Success Metrics (Phase 8)
+
+| Metric | Baseline | Target | Method |
+|--------|----------|--------|--------|
+| Documentation Completeness | 30% | 80% | USER_GUIDE.md coverage |
+| Memory Data Collection | None | Background active | Pattern storage |
+| Example Project Coverage | 3 | 6+ | examples/ directory |
+| Error Message Quality | Generic | Actionable | User feedback |
+
+---
+
 ## Future Considerations (P3 LOW)
 
 ### Advanced Features
@@ -475,7 +542,8 @@ Target:  Simulation correctly uses --data file1.csv file2.csv
 | **v0.3.0** | Jan 2026 | Autonomous MLOps (Phase 4 Tier 1-3) | ✅ Complete |
 | **v0.4.0** | Jan 2026 | Intelligent Memory System (Phase 5) | ✅ Complete |
 | **v0.5.0** | Jan 2026 | Agent Intelligence & Data Quality (Phase 6) | ✅ Complete |
-| **v1.0.0** | Jan 2026 | Production Readiness (Phase 7) | ✅ Ready for Release |
+| **v1.0.0** | Jan 2026 | Production Readiness (Phase 7) | ✅ Released |
+| **v1.1.0** | Q1 2026 | Polish & Documentation (Phase 8) | 🔄 Planning |
 
 ---
 
@@ -514,5 +582,5 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: January 11, 2026
-**Version**: 1.0.0 (Phase 7 Complete - Ready for Release)
-**Critical Review**: T7.1 deferred (existing analysis sufficient), T7.3 minimal scope (589 tests)
+**Version**: 1.0.0 Released, v1.1.0 Planning (Phase 8)
+**Critical Review**: T7.1 CLI Insights deferred to v1.2.0 (memory empty initially), T7.3 E2E tests deferred (maintenance cost)
