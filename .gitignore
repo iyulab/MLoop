@@ -60,6 +60,7 @@ claudedocs/
 
 # Testing resources
 ML-Resource/
+!ML-Resource/*.md
 local-tests/
 
 # Serena (개발용)
