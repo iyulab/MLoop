@@ -385,17 +385,18 @@ Target:  mloop train shows pattern recommendations and failure warnings
 - [ ] Show compatibility warnings from DatasetCompatibilityChecker
 - [ ] Optional `--no-insights` flag to skip memory lookup
 
-### T7.2 Simulation Validation 📋
+### T7.2 Simulation Validation ✅
 **Problem**: ML-Resource simulation shows 40% completion but features exist
 **Solution**: Re-validate with correct feature usage knowledge
 ```
 Current: Simulation thinks Multi-CSV is unsupported
 Target:  Simulation correctly uses --data file1.csv file2.csv
 ```
-- [ ] Update simulation guidance with existing CLI options
-- [ ] Document --data, --auto-merge, --drop-missing-labels usage
-- [ ] Re-run problematic datasets with correct approach
-- [ ] Update SIMULATION_PROGRESS.md with actual results
+- [x] Update simulation guidance with existing CLI options
+- [x] Document --data, --auto-merge, --drop-missing-labels usage
+- [x] Re-run problematic datasets with correct approach (018 tested successfully)
+- [x] Update SIMULATION_PROGRESS.md with actual results
+- [x] **Bugfix**: Add EncodingDetector to InfoCommand for Korean text support
 
 ### T7.3 Test Coverage Completion 📋
 **Problem**: IntelligentDataAnalyzer and DatasetCompatibilityChecker lack integration tests
