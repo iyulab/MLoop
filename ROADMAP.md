@@ -467,10 +467,10 @@ Target:
 - Quick-start examples in README.md
 - Best practices for data preparation
 ```
-- [ ] Create docs/USER_GUIDE.md with comprehensive workflows
-- [ ] Add troubleshooting section for common errors
+- [x] Update docs/GUIDE.md with v1.0.0 features (train options, docker, encoding)
+- [x] Add troubleshooting section for common errors
 - [ ] Update README.md quick-start examples
-- [ ] Document all CLI commands with examples
+- [x] Document all CLI commands with examples (train, info, docker)
 
 ### T8.2 Background Memory Infrastructure
 **Problem**: Memory services exist but never collect data
