@@ -439,7 +439,8 @@ Target:  Simulation correctly uses --data file1.csv file2.csv
 | All CI tests passing (589 tests) | ✅ |
 | InfoCommand encoding bug fixed | ✅ |
 | Critical review of T7.1/T7.3 complete | ✅ |
-| Feature branch ready for merge | 🔄 |
+| Feature branch merged to main | ✅ |
+| v1.0.0 tag created | ✅ |
 
 ---
 
