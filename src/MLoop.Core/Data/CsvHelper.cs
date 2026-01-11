@@ -16,6 +16,7 @@ public class CsvHelperImpl : ICsvHelper
     /// <summary>
     /// Reads a CSV file and returns the data as a list of dictionaries.
     /// Each dictionary represents a row, with column names as keys.
+    /// Automatically detects encoding (including CP949/EUC-KR for Korean files).
     /// </summary>
     public async Task<List<Dictionary<string, string>>> ReadAsync(
         string path,
@@ -27,39 +28,64 @@ public class CsvHelperImpl : ICsvHelper
             throw new FileNotFoundException($"CSV file not found: {path}");
         }
 
-        var targetEncoding = encoding ?? System.Text.Encoding.UTF8;
+        // Auto-detect encoding if not explicitly provided
+        string readPath = path;
+        string? tempFile = null;
 
-        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        if (encoding == null)
         {
-            HasHeaderRecord = true,
-            MissingFieldFound = null, // Ignore missing fields
-            BadDataFound = null, // Ignore bad data
-            TrimOptions = TrimOptions.Trim,
-            Encoding = targetEncoding
-        };
-
-        using var reader = new StreamReader(path, targetEncoding, detectEncodingFromByteOrderMarks: true);
-        using var csv = new CsvReader(reader, config);
-
-        var records = new List<Dictionary<string, string>>();
-
-        await csv.ReadAsync();
-        csv.ReadHeader();
-        var headers = csv.HeaderRecord ?? throw new InvalidOperationException("No headers found in CSV");
-
-        while (await csv.ReadAsync())
-        {
-            var record = new Dictionary<string, string>();
-            foreach (var header in headers)
+            var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(path);
+            readPath = convertedPath;
+            if (detection.WasConverted)
             {
-                var value = csv.GetField(header) ?? string.Empty;
-                // Automatically clean comma-formatted numbers (e.g., "2,000" → "2000")
-                record[header] = CleanNumericString(value);
+                tempFile = convertedPath;
             }
-            records.Add(record);
         }
 
-        return records;
+        try
+        {
+            var targetEncoding = encoding ?? System.Text.Encoding.UTF8;
+
+            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                HasHeaderRecord = true,
+                MissingFieldFound = null, // Ignore missing fields
+                BadDataFound = null, // Ignore bad data
+                TrimOptions = TrimOptions.Trim,
+                Encoding = targetEncoding
+            };
+
+            using var reader = new StreamReader(readPath, targetEncoding, detectEncodingFromByteOrderMarks: true);
+            using var csv = new CsvReader(reader, config);
+
+            var records = new List<Dictionary<string, string>>();
+
+            await csv.ReadAsync();
+            csv.ReadHeader();
+            var headers = csv.HeaderRecord ?? throw new InvalidOperationException("No headers found in CSV");
+
+            while (await csv.ReadAsync())
+            {
+                var record = new Dictionary<string, string>();
+                foreach (var header in headers)
+                {
+                    var value = csv.GetField(header) ?? string.Empty;
+                    // Automatically clean comma-formatted numbers (e.g., "2,000" → "2000")
+                    record[header] = CleanNumericString(value);
+                }
+                records.Add(record);
+            }
+
+            return records;
+        }
+        finally
+        {
+            // Clean up temp file if encoding conversion was performed
+            if (tempFile != null && File.Exists(tempFile))
+            {
+                try { File.Delete(tempFile); } catch { /* Ignore cleanup errors */ }
+            }
+        }
     }
 
     /// <summary>
@@ -201,6 +227,7 @@ public class CsvHelperImpl : ICsvHelper
     /// <summary>
     /// Reads CSV file headers only (first row).
     /// Useful for schema validation without loading entire file.
+    /// Automatically detects encoding (including CP949/EUC-KR for Korean files).
     /// </summary>
     public async Task<List<string>> ReadHeadersAsync(
         string path,
@@ -212,23 +239,48 @@ public class CsvHelperImpl : ICsvHelper
             throw new FileNotFoundException($"CSV file not found: {path}");
         }
 
-        var targetEncoding = encoding ?? System.Text.Encoding.UTF8;
+        // Auto-detect encoding if not explicitly provided
+        string readPath = path;
+        string? tempFile = null;
 
-        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        if (encoding == null)
         {
-            HasHeaderRecord = true,
-            MissingFieldFound = null,
-            BadDataFound = null,
-            TrimOptions = TrimOptions.Trim,
-            Encoding = targetEncoding
-        };
+            var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(path);
+            readPath = convertedPath;
+            if (detection.WasConverted)
+            {
+                tempFile = convertedPath;
+            }
+        }
 
-        using var reader = new StreamReader(path, targetEncoding, detectEncodingFromByteOrderMarks: true);
-        using var csv = new CsvReader(reader, config);
+        try
+        {
+            var targetEncoding = encoding ?? System.Text.Encoding.UTF8;
 
-        await csv.ReadAsync();
-        csv.ReadHeader();
+            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                HasHeaderRecord = true,
+                MissingFieldFound = null,
+                BadDataFound = null,
+                TrimOptions = TrimOptions.Trim,
+                Encoding = targetEncoding
+            };
 
-        return csv.HeaderRecord?.ToList() ?? new List<string>();
+            using var reader = new StreamReader(readPath, targetEncoding, detectEncodingFromByteOrderMarks: true);
+            using var csv = new CsvReader(reader, config);
+
+            await csv.ReadAsync();
+            csv.ReadHeader();
+
+            return csv.HeaderRecord?.ToList() ?? new List<string>();
+        }
+        finally
+        {
+            // Clean up temp file if encoding conversion was performed
+            if (tempFile != null && File.Exists(tempFile))
+            {
+                try { File.Delete(tempFile); } catch { /* Ignore cleanup errors */ }
+            }
+        }
     }
 }
