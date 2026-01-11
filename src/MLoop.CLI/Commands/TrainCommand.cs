@@ -350,8 +350,10 @@ public static class TrainCommand
             // Default behavior: drop missing labels for classification tasks
             var isClassificationTask = effectiveDefinition.Task?.ToLowerInvariant() switch
             {
-                "binaryclassification" => true,
-                "multiclassclassification" => true,
+                "binary-classification" => true,
+                "multiclass-classification" => true,
+                "binaryclassification" => true,  // Legacy format
+                "multiclassclassification" => true,  // Legacy format
                 "classification" => true,
                 _ => false
             };
