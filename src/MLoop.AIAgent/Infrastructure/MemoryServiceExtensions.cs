@@ -5,6 +5,7 @@ using MemoryIndexer.Sdk.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MLoop.AIAgent.Configuration;
+using MLoop.AIAgent.Core.Memory;
 
 namespace MLoop.AIAgent.Infrastructure;
 
@@ -98,6 +99,36 @@ public static class MemoryServiceExtensions
                 conversationsDirectory,
                 memoryEnabled,
                 logger);
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds intelligent memory services for dataset pattern learning and failure case learning.
+    /// T5.1: DatasetPatternMemoryService - Procedural memory for processing patterns.
+    /// T5.2: FailureCaseLearningService - Episodic memory for failure cases.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <returns>Service collection for chaining.</returns>
+    public static IServiceCollection AddIntelligentMemoryServices(this IServiceCollection services)
+    {
+        // T5.1: Dataset Pattern Memory Service
+        services.AddScoped<DatasetPatternMemoryService>(sp =>
+        {
+            var store = sp.GetRequiredService<IMemoryStore>();
+            var embedding = sp.GetRequiredService<IEmbeddingService>();
+            var logger = sp.GetService<ILogger<DatasetPatternMemoryService>>();
+            return new DatasetPatternMemoryService(store, embedding, logger);
+        });
+
+        // T5.2: Failure Case Learning Service
+        services.AddScoped<FailureCaseLearningService>(sp =>
+        {
+            var store = sp.GetRequiredService<IMemoryStore>();
+            var embedding = sp.GetRequiredService<IEmbeddingService>();
+            var logger = sp.GetService<ILogger<FailureCaseLearningService>>();
+            return new FailureCaseLearningService(store, embedding, logger);
         });
 
         return services;
