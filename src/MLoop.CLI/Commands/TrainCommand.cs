@@ -1,7 +1,9 @@
 using System.CommandLine;
 using Microsoft.ML;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.CLI.Infrastructure.Memory;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
@@ -672,6 +674,11 @@ public static class TrainCommand
             if (result == null)
             {
                 AnsiConsole.MarkupLine($"[red]Error:[/] Training failed for model '[cyan]{resolvedModelName}[/]'");
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[yellow]Suggestions:[/]");
+                AnsiConsole.MarkupLine("  [blue]>[/] Try increasing the time limit: [cyan]--time 120[/]");
+                AnsiConsole.MarkupLine("  [blue]>[/] Check data quality: [cyan]mloop analyze[/]");
+                AnsiConsole.MarkupLine("  [blue]>[/] Verify label column exists and has valid values");
                 return 1;
             }
 
@@ -836,19 +843,23 @@ public static class TrainCommand
                 }
             }
 
+            // T8.2: Background memory collection (silent, no UI impact)
+            try
+            {
+                using var memoryCollector = new TrainingMemoryCollector(projectRoot);
+                await memoryCollector.StoreSuccessfulTrainingAsync(trainingConfig, result);
+            }
+            catch
+            {
+                // Silent failure - never interrupt training workflow
+            }
+
             return 0;
         }
         catch (Exception ex)
         {
-            AnsiConsole.Markup("[red]Error:[/] ");
-            AnsiConsole.WriteLine(ex.Message);
-
-            if (ex.InnerException != null)
-            {
-                AnsiConsole.Markup("[grey]Details:[/] ");
-                AnsiConsole.WriteLine(ex.InnerException.Message);
-            }
-
+            // T8.3: Enhanced error messaging with actionable suggestions
+            ErrorSuggestions.DisplayError(ex, "training");
             return 1;
         }
     }

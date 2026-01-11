@@ -202,7 +202,11 @@ public class TrainingEngine : ITrainingEngine
                 BestTrainer = autoMLResult.BestTrainer,
                 Metrics = autoMLResult.Metrics,
                 TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds,
-                ModelPath = modelPath
+                ModelPath = modelPath,
+                SchemaInfo = inputSchema != null
+                    ? string.Join(",", inputSchema.Columns.Select(c => c.Name))
+                    : null,
+                RowCount = autoMLResult.RowCount
             };
         }
         catch (Exception ex)

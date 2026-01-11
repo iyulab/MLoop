@@ -10,6 +10,16 @@ public class TrainingResult
     public required Dictionary<string, double> Metrics { get; init; }
     public required double TrainingTimeSeconds { get; init; }
     public required string ModelPath { get; init; }
+
+    /// <summary>
+    /// Number of rows in the training dataset (for memory collection)
+    /// </summary>
+    public long RowCount { get; init; }
+
+    /// <summary>
+    /// Comma-separated column names from schema (for memory collection)
+    /// </summary>
+    public string? SchemaInfo { get; init; }
 }
 
 /// <summary>

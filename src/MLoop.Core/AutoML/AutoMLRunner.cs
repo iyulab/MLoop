@@ -180,7 +180,8 @@ public class AutoMLRunner
         {
             BestTrainer = experimentResult.BestRun.TrainerName,
             Model = experimentResult.BestRun.Model,
-            Metrics = metricsDict
+            Metrics = metricsDict,
+            RowCount = trainSet.GetRowCount() ?? 0
         };
     }
 
@@ -249,7 +250,8 @@ public class AutoMLRunner
         {
             BestTrainer = experimentResult.BestRun.TrainerName,
             Model = experimentResult.BestRun.Model,
-            Metrics = metricsDict
+            Metrics = metricsDict,
+            RowCount = trainSet.GetRowCount() ?? 0
         };
     }
 
@@ -319,7 +321,8 @@ public class AutoMLRunner
         {
             BestTrainer = experimentResult.BestRun.TrainerName,
             Model = experimentResult.BestRun.Model,
-            Metrics = metricsDict
+            Metrics = metricsDict,
+            RowCount = trainSet.GetRowCount() ?? 0
         };
     }
 
@@ -401,6 +404,11 @@ public class AutoMLResult
     public required string BestTrainer { get; init; }
     public required ITransformer Model { get; init; }
     public required Dictionary<string, double> Metrics { get; init; }
+
+    /// <summary>
+    /// Number of rows in the training dataset (for memory collection)
+    /// </summary>
+    public long RowCount { get; init; }
 }
 
 /// <summary>
