@@ -63,6 +63,9 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 - **Fast Preprocessing**: Integrated FilePrepper (20x faster than pandas)
 - **Extensibility**: Code-based hooks and custom metrics
 - **Zero Config**: Works immediately with intelligent defaults
+- **Multi-CSV Support** (v1.0.0): Auto-merge same-schema files with `--data` or `--auto-merge`
+- **Encoding Detection** (v1.0.0): Automatic CP949/EUC-KR to UTF-8 conversion for Korean text
+- **Docker Deployment** (v1.0.0): Generate production-ready containerization with `mloop docker`
 
 ## Quick Start
 
@@ -102,9 +105,29 @@ mloop list                             # View experiments
 mloop promote <exp-id>                # Promote to production
 mloop evaluate <model> <test> <label> # Evaluate performance
 mloop orchestrate <data>               # End-to-end MLOps automation with AI
+mloop info <data>                      # Dataset profiling with encoding detection
+mloop serve                            # Start REST API server
+mloop docker                           # Generate Docker deployment files
 ```
 
-### AI-Powered Orchestration (New!)
+### Advanced Data Handling (v1.0.0)
+
+```bash
+# Multi-file training - auto-merge same-schema CSVs
+mloop train --data file1.csv file2.csv --label Target --task regression
+
+# Auto-discovery merge from datasets/ folder
+mloop train --auto-merge --label Target --task regression
+
+# Handle Korean/Chinese encoded files (CP949, EUC-KR auto-converted)
+mloop train korean_data.csv label --task regression
+# Output: [Info] Converted CP949 → UTF-8
+
+# Drop missing label values (default for classification)
+mloop train data.csv label --task binary-classification --drop-missing-labels
+```
+
+### AI-Powered Orchestration
 
 Automate the entire ML lifecycle with a single command:
 
