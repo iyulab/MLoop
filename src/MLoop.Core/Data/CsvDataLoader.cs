@@ -144,32 +144,17 @@ public class CsvDataLoader : IDataProvider
     /// <summary>
     /// Ensures the CSV file has UTF-8 BOM for ML.NET compatibility.
     /// ML.NET's InferColumns doesn't have encoding parameters and relies on BOM detection.
-    /// Creates a temporary UTF-8 BOM file if the original doesn't have BOM.
+    /// Detects encoding (UTF-8, CP949, EUC-KR) and converts to UTF-8 with BOM if needed.
     /// </summary>
     private static string EnsureUtf8Bom(string filePath)
     {
-        // Check if file has UTF-8 BOM
-        byte[] bom = new byte[3];
-        using (var fs = File.OpenRead(filePath))
+        var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(filePath);
+
+        if (detection.WasConverted && detection.EncodingName != "UTF-8")
         {
-            if (fs.Length >= 3)
-            {
-                fs.ReadExactly(bom, 0, 3);
-            }
+            Console.WriteLine($"[Info] Converted {detection.EncodingName} → UTF-8: {Path.GetFileName(filePath)}");
         }
 
-        bool hasBom = bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF;
-
-        if (hasBom)
-        {
-            return filePath; // Already has BOM, use original
-        }
-
-        // Create temp file with UTF-8 BOM
-        var tempFile = Path.GetTempFileName();
-        var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
-        File.WriteAllLines(tempFile, allLines, new System.Text.UTF8Encoding(true)); // true = add BOM
-
-        return tempFile;
+        return convertedPath;
     }
 }
