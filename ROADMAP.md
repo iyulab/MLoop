@@ -444,7 +444,7 @@ Target:  Simulation correctly uses --data file1.csv file2.csv
 
 ---
 
-## Phase 8: Polish & Documentation (v1.1.0)
+## Phase 8: Polish & Documentation ✅ Complete (v1.1.0)
 **Goal**: Maximize user success with minimal new complexity
 
 **Background**: v1.0.0 provides solid ML training foundation. Phase 8 focuses on:
@@ -513,14 +513,68 @@ Target:  Background collection during mloop train
 
 **Status**: Examples already in good shape with multi-model format. All tutorials (iris-classification, housing-prices, sentiment-analysis) and examples (customer-churn, equipment-anomaly-detection) verified working.
 
+### T8.5 Encoding Detection Consistency ✅
+**Problem**: CsvHelperImpl lacked encoding detection, causing garbled Korean column names in `mloop train`
+**Discovery**: Agent Simulation testing (IMP-001 finding)
+**Solution**: Add EncodingDetector to CsvHelperImpl.ReadAsync() and ReadHeadersAsync()
+```
+Current: 깨진한글 (garbled due to CP949→UTF8 mismatch)
+Target:  정상한글 (correct Korean text)
+```
+- [x] EncodingDetector.ConvertToUtf8WithBom() in ReadAsync()
+- [x] EncodingDetector.ConvertToUtf8WithBom() in ReadHeadersAsync()
+- [x] Temp file cleanup after encoding conversion
+- [x] Consistent behavior with InfoCommand and CsvDataLoader
+
+**Fix Location**: `src/MLoop.Core/Data/CsvHelper.cs`
+
 ### Success Metrics (Phase 8)
+
+| Metric | Baseline | Target | Actual | Status |
+|--------|----------|--------|--------|--------|
+| Documentation Completeness | 30% | 80% | ✅ 80%+ | Complete |
+| Memory Data Collection | None | Background active | ✅ Active | Complete |
+| Example Project Coverage | 3 | 6+ | ✅ 5 verified | Complete |
+| Error Message Quality | Generic | Actionable | ✅ Contextual | Complete |
+| Encoding Consistency | Partial | Full | ✅ All commands | Complete |
+
+---
+
+## Phase 9: CLI Intelligence (v1.2.0)
+**Goal**: Enable memory-based intelligent recommendations for users
+
+**Background**: Phase 8 completed infrastructure (memory collection, error suggestions). Phase 9 focuses on:
+- Exposing memory insights through CLI
+- Deferred T7.1 CLI Insights feature
+- Simulation-derived improvements (IMP-002, IMP-003) if high-value
+
+**Philosophy Alignment**: "Minimum Cost" = Leverage existing infrastructure, minimal new code
+
+### T9.1 CLI Insights Flag (Deferred from T7.1)
+**Problem**: Memory services collect data but users cannot access insights
+**Solution**: Optional `--insights` flag to enable memory-based recommendations
+```bash
+mloop train --data data.csv --label Price --insights
+# Shows: "Similar dataset patterns suggest LightGBM with 300s training time"
+```
+- [ ] `--insights` flag in TrainCommand
+- [ ] Integration with DatasetPatternMemoryService
+- [ ] Fallback graceful degradation when memory is empty
+
+### T9.2 Label Column Inference (IMP-002)
+**Problem**: Users must specify label column manually even when obvious
+**Solution**: Auto-recommend label column based on DataAnalyzer.RecommendTarget()
+- [ ] Suggest label column if not specified
+- [ ] Use column naming patterns (target, label, y, price, etc.)
+- [ ] Integration with mloop.yaml configuration
+
+### Success Metrics (Phase 9)
 
 | Metric | Baseline | Target | Method |
 |--------|----------|--------|--------|
-| Documentation Completeness | 30% | 80% | USER_GUIDE.md coverage |
-| Memory Data Collection | None | Background active | Pattern storage |
-| Example Project Coverage | 3 | 6+ | examples/ directory |
-| Error Message Quality | Generic | Actionable | User feedback |
+| CLI Insights Usage | 0% | 20%+ | Flag adoption rate |
+| Label Auto-Inference | 0% | 50%+ | Datasets with auto-detected label |
+| Memory Pattern Reuse | 0% | 10%+ | Similar pattern recommendations |
 
 ---
 
@@ -556,7 +610,8 @@ Target:  Background collection during mloop train
 | **v0.4.0** | Jan 2026 | Intelligent Memory System (Phase 5) | ✅ Complete |
 | **v0.5.0** | Jan 2026 | Agent Intelligence & Data Quality (Phase 6) | ✅ Complete |
 | **v1.0.0** | Jan 2026 | Production Readiness (Phase 7) | ✅ Released |
-| **v1.1.0** | Q1 2026 | Polish & Documentation (Phase 8) | 🔄 In Progress |
+| **v1.1.0** | Jan 2026 | Polish & Documentation (Phase 8) | ✅ Complete |
+| **v1.2.0** | Q1 2026 | CLI Intelligence (Phase 9) | 📋 Planning |
 
 ---
 
@@ -595,5 +650,8 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: January 11, 2026
-**Version**: 1.0.0 Released, v1.1.0 In Progress (Phase 8 T8.1-T8.4 Complete)
-**Critical Review**: T7.1 CLI Insights deferred to v1.2.0 (memory empty initially), T7.3 E2E tests deferred (maintenance cost)
+**Version**: v1.1.0 Complete (Phase 8), v1.2.0 Planning (Phase 9)
+**Recent Changes**:
+- T8.5 Encoding Detection Consistency fix (IMP-001 from Agent Simulation)
+- Phase 8 marked complete with all success metrics achieved
+- Phase 9 scoped with T9.1 CLI Insights and T9.2 Label Inference
