@@ -245,7 +245,10 @@ mloop train --label Status --task binary-classification
 4. ✅ **저성능 진단**: v0.3.0 PerformanceDiagnostics 자동 실행
 
 ### 📋 재검증 필요
-1. 🔄 **018-열처리 예지보전**: 인코딩 문제 해결됨, 라벨 컬럼 확인 후 재시도
+1. ✅ **018-열처리 예지보전**: 인코딩 문제 해결 확인됨 (`mloop info` 명령 테스트 성공)
+   - CP949 → UTF-8 자동 변환 정상 동작
+   - 한글 컬럼명 정상 표시 (배정번호, 건조 1존 OP, 소입로 온도 등)
+   - 라벨 컬럼 확인 후 `mloop train` 가능
 2. 🔄 **006, 007**: Multi-CSV 병합 옵션 사용하여 재시도 (L2→L3 가능성)
 3. 🔄 **010**: 34 CSV 자동 병합으로 재시도 (L1→L2 가능성)
 
@@ -261,7 +264,7 @@ mloop train --label Status --task binary-classification
 
 ---
 
-**Last Updated**: 2026-01-11 (T7.2 재검증 업데이트)
+**Last Updated**: 2026-01-11 (T7.2 InfoCommand 인코딩 수정)
 **Completed**: 10/25 datasets (40%)
 **Regression**: 7/7 성공 (100%)
 **Classification**: 3/3 성공 (100%) ✅
@@ -269,4 +272,5 @@ mloop train --label Status --task binary-classification
 **v0.4.0 검증**: Label 결측치 자동 처리 정상 작동
 **v0.5.0 검증**: 인코딩 자동 감지 완료 (T6.2)
 **T7.2 발견**: Multi-CSV, 인코딩, 진단 기능 이미 구현됨 - 시뮬레이션 재검증 필요
+**T7.2 수정**: InfoCommand에 EncodingDetector 통합 - 018 데이터셋 info 명령 테스트 성공
 
