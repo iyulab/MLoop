@@ -11,6 +11,7 @@ Complete guide for using MLoop, the ML.NET CLI tool for building and managing ma
 5. [Extensibility](#extensibility)
 6. [Project Structure](#project-structure)
 7. [Best Practices](#best-practices)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -98,17 +99,32 @@ Train models using ML.NET AutoML with automatic experiment tracking.
 # Basic training
 mloop train <data-file> <label-column> [options]
 
-# Options:
+# Core Options:
 #   --time <seconds>     Training time budget (default: 60)
 #   --metric <name>      Metric to optimize (default: task-dependent)
 #   --test-split <0-1>   Test split fraction (default: 0.2)
 #   --output <path>      Custom model output path
 
+# Data Options (v0.4.0+):
+#   --data <files...>           External data file(s) - multiple files auto-merged
+#   --auto-merge                Auto-detect and merge same-schema CSVs in datasets/
+#   --drop-missing-labels       Drop rows with missing label values (default: auto)
+
 # Examples
 mloop train datasets/train.csv price --time 120
 mloop train data/sales.csv revenue --time 300 --metric r_squared
 mloop train data/fraud.csv is_fraud --time 180 --test-split 0.3
+
+# Multi-file training (v0.4.0+)
+mloop train --data normal.csv outlier.csv --label Target --task regression
+mloop train --auto-merge --label Status --task binary-classification
 ```
+
+**Automatic Features** (v1.0.0):
+- **Encoding Detection**: CP949/EUC-KR files auto-converted to UTF-8 (Korean text support)
+- **Schema Validation**: Same-schema files auto-detected for `--auto-merge`
+- **Label Handling**: Missing labels auto-dropped for classification tasks
+- **Data Quality Analysis**: Automatic class distribution and quality warnings
 
 **Output**:
 - Model saved to `models/staging/exp-XXX/model.zip`
@@ -174,12 +190,14 @@ mloop promote exp-005 --to staging
 
 ### `mloop info`
 
-Display dataset profiling information.
+Display dataset profiling information with automatic encoding detection.
 
 ```bash
 mloop info <data-file>
 
 # Output:
+# [Info] Converted CP949 → UTF-8    # (v1.0.0 - automatic encoding conversion)
+#
 # 📊 Dataset Information
 # Rows: 1,000
 # Columns: 15
@@ -189,6 +207,11 @@ mloop info <data-file>
 # - category (Text): 5 unique values
 # - date (DateTime): Range: 2024-01-01 to 2024-12-31
 ```
+
+**Encoding Support** (v1.0.0):
+- Auto-detects CP949, EUC-KR, UTF-8, UTF-16 encodings
+- Converts to UTF-8 with BOM for ML.NET compatibility
+- Korean text displayed correctly (e.g., 설비명, 공정번호)
 
 ### `mloop evaluate`
 
@@ -287,6 +310,45 @@ curl -X POST http://localhost:5000/predict \
 - Single and batch predictions
 - JSON request/response format
 - CORS enabled for web clients
+
+### `mloop docker` (v0.4.0+)
+
+Generate Docker configuration files for containerized deployment.
+
+```bash
+# Generate all Docker files
+mloop docker
+
+# Generated files:
+# - Dockerfile           Multi-stage build with MLoop API
+# - docker-compose.yml   Complete service configuration
+# - .dockerignore        Exclude unnecessary files
+
+# Build and run
+docker build -t my-ml-model .
+docker run -p 5000:5000 my-ml-model
+
+# Or use docker-compose
+docker-compose up -d
+```
+
+**Generated Dockerfile**:
+```dockerfile
+# Multi-stage build
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+WORKDIR /app
+EXPOSE 5000
+
+# Copy model and start API
+COPY models/production/current /app/model
+ENTRYPOINT ["dotnet", "MLoop.API.dll", "--model", "/app/model"]
+```
+
+**docker-compose.yml Features**:
+- Health checks configured
+- Volume mounts for models
+- Environment variables for API configuration
+- Restart policy for production
 
 ### `mloop pipeline`
 
@@ -859,6 +921,109 @@ $ taskset -c 0-3 mloop train dataset.csv price --time 1800
 
 # Set memory limits (Linux)
 $ systemd-run --scope -p MemoryMax=4G mloop train dataset.csv price --time 1800
+```
+
+---
+
+## Troubleshooting
+
+Common issues and solutions when using MLoop.
+
+### Encoding Issues (Korean/Chinese Text)
+
+**Problem**: Garbled text like `㿀₩Ý¢Àà§°ü¬÷Àú¥ó` instead of Korean characters
+
+**Solution**: MLoop v1.0.0+ automatically detects and converts encodings:
+```bash
+# Check encoding with mloop info
+mloop info data.csv
+# Output: [Info] Converted CP949 → UTF-8
+
+# Train will also auto-convert
+mloop train data.csv label --task regression
+```
+
+If still having issues:
+1. Try saving your CSV as UTF-8 with BOM in Excel
+2. Use a text editor that supports encoding conversion (VS Code, Notepad++)
+
+### Multi-CSV Merge Failures
+
+**Problem**: Schema mismatch error when merging multiple CSV files
+
+**Solution**:
+```bash
+# Check schemas first
+mloop info file1.csv
+mloop info file2.csv
+
+# If columns match, use --data to specify files
+mloop train --data file1.csv file2.csv --label Target --task regression
+
+# For auto-discovery, ensure files have identical columns
+mloop train --auto-merge --label Target --task regression
+```
+
+### Missing Label Values
+
+**Problem**: Training fails with "label column contains null values"
+
+**Solution**: Use `--drop-missing-labels` (default for classification):
+```bash
+# Explicit handling
+mloop train data.csv label --task binary-classification --drop-missing-labels
+
+# Check the output for dropped row count
+# Output: "Warning: Dropped 113 rows with missing labels"
+```
+
+### Low Model Performance
+
+**Problem**: R² < 0.5 or Accuracy < 0.7 after training
+
+**Checklist**:
+1. **Check data quality**: `mloop info data.csv` - look for missing values, outliers
+2. **Increase training time**: `--time 300` or `--time 600`
+3. **Check label column**: Ensure it's the correct target variable
+4. **Check class imbalance**: MLoop shows distribution automatically for classification
+5. **Consider preprocessing**: Add feature engineering scripts in `.mloop/scripts/preprocessing/`
+
+### Training Timeout
+
+**Problem**: Training finishes but metrics are poor or "no valid model found"
+
+**Solution**:
+```bash
+# Increase training time budget
+mloop train data.csv label --time 600  # 10 minutes
+
+# For complex datasets, try 30 minutes
+mloop train data.csv label --time 1800
+```
+
+### API Server Won't Start
+
+**Problem**: `mloop serve` fails or can't connect
+
+**Checklist**:
+1. **Port in use**: Try different port `mloop serve --port 8080`
+2. **No production model**: Promote a model first `mloop promote exp-001`
+3. **Model corrupted**: Re-train and promote a new model
+
+### Docker Build Fails
+
+**Problem**: Dockerfile generation or build fails
+
+**Solution**:
+```bash
+# Regenerate Docker files
+mloop docker
+
+# Ensure production model exists
+ls models/production/current/
+
+# Build with verbose output
+docker build -t my-model . --progress=plain
 ```
 
 ---
