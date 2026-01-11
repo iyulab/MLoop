@@ -319,7 +319,7 @@ public sealed class ResolutionSuggestion
     /// <summary>
     /// Human-readable suggestion message.
     /// </summary>
-    public string Message => $"Based on similar failure ({Confidence:P0} match): " +
+    public string Message => $"Based on similar failure ({Confidence * 100:F0}% match): " +
                              $"Root cause was '{SuggestedResolution?.RootCause}'. " +
                              $"Suggested fix: {SuggestedResolution?.FixDescription}";
 }

@@ -162,7 +162,7 @@ public sealed class FailureWarning
     /// <summary>
     /// Warning message to display.
     /// </summary>
-    public string Message => $"Potential failure risk ({SimilarityScore:P0} match): {Context?.ErrorType}. " +
+    public string Message => $"Potential failure risk ({SimilarityScore * 100:F0}% match): {Context?.ErrorType}. " +
                             $"Suggestion: {Resolution?.PreventionAdvice ?? Resolution?.FixDescription}";
 }
 
