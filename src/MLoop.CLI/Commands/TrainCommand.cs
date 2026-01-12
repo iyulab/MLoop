@@ -3,7 +3,6 @@ using Microsoft.ML;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
-using MLoop.CLI.Infrastructure.Memory;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
@@ -841,17 +840,6 @@ public static class TrainCommand
                     }
                     AnsiConsole.WriteLine();
                 }
-            }
-
-            // T8.2: Background memory collection (silent, no UI impact)
-            try
-            {
-                using var memoryCollector = new TrainingMemoryCollector(projectRoot);
-                await memoryCollector.StoreSuccessfulTrainingAsync(trainingConfig, result);
-            }
-            catch
-            {
-                // Silent failure - never interrupt training workflow
             }
 
             return 0;
