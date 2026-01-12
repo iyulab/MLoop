@@ -6,7 +6,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
-## Current Status (v1.2.0 - January 2026)
+## Current Status (v1.4.0 - January 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
@@ -33,10 +33,10 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - **MLoop.API**: REST API for web integration
 - **MLoop.Extensibility**: Hooks, scripts, metrics interfaces
 - **MLoop.DataStore**: Prediction logging with filesystem-first JSONL storage (v1.3.0)
-- **MLoop.Ops**: Retraining triggers, model comparison (new in v1.2.0)
+- **MLoop.Ops**: Model comparison, time-based retraining triggers (v1.4.0)
 
 ### Quality
-- 397+ tests passing (Core + API + CLI + DataStore)
+- 413+ tests passing (Core + API + CLI + DataStore + Ops)
 
 ---
 
@@ -560,6 +560,92 @@ This separation of concerns enables:
 
 ---
 
+## Phase 10: DataStore Implementation ✅ Complete (v1.3.0)
+**Goal**: Enable prediction logging and monitoring infrastructure
+
+**Background**: Production ML systems need prediction tracking for:
+- Monitoring model performance over time
+- Debugging prediction issues
+- Compliance and audit requirements
+- Building feedback loops for retraining
+
+**Philosophy Alignment**: Filesystem-first, JSONL format for simplicity
+
+### T10.1 FilePredictionLogger ✅
+**Problem**: No way to track predictions after deployment
+**Solution**: JSONL-based prediction logging to `.mloop/logs/{model}/{date}.jsonl`
+- [x] IPredictionLogger interface with async logging
+- [x] FilePredictionLogger with thread-safe file operations
+- [x] Batch logging support for high-throughput scenarios
+- [x] Query API with date range and limit filters
+
+### T10.2 CLI Integration ✅
+**Problem**: Users need to view prediction history
+**Solution**: Add prediction logging capabilities to CLI
+- [x] `--log` option in `mloop predict` command
+- [x] `mloop logs` command with filtering options
+- [x] JSON output format for scripting
+- [x] Table output format for human readability
+
+### Success Metrics (Phase 10)
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| FilePredictionLogger | Complete | ✅ | Complete |
+| CLI Integration | Complete | ✅ | Complete |
+| Unit Tests | 8+ tests | 8 tests | ✅ |
+
+---
+
+## Phase 11: Ops Implementation ✅ Complete (v1.4.0)
+**Goal**: Enable model comparison and retraining trigger infrastructure
+
+**Background**: MLOps automation requires:
+- Comparing model versions to decide on promotion
+- Scheduling retraining based on time or performance
+- Tracking model lifecycle and performance drift
+
+**Philosophy Alignment**: Minimal scope, filesystem-based, no external dependencies
+
+### T11.1 FileModelComparer ✅
+**Problem**: No automated way to compare experiments
+**Solution**: Filesystem-based model comparison service
+- [x] IModelComparer interface implementation
+- [x] Compare experiments by metrics
+- [x] Compare candidate with production model
+- [x] Find best experiment based on criteria
+- [x] Support for higher-is-better and lower-is-better metrics
+
+### T11.2 TimeBasedTrigger ✅
+**Problem**: No automated retraining scheduling
+**Solution**: Simple time-based retraining trigger
+- [x] IRetrainingTrigger interface (partial implementation)
+- [x] TimeBased condition evaluation
+- [x] Days since last training calculation
+- [x] Clear messaging for unsupported conditions
+
+### T11.3 Existing CompareCommand ✅
+**Problem**: CLI comparison functionality
+**Solution**: Already implemented in Phase 4
+- [x] `mloop compare` command with metric highlighting
+- [x] Production model indication
+- [x] Best value highlighting in table output
+
+### Success Metrics (Phase 11)
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| FileModelComparer | Complete | ✅ | Complete |
+| TimeBasedTrigger | Complete | ✅ | Complete |
+| Unit Tests | 16+ tests | 16 tests | ✅ |
+
+### Deferred to v2.0.0
+- **IPromotionManager**: Overlaps with existing `mloop promote` command
+- **Full IRetrainingTrigger**: Requires IFeedbackCollector for AccuracyDrop, DataDrift, etc.
+- **IFeedbackCollector**: User feedback collection for model monitoring
+
+---
+
 ## Future Considerations (P3 LOW)
 
 ### Advanced Features
@@ -594,9 +680,10 @@ This separation of concerns enables:
 | **v1.0.0** | Jan 2026 | Production Readiness (Phase 7) | ✅ Released |
 | **v1.1.0** | Jan 2026 | Polish & Documentation (Phase 8) | ⚠️ Partial |
 | **v1.2.0** | Jan 2026 | Zero AI Dependency Refactoring | ✅ Complete |
-| **v1.3.0** | Q1 2026 | DataStore Implementation | 🔄 In Progress |
-| **v1.4.0** | Q2 2026 | Ops Implementation | 📋 Planning |
-| **v2.0.0** | Q3 2026 | Studio Integration | 📋 Planning |
+| **v1.3.0** | Jan 2026 | DataStore Implementation | ✅ Complete |
+| **v1.4.0** | Jan 2026 | Ops Implementation | ✅ Complete |
+| **v1.5.0** | Q1 2026 | CLI Polish & Testing | 📋 Planning |
+| **v2.0.0** | Q2 2026 | Studio Integration | 📋 Planning |
 
 ---
 
@@ -635,11 +722,17 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: January 12, 2026
-**Version**: v1.2.0 Complete (Zero AI Dependency Refactoring)
+**Version**: v1.4.0 Complete (Ops Implementation)
 **Recent Changes**:
+- v1.4.0 MLoop.Ops implementation complete
+  - FileModelComparer: Filesystem-based experiment comparison
+  - TimeBasedTrigger: Simple time-based retraining trigger
+  - 16 unit tests for Ops services
+- v1.3.0 MLoop.DataStore implementation complete
+  - FilePredictionLogger: JSONL-based prediction logging
+  - `mloop logs` command for viewing prediction history
+  - `--log` option in predict command
+  - 8 unit tests for DataStore services
 - v1.2.0 "Zero AI Dependency" refactoring complete
 - MLoop.AIAgent removed, AI integration via mloop-mcp
-- Phase 5 (Memory), Phase 6 T6.1, Phase 8 T8.2 deprecated
-- Phase 9 cancelled (memory-based features)
-- New projects: MLoop.DataStore, MLoop.Ops (skeletons)
 - External repos: mloop-mcp, mloop-studio (submodules)
