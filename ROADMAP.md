@@ -6,7 +6,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
-## Current Status (v0.2.0 - January 2026)
+## Current Status (v1.2.0 - January 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
@@ -16,17 +16,27 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - Batch prediction with auto-discovery
 - CLI with comprehensive command set
 - .NET 10.0 + C# 13 modern codebase
+- Zero AI dependencies (pure ML CLI tool)
 
-### AI Agent System
-- **Ironbees v0.4.1** (Infrastructure): Multi-provider LLM, YAML templates, AgenticSettings
-- **MemoryIndexer v0.6.0** (Infrastructure): Semantic memory, Tags/Metadata, vector search
-- **MLoop Agents** (Domain Logic): 5 specialized agents in `agents/` directory
-  - data-analyst, model-architect, preprocessing-expert, experiment-explainer, ml-tutor
-- Architecture: External libs provide infrastructure, MLoop implements ML-specific logic
+### AI Integration (External)
+> **v1.2.0 Architecture Change**: "AI uses MLoop" instead of "MLoop contains AI"
+
+- **mloop-mcp**: MCP server exposing MLoop CLI to AI clients
+  - Repository: https://github.com/iyulab/mloop-mcp
+  - Tools: train, predict, list, promote, info, serve
+- **mloop-studio**: Web platform for visual ML workflows (planned)
+  - Repository: https://github.com/iyulab/mloop-studio
+
+### Project Structure (6 projects)
+- **MLoop.Core**: Pure ML engine (AutoML, preprocessing, encoding detection)
+- **MLoop.CLI**: Simple command-line interface
+- **MLoop.API**: REST API for web integration
+- **MLoop.Extensibility**: Hooks, scripts, metrics interfaces
+- **MLoop.DataStore**: Prediction logging interfaces (new in v1.2.0)
+- **MLoop.Ops**: Retraining triggers, model comparison (new in v1.2.0)
 
 ### Quality
-- 464+ tests passing (Core + API + AIAgent + Pipeline)
-- 15 LLM integration tests for AI agents
+- 389+ tests passing (Core + API + CLI)
 
 ---
 
@@ -229,8 +239,15 @@ Individual reports:
 
 ---
 
-## Phase 5: Intelligent Memory System ✅ Complete (v0.4.0)
+## Phase 5: Intelligent Memory System ⚠️ DEPRECATED (v1.2.0)
 **Goal**: Enable agents to learn from past successes and failures
+
+> ⚠️ **Deprecated in v1.2.0**: This phase was removed as part of the "Zero AI Dependency" refactoring.
+> Memory services (DatasetPatternMemoryService, FailureCaseLearningService) were part of MLoop.AIAgent
+> which has been completely removed. AI-based pattern learning is now the responsibility of external
+> AI clients using mloop-mcp.
+>
+> **Historical Reference**: The implementation below is preserved for documentation purposes only.
 
 ### T5.1 Dataset Pattern Memory ✅
 **Problem**: Agent starts from scratch without leveraging past learnings
@@ -301,32 +318,23 @@ public class FailureCaseLearningService
 ## Phase 6: Agent Intelligence & Data Quality (v0.5.0)
 **Goal**: Polish and stabilize through intelligent data handling and agent memory integration
 
+> ⚠️ **Partial Deprecation in v1.2.0**: T6.1 (Agent Memory Integration) was removed with MLoop.AIAgent.
+> T6.2 (Encoding Auto-Detection) and T6.3 (Dataset Compatibility Check) are preserved in MLoop.Core.
+
 **Background**: ML-Resource simulation analysis (10/25 datasets) revealed:
 - Remaining datasets have fundamental incompatibilities (no labels, wrong format)
 - Encoding issues block 018-열처리 예지보전 (CP949/EUC-KR)
 - Better guidance needed when data doesn't fit supervised learning paradigm
 
 **Philosophy Alignment**: Focus on POLISH, not new features
-- Use existing Phase 5 infrastructure (memory services already built)
 - Add low-cost, high-value improvements (encoding detection)
 - Improve error messages instead of complex workarounds
 
-### T6.1 Agent Memory Integration ✅
-**Problem**: Phase 5 memory services exist but agents don't use them
-**Solution**: IntelligentDataAnalyzer wraps DataAnalyzer with memory integration
-```csharp
-// IntelligentDataAnalyzer with memory-based recommendations
-var result = await _intelligentAnalyzer.AnalyzeWithMemoryAsync(filePath, labelColumn);
-if (result.HasMemoryInsights)
-{
-    // Recommend based on similar patterns and past failures
-    Console.WriteLine(result.GetInsightsSummary());
-}
-```
-- [x] DatasetFingerprint.FromAnalysisReport() factory method
-- [x] IntelligentDataAnalyzer with memory integration (composition pattern)
-- [x] DatasetPatternMemoryService integration for similar pattern lookup
-- [x] FailureCaseLearningService integration for proactive warnings
+### T6.1 Agent Memory Integration ⚠️ DEPRECATED
+**Status**: Removed in v1.2.0 with MLoop.AIAgent
+
+> This feature was removed as part of the "Zero AI Dependency" refactoring.
+> IntelligentDataAnalyzer and memory integration are no longer part of MLoop.
 
 ### T6.2 Encoding Auto-Detection ✅
 **Problem**: CP949/EUC-KR encoded files cause garbled text (018 dataset)
@@ -472,23 +480,12 @@ Target:
 - [x] Update README.md quick-start examples
 - [x] Document all CLI commands with examples (train, info, docker)
 
-### T8.2 Background Memory Infrastructure ✅
-**Problem**: Memory services exist but never collect data
-**Solution**: Silently collect patterns during training for future insights
-```
-Current: Memory services are empty
-Target:  Background collection during mloop train
-```
-- [x] TrainCommand stores DatasetFingerprint after successful training
-- [x] FailureCaseLearningService captures errors automatically
-- [x] No CLI flags, no UI changes (pure infrastructure)
-- [x] Prepare for v1.2.0 `--insights` feature
+### T8.2 Background Memory Infrastructure ⚠️ DEPRECATED
+**Status**: Removed in v1.2.0 with MLoop.AIAgent
 
-**Implementation**:
-- `TrainingMemoryCollector`: Silent background memory collection
-- `DatasetPatternMemoryService`: Stores successful training patterns
-- `FailureCaseLearningService`: Captures errors for future learning
-- Mock embedding for zero-config operation (no external dependencies)
+> This feature was removed as part of the "Zero AI Dependency" refactoring.
+> TrainingMemoryCollector and memory services are no longer part of MLoop.
+> Pattern learning is now the responsibility of external AI clients.
 
 ### T8.3 Error Message Improvement ✅
 **Problem**: Error messages are generic, lack actionable guidance
@@ -540,41 +537,26 @@ Target:  정상한글 (correct Korean text)
 
 ---
 
-## Phase 9: CLI Intelligence (v1.2.0)
-**Goal**: Enable memory-based intelligent recommendations for users
+## Phase 9: CLI Intelligence ❌ CANCELLED
+**Original Goal**: Enable memory-based intelligent recommendations for users
 
-**Background**: Phase 8 completed infrastructure (memory collection, error suggestions). Phase 9 focuses on:
-- Exposing memory insights through CLI
-- Deferred T7.1 CLI Insights feature
-- Simulation-derived improvements (IMP-002, IMP-003) if high-value
+> ❌ **Cancelled in v1.2.0**: This phase was cancelled as part of the "Zero AI Dependency" refactoring.
+> Memory-based features (T9.1 CLI Insights) depended on MLoop.AIAgent which has been removed.
+> T9.2 (Label Column Inference) may be reconsidered for future versions as a Core feature.
+>
+> AI-based recommendations are now the responsibility of external AI clients using mloop-mcp.
 
-**Philosophy Alignment**: "Minimum Cost" = Leverage existing infrastructure, minimal new code
+### Future Direction
 
-### T9.1 CLI Insights Flag (Deferred from T7.1)
-**Problem**: Memory services collect data but users cannot access insights
-**Solution**: Optional `--insights` flag to enable memory-based recommendations
-```bash
-mloop train --data data.csv --label Price --insights
-# Shows: "Similar dataset patterns suggest LightGBM with 300s training time"
-```
-- [ ] `--insights` flag in TrainCommand
-- [ ] Integration with DatasetPatternMemoryService
-- [ ] Fallback graceful degradation when memory is empty
+Instead of embedded AI intelligence, MLoop follows the Unix philosophy:
+- **MLoop CLI**: Simple, stateless ML operations (like `grep`, `awk`)
+- **mloop-mcp**: MCP server exposing CLI to AI clients
+- **AI Clients**: Claude, Cursor, or any MCP-compatible AI provides intelligence
 
-### T9.2 Label Column Inference (IMP-002)
-**Problem**: Users must specify label column manually even when obvious
-**Solution**: Auto-recommend label column based on DataAnalyzer.RecommendTarget()
-- [ ] Suggest label column if not specified
-- [ ] Use column naming patterns (target, label, y, price, etc.)
-- [ ] Integration with mloop.yaml configuration
-
-### Success Metrics (Phase 9)
-
-| Metric | Baseline | Target | Method |
-|--------|----------|--------|--------|
-| CLI Insights Usage | 0% | 20%+ | Flag adoption rate |
-| Label Auto-Inference | 0% | 50%+ | Datasets with auto-detected label |
-| Memory Pattern Reuse | 0% | 10%+ | Similar pattern recommendations |
+This separation of concerns enables:
+- Zero AI dependencies in MLoop
+- Any AI provider can use MLoop
+- Simpler maintenance and testing
 
 ---
 
@@ -607,11 +589,14 @@ mloop train --data data.csv --label Price --insights
 | **v0.1.0** | Nov 2025 | ML.NET 5.0 + Core | ✅ Complete |
 | **v0.2.0** | Jan 2026 | Preprocessing + Extensibility + AI Agents | ✅ Complete |
 | **v0.3.0** | Jan 2026 | Autonomous MLOps (Phase 4 Tier 1-3) | ✅ Complete |
-| **v0.4.0** | Jan 2026 | Intelligent Memory System (Phase 5) | ✅ Complete |
-| **v0.5.0** | Jan 2026 | Agent Intelligence & Data Quality (Phase 6) | ✅ Complete |
+| **v0.4.0** | Jan 2026 | Intelligent Memory System (Phase 5) | ⚠️ Deprecated |
+| **v0.5.0** | Jan 2026 | Agent Intelligence & Data Quality (Phase 6) | ⚠️ Partial |
 | **v1.0.0** | Jan 2026 | Production Readiness (Phase 7) | ✅ Released |
-| **v1.1.0** | Jan 2026 | Polish & Documentation (Phase 8) | ✅ Complete |
-| **v1.2.0** | Q1 2026 | CLI Intelligence (Phase 9) | 📋 Planning |
+| **v1.1.0** | Jan 2026 | Polish & Documentation (Phase 8) | ⚠️ Partial |
+| **v1.2.0** | Jan 2026 | Zero AI Dependency Refactoring | ✅ Complete |
+| **v1.3.0** | Q1 2026 | DataStore Implementation | 📋 Planning |
+| **v1.4.0** | Q2 2026 | Ops Implementation | 📋 Planning |
+| **v2.0.0** | Q3 2026 | Studio Integration | 📋 Planning |
 
 ---
 
@@ -649,9 +634,12 @@ Submit proposals via GitHub Issues with `roadmap` label.
 
 ---
 
-**Last Updated**: January 11, 2026
-**Version**: v1.1.0 Complete (Phase 8), v1.2.0 Planning (Phase 9)
+**Last Updated**: January 12, 2026
+**Version**: v1.2.0 Complete (Zero AI Dependency Refactoring)
 **Recent Changes**:
-- T8.5 Encoding Detection Consistency fix (IMP-001 from Agent Simulation)
-- Phase 8 marked complete with all success metrics achieved
-- Phase 9 scoped with T9.1 CLI Insights and T9.2 Label Inference
+- v1.2.0 "Zero AI Dependency" refactoring complete
+- MLoop.AIAgent removed, AI integration via mloop-mcp
+- Phase 5 (Memory), Phase 6 T6.1, Phase 8 T8.2 deprecated
+- Phase 9 cancelled (memory-based features)
+- New projects: MLoop.DataStore, MLoop.Ops (skeletons)
+- External repos: mloop-mcp, mloop-studio (submodules)
