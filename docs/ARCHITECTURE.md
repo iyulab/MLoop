@@ -686,6 +686,12 @@ MLoop/
 │   ├── GUIDE.md                         # User guide
 │   └── ECOSYSTEM.md                     # MLoop ecosystem overview
 │
+├── mcp/                                 # [Submodule] mloop-mcp (MCP Server)
+│   └── (https://github.com/iyulab/mloop-mcp)
+│
+├── studio/                              # [Submodule] mloop-studio (Web Platform)
+│   └── (https://github.com/iyulab/mloop-studio)
+│
 ├── Directory.Build.props                # Central package management
 ├── Directory.Packages.props             # Package versions
 └── .gitignore

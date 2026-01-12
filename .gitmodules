@@ -1,0 +1,6 @@
+[submodule "mcp"]
+	path = mcp
+	url = https://github.com/iyulab/mloop-mcp.git
+[submodule "studio"]
+	path = studio
+	url = https://github.com/iyulab/mloop-studio.git
