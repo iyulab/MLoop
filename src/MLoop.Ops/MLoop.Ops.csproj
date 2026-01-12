@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>MLoop.Ops</RootNamespace>
+
+    <!-- Package metadata -->
+    <Version>0.1.0-alpha</Version>
+    <Description>MLoop Ops - MLOps automation for retraining, comparison, and promotion</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MLoop.Core\MLoop.Core.csproj" />
+  </ItemGroup>
+
+</Project>
