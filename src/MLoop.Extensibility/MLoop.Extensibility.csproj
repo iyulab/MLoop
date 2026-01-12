@@ -12,13 +12,16 @@
     <Authors>MLoop Contributors</Authors>
     <Description>Extensibility interfaces for MLoop - preprocessing scripts, hooks, and custom metrics</Description>
     <PackageTags>mlops;automl;mlnet;extensibility;preprocessing</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- ML.NET required for hook contexts -->
     <PackageReference Include="Microsoft.ML" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>

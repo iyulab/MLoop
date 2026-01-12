@@ -6,14 +6,20 @@
     <Nullable>enable</Nullable>
     <RootNamespace>MLoop.Ops</RootNamespace>
 
-    <!-- Package metadata -->
-    <Version>0.1.0-alpha</Version>
-    <Description>MLoop Ops - MLOps automation for retraining, comparison, and promotion</Description>
+    <!-- NuGet Package Metadata -->
+    <PackageId>MLoop.Ops</PackageId>
+    <Description>MLoop Ops - MLOps automation for model comparison, retraining triggers, and promotion</Description>
+    <PackageTags>mlops;automation;retraining;triggers;model-comparison</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MLoop.Core\MLoop.Core.csproj" />
     <ProjectReference Include="..\MLoop.DataStore\MLoop.DataStore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>

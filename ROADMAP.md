@@ -6,7 +6,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
-## Current Status (v1.7.0 - January 2026)
+## Current Status (v1.8.0 - January 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
@@ -18,6 +18,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - Data sampling for retraining datasets
 - Feedback-based retraining triggers with CLI evaluation
 - CLI with comprehensive command set (including `mloop trigger check`)
+- SDK packages ready for NuGet distribution
 - .NET 10.0 + C# 13 modern codebase
 - Zero AI dependencies (pure ML CLI tool)
 
@@ -774,21 +775,64 @@ Phase 14 exposes this functionality via CLI for:
 | CLI Integration | Complete | ✅ | Complete |
 | Unit Tests | Existing | 24 tests | ✅ |
 
-### Next Steps (v1.8.0+)
+---
+
+## Phase 15: NuGet Package Preparation ✅ Complete (v1.8.0)
+**Goal**: Prepare SDK packages for NuGet distribution
+
+**Background**: v2.0.0 Studio Integration requires SDK packages on NuGet.
+This phase prepares all SDK projects for public distribution.
+
+**Philosophy Alignment**:
+- SDK/Tools separation enables clean package distribution
+- NuGet packages enable MLoop Studio direct reference
+
+### T15.1 Common Package Settings ✅
+**Status**: Already configured in Directory.Build.props
+- [x] Authors, Company, Copyright
+- [x] MIT License
+- [x] GitHub Repository URL
+- [x] Source Link integration
+- [x] Symbol packages
+
+### T15.2 SDK Package Metadata ✅
+**Problem**: SDK projects need individual package metadata
+**Solution**: Add NuGet configuration to each SDK project
+- [x] MLoop.Core: PackageId, Description, Tags, README
+- [x] MLoop.DataStore: PackageId, Description, Tags, README
+- [x] MLoop.Extensibility: PackageId, Description, Tags, README (already complete)
+- [x] MLoop.Ops: PackageId, Description, Tags, README
+
+### T15.3 SDK README Files ✅
+**Problem**: Each package needs documentation
+**Solution**: Create README.md for NuGet package display
+- [x] MLoop.Core/README.md
+- [x] MLoop.DataStore/README.md
+- [x] MLoop.Extensibility/README.md (already exists)
+- [x] MLoop.Ops/README.md
+
+### Success Metrics (Phase 15)
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| Package Metadata | 4 SDKs | ✅ | Complete |
+| README Files | 4 SDKs | ✅ | Complete |
+| Build Verification | Pass | ✅ | Complete |
+
+### Next Steps (v1.9.0+)
 
 **Project Structure Refactoring**:
 - Move `src/MLoop.CLI` → `tools/MLoop.CLI`
 - Move `src/MLoop.API` → `tools/MLoop.API`
 - Update solution file and project references
-- SDK packages: MLoop.Core, MLoop.DataStore, MLoop.Extensibility, MLoop.Ops
-- Tool packages: MLoop.CLI (dotnet tool), MLoop.API (Docker)
 
 **Sampling Enhancements**:
 - Stratified Sampling: Sample proportionally by class distribution
 - LowConfidence Sampling: Prioritize uncertain predictions
 
-**Trigger Enhancements**:
-- DataDrift Detection: Statistical tests for feature distribution changes
+**NuGet Publishing**:
+- GitHub Actions workflow for automated publishing
+- Version management strategy
 
 ---
 
@@ -831,6 +875,7 @@ Phase 14 exposes this functionality via CLI for:
 | **v1.5.0** | Jan 2026 | Feedback Collection | ✅ Complete |
 | **v1.6.0** | Jan 2026 | Data Sampling & Triggers | ✅ Complete |
 | **v1.7.0** | Jan 2026 | Trigger CLI Enhancement | ✅ Complete |
+| **v1.8.0** | Jan 2026 | NuGet Package Preparation | ✅ Complete |
 | **v2.0.0** | Q2 2026 | Studio Integration | 📋 Planning |
 
 ---
@@ -870,8 +915,12 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: January 12, 2026
-**Version**: v1.7.0 Complete (Trigger CLI Enhancement)
+**Version**: v1.8.0 Complete (NuGet Package Preparation)
 **Recent Changes**:
+- v1.8.0 NuGet Package Preparation complete
+  - SDK package metadata: PackageId, Description, Tags for all SDK projects
+  - README files for NuGet package display
+  - Ready for NuGet.org or GitHub Packages distribution
 - v1.7.0 Trigger CLI Enhancement complete
   - TriggerCommand: `mloop trigger check --model xxx` for CLI-based trigger evaluation
   - Custom thresholds: `--accuracy` and `--feedback` options

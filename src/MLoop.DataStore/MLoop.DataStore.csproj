@@ -6,13 +6,19 @@
     <Nullable>enable</Nullable>
     <RootNamespace>MLoop.DataStore</RootNamespace>
 
-    <!-- Package metadata -->
-    <Version>0.1.0-alpha</Version>
-    <Description>MLoop DataStore - Prediction logging and feedback collection for MLOps</Description>
+    <!-- NuGet Package Metadata -->
+    <PackageId>MLoop.DataStore</PackageId>
+    <Description>MLoop DataStore - Prediction logging, feedback collection, and data sampling for MLOps</Description>
+    <PackageTags>mlops;logging;feedback;data-sampling;prediction</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MLoop.Core\MLoop.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>
