@@ -2,7 +2,7 @@
 
 **Version**: v1.2.0 → v2.0.0
 **Date**: January 2026
-**Status**: In Progress (Phase A ✅, Phase B ✅, Phase C/D pending)
+**Status**: In Progress (Phase A ✅, Phase B ✅, Phase C ✅, Phase D pending)
 
 ---
 
@@ -154,42 +154,28 @@ src/MLoop.Ops/
 
 ---
 
-### Phase C: External Repos (v1.2.0)
+### Phase C: External Repos (v1.2.0) ✅ COMPLETE
 **Goal**: 서브모듈 설정
 
 ```
 Duration: 1 day (레포 생성 후)
 Risk: Low
+Status: ✅ Completed (January 12, 2026)
 ```
 
-#### C.1 mloop-mcp 레포
+#### C.1 mloop-mcp 레포 ✅
 ```bash
-# 레포 생성 후
 git submodule add https://github.com/iyulab/mloop-mcp.git mcp
 ```
+- [x] 레포 생성: https://github.com/iyulab/mloop-mcp
+- [x] 서브모듈 추가: `mcp/`
 
-**mloop-mcp 초기 구조**:
-```
-mloop-mcp/
-├── src/
-│   ├── tools/
-│   │   ├── train.ts
-│   │   ├── predict.ts
-│   │   ├── list.ts
-│   │   └── promote.ts
-│   └── prompts/
-│       ├── data-analyst.md
-│       ├── model-architect.md
-│       └── ml-tutor.md
-├── package.json
-└── README.md
-```
-
-#### C.2 mloop-studio 레포
+#### C.2 mloop-studio 레포 ✅
 ```bash
-# 레포 생성 후
 git submodule add https://github.com/iyulab/mloop-studio.git studio
 ```
+- [x] 레포 생성: https://github.com/iyulab/mloop-studio
+- [x] 서브모듈 추가: `studio/`
 
 ---
 
@@ -257,14 +243,14 @@ Risk: Low
 | B.3.1 | Update MLoop.sln | 🟡 MED | ✅ Done |
 | B.3.2 | Verify build | 🔴 HIGH | ✅ Done (389 tests pass) |
 
-### Phase C Tasks (4 tasks)
+### Phase C Tasks (4 tasks) ✅ COMPLETE
 
-| ID | Task | Priority | Est. |
-|----|------|----------|------|
-| C.1.1 | Create mloop-mcp repo | 🟡 MED | - |
-| C.1.2 | Add mcp/ submodule | 🟡 MED | 5min |
-| C.2.1 | Create mloop-studio repo | 🟡 MED | - |
-| C.2.2 | Add studio/ submodule | 🟡 MED | 5min |
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| C.1.1 | Create mloop-mcp repo | 🟡 MED | ✅ Done |
+| C.1.2 | Add mcp/ submodule | 🟡 MED | ✅ Done |
+| C.2.1 | Create mloop-studio repo | 🟡 MED | ✅ Done |
+| C.2.2 | Add studio/ submodule | 🟡 MED | ✅ Done |
 
 ### Phase D Tasks (8 tasks)
 
@@ -287,7 +273,8 @@ Risk: Low
 |---------|-------|------------------|--------|
 | **v1.2.0-alpha** | Phase A | AIAgent 제거, 순수 CLI | ✅ Complete |
 | **v1.2.0-beta** | Phase B | DataStore/Ops 스켈레톤 | ✅ Complete |
-| **v1.2.0** | Phase C+D | 서브모듈, 문서 완료 |
+| **v1.2.0-rc** | Phase C | 서브모듈 설정 | ✅ Complete |
+| **v1.2.0** | Phase D | 문서 완료 | ⏳ Pending |
 | **v1.3.0** | DataStore | 예측 로깅, 피드백 수집 |
 | **v1.4.0** | Ops | 재학습 트리거, 자동 프로모션 |
 | **v2.0.0** | Studio | 웹 플랫폼 베타 |
@@ -328,4 +315,4 @@ git checkout feature/phase8-polish-documentation -- agents/
 
 ---
 
-**Last Updated**: January 12, 2026 (Phase B completed)
+**Last Updated**: January 12, 2026 (Phase C completed)
