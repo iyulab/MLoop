@@ -4,6 +4,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>MLoop.Core</PackageId>
+    <Description>MLoop Core - ML.NET AutoML engine for training, prediction, and model management</Description>
+    <PackageTags>mlops;automl;mlnet;machine-learning;training;prediction</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +25,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MLoop.Extensibility\MLoop.Extensibility.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <!-- FilePrepper Integration: Conditional references for CI vs Local -->
