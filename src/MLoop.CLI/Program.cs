@@ -34,6 +34,7 @@ internal class Program
             LogsCommand.Create(),
             FeedbackCommand.Create(),
             SampleCommand.Create(),
+            TriggerCommand.Create(),
             CompareCommand.Create(),
             PromoteCommand.Create(),
             InfoCommand.Create(),
@@ -83,6 +84,7 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]logs[/]        View prediction logs");
         AnsiConsole.MarkupLine("  [green]feedback[/]    Manage prediction feedback");
         AnsiConsole.MarkupLine("  [green]sample[/]      Create retraining datasets from predictions");
+        AnsiConsole.MarkupLine("  [green]trigger[/]     Evaluate retraining triggers for models");
         AnsiConsole.MarkupLine("  [green]compare[/]     Compare experiments side by side");
         AnsiConsole.MarkupLine("  [green]promote[/]     Promote an experiment to production");
         AnsiConsole.MarkupLine("  [green]info[/]        Display dataset profiling information");
