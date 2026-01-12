@@ -31,12 +31,21 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
   - Repository: https://github.com/iyulab/mloop-studio
 
 ### Project Structure (6 projects)
+
+**SDK (`src/`) - NuGet Package Distribution**
 - **MLoop.Core**: Pure ML engine (AutoML, preprocessing, encoding detection)
-- **MLoop.CLI**: Simple command-line interface
-- **MLoop.API**: REST API for web integration
+- **MLoop.DataStore**: Prediction logging, feedback collection, data sampling (JSONL)
 - **MLoop.Extensibility**: Hooks, scripts, metrics interfaces
-- **MLoop.DataStore**: Prediction logging, feedback collection, data sampling with filesystem-first JSONL storage (v1.6.0)
-- **MLoop.Ops**: Model comparison, feedback-based retraining triggers (v1.6.0)
+- **MLoop.Ops**: Model comparison, feedback-based retraining triggers
+
+**Tools (`tools/`) - Executable Distribution**
+- **MLoop.CLI**: Command-line interface (dotnet tool)
+- **MLoop.API**: REST API server (Docker/standalone)
+
+**Usage Pattern:**
+- **.NET 앱 (MLoop Studio)**: SDK 직접 참조 (`dotnet add package MLoop.Core`)
+- **외부 시스템 (mloop-mcp)**: CLI subprocess 호출
+- **비-.NET 시스템**: API HTTP 호출
 
 ### Quality
 - 429+ tests passing (Core + API + CLI + DataStore + Ops)
@@ -729,10 +738,21 @@ This separation of concerns enables:
 | Unit Tests | 16+ tests | 16 tests | ✅ |
 
 ### Next Steps (v1.7.0+)
-- **Stratified Sampling**: Sample proportionally by class distribution
-- **LowConfidence Sampling**: Prioritize uncertain predictions
-- **DataDrift Detection**: Statistical tests for feature distribution changes
-- **AutoTrigger CLI**: `mloop trigger check --model xxx` command
+
+**Project Structure Refactoring**:
+- Move `src/MLoop.CLI` → `tools/MLoop.CLI`
+- Move `src/MLoop.API` → `tools/MLoop.API`
+- Update solution file and project references
+- SDK packages: MLoop.Core, MLoop.DataStore, MLoop.Extensibility, MLoop.Ops
+- Tool packages: MLoop.CLI (dotnet tool), MLoop.API (Docker)
+
+**Sampling Enhancements**:
+- Stratified Sampling: Sample proportionally by class distribution
+- LowConfidence Sampling: Prioritize uncertain predictions
+
+**Trigger Enhancements**:
+- DataDrift Detection: Statistical tests for feature distribution changes
+- AutoTrigger CLI: `mloop trigger check --model xxx` command
 
 ---
 

@@ -10,24 +10,27 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                        MLoop Studio                             │
 │              "대화로 만드는 ML" - 최종 제품                      │
+│                                                                 │
+│   SDK 직접 참조: MLoop.Core, MLoop.DataStore, MLoop.Ops        │
 └─────────────────────────────────────────────────────────────────┘
                               │
          ┌────────────────────┼────────────────────┐
          ▼                    ▼                    ▼
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│   mloop-mcp     │  │     MLoop       │  │   FilePrepper   │
+│   mloop-mcp     │  │  MLoop (SDK)    │  │   FilePrepper   │
 │                 │  │                 │  │                 │
-│  AI ↔ MLoop     │  │  ML 빌드 도구   │  │  파일 전처리    │
-│  브릿지         │  │                 │  │                 │
+│  AI ↔ MLoop     │  │  ML 빌드 SDK    │  │  파일 전처리    │
+│  브릿지 (CLI)   │  │  + CLI/API 도구 │  │                 │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│    Ironbees     │
-│                 │
-│  에이전트       │
-│  프레임워크     │
-└─────────────────┘
+         │                    │
+         ▼                    ▼
+┌─────────────────┐  ┌─────────────────────────────────────┐
+│    Ironbees     │  │  MLoop 프로젝트 구조                │
+│                 │  │  ┌─────────────┬─────────────────┐  │
+│  에이전트       │  │  │ src/ (SDK)  │ tools/ (실행)   │  │
+│  프레임워크     │  │  │ NuGet 배포  │ dotnet tool     │  │
+└─────────────────┘  │  └─────────────┴─────────────────┘  │
+                     └─────────────────────────────────────┘
 ```
 
 ### 컴포넌트 역할 요약표
@@ -177,25 +180,69 @@ Ironbees
 
 ### 3.5 아키텍처
 
+MLoop은 **SDK**와 **Tools**로 분리됩니다:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  src/ (SDK)                      │  tools/ (실행 도구)         │
+│  NuGet.org 패키지 배포           │  dotnet tool / Docker 배포  │
+├──────────────────────────────────┼─────────────────────────────┤
+│  MLoop.Core                      │  MLoop.CLI                  │
+│  MLoop.DataStore                 │  MLoop.API                  │
+│  MLoop.Extensibility             │                             │
+│  MLoop.Ops                       │                             │
+└──────────────────────────────────┴─────────────────────────────┘
+                    │                           │
+                    ▼                           ▼
+            라이브러리 참조              subprocess / HTTP 호출
+            (MLoop Studio)              (mloop-mcp, 외부 시스템)
+```
+
+#### SDK (`src/`) - NuGet 패키지
+
 ```
 src/
-├── MLoop.Core/            # ML 엔진 (라이브러리)
-│   ├── AutoML/           # ML.NET AutoML 래퍼
-│   ├── Data/             # 데이터 로딩
-│   ├── Pipeline/         # ML 파이프라인
-│   └── Models/           # 도메인 모델
+├── MLoop.Core/                # ML 엔진 라이브러리
+│   ├── AutoML/               # ML.NET AutoML 래퍼
+│   ├── Data/                 # 데이터 로딩
+│   ├── Pipeline/             # ML 파이프라인
+│   └── Models/               # 도메인 모델
 │
-├── MLoop.CLI/             # 명령줄 도구 (콘솔 앱)
-│   └── Commands/         # 각 명령 구현
+├── MLoop.DataStore/           # 운영 데이터 저장
+│   ├── FilePredictionLogger  # 예측 로그 (JSONL)
+│   ├── FileFeedbackCollector # 피드백 수집
+│   └── FileDataSampler       # 재학습 데이터 샘플링
 │
-├── MLoop.API/             # REST API (ASP.NET Core)
-│   └── (mloop serve가 실행)
+├── MLoop.Extensibility/       # 확장 인터페이스
+│   ├── IPreprocessingScript
+│   ├── IHook<T>
+│   └── ICustomMetric
 │
-└── MLoop.Extensibility/   # 확장 인터페이스
-    ├── IPreprocessingScript
-    ├── IHook<T>
-    └── ICustomMetric
+└── MLoop.Ops/                 # 운영 자동화
+    ├── FileModelComparer     # 모델 비교
+    ├── TimeBasedTrigger      # 시간 기반 트리거
+    └── FeedbackBasedTrigger  # 피드백 기반 트리거
 ```
+
+#### Tools (`tools/`) - 실행 도구
+
+```
+tools/
+├── MLoop.CLI/                 # 명령줄 도구
+│   └── Commands/             # dotnet tool install mloop
+│
+└── MLoop.API/                 # REST API 서버
+    └── (mloop serve 또는 독립 배포)
+```
+
+#### 사용 시나리오
+
+| 시나리오 | 사용 방식 | 예시 |
+|----------|-----------|------|
+| **MLoop Studio** | SDK 직접 참조 | `TrainingEngine.TrainAsync()` |
+| **mloop-mcp** | CLI subprocess | `exec("mloop train ...")` |
+| **외부 시스템** | API HTTP 호출 | `POST /api/train` |
+| **개발자** | CLI 직접 실행 | `mloop train --data ...` |
 
 ---
 
@@ -248,8 +295,10 @@ src/
 │                                                                 │
 │        │              │               │              │          │
 │        ▼              ▼               ▼              ▼          │
-│   FilePrepper     Ironbees      MLoop train     MLoop serve    │
-│                   + mloop-mcp                                   │
+│   FilePrepper     Ironbees       MLoop.Core      MLoop.Core    │
+│                   (AI 대화)      .TrainAsync()   .PredictAsync()│
+│                                                                 │
+│   ※ SDK 직접 참조 - CLI/API subprocess 호출 없음               │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -269,46 +318,56 @@ src/
 | **팀 협업** | 사용자/팀 관리 (멀티테넌트) |
 | **자동 재학습** | 피드백 기반 모델 개선 (MLoop.Ops 호출) |
 
-**Out of Scope (하지 않는 것, 하위 컴포넌트에 위임):**
+**Out of Scope (하지 않는 것, SDK에 위임):**
 
-| 기능 | 위임 대상 |
-|------|-----------|
-| ML 학습 로직 | MLoop.Core |
-| 데이터 저장 로직 | MLoop.DataStore |
-| 재학습 판단 로직 | MLoop.Ops |
-| 에이전트 오케스트레이션 | Ironbees |
-| MLoop CLI 호출 | mloop-mcp |
-| 파일 전처리 | FilePrepper |
+| 기능 | 위임 대상 | 참조 방식 |
+|------|-----------|-----------|
+| ML 학습 로직 | MLoop.Core | SDK 직접 참조 |
+| 데이터 저장 로직 | MLoop.DataStore | SDK 직접 참조 |
+| 재학습 판단 로직 | MLoop.Ops | SDK 직접 참조 |
+| 에이전트 오케스트레이션 | Ironbees | 라이브러리 참조 |
+| 파일 전처리 | FilePrepper | 라이브러리 참조 |
+
+※ MLoop Studio는 .NET 프로젝트이므로 MLoop SDK를 직접 참조합니다.
+   CLI나 API를 subprocess/HTTP로 호출하지 않습니다.
 
 ### 4.5 아키텍처
 
 ```
 mloop-studio/
 ├── src/
-│   ├── MLoop.Studio.Web/        # 프론트엔드
+│   ├── MLoop.Studio.Web/        # 프론트엔드 (Blazor/React)
 │   │   ├── Pages/              # 대화, 대시보드, 관리
 │   │   └── Components/         # UI 컴포넌트
 │   │
-│   └── MLoop.Studio.Backend/    # API Gateway
+│   └── MLoop.Studio.Backend/    # 백엔드 서비스
 │       ├── Orchestration/      # 워크플로우 관리
 │       ├── Sessions/           # 대화 세션 관리
 │       └── Endpoints/          # 엔드포인트 프로비저닝
 │
-└── (depends on)
-    ├── MLoop                   # 학습/예측
-    ├── MLoop.DataStore         # 데이터 관리
-    ├── MLoop.Ops               # 재학습 오케스트레이션
-    ├── mloop-mcp               # AI 대화
-    ├── FilePrepper             # 전처리
-    └── Ironbees                # 에이전트
+└── (NuGet 패키지 참조)
+    │
+    ├── MLoop SDK (직접 참조)
+    │   ├── MLoop.Core          # ML 학습/예측 엔진
+    │   ├── MLoop.DataStore     # 예측 로그, 피드백
+    │   └── MLoop.Ops           # 재학습 트리거
+    │
+    └── 외부 라이브러리
+        ├── FilePrepper         # 파일 전처리
+        └── Ironbees            # AI 에이전트 오케스트레이션
 ```
+
+**참조 방식:**
+- ✅ SDK 직접 참조: `dotnet add package MLoop.Core`
+- ❌ CLI 호출 없음: subprocess 오버헤드 제거
+- ❌ API 호출 없음: HTTP 오버헤드 제거
 
 ### 4.6 사용자 시나리오
 
 ```
 1. 파일 업로드
    사용자: "customer_data.xlsx 업로드"
-   시스템: FilePrepper로 전처리 → CSV 변환, 인코딩 수정
+   시스템: FilePrepper.ProcessAsync() → CSV 변환, 인코딩 수정
 
 2. 스무고개 대화
    AI: "어떤 것을 예측하고 싶으세요?"
@@ -318,18 +377,25 @@ mloop-studio/
    AI: "분류 모델을 만들게요. 학습을 시작할까요?"
 
 3. 모델 빌드
-   시스템: mloop-mcp → MLoop train 실행
+   시스템: TrainingEngine.TrainAsync() 직접 호출  ← SDK 사용
    AI: "학습 완료! 정확도 92%입니다. 배포할까요?"
 
 4. 엔드포인트 제공
-   시스템: MLoop serve 실행, API 키 발급
+   시스템: PredictionEngine 인스턴스 생성, API 키 발급
    AI: "여기 API 엔드포인트입니다: https://..."
 
 5. 운영 중 개선
-   시스템: 예측 로그 수집 (DataStore)
-   시스템: 피드백 1000건 도달 → 자동 재학습 (Ops)
+   시스템: FilePredictionLogger.LogAsync()        ← DataStore SDK
+   시스템: FeedbackBasedTrigger.EvaluateAsync()   ← Ops SDK
+   시스템: 피드백 1000건 도달 → 자동 재학습 트리거
    AI: "새 모델이 더 좋아서 자동 배포했어요. 정확도 94%"
 ```
+
+**핵심 차이점:**
+- CLI subprocess 호출 ❌ → SDK 메서드 직접 호출 ✅
+- 프로세스 생성 오버헤드 없음
+- 타입 안전성 보장
+- 에러 핸들링 통합
 
 ---
 
@@ -524,32 +590,43 @@ You are an ML expert helping users build models with MLoop.
 ┌─────────────────────────────────────────────────────────────────┐
 │                        의존성 방향                              │
 │                                                                 │
-│   MLoop Studio                                                  │
+│   MLoop Studio (.NET 웹앱)                                      │
 │       │                                                         │
-│       ├──→ MLoop (필수)                                        │
-│       ├──→ MLoop.DataStore (필수)                              │
-│       ├──→ MLoop.Ops (필수)                                    │
-│       ├──→ mloop-mcp (필수)                                    │
+│       ├──→ MLoop.Core (SDK, NuGet)      ← 직접 참조            │
+│       ├──→ MLoop.DataStore (SDK, NuGet) ← 직접 참조            │
+│       ├──→ MLoop.Ops (SDK, NuGet)       ← 직접 참조            │
 │       ├──→ Ironbees (필수)                                     │
 │       ├──→ FilePrepper (필수)                                  │
 │       └──→ AI Provider (필수, 외부)                            │
+│       ❌ CLI/API 불필요 (SDK 직접 사용)                         │
 │                                                                 │
-│   mloop-mcp                                                     │
+│   mloop-mcp (TypeScript)                                        │
 │       │                                                         │
-│       └──→ MLoop CLI (필수)                                    │
+│       └──→ MLoop CLI (subprocess 호출)                         │
 │                                                                 │
-│   MLoop                                                         │
+│   외부 시스템 (Python, Java 등)                                 │
 │       │                                                         │
-│       └──→ FilePrepper (선택적)                                │
-│       └──→ ML.NET (필수)                                       │
+│       ├──→ MLoop CLI (subprocess)                              │
+│       └──→ MLoop API (HTTP 호출)                               │
 │                                                                 │
-│   Ironbees                                                      │
-│       │                                                         │
-│       └──→ AI Provider (필수, 외부 주입)                       │
+├─────────────────────────────────────────────────────────────────┤
+│   MLoop 프로젝트 내부 구조                                      │
 │                                                                 │
-│   FilePrepper                                                   │
-│       │                                                         │
-│       └──→ (독립, 외부 의존성 최소)                            │
+│   src/ (SDK - NuGet 패키지)                                     │
+│       ├── MLoop.Core ──→ ML.NET (필수)                         │
+│       ├── MLoop.DataStore ──→ (독립, 파일시스템 기반)          │
+│       ├── MLoop.Extensibility ──→ (독립, 인터페이스만)         │
+│       └── MLoop.Ops ──→ MLoop.DataStore (필수)                 │
+│                                                                 │
+│   tools/ (실행 도구 - dotnet tool / Docker)                     │
+│       ├── MLoop.CLI ──→ src/* (SDK 전체)                       │
+│       └── MLoop.API ──→ src/* (SDK 전체)                       │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│   외부 프로젝트                                                 │
+│                                                                 │
+│   Ironbees ──→ AI Provider (필수, 외부 주입)                   │
+│   FilePrepper ──→ (독립, 외부 의존성 최소)                     │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -573,4 +650,4 @@ You are an ML expert helping users build models with MLoop.
 ---
 
 **Last Updated**: January 2026
-**Version**: v1.2.0 Planning
+**Version**: v1.6.0
