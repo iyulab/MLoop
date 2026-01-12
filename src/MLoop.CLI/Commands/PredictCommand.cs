@@ -1,8 +1,13 @@
 using System.CommandLine;
+using System.Globalization;
+using CsvHelper;
+using CsvHelper.Configuration;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.DataStore.Interfaces;
+using MLoop.DataStore.Services;
 using Spectre.Console;
 using static MLoop.CLI.Infrastructure.ML.CategoricalMapper;
 
@@ -42,12 +47,18 @@ public static class PredictCommand
             DefaultValueFactory = _ => "auto"
         };
 
+        var logOption = new Option<bool>("--log", "-l")
+        {
+            Description = "Log predictions to .mloop/logs/ for monitoring and analysis"
+        };
+
         var command = new Command("predict", "Make predictions with a trained model");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
         command.Options.Add(modelPathOption);
         command.Options.Add(outputOption);
         command.Options.Add(unknownStrategyOption);
+        command.Options.Add(logOption);
 
         command.SetAction((parseResult) =>
         {
@@ -56,7 +67,8 @@ public static class PredictCommand
             var modelPath = parseResult.GetValue(modelPathOption);
             var output = parseResult.GetValue(outputOption);
             var unknownStrategy = parseResult.GetValue(unknownStrategyOption)!;
-            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy);
+            var logPredictions = parseResult.GetValue(logOption);
+            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions);
         });
 
         return command;
@@ -67,7 +79,8 @@ public static class PredictCommand
         string? modelName,
         string? modelPath,
         string? output,
-        string unknownStrategy)
+        string unknownStrategy,
+        bool logPredictions)
     {
         try
         {
@@ -310,6 +323,19 @@ public static class PredictCommand
                     ctx.Status("[green]Predictions complete![/]");
                 });
 
+            // Log predictions if requested
+            if (logPredictions)
+            {
+                await LogPredictionsAsync(
+                    projectRoot,
+                    resolvedModelName,
+                    experimentId ?? "unknown",
+                    resolvedDataFile,
+                    resolvedOutputPath);
+
+                AnsiConsole.MarkupLine($"[green]>[/] Predictions logged to: [cyan].mloop/logs/{resolvedModelName}/[/]");
+            }
+
             AnsiConsole.WriteLine();
             AnsiConsole.Write(new Rule("[green]Predictions Complete![/]").LeftJustified());
             AnsiConsole.WriteLine();
@@ -317,6 +343,10 @@ public static class PredictCommand
             AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
             AnsiConsole.MarkupLine($"[green]>[/] Predicted: [yellow]{predictedCount}[/] rows");
             AnsiConsole.MarkupLine($"[green]>[/] Output saved to: [cyan]{Path.GetRelativePath(projectRoot, resolvedOutputPath)}[/]");
+            if (logPredictions)
+            {
+                AnsiConsole.MarkupLine($"[green]>[/] Logged to: [cyan].mloop/logs/{resolvedModelName}/[/]");
+            }
             AnsiConsole.WriteLine();
 
             return 0;
@@ -326,6 +356,66 @@ public static class PredictCommand
             // T8.3: Enhanced error messaging with actionable suggestions
             ErrorSuggestions.DisplayError(ex, "prediction");
             return 1;
+        }
+    }
+
+    private static async Task LogPredictionsAsync(
+        string projectRoot,
+        string modelName,
+        string experimentId,
+        string inputFile,
+        string outputFile)
+    {
+        var logger = new FilePredictionLogger(projectRoot);
+
+        // Read input data
+        var inputRecords = new List<Dictionary<string, object>>();
+        using (var inputReader = new StreamReader(inputFile))
+        using (var inputCsv = new CsvReader(inputReader, new CsvConfiguration(CultureInfo.InvariantCulture)))
+        {
+            await foreach (var record in inputCsv.GetRecordsAsync<dynamic>())
+            {
+                var dict = new Dictionary<string, object>();
+                foreach (var property in (IDictionary<string, object>)record)
+                {
+                    dict[property.Key] = property.Value;
+                }
+                inputRecords.Add(dict);
+            }
+        }
+
+        // Read output data (predictions)
+        var predictions = new List<object>();
+        using (var outputReader = new StreamReader(outputFile))
+        using (var outputCsv = new CsvReader(outputReader, new CsvConfiguration(CultureInfo.InvariantCulture)))
+        {
+            await foreach (var record in outputCsv.GetRecordsAsync<dynamic>())
+            {
+                var dict = (IDictionary<string, object>)record;
+                // Use the last column as prediction (typically "PredictedLabel" or "Score")
+                var lastValue = dict.Values.LastOrDefault() ?? string.Empty;
+                predictions.Add(lastValue);
+            }
+        }
+
+        // Log each prediction
+        var entries = new List<PredictionLogEntry>();
+        var timestamp = DateTimeOffset.UtcNow;
+
+        for (int i = 0; i < Math.Min(inputRecords.Count, predictions.Count); i++)
+        {
+            entries.Add(new PredictionLogEntry(
+                modelName,
+                experimentId,
+                inputRecords[i],
+                predictions[i],
+                null,
+                timestamp));
+        }
+
+        if (entries.Count > 0)
+        {
+            await logger.LogBatchAsync(modelName, experimentId, entries);
         }
     }
 }

@@ -31,6 +31,7 @@ internal class Program
             PredictCommand.Create(),
             PreprocessCommand.Create(),
             ListCommand.Create(),
+            LogsCommand.Create(),
             CompareCommand.Create(),
             PromoteCommand.Create(),
             InfoCommand.Create(),
