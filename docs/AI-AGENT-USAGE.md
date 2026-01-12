@@ -155,6 +155,8 @@ public class HandleMissingValues : IPreprocessingScript
 - `exceptions.json` - Records that didn't fit rules
 - `preprocessing_report.md` - Detailed analysis report
 
+**Architecture Details**: See [ADR-001: Incremental Sampling Preprocessing](adr/ADR-001-incremental-preprocessing.md)
+
 ### 2.3 ModelArchitectAgent
 
 **Purpose**: ML problem classification and AutoML configuration
@@ -213,62 +215,23 @@ mloop agent "Promote experiment exp-003 to production" -a mlops-manager
 
 ## 3. Configuration
 
-### 3.1 Environment Variables
+For complete LLM provider configuration, see **[AI-AGENTS.md](AI-AGENTS.md#llm-provider-configuration)**.
 
-Create a `.env` file in your project root:
+### Quick Setup
 
 ```bash
-# Option 1: GPUStack (Local - 89% cost savings)
-GPUSTACK_ENDPOINT=http://localhost:8080/v1
-GPUSTACK_API_KEY=your-gpustack-key
-GPUSTACK_MODEL=llama-3.1-8b
-
-# Option 2: Anthropic (Recommended for production)
+# Create .env file with one provider (copy from .env.example)
+# Anthropic (Recommended for development)
 ANTHROPIC_API_KEY=sk-ant-your-key
-ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_MODEL=claude-sonnet-4-20250514
 
-# Option 3: Azure OpenAI (Enterprise)
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
-AZURE_OPENAI_KEY=your-azure-key
-AZURE_OPENAI_MODEL=gpt-4o
-
-# Option 4: OpenAI (Development)
-OPENAI_API_KEY=sk-proj-your-key
-OPENAI_MODEL=gpt-4o-mini
+# Or GPUStack (Recommended for production - 89% cost savings)
+GPUSTACK_ENDPOINT=http://localhost:8080
+GPUSTACK_API_KEY=your-key
+GPUSTACK_MODEL=llama-3.1-8b-instruct
 ```
 
-### 3.2 Provider Priority
-
-MLoop checks providers in this order:
-1. **GPUStack** - Local deployment, lowest cost
-2. **Anthropic** - Best quality, recommended for production
-3. **Azure OpenAI** - Enterprise compliance
-4. **OpenAI** - General development
-
-### 3.3 Cost Comparison
-
-| Provider | Input (per 1M) | Output (per 1M) | Monthly Estimate* |
-|----------|----------------|-----------------|-------------------|
-| GPUStack (Llama 3.1 8B) | ~$1 | ~$1 | $20-50 |
-| Anthropic Claude 3.5 | $3 | $15 | $300-600 |
-| OpenAI GPT-4o-mini | $0.15 | $0.60 | $50-100 |
-| Azure OpenAI GPT-4o | $10 | $30 | $800-1500 |
-
-*Based on 10-20M tokens/month (medium usage)
-
-### 3.4 GPUStack Setup (Local)
-
-```bash
-# Docker (requires GPU)
-docker run -d -p 8080:8080 --gpus all gpustack/gpustack:latest
-
-# Or pip install
-pip install gpustack
-gpustack start --port 8080
-
-# Verify
-curl http://localhost:8080/health
-```
+**Provider Priority**: GPUStack → Anthropic → Azure OpenAI → OpenAI
 
 ---
 
@@ -876,6 +839,11 @@ When in interactive mode (`mloop agent -i`):
 
 ---
 
-**Version**: 1.1.0
-**Last Updated**: 2024-12-30
+**Version**: 1.2.0
+**Last Updated**: 2026-01-12
 **Related**: [AI-AGENT-ARCHITECTURE.md](AI-AGENT-ARCHITECTURE.md), [AI-AGENTS.md](AI-AGENTS.md)
+
+**Changelog v1.2.0**:
+- Simplified Configuration section (now references AI-AGENTS.md)
+- Updated model names to latest versions
+- Added Guardrails documentation (Section 5.5)

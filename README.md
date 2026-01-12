@@ -24,22 +24,16 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 - **No feature engineering required**: Optional FilePrepper integration for complex preprocessing
 - **Production-ready in minutes**: From CSV to deployed model in 3 commands
 
-**3. AI Agent Assistance for Expert-Level Results**
-- **Interactive ML guidance**: Multi-provider LLM agents (OpenAI, Anthropic, Google, etc.)
-- **Intelligent optimization**: AI suggests hyperparameters, feature engineering, and model selection
-- **No ML expertise required**: Agents guide you through the entire workflow
-- **Learn as you go**: AI explains decisions and teaches ML concepts
-
-**4. Extensibility Through Dynamic Scripting**
+**3. Extensibility Through Dynamic Scripting**
 - **Optional customization**: Start simple, add complexity only when needed
 - **Code-based hooks**: Inject custom logic at any pipeline stage (pre-train, post-train, etc.)
 - **Custom metrics**: Define business-specific optimization objectives
 - **C# scripting**: Full IDE support with IntelliSense and debugging
 - **Zero overhead**: <1ms performance impact when extensions aren't used
 
-**5. Minimum Cost, Maximum Value**
+**4. Minimum Cost, Maximum Value**
 - **Development cost**: 3-command workflow vs traditional multi-week ML projects
-- **Knowledge cost**: No ML degree required - AI agents provide expertise
+- **Knowledge cost**: AutoML handles algorithm selection automatically
 - **Operational cost**: Filesystem-based MLOps eliminates infrastructure complexity
 - **Time cost**: From CSV to production model in minutes, not days
 
@@ -57,7 +51,6 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 
 - **AutoML Training**: Automatic model selection with ML.NET AutoML
 - **Multi-Model Projects**: Manage multiple models (churn, revenue, etc.) in one project
-- **AI Agents**: Interactive ML assistance with multi-provider LLM support
 - **Smart Predictions**: Production model auto-discovery and batch processing
 - **Filesystem MLOps**: Git-friendly experiment tracking (no database required)
 - **Fast Preprocessing**: Integrated FilePrepper (20x faster than pandas)
@@ -104,7 +97,6 @@ mloop predict [model] [data]          # Run predictions
 mloop list                             # View experiments
 mloop promote <exp-id>                # Promote to production
 mloop evaluate <model> <test> <label> # Evaluate performance
-mloop orchestrate <data>               # End-to-end MLOps automation with AI
 mloop info <data>                      # Dataset profiling with encoding detection
 mloop serve                            # Start REST API server
 mloop docker                           # Generate Docker deployment files
@@ -126,29 +118,6 @@ mloop train korean_data.csv label --task regression
 # Drop missing label values (default for classification)
 mloop train data.csv label --task binary-classification --drop-missing-labels
 ```
-
-### AI-Powered Orchestration
-
-Automate the entire ML lifecycle with a single command:
-
-```bash
-# Fully automated ML pipeline with human-in-the-loop checkpoints
-mloop orchestrate customer_churn.csv --target Churned
-
-# Skip all checkpoints for non-interactive execution
-mloop orchestrate data.csv --skip-hitl
-
-# Auto-approve high-confidence decisions
-mloop orchestrate data.csv --auto-approve --threshold 0.8
-
-# Resume a paused session
-mloop orchestrate --resume <session-id>
-
-# List all orchestration sessions
-mloop orchestrate --list-sessions
-```
-
-The orchestrator coordinates 4 specialized AI agents (DataAnalyst, ModelArchitect, PreprocessingExpert, MLOpsManager) with 5 HITL checkpoints for human oversight at critical decision points.
 
 **Full documentation**: [docs/GUIDE.md](docs/GUIDE.md)
 
@@ -240,8 +209,7 @@ models/
 
 ### Project Philosophy & Roadmap
 - **[Philosophy & Design](README.md#philosophy-excellent-mlops-with-minimum-cost)** - Core mission and design principles
-- **[Roadmap](ROADMAP.md)** - Feature roadmap aligned with mission (v0.1 → v1.0)
-- **[Task Breakdown](docs/TASKS.md)** - Detailed, actionable tasks for current sprint
+- **[Roadmap](ROADMAP.md)** - Feature roadmap aligned with mission (v0.1 → v1.2)
 
 ### Technical Documentation
 - **[Architecture](docs/ARCHITECTURE.md)** - System design and technical decisions

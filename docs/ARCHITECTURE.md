@@ -614,97 +614,92 @@ public class FileSystemManager : IFileSystemManager
 
 ### 6.1 Development Project Structure
 
+MLoop is organized into **5 separate projects** with clear separation of concerns:
+
 ```
 MLoop/
 ├── src/
 │   ├── MLoop.sln                        # .NET 10 Solution
-│   └── MLoop/                           # Main CLI project
-│       ├── MLoop.csproj                 # Global tool configuration
-│       ├── Program.cs                   # Entry point
-│       │
-│       ├── Commands/                    # CLI command handlers
-│       │   ├── InitCommand.cs          # mloop init
-│       │   ├── TrainCommand.cs         # mloop train
-│       │   ├── PredictCommand.cs       # mloop predict
-│       │   ├── EvaluateCommand.cs      # mloop evaluate
-│       │   ├── ListCommand.cs          # mloop list
-│       │   ├── PromoteCommand.cs       # mloop promote
-│       │   └── ServeCommand.cs         # mloop serve
-│       │
-│       ├── Core/                        # Core business logic
-│       │   ├── AutoML/                  # AutoML engine
-│       │   │   ├── ITrainingEngine.cs
-│       │   │   ├── TrainingEngine.cs
-│       │   │   ├── AutoMLRunner.cs
-│       │   │   ├── TrainingConfig.cs
-│       │   │   └── TrainingResult.cs
-│       │   │
-│       │   ├── Data/                    # Data loaders
-│       │   │   ├── IDataLoader.cs
-│       │   │   ├── CsvDataLoader.cs
-│       │   │   └── JsonDataLoader.cs
-│       │   │
-│       │   ├── Models/                  # Model management
-│       │   │   ├── IPredictionEngine.cs
-│       │   │   ├── PredictionEngine.cs
-│       │   │   ├── ModelLoader.cs
-│       │   │   └── ModelSaver.cs
-│       │   │
-│       │   └── Evaluation/              # Evaluation
-│       │       ├── IEvaluator.cs
-│       │       ├── ClassificationEvaluator.cs
-│       │       └── RegressionEvaluator.cs
-│       │
-│       ├── Infrastructure/              # Infrastructure
-│       │   ├── FileSystem/              # Filesystem operations
-│       │   │   ├── IFileSystemManager.cs
-│       │   │   ├── FileSystemManager.cs
-│       │   │   ├── IProjectDiscovery.cs
-│       │   │   ├── ProjectDiscovery.cs
-│       │   │   ├── IExperimentStore.cs
-│       │   │   ├── ExperimentStore.cs
-│       │   │   ├── IModelRegistry.cs
-│       │   │   └── ModelRegistry.cs
-│       │   │
-│       │   ├── Configuration/           # Config management
-│       │   │   ├── MLoopConfig.cs
-│       │   │   ├── ConfigLoader.cs
-│       │   │   └── ConfigMerger.cs
-│       │   │
-│       │   └── Logging/                 # Logging and progress
-│       │       ├── IProgressReporter.cs
-│       │       └── SpectreProgressReporter.cs
-│       │
-│       └── Templates/                   # Project templates
-│           ├── binary-classification.yaml
-│           ├── multiclass-classification.yaml
-│           └── regression.yaml
+│   │
+│   ├── MLoop.Extensibility/             # Extension interfaces (no dependencies)
+│   │   ├── Preprocessing/
+│   │   │   └── IPreprocessingScript.cs  # Custom preprocessing interface
+│   │   ├── Hooks/
+│   │   │   └── IHook.cs                 # Lifecycle hook interface
+│   │   └── Metrics/
+│   │       └── ICustomMetric.cs         # Custom metric interface
+│   │
+│   ├── MLoop.Core/                      # Core ML engine
+│   │   ├── AutoML/                      # ML.NET AutoML wrapper
+│   │   │   ├── TrainingEngine.cs
+│   │   │   └── TrainingConfig.cs
+│   │   ├── Data/                        # Data loading, encoding detection
+│   │   │   ├── DataLoaderFactory.cs
+│   │   │   └── CsvHelperImpl.cs
+│   │   ├── Preprocessing/               # FilePrepper integration
+│   │   ├── Scripting/                   # C# script compilation/execution
+│   │   ├── Hooks/                       # Hook execution
+│   │   ├── Metrics/                     # Metric processing
+│   │   └── Models/                      # Domain models (Experiment, etc.)
+│   │
+│   ├── MLoop.CLI/                       # Command-line interface
+│   │   ├── Commands/                    # CLI commands
+│   │   │   ├── InitCommand.cs          # mloop init
+│   │   │   ├── TrainCommand.cs         # mloop train
+│   │   │   ├── PredictCommand.cs       # mloop predict
+│   │   │   ├── EvaluateCommand.cs      # mloop evaluate
+│   │   │   ├── ListCommand.cs          # mloop list
+│   │   │   ├── PromoteCommand.cs       # mloop promote
+│   │   │   ├── ServeCommand.cs         # mloop serve (launches API)
+│   │   │   ├── DockerCommand.cs        # mloop docker
+│   │   │   └── InfoCommand.cs          # mloop info
+│   │   ├── Infrastructure/              # Console output, DI setup
+│   │   └── Templates/                   # Dockerfile templates
+│   │
+│   └── MLoop.API/                       # REST API server (ASP.NET Core)
+│       ├── Program.cs                   # Minimal API endpoints
+│       └── appsettings.json             # API configuration
 │
 ├── tests/
-│   ├── MLoop.Tests/                     # Unit tests
-│   │   ├── Commands/
-│   │   ├── Core/
-│   │   └── Infrastructure/
-│   │
-│   └── MLoop.IntegrationTests/          # Integration tests
-│       └── EndToEndTests.cs
+│   ├── MLoop.Core.Tests/
+│   ├── MLoop.API.Tests/
+│   └── MLoop.Pipeline.Tests/
 │
 ├── examples/                            # Example projects
 │   ├── customer-churn/
 │   ├── equipment-anomaly-detection/
-│   └── mloop-agents/
+│   └── tutorials/
 │
 ├── docs/                                # Documentation
 │   ├── ARCHITECTURE.md                  # This file
-│   ├── GUIDE.md
-│   ├── AI-AGENTS.md
-│   └── MIGRATION.md                     # Multi-model migration guide
+│   ├── GUIDE.md                         # User guide
+│   └── ECOSYSTEM.md                     # MLoop ecosystem overview
 │
-├── Directory.Build.props                # Common build properties
-├── .editorconfig                        # Code style
-├── nuget.config                         # NuGet configuration
-└── .gitignore                           # Git ignore rules
+├── Directory.Build.props                # Central package management
+├── Directory.Packages.props             # Package versions
+└── .gitignore
 ```
+
+### 6.2 Project Dependencies
+
+```
+MLoop.Extensibility  ← (interfaces only, no dependencies)
+        ↑
+    MLoop.Core       ← ML.NET, FilePrepper
+        ↑
+    ┌───┴───┐
+    │       │
+MLoop.CLI  MLoop.API
+    │
+    └─── (CLI launches API via ServeCommand)
+```
+
+| Project | Role | Key Dependencies |
+|---------|------|------------------|
+| MLoop.Extensibility | Extension interfaces | None |
+| MLoop.Core | ML engine | ML.NET, FilePrepper |
+| MLoop.CLI | CLI tool (`mloop`) | System.CommandLine, Spectre.Console |
+| MLoop.API | REST API server | ASP.NET Core, Serilog |
 
 ### 6.2 User Project Structure (Multi-Model)
 

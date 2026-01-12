@@ -17,16 +17,10 @@
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <!-- Microsoft Extensions -->
-    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.1.1" />
-    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.1.1-preview.1.25612.2" />
-    <PackageVersion Include="Microsoft.Extensions.AI.AzureAIInference" Version="10.0.0-preview.1.25559.3" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.1" />
-    <!-- AI Dependencies -->
-    <PackageVersion Include="System.ClientModel" Version="1.8.1" />
-    <PackageVersion Include="OpenAI" Version="2.8.0" />
     <!-- Roslyn / Code Analysis -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.0.0" />
@@ -42,12 +36,6 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.0" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.4.9" />
-    <!-- Ironbees SDK v0.4.1 (for CI builds when local project references are not available) -->
-    <PackageVersion Include="Ironbees.Core" Version="0.4.1" />
-    <PackageVersion Include="Ironbees.AgentMode" Version="0.4.1" />
-    <!-- Memory Indexer SDK v0.6.0 (Cognitive Memory System for LLMs) -->
-    <PackageVersion Include="MemoryIndexer" Version="0.6.0" />
-    <PackageVersion Include="MemoryIndexer.Sdk" Version="0.6.0" />
     <!-- Resilience / Polly -->
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Testing Packages -->

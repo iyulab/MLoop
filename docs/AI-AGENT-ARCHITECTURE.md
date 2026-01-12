@@ -1055,53 +1055,18 @@ tests/MLoop.AIAgent.Tests/
 
 ## Appendix B: Configuration Reference
 
-### Environment Variables
+For complete LLM provider configuration including environment variables, cost comparison, and troubleshooting, see **[AI-AGENTS.md](AI-AGENTS.md#llm-provider-configuration)**.
 
-```bash
-# Required: At least one provider
-# GPUStack (Local)
-GPUSTACK_ENDPOINT=http://localhost:8080/v1
-GPUSTACK_API_KEY=your-key
-GPUSTACK_MODEL=llama-3.1-8b
+### Quick Reference
 
-# Anthropic
-ANTHROPIC_API_KEY=sk-ant-your-key
-ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+| Provider | Required Environment Variables |
+|----------|-------------------------------|
+| GPUStack | `GPUSTACK_ENDPOINT`, `GPUSTACK_API_KEY`, `GPUSTACK_MODEL` |
+| Anthropic | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` |
+| Azure OpenAI | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` |
+| OpenAI | `OPENAI_API_KEY`, `OPENAI_MODEL` |
 
-# Azure OpenAI
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
-AZURE_OPENAI_KEY=your-key
-AZURE_OPENAI_MODEL=gpt-4o
-
-# OpenAI
-OPENAI_API_KEY=sk-proj-your-key
-OPENAI_MODEL=gpt-4o-mini
-```
-
-### .env.example Template
-
-```bash
-# MLoop AI Agent Configuration
-# Copy to .env and configure your preferred provider
-
-# Option 1: GPUStack (Local - Recommended for development)
-# GPUSTACK_ENDPOINT=http://localhost:8080/v1
-# GPUSTACK_API_KEY=your-gpustack-key
-# GPUSTACK_MODEL=llama-3.1-8b
-
-# Option 2: Anthropic (Recommended for production)
-# ANTHROPIC_API_KEY=sk-ant-your-key
-# ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
-
-# Option 3: Azure OpenAI (Enterprise)
-# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
-# AZURE_OPENAI_KEY=your-azure-key
-# AZURE_OPENAI_MODEL=gpt-4o
-
-# Option 4: OpenAI (Development)
-# OPENAI_API_KEY=sk-proj-your-key
-# OPENAI_MODEL=gpt-4o-mini
-```
+**Selection Priority**: GPUStack → Anthropic → Azure OpenAI → OpenAI
 
 ---
 

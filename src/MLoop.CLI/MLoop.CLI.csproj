@@ -2,7 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MLoop.Core\MLoop.Core.csproj" />
-    <ProjectReference Include="..\MLoop.AIAgent\MLoop.AIAgent.csproj" />
   </ItemGroup>
 
   <ItemGroup>
