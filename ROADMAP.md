@@ -6,7 +6,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
-## Current Status (v1.6.0 - January 2026)
+## Current Status (v1.7.0 - January 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
@@ -16,8 +16,8 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - Batch prediction with auto-discovery
 - Prediction logging and feedback collection
 - Data sampling for retraining datasets
-- Feedback-based retraining triggers
-- CLI with comprehensive command set
+- Feedback-based retraining triggers with CLI evaluation
+- CLI with comprehensive command set (including `mloop trigger check`)
 - .NET 10.0 + C# 13 modern codebase
 - Zero AI dependencies (pure ML CLI tool)
 
@@ -737,7 +737,44 @@ This separation of concerns enables:
 | CLI Integration | Complete | ✅ | Complete |
 | Unit Tests | 16+ tests | 16 tests | ✅ |
 
-### Next Steps (v1.7.0+)
+---
+
+## Phase 14: Trigger CLI Enhancement ✅ Complete (v1.7.0)
+**Goal**: Enable CLI-based retraining trigger evaluation for automation scripts
+
+**Background**: FeedbackBasedTrigger (v1.6.0) provides programmatic trigger evaluation.
+Phase 14 exposes this functionality via CLI for:
+- Shell script automation (`if mloop trigger check; then mloop train; fi`)
+- Cron job integration
+- CI/CD pipeline triggers
+
+**Philosophy Alignment**: CLI is the primary interface, SDK is the building block
+
+### T14.1 TriggerCommand ✅
+**Problem**: No CLI access to trigger evaluation
+**Solution**: Add `mloop trigger check` command
+- [x] `mloop trigger check --model xxx` with default conditions
+- [x] Custom thresholds: `--accuracy 0.7 --feedback 100`
+- [x] JSON output format with `--json` flag
+- [x] Exit code: 0 = should retrain, 1 = no retraining, 2 = error
+- [x] Integrated with FeedbackBasedTrigger from MLoop.Ops
+
+### T14.2 CLI Integration ✅
+**Problem**: TriggerCommand needs project reference to MLoop.Ops
+**Solution**: Update MLoop.CLI.csproj
+- [x] Add ProjectReference to MLoop.Ops
+- [x] Register TriggerCommand in Program.cs
+- [x] Add trigger to help banner display
+
+### Success Metrics (Phase 14)
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| TriggerCommand | Complete | ✅ | Complete |
+| CLI Integration | Complete | ✅ | Complete |
+| Unit Tests | Existing | 24 tests | ✅ |
+
+### Next Steps (v1.8.0+)
 
 **Project Structure Refactoring**:
 - Move `src/MLoop.CLI` → `tools/MLoop.CLI`
@@ -752,7 +789,6 @@ This separation of concerns enables:
 
 **Trigger Enhancements**:
 - DataDrift Detection: Statistical tests for feature distribution changes
-- AutoTrigger CLI: `mloop trigger check --model xxx` command
 
 ---
 
@@ -794,7 +830,7 @@ This separation of concerns enables:
 | **v1.4.0** | Jan 2026 | Ops Implementation | ✅ Complete |
 | **v1.5.0** | Jan 2026 | Feedback Collection | ✅ Complete |
 | **v1.6.0** | Jan 2026 | Data Sampling & Triggers | ✅ Complete |
-| **v1.7.0** | Q1 2026 | Advanced Sampling & Triggers | 📋 Planning |
+| **v1.7.0** | Jan 2026 | Trigger CLI Enhancement | ✅ Complete |
 | **v2.0.0** | Q2 2026 | Studio Integration | 📋 Planning |
 
 ---
@@ -834,8 +870,13 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: January 12, 2026
-**Version**: v1.6.0 Complete (Data Sampling & Triggers)
+**Version**: v1.7.0 Complete (Trigger CLI Enhancement)
 **Recent Changes**:
+- v1.7.0 Trigger CLI Enhancement complete
+  - TriggerCommand: `mloop trigger check --model xxx` for CLI-based trigger evaluation
+  - Custom thresholds: `--accuracy` and `--feedback` options
+  - Exit code semantics for shell script automation
+  - MLoop.CLI now references MLoop.Ops for trigger functionality
 - v1.6.0 Data Sampling & Triggers implementation complete
   - FileDataSampler: Random, Recent, FeedbackPriority sampling strategies
   - FeedbackBasedTrigger: AccuracyDrop and FeedbackVolume conditions
