@@ -6,7 +6,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
-## Current Status (v1.4.0 - January 2026)
+## Current Status (v1.5.0 - January 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
@@ -14,6 +14,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - Multi-process concurrent training support
 - Production model promotion and discovery
 - Batch prediction with auto-discovery
+- Prediction logging and feedback collection
 - CLI with comprehensive command set
 - .NET 10.0 + C# 13 modern codebase
 - Zero AI dependencies (pure ML CLI tool)
@@ -32,7 +33,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - **MLoop.CLI**: Simple command-line interface
 - **MLoop.API**: REST API for web integration
 - **MLoop.Extensibility**: Hooks, scripts, metrics interfaces
-- **MLoop.DataStore**: Prediction logging with filesystem-first JSONL storage (v1.3.0)
+- **MLoop.DataStore**: Prediction logging, feedback collection with filesystem-first JSONL storage (v1.5.0)
 - **MLoop.Ops**: Model comparison, time-based retraining triggers (v1.4.0)
 
 ### Quality
@@ -642,7 +643,46 @@ This separation of concerns enables:
 ### Deferred to v2.0.0
 - **IPromotionManager**: Overlaps with existing `mloop promote` command
 - **Full IRetrainingTrigger**: Requires IFeedbackCollector for AccuracyDrop, DataDrift, etc.
-- **IFeedbackCollector**: User feedback collection for model monitoring
+
+---
+
+## Phase 12: Feedback Collection ✅ Complete (v1.5.0)
+**Goal**: Enable ground truth feedback collection for model monitoring
+
+**Background**: Production ML systems need feedback loops to:
+- Track model accuracy over time
+- Enable data-driven retraining decisions
+- Build training data from production predictions
+
+**Philosophy Alignment**: Filesystem-first, JSONL format, links to prediction logs
+
+### T12.1 FileFeedbackCollector ✅
+**Problem**: No way to record ground truth for predictions
+**Solution**: JSONL-based feedback storage linked to predictions
+- [x] IFeedbackCollector interface implementation
+- [x] RecordFeedbackAsync linking to prediction IDs
+- [x] GetFeedbackAsync with filtering
+- [x] CalculateMetricsAsync for accuracy calculation
+
+### T12.2 CLI Integration ✅
+**Problem**: Users need CLI access to feedback functionality
+**Solution**: Add `mloop feedback` command with subcommands
+- [x] `mloop feedback add --prediction-id xxx --actual-value yyy`
+- [x] `mloop feedback list --model xxx`
+- [x] `mloop feedback metrics --model xxx`
+- [x] JSON and table output formats
+
+### Success Metrics (Phase 12)
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| FileFeedbackCollector | Complete | ✅ | Complete |
+| CLI Integration | Complete | ✅ | Complete |
+| Unit Tests | 8+ tests | 8 tests | ✅ |
+
+### Next Steps (v1.6.0+)
+- **IDataSampler**: Sample training data from predictions + feedback
+- **Full IRetrainingTrigger**: AccuracyDrop condition using FeedbackMetrics
 
 ---
 
@@ -682,7 +722,8 @@ This separation of concerns enables:
 | **v1.2.0** | Jan 2026 | Zero AI Dependency Refactoring | ✅ Complete |
 | **v1.3.0** | Jan 2026 | DataStore Implementation | ✅ Complete |
 | **v1.4.0** | Jan 2026 | Ops Implementation | ✅ Complete |
-| **v1.5.0** | Q1 2026 | CLI Polish & Testing | 📋 Planning |
+| **v1.5.0** | Jan 2026 | Feedback Collection | ✅ Complete |
+| **v1.6.0** | Q1 2026 | Data Sampling & Triggers | 📋 Planning |
 | **v2.0.0** | Q2 2026 | Studio Integration | 📋 Planning |
 
 ---
@@ -722,8 +763,13 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: January 12, 2026
-**Version**: v1.4.0 Complete (Ops Implementation)
+**Version**: v1.5.0 Complete (Feedback Collection)
 **Recent Changes**:
+- v1.5.0 Feedback Collection implementation complete
+  - FileFeedbackCollector: JSONL-based feedback storage linked to predictions
+  - `mloop feedback add/list/metrics` commands for CLI access
+  - Accuracy calculation from predictions vs ground truth
+  - 8 unit tests for feedback services
 - v1.4.0 MLoop.Ops implementation complete
   - FileModelComparer: Filesystem-based experiment comparison
   - TimeBasedTrigger: Simple time-based retraining trigger
@@ -731,8 +777,5 @@ Submit proposals via GitHub Issues with `roadmap` label.
 - v1.3.0 MLoop.DataStore implementation complete
   - FilePredictionLogger: JSONL-based prediction logging
   - `mloop logs` command for viewing prediction history
-  - `--log` option in predict command
-  - 8 unit tests for DataStore services
 - v1.2.0 "Zero AI Dependency" refactoring complete
 - MLoop.AIAgent removed, AI integration via mloop-mcp
-- External repos: mloop-mcp, mloop-studio (submodules)

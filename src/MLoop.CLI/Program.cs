@@ -32,6 +32,7 @@ internal class Program
             PreprocessCommand.Create(),
             ListCommand.Create(),
             LogsCommand.Create(),
+            FeedbackCommand.Create(),
             CompareCommand.Create(),
             PromoteCommand.Create(),
             InfoCommand.Create(),
@@ -78,6 +79,8 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]predict[/]     Make predictions with a trained model");
         AnsiConsole.MarkupLine("  [green]preprocess[/]  Execute preprocessing scripts on data");
         AnsiConsole.MarkupLine("  [green]list[/]        List all experiments");
+        AnsiConsole.MarkupLine("  [green]logs[/]        View prediction logs");
+        AnsiConsole.MarkupLine("  [green]feedback[/]    Manage prediction feedback");
         AnsiConsole.MarkupLine("  [green]compare[/]     Compare experiments side by side");
         AnsiConsole.MarkupLine("  [green]promote[/]     Promote an experiment to production");
         AnsiConsole.MarkupLine("  [green]info[/]        Display dataset profiling information");
