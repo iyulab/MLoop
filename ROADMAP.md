@@ -32,11 +32,11 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - **MLoop.CLI**: Simple command-line interface
 - **MLoop.API**: REST API for web integration
 - **MLoop.Extensibility**: Hooks, scripts, metrics interfaces
-- **MLoop.DataStore**: Prediction logging interfaces (new in v1.2.0)
+- **MLoop.DataStore**: Prediction logging with filesystem-first JSONL storage (v1.3.0)
 - **MLoop.Ops**: Retraining triggers, model comparison (new in v1.2.0)
 
 ### Quality
-- 389+ tests passing (Core + API + CLI)
+- 397+ tests passing (Core + API + CLI + DataStore)
 
 ---
 
@@ -594,7 +594,7 @@ This separation of concerns enables:
 | **v1.0.0** | Jan 2026 | Production Readiness (Phase 7) | ✅ Released |
 | **v1.1.0** | Jan 2026 | Polish & Documentation (Phase 8) | ⚠️ Partial |
 | **v1.2.0** | Jan 2026 | Zero AI Dependency Refactoring | ✅ Complete |
-| **v1.3.0** | Q1 2026 | DataStore Implementation | 📋 Planning |
+| **v1.3.0** | Q1 2026 | DataStore Implementation | 🔄 In Progress |
 | **v1.4.0** | Q2 2026 | Ops Implementation | 📋 Planning |
 | **v2.0.0** | Q3 2026 | Studio Integration | 📋 Planning |
 

@@ -2,9 +2,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MLoop.Core\MLoop.Core.csproj" />
+    <ProjectReference Include="..\MLoop.DataStore\MLoop.DataStore.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="CsvHelper" />
     <PackageReference Include="DotNetEnv" />
     <PackageReference Include="Microsoft.ML" />
     <PackageReference Include="Microsoft.ML.AutoML" />
