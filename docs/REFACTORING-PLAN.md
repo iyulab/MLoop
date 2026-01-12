@@ -2,7 +2,7 @@
 
 **Version**: v1.2.0 → v2.0.0
 **Date**: January 2026
-**Status**: In Progress (Phase A ✅, Phase B ✅, Phase C ✅, Phase D pending)
+**Status**: ✅ Complete (Phase A ✅, Phase B ✅, Phase C ✅, Phase D ✅)
 
 ---
 
@@ -179,32 +179,38 @@ git submodule add https://github.com/iyulab/mloop-studio.git studio
 
 ---
 
-### Phase D: Documentation (v1.2.0-release)
+### Phase D: Documentation (v1.2.0-release) ✅ COMPLETE
 **Goal**: 문서 정합성 확보
 
 ```
 Duration: 1 day
 Risk: Low
+Status: ✅ Completed (January 12, 2026)
 ```
 
-#### D.1 ROADMAP.md 재작성
-- [ ] Phase 5, 6, 9 "deprecated" 마킹
-- [ ] 새로운 Phase 구조 추가:
-  - Phase 10: DataStore (v1.3.0)
-  - Phase 11: Ops (v1.4.0)
-  - Phase 12: Studio (v2.0.0)
+#### D.1 ROADMAP.md 재작성 ✅
+- [x] Phase 5, 6, 9 "deprecated" 마킹
+- [x] 새로운 Release Schedule 추가 (v1.3.0 DataStore, v1.4.0 Ops, v2.0.0 Studio)
+- [x] Current Status 섹션 업데이트 (6개 프로젝트 구조, AI Integration 외부화)
 
-#### D.2 ARCHITECTURE.md 업데이트
-- [ ] 5개 프로젝트 → 6개 프로젝트 구조
-- [ ] 외부 컴포넌트 (mloop-mcp, mloop-studio) 추가
+#### D.2 ARCHITECTURE.md 업데이트 ✅ (Phase B에서 완료)
+- [x] 5개 프로젝트 → 6개 프로젝트 구조
+- [x] 외부 컴포넌트 (mloop-mcp, mloop-studio) 추가
 
-#### D.3 PHILOSOPHY.md 생성
-- [ ] 사용자 제공 철학 문서 정리
-- [ ] Unix 철학, 경계 정의 명문화
+#### D.3 AI Agent 문서 업데이트 ✅
+- [x] AI-AGENTS.md → mloop-mcp 리디렉션
+- [x] AI-AGENT-USAGE.md → 마이그레이션 가이드
+- [x] AI-AGENT-ARCHITECTURE.md → deprecated 마킹 + 히스토리 보존
 
-#### D.4 CLI-REFERENCE.md 생성
-- [ ] 모든 명령어 레퍼런스
-- [ ] AI 명령 제거 반영
+#### D.4 PHILOSOPHY.md 생성 → SKIPPED
+**결정**: ECOSYSTEM.md Part 8에 이미 철학 문서 포함
+- "MLoop은 grep이다" 철학이 ECOSYSTEM.md에 상세히 기술됨
+- 중복 문서 생성 방지 (Minimum Cost 원칙)
+
+#### D.5 CLI-REFERENCE.md 생성 → DEFERRED
+**결정**: CLI에 --help 옵션 이미 존재
+- v1.2.0에서는 필수 아님
+- 필요시 v1.3.0 이후 고려
 
 ---
 
@@ -274,10 +280,10 @@ Risk: Low
 | **v1.2.0-alpha** | Phase A | AIAgent 제거, 순수 CLI | ✅ Complete |
 | **v1.2.0-beta** | Phase B | DataStore/Ops 스켈레톤 | ✅ Complete |
 | **v1.2.0-rc** | Phase C | 서브모듈 설정 | ✅ Complete |
-| **v1.2.0** | Phase D | 문서 완료 | ⏳ Pending |
-| **v1.3.0** | DataStore | 예측 로깅, 피드백 수집 |
-| **v1.4.0** | Ops | 재학습 트리거, 자동 프로모션 |
-| **v2.0.0** | Studio | 웹 플랫폼 베타 |
+| **v1.2.0** | Phase D | 문서 완료 | ✅ Complete |
+| **v1.3.0** | DataStore | 예측 로깅, 피드백 수집 | 📋 Planning |
+| **v1.4.0** | Ops | 재학습 트리거, 자동 프로모션 | 📋 Planning |
+| **v2.0.0** | Studio | 웹 플랫폼 베타 | 📋 Planning |
 
 ---
 
@@ -315,4 +321,4 @@ git checkout feature/phase8-polish-documentation -- agents/
 
 ---
 
-**Last Updated**: January 12, 2026 (Phase C completed)
+**Last Updated**: January 12, 2026 (v1.2.0 Refactoring Complete)
