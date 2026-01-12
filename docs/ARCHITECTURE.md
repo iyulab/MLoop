@@ -31,7 +31,7 @@ MLoop is a lightweight MLOps platform built on ML.NET, designed with a **filesys
 MLoop enables anyone to achieve production-quality ML models with minimal coding and ML expertise, while maintaining flexibility for advanced customization. This is accomplished through:
 
 1. **Minimal Development Cost**: 3-command workflow (`init` → `train` → `predict`) vs traditional multi-week ML projects
-2. **Minimal Knowledge Cost**: AutoML + AI Agent assistance eliminates need for ML expertise
+2. **Minimal Knowledge Cost**: AutoML eliminates need for ML expertise (AI assistance via mloop-mcp)
 3. **Minimal Operational Cost**: Filesystem-based MLOps, no infrastructure complexity
 4. **Maximum Value**: Production-ready models with optional extensibility for expert users
 
@@ -49,11 +49,10 @@ MLoop enables anyone to achieve production-quality ML models with minimal coding
 - Optional FilePrepper integration for complex preprocessing
 - No manual feature engineering unless user chooses to customize
 
-**AI Agent Assistance**
-- Multi-provider LLM integration (OpenAI, Anthropic, Google, etc.)
-- Interactive guidance for users without ML expertise
-- Intelligent optimization suggestions (hyperparameters, features, algorithms)
-- Educational feedback: Agents explain decisions and teach ML concepts
+**AI Integration via MCP (External)**
+- AI agents access MLoop through mloop-mcp (separate repository)
+- "AI uses MLoop" philosophy (not "MLoop contains AI")
+- See docs/ECOSYSTEM.md for MLoop ecosystem architecture
 
 **Extensibility Through Dynamic Scripting**
 - Optional C# scripts for custom logic (hooks, metrics, preprocessing)
@@ -614,7 +613,7 @@ public class FileSystemManager : IFileSystemManager
 
 ### 6.1 Development Project Structure
 
-MLoop is organized into **5 separate projects** with clear separation of concerns:
+MLoop is organized into **6 separate projects** with clear separation of concerns:
 
 ```
 MLoop/
@@ -656,9 +655,21 @@ MLoop/
 │   │   ├── Infrastructure/              # Console output, DI setup
 │   │   └── Templates/                   # Dockerfile templates
 │   │
-│   └── MLoop.API/                       # REST API server (ASP.NET Core)
-│       ├── Program.cs                   # Minimal API endpoints
-│       └── appsettings.json             # API configuration
+│   ├── MLoop.API/                       # REST API server (ASP.NET Core)
+│   │   ├── Program.cs                   # Minimal API endpoints
+│   │   └── appsettings.json             # API configuration
+│   │
+│   ├── MLoop.DataStore/                 # Prediction logging & feedback (MLOps)
+│   │   └── Interfaces/
+│   │       ├── IPredictionLogger.cs     # Prediction logging interface
+│   │       ├── IFeedbackCollector.cs    # Ground truth feedback collection
+│   │       └── IDataSampler.cs          # Production data sampling
+│   │
+│   └── MLoop.Ops/                       # MLOps automation
+│       └── Interfaces/
+│           ├── IRetrainingTrigger.cs    # Retraining condition evaluation
+│           ├── IModelComparer.cs        # Model performance comparison
+│           └── IPromotionManager.cs     # Automated model promotion
 │
 ├── tests/
 │   ├── MLoop.Core.Tests/
@@ -687,11 +698,16 @@ MLoop.Extensibility  ← (interfaces only, no dependencies)
         ↑
     MLoop.Core       ← ML.NET, FilePrepper
         ↑
-    ┌───┴───┐
-    │       │
-MLoop.CLI  MLoop.API
-    │
+    ┌───┼───────────┐
+    │   │           │
+    │   │   ┌───────┴───────┐
+    │   │   │               │
+MLoop.CLI  MLoop.API  MLoop.DataStore  MLoop.Ops
+    │                       │              │
+    │                       └──────────────┘
     └─── (CLI launches API via ServeCommand)
+
+Note: DataStore/Ops are MLOps extensions (separate from core CLI)
 ```
 
 | Project | Role | Key Dependencies |
@@ -700,8 +716,10 @@ MLoop.CLI  MLoop.API
 | MLoop.Core | ML engine | ML.NET, FilePrepper |
 | MLoop.CLI | CLI tool (`mloop`) | System.CommandLine, Spectre.Console |
 | MLoop.API | REST API server | ASP.NET Core, Serilog |
+| MLoop.DataStore | Prediction logging & feedback | MLoop.Core |
+| MLoop.Ops | MLOps automation | MLoop.Core |
 
-### 6.2 User Project Structure (Multi-Model)
+### 6.3 User Project Structure (Multi-Model)
 
 MLoop v0.2.0+ supports **multiple models** within a single project. When users run `mloop init my-project --task binary-classification`:
 
@@ -749,7 +767,7 @@ my-project/
     └── revenue/
 ```
 
-### 6.3 Multi-Model Configuration
+### 6.4 Multi-Model Configuration
 
 #### mloop.yaml Schema
 
@@ -782,7 +800,7 @@ data:
   test: datasets/test.csv
 ```
 
-### 6.4 Multi-Model CLI Usage
+### 6.5 Multi-Model CLI Usage
 
 ```bash
 # Default model (--name omitted)
@@ -2100,8 +2118,9 @@ Terminal 2: cd project-B && mloop train ...
 
 ---
 
-**Version**: 0.2.0
-**Last Updated**: 2025-12-08
+**Version**: 1.2.0
+**Last Updated**: 2026-01-12
 **Status**: Living Document
 **Process Model**: Multi-Process Casual
 **Multi-Model Support**: Yes (v0.2.0+)
+**Project Count**: 6 (Core, CLI, API, Extensibility, DataStore, Ops)

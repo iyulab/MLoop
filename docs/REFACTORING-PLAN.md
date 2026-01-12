@@ -2,7 +2,7 @@
 
 **Version**: v1.2.0 → v2.0.0
 **Date**: January 2026
-**Status**: Planning
+**Status**: In Progress (Phase A ✅, Phase B ✅, Phase C/D pending)
 
 ---
 
@@ -110,48 +110,47 @@ Risk: Low (기능 제거만)
 
 ---
 
-### Phase B: New Projects (v1.2.0-beta)
+### Phase B: New Projects (v1.2.0-beta) ✅ COMPLETE
 **Goal**: DataStore, Ops 프로젝트 스켈레톤 생성
 
 ```
 Duration: 1 day
 Risk: Low (스켈레톤만)
+Status: ✅ Completed (January 12, 2026)
 ```
 
-#### B.1 MLoop.DataStore 생성
+#### B.1 MLoop.DataStore 생성 ✅
 ```
 src/MLoop.DataStore/
-├── MLoop.DataStore.csproj
+├── MLoop.DataStore.csproj ✅
 ├── Interfaces/
-│   ├── IPredictionLogger.cs
-│   ├── IFeedbackCollector.cs
-│   └── IDataSampler.cs
+│   ├── IPredictionLogger.cs ✅
+│   ├── IFeedbackCollector.cs ✅
+│   └── IDataSampler.cs ✅
 ├── Services/
 │   └── (구현 예정)
 └── Models/
-    ├── PredictionLog.cs
-    └── FeedbackEntry.cs
+    └── (Interfaces에 record로 포함)
 ```
 
-#### B.2 MLoop.Ops 생성
+#### B.2 MLoop.Ops 생성 ✅
 ```
 src/MLoop.Ops/
-├── MLoop.Ops.csproj
+├── MLoop.Ops.csproj ✅
 ├── Interfaces/
-│   ├── IRetrainingTrigger.cs
-│   ├── IModelComparer.cs
-│   └── IPromotionManager.cs
+│   ├── IRetrainingTrigger.cs ✅
+│   ├── IModelComparer.cs ✅
+│   └── IPromotionManager.cs ✅
 ├── Services/
 │   └── (구현 예정)
 └── Models/
-    ├── RetrainingCondition.cs
-    └── ComparisonResult.cs
+    └── (Interfaces에 record로 포함)
 ```
 
-#### B.3 솔루션 업데이트
-- [ ] MLoop.sln에 새 프로젝트 추가
-- [ ] Directory.Build.props 업데이트
-- [ ] 의존성 그래프 검증
+#### B.3 솔루션 업데이트 ✅
+- [x] MLoop.sln에 새 프로젝트 추가
+- [x] 빌드 검증 (0 errors)
+- [x] 테스트 검증 (389 passed)
 
 ---
 
@@ -245,18 +244,18 @@ Risk: Low
 | A.5.1 | Build verification | 🔴 HIGH | 10min |
 | A.5.2 | Test verification | 🔴 HIGH | 15min |
 
-### Phase B Tasks (8 tasks)
+### Phase B Tasks (8 tasks) ✅ COMPLETE
 
-| ID | Task | Priority | Est. |
-|----|------|----------|------|
-| B.1.1 | Create MLoop.DataStore.csproj | 🟡 MED | 10min |
-| B.1.2 | Create DataStore interfaces | 🟡 MED | 20min |
-| B.1.3 | Create DataStore models | 🟡 MED | 15min |
-| B.2.1 | Create MLoop.Ops.csproj | 🟡 MED | 10min |
-| B.2.2 | Create Ops interfaces | 🟡 MED | 20min |
-| B.2.3 | Create Ops models | 🟡 MED | 15min |
-| B.3.1 | Update MLoop.sln | 🟡 MED | 10min |
-| B.3.2 | Verify build | 🔴 HIGH | 10min |
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| B.1.1 | Create MLoop.DataStore.csproj | 🟡 MED | ✅ Done |
+| B.1.2 | Create DataStore interfaces | 🟡 MED | ✅ Done |
+| B.1.3 | Create DataStore models | 🟡 MED | ✅ (record in interfaces) |
+| B.2.1 | Create MLoop.Ops.csproj | 🟡 MED | ✅ Done |
+| B.2.2 | Create Ops interfaces | 🟡 MED | ✅ Done |
+| B.2.3 | Create Ops models | 🟡 MED | ✅ (record in interfaces) |
+| B.3.1 | Update MLoop.sln | 🟡 MED | ✅ Done |
+| B.3.2 | Verify build | 🔴 HIGH | ✅ Done (389 tests pass) |
 
 ### Phase C Tasks (4 tasks)
 
@@ -284,10 +283,10 @@ Risk: Low
 
 ## 5. Version Milestones
 
-| Version | Focus | Key Deliverables |
-|---------|-------|------------------|
-| **v1.2.0-alpha** | Phase A | AIAgent 제거, 순수 CLI |
-| **v1.2.0-beta** | Phase B | DataStore/Ops 스켈레톤 |
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|------------------|--------|
+| **v1.2.0-alpha** | Phase A | AIAgent 제거, 순수 CLI | ✅ Complete |
+| **v1.2.0-beta** | Phase B | DataStore/Ops 스켈레톤 | ✅ Complete |
 | **v1.2.0** | Phase C+D | 서브모듈, 문서 완료 |
 | **v1.3.0** | DataStore | 예측 로깅, 피드백 수집 |
 | **v1.4.0** | Ops | 재학습 트리거, 자동 프로모션 |
@@ -329,4 +328,4 @@ git checkout feature/phase8-polish-documentation -- agents/
 
 ---
 
-**Last Updated**: January 12, 2026
+**Last Updated**: January 12, 2026 (Phase B completed)
