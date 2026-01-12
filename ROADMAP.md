@@ -6,7 +6,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
-## Current Status (v1.5.0 - January 2026)
+## Current Status (v1.6.0 - January 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
@@ -15,6 +15,8 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - Production model promotion and discovery
 - Batch prediction with auto-discovery
 - Prediction logging and feedback collection
+- Data sampling for retraining datasets
+- Feedback-based retraining triggers
 - CLI with comprehensive command set
 - .NET 10.0 + C# 13 modern codebase
 - Zero AI dependencies (pure ML CLI tool)
@@ -33,11 +35,11 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - **MLoop.CLI**: Simple command-line interface
 - **MLoop.API**: REST API for web integration
 - **MLoop.Extensibility**: Hooks, scripts, metrics interfaces
-- **MLoop.DataStore**: Prediction logging, feedback collection with filesystem-first JSONL storage (v1.5.0)
-- **MLoop.Ops**: Model comparison, time-based retraining triggers (v1.4.0)
+- **MLoop.DataStore**: Prediction logging, feedback collection, data sampling with filesystem-first JSONL storage (v1.6.0)
+- **MLoop.Ops**: Model comparison, feedback-based retraining triggers (v1.6.0)
 
 ### Quality
-- 413+ tests passing (Core + API + CLI + DataStore + Ops)
+- 429+ tests passing (Core + API + CLI + DataStore + Ops)
 
 ---
 
@@ -680,9 +682,57 @@ This separation of concerns enables:
 | CLI Integration | Complete | ✅ | Complete |
 | Unit Tests | 8+ tests | 8 tests | ✅ |
 
-### Next Steps (v1.6.0+)
-- **IDataSampler**: Sample training data from predictions + feedback
-- **Full IRetrainingTrigger**: AccuracyDrop condition using FeedbackMetrics
+---
+
+## Phase 13: Data Sampling & Triggers ✅ Complete (v1.6.0)
+**Goal**: Enable retraining data creation and automated trigger evaluation
+
+**Background**: Feedback collection (v1.5.0) enables:
+- Joining predictions with ground truth for retraining datasets
+- Calculating accuracy metrics for trigger decisions
+- Building data pipelines for continuous improvement
+
+**Philosophy Alignment**: Minimal scope, only implement needed strategies
+
+### T13.1 FileDataSampler ✅
+**Problem**: Need to create retraining datasets from predictions + feedback
+**Solution**: Sampling service with multiple strategies
+- [x] IDataSampler interface implementation
+- [x] Random, Recent, FeedbackPriority strategies (Stratified, LowConfidence deferred)
+- [x] Join predictions with feedback data
+- [x] Export to CSV format for ML.NET training
+- [x] GetStatisticsAsync for sampling metadata
+
+### T13.2 FeedbackBasedTrigger ✅
+**Problem**: Need accuracy-based retraining decisions
+**Solution**: Trigger evaluation using FeedbackMetrics
+- [x] IRetrainingTrigger implementation
+- [x] AccuracyDrop condition (accuracy < threshold)
+- [x] FeedbackVolume condition (count >= threshold)
+- [x] Clear messaging for unsupported conditions (DataDrift, PerformanceDegradation)
+
+### T13.3 CLI Integration ✅
+**Problem**: Users need CLI access to sampling functionality
+**Solution**: Add `mloop sample` command
+- [x] `mloop sample create --model xxx --size 1000 --strategy random`
+- [x] `mloop sample stats --model xxx`
+- [x] Strategies: random, recent, feedback-priority
+- [x] Auto-generated output path with timestamp
+
+### Success Metrics (Phase 13)
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| FileDataSampler | Complete | ✅ | Complete |
+| FeedbackBasedTrigger | Complete | ✅ | Complete |
+| CLI Integration | Complete | ✅ | Complete |
+| Unit Tests | 16+ tests | 16 tests | ✅ |
+
+### Next Steps (v1.7.0+)
+- **Stratified Sampling**: Sample proportionally by class distribution
+- **LowConfidence Sampling**: Prioritize uncertain predictions
+- **DataDrift Detection**: Statistical tests for feature distribution changes
+- **AutoTrigger CLI**: `mloop trigger check --model xxx` command
 
 ---
 
@@ -723,7 +773,8 @@ This separation of concerns enables:
 | **v1.3.0** | Jan 2026 | DataStore Implementation | ✅ Complete |
 | **v1.4.0** | Jan 2026 | Ops Implementation | ✅ Complete |
 | **v1.5.0** | Jan 2026 | Feedback Collection | ✅ Complete |
-| **v1.6.0** | Q1 2026 | Data Sampling & Triggers | 📋 Planning |
+| **v1.6.0** | Jan 2026 | Data Sampling & Triggers | ✅ Complete |
+| **v1.7.0** | Q1 2026 | Advanced Sampling & Triggers | 📋 Planning |
 | **v2.0.0** | Q2 2026 | Studio Integration | 📋 Planning |
 
 ---
@@ -763,8 +814,13 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: January 12, 2026
-**Version**: v1.5.0 Complete (Feedback Collection)
+**Version**: v1.6.0 Complete (Data Sampling & Triggers)
 **Recent Changes**:
+- v1.6.0 Data Sampling & Triggers implementation complete
+  - FileDataSampler: Random, Recent, FeedbackPriority sampling strategies
+  - FeedbackBasedTrigger: AccuracyDrop and FeedbackVolume conditions
+  - `mloop sample create/stats` commands for CLI access
+  - 16 unit tests for sampling and trigger services
 - v1.5.0 Feedback Collection implementation complete
   - FileFeedbackCollector: JSONL-based feedback storage linked to predictions
   - `mloop feedback add/list/metrics` commands for CLI access

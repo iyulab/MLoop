@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\MLoop.DataStore\MLoop.DataStore.csproj" />
     <ProjectReference Include="..\..\src\MLoop.Ops\MLoop.Ops.csproj" />
   </ItemGroup>
 

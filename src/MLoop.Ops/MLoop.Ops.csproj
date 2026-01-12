@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MLoop.Core\MLoop.Core.csproj" />
+    <ProjectReference Include="..\MLoop.DataStore\MLoop.DataStore.csproj" />
   </ItemGroup>
 
 </Project>
