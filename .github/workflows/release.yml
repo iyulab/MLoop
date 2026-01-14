@@ -65,8 +65,11 @@ jobs:
 
     - name: Pack NuGet packages
       run: |
+        # SDK packages
         dotnet pack src/MLoop.Core/MLoop.Core.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }} -o ./artifacts
         dotnet pack src/MLoop.Extensibility/MLoop.Extensibility.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }} -o ./artifacts
+        dotnet pack src/MLoop.DataStore/MLoop.DataStore.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }} -o ./artifacts
+        dotnet pack src/MLoop.Ops/MLoop.Ops.csproj --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }} -o ./artifacts
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -132,6 +135,8 @@ jobs:
         ```bash
         dotnet add package MLoop.Core --version $VERSION
         dotnet add package MLoop.Extensibility --version $VERSION
+        dotnet add package MLoop.DataStore --version $VERSION
+        dotnet add package MLoop.Ops --version $VERSION
         ```
 
         ### CLI Tool
@@ -181,7 +186,7 @@ jobs:
     - name: Pack CLI tool
       run: |
         mkdir -p ./artifacts
-        dotnet pack src/MLoop.CLI/MLoop.CLI.csproj --configuration Release -p:Version=${{ needs.build.outputs.version }} -o ./artifacts
+        dotnet pack tools/MLoop.CLI/MLoop.CLI.csproj --configuration Release -p:Version=${{ needs.build.outputs.version }} -o ./artifacts
         echo "Packed CLI tool:"
         ls -la ./artifacts/
 

@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\MLoop.API\MLoop.API.csproj" />
+    <ProjectReference Include="..\..\tools\MLoop.API\MLoop.API.csproj" />
     <ProjectReference Include="..\MLoop.Tests.Common\MLoop.Tests.Common.csproj" />
   </ItemGroup>
 

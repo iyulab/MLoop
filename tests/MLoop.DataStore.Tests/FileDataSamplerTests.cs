@@ -187,6 +187,91 @@ public class FileDataSamplerTests : IDisposable
     }
 
     [Fact]
+    public async Task SampleAsync_StratifiedStrategy_MaintainsClassDistribution()
+    {
+        // Arrange - create predictions with different classes (60% A, 30% B, 10% C)
+        for (int i = 0; i < 6; i++)
+        {
+            await _logger.LogPredictionAsync(
+                "test-model",
+                "exp-001",
+                new Dictionary<string, object> { ["index"] = i },
+                "class_A",
+                0.9);
+        }
+        for (int i = 0; i < 3; i++)
+        {
+            await _logger.LogPredictionAsync(
+                "test-model",
+                "exp-001",
+                new Dictionary<string, object> { ["index"] = i + 6 },
+                "class_B",
+                0.8);
+        }
+        await _logger.LogPredictionAsync(
+            "test-model",
+            "exp-001",
+            new Dictionary<string, object> { ["index"] = 9 },
+            "class_C",
+            0.7);
+
+        var outputPath = Path.Combine(_testDir, "output.csv");
+
+        // Act - sample 5 out of 10
+        var result = await _sampler.SampleAsync(
+            "test-model",
+            5,
+            SamplingStrategy.Stratified,
+            outputPath);
+
+        // Assert
+        result.SampledCount.Should().Be(5);
+        result.StrategyUsed.Should().Be(SamplingStrategy.Stratified);
+
+        var content = await File.ReadAllTextAsync(outputPath);
+        // Should have roughly proportional distribution
+        // At minimum, should include at least one of each class that has enough samples
+        content.Should().Contain("class_A");
+        content.Should().Contain("class_B");
+        // class_C might be included (10% of 5 = 0.5, rounds to 1)
+    }
+
+    [Fact]
+    public async Task SampleAsync_LowConfidenceStrategy_PrioritizesLowConfidence()
+    {
+        // Arrange - create predictions with varying confidence
+        var confidences = new[] { 0.95, 0.85, 0.75, 0.45, 0.35 };
+        for (int i = 0; i < confidences.Length; i++)
+        {
+            await _logger.LogPredictionAsync(
+                "test-model",
+                "exp-001",
+                new Dictionary<string, object> { ["index"] = i },
+                $"output_{i}",
+                confidences[i]);
+        }
+
+        var outputPath = Path.Combine(_testDir, "output.csv");
+
+        // Act
+        var result = await _sampler.SampleAsync(
+            "test-model",
+            2,
+            SamplingStrategy.LowConfidence,
+            outputPath);
+
+        // Assert
+        result.SampledCount.Should().Be(2);
+        result.StrategyUsed.Should().Be(SamplingStrategy.LowConfidence);
+
+        var content = await File.ReadAllTextAsync(outputPath);
+        // Should contain the lowest confidence predictions (0.35 and 0.45)
+        content.Should().Contain("output_4"); // 0.35
+        content.Should().Contain("output_3"); // 0.45
+        content.Should().NotContain("output_0"); // 0.95 should not be included
+    }
+
+    [Fact]
     public async Task GetStatisticsAsync_ReturnsZeroes_WhenNoPredictions()
     {
         // Act
