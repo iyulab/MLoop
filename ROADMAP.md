@@ -6,7 +6,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
-## Current Status (v1.8.0 - January 2026)
+## Current Status (v1.9.0 - January 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
@@ -39,7 +39,7 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 - **MLoop.Extensibility**: Hooks, scripts, metrics interfaces
 - **MLoop.Ops**: Model comparison, feedback-based retraining triggers
 
-**Tools (`tools/`) - Executable Distribution**
+**Tools (`tools/`) - Executable Distribution** *(v1.9.0: relocated from src/)*
 - **MLoop.CLI**: Command-line interface (dotnet tool)
 - **MLoop.API**: REST API server (Docker/standalone)
 
@@ -819,20 +819,49 @@ This phase prepares all SDK projects for public distribution.
 | README Files | 4 SDKs | ✅ | Complete |
 | Build Verification | Pass | ✅ | Complete |
 
-### Next Steps (v1.9.0+)
+---
 
-**Project Structure Refactoring**:
-- Move `src/MLoop.CLI` → `tools/MLoop.CLI`
-- Move `src/MLoop.API` → `tools/MLoop.API`
-- Update solution file and project references
+## Phase 16: Project Refinement ✅ Complete (v1.9.0)
+**Goal**: Complete SDK/Tools separation and finalize NuGet publishing
 
-**Sampling Enhancements**:
-- Stratified Sampling: Sample proportionally by class distribution
-- LowConfidence Sampling: Prioritize uncertain predictions
+**Background**: v1.8.0 prepared NuGet package metadata. v1.9.0 completes the
+architectural separation and all remaining sampling strategies.
 
-**NuGet Publishing**:
-- GitHub Actions workflow for automated publishing
-- Version management strategy
+**Philosophy Alignment**: Clean separation enables proper package distribution
+
+### T16.1 Project Structure Refactoring ✅
+**Problem**: CLI and API still in `src/` despite being tools, not SDK
+**Solution**: Move to dedicated `tools/` directory
+- [x] Create `tools/` directory
+- [x] Move `src/MLoop.CLI` → `tools/MLoop.CLI`
+- [x] Move `src/MLoop.API` → `tools/MLoop.API`
+- [x] Update solution file with `tools` solution folder
+- [x] Update project references in test projects
+- [x] All tests passing (26 DataStore, 24 Ops, etc.)
+
+### T16.2 Sampling Enhancements ✅
+**Problem**: Stratified sampling was fallback to random
+**Solution**: Implement proper stratified sampling
+- [x] Stratified Sampling: Proportional sampling by output class distribution
+- [x] LowConfidence Sampling: Already implemented, added tests
+- [x] Unit tests for both strategies (2 new tests)
+
+### T16.3 NuGet Publishing Workflow ✅
+**Problem**: Workflow only packed Core and Extensibility
+**Solution**: Update release.yml for all SDK packages
+- [x] Add MLoop.DataStore to pack step
+- [x] Add MLoop.Ops to pack step
+- [x] Update CLI path from `src/` to `tools/`
+- [x] Update release notes with all 4 SDK packages
+
+### Success Metrics (Phase 16)
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| Project Structure | SDK/Tools separation | ✅ | Complete |
+| Sampling Strategies | 5 strategies | ✅ | Complete |
+| NuGet Workflow | 4 SDK packages | ✅ | Complete |
+| Test Coverage | All passing | ✅ | Complete |
 
 ---
 
@@ -876,6 +905,7 @@ This phase prepares all SDK projects for public distribution.
 | **v1.6.0** | Jan 2026 | Data Sampling & Triggers | ✅ Complete |
 | **v1.7.0** | Jan 2026 | Trigger CLI Enhancement | ✅ Complete |
 | **v1.8.0** | Jan 2026 | NuGet Package Preparation | ✅ Complete |
+| **v1.9.0** | Jan 2026 | Project Refinement | ✅ Complete |
 | **v2.0.0** | Q2 2026 | Studio Integration | 📋 Planning |
 
 ---
@@ -914,9 +944,14 @@ Submit proposals via GitHub Issues with `roadmap` label.
 
 ---
 
-**Last Updated**: January 12, 2026
-**Version**: v1.8.0 Complete (NuGet Package Preparation)
+**Last Updated**: January 14, 2026
+**Version**: v1.9.0 Complete (Project Refinement)
 **Recent Changes**:
+- v1.9.0 Project Refinement complete
+  - Project structure refactoring: CLI/API moved to `tools/` directory
+  - Stratified sampling implementation for class-proportional sampling
+  - GitHub Actions workflow updated for all 4 SDK packages
+  - All tests passing (26+ DataStore tests including new sampling tests)
 - v1.8.0 NuGet Package Preparation complete
   - SDK package metadata: PackageId, Description, Tags for all SDK projects
   - README files for NuGet package display

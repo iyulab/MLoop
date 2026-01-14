@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\MLoop.Core\MLoop.Core.csproj" />
-    <ProjectReference Include="..\MLoop.DataStore\MLoop.DataStore.csproj" />
-    <ProjectReference Include="..\MLoop.Ops\MLoop.Ops.csproj" />
+    <ProjectReference Include="..\..\src\MLoop.Core\MLoop.Core.csproj" />
+    <ProjectReference Include="..\..\src\MLoop.DataStore\MLoop.DataStore.csproj" />
+    <ProjectReference Include="..\..\src\MLoop.Ops\MLoop.Ops.csproj" />
   </ItemGroup>
 
   <ItemGroup>

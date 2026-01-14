@@ -112,7 +112,7 @@ public sealed class FileDataSampler : IDataSampler
             SamplingStrategy.Random => RandomSample(data, actualSize),
             SamplingStrategy.Recent => RecentSample(data, actualSize),
             SamplingStrategy.FeedbackPriority => FeedbackPrioritySample(data, actualSize),
-            SamplingStrategy.Stratified => RandomSample(data, actualSize), // Fallback to random
+            SamplingStrategy.Stratified => StratifiedSample(data, actualSize),
             SamplingStrategy.LowConfidence => LowConfidenceSample(data, actualSize),
             _ => RandomSample(data, actualSize)
         };
@@ -155,6 +155,54 @@ public sealed class FileDataSampler : IDataSampler
             .OrderBy(d => d.Confidence!.Value)
             .Take(size)
             .ToList();
+    }
+
+    private static List<JoinedSample> StratifiedSample(List<JoinedSample> data, int size)
+    {
+        // Group by output value to maintain class distribution
+        var groups = data
+            .GroupBy(d => d.Output?.ToString() ?? "_null_")
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        if (groups.Count == 0)
+            return new List<JoinedSample>();
+
+        var result = new List<JoinedSample>();
+        var random = new Random();
+
+        // Calculate proportional sample size for each group
+        var totalCount = data.Count;
+        var remaining = size;
+
+        foreach (var (key, group) in groups.OrderByDescending(g => g.Value.Count))
+        {
+            // Calculate proportional count for this group
+            var proportion = (double)group.Count / totalCount;
+            var groupSampleSize = Math.Max(1, (int)Math.Round(size * proportion));
+            groupSampleSize = Math.Min(groupSampleSize, remaining);
+            groupSampleSize = Math.Min(groupSampleSize, group.Count);
+
+            if (groupSampleSize > 0)
+            {
+                var sampled = group.OrderBy(_ => random.Next()).Take(groupSampleSize);
+                result.AddRange(sampled);
+                remaining -= groupSampleSize;
+            }
+
+            if (remaining <= 0)
+                break;
+        }
+
+        // Fill remaining slots with random samples if needed
+        if (remaining > 0 && result.Count < size)
+        {
+            var usedIds = new HashSet<string>(result.Select(r => r.PredictionId));
+            var unused = data.Where(d => !usedIds.Contains(d.PredictionId)).ToList();
+            var additional = unused.OrderBy(_ => random.Next()).Take(remaining);
+            result.AddRange(additional);
+        }
+
+        return result;
     }
 
     private async Task<List<PredictionRecord>> LoadPredictionsAsync(
