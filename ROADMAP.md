@@ -6,6 +6,37 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
+## Versioning Policy
+
+MLoop follows [Semantic Versioning](https://semver.org/) with a community-first approach:
+
+### Version Format: `MAJOR.MINOR.PATCH`
+
+| Component | Change Policy |
+|-----------|---------------|
+| **MAJOR** (v1.0, v2.0) | Community validation required. Only after public testing, feedback collection, and stability confirmation. |
+| **MINOR** (v0.x, v1.x) | Feature development. All roadmap phases use minor versions until community validation. |
+| **PATCH** (v0.x.1) | Bug fixes and documentation updates. |
+
+### Development Workflow
+
+```
+v0.1.0 → v0.2.0 → ... → v0.9.0 → Community Validation → v1.0.0
+                                         ↓
+v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
+```
+
+**Key Principles:**
+- All roadmap features are implemented in **minor versions** (v0.x.x, v1.x.x)
+- **Major version bumps** require:
+  - Public beta testing period
+  - Issue triage and resolution
+  - Community feedback incorporation
+  - Maintainer approval
+- Pre-release tags (`-alpha`, `-beta`, `-rc`) may be used for early access
+
+---
+
 ## Current Status (v1.9.0 - January 2026)
 
 ### Core Platform
@@ -865,6 +896,131 @@ architectural separation and all remaining sampling strategies.
 
 ---
 
+## Phase 17: Studio API Integration ✅ Complete (v1.10.0)
+**Goal**: Complete Studio API endpoints with full MLoop SDK integration
+
+**Background**: Studio Host currently has Project and Data endpoints. Need to add
+training, models, experiments, predictions, and feedback endpoints backed by MLoop SDK.
+
+### T17.1 Training Endpoints ✅
+- [x] POST /api/projects/{id}/training - Start training job
+- [x] GET /api/projects/{id}/training - List training jobs
+- [x] POST /api/projects/{id}/training/{jobId}/cancel - Cancel training
+
+### T17.2 Model Management Endpoints ✅
+- [x] GET /api/projects/{id}/models - List models with experiments
+- [x] POST /api/projects/{id}/models/{name}/promote - Promote to production
+
+### T17.3 Prediction Endpoints ✅
+- [x] POST /api/projects/{id}/predictions/single - Single prediction
+- [x] POST /api/projects/{id}/predictions/batch - Batch prediction
+- [x] GET /api/projects/{id}/predictions/logs - List prediction logs
+
+### T17.4 Feedback Endpoints ✅
+- [x] POST /api/projects/{id}/feedback - Record feedback
+- [x] GET /api/projects/{id}/feedback - List feedback
+- [x] GET /api/projects/{id}/feedback/metrics - Get accuracy metrics
+
+### Success Metrics (Phase 17)
+
+| Metric | Target | Status |
+|--------|--------|--------|
+| Training API | 3 endpoints | ✅ |
+| Model API | 2 endpoints | ✅ |
+| Prediction API | 3 endpoints | ✅ |
+| Feedback API | 3 endpoints | ✅ |
+
+---
+
+## Phase 18: Studio UI Development ✅ Complete (v1.11.0)
+**Goal**: Build React UI for visual ML workflow management
+
+**Background**: wwwsrc contains React scaffold. Implemented feature pages
+for projects, data, training, predictions, feedback, and model management.
+
+### T18.1 Project Dashboard ✅
+- [x] Projects.tsx: Project list with search and create/delete modals
+- [x] ProjectDetail.tsx: Tabbed view (Overview, Data, Training, Models, Predictions, Feedback)
+
+### T18.2 Data Management UI ✅
+- [x] ProjectData.tsx: File upload with drag-drop
+- [x] DataPreviewModal: Schema display and data preview
+- [x] File list with metadata (rows, size, status)
+
+### T18.3 Training UI ✅
+- [x] ProjectTraining.tsx: Training job list with progress bars
+- [x] StartTrainingModal: Form with data file, label, ML task, time limit
+
+### T18.4 Model & Predictions UI ✅
+- [x] ProjectModels.tsx: Expandable model cards with experiments
+- [x] ProjectPredictions.tsx: Batch/Single prediction modals
+- [x] ProjectFeedback.tsx: Feedback recording and accuracy metrics
+
+### Success Metrics (Phase 18)
+
+| Metric | Target | Status |
+|--------|--------|--------|
+| Project Dashboard | Complete | ✅ |
+| Data Management | Complete | ✅ |
+| Training UI | Complete | ✅ |
+| Model Management | Complete | ✅ |
+
+---
+
+## Phase 19: ML-Resource E2E Validation 🔄 In Progress (v1.12.0)
+**Goal**: Complete E2E testing with all 25 ML-Resource datasets
+
+**Background**: Current simulation covers 10/25 datasets (40%). Complete remaining
+15 datasets and verify MLoop CLI E2E works correctly.
+
+**Test Datasets** (`D:\data\MLoop\ML-Resource`):
+
+| Category | Datasets | Status |
+|----------|----------|--------|
+| Regression (Supply Chain) | 001-004 | 🔄 3/4 Complete |
+| Regression (Resource) | 005-011 | ✅ Complete (7) |
+| Classification (PM) | 012-014 | ⚠️ Label separation |
+| Classification (Tested) | 015, 017, 019 | ✅ Complete (3) |
+| Classification (Remaining) | 016, 018, 020-021 | ⚠️ Label missing |
+| Other (OCR, Safety) | 022-025 | 📋 Pending |
+
+### T19.1 Regression Dataset Validation ✅
+E2E test results (MLoop CLI):
+- 001: Skipped (label column unclear in guidebook)
+- 002-사출성형 공급망최적화: **R² = 0.9960** (L3 - Full autonomous)
+- 003-소성가공 자원최적화: **R² = 0.6556** (L3 - Full autonomous)
+- 004-생산계획 최적화: **R² = 0.9499** (L3 - Full autonomous)
+
+### T19.2 Classification Dataset Analysis ⚠️
+Current state:
+- 012-열처리 공정최적화: Sensor data + labels in separate files (join required)
+- 016-전자부품 예지보전: Training data lacks label column
+- 018-열처리 예지보전: **Encoding auto-convert OK** (CP949→UTF-8), but no label column
+- 020-사출성형 예지보전: No label column in raw data
+
+### T19.3 Autonomy Level Measurement ✅
+**Current Results**:
+- Regression: 3/4 L3 (75% full autonomous)
+- Classification: Most L2 (requires preprocessing/join)
+- EncodingDetector: Working correctly (018 verified)
+- Average: L2.4 (target L3.0+)
+
+**Key Findings**:
+- Single clean CSV with clear label → L3 (fully autonomous)
+- Multi-file or label separation → L2 (human intervention needed)
+- Encoding issues → Auto-resolved by EncodingDetector
+
+### Success Metrics (Phase 19)
+
+| Metric | Baseline | Target | Current |
+|--------|----------|--------|---------|
+| Regression E2E | 40% | 100% | 75% (3/4) |
+| Classification E2E | 30% | 80% | 50% (label issues) |
+| Average Autonomy | L2.4 | L3.0+ | L2.5 |
+| L3 Achievement | 40% | 80%+ | 60% |
+
+---
+
 ## Future Considerations (P3 LOW)
 
 ### Advanced Features
@@ -889,24 +1045,42 @@ architectural separation and all remaining sampling strategies.
 
 ## Release Schedule
 
-| Version | Date | Focus | Status |
-|---------|------|-------|--------|
-| **v0.1.0** | Nov 2025 | ML.NET 5.0 + Core | ✅ Complete |
-| **v0.2.0** | Jan 2026 | Preprocessing + Extensibility + AI Agents | ✅ Complete |
-| **v0.3.0** | Jan 2026 | Autonomous MLOps (Phase 4 Tier 1-3) | ✅ Complete |
-| **v0.4.0** | Jan 2026 | Intelligent Memory System (Phase 5) | ⚠️ Deprecated |
-| **v0.5.0** | Jan 2026 | Agent Intelligence & Data Quality (Phase 6) | ⚠️ Partial |
-| **v1.0.0** | Jan 2026 | Production Readiness (Phase 7) | ✅ Released |
-| **v1.1.0** | Jan 2026 | Polish & Documentation (Phase 8) | ⚠️ Partial |
-| **v1.2.0** | Jan 2026 | Zero AI Dependency Refactoring | ✅ Complete |
-| **v1.3.0** | Jan 2026 | DataStore Implementation | ✅ Complete |
-| **v1.4.0** | Jan 2026 | Ops Implementation | ✅ Complete |
-| **v1.5.0** | Jan 2026 | Feedback Collection | ✅ Complete |
-| **v1.6.0** | Jan 2026 | Data Sampling & Triggers | ✅ Complete |
-| **v1.7.0** | Jan 2026 | Trigger CLI Enhancement | ✅ Complete |
-| **v1.8.0** | Jan 2026 | NuGet Package Preparation | ✅ Complete |
-| **v1.9.0** | Jan 2026 | Project Refinement | ✅ Complete |
-| **v2.0.0** | Q2 2026 | Studio Integration | 📋 Planning |
+> **Note**: Major versions (v1.0, v2.0) require community validation before release.
+> All roadmap features are developed in minor versions (v0.x.x, v1.x.x).
+
+### v0.x Development Series (Core CLI)
+
+| Version | Focus | Status |
+|---------|-------|--------|
+| **v0.1.0** | ML.NET 5.0 + Core | ✅ Complete |
+| **v0.2.0** | Preprocessing + Extensibility | ✅ Complete |
+| **v0.3.0** | Autonomous MLOps (Auto-merge, Label handling) | ✅ Complete |
+| **v0.4.0** | Intelligent Memory System | ⚠️ Deprecated |
+| **v0.5.0** | Data Quality + Encoding Detection | ✅ Complete |
+| **v0.6.0** | DataStore + Prediction Logging | ✅ Complete |
+| **v0.7.0** | Ops + Model Comparison | ✅ Complete |
+| **v0.8.0** | Feedback + Data Sampling | ✅ Complete |
+| **v0.9.0** | Trigger CLI + NuGet Preparation | ✅ Complete |
+
+### v1.0.0 (Community Validation Milestone)
+- **Status**: 🎯 Ready for community validation
+- **Criteria**: Stable CLI, comprehensive tests, documentation complete
+- **Release**: After public beta feedback
+
+### v1.x Development Series (Studio Integration)
+
+| Version | Focus | Status |
+|---------|-------|--------|
+| **v1.1.0** | Studio API Integration | ✅ Complete |
+| **v1.2.0** | Studio UI Development | ✅ Complete |
+| **v1.3.0** | ML-Resource E2E Validation | 🔄 In Progress |
+| **v1.4.0** | Studio Polish & Testing | 📋 Planned |
+| **v1.5.0** | Documentation & Examples | 📋 Planned |
+
+### v2.0.0 (Major Release Milestone)
+- **Status**: 📋 Requires community validation
+- **Criteria**: Studio production-ready, community feedback incorporated
+- **Release**: After v1.x series validation and public testing
 
 ---
 
@@ -944,14 +1118,20 @@ Submit proposals via GitHub Issues with `roadmap` label.
 
 ---
 
-**Last Updated**: January 14, 2026
-**Version**: v1.9.0 Complete (Project Refinement)
+**Last Updated**: January 15, 2026
+**Version**: v1.11.0 Complete (Studio UI Development)
 **Recent Changes**:
-- v1.9.0 Project Refinement complete
-  - Project structure refactoring: CLI/API moved to `tools/` directory
-  - Stratified sampling implementation for class-proportional sampling
-  - GitHub Actions workflow updated for all 4 SDK packages
-  - All tests passing (26+ DataStore tests including new sampling tests)
+- v1.11.0 Studio UI Development complete
+  - Projects.tsx, ProjectDetail.tsx with 6 tabs
+  - Training, Models, Predictions, Feedback UI components
+  - React + TanStack Query + Tailwind CSS
+- v1.10.0 Studio API Integration complete
+  - Training, Models, Predictions, Feedback endpoints
+  - Full MLoop SDK integration
+- v1.12.0 ML-Resource E2E Validation in progress
+  - Regression: 002 (R²=0.996), 003 (R²=0.656), 004 (R²=0.950)
+  - Classification: Label separation issues identified
+  - EncodingDetector: CP949→UTF-8 auto-conversion verified
 - v1.8.0 NuGet Package Preparation complete
   - SDK package metadata: PackageId, Description, Tags for all SDK projects
   - README files for NuGet package display
