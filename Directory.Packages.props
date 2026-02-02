@@ -9,9 +9,9 @@
     <PackageVersion Include="Microsoft.ML.AutoML" Version="0.23.0" />
     <!-- ASP.NET Core Packages -->
     <PackageVersion Include="AspNetCoreRateLimit" Version="5.0.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.2" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.2" />
     <!-- Logging Packages -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
@@ -30,10 +30,10 @@
     <PackageVersion Include="YamlDotNet" Version="16.3.0" />
     <!-- CLI / Console -->
     <PackageVersion Include="Spectre.Console" Version="0.54.0" />
-    <PackageVersion Include="System.CommandLine" Version="2.0.1" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.2" />
     <PackageVersion Include="DotNetEnv" Version="3.1.1" />
     <!-- Documentation / API -->
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.0" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.1" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.4.9" />
     <!-- Resilience / Polly -->
@@ -45,6 +45,6 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="FluentAssertions" Version="8.8.0" />
     <!-- Source Link for debugging -->
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.102" />
   </ItemGroup>
 </Project>

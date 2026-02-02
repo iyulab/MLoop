@@ -84,7 +84,7 @@ public class TrainingEngine : ITrainingEngine
 
             // Validate data quality before training (label column + dataset size)
             var dataQualityValidator = new DataQualityValidator(_mlContext);
-            var qualityResult = dataQualityValidator.ValidateTrainingData(dataFilePath, config.LabelColumn);
+            var qualityResult = dataQualityValidator.ValidateTrainingData(dataFilePath, config.LabelColumn, config.Task);
 
             if (!qualityResult.IsValid)
             {
