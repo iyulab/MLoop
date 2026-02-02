@@ -110,6 +110,12 @@ mloop train <data-file> <label-column> [options]
 #   --auto-merge                Auto-detect and merge same-schema CSVs in datasets/
 #   --drop-missing-labels       Drop rows with missing label values (default: auto)
 
+# Class Balancing (v0.5.0+):
+#   --balance <strategy>        Class balancing for imbalanced datasets
+#                               'auto'  - Balance to 10:1 if ratio > 10:1
+#                               'none'  - No balancing (default)
+#                               '<n>'   - Target ratio (e.g., '5' for 5:1)
+
 # Examples
 mloop train datasets/train.csv price --time 120
 mloop train data/sales.csv revenue --time 300 --metric r_squared
@@ -118,6 +124,10 @@ mloop train data/fraud.csv is_fraud --time 180 --test-split 0.3
 # Multi-file training (v0.4.0+)
 mloop train --data normal.csv outlier.csv --label Target --task regression
 mloop train --auto-merge --label Status --task binary-classification
+
+# Class imbalance handling (v0.5.0+)
+mloop train data.csv is_fraud --task binary-classification --balance auto
+mloop train data.csv defect --task binary-classification --balance 5  # Target 5:1 ratio
 ```
 
 **Automatic Features** (v1.0.0):
@@ -193,10 +203,24 @@ mloop promote exp-005 --to staging
 Display dataset profiling information with automatic encoding detection.
 
 ```bash
-mloop info <data-file>
+mloop info <data-file> [options]
+
+# Options (v0.5.0+):
+#   --label, -l <column>   Specify label column for proper column inference
+#   --name, -n <model>     Model name to read label from mloop.yaml (default: "default")
+
+# Basic usage
+mloop info datasets/train.csv
+
+# With explicit label column
+mloop info datasets/train.csv --label IsError
+
+# Read label from mloop.yaml model configuration
+mloop info datasets/train.csv --name fraud-detector
 
 # Output:
 # [Info] Converted CP949 → UTF-8    # (v1.0.0 - automatic encoding conversion)
+# Label column: IsError (from mloop.yaml (model: default))
 #
 # 📊 Dataset Information
 # Rows: 1,000
@@ -207,6 +231,11 @@ mloop info <data-file>
 # - category (Text): 5 unique values
 # - date (DateTime): Range: 2024-01-01 to 2024-12-31
 ```
+
+**Label Column Resolution** (v0.5.0+):
+1. `--label` option (explicit override)
+2. `mloop.yaml` model configuration (if in project)
+3. First column (fallback)
 
 **Encoding Support** (v1.0.0):
 - Auto-detects CP949, EUC-KR, UTF-8, UTF-16 encodings
@@ -987,6 +1016,30 @@ mloop train data.csv label --task binary-classification --drop-missing-labels
 3. **Check label column**: Ensure it's the correct target variable
 4. **Check class imbalance**: MLoop shows distribution automatically for classification
 5. **Consider preprocessing**: Add feature engineering scripts in `.mloop/scripts/preprocessing/`
+
+### Class Imbalance / AUC Calculation Error
+
+**Problem**: Training fails with "AUC is not defined when there is no positive class"
+
+This occurs when minority class samples are too few for cross-validation folds.
+
+**Solution**:
+```bash
+# Use --balance option to oversample minority class
+mloop train data.csv is_fraud --task binary-classification --balance auto
+
+# For extreme imbalance (e.g., 50:1), use aggressive balancing
+mloop train data.csv defect --task binary-classification --balance 5
+
+# Alternative: use F1-score metric instead of AUC
+mloop train data.csv is_fraud --task binary-classification --metric f1_score
+```
+
+**Class Imbalance Thresholds**:
+- **Moderate** (5:1): Warning shown, training continues
+- **High** (10:1): Strong warning, `--balance auto` recommended
+- **Extreme** (20:1+): May require manual oversampling or `--balance` option
+- **Critical** (50:1+): Cross-validation likely to fail without balancing
 
 ### Training Timeout
 
