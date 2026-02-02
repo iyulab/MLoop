@@ -101,6 +101,17 @@ public class TrainingEngine : ITrainingEngine
                 Console.WriteLine($"[Warning] {warning}");
             }
 
+            // Show suggestions if any
+            if (qualityResult.Suggestions.Any())
+            {
+                Console.WriteLine("[Suggestions]");
+                foreach (var suggestion in qualityResult.Suggestions)
+                {
+                    Console.WriteLine($"  {suggestion}");
+                }
+                Console.WriteLine();
+            }
+
             // Capture input schema before training (using enhanced detection)
             var inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn);
 
