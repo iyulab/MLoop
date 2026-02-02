@@ -94,6 +94,11 @@ public static class TrainCommand
             AllowMultipleArgumentsPerToken = true
         };
 
+        var balanceOption = new Option<string?>("--balance", "-b")
+        {
+            Description = "Class balancing strategy: 'auto' (balance to 10:1 if ratio > 10:1), 'none' (no balancing), or target ratio (e.g., '5' for 5:1)"
+        };
+
         var command = new Command("train", "Train a model using AutoML");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
@@ -108,6 +113,7 @@ public static class TrainCommand
         command.Options.Add(autoMergeOption);
         command.Options.Add(dropMissingLabelsOption);
         command.Options.Add(dataOption);
+        command.Options.Add(balanceOption);
 
         command.SetAction((parseResult) =>
         {
@@ -124,7 +130,8 @@ public static class TrainCommand
             var autoMerge = parseResult.GetValue(autoMergeOption);
             var dropMissingLabels = parseResult.GetValue(dropMissingLabelsOption);
             var dataPaths = parseResult.GetValue(dataOption);
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths);
+            var balance = parseResult.GetValue(balanceOption);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, balance);
         });
 
         return command;
@@ -143,7 +150,8 @@ public static class TrainCommand
         string? generateScript,
         bool autoMerge,
         bool? dropMissingLabels,
-        string[]? dataPaths)
+        string[]? dataPaths,
+        string? balance)
     {
         try
         {
@@ -575,6 +583,35 @@ public static class TrainCommand
                     AnsiConsole.WriteLine(ex.Message);
                     return 1;
                 }
+            }
+
+            // Apply class balancing if requested (only for classification tasks)
+            string? balancedFilePath = null;
+            if (!string.IsNullOrEmpty(balance) && isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
+            {
+                var dataBalancer = new DataBalancer();
+                var balanceResult = dataBalancer.Balance(resolvedDataFile, effectiveDefinition.Label, balance);
+
+                if (balanceResult.Applied && balanceResult.BalancedFilePath != null)
+                {
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.Write(new Rule("[blue]Class Balancing[/]").LeftJustified());
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
+                    AnsiConsole.MarkupLine($"[green]>[/] Using balanced data: [cyan]{Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath)}[/]");
+                    AnsiConsole.WriteLine();
+
+                    resolvedDataFile = balanceResult.BalancedFilePath;
+                    balancedFilePath = balanceResult.BalancedFilePath;
+                }
+                else if (!string.IsNullOrEmpty(balanceResult.Message))
+                {
+                    AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
+                }
+            }
+            else if (!string.IsNullOrEmpty(balance) && !isClassificationTask)
+            {
+                AnsiConsole.MarkupLine("[yellow]Warning:[/] --balance option is only applicable to classification tasks");
             }
 
             // Display training configuration
