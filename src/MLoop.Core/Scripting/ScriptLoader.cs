@@ -190,9 +190,14 @@ public class ScriptLoader
             throw new InvalidOperationException($"Compilation failed:\n{errors}");
         }
 
-        // Save to cache
+        // Save to cache - ensure directory exists
         ms.Seek(0, SeekOrigin.Begin);
         var assemblyBytes = ms.ToArray();
+        var cacheDir = Path.GetDirectoryName(cachedDllPath);
+        if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
+        {
+            Directory.CreateDirectory(cacheDir);
+        }
         await File.WriteAllBytesAsync(cachedDllPath, assemblyBytes);
 
         // Load from memory to avoid file locking
