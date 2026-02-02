@@ -70,8 +70,15 @@ public class ServeCommand : Command
 
             if (apiAssembly == null)
             {
-                AnsiConsole.MarkupLine("[red]❌ MLoop.API assembly not found. Build the solution first:[/]");
-                AnsiConsole.MarkupLine("[yellow]   dotnet build[/]");
+                AnsiConsole.MarkupLine("[red]❌ MLoop.API assembly not found.[/]");
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[yellow]Options:[/]");
+                AnsiConsole.MarkupLine("[grey]  1. Set MLOOP_API_PATH environment variable:[/]");
+                AnsiConsole.MarkupLine("[grey]     set MLOOP_API_PATH=D:\\path\\to\\MLoop.API.dll[/]");
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[grey]  2. Build from source:[/]");
+                AnsiConsole.MarkupLine("[grey]     dotnet build src/MLoop.sln[/]");
+                AnsiConsole.MarkupLine("[grey]     dotnet run --project tools/MLoop.API[/]");
                 return;
             }
 
@@ -156,14 +163,24 @@ public class ServeCommand : Command
 
     private static string? FindApiAssembly()
     {
-        // Look for MLoop.API.dll in common build output locations
+        // 1. Check MLOOP_API_PATH environment variable first (highest priority)
+        var envPath = Environment.GetEnvironmentVariable("MLOOP_API_PATH");
+        if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath))
+        {
+            return Path.GetFullPath(envPath);
+        }
+
+        // 2. Look for MLoop.API.dll in common build output locations
         var searchPaths = new[]
         {
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "MLoop.API", "MLoop.API.dll"),
-            Path.Combine(AppContext.BaseDirectory, "..", "MLoop.API", "MLoop.API.dll"),
+            // Same directory as CLI (for bundled deployments)
             Path.Combine(AppContext.BaseDirectory, "MLoop.API.dll"),
-            Path.Combine(Directory.GetCurrentDirectory(), "src", "MLoop.API", "bin", "Debug", "net10.0", "MLoop.API.dll"),
-            Path.Combine(Directory.GetCurrentDirectory(), "src", "MLoop.API", "bin", "Release", "net10.0", "MLoop.API.dll"),
+            // Relative paths from CLI location
+            Path.Combine(AppContext.BaseDirectory, "..", "MLoop.API", "MLoop.API.dll"),
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "MLoop.API", "MLoop.API.dll"),
+            // Development paths
+            Path.Combine(Directory.GetCurrentDirectory(), "tools", "MLoop.API", "bin", "Debug", "net9.0", "MLoop.API.dll"),
+            Path.Combine(Directory.GetCurrentDirectory(), "tools", "MLoop.API", "bin", "Release", "net9.0", "MLoop.API.dll"),
         };
 
         foreach (var path in searchPaths)

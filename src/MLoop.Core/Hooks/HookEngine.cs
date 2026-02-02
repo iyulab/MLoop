@@ -11,8 +11,9 @@ namespace MLoop.Core.Hooks;
 public class HookEngine
 {
     private readonly string _projectRoot;
-    private readonly ScriptLoader _scriptLoader;
     private readonly ILogger _logger;
+    private ScriptLoader? _scriptLoader;
+    private readonly object _scriptLoaderLock = new();
 
     // Hook type to directory name mapping
     private static readonly Dictionary<HookType, string> HookDirectories = new()
@@ -36,7 +37,23 @@ public class HookEngine
     {
         _projectRoot = projectRoot;
         _logger = logger;
-        _scriptLoader = scriptLoader ?? new ScriptLoader();
+        _scriptLoader = scriptLoader;  // Lazy initialization - only create when needed
+    }
+
+    /// <summary>
+    /// Gets or creates the ScriptLoader instance (lazy initialization).
+    /// This avoids Assembly.Location issues in single-file publish when scripts aren't needed.
+    /// </summary>
+    private ScriptLoader GetScriptLoader()
+    {
+        if (_scriptLoader == null)
+        {
+            lock (_scriptLoaderLock)
+            {
+                _scriptLoader ??= new ScriptLoader();
+            }
+        }
+        return _scriptLoader;
     }
 
     /// <summary>
@@ -123,8 +140,8 @@ public class HookEngine
                     var scriptName = Path.GetFileName(scriptFile);
                     _logger.Info($"  🪝 [{hookIndex}/{scriptFiles.Count}] {scriptName}");
 
-                    // Load hook script
-                    var hooks = await _scriptLoader.LoadScriptAsync<IMLoopHook>(scriptFile);
+                    // Load hook script (lazy initialize ScriptLoader only when needed)
+                    var hooks = await GetScriptLoader().LoadScriptAsync<IMLoopHook>(scriptFile);
 
                     if (hooks.Count == 0)
                     {

@@ -17,10 +17,10 @@ public class DataQualityValidator
     /// <summary>
     /// Validates data quality before training (label column + dataset size)
     /// </summary>
-    public DataQualityResult ValidateTrainingData(string dataFile, string labelColumn)
+    public DataQualityResult ValidateTrainingData(string dataFile, string labelColumn, string? taskType = null)
     {
         // First validate label column
-        var result = ValidateLabelColumn(dataFile, labelColumn);
+        var result = ValidateLabelColumn(dataFile, labelColumn, taskType);
         if (!result.IsValid)
         {
             return result; // Critical error, don't check dataset size
@@ -35,7 +35,7 @@ public class DataQualityValidator
     /// <summary>
     /// Validates label column before training
     /// </summary>
-    private DataQualityResult ValidateLabelColumn(string dataFile, string labelColumn)
+    private DataQualityResult ValidateLabelColumn(string dataFile, string labelColumn, string? taskType = null)
     {
         var result = new DataQualityResult { IsValid = true };
 
@@ -76,8 +76,17 @@ public class DataQualityValidator
                 return result;
             }
 
-            // Extract label column values
-            var labelValues = new List<double>();
+            // Determine if this is a classification task (text labels allowed)
+            var isClassificationTask = taskType?.ToLowerInvariant() switch
+            {
+                "binary-classification" => true,
+                "multiclass-classification" => true,
+                _ => false
+            };
+
+            // Extract label column values - support both numeric and text labels
+            var numericLabelValues = new List<double>();
+            var textLabelValues = new List<string>();
             var parseErrors = 0;
 
             foreach (var line in dataLines)
@@ -85,64 +94,109 @@ public class DataQualityValidator
                 var values = line.Split(',');
                 if (labelColumnIndex < values.Length)
                 {
-                    if (double.TryParse(values[labelColumnIndex], out var value))
+                    var rawValue = values[labelColumnIndex].Trim();
+                    if (double.TryParse(rawValue, out var numericValue))
                     {
-                        labelValues.Add(value);
+                        numericLabelValues.Add(numericValue);
+                        textLabelValues.Add(rawValue);
                     }
-                    else
+                    else if (!string.IsNullOrWhiteSpace(rawValue))
                     {
+                        // Text label (valid for classification)
+                        textLabelValues.Add(rawValue);
                         parseErrors++;
                     }
                 }
             }
 
-            if (parseErrors > 0)
+            // For classification tasks, text labels are valid
+            if (isClassificationTask && textLabelValues.Count > 0)
+            {
+                var uniqueClasses = textLabelValues.Distinct().ToList();
+                result.UniqueClassCount = uniqueClasses.Count;
+
+                // All text labels - valid for classification
+                if (numericLabelValues.Count == 0)
+                {
+                    // Check 1: Only one unique class
+                    if (uniqueClasses.Count == 1)
+                    {
+                        result.IsValid = false;
+                        result.ErrorMessage = $"Label column '{labelColumn}' contains only one class: '{uniqueClasses[0]}'";
+                        result.ErrorMessageEn = "Cannot train classifier with only one class";
+                        return result;
+                    }
+
+                    // Check 2: Binary classification with more than 2 classes
+                    if (taskType == "binary-classification" && uniqueClasses.Count > 2)
+                    {
+                        result.Warnings.Add($"⚠ Found {uniqueClasses.Count} classes but task is binary-classification");
+                        result.Suggestions.Add("💡 Consider using --task multiclass-classification");
+                    }
+
+                    // Valid text labels for classification
+                    return result;
+                }
+            }
+
+            // For regression or mixed labels, require numeric values
+            if (parseErrors > 0 && !isClassificationTask)
             {
                 result.Warnings.Add($"⚠ {parseErrors} values in label column '{labelColumn}' could not be parsed as numbers");
             }
 
-            if (labelValues.Count == 0)
+            if (numericLabelValues.Count == 0 && !isClassificationTask)
             {
                 result.IsValid = false;
                 result.ErrorMessage = $"No valid numeric values found in label column '{labelColumn}'";
+                result.Suggestions.Add("💡 For text labels, use --task binary-classification or --task multiclass-classification");
                 return result;
             }
 
-            // Check 1: All same value (no variance)
-            var uniqueValues = labelValues.Distinct().ToList();
-            if (uniqueValues.Count == 1)
+            // For numeric labels, check variance
+            if (numericLabelValues.Count > 0)
             {
-                result.IsValid = false;
-                result.ErrorMessage = $"Label column '{labelColumn}' contains all identical values ({uniqueValues[0]})";
-                result.ErrorMessageEn = $"Cannot train model with constant label - this indicates a data quality issue";
+                // Check 1: All same value (no variance)
+                var uniqueValues = numericLabelValues.Distinct().ToList();
+                result.UniqueClassCount = uniqueValues.Count;
 
-                // Check specifically for all zeros
-                if (uniqueValues[0] == 0.0)
+                if (uniqueValues.Count == 1)
                 {
-                    result.Suggestions.Add("❌ All values are 0.0 - check data collection or preprocessing logic");
-                    result.Suggestions.Add("💡 This often indicates sensor malfunction or incomplete data collection");
+                    result.IsValid = false;
+                    result.ErrorMessage = $"Label column '{labelColumn}' contains all identical values ({uniqueValues[0]})";
+                    result.ErrorMessageEn = $"Cannot train model with constant label - this indicates a data quality issue";
+
+                    // Check specifically for all zeros
+                    if (uniqueValues[0] == 0.0)
+                    {
+                        result.Suggestions.Add("❌ All values are 0.0 - check data collection or preprocessing logic");
+                        result.Suggestions.Add("💡 This often indicates sensor malfunction or incomplete data collection");
+                    }
+
+                    // Suggest alternative columns with variation
+                    var alternatives = FindColumnsWithVariation(dataFile, columnNames, dataLines);
+                    if (alternatives.Any())
+                    {
+                        result.Suggestions.Add($"✅ Alternative columns with variation: {string.Join(", ", alternatives.Take(3))}");
+                    }
+
+                    return result;
                 }
 
-                // Suggest alternative columns with variation
-                var alternatives = FindColumnsWithVariation(dataFile, columnNames, dataLines);
-                if (alternatives.Any())
+                // Check 2: Very low variance (nearly constant) - only for regression
+                if (!isClassificationTask)
                 {
-                    result.Suggestions.Add($"✅ Alternative columns with variation: {string.Join(", ", alternatives.Take(3))}");
+                    var mean = numericLabelValues.Average();
+                    var variance = numericLabelValues.Select(v => Math.Pow(v - mean, 2)).Average();
+                    var stdDev = Math.Sqrt(variance);
+                    var coefficientOfVariation = Math.Abs(mean) > 0.0001 ? stdDev / Math.Abs(mean) : 0;
+
+                    if (coefficientOfVariation < 0.01 && uniqueValues.Count > 1) // CV < 1%
+                    {
+                        result.Warnings.Add($"⚠ Label column '{labelColumn}' has very low variance (CV={coefficientOfVariation:P2})");
+                        result.Warnings.Add("💡 Model performance may be poor with nearly constant label values");
+                    }
                 }
-
-                return result;
-            }
-
-            // Check 2: Very low variance (nearly constant)
-            var mean = labelValues.Average();
-            var variance = labelValues.Select(v => Math.Pow(v - mean, 2)).Average();
-            var stdDev = Math.Sqrt(variance);
-            var coefficientOfVariation = Math.Abs(mean) > 0.0001 ? stdDev / Math.Abs(mean) : 0;
-
-            if (coefficientOfVariation < 0.01 && uniqueValues.Count > 1) // CV < 1%
-            {
-                result.Warnings.Add($"⚠ Label column '{labelColumn}' has very low variance (CV={coefficientOfVariation:P2})");
-                result.Warnings.Add("💡 Model performance may be poor with nearly constant label values");
             }
 
             return result;
@@ -270,4 +324,9 @@ public class DataQualityResult
     public string? ErrorMessageEn { get; set; }
     public List<string> Warnings { get; set; } = new();
     public List<string> Suggestions { get; set; } = new();
+
+    /// <summary>
+    /// Number of unique classes/values in label column (for classification tasks)
+    /// </summary>
+    public int UniqueClassCount { get; set; }
 }

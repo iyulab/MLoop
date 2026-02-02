@@ -18,7 +18,8 @@ namespace MLoop.Core.Scripting;
 public class ScriptLoader
 {
     private readonly string _cacheDirectory;
-    private readonly ScriptOptions _scriptOptions;
+    private ScriptOptions? _scriptOptions;
+    private readonly object _scriptOptionsLock = new();
 
     /// <summary>
     /// Initializes a new instance of ScriptLoader.
@@ -27,26 +28,46 @@ public class ScriptLoader
     public ScriptLoader(string? cacheDirectory = null)
     {
         _cacheDirectory = cacheDirectory ?? Path.Combine(".mloop", ".cache", "scripts");
-        Directory.CreateDirectory(_cacheDirectory);
+        // Note: _scriptOptions is lazily initialized to avoid Assembly.Location issues in single-file publish
+    }
 
-        // Configure script compilation options with necessary references
-        _scriptOptions = ScriptOptions.Default
-            .AddReferences(
-                typeof(object).Assembly,                    // System
-                typeof(IPreprocessingScript).Assembly,      // MLoop.Extensibility
-                typeof(Microsoft.ML.MLContext).Assembly,    // Microsoft.ML
-                typeof(FilePrepper.Pipeline.DataPipeline).Assembly  // FilePrepper
-            )
-            .AddImports(
-                "System",
-                "System.IO",
-                "System.Linq",
-                "System.Threading.Tasks",
-                "Microsoft.ML",
-                "MLoop.Extensibility",
-                "MLoop.Extensibility.Preprocessing",
-                "FilePrepper.Pipeline"
-            );
+    /// <summary>
+    /// Gets or creates the ScriptOptions instance (lazy initialization).
+    /// This avoids Assembly.Location issues in single-file publish scenarios.
+    /// </summary>
+    private ScriptOptions GetScriptOptions()
+    {
+        if (_scriptOptions == null)
+        {
+            lock (_scriptOptionsLock)
+            {
+                if (_scriptOptions == null)
+                {
+                    // Ensure cache directory exists
+                    Directory.CreateDirectory(_cacheDirectory);
+
+                    // Configure script compilation options with necessary references
+                    _scriptOptions = ScriptOptions.Default
+                        .AddReferences(
+                            typeof(object).Assembly,                    // System
+                            typeof(IPreprocessingScript).Assembly,      // MLoop.Extensibility
+                            typeof(Microsoft.ML.MLContext).Assembly,    // Microsoft.ML
+                            typeof(FilePrepper.Pipeline.DataPipeline).Assembly  // FilePrepper
+                        )
+                        .AddImports(
+                            "System",
+                            "System.IO",
+                            "System.Linq",
+                            "System.Threading.Tasks",
+                            "Microsoft.ML",
+                            "MLoop.Extensibility",
+                            "MLoop.Extensibility.Preprocessing",
+                            "FilePrepper.Pipeline"
+                        );
+                }
+            }
+        }
+        return _scriptOptions;
     }
 
     /// <summary>
@@ -106,41 +127,45 @@ public class ScriptLoader
         // Create compilation with necessary references
         var mlAssembly = typeof(Microsoft.ML.MLContext).Assembly;
         var filePrepperAssembly = typeof(FilePrepper.Pipeline.DataPipeline).Assembly;
-        var references = new[]
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(IPreprocessingScript).Assembly.Location),
-            MetadataReference.CreateFromFile(mlAssembly.Location),
-            MetadataReference.CreateFromFile(filePrepperAssembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Threading.Tasks.Task).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.IO.Path).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),
-        };
+
+        // Get references - handle single-file publish where Assembly.Location is empty
+        var additionalReferences = new List<MetadataReference>();
+        additionalReferences.AddRange(GetMetadataReferences(
+            typeof(object).Assembly,
+            typeof(IPreprocessingScript).Assembly,
+            mlAssembly,
+            filePrepperAssembly,
+            typeof(System.Threading.Tasks.Task).Assembly,
+            typeof(System.Linq.Enumerable).Assembly,
+            typeof(System.IO.Path).Assembly,
+            typeof(Console).Assembly
+        ));
 
         // Add ML.NET DataView assembly if available
         var dataViewAssembly = mlAssembly.GetReferencedAssemblies()
             .FirstOrDefault(a => a.Name == "Microsoft.ML.DataView");
-        var additionalReferences = new List<MetadataReference>(references);
         if (dataViewAssembly != null)
         {
             try
             {
                 var assembly = Assembly.Load(dataViewAssembly);
-                additionalReferences.Add(MetadataReference.CreateFromFile(assembly.Location));
+                additionalReferences.AddRange(GetMetadataReferences(assembly));
             }
             catch { /* Ignore if DataView assembly cannot be loaded */ }
         }
 
-        // Add runtime assemblies for .NET 9
-        var runtimePath = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+        // Add runtime assemblies for .NET
+        var runtimePath = GetRuntimeDirectory();
         var runtimeReferences = new[]
         {
             "System.Runtime.dll",
             "System.Collections.dll",
             "System.Collections.Immutable.dll",
             "netstandard.dll"
-        }.Select(name => MetadataReference.CreateFromFile(Path.Combine(runtimePath, name)));
+        }
+        .Select(name => Path.Combine(runtimePath, name))
+        .Where(File.Exists)
+        .Select(path => MetadataReference.CreateFromFile(path));
 
         var compilation = CSharpCompilation.Create(
             assemblyName: Path.GetFileNameWithoutExtension(scriptPath),
@@ -240,5 +265,56 @@ public class ScriptLoader
         {
             Console.WriteLine($"⚠️ Failed to clear cache: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Gets MetadataReferences for assemblies, handling single-file publish scenarios.
+    /// </summary>
+    private static IEnumerable<MetadataReference> GetMetadataReferences(params Assembly[] assemblies)
+    {
+        foreach (var assembly in assemblies)
+        {
+            var location = assembly.Location;
+            if (!string.IsNullOrEmpty(location) && File.Exists(location))
+            {
+                yield return MetadataReference.CreateFromFile(location);
+            }
+            else
+            {
+                // For single-file publish, try to find the assembly in the runtime directory
+                var runtimeDir = GetRuntimeDirectory();
+                var assemblyName = assembly.GetName().Name + ".dll";
+                var runtimePath = Path.Combine(runtimeDir, assemblyName);
+
+                if (File.Exists(runtimePath))
+                {
+                    yield return MetadataReference.CreateFromFile(runtimePath);
+                }
+                // If still not found, skip this assembly (it may be embedded)
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the .NET runtime directory for loading reference assemblies.
+    /// </summary>
+    private static string GetRuntimeDirectory()
+    {
+        // Try Assembly.Location first (works in normal execution)
+        var coreLibLocation = typeof(object).Assembly.Location;
+        if (!string.IsNullOrEmpty(coreLibLocation))
+        {
+            return Path.GetDirectoryName(coreLibLocation)!;
+        }
+
+        // Fallback for single-file publish: use RuntimeEnvironment
+        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        if (!string.IsNullOrEmpty(runtimeDir) && Directory.Exists(runtimeDir))
+        {
+            return runtimeDir;
+        }
+
+        // Last resort: AppContext.BaseDirectory
+        return AppContext.BaseDirectory;
     }
 }
