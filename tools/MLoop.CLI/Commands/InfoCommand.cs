@@ -21,19 +21,34 @@ public static class InfoCommand
             Description = "Path to data file to analyze"
         };
 
+        var labelOption = new Option<string?>("--label", "-l")
+        {
+            Description = "Label column name (overrides mloop.yaml setting)"
+        };
+
+        var nameOption = new Option<string>("--name", "-n")
+        {
+            Description = "Model name to read label configuration from mloop.yaml",
+            DefaultValueFactory = _ => "default"
+        };
+
         var command = new Command("info", "Display dataset profiling information");
         command.Arguments.Add(dataFileArg);
+        command.Options.Add(labelOption);
+        command.Options.Add(nameOption);
 
         command.SetAction((parseResult) =>
         {
             var dataFile = parseResult.GetValue(dataFileArg)!;
-            return ExecuteAsync(dataFile);
+            var label = parseResult.GetValue(labelOption);
+            var modelName = parseResult.GetValue(nameOption)!;
+            return ExecuteAsync(dataFile, label, modelName);
         });
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(string dataFile)
+    private static async Task<int> ExecuteAsync(string dataFile, string? labelOption, string modelName)
     {
         try
         {
@@ -69,11 +84,35 @@ public static class InfoCommand
                 return 1;
             }
 
+            // Determine label column: 1) --label option, 2) mloop.yaml, 3) first column (fallback)
+            string? labelColumn = labelOption;
+            string? labelSource = labelOption != null ? "--label option" : null;
+
+            if (labelColumn == null && projectRoot != null)
+            {
+                // Try to load label from mloop.yaml
+                var configLoader = new ConfigLoader(fileSystem, projectDiscovery);
+                var config = await configLoader.LoadUserConfigAsync();
+
+                if (config?.Models != null && config.Models.TryGetValue(modelName, out var modelDef))
+                {
+                    if (!string.IsNullOrEmpty(modelDef.Label))
+                    {
+                        labelColumn = modelDef.Label;
+                        labelSource = $"mloop.yaml (model: {modelName})";
+                    }
+                }
+            }
+
             AnsiConsole.MarkupLine($"[blue]Analyzing:[/] [cyan]{Path.GetFileName(resolvedDataFile)}[/]");
+            if (labelSource != null)
+            {
+                AnsiConsole.MarkupLine($"[blue]Label column:[/] [green]{labelColumn}[/] (from {labelSource})");
+            }
             AnsiConsole.WriteLine();
 
             // Profile the dataset
-            await ProfileDatasetAsync(resolvedDataFile);
+            await ProfileDatasetAsync(resolvedDataFile, labelColumn);
 
             return 0;
         }
@@ -85,7 +124,7 @@ public static class InfoCommand
         }
     }
 
-    private static async Task ProfileDatasetAsync(string dataFile)
+    private static async Task ProfileDatasetAsync(string dataFile, string? labelColumn)
     {
         await Task.Run(() =>
         {
@@ -143,11 +182,27 @@ public static class InfoCommand
             }
 
             var columns = firstLine.Split(',');
-            var dummyLabel = columns.Length > 0 ? columns[0] : "dummy";
+
+            // Determine label for InferColumns:
+            // 1) Use provided labelColumn if it exists in the file
+            // 2) Fall back to first column
+            string inferLabel;
+            if (!string.IsNullOrEmpty(labelColumn) && columns.Contains(labelColumn))
+            {
+                inferLabel = labelColumn;
+            }
+            else
+            {
+                inferLabel = columns.Length > 0 ? columns[0] : "dummy";
+                if (!string.IsNullOrEmpty(labelColumn) && !columns.Contains(labelColumn))
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label column '{labelColumn}' not found in file, using '{inferLabel}'");
+                }
+            }
 
             var columnInference = mlContext.Auto().InferColumns(
                 dataFile,
-                labelColumnName: dummyLabel,
+                labelColumnName: inferLabel,
                 separatorChar: ',');
 
             AnsiConsole.Write(new Rule("[yellow]Column Information[/]").LeftJustified());
