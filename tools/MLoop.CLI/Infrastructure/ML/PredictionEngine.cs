@@ -185,14 +185,40 @@ public class PredictionEngine : IPredictionEngine
             // Make predictions
             var predictions = trainedModel.Transform(processedData);
 
+            // Select only prediction output columns (exclude duplicated input features)
+            // ML.NET prediction output columns: PredictedLabel, Score, Probability (for classification)
+            // For regression: Score only
+            var predictionColumns = new List<string>();
+            foreach (var col in predictions.Schema)
+            {
+                // Include standard prediction output columns
+                if (col.Name == "PredictedLabel" || col.Name == "Score" || col.Name == "Probability")
+                {
+                    predictionColumns.Add(col.Name);
+                }
+            }
+
+            // If no prediction columns found, fall back to all columns (shouldn't happen)
+            IDataView outputData;
+            if (predictionColumns.Count > 0)
+            {
+                outputData = _mlContext.Transforms.SelectColumns(predictionColumns.ToArray())
+                    .Fit(predictions)
+                    .Transform(predictions);
+            }
+            else
+            {
+                outputData = predictions;
+            }
+
             // Count rows before saving
-            long? count = predictions.GetRowCount();
+            long? count = outputData.GetRowCount();
             var rowCount = count.HasValue ? (int)count.Value : 0;
 
             // If GetRowCount returns null, count manually
             if (!count.HasValue)
             {
-                using (var cursor = predictions.GetRowCursor(predictions.Schema))
+                using (var cursor = outputData.GetRowCursor(outputData.Schema))
                 {
                     while (cursor.MoveNext())
                     {
@@ -204,7 +230,7 @@ public class PredictionEngine : IPredictionEngine
             // Save predictions to CSV (without schema metadata for cleaner output)
             await using (var fileStream = File.Create(outputPath))
             {
-                _mlContext.Data.SaveAsText(predictions, fileStream, separatorChar: ',', headerRow: true, schema: false);
+                _mlContext.Data.SaveAsText(outputData, fileStream, separatorChar: ',', headerRow: true, schema: false);
             }
 
             return rowCount;

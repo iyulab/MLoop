@@ -134,9 +134,20 @@ public class DataQualityValidator
                         result.Suggestions.Add("💡 Consider using --task multiclass-classification");
                     }
 
+                    // Check 3: Class imbalance detection
+                    CheckClassImbalance(textLabelValues, uniqueClasses, result);
+
                     // Valid text labels for classification
                     return result;
                 }
+            }
+
+            // For numeric classification labels, also check class imbalance
+            if (isClassificationTask && numericLabelValues.Count > 0)
+            {
+                var uniqueNumericClasses = numericLabelValues.Select(v => v.ToString()).Distinct().ToList();
+                var allLabelStrings = numericLabelValues.Select(v => v.ToString()).ToList();
+                CheckClassImbalance(allLabelStrings, uniqueNumericClasses, result);
             }
 
             // For regression or mixed labels, require numeric values
@@ -206,6 +217,78 @@ public class DataQualityValidator
             result.IsValid = false;
             result.ErrorMessage = $"Error validating data quality: {ex.Message}";
             return result;
+        }
+    }
+
+    /// <summary>
+    /// Checks for class imbalance in classification tasks
+    /// </summary>
+    private static void CheckClassImbalance(List<string> labelValues, List<string> uniqueClasses, DataQualityResult result)
+    {
+        if (uniqueClasses.Count < 2)
+        {
+            return; // Already handled by single-class check
+        }
+
+        // Count each class
+        var classCounts = uniqueClasses
+            .Select(c => new { Class = c, Count = labelValues.Count(v => v == c) })
+            .OrderByDescending(x => x.Count)
+            .ToList();
+
+        var majorityClass = classCounts.First();
+        var minorityClass = classCounts.Last();
+        var totalSamples = labelValues.Count;
+
+        // Calculate imbalance ratio
+        var imbalanceRatio = minorityClass.Count > 0
+            ? (double)majorityClass.Count / minorityClass.Count
+            : double.MaxValue;
+
+        // Store class distribution info
+        result.ClassDistribution = classCounts.ToDictionary(x => x.Class, x => x.Count);
+        result.ImbalanceRatio = imbalanceRatio;
+
+        // Warning levels based on imbalance severity
+        const double MODERATE_THRESHOLD = 5.0;   // 5:1
+        const double HIGH_THRESHOLD = 10.0;      // 10:1
+        const double EXTREME_THRESHOLD = 20.0;   // 20:1
+        const double CRITICAL_THRESHOLD = 50.0;  // 50:1 - likely to fail CV
+
+        if (imbalanceRatio >= CRITICAL_THRESHOLD)
+        {
+            // Critical imbalance - likely to fail cross-validation
+            result.Warnings.Add($"🔴 Critical class imbalance detected: {imbalanceRatio:F1}:1 ratio");
+            result.Warnings.Add($"   Majority class '{majorityClass.Class}': {majorityClass.Count} samples ({(double)majorityClass.Count / totalSamples:P1})");
+            result.Warnings.Add($"   Minority class '{minorityClass.Class}': {minorityClass.Count} samples ({(double)minorityClass.Count / totalSamples:P1})");
+            result.Warnings.Add("");
+            result.Warnings.Add("⚠️  AutoML may fail with 'AUC not defined' error due to insufficient minority class samples in cross-validation folds");
+            result.Warnings.Add("");
+            result.Suggestions.Add("🔧 RECOMMENDED WORKAROUNDS:");
+            result.Suggestions.Add("   1. Oversample minority class before training:");
+            result.Suggestions.Add("      - Simple replication: Duplicate minority samples 10-20x");
+            result.Suggestions.Add("      - SMOTE: Generate synthetic samples (requires external tool)");
+            result.Suggestions.Add("   2. Use a shorter training time with --time 30 to reduce CV folds");
+            result.Suggestions.Add("   3. Consider treating this as anomaly detection instead of classification");
+        }
+        else if (imbalanceRatio >= EXTREME_THRESHOLD)
+        {
+            result.Warnings.Add($"🟠 Extreme class imbalance detected: {imbalanceRatio:F1}:1 ratio");
+            result.Warnings.Add($"   Minority class '{minorityClass.Class}' has only {minorityClass.Count} samples ({(double)minorityClass.Count / totalSamples:P1})");
+            result.Warnings.Add("   This may cause training instability or poor minority class recall");
+            result.Warnings.Add("");
+            result.Suggestions.Add("💡 Consider oversampling minority class or using class weights");
+        }
+        else if (imbalanceRatio >= HIGH_THRESHOLD)
+        {
+            result.Warnings.Add($"🟡 High class imbalance: {imbalanceRatio:F1}:1 ratio");
+            result.Warnings.Add($"   Minority class has {minorityClass.Count} samples ({(double)minorityClass.Count / totalSamples:P1})");
+            result.Suggestions.Add("💡 Use F1-score or recall instead of accuracy: --metric f1_score");
+        }
+        else if (imbalanceRatio >= MODERATE_THRESHOLD)
+        {
+            result.Warnings.Add($"⚠ Moderate class imbalance: {imbalanceRatio:F1}:1 ratio");
+            result.Suggestions.Add("💡 Consider using F1-score for evaluation: --metric f1_score");
         }
     }
 
@@ -329,4 +412,14 @@ public class DataQualityResult
     /// Number of unique classes/values in label column (for classification tasks)
     /// </summary>
     public int UniqueClassCount { get; set; }
+
+    /// <summary>
+    /// Class distribution for classification tasks (class name -> sample count)
+    /// </summary>
+    public Dictionary<string, int>? ClassDistribution { get; set; }
+
+    /// <summary>
+    /// Ratio of majority to minority class (e.g., 10.0 means 10:1 imbalance)
+    /// </summary>
+    public double ImbalanceRatio { get; set; }
 }
