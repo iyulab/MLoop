@@ -4,3 +4,6 @@
 [submodule "studio"]
 	path = studio
 	url = https://github.com/iyulab/mloop-studio.git
+[submodule "submodules/FilePrepper"]
+	path = submodules/FilePrepper
+	url = https://github.com/iyulab/FilePrepper.git

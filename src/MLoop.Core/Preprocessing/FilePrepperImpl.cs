@@ -31,45 +31,15 @@ public class FilePrepperImpl : IFilePrepper
         string[]? keyColumns = null,
         CancellationToken cancellationToken = default)
     {
-        // TODO: FilePrepper has DropDuplicatesTask (Task API) but not in Pipeline API
-        // See: FilePrepper_Gaps_Response.md - Gap #1 resolution
-        // Current: Using FilterRows workaround for Pipeline API consistency
-        // Future: Request DropDuplicates() addition to DataPipeline fluent API
-        // Issue: https://github.com/iyulab/FilePrepper/issues/XXX
-
         var pipeline = await DataPipeline.FromCsvAsync(inputPath);
         var beforeCount = pipeline.RowCount;
 
-        // Use FilterRows to implement basic duplicate removal
-        // This is temporary until FilePrepper adds DropDuplicates
-        var seen = new HashSet<string>();
-
-        if (keyColumns != null && keyColumns.Length > 0)
-        {
-            // Key-based deduplication
-            pipeline = pipeline.FilterRows(row =>
-            {
-                var key = string.Join("|", keyColumns.Select(col => row.GetValueOrDefault(col, "")));
-                return seen.Add(key);
-            });
-        }
-        else
-        {
-            // Full-row deduplication
-            pipeline = pipeline.FilterRows(row =>
-            {
-                var key = string.Join("|", row.OrderBy(kvp => kvp.Key).Select(kvp => $"{kvp.Key}={kvp.Value}"));
-                return seen.Add(key);
-            });
-        }
+        // Use FilePrepper Pipeline API for duplicate removal
+        pipeline = pipeline.DropDuplicates(keyColumns, keepFirst: true);
 
         await pipeline.ToCsvAsync(outputPath);
 
-        // Read back to get final count
-        var afterPipeline = await DataPipeline.FromCsvAsync(outputPath);
-        var afterCount = afterPipeline.RowCount;
-
-        var duplicatesRemoved = beforeCount - afterCount;
+        var duplicatesRemoved = beforeCount - pipeline.RowCount;
 
         return (outputPath, duplicatesRemoved);
     }
