@@ -31,15 +31,10 @@
     <None Include="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
-  <!-- FilePrepper Integration: Conditional references for CI vs Local -->
-  <!-- CI environment: Use NuGet package -->
-  <ItemGroup Condition="'$(CI)' == 'true'">
-    <PackageReference Include="FilePrepper" />
-  </ItemGroup>
-
-  <!-- Local development: Use project reference for latest features -->
-  <ItemGroup Condition="'$(CI)' != 'true'">
-    <ProjectReference Include="..\..\..\FilePrepper\src\FilePrepper\FilePrepper.csproj" />
+  <!-- FilePrepper Integration: Always use submodule project reference -->
+  <!-- This enables direct development and ensures CI/local consistency -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\submodules\FilePrepper\src\FilePrepper\FilePrepper.csproj" />
   </ItemGroup>
 
 </Project>
