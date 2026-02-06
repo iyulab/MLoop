@@ -41,6 +41,7 @@ public class PrepCommand : Command
         this.Add(new FilterRowsCommand(_loggerFactory));
         this.Add(new CSVCleanerCommand(_loggerFactory));
         this.Add(new ValueReplaceCommand(_loggerFactory));
+        this.Add(new RemoveConstantsCommand(_loggerFactory));
 
         // Feature Engineering Commands
         this.Add(new CreateLagFeaturesCommand(_loggerFactory));
