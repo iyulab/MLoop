@@ -210,7 +210,8 @@ public static class EvaluateCommand
                         resolvedTestDataFile,
                         experimentData!.Config.LabelColumn,
                         experimentData.Task,
-                        CancellationToken.None);
+                        CancellationToken.None,
+                        experimentData.Config.InputSchema);
 
                     ctx.Status("[green]Evaluation complete![/]");
                 });

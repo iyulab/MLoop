@@ -27,7 +27,7 @@ public static class TriggerCommand
 
     private static Command CreateCheckCommand()
     {
-        var nameOption = new Option<string>("--model", "-m")
+        var nameOption = new Option<string>("--name", "-n", "--model", "-m")
         {
             Description = "Model name to evaluate",
             Required = true
@@ -108,14 +108,13 @@ public static class TriggerCommand
                 OutputResultAsPanel(result, modelName);
             }
 
-            // Exit code: 0 = should retrain, 1 = should not retrain (or error)
-            // This allows scripting: if mloop trigger check --model xxx; then mloop train ...; fi
-            return result.ShouldRetrain ? 0 : 1;
+            // Exit code: 0 = success (check completed), 1 = error
+            return 0;
         }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
-            return 2; // Error exit code
+            return 1;
         }
     }
 

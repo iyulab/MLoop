@@ -314,7 +314,7 @@ public class TrainingEngine : ITrainingEngine
                 return null;
             }
 
-            var columnNames = firstLine.Split(',');
+            var columnNames = CsvFieldParser.ParseFields(firstLine);
 
             // Read all data lines to collect categorical values with UTF-8 encoding
             var allLines = File.ReadAllLines(dataFile, System.Text.Encoding.UTF8);
@@ -338,7 +338,7 @@ public class TrainingEngine : ITrainingEngine
 
                         foreach (var line in dataLines)
                         {
-                            var values = line.Split(',');
+                            var values = CsvFieldParser.ParseFields(line);
                             if (colIndex < values.Length)
                             {
                                 var value = values[colIndex].Trim();
@@ -425,7 +425,7 @@ public class TrainingEngine : ITrainingEngine
                 return null;
             }
 
-            var columnNames = firstLine.Split(',');
+            var columnNames = CsvFieldParser.ParseFields(firstLine);
 
             // Read sample of data lines for type inference
             var allLines = File.ReadAllLines(dataFile, System.Text.Encoding.UTF8);
@@ -433,6 +433,7 @@ public class TrainingEngine : ITrainingEngine
 
             // Try ML.NET InferColumns first
             Microsoft.ML.AutoML.ColumnInformation? columnInfo = null;
+            DataKind? labelInferredKind = null;
             try
             {
                 var columnInference = _mlContext.Auto().InferColumns(
@@ -440,6 +441,22 @@ public class TrainingEngine : ITrainingEngine
                     labelColumnName: labelColumn,
                     separatorChar: ',');
                 columnInfo = columnInference?.ColumnInformation;
+
+                // BUG-15: Track label column's inferred DataKind.
+                // CsvDataLoader converts Boolean labels → String for MapValueToKey compatibility.
+                // Schema must reflect this so PredictionEngine uses the correct type.
+                if (columnInference?.TextLoaderOptions?.Columns != null)
+                {
+                    foreach (var col in columnInference.TextLoaderOptions.Columns)
+                    {
+                        if (col.Name != null &&
+                            col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                        {
+                            labelInferredKind = col.DataKind;
+                            break;
+                        }
+                    }
+                }
             }
             catch
             {
@@ -454,6 +471,14 @@ public class TrainingEngine : ITrainingEngine
                 var purpose = GetColumnPurposeEnhanced(colName, labelColumn, columnInfo);
                 var (dataType, categoricalValues, uniqueCount) = InferColumnTypeFromData(
                     colName, colIndex, dataLines, columnInfo);
+
+                // BUG-15: If label column was inferred as Boolean by InferColumns,
+                // CsvDataLoader converts it to String (for MapValueToKey compatibility).
+                // Record as "Categorical" so PredictionEngine overrides to String type.
+                if (purpose == "Label" && labelInferredKind == DataKind.Boolean && dataType == "Numeric")
+                {
+                    dataType = "Categorical";
+                }
 
                 columns.Add(new ColumnSchema
                 {
@@ -529,7 +554,7 @@ public class TrainingEngine : ITrainingEngine
 
         foreach (var line in dataLines)
         {
-            var values = line.Split(',');
+            var values = CsvFieldParser.ParseFields(line);
             if (colIndex >= values.Length)
                 continue;
 
@@ -578,7 +603,7 @@ public class TrainingEngine : ITrainingEngine
 
         foreach (var line in dataLines)
         {
-            var values = line.Split(',');
+            var values = CsvFieldParser.ParseFields(line);
             if (colIndex < values.Length)
             {
                 var value = values[colIndex].Trim();

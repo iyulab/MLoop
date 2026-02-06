@@ -35,7 +35,7 @@ public class AutoMLRunner
         CancellationToken cancellationToken = default)
     {
         // Load data
-        var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn);
+        var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task);
 
         // Split data
         var (trainSet, testSet) = _dataLoader.SplitData(dataView, config.TestSplit);
@@ -214,7 +214,7 @@ public class AutoMLRunner
         // Evaluate custom metrics
         var metricsDict = new Dictionary<string, double>
         {
-            ["accuracy"] = metrics.MacroAccuracy,
+            ["macro_accuracy"] = metrics.MacroAccuracy,
             ["micro_accuracy"] = metrics.MicroAccuracy,
             ["log_loss"] = metrics.LogLoss
         };

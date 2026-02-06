@@ -18,7 +18,7 @@ public class CsvDataLoader : IDataProvider
         _mlContext = mlContext ?? throw new ArgumentNullException(nameof(mlContext));
     }
 
-    public IDataView LoadData(string filePath, string? labelColumn = null)
+    public IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null)
     {
         if (!File.Exists(filePath))
         {
@@ -34,7 +34,31 @@ public class CsvDataLoader : IDataProvider
             labelColumnName: labelColumn,
             separatorChar: ',');
 
+        // BUG-15: Fix InferColumns misdetecting multiclass label as Boolean.
+        // When label column only has 0/1 in early rows, InferColumns infers Boolean,
+        // but fails when encountering values like 2. Override Boolean label to String
+        // so MapValueToKey can handle any discrete class values.
+        // BUG-17: Skip this conversion for binary-classification — ML.NET binary
+        // classification pipeline expects Boolean labels and will fail with String.
+        var isBinaryTask = string.Equals(taskType, "binary-classification", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(taskType, "BinaryClassification", StringComparison.OrdinalIgnoreCase);
+
+        if (!isBinaryTask && !string.IsNullOrEmpty(labelColumn) && columnInference.TextLoaderOptions.Columns != null)
+        {
+            foreach (var col in columnInference.TextLoaderOptions.Columns)
+            {
+                if (col.Name != null &&
+                    col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) &&
+                    col.DataKind == DataKind.Boolean)
+                {
+                    col.DataKind = DataKind.String;
+                }
+            }
+        }
+
         // Create text loader with inferred schema
+        // Ensure RFC 4180 compliance: handle commas inside quoted fields
+        columnInference.TextLoaderOptions.AllowQuoting = true;
         var loader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
         var dataView = loader.Load(mlnetCompatiblePath);
 

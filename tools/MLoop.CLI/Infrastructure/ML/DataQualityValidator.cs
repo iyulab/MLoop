@@ -55,7 +55,7 @@ public class DataQualityValidator
                 return result;
             }
 
-            var columnNames = firstLine.Split(',');
+            var columnNames = CsvFieldParser.ParseFields(firstLine);
             var labelColumnIndex = Array.IndexOf(columnNames, labelColumn);
 
             if (labelColumnIndex == -1)
@@ -91,7 +91,7 @@ public class DataQualityValidator
 
             foreach (var line in dataLines)
             {
-                var values = line.Split(',');
+                var values = CsvFieldParser.ParseFields(line);
                 if (labelColumnIndex < values.Length)
                 {
                     var rawValue = values[labelColumnIndex].Trim();
@@ -306,7 +306,7 @@ public class DataQualityValidator
 
             foreach (var line in dataLines)
             {
-                var cells = line.Split(',');
+                var cells = CsvFieldParser.ParseFields(line);
                 if (colIndex < cells.Length && double.TryParse(cells[colIndex], out var value))
                 {
                     values.Add(value);
@@ -351,7 +351,7 @@ public class DataQualityValidator
                 return; // Already handled by label validation
             }
 
-            var featureCount = firstLine.Split(',').Length - 1; // Exclude label column
+            var featureCount = CsvFieldParser.ParseFields(firstLine).Length - 1; // Exclude label column
             var allLines = File.ReadAllLines(dataFile, System.Text.Encoding.UTF8);
             var sampleCount = allLines.Length - 1; // Exclude header
 
@@ -395,6 +395,7 @@ public class DataQualityValidator
             // Non-critical check, ignore errors
         }
     }
+
 }
 
 /// <summary>

@@ -65,6 +65,12 @@ public static class CompareCommand
             // Determine which experiments to compare
             List<ExperimentData> experimentsToCompare;
 
+            // Support comma-separated experiment IDs (e.g., "exp-001,exp-002")
+            experimentIds = experimentIds
+                .SelectMany(id => id.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                .Select(id => id.Trim())
+                .ToArray();
+
             if (experimentIds.Length > 0)
             {
                 // Specific experiments provided
@@ -242,20 +248,35 @@ public static class CompareCommand
             // Summary
             AnsiConsole.MarkupLine($"[grey]Compared {experimentsToCompare.Count} experiments[/]");
 
-            // Recommendation
+            // Recommendation: find the experiment with the best primary metric
             if (allMetricNames.Count > 0)
             {
-                var bestExp = experimentsToCompare.First();
-                var bestExpMetric = bestExp.Metrics?.Values.FirstOrDefault();
-                if (bestExpMetric.HasValue)
+                var primaryMetric = sortMetric ?? allMetricNames.First();
+                var isLowerBetter = primaryMetric.Contains("Loss", StringComparison.OrdinalIgnoreCase) ||
+                                    primaryMetric.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+                                    primaryMetric.Contains("MAE", StringComparison.OrdinalIgnoreCase) ||
+                                    primaryMetric.Contains("MSE", StringComparison.OrdinalIgnoreCase) ||
+                                    primaryMetric.Contains("RMSE", StringComparison.OrdinalIgnoreCase);
+
+                var rankedExperiments = experimentsToCompare
+                    .Where(e => e.Metrics?.ContainsKey(primaryMetric) == true)
+                    .OrderBy(e => isLowerBetter ? e.Metrics![primaryMetric] : -e.Metrics![primaryMetric])
+                    .ToList();
+
+                if (rankedExperiments.Count > 0)
                 {
+                    var bestExp = rankedExperiments.First();
                     var isProduction = productionDict.TryGetValue(bestExp.ModelName, out var prodExpId)
                         && bestExp.ExperimentId == prodExpId;
 
                     if (!isProduction)
                     {
-                        AnsiConsole.MarkupLine($"[grey]Recommendation: Consider promoting [cyan]{bestExp.ExperimentId}[/] to production[/]");
+                        AnsiConsole.MarkupLine($"[grey]Recommendation: Consider promoting [cyan]{bestExp.ExperimentId}[/] to production (best {primaryMetric}: {bestExp.Metrics![primaryMetric]:F4})[/]");
                         AnsiConsole.MarkupLine($"[grey]  Run: [blue]mloop promote {bestExp.ExperimentId} --name {bestExp.ModelName}[/][/]");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"[grey]Best experiment [cyan]{bestExp.ExperimentId}[/] is already in production ({primaryMetric}: {bestExp.Metrics![primaryMetric]:F4})[/]");
                     }
                 }
             }

@@ -52,6 +52,11 @@ public static class PredictCommand
             Description = "Log predictions to .mloop/logs/ for monitoring and analysis"
         };
 
+        var includeFeaturesOption = new Option<bool>("--include-features")
+        {
+            Description = "Include original feature columns in prediction output"
+        };
+
         var command = new Command("predict", "Make predictions with a trained model");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
@@ -59,6 +64,7 @@ public static class PredictCommand
         command.Options.Add(outputOption);
         command.Options.Add(unknownStrategyOption);
         command.Options.Add(logOption);
+        command.Options.Add(includeFeaturesOption);
 
         command.SetAction((parseResult) =>
         {
@@ -68,7 +74,8 @@ public static class PredictCommand
             var output = parseResult.GetValue(outputOption);
             var unknownStrategy = parseResult.GetValue(unknownStrategyOption)!;
             var logPredictions = parseResult.GetValue(logOption);
-            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions);
+            var includeFeatures = parseResult.GetValue(includeFeaturesOption);
+            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures);
         });
 
         return command;
@@ -80,7 +87,8 @@ public static class PredictCommand
         string? modelPath,
         string? output,
         string unknownStrategy,
-        bool logPredictions)
+        bool logPredictions,
+        bool includeFeatures)
     {
         try
         {
@@ -323,6 +331,13 @@ public static class PredictCommand
                     ctx.Status("[green]Predictions complete![/]");
                 });
 
+            // Merge original features with predictions if requested
+            if (includeFeatures)
+            {
+                MergeInputWithPredictions(resolvedDataFile, resolvedOutputPath, trainedSchema);
+                AnsiConsole.MarkupLine("[green]>[/] Original features included in output");
+            }
+
             // Log predictions if requested
             if (logPredictions)
             {
@@ -357,6 +372,49 @@ public static class PredictCommand
             ErrorSuggestions.DisplayError(ex, "prediction");
             return 1;
         }
+    }
+
+    private static void MergeInputWithPredictions(string inputPath, string outputPath, InputSchemaInfo? schema)
+    {
+        string? labelColumn = null;
+        if (schema != null)
+        {
+            labelColumn = schema.Columns.FirstOrDefault(c => c.Purpose == "Label")?.Name;
+        }
+
+        var inputLines = File.ReadAllLines(inputPath, System.Text.Encoding.UTF8);
+        var predLines = File.ReadAllLines(outputPath, System.Text.Encoding.UTF8);
+
+        if (inputLines.Length < 2 || predLines.Length < 2) return;
+
+        var inputHeaders = CsvFieldParser.ParseFields(inputLines[0]);
+        int labelIdx = labelColumn != null ? Array.IndexOf(inputHeaders, labelColumn) : -1;
+
+        // Column indices to keep (exclude label)
+        var keepIndices = Enumerable.Range(0, inputHeaders.Length)
+            .Where(i => i != labelIdx)
+            .ToList();
+
+        using var writer = new StreamWriter(outputPath, false, new System.Text.UTF8Encoding(true));
+
+        // Header: features + predictions
+        var featureHeaders = keepIndices.Select(i => QuoteCsvField(inputHeaders[i]));
+        writer.WriteLine(string.Join(",", featureHeaders) + "," + predLines[0]);
+
+        // Data rows
+        for (int r = 1; r < Math.Min(inputLines.Length, predLines.Length); r++)
+        {
+            var fields = CsvFieldParser.ParseFields(inputLines[r]);
+            var featureValues = keepIndices.Select(i => i < fields.Length ? QuoteCsvField(fields[i]) : "");
+            writer.WriteLine(string.Join(",", featureValues) + "," + predLines[r]);
+        }
+    }
+
+    private static string QuoteCsvField(string value)
+    {
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        return value;
     }
 
     private static async Task LogPredictionsAsync(

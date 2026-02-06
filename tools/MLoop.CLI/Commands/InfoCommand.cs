@@ -4,6 +4,7 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using Spectre.Console;
 
@@ -181,7 +182,7 @@ public static class InfoCommand
                 return;
             }
 
-            var columns = firstLine.Split(',');
+            var columns = MLoop.CLI.Infrastructure.ML.CsvFieldParser.ParseFields(firstLine);
 
             // Determine label for InferColumns:
             // 1) Use provided labelColumn if it exists in the file
@@ -205,6 +206,9 @@ public static class InfoCommand
                 labelColumnName: inferLabel,
                 separatorChar: ',');
 
+            // Ensure RFC 4180 compliance: handle commas inside quoted fields
+            columnInference.TextLoaderOptions.AllowQuoting = true;
+
             AnsiConsole.Write(new Rule("[yellow]Column Information[/]").LeftJustified());
             AnsiConsole.WriteLine();
 
@@ -214,80 +218,160 @@ public static class InfoCommand
             columnTable.AddColumn("Data Type");
             columnTable.AddColumn("Purpose");
 
-            int colIndex = 1;
-            foreach (var column in columns)
+            for (int colIdx = 0; colIdx < columns.Length; colIdx++)
             {
-                var purpose = GetColumnPurpose(column, columnInference.ColumnInformation);
-                var dataType = InferDisplayType(column, columnInference);
+                var column = columns[colIdx];
+                var dataType = InferDisplayType(column, columnInference, colIdx);
+                var purpose = GetColumnPurpose(column, columnInference.ColumnInformation, dataType);
 
                 columnTable.AddRow(
-                    colIndex.ToString(),
+                    (colIdx + 1).ToString(),
                     column,
                     dataType,
                     purpose);
-
-                colIndex++;
             }
 
             AnsiConsole.Write(columnTable);
             AnsiConsole.WriteLine();
 
-            // Load data for statistics
-            try
+            // Calculate statistics from raw CSV (avoids ML.NET DataView type compatibility issues)
+            AnsiConsole.Write(new Rule("[yellow]Data Statistics[/]").LeftJustified());
+            AnsiConsole.WriteLine();
+
+            var (columnStats, labelDistribution) = CalculateColumnStats(dataFile, columns, labelColumn);
+
+            var statsTable = new Table().Border(TableBorder.Rounded);
+            statsTable.AddColumn("Column");
+            statsTable.AddColumn("Missing Count");
+            statsTable.AddColumn("Missing %");
+            statsTable.AddColumn("Unique Values (sample)");
+
+            foreach (var colName in columns)
             {
-                var textLoader = mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
-                var dataView = textLoader.Load(dataFile);
-
-                AnsiConsole.Write(new Rule("[yellow]Data Statistics[/]").LeftJustified());
-                AnsiConsole.WriteLine();
-
-                // Calculate null/missing percentages for each column
-                var statsTable = new Table().Border(TableBorder.Rounded);
-                statsTable.AddColumn("Column");
-                statsTable.AddColumn("Missing Count");
-                statsTable.AddColumn("Missing %");
-                statsTable.AddColumn("Unique Values (sample)");
-
-                foreach (var colName in columns.Take(10))
+                if (columnStats.TryGetValue(colName, out var stats))
                 {
-                    var schema = dataView.Schema;
-                    var colIndex2 = schema.GetColumnOrNull(colName);
-
-                    if (colIndex2.HasValue)
-                    {
-                        // Count missing values (simplified)
-                        long missingCount = CountMissingValues(dataView, colName);
-                        double missingPercent = (missingCount / (double)lineCount) * 100;
-
-                        // Sample unique values for categorical
-                        int uniqueCount = CountUniqueValues(dataView, colName, maxSample: 1000);
-
-                        statsTable.AddRow(
-                            colName,
-                            missingCount.ToString("N0"),
-                            $"{missingPercent:F2}%",
-                            uniqueCount > 0 ? $"~{uniqueCount}" : "N/A");
-                    }
-                }
-
-                AnsiConsole.Write(statsTable);
-                AnsiConsole.WriteLine();
-
-                if (columns.Length > 10)
-                {
-                    AnsiConsole.MarkupLine("[grey]Showing first 10 columns. Total columns: {0}[/]",
-                        columns.Length);
-                    AnsiConsole.WriteLine();
+                    statsTable.AddRow(
+                        colName,
+                        stats.MissingCount.ToString("N0"),
+                        $"{(stats.MissingCount / (double)lineCount) * 100:F2}%",
+                        stats.UniqueCount > 0 ? $"~{stats.UniqueCount}" : "N/A");
                 }
             }
-            catch (Exception ex)
+
+            AnsiConsole.Write(statsTable);
+            AnsiConsole.WriteLine();
+
+            // Show label column class distribution
+            if (labelDistribution != null && labelDistribution.Count > 0)
             {
-                AnsiConsole.MarkupLine($"[yellow]Could not load detailed statistics: {ex.Message}[/]");
+                // IMP-8: Detect regression target (many unique numeric values) and show stats instead
+                var nonEmptyClasses = labelDistribution.Where(p => p.Key != "(empty)").ToList();
+                bool isLikelyRegression = nonEmptyClasses.Count > 20
+                    && nonEmptyClasses.All(p => double.TryParse(p.Key, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out _));
+
+                if (isLikelyRegression)
+                {
+                    AnsiConsole.Write(new Rule("[yellow]Label Statistics (Regression)[/]").LeftJustified());
+                    AnsiConsole.WriteLine();
+
+                    var values = nonEmptyClasses
+                        .SelectMany(p => Enumerable.Repeat(double.Parse(p.Key, System.Globalization.CultureInfo.InvariantCulture), p.Value))
+                        .OrderBy(v => v)
+                        .ToList();
+
+                    var mean = values.Average();
+                    var stdDev = Math.Sqrt(values.Average(v => (v - mean) * (v - mean)));
+                    var median = values.Count % 2 == 0
+                        ? (values[values.Count / 2 - 1] + values[values.Count / 2]) / 2.0
+                        : values[values.Count / 2];
+
+                    var statsTable2 = new Table().Border(TableBorder.Rounded);
+                    statsTable2.AddColumn("Statistic");
+                    statsTable2.AddColumn("Value");
+
+                    statsTable2.AddRow("Count", values.Count.ToString("N0"));
+                    statsTable2.AddRow("Unique Values", nonEmptyClasses.Count.ToString("N0"));
+                    statsTable2.AddRow("Min", values.First().ToString("F4"));
+                    statsTable2.AddRow("Max", values.Last().ToString("F4"));
+                    statsTable2.AddRow("Mean", mean.ToString("F4"));
+                    statsTable2.AddRow("Median", median.ToString("F4"));
+                    statsTable2.AddRow("Std Dev", stdDev.ToString("F4"));
+
+                    AnsiConsole.Write(statsTable2);
+                    AnsiConsole.WriteLine();
+
+                    if (labelDistribution.ContainsKey("(empty)"))
+                    {
+                        var emptyCount = labelDistribution["(empty)"];
+                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] {emptyCount} rows have empty label values. These will be dropped during training.");
+                        AnsiConsole.WriteLine();
+                    }
+
+                    AnsiConsole.MarkupLine("[green]Info:[/] Continuous label detected — suitable for [blue]regression[/] task.");
+                    AnsiConsole.MarkupLine("[grey]  Tip: [blue]mloop init . --task regression[/][/]");
+                    AnsiConsole.WriteLine();
+                }
+                else
+                {
+                AnsiConsole.Write(new Rule("[yellow]Label Distribution[/]").LeftJustified());
+                AnsiConsole.WriteLine();
+
+                var labelTable = new Table().Border(TableBorder.Rounded);
+                labelTable.AddColumn("Class");
+                labelTable.AddColumn("Count");
+                labelTable.AddColumn("Percentage");
+
+                foreach (var pair in labelDistribution.OrderByDescending(p => p.Value))
+                {
+                    var percent = (pair.Value / (double)lineCount) * 100;
+                    labelTable.AddRow(pair.Key, pair.Value.ToString("N0"), $"{percent:F2}%");
+                }
+
+                AnsiConsole.Write(labelTable);
+                AnsiConsole.WriteLine();
+
+                // Imbalance warning for binary classification
+                var realClasses = labelDistribution.Where(p => p.Key != "(empty)").OrderByDescending(p => p.Value).ToList();
+                if (realClasses.Count == 2)
+                {
+                    var ratio = (double)realClasses[0].Value / realClasses[1].Value;
+                    if (ratio > 10)
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Severe class imbalance detected (ratio {ratio:F1}:1). Consider using [blue]--balance auto[/] during training.");
+                    }
+                    else if (ratio > 3)
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Class imbalance detected (ratio {ratio:F1}:1). Consider using [blue]--balance auto[/] during training.");
+                    }
+                    AnsiConsole.WriteLine();
+                }
+
+                // IMP-7: Warn about empty label values
+                if (labelDistribution.ContainsKey("(empty)"))
+                {
+                    var emptyCount = labelDistribution["(empty)"];
+                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] {emptyCount} rows have empty label values. These will be dropped during training.");
+                    AnsiConsole.MarkupLine("[grey]  Tip: Clean data with [blue]mloop train --drop-missing-labels[/] (default for classification)[/]");
+                    AnsiConsole.WriteLine();
+                }
+                } // end else (classification branch)
+            }
+
+            // BUG-8: Warn about potential date columns
+            for (int ci = 0; ci < columns.Length; ci++)
+            {
+                var colName = columns[ci].ToLowerInvariant();
+                if (colName.Contains("date") || colName.Contains("time") || colName.Contains("timestamp"))
+                {
+                    AnsiConsole.MarkupLine($"[yellow]Note:[/] Column '[cyan]{columns[ci]}[/]' appears to be a date/time column. ML.NET will treat it as text — consider excluding it if not relevant to the prediction task.");
+                    AnsiConsole.WriteLine();
+                    break; // Only warn once
+                }
             }
         });
     }
 
-    private static string GetColumnPurpose(string columnName, Microsoft.ML.AutoML.ColumnInformation columnInfo)
+    private static string GetColumnPurpose(string columnName, Microsoft.ML.AutoML.ColumnInformation columnInfo, string dataType)
     {
         if (columnInfo.LabelColumnName == columnName)
             return "[green]Label[/]";
@@ -300,10 +384,17 @@ public static class InfoCommand
         if (columnInfo.TextColumnNames?.Contains(columnName) == true)
             return "[blue]Text Feature[/]";
 
-        return "[grey]Feature[/]";
+        // Fall back: use inferred data type for purpose display
+        return dataType switch
+        {
+            "Numeric" or "Integer" => "[cyan]Numeric Feature[/]",
+            "Text" => "[blue]Text Feature[/]",
+            "Boolean" => "[cyan]Numeric Feature[/]",
+            _ => "[grey]Feature[/]"
+        };
     }
 
-    private static string InferDisplayType(string columnName, Microsoft.ML.AutoML.ColumnInferenceResults results)
+    private static string InferDisplayType(string columnName, Microsoft.ML.AutoML.ColumnInferenceResults results, int csvColumnIndex)
     {
         var columnInfo = results.ColumnInformation;
 
@@ -314,97 +405,96 @@ public static class InfoCommand
         if (columnInfo.TextColumnNames?.Contains(columnName) == true)
             return "Text";
 
+        // Fall back to TextLoaderOptions for columns not in ColumnInformation
+        if (results.TextLoaderOptions?.Columns != null)
+        {
+            foreach (var col in results.TextLoaderOptions.Columns)
+            {
+                bool matched = false;
+
+                // Match by name
+                if (col.Name == columnName)
+                {
+                    matched = true;
+                }
+                // Match by source column index
+                else if (col.Source != null)
+                {
+                    foreach (var range in col.Source)
+                    {
+                        if (csvColumnIndex >= range.Min && csvColumnIndex <= (range.Max ?? range.Min))
+                        {
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (matched)
+                {
+                    return col.DataKind switch
+                    {
+                        DataKind.Single or DataKind.Double => "Numeric",
+                        DataKind.Int32 or DataKind.Int64 or DataKind.UInt32 or DataKind.UInt64 => "Integer",
+                        DataKind.String => "Text",
+                        DataKind.Boolean => "Boolean",
+                        _ => col.DataKind.ToString()
+                    };
+                }
+            }
+        }
+
         return "Unknown";
     }
 
-    private static long CountMissingValues(IDataView dataView, string columnName)
+    private record ColumnStatInfo(long MissingCount, int UniqueCount);
+
+    private static (Dictionary<string, ColumnStatInfo> Stats, Dictionary<string, int>? LabelDistribution)
+        CalculateColumnStats(string dataFile, string[] columns, string? labelColumn, int maxUniqueRows = 10000)
     {
-        // Simplified: count rows where value is empty/null
-        // In practice, ML.NET handles missing values differently per type
-        long missingCount = 0;
+        var missingCounts = new long[columns.Length];
+        var uniqueSets = new HashSet<string>[columns.Length];
+        for (int i = 0; i < columns.Length; i++)
+            uniqueSets[i] = new HashSet<string>();
 
-        try
+        int labelIndex = labelColumn != null ? Array.IndexOf(columns, labelColumn) : -1;
+        Dictionary<string, int>? labelDistribution = labelIndex >= 0 ? new Dictionary<string, int>() : null;
+
+        int rowCount = 0;
+        using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
         {
-            var schema = dataView.Schema;
-            var colIndex = schema.GetColumnOrNull(columnName);
-
-            if (!colIndex.HasValue)
-                return 0;
-
-            using (var cursor = dataView.GetRowCursor(dataView.Schema))
+            reader.ReadLine(); // skip header
+            string? line;
+            while ((line = reader.ReadLine()) != null)
             {
-                var getter = cursor.GetGetter<ReadOnlyMemory<char>>(colIndex.Value);
-                var value = new ReadOnlyMemory<char>();
-
-                while (cursor.MoveNext())
+                rowCount++;
+                var fields = CsvFieldParser.ParseFields(line);
+                for (int i = 0; i < Math.Min(fields.Length, columns.Length); i++)
                 {
-                    try
-                    {
-                        getter(ref value);
-                        if (value.IsEmpty || value.Length == 0)
-                        {
-                            missingCount++;
-                        }
-                    }
-                    catch
-                    {
-                        missingCount++;
-                    }
+                    if (string.IsNullOrWhiteSpace(fields[i]))
+                        missingCounts[i]++;
+                    if (rowCount <= maxUniqueRows && !string.IsNullOrWhiteSpace(fields[i]))
+                        uniqueSets[i].Add(fields[i]);
+                }
+
+                // Label distribution (all rows)
+                if (labelDistribution != null && labelIndex >= 0 && labelIndex < fields.Length)
+                {
+                    var value = fields[labelIndex];
+                    if (string.IsNullOrWhiteSpace(value)) value = "(empty)";
+                    labelDistribution.TryGetValue(value, out var count);
+                    labelDistribution[value] = count + 1;
                 }
             }
         }
-        catch
+
+        var result = new Dictionary<string, ColumnStatInfo>();
+        for (int i = 0; i < columns.Length; i++)
         {
-            // Column type not compatible with text getter
-            return 0;
+            result[columns[i]] = new ColumnStatInfo(missingCounts[i], uniqueSets[i].Count);
         }
 
-        return missingCount;
-    }
-
-    private static int CountUniqueValues(IDataView dataView, string columnName, int maxSample)
-    {
-        var uniqueValues = new HashSet<string>();
-        int sampledRows = 0;
-
-        try
-        {
-            var schema = dataView.Schema;
-            var colIndex = schema.GetColumnOrNull(columnName);
-
-            if (!colIndex.HasValue)
-                return 0;
-
-            using (var cursor = dataView.GetRowCursor(dataView.Schema))
-            {
-                var getter = cursor.GetGetter<ReadOnlyMemory<char>>(colIndex.Value);
-                var value = new ReadOnlyMemory<char>();
-
-                while (cursor.MoveNext() && sampledRows < maxSample)
-                {
-                    try
-                    {
-                        getter(ref value);
-                        if (!value.IsEmpty)
-                        {
-                            uniqueValues.Add(value.ToString());
-                        }
-                        sampledRows++;
-                    }
-                    catch
-                    {
-                        // Skip incompatible types
-                        break;
-                    }
-                }
-            }
-        }
-        catch
-        {
-            return 0;
-        }
-
-        return uniqueValues.Count;
+        return (result, labelDistribution);
     }
 
     private static string FormatFileSize(long bytes)
