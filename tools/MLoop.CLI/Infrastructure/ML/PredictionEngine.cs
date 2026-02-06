@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
+using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Contracts;
 
@@ -130,7 +131,7 @@ public class PredictionEngine : IPredictionEngine
                 throw new InvalidOperationException("Input file is empty");
             }
 
-            var columns = firstLine.Split(',');
+            var columns = CsvFieldParser.ParseFields(firstLine);
 
             // Find the label column from trained schema to exclude it from features
             string? labelColumn = null;
@@ -143,16 +144,48 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
 
-            // Use column inference with the correct label (or dummy if unknown)
-            var dummyLabel = labelColumn ?? (columns.Length > 0 ? columns[0] : "dummy");
+            // If label column is expected but missing from prediction data,
+            // add a dummy label column so the ML.NET model schema is satisfied
+            var labelExistsInData = labelColumn != null && columns.Contains(labelColumn);
+
+            if (!labelExistsInData && labelColumn != null)
+            {
+                var tempWithLabel = Path.GetTempFileName();
+                var allLines = File.ReadAllLines(mlnetCompatiblePath, System.Text.Encoding.UTF8);
+                using (var writer = new StreamWriter(tempWithLabel, false, new System.Text.UTF8Encoding(true)))
+                {
+                    // Add label column to header
+                    writer.WriteLine(labelColumn + "," + allLines[0]);
+                    // Add empty label value for each data row
+                    for (int i = 1; i < allLines.Length; i++)
+                    {
+                        writer.WriteLine("," + allLines[i]);
+                    }
+                }
+
+                // Update paths
+                if (createdTempFile)
+                {
+                    File.Delete(mlnetCompatiblePath);
+                }
+                mlnetCompatiblePath = tempWithLabel;
+                createdTempFile = true;
+
+                // Update state: label now exists in the modified data
+                firstLine = labelColumn + "," + firstLine;
+                columns = CsvFieldParser.ParseFields(firstLine);
+                labelExistsInData = true;
+            }
+
+            var dummyLabel = labelExistsInData ? labelColumn! : (columns.Length > 0 ? columns[0] : "dummy");
 
             var columnInference = _mlContext.Auto().InferColumns(
                 mlnetCompatiblePath,
                 labelColumnName: dummyLabel,
                 separatorChar: ',');
 
-            // If we have the label column, ensure it's marked as ignored/label in inference
-            if (!string.IsNullOrEmpty(labelColumn) && columnInference.ColumnInformation != null)
+            // If we have the label column in the data, ensure it's marked as ignored/label in inference
+            if (labelExistsInData && !string.IsNullOrEmpty(labelColumn) && columnInference.ColumnInformation != null)
             {
                 // Remove from feature columns if present
                 columnInference.ColumnInformation.NumericColumnNames.Remove(labelColumn);
@@ -160,27 +193,60 @@ public class PredictionEngine : IPredictionEngine
                 columnInference.ColumnInformation.TextColumnNames.Remove(labelColumn);
             }
 
+            // BUG-11: Fix column type mismatches between InferColumns and trained model.
+            // InferColumns may misdetect types (e.g. "0" as Boolean instead of Single)
+            // when prediction data has limited/dummy values. Override with trained schema types.
+            if (trainedSchema != null && columnInference.TextLoaderOptions.Columns != null)
+            {
+                var schemaLookup = trainedSchema.Columns.ToDictionary(c => c.Name, c => c.DataType);
+                foreach (var col in columnInference.TextLoaderOptions.Columns)
+                {
+                    if (col.Name != null && schemaLookup.TryGetValue(col.Name, out var expectedType))
+                    {
+                        var expectedKind = expectedType switch
+                        {
+                            "Numeric" => Microsoft.ML.Data.DataKind.Single,
+                            "Categorical" => Microsoft.ML.Data.DataKind.String,
+                            "Text" => Microsoft.ML.Data.DataKind.String,
+                            "Boolean" => Microsoft.ML.Data.DataKind.Boolean,
+                            _ => col.DataKind // keep inferred type for unknown schema types
+                        };
+                        if (col.DataKind != expectedKind)
+                        {
+                            col.DataKind = expectedKind;
+                        }
+                    }
+                }
+            }
+
+            // BUG-15: If label column was inferred as Boolean, convert to String
+            // (same as CsvDataLoader BUG-15 fix) for MapValueToKey compatibility
+            if (labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
+            {
+                foreach (var col in columnInference.TextLoaderOptions.Columns)
+                {
+                    if (col.Name != null &&
+                        col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) &&
+                        col.DataKind == DataKind.Boolean)
+                    {
+                        col.DataKind = DataKind.String;
+                    }
+                }
+            }
+
+            // BUG-16: Enable RFC 4180 quoting for CSV fields containing commas
+            // (e.g. bbox: "[935.49, 26.14, 123.27, 138.12]", attributes: "{'key': val, ...}")
+            // CsvDataLoader already sets this but PredictionEngine was missing it.
+            columnInference.TextLoaderOptions.AllowQuoting = true;
+
             var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
             var inputData = textLoader.Load(mlnetCompatiblePath);
 
-            // Drop label column from input data if it exists (it shouldn't be used for prediction)
+            // Keep all columns including label for model.Transform
+            // Classification models (e.g. multiclass) include MapValueToKey on the label column
+            // in the pipeline, so the label column must be present in the input schema.
+            // The label values are ignored during prediction.
             IDataView processedData = inputData;
-            if (!string.IsNullOrEmpty(labelColumn) && inputData.Schema.GetColumnOrNull(labelColumn) != null)
-            {
-                // Create a column dropping transform to exclude the label
-                var columnsToKeep = inputData.Schema
-                    .Where(col => col.Name != labelColumn)
-                    .Select(col => col.Name)
-                    .ToArray();
-
-                if (columnsToKeep.Length < inputData.Schema.Count)
-                {
-                    // Use ChooseColumns to keep only non-label columns
-                    processedData = _mlContext.Transforms.SelectColumns(columnsToKeep)
-                        .Fit(inputData)
-                        .Transform(inputData);
-                }
-            }
 
             // Make predictions
             var predictions = trainedModel.Transform(processedData);
@@ -233,6 +299,10 @@ public class PredictionEngine : IPredictionEngine
                 _mlContext.Data.SaveAsText(outputData, fileStream, separatorChar: ',', headerRow: true, schema: false);
             }
 
+            // BUG-14: Fix empty headers for vector columns (e.g., multiclass Score)
+            // SaveAsText outputs empty column names for VBuffer columns
+            FixVectorColumnHeaders(outputPath, outputData.Schema);
+
             return rowCount;
         }
         finally
@@ -261,6 +331,46 @@ public class PredictionEngine : IPredictionEngine
                     // Ignore cleanup errors
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Fixes empty column headers generated by SaveAsText for VBuffer (vector) columns.
+    /// ML.NET's SaveAsText outputs empty header cells for each element of a vector column.
+    /// This method replaces them with proper names like Score.0, Score.1, etc.
+    /// </summary>
+    private static void FixVectorColumnHeaders(string filePath, DataViewSchema schema)
+    {
+        // Build expected header names from schema
+        var expectedHeaders = new List<string>();
+        bool hasVectorColumns = false;
+
+        foreach (var col in schema)
+        {
+            if (col.IsHidden) continue; // Skip hidden columns (e.g., Key-type PredictedLabel)
+
+            if (col.Type is VectorDataViewType vectorType)
+            {
+                hasVectorColumns = true;
+                for (int i = 0; i < vectorType.Size; i++)
+                {
+                    expectedHeaders.Add($"{col.Name}.{i}");
+                }
+            }
+            else
+            {
+                expectedHeaders.Add(col.Name);
+            }
+        }
+
+        if (!hasVectorColumns) return;
+
+        // Read file, fix header, rewrite
+        var lines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+        if (lines.Length > 0)
+        {
+            lines[0] = string.Join(",", expectedHeaders);
+            File.WriteAllLines(filePath, lines, new System.Text.UTF8Encoding(true));
         }
     }
 }

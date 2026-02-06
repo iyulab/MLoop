@@ -29,7 +29,7 @@ public class PerformanceDiagnostics
         };
 
         // Analyze based on task type
-        var normalizedTask = taskType.ToLowerInvariant().Replace(" ", "");
+        var normalizedTask = taskType.ToLowerInvariant().Replace(" ", "").Replace("-", "");
 
         switch (normalizedTask)
         {
@@ -192,17 +192,17 @@ public class PerformanceDiagnostics
         double? primaryMetricValue = null;
         string primaryMetricName = "";
 
-        if (metrics.TryGetValue("MacroAccuracy", out var macroAcc))
+        if (metrics.TryGetValue("macro_accuracy", out var macroAcc) || metrics.TryGetValue("MacroAccuracy", out macroAcc))
         {
             primaryMetricValue = macroAcc;
             primaryMetricName = "Macro Accuracy";
         }
-        else if (metrics.TryGetValue("MicroAccuracy", out var microAcc))
+        else if (metrics.TryGetValue("micro_accuracy", out var microAcc) || metrics.TryGetValue("MicroAccuracy", out microAcc))
         {
             primaryMetricValue = microAcc;
             primaryMetricName = "Micro Accuracy";
         }
-        else if (metrics.TryGetValue("Accuracy", out var acc))
+        else if (metrics.TryGetValue("accuracy", out var acc) || metrics.TryGetValue("Accuracy", out acc))
         {
             primaryMetricValue = acc;
             primaryMetricName = "Accuracy";

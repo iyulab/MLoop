@@ -59,7 +59,7 @@ public class DataBalancer
         }
 
         var header = allLines[0];
-        var columns = header.Split(',');
+        var columns = CsvFieldParser.ParseFields(header);
         var labelIndex = Array.IndexOf(columns, labelColumn);
 
         if (labelIndex == -1)
@@ -74,7 +74,7 @@ public class DataBalancer
 
         foreach (var row in dataRows)
         {
-            var values = row.Split(',');
+            var values = CsvFieldParser.ParseFields(row);
             if (labelIndex < values.Length)
             {
                 var labelValue = values[labelIndex].Trim();

@@ -102,7 +102,7 @@ public class SchemaValidator
                 return result;
             }
 
-            var columns = firstLine.Split(',');
+            var columns = CsvFieldParser.ParseFields(firstLine);
             var dummyLabel = columns.Length > 0 ? columns[0] : "dummy";
 
             var columnInference = _mlContext.Auto().InferColumns(
@@ -250,7 +250,7 @@ public class SchemaValidator
                 return result;
             }
 
-            var inputColumns = firstLine.Split(',');
+            var inputColumns = CsvFieldParser.ParseFields(firstLine);
             var missingColumns = new List<string>();
             var extraColumns = new List<string>();
             var potentialEncodingIssues = new List<(string expected, string found)>();

@@ -72,3 +72,4 @@ nulcoverage/
 nul
 CLAUDE.md
 tmpclaude-*
+.claude/

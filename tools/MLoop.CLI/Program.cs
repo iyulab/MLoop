@@ -1,6 +1,7 @@
 using System.CommandLine;
 using DotNetEnv;
 using MLoop.CLI.Commands;
+using MLoop.CLI.Infrastructure.Update;
 using Spectre.Console;
 
 namespace MLoop.CLI;
@@ -12,6 +13,9 @@ internal class Program
 {
     static int Main(string[] args)
     {
+        // Cleanup .old binary from previous standalone update (Windows only)
+        UpdateChecker.CleanupOldBinary();
+
         // Load .env file from project root (D:\data\MLoop\.env)
         var projectRoot = FindProjectRoot();
         if (projectRoot != null)
@@ -51,6 +55,9 @@ internal class Program
 
             // Phase 4: Production Deployment
             DockerCommand.Create(),
+
+            // Utility
+            UpdateCommand.Create(),
         };
 
         // Display banner
@@ -60,7 +67,32 @@ internal class Program
         }
 
         var parseResult = rootCommand.Parse(args);
-        return parseResult.Invoke();
+        var exitCode = parseResult.Invoke();
+
+        // Lazy update check (skip for update command itself)
+        var firstArg = args.Length > 0 ? args[0] : null;
+        if (firstArg != "update")
+        {
+            try
+            {
+                var checkTask = Task.Run(() => UpdateChecker.CheckForUpdateAsync(forceCheck: false));
+                if (checkTask.Wait(TimeSpan.FromSeconds(2)))
+                {
+                    var info = checkTask.Result;
+                    if (info?.UpdateAvailable == true)
+                    {
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.MarkupLine($"[yellow]A new version (v{info.LatestVersion}) is available. Run 'mloop update' to upgrade.[/]");
+                    }
+                }
+            }
+            catch
+            {
+                // Silently ignore update check failures
+            }
+        }
+
+        return exitCode;
     }
 
     private static void DisplayBanner()
@@ -70,7 +102,7 @@ internal class Program
                 .LeftJustified()
                 .Color(Color.Blue));
 
-        AnsiConsole.MarkupLine("[grey]v0.1.0-alpha - ML.NET CLI Tool[/]");
+        AnsiConsole.MarkupLine($"[grey]v{UpdateChecker.GetCurrentVersion()} - ML.NET CLI Tool[/]");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[yellow]Clean Data In, Trained Model Out - That's It.[/]");
         AnsiConsole.WriteLine();
@@ -97,6 +129,7 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]docker[/]      Generate Docker configuration for deployment");
         AnsiConsole.MarkupLine("  [green]pipeline[/]    Execute ML workflow from YAML");
         AnsiConsole.MarkupLine("  [green]prep[/]        Data preprocessing tools (FilePrepper)");
+        AnsiConsole.MarkupLine("  [green]update[/]      Check for and install CLI updates");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("Use [blue]mloop [[command]] --help[/] for more information about a command.");
     }

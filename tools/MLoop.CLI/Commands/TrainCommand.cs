@@ -96,7 +96,8 @@ public static class TrainCommand
 
         var balanceOption = new Option<string?>("--balance", "-b")
         {
-            Description = "Class balancing strategy: 'auto' (balance to 10:1 if ratio > 10:1), 'none' (no balancing), or target ratio (e.g., '5' for 5:1)"
+            Description = "Class balancing strategy: 'auto' (balance to 10:1 if ratio > 10:1), 'none' (no balancing), or target ratio (e.g., '5' for 5:1). Use without value for 'auto'.",
+            Arity = ArgumentArity.ZeroOrOne
         };
 
         var command = new Command("train", "Train a model using AutoML");
@@ -131,6 +132,11 @@ public static class TrainCommand
             var dropMissingLabels = parseResult.GetValue(dropMissingLabelsOption);
             var dataPaths = parseResult.GetValue(dataOption);
             var balance = parseResult.GetValue(balanceOption);
+            // Handle --balance without argument: default to "auto"
+            if (balance == null && parseResult.Tokens.Any(t => t.Value == "--balance" || t.Value == "-b"))
+            {
+                balance = "auto";
+            }
             return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, balance);
         });
 
@@ -355,6 +361,9 @@ public static class TrainCommand
 
             AnsiConsole.MarkupLine($"[green]>[/] Using data: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
 
+            // Track all data files used during pipeline (for unused file scanner)
+            var allDataFilesUsed = new List<string> { resolvedDataFile };
+
             // Handle missing label values (T4.2)
             // Default behavior: drop missing labels for classification tasks
             var isClassificationTask = effectiveDefinition.Task?.ToLowerInvariant() switch
@@ -402,6 +411,7 @@ public static class TrainCommand
                         AnsiConsole.MarkupLine($"[green]>[/] Dropped {cleanResult.DroppedRowCount} rows with missing labels");
                         AnsiConsole.MarkupLine($"[green]>[/] Using cleaned data: [cyan]{Path.GetRelativePath(projectRoot, cleanResult.OutputPath!)}[/]");
                         resolvedDataFile = cleanResult.OutputPath!;
+                        allDataFilesUsed.Add(resolvedDataFile);
                     }
                     else
                     {
@@ -599,9 +609,18 @@ public static class TrainCommand
                     AnsiConsole.WriteLine();
                     AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
                     AnsiConsole.MarkupLine($"[green]>[/] Using balanced data: [cyan]{Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath)}[/]");
+
+                    // IMP-5: Warn about overfitting risk from high replication
+                    var replicationRatio = (double)balanceResult.NewMinorityCount / balanceResult.OriginalMinorityCount;
+                    if (replicationRatio > 10)
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Minority class replicated {replicationRatio:F0}x — high risk of overfitting with duplicated samples.");
+                        AnsiConsole.MarkupLine("[grey]  Consider using independent test data for evaluation.[/]");
+                    }
                     AnsiConsole.WriteLine();
 
                     resolvedDataFile = balanceResult.BalancedFilePath;
+                    allDataFilesUsed.Add(resolvedDataFile);
                     balancedFilePath = balanceResult.BalancedFilePath;
                 }
                 else if (!string.IsNullOrEmpty(balanceResult.Message))
@@ -820,9 +839,27 @@ public static class TrainCommand
                         }
                         else
                         {
+                            // IMP-9: Check if metrics are identical (convergence)
+                            var production = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
+                            bool isConverged = false;
+                            if (production?.Metrics != null && result.Metrics != null && production.Metrics.ContainsKey(primaryMetric))
+                            {
+                                var prodValue = production.Metrics[primaryMetric];
+                                var newValue = result.Metrics.TryGetValue(primaryMetric, out var v) ? v : double.NaN;
+                                isConverged = Math.Abs(prodValue - newValue) < 1e-10;
+                            }
+
                             ctx.Status("[yellow]Model saved to staging[/]");
                             AnsiConsole.MarkupLine("[yellow]Model saved to staging[/]");
-                            AnsiConsole.WriteLine($"   Current production model has better {primaryMetric}");
+                            if (isConverged)
+                            {
+                                AnsiConsole.WriteLine($"   Performance converged — same {primaryMetric} as production model");
+                                AnsiConsole.MarkupLine("[grey]   Tip: Additional training time may not improve this dataset further.[/]");
+                            }
+                            else
+                            {
+                                AnsiConsole.WriteLine($"   Current production model has better {primaryMetric}");
+                            }
                         }
                     });
 
@@ -834,7 +871,7 @@ public static class TrainCommand
             if (!string.IsNullOrEmpty(dataDirectory) && Directory.Exists(dataDirectory))
             {
                 var unusedDataScanner = new UnusedDataScanner();
-                var usedFiles = new List<string> { resolvedDataFile };
+                var usedFiles = allDataFilesUsed;
 
                 var scanResult = unusedDataScanner.Scan(dataDirectory, usedFiles);
 
@@ -902,7 +939,7 @@ public static class TrainCommand
 
         table.AddRow("Model", $"[cyan]{modelName}[/]");
         table.AddRow("Task", definition.Task);
-        table.AddRow("Data File", dataFile);
+        table.AddRow("Data File", Path.GetFileName(dataFile));
         table.AddRow("Label Column", definition.Label);
         table.AddRow("Time Limit", $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);

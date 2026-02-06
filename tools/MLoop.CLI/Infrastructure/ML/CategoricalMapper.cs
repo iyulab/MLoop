@@ -74,7 +74,7 @@ public class CategoricalMapper
             }
 
             var header = lines[0];
-            var columnNames = header.Split(',');
+            var columnNames = CsvFieldParser.ParseFields(header);
             var dataLines = lines.Skip(1).ToArray();
 
             // Build column index mapping for categorical columns
@@ -107,7 +107,7 @@ public class CategoricalMapper
 
             foreach (var line in dataLines)
             {
-                var values = line.Split(',');
+                var values = CsvFieldParser.ParseFields(line);
                 var processedValues = new string[values.Length];
                 Array.Copy(values, processedValues, values.Length);
 
@@ -149,7 +149,7 @@ public class CategoricalMapper
                     }
                 }
 
-                processedLines.Add(string.Join(",", processedValues));
+                processedLines.Add(CsvFieldParser.FormatLine(processedValues));
             }
 
             // Report unknown values if found
@@ -234,7 +234,7 @@ public class CategoricalMapper
         string[] lines)
     {
         var header = lines[0];
-        var columnNames = header.Split(',');
+        var columnNames = CsvFieldParser.ParseFields(header);
         var dataLines = lines.Skip(1).ToArray();
 
         // Build column index mapping for categorical columns
@@ -259,7 +259,7 @@ public class CategoricalMapper
 
         foreach (var line in dataLines)
         {
-            var values = line.Split(',');
+            var values = CsvFieldParser.ParseFields(line);
 
             foreach (var (colIndex, schemaCol) in categoricalColumns)
             {

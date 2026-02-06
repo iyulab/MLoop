@@ -29,13 +29,27 @@
     <!-- Package metadata -->
     <AssemblyName>mloop</AssemblyName>
     <RootNamespace>MLoop.CLI</RootNamespace>
-    <Version>0.1.0-alpha</Version>
     <Description>MLoop - A modern CLI tool for ML.NET with filesystem-based MLOps</Description>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>mloop</ToolCommandName>
 
     <!-- Publishing settings -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
-    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64;linux-arm64</RuntimeIdentifiers>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>embedded</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <!-- Clean publish output: exclude PDBs, XMLs from referenced projects -->
+  <Target Name="CleanPublishOutput" AfterTargets="Publish">
+    <ItemGroup>
+      <FilesToDelete Include="$(PublishDir)*.pdb" />
+      <FilesToDelete Include="$(PublishDir)*.xml" />
+      <FilesToDelete Include="$(PublishDir)appsettings.json" />
+    </ItemGroup>
+    <Delete Files="@(FilesToDelete)" />
+  </Target>
 
 </Project>
