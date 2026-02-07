@@ -64,43 +64,20 @@ jobs:
     - name: Run tests (CI - excludes heavy tests)
       run: dotnet test MLoop.sln --configuration Release --no-build --verbosity normal --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
 
-  publish-cli-tool:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_nuget)
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '10.0.x'
-
-    - name: Restore dependencies
-      run: dotnet restore MLoop.sln
-
-    - name: Pack CLI tool
-      run: |
-        mkdir -p ./artifacts
-        dotnet pack tools/MLoop.CLI/MLoop.CLI.csproj --configuration Release -p:Version=${{ needs.build.outputs.version }} -o ./artifacts
-        echo "Packed CLI tool:"
-        ls -la ./artifacts/
-
-    - name: Publish CLI to NuGet
-      run: |
-        for package in ./artifacts/mloop.*.nupkg; do
-          if [ -f "$package" ]; then
-            echo "Publishing $package"
-            dotnet nuget push "$package" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-          else
-            echo "No CLI package found matching pattern"
-            exit 1
-          fi
-        done
+  # publish-cli-tool: NuGet publishing disabled - distributing via GitHub Releases only
+  # To re-enable: uncomment and fix PublishSingleFile/PackAsTool conflict in csproj
+  # publish-cli-tool:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_nuget)
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #     with: { submodules: recursive }
+  #   - uses: actions/setup-dotnet@v4
+  #     with: { dotnet-version: '10.0.x' }
+  #   - run: dotnet restore MLoop.sln
+  #   - run: dotnet pack tools/MLoop.CLI/MLoop.CLI.csproj --configuration Release -p:Version=${{ needs.build.outputs.version }} -o ./artifacts
+  #   - run: dotnet nuget push ./artifacts/mloop.*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
   publish-binaries:
     needs: build
@@ -177,13 +154,9 @@ jobs:
 
         ## Installation
 
-        ### Via dotnet tool (recommended)
-        \`\`\`bash
-        dotnet tool install --global mloop --version ${VERSION}
-        \`\`\`
-
         ### Via standalone binary
-        Download the appropriate binary for your platform below, then run:
+        Download the appropriate binary for your platform below and place it in your PATH.
+        Self-update to latest version anytime:
         \`\`\`bash
         mloop update    # Self-update to latest version
         \`\`\`
