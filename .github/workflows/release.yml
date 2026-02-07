@@ -85,8 +85,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     strategy:
+      fail-fast: false
       matrix:
-        rid: [win-x64, linux-x64, linux-arm64, osx-x64, osx-arm64]
+        # ML.NET only supports x64/x86 - no ARM64 builds
+        rid: [win-x64, linux-x64, osx-x64]
 
     steps:
     - name: Checkout code
@@ -165,9 +167,7 @@ jobs:
         |----------|----------|
         | Windows x64 | \`mloop-win-x64.exe\` |
         | Linux x64 | \`mloop-linux-x64\` |
-        | Linux ARM64 | \`mloop-linux-arm64\` |
         | macOS x64 | \`mloop-osx-x64\` |
-        | macOS ARM64 | \`mloop-osx-arm64\` |
 
         ## Checksums
         EOF
