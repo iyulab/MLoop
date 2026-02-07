@@ -1,6 +1,6 @@
 # AI Agent Architecture
 
-> ⚠️ **Deprecated in v1.2.0**: This document describes architecture that has been removed.
+> ⚠️ **Deprecated**: This document describes architecture that has been removed.
 >
 > The `MLoop.AIAgent` project and all related components were removed as part of the "Zero AI Dependency" refactoring.
 > AI integration is now provided through [mloop-mcp](https://github.com/iyulab/mloop-mcp).
@@ -12,7 +12,7 @@
 ### Architectural Change
 
 ```
-Before v1.2.0:                    After v1.2.0:
+Before (removed):                 Current:
 ──────────────                    ──────────────
 MLoop.AIAgent (embedded)    →     mloop-mcp (external MCP server)
 Ironbees.AgentMode          →     MCP Protocol
@@ -74,7 +74,7 @@ Microsoft.Extensions.AI     →     MCP-compatible AI clients
 ## Historical Reference
 
 The content below is preserved for historical reference and migration assistance.
-This architecture was used in MLoop v1.0.0-v1.1.x before the "Zero AI Dependency" refactoring.
+This architecture was used before the "Zero AI Dependency" refactoring.
 
 <details>
 <summary>Click to expand legacy architecture documentation</summary>
@@ -212,5 +212,5 @@ MLoop's AI Agent system provided intelligent ML workflow assistance through spec
 ---
 
 **Last Updated**: January 2026
-**Version**: v1.2.0
+**Version**: Deprecated (archived)
 

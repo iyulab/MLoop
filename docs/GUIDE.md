@@ -19,8 +19,11 @@ Complete guide for using MLoop, the ML.NET CLI tool for building and managing ma
 
 ### Installation
 
+Download from [GitHub Releases](https://github.com/iyulab/MLoop/releases) and place in your PATH.
+
 ```bash
-dotnet tool install -g mloop
+# Self-update to latest version
+mloop update
 ```
 
 ### Initialize Project
@@ -130,7 +133,7 @@ mloop train data.csv is_fraud --task binary-classification --balance auto
 mloop train data.csv defect --task binary-classification --balance 5  # Target 5:1 ratio
 ```
 
-**Automatic Features** (v1.0.0):
+**Automatic Features**:
 - **Encoding Detection**: CP949/EUC-KR files auto-converted to UTF-8 (Korean text support)
 - **Schema Validation**: Same-schema files auto-detected for `--auto-merge`
 - **Label Handling**: Missing labels auto-dropped for classification tasks
@@ -219,7 +222,7 @@ mloop info datasets/train.csv --label IsError
 mloop info datasets/train.csv --name fraud-detector
 
 # Output:
-# [Info] Converted CP949 → UTF-8    # (v1.0.0 - automatic encoding conversion)
+# [Info] Converted CP949 → UTF-8    # (automatic encoding conversion)
 # Label column: IsError (from mloop.yaml (model: default))
 #
 # 📊 Dataset Information
@@ -237,7 +240,7 @@ mloop info datasets/train.csv --name fraud-detector
 2. `mloop.yaml` model configuration (if in project)
 3. First column (fallback)
 
-**Encoding Support** (v1.0.0):
+**Encoding Support**:
 - Auto-detects CP949, EUC-KR, UTF-8, UTF-16 encodings
 - Converts to UTF-8 with BOM for ML.NET compatibility
 - Korean text displayed correctly (e.g., 설비명, 공정번호)
@@ -962,7 +965,7 @@ Common issues and solutions when using MLoop.
 
 **Problem**: Garbled text like `㿀₩Ý¢Àà§°ü¬÷Àú¥ó` instead of Korean characters
 
-**Solution**: MLoop v1.0.0+ automatically detects and converts encodings:
+**Solution**: MLoop automatically detects and converts encodings:
 ```bash
 # Check encoding with mloop info
 mloop info data.csv

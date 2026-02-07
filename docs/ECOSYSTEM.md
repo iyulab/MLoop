@@ -649,5 +649,5 @@ You are an ML expert helping users build models with MLoop.
 
 ---
 
-**Last Updated**: January 2026
-**Version**: v1.6.0
+**Last Updated**: February 2026
+**Version**: v0.5.1-alpha

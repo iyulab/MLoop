@@ -1147,11 +1147,11 @@ $ mloop experiment show exp-005  # Read metadata.json, metrics.json
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| Microsoft.ML | 4.0.0 | ML.NET core framework |
-| Microsoft.ML.AutoML | 0.21.1 | AutoML engine |
-| System.CommandLine | 2.0.0-beta4 | CLI framework |
-| YamlDotNet | 16.2.0 | YAML configuration |
-| Spectre.Console | 0.49.1 | Rich CLI UI |
+| Microsoft.ML | 5.0.0 | ML.NET core framework |
+| Microsoft.ML.AutoML | 0.23.0 | AutoML engine |
+| System.CommandLine | 2.0.1 | CLI framework |
+| YamlDotNet | 16.3.0 | YAML configuration |
+| Spectre.Console | 0.54.0 | Rich CLI UI |
 
 ---
 
@@ -2124,8 +2124,8 @@ Terminal 2: cd project-B && mloop train ...
 
 ---
 
-**Version**: 1.2.0
-**Last Updated**: 2026-01-12
+**Version**: 0.5.1-alpha
+**Last Updated**: 2026-02-07
 **Status**: Living Document
 **Process Model**: Multi-Process Casual
 **Multi-Model Support**: Yes (v0.2.0+)
