@@ -1,6 +1,6 @@
 # AI Agent Usage Guide
 
-> ⚠️ **Deprecated in v1.2.0**: This document describes functionality that has been removed.
+> ⚠️ **Deprecated**: This document describes functionality that has been removed.
 >
 > The `mloop agent` and `mloop orchestrate` commands are no longer available.
 > AI integration is now provided through [mloop-mcp](https://github.com/iyulab/mloop-mcp).
@@ -11,7 +11,7 @@
 
 ### What Changed
 
-| v1.1.x (Removed) | v1.2.0+ (Current) |
+| Before (Removed) | Current |
 |------------------|-------------------|
 | `mloop agent "query"` | Use Claude/Cursor with mloop-mcp |
 | `mloop orchestrate` | Use AI client's native orchestration |
@@ -56,5 +56,5 @@ Instead of embedding AI inside MLoop, we expose MLoop to AI through MCP protocol
 
 ---
 
-**Last Updated**: January 2026
-**Version**: v1.2.0
+**Last Updated**: February 2026
+**Version**: Deprecated (archived)

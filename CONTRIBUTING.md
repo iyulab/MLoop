@@ -481,5 +481,5 @@ Thank you for helping make ML accessible to everyone!
 
 ---
 
-**Last Updated**: November 13, 2025
-**Version**: 1.0
+**Last Updated**: February 2026
+**Version**: 0.5.1-alpha

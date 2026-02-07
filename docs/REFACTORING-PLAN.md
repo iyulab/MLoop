@@ -1,7 +1,7 @@
 # MLoop Architecture Refactoring Plan
 
-**Version**: v1.2.0 → v2.0.0
-**Date**: January 2026
+**Version**: Architecture Refactoring (Zero AI Dependency)
+**Date**: January 2026 (completed)
 **Status**: ✅ Complete (Phase A ✅, Phase B ✅, Phase C ✅, Phase D ✅)
 
 ---
@@ -11,7 +11,7 @@
 ### 1.1 Core Change
 
 ```
-Before (v1.1.0):                    After (v2.0.0):
+Before (with AIAgent):               After (Zero AI Dependency):
 ────────────────                    ────────────────
 MLoop.Core                          MLoop.Core (순수 ML 엔진)
 MLoop.CLI                           MLoop.CLI (순수 CLI)
@@ -321,4 +321,4 @@ git checkout feature/phase8-polish-documentation -- agents/
 
 ---
 
-**Last Updated**: January 12, 2026 (v1.2.0 Refactoring Complete)
+**Last Updated**: January 12, 2026 (Refactoring Complete)

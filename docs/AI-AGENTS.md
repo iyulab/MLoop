@@ -1,15 +1,15 @@
 # AI Agents
 
-> ⚠️ **Notice**: The `mloop agent` command was removed in v1.2.0 as part of the "Zero AI Dependency" refactoring.
+> ⚠️ **Notice**: The `mloop agent` command was removed as part of the "Zero AI Dependency" refactoring.
 >
 > AI integration is now provided through **mloop-mcp**, a separate MCP (Model Context Protocol) server.
 
 ---
 
-## New Architecture (v1.2.0+)
+## Current Architecture
 
 ```
-Before v1.2.0:                    After v1.2.0:
+Before (removed):                 Current:
 ──────────────                    ──────────────
 MLoop.AIAgent (embedded)    →     mloop-mcp (external)
 
@@ -67,10 +67,10 @@ See [ECOSYSTEM.md](./ECOSYSTEM.md) for the full ecosystem architecture.
 If you were using `mloop agent` commands:
 
 ```bash
-# OLD (v1.1.x)
+# OLD (removed)
 mloop agent "Analyze my dataset" --agent data-analyst
 
-# NEW (v1.2.0+)
+# CURRENT
 # 1. Install mloop-mcp
 # 2. Configure your AI client (Claude, Cursor, etc.)
 # 3. The AI will use MLoop through MCP protocol
@@ -85,5 +85,5 @@ mloop agent "Analyze my dataset" --agent data-analyst
 
 ---
 
-**Last Updated**: January 2026
-**Version**: v1.2.0
+**Last Updated**: February 2026
+**Version**: Deprecated (archived)

@@ -56,16 +56,28 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 - **Fast Preprocessing**: Integrated FilePrepper (20x faster than pandas)
 - **Extensibility**: Code-based hooks and custom metrics
 - **Zero Config**: Works immediately with intelligent defaults
-- **Multi-CSV Support** (v1.0.0): Auto-merge same-schema files with `--data` or `--auto-merge`
-- **Encoding Detection** (v1.0.0): Automatic CP949/EUC-KR to UTF-8 conversion for Korean text
-- **Docker Deployment** (v1.0.0): Generate production-ready containerization with `mloop docker`
+- **Multi-CSV Support**: Auto-merge same-schema files with `--data` or `--auto-merge`
+- **Encoding Detection**: Automatic CP949/EUC-KR to UTF-8 conversion for Korean text
+- **Docker Deployment**: Generate production-ready containerization with `mloop docker`
+- **Self-Update**: Update to latest version with `mloop update`
 
 ## Quick Start
 
 ### Installation
 
+**Standalone Binary** (Recommended):
+
+Download from [GitHub Releases](https://github.com/iyulab/MLoop/releases) and place in your PATH.
+
+| Platform | Binary |
+|----------|--------|
+| Windows x64 | `mloop-win-x64.exe` |
+| Linux x64 | `mloop-linux-x64` |
+| macOS x64 | `mloop-osx-x64` |
+
 ```bash
-dotnet tool install -g mloop
+# Self-update to latest version anytime
+mloop update
 ```
 
 ### 60-Second Workflow
@@ -102,7 +114,7 @@ mloop serve                            # Start REST API server
 mloop docker                           # Generate Docker deployment files
 ```
 
-### Advanced Data Handling (v1.0.0)
+### Advanced Data Handling
 
 ```bash
 # Multi-file training - auto-merge same-schema CSVs
@@ -209,7 +221,7 @@ models/
 
 ### Project Philosophy & Roadmap
 - **[Philosophy & Design](README.md#philosophy-excellent-mlops-with-minimum-cost)** - Core mission and design principles
-- **[Roadmap](ROADMAP.md)** - Feature roadmap aligned with mission (v0.1 → v1.2)
+- **[Roadmap](ROADMAP.md)** - Feature roadmap aligned with mission
 
 ### Technical Documentation
 - **[Architecture](docs/ARCHITECTURE.md)** - System design and technical decisions
@@ -219,7 +231,7 @@ models/
 
 With Microsoft discontinuing ML.NET CLI and Model Builder updates, MLoop provides:
 
-- ✅ **Active Development** - Modern tooling with latest ML.NET 4.0
+- ✅ **Active Development** - Modern tooling with latest ML.NET 5.0
 - ✅ **Production Ready** - From prototyping to deployment
 - ✅ **Git Friendly** - All state as files, no database
 - ✅ **Extensible** - Hooks and custom metrics

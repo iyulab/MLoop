@@ -37,7 +37,7 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
 
 ---
 
-## Current Status (v1.9.0 - January 2026)
+## Current Status (v0.5.1-alpha - February 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
@@ -54,7 +54,7 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
 - Zero AI dependencies (pure ML CLI tool)
 
 ### AI Integration (External)
-> **v1.2.0 Architecture Change**: "AI uses MLoop" instead of "MLoop contains AI"
+> **Architecture Change**: "AI uses MLoop" instead of "MLoop contains AI"
 
 - **mloop-mcp**: MCP server exposing MLoop CLI to AI clients
   - Repository: https://github.com/iyulab/mloop-mcp
@@ -70,7 +70,7 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
 - **MLoop.Extensibility**: Hooks, scripts, metrics interfaces
 - **MLoop.Ops**: Model comparison, feedback-based retraining triggers
 
-**Tools (`tools/`) - Executable Distribution** *(v1.9.0: relocated from src/)*
+**Tools (`tools/`) - Executable Distribution**
 - **MLoop.CLI**: Command-line interface (dotnet tool)
 - **MLoop.API**: REST API server (Docker/standalone)
 
@@ -283,10 +283,10 @@ Individual reports:
 
 ---
 
-## Phase 5: Intelligent Memory System ⚠️ DEPRECATED (v1.2.0)
+## Phase 5: Intelligent Memory System ⚠️ DEPRECATED
 **Goal**: Enable agents to learn from past successes and failures
 
-> ⚠️ **Deprecated in v1.2.0**: This phase was removed as part of the "Zero AI Dependency" refactoring.
+> ⚠️ **Deprecated**: This phase was removed as part of the "Zero AI Dependency" refactoring.
 > Memory services (DatasetPatternMemoryService, FailureCaseLearningService) were part of MLoop.AIAgent
 > which has been completely removed. AI-based pattern learning is now the responsibility of external
 > AI clients using mloop-mcp.
@@ -362,7 +362,7 @@ public class FailureCaseLearningService
 ## Phase 6: Agent Intelligence & Data Quality (v0.5.0)
 **Goal**: Polish and stabilize through intelligent data handling and agent memory integration
 
-> ⚠️ **Partial Deprecation in v1.2.0**: T6.1 (Agent Memory Integration) was removed with MLoop.AIAgent.
+> ⚠️ **Partial Deprecation**: T6.1 (Agent Memory Integration) was removed with MLoop.AIAgent.
 > T6.2 (Encoding Auto-Detection) and T6.3 (Dataset Compatibility Check) are preserved in MLoop.Core.
 
 **Background**: ML-Resource simulation analysis (10/25 datasets) revealed:
@@ -375,7 +375,7 @@ public class FailureCaseLearningService
 - Improve error messages instead of complex workarounds
 
 ### T6.1 Agent Memory Integration ⚠️ DEPRECATED
-**Status**: Removed in v1.2.0 with MLoop.AIAgent
+**Status**: Removed with MLoop.AIAgent
 
 > This feature was removed as part of the "Zero AI Dependency" refactoring.
 > IntelligentDataAnalyzer and memory integration are no longer part of MLoop.
@@ -525,7 +525,7 @@ Target:
 - [x] Document all CLI commands with examples (train, info, docker)
 
 ### T8.2 Background Memory Infrastructure ⚠️ DEPRECATED
-**Status**: Removed in v1.2.0 with MLoop.AIAgent
+**Status**: Removed with MLoop.AIAgent
 
 > This feature was removed as part of the "Zero AI Dependency" refactoring.
 > TrainingMemoryCollector and memory services are no longer part of MLoop.
@@ -581,10 +581,10 @@ Target:  정상한글 (correct Korean text)
 
 ---
 
-## Phase 9: CLI Intelligence ❌ CANCELLED
+## Phase 9: CLI Intelligence ❌ CANCELLED (Archived)
 **Original Goal**: Enable memory-based intelligent recommendations for users
 
-> ❌ **Cancelled in v1.2.0**: This phase was cancelled as part of the "Zero AI Dependency" refactoring.
+> ❌ **Cancelled**: This phase was cancelled as part of the "Zero AI Dependency" refactoring.
 > Memory-based features (T9.1 CLI Insights) depended on MLoop.AIAgent which has been removed.
 > T9.2 (Label Column Inference) may be reconsidered for future versions as a Core feature.
 >
@@ -1058,41 +1058,41 @@ Out of MLoop CLI scope (requires Image Classification support):
 ## Release Schedule
 
 > **Note**: Major versions (v1.0, v2.0) require community validation before release.
-> All roadmap features are developed in minor versions (v0.x.x, v1.x.x).
+> All roadmap features are developed in minor versions (v0.x.x).
+> Phase version numbers below are internal development milestones, not GitHub Release versions.
 
-### v0.x Development Series (Core CLI)
+### v0.5.x (Current Release Series)
 
-| Version | Focus | Status |
-|---------|-------|--------|
-| **v0.1.0** | ML.NET 5.0 + Core | ✅ Complete |
-| **v0.2.0** | Preprocessing + Extensibility | ✅ Complete |
-| **v0.3.0** | Autonomous MLOps (Auto-merge, Label handling) | ✅ Complete |
-| **v0.4.0** | Intelligent Memory System | ⚠️ Deprecated |
-| **v0.5.0** | Data Quality + Encoding Detection | ✅ Complete |
-| **v0.6.0** | DataStore + Prediction Logging | ✅ Complete |
-| **v0.7.0** | Ops + Model Comparison | ✅ Complete |
-| **v0.8.0** | Feedback + Data Sampling | ✅ Complete |
-| **v0.9.0** | Trigger CLI + NuGet Preparation | ✅ Complete |
+| GitHub Release | Focus | Status |
+|----------------|-------|--------|
+| **v0.5.0-alpha** | First GitHub Release + multiplatform binaries | ✅ Released |
+| **v0.5.1-alpha** | Self-update system + CI/CD refinement | ✅ Released |
+
+### Development Phases (Internal Milestones)
+
+| Phase | Focus | Status |
+|-------|-------|--------|
+| Phase 0-3 | Preprocessing, Extensibility, AI Agents, FilePrepper | ✅ Complete |
+| Phase 4 | Autonomous MLOps (Auto-merge, Label handling) | ✅ Complete |
+| Phase 5 | Intelligent Memory System | ⚠️ Deprecated |
+| Phase 6 | Data Quality + Encoding Detection | ✅ Complete |
+| Phase 7 | Production Readiness | ✅ Complete |
+| Phase 8 | Polish & Documentation | ✅ Complete |
+| Phase 9 | CLI Intelligence | ❌ Cancelled |
+| Phase 10 | DataStore + Prediction Logging | ✅ Complete |
+| Phase 11 | Ops + Model Comparison | ✅ Complete |
+| Phase 12 | Feedback Collection | ✅ Complete |
+| Phase 13 | Data Sampling & Triggers | ✅ Complete |
+| Phase 14 | Trigger CLI Enhancement | ✅ Complete |
+| Phase 15 | NuGet Package Preparation | ✅ Complete |
+| Phase 16 | Project Refinement (SDK/Tools separation) | ✅ Complete |
+| Phase 17-18 | Studio API & UI | ✅ Complete |
+| Phase 19 | ML-Resource E2E Validation | ✅ Complete |
 
 ### v1.0.0 (Community Validation Milestone)
-- **Status**: 🎯 Ready for community validation
+- **Status**: 🎯 Pending community validation
 - **Criteria**: Stable CLI, comprehensive tests, documentation complete
-- **Release**: After public beta feedback
-
-### v1.x Development Series (Studio Integration)
-
-| Version | Focus | Status |
-|---------|-------|--------|
-| **v1.1.0** | Studio API Integration | ✅ Complete |
-| **v1.2.0** | Studio UI Development | ✅ Complete |
-| **v1.3.0** | ML-Resource E2E Validation | ✅ Complete |
-| **v1.4.0** | Studio Polish & Testing | 📋 Planned |
-| **v1.5.0** | Documentation & Examples | 📋 Planned |
-
-### v2.0.0 (Major Release Milestone)
-- **Status**: 📋 Requires community validation
-- **Criteria**: Studio production-ready, community feedback incorporated
-- **Release**: After v1.x series validation and public testing
+- **Release**: After public beta feedback and community approval
 
 ---
 
@@ -1130,47 +1130,11 @@ Submit proposals via GitHub Issues with `roadmap` label.
 
 ---
 
-**Last Updated**: January 15, 2026
-**Version**: v1.12.0 Complete (ML-Resource E2E Validation)
+**Last Updated**: February 7, 2026
+**Current Release**: v0.5.1-alpha ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
 **Recent Changes**:
-- v1.12.0 ML-Resource E2E Validation complete
-  - Regression: 5/5 datasets L3 autonomous (R² avg: 0.8559)
-  - 002 (R²=0.996), 003 (R²=0.656), 004 (R²=0.950), 005 (R²=0.939), 008 (R²=0.939)
-  - Classification: L2 (label separation issues)
-  - Non-tabular (022-025): Out of scope (image/text data)
-  - Best Trainer: LightGbmRegression across all datasets
-- v1.11.0 Studio UI Development complete
-  - Projects.tsx, ProjectDetail.tsx with 6 tabs
-  - Training, Models, Predictions, Feedback UI components
-  - React + TanStack Query + Tailwind CSS
-- v1.10.0 Studio API Integration complete
-  - Training, Models, Predictions, Feedback endpoints
-  - Full MLoop SDK integration
-- v1.8.0 NuGet Package Preparation complete
-  - SDK package metadata: PackageId, Description, Tags for all SDK projects
-  - README files for NuGet package display
-  - Ready for NuGet.org or GitHub Packages distribution
-- v1.7.0 Trigger CLI Enhancement complete
-  - TriggerCommand: `mloop trigger check --model xxx` for CLI-based trigger evaluation
-  - Custom thresholds: `--accuracy` and `--feedback` options
-  - Exit code semantics for shell script automation
-  - MLoop.CLI now references MLoop.Ops for trigger functionality
-- v1.6.0 Data Sampling & Triggers implementation complete
-  - FileDataSampler: Random, Recent, FeedbackPriority sampling strategies
-  - FeedbackBasedTrigger: AccuracyDrop and FeedbackVolume conditions
-  - `mloop sample create/stats` commands for CLI access
-  - 16 unit tests for sampling and trigger services
-- v1.5.0 Feedback Collection implementation complete
-  - FileFeedbackCollector: JSONL-based feedback storage linked to predictions
-  - `mloop feedback add/list/metrics` commands for CLI access
-  - Accuracy calculation from predictions vs ground truth
-  - 8 unit tests for feedback services
-- v1.4.0 MLoop.Ops implementation complete
-  - FileModelComparer: Filesystem-based experiment comparison
-  - TimeBasedTrigger: Simple time-based retraining trigger
-  - 16 unit tests for Ops services
-- v1.3.0 MLoop.DataStore implementation complete
-  - FilePredictionLogger: JSONL-based prediction logging
-  - `mloop logs` command for viewing prediction history
-- v1.2.0 "Zero AI Dependency" refactoring complete
-- MLoop.AIAgent removed, AI integration via mloop-mcp
+- v0.5.1-alpha: Self-update system (`mloop update`), CI/CD refinement
+- v0.5.0-alpha: First GitHub Release with multiplatform binaries (win-x64, linux-x64, osx-x64)
+- All 19 development phases complete (see Development Phases table above)
+- 429+ tests passing across all projects
+- Distribution: GitHub Releases (standalone binaries) with self-update support
