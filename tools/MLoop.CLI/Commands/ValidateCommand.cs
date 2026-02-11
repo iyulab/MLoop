@@ -1,4 +1,6 @@
 using System.CommandLine;
+using CsvHelper;
+using CsvHelper.Configuration;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
@@ -22,6 +24,23 @@ public static class ValidateCommand
         "auto",
         "accuracy", "auc", "f1", "recall", "precision", "log-loss",
         "r2", "rmse", "mae", "mse", "rSquared"
+    };
+
+    private static readonly HashSet<string> ValidPrepStepTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "fill-missing", "fill_missing",
+        "normalize", "scale",
+        "remove-columns", "remove_columns",
+        "rename-columns", "rename_columns",
+        "drop-duplicates", "drop_duplicates",
+        "extract-date", "extract_date",
+        "parse-datetime", "parse_datetime",
+        "filter-rows", "filter_rows",
+        "add-column", "add_column",
+        "parse-korean-time", "parse_korean_time",
+        "parse-excel-date", "parse_excel_date",
+        "rolling",
+        "resample"
     };
 
     public static Command Create()
@@ -105,10 +124,20 @@ public static class ValidateCommand
                 }
             }
 
-            // Validate data paths
+            // Validate data paths and label column
             if (config.Data != null)
             {
                 ValidateDataPaths(config.Data, ctx.ProjectRoot, ctx.FileSystem, errors, warnings);
+
+                // Validate label columns exist in training data
+                if (!string.IsNullOrWhiteSpace(config.Data.Train) && config.Models != null)
+                {
+                    var trainPath = ctx.FileSystem.CombinePath(ctx.ProjectRoot, config.Data.Train);
+                    if (ctx.FileSystem.FileExists(trainPath))
+                    {
+                        ValidateLabelColumnsInCsv(trainPath, config.Models, errors, warnings);
+                    }
+                }
             }
 
             // Display results
@@ -179,6 +208,12 @@ public static class ValidateCommand
         if (model.Training != null)
         {
             ValidateTrainingSettings($"{prefix}.training", model.Training, errors, warnings);
+        }
+
+        // Validate prep steps
+        if (model.Prep is { Count: > 0 })
+        {
+            ValidatePrepSteps($"{prefix}.prep", model.Prep, errors, warnings);
         }
     }
 
@@ -274,6 +309,151 @@ public static class ValidateCommand
         }
     }
 
+    private static void ValidatePrepSteps(
+        string prefix,
+        List<MLoop.Core.Preprocessing.PrepStep> steps,
+        List<ValidationError> errors,
+        List<ValidationWarning> warnings)
+    {
+        for (int i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            var stepPrefix = $"{prefix}[{i}]";
+
+            // Validate step type
+            if (string.IsNullOrWhiteSpace(step.Type))
+            {
+                errors.Add(new ValidationError(stepPrefix, "Step type is required"));
+                continue;
+            }
+
+            if (!ValidPrepStepTypes.Contains(step.Type))
+            {
+                errors.Add(new ValidationError($"{stepPrefix}.type",
+                    $"Unknown prep step type '{step.Type}'. Valid types: fill-missing, normalize, remove-columns, rename-columns, drop-duplicates, extract-date, parse-datetime, filter-rows, add-column, parse-korean-time, parse-excel-date, rolling, resample"));
+                continue;
+            }
+
+            // Validate required parameters per step type
+            var normalizedType = step.Type.ToLowerInvariant().Replace('_', '-');
+            switch (normalizedType)
+            {
+                case "fill-missing":
+                case "normalize":
+                case "scale":
+                case "remove-columns":
+                    if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
+                    {
+                        errors.Add(new ValidationError(stepPrefix,
+                            $"'{step.Type}' requires 'columns' or 'column' parameter"));
+                    }
+                    break;
+
+                case "rename-columns":
+                    if (step.Mapping == null || step.Mapping.Count == 0)
+                    {
+                        errors.Add(new ValidationError(stepPrefix,
+                            "'rename-columns' requires 'mapping' parameter"));
+                    }
+                    break;
+
+                case "extract-date":
+                case "parse-datetime":
+                case "parse-korean-time":
+                case "parse-excel-date":
+                    if (string.IsNullOrEmpty(step.Column))
+                    {
+                        errors.Add(new ValidationError(stepPrefix,
+                            $"'{step.Type}' requires 'column' parameter"));
+                    }
+                    if (normalizedType == "parse-datetime" && string.IsNullOrEmpty(step.Format))
+                    {
+                        errors.Add(new ValidationError(stepPrefix,
+                            "'parse-datetime' requires 'format' parameter"));
+                    }
+                    break;
+
+                case "filter-rows":
+                    if (string.IsNullOrEmpty(step.Column))
+                        errors.Add(new ValidationError(stepPrefix, "'filter-rows' requires 'column' parameter"));
+                    if (string.IsNullOrEmpty(step.Operator))
+                        errors.Add(new ValidationError(stepPrefix, "'filter-rows' requires 'operator' parameter"));
+                    if (string.IsNullOrEmpty(step.Value))
+                        errors.Add(new ValidationError(stepPrefix, "'filter-rows' requires 'value' parameter"));
+                    break;
+
+                case "add-column":
+                    if (string.IsNullOrEmpty(step.Column))
+                        errors.Add(new ValidationError(stepPrefix, "'add-column' requires 'column' parameter"));
+                    if (string.IsNullOrEmpty(step.Value) && string.IsNullOrEmpty(step.Expression))
+                        errors.Add(new ValidationError(stepPrefix,
+                            "'add-column' requires 'value' or 'expression' parameter"));
+                    break;
+
+                case "rolling":
+                    if (step.WindowSize < 1)
+                        errors.Add(new ValidationError(stepPrefix, "'rolling' requires 'window_size' > 0"));
+                    if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
+                        errors.Add(new ValidationError(stepPrefix, "'rolling' requires 'columns' parameter"));
+                    break;
+
+                case "resample":
+                    if (string.IsNullOrEmpty(step.TimeColumn))
+                        errors.Add(new ValidationError(stepPrefix, "'resample' requires 'time_column' parameter"));
+                    if (string.IsNullOrEmpty(step.Window))
+                        errors.Add(new ValidationError(stepPrefix, "'resample' requires 'window' parameter"));
+                    if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
+                        errors.Add(new ValidationError(stepPrefix, "'resample' requires 'columns' parameter"));
+                    break;
+            }
+        }
+    }
+
+    private static void ValidateLabelColumnsInCsv(
+        string csvPath,
+        Dictionary<string, ModelDefinition> models,
+        List<ValidationError> errors,
+        List<ValidationWarning> warnings)
+    {
+        try
+        {
+            var csvConfig = new CsvConfiguration(System.Globalization.CultureInfo.InvariantCulture)
+            {
+                HasHeaderRecord = true,
+                MissingFieldFound = null,
+                BadDataFound = null
+            };
+
+            using var reader = new StreamReader(csvPath);
+            using var csv = new CsvReader(reader, csvConfig);
+            csv.Read();
+            csv.ReadHeader();
+            var headers = csv.HeaderRecord;
+
+            if (headers == null || headers.Length == 0)
+            {
+                warnings.Add(new ValidationWarning("data.train", "Training CSV has no header row"));
+                return;
+            }
+
+            var headerSet = new HashSet<string>(headers, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (modelName, modelDef) in models)
+            {
+                if (!string.IsNullOrWhiteSpace(modelDef.Label) && !headerSet.Contains(modelDef.Label))
+                {
+                    errors.Add(new ValidationError($"models.{modelName}.label",
+                        $"Label column '{modelDef.Label}' not found in training CSV. Available columns: {string.Join(", ", headers.Take(10))}{(headers.Length > 10 ? "..." : "")}"));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            warnings.Add(new ValidationWarning("data.train",
+                $"Could not read training CSV headers: {ex.Message}"));
+        }
+    }
+
     private static bool IsValidModelName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -334,6 +514,8 @@ public static class ValidateCommand
         table.AddRow("Training settings", errors.Any(e => e.Path.Contains(".training")) ? "[red]✗[/]" :
             warnings.Any(w => w.Path.Contains(".training")) ? "[yellow]⚠[/]" : "[green]✓[/]");
         table.AddRow("Data paths", warnings.Any(w => w.Path.StartsWith("data.")) ? "[yellow]⚠[/]" : "[green]✓[/]");
+        table.AddRow("Prep steps", errors.Any(e => e.Path.Contains(".prep")) ? "[red]✗[/]" :
+            warnings.Any(w => w.Path.Contains(".prep")) ? "[yellow]⚠[/]" : "[green]✓[/]");
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
