@@ -28,6 +28,7 @@ public class HITLQuestionGeneratorTests
         Assert.Contains("missing values", question.Question, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(4, question.Options.Count); // Delete, ImputeMean, ImputeMedian, ImputeCustom
         Assert.NotNull(question.RecommendedOption);
+        Assert.NotNull(question.RecommendationReason);
         Assert.NotEmpty(question.RecommendationReason);
     }
 

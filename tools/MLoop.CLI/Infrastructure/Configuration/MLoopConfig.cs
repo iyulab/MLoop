@@ -1,3 +1,5 @@
+using MLoop.Core.Preprocessing;
+
 namespace MLoop.CLI.Infrastructure.Configuration;
 
 /// <summary>
@@ -46,6 +48,12 @@ public class ModelDefinition
     /// Model description for documentation purposes
     /// </summary>
     public string? Description { get; set; }
+
+    /// <summary>
+    /// Preprocessing pipeline steps executed before training via FilePrepper DataPipeline API.
+    /// Steps are executed sequentially in order.
+    /// </summary>
+    public List<PrepStep>? Prep { get; set; }
 }
 
 /// <summary>
