@@ -170,18 +170,51 @@ public class ServeCommand : Command
             return Path.GetFullPath(envPath);
         }
 
-        // 2. Look for MLoop.API.dll in common build output locations
-        var searchPaths = new[]
+        // 2. Look for MLoop.API.dll in common locations
+        var searchPaths = new List<string>
         {
             // Same directory as CLI (for bundled deployments)
             Path.Combine(AppContext.BaseDirectory, "MLoop.API.dll"),
             // Relative paths from CLI location
             Path.Combine(AppContext.BaseDirectory, "..", "MLoop.API", "MLoop.API.dll"),
             Path.Combine(AppContext.BaseDirectory, "..", "..", "MLoop.API", "MLoop.API.dll"),
-            // Development paths
-            Path.Combine(Directory.GetCurrentDirectory(), "tools", "MLoop.API", "bin", "Debug", "net9.0", "MLoop.API.dll"),
-            Path.Combine(Directory.GetCurrentDirectory(), "tools", "MLoop.API", "bin", "Release", "net9.0", "MLoop.API.dll"),
         };
+
+        // 3. Search development build output with dynamic TFM detection
+        var devRoots = new[]
+        {
+            // From CLI bin directory: navigate up to solution root
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."),
+            // From current working directory
+            Directory.GetCurrentDirectory(),
+        };
+
+        foreach (var root in devRoots)
+        {
+            var apiProjectDir = Path.Combine(root, "tools", "MLoop.API", "bin");
+            if (Directory.Exists(apiProjectDir))
+            {
+                // Search across all configurations and target frameworks
+                foreach (var config in new[] { "Debug", "Release" })
+                {
+                    var configDir = Path.Combine(apiProjectDir, config);
+                    if (!Directory.Exists(configDir)) continue;
+
+                    // Find net* directories dynamically (net9.0, net10.0, etc.)
+                    try
+                    {
+                        foreach (var tfmDir in Directory.GetDirectories(configDir, "net*"))
+                        {
+                            searchPaths.Add(Path.Combine(tfmDir, "MLoop.API.dll"));
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        // Directory access error, skip
+                    }
+                }
+            }
+        }
 
         foreach (var path in searchPaths)
         {
