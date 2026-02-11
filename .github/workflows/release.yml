@@ -5,12 +5,10 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      publish_nuget:
-        description: 'Publish CLI to NuGet'
-        required: true
-        default: 'true'
-        type: boolean
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -63,21 +61,6 @@ jobs:
 
     - name: Run tests (CI - excludes heavy tests)
       run: dotnet test MLoop.sln --configuration Release --no-build --verbosity normal --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
-
-  # publish-cli-tool: NuGet publishing disabled - distributing via GitHub Releases only
-  # To re-enable: uncomment and fix PublishSingleFile/PackAsTool conflict in csproj
-  # publish-cli-tool:
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_nuget)
-  #   steps:
-  #   - uses: actions/checkout@v4
-  #     with: { submodules: recursive }
-  #   - uses: actions/setup-dotnet@v4
-  #     with: { dotnet-version: '10.0.x' }
-  #   - run: dotnet restore MLoop.sln
-  #   - run: dotnet pack tools/MLoop.CLI/MLoop.CLI.csproj --configuration Release -p:Version=${{ needs.build.outputs.version }} -o ./artifacts
-  #   - run: dotnet nuget push ./artifacts/mloop.*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
   publish-binaries:
     needs: build
@@ -147,9 +130,7 @@ jobs:
 
     - name: Generate release notes
       run: |
-        VERSION="${{ needs.build.outputs.version }}"
-
-        cat << EOF > release_notes.md
+        cat > release_notes.md << 'NOTES'
         ## What's Changed
 
         See [CHANGELOG](https://github.com/iyulab/MLoop/blob/main/CHANGELOG.md) for details.
@@ -159,20 +140,21 @@ jobs:
         ### Via standalone binary
         Download the appropriate binary for your platform below and place it in your PATH.
         Self-update to latest version anytime:
-        \`\`\`bash
+        ```bash
         mloop update    # Self-update to latest version
-        \`\`\`
+        ```
 
         | Platform | Download |
         |----------|----------|
-        | Windows x64 | \`mloop-win-x64.exe\` |
-        | Linux x64 | \`mloop-linux-x64\` |
-        | macOS x64 | \`mloop-osx-x64\` |
+        | Windows x64 | `mloop-win-x64.exe` |
+        | Linux x64 | `mloop-linux-x64` |
+        | macOS x64 | `mloop-osx-x64` |
 
         ## Checksums
-        EOF
+        NOTES
+        # Strip leading 8 spaces from heredoc indentation
+        sed -i 's/^        //' release_notes.md
 
-        echo "" >> release_notes.md
         echo '```' >> release_notes.md
         for file in ./binaries/mloop-*; do
           sha256sum "$file" | awk '{print $1 "  " $2}' >> release_notes.md
