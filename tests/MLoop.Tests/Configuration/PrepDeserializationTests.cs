@@ -212,6 +212,112 @@ public class PrepDeserializationTests
     }
 
     [Fact]
+    public void Deserialize_PrepWithRolling_ParsesCorrectly()
+    {
+        var yaml = """
+            project: test-project
+            models:
+              default:
+                task: regression
+                label: Temp
+                prep:
+                  - type: rolling
+                    columns:
+                      - pH
+                      - Temp
+                    window_size: 5
+                    method: mean
+                    output_suffix: "_avg"
+            """;
+
+        var config = _deserializer.Deserialize<MLoopConfig>(yaml);
+        var step = config.Models["default"].Prep![0];
+
+        Assert.Equal("rolling", step.Type);
+        Assert.Equal(5, step.WindowSize);
+        Assert.Equal("mean", step.Method);
+        Assert.Equal("_avg", step.OutputSuffix);
+    }
+
+    [Fact]
+    public void Deserialize_PrepWithResample_ParsesCorrectly()
+    {
+        var yaml = """
+            project: test-project
+            models:
+              default:
+                task: regression
+                label: Temp
+                prep:
+                  - type: resample
+                    time_column: timestamp
+                    window: "1H"
+                    columns:
+                      - pH
+                      - Temp
+                    method: mean
+            """;
+
+        var config = _deserializer.Deserialize<MLoopConfig>(yaml);
+        var step = config.Models["default"].Prep![0];
+
+        Assert.Equal("resample", step.Type);
+        Assert.Equal("timestamp", step.TimeColumn);
+        Assert.Equal("1H", step.Window);
+        Assert.Equal("mean", step.Method);
+        Assert.Equal(2, step.Columns!.Count);
+    }
+
+    [Fact]
+    public void Deserialize_PrepWithParseKoreanTime_ParsesCorrectly()
+    {
+        var yaml = """
+            project: test-project
+            models:
+              default:
+                task: regression
+                label: Temp
+                prep:
+                  - type: parse-korean-time
+                    column: time_str
+                    output_column: parsed_time
+            """;
+
+        var config = _deserializer.Deserialize<MLoopConfig>(yaml);
+        var step = config.Models["default"].Prep![0];
+
+        Assert.Equal("parse-korean-time", step.Type);
+        Assert.Equal("time_str", step.Column);
+        Assert.Equal("parsed_time", step.OutputColumn);
+    }
+
+    [Fact]
+    public void Deserialize_PrepWithAddColumn_ParsesCorrectly()
+    {
+        var yaml = """
+            project: test-project
+            models:
+              default:
+                task: regression
+                label: Temp
+                prep:
+                  - type: add-column
+                    column: status
+                    value: active
+                  - type: add-column
+                    column: full_name
+                    expression: "concat:first,last, "
+            """;
+
+        var config = _deserializer.Deserialize<MLoopConfig>(yaml);
+        var prep = config.Models["default"].Prep!;
+
+        Assert.Equal(2, prep.Count);
+        Assert.Equal("active", prep[0].Value);
+        Assert.Equal("concat:first,last, ", prep[1].Expression);
+    }
+
+    [Fact]
     public void Deserialize_PrepWithParseDatetime_ParsesCorrectly()
     {
         var yaml = """

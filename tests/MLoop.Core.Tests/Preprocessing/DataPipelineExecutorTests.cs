@@ -198,6 +198,177 @@ public class DataPipelineExecutorTests : IDisposable
         Assert.Equal(3, lines.Length); // header + 2 rows
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WithAddColumnConstant_AddsColumn()
+    {
+        var inputPath = CreateTestCsv(
+            "id,name",
+            "1,Alice",
+            "2,Bob");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "add-column", Column = "status", Value = "active" }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Contains("status", lines[0]);
+        Assert.Contains("active", lines[1]);
+        Assert.Contains("active", lines[2]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithAddColumnCopyExpression_CopiesColumn()
+    {
+        var inputPath = CreateTestCsv(
+            "id,name",
+            "1,Alice",
+            "2,Bob");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "add-column", Column = "name_backup", Expression = "copy:name" }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Contains("name_backup", lines[0]);
+        Assert.Contains("Alice", lines[1]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithParseKoreanTime_ParsesCorrectly()
+    {
+        var inputPath = CreateTestCsv(
+            "id,time_str",
+            "1,오전 9:01:18",
+            "2,오후 2:15:30");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "parse-korean-time", Column = "time_str", OutputColumn = "parsed_time" }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Contains("parsed_time", lines[0]);
+        Assert.Contains("09:01:18", lines[1]);
+        Assert.Contains("14:15:30", lines[2]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithParseExcelDate_ParsesNumericDate()
+    {
+        // Excel date 44927 = 2023-01-01
+        var inputPath = CreateTestCsv(
+            "id,date_num",
+            "1,44927",
+            "2,44928");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "parse-excel-date", Column = "date_num", Format = "yyyy-MM-dd" }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Contains("2023-01-01", lines[1]);
+        Assert.Contains("2023-01-02", lines[2]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithRolling_AddsRollingColumns()
+    {
+        var inputPath = CreateTestCsv(
+            "time,value",
+            "1,10",
+            "2,20",
+            "3,30",
+            "4,40",
+            "5,50");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new()
+            {
+                Type = "rolling",
+                Columns = ["value"],
+                WindowSize = 3,
+                Method = "mean",
+                OutputSuffix = "_avg"
+            }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Contains("value_avg", lines[0]);
+        Assert.Equal(6, lines.Length); // header + 5 rows
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithResample_AggregatesTimeWindows()
+    {
+        var inputPath = CreateTestCsv(
+            "timestamp,temperature",
+            "2024-01-01 00:00:00,20",
+            "2024-01-01 00:05:00,22",
+            "2024-01-01 00:10:00,21",
+            "2024-01-01 01:00:00,18",
+            "2024-01-01 01:05:00,19");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new()
+            {
+                Type = "resample",
+                TimeColumn = "timestamp",
+                Window = "1H",
+                Columns = ["temperature"],
+                Method = "mean"
+            }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        // Should aggregate into 2 hourly windows
+        Assert.Equal(3, lines.Length); // header + 2 windows
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithAddColumnConcat_ConcatenatesColumns()
+    {
+        var inputPath = CreateTestCsv(
+            "first,last",
+            "John,Doe",
+            "Jane,Smith");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "add-column", Column = "full_name", Expression = "concat:first,last, " }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Contains("full_name", lines[0]);
+        Assert.Contains("John Doe", lines[1]);
+        Assert.Contains("Jane Smith", lines[2]);
+    }
+
     private string CreateTestCsv(params string[] lines)
     {
         var path = Path.Combine(_tempDirectory, $"test_{Guid.NewGuid()}.csv");

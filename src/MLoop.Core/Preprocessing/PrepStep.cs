@@ -72,4 +72,29 @@ public class PrepStep
     /// Filter operator for filter-rows (gt, gte, lt, lte, eq, neq, contains, not-contains)
     /// </summary>
     public string? Operator { get; set; }
+
+    /// <summary>
+    /// Window size for rolling aggregation
+    /// </summary>
+    public int WindowSize { get; set; }
+
+    /// <summary>
+    /// Time column for resample operations
+    /// </summary>
+    public string? TimeColumn { get; set; }
+
+    /// <summary>
+    /// Window specification for resample (e.g., "5T", "1H", "1D")
+    /// </summary>
+    public string? Window { get; set; }
+
+    /// <summary>
+    /// Output suffix for rolling columns (default: "_rolling")
+    /// </summary>
+    public string? OutputSuffix { get; set; }
+
+    /// <summary>
+    /// Expression for add-column (simple expressions: concat, math, constant)
+    /// </summary>
+    public string? Expression { get; set; }
 }
