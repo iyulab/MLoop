@@ -56,14 +56,40 @@ public class DataQualityAnalyzer
 
         try
         {
-            // Use TextLoader for schema inference
+            // Read header first to get column names
+            string[] headers;
+            using (var reader = new StreamReader(csvPath))
+            using (var csv = new CsvReader(reader, _csvConfig))
+            {
+                await csv.ReadAsync();
+                csv.ReadHeader();
+                headers = csv.HeaderRecord ?? Array.Empty<string>();
+            }
+
+            if (headers.Length == 0)
+            {
+                issues.Add(new DataQualityIssue
+                {
+                    Type = DataQualityIssueType.TypeInconsistency,
+                    Severity = IssueSeverity.Critical,
+                    Description = "No columns found in CSV header",
+                    SuggestedFix = "Check CSV file format and structure"
+                });
+                return issues;
+            }
+
+            // Create TextLoader with explicit columns (all as Text for quality analysis)
+            var columns = headers.Select((h, i) =>
+                new TextLoader.Column(h, DataKind.String, i)).ToArray();
+
             var textLoader = mlContext.Data.CreateTextLoader(
                 new TextLoader.Options
                 {
                     Separators = new[] { ',' },
                     HasHeader = true,
                     AllowQuoting = true,
-                    AllowSparse = false
+                    AllowSparse = false,
+                    Columns = columns
                 });
 
             dataView = textLoader.Load(csvPath);
