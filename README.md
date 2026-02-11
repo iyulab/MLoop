@@ -110,8 +110,12 @@ mloop list                             # View experiments
 mloop promote <exp-id>                # Promote to production
 mloop evaluate <model> <test> <label> # Evaluate performance
 mloop info <data>                      # Dataset profiling with encoding detection
+mloop validate                         # Validate mloop.yaml configuration
+mloop prep run [options]               # Run preprocessing pipeline
+mloop compare <exp1> <exp2>            # Compare experiment metrics
 mloop serve                            # Start REST API server
 mloop docker                           # Generate Docker deployment files
+mloop update                           # Self-update to latest version
 ```
 
 ### Advanced Data Handling
