@@ -1,5 +1,6 @@
 using FilePrepper.Pipeline;
 using FilePrepper.Tasks.NormalizeData;
+using FilePrepper.Tasks.WindowOps;
 using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.Core.Preprocessing;
@@ -58,6 +59,11 @@ public class DataPipelineExecutor
             "extract-date" or "extract_date" => ApplyExtractDate(pipeline, step),
             "parse-datetime" or "parse_datetime" => ApplyParseDatetime(pipeline, step),
             "filter-rows" or "filter_rows" => ApplyFilterRows(pipeline, step),
+            "add-column" or "add_column" => ApplyAddColumn(pipeline, step),
+            "parse-korean-time" or "parse_korean_time" => ApplyParseKoreanTime(pipeline, step),
+            "parse-excel-date" or "parse_excel_date" => ApplyParseExcelDate(pipeline, step),
+            "rolling" => ApplyRolling(pipeline, step),
+            "resample" => ApplyResample(pipeline, step),
             _ => throw new InvalidOperationException($"Unknown prep step type: '{step.Type}'")
         };
     }
@@ -161,6 +167,97 @@ public class DataPipelineExecutor
         return pipeline.FilterRows(predicate);
     }
 
+    private DataPipeline ApplyAddColumn(DataPipeline pipeline, PrepStep step)
+    {
+        var columnName = step.Column
+            ?? throw new InvalidOperationException("add-column step requires 'column' parameter");
+
+        if (!string.IsNullOrEmpty(step.Value))
+        {
+            // Constant value
+            var constantValue = step.Value;
+            pipeline.AddColumn(columnName, _ => constantValue);
+        }
+        else if (!string.IsNullOrEmpty(step.Expression))
+        {
+            // Simple expression: "concat:col1,col2,separator" or "copy:col_name"
+            var expr = step.Expression;
+            if (expr.StartsWith("copy:"))
+            {
+                var sourceCol = expr["copy:".Length..];
+                pipeline.AddColumn(columnName, row => row.GetValueOrDefault(sourceCol, ""));
+            }
+            else if (expr.StartsWith("concat:"))
+            {
+                var parts = expr["concat:".Length..].Split(',');
+                if (parts.Length < 2)
+                    throw new InvalidOperationException("concat expression requires at least 2 column names");
+                var separator = parts.Length > 2 ? parts[^1] : "";
+                var colNames = parts.Length > 2 ? parts[..^1] : parts;
+                pipeline.AddColumn(columnName, row =>
+                    string.Join(separator, colNames.Select(c => row.GetValueOrDefault(c.Trim(), ""))));
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Unknown add-column expression: '{expr}'. Supported: 'copy:<col>', 'concat:<col1>,<col2>[,<separator>]'");
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "add-column step requires 'value' (constant) or 'expression' parameter");
+        }
+
+        return pipeline;
+    }
+
+    private DataPipeline ApplyParseKoreanTime(DataPipeline pipeline, PrepStep step)
+    {
+        var column = step.Column
+            ?? throw new InvalidOperationException("parse-korean-time step requires 'column' parameter");
+        var outputColumn = step.OutputColumn ?? $"{column}_parsed";
+
+        pipeline.ParseKoreanTime(column, outputColumn);
+        return pipeline;
+    }
+
+    private DataPipeline ApplyParseExcelDate(DataPipeline pipeline, PrepStep step)
+    {
+        var column = step.Column
+            ?? throw new InvalidOperationException("parse-excel-date step requires 'column' parameter");
+        var format = step.Format ?? "yyyy-MM-dd";
+
+        pipeline.ParseExcelDate(column, format);
+        return pipeline;
+    }
+
+    private DataPipeline ApplyRolling(DataPipeline pipeline, PrepStep step)
+    {
+        if (step.WindowSize < 1)
+            throw new InvalidOperationException("rolling step requires 'window_size' > 0");
+
+        var columns = ResolveColumns(step);
+        var method = ParseAggregationMethod(step.Method ?? "mean");
+        var suffix = step.OutputSuffix ?? "_rolling";
+
+        pipeline.Rolling(step.WindowSize, method, columns, suffix);
+        return pipeline;
+    }
+
+    private DataPipeline ApplyResample(DataPipeline pipeline, PrepStep step)
+    {
+        var timeColumn = step.TimeColumn
+            ?? throw new InvalidOperationException("resample step requires 'time_column' parameter");
+        var window = step.Window
+            ?? throw new InvalidOperationException("resample step requires 'window' parameter");
+
+        var columns = ResolveColumns(step);
+        var method = ParseAggregationMethod(step.Method ?? "mean");
+
+        return pipeline.Resample(timeColumn, window, method, columns);
+    }
+
     private string[] ResolveColumns(PrepStep step)
     {
         if (step.Columns is { Count: > 0 })
@@ -195,6 +292,20 @@ public class DataPipelineExecutor
             "z-score" or "z_score" or "zscore" or "standard" => NormalizationMethod.ZScore,
             "robust" => NormalizationMethod.Robust,
             _ => throw new InvalidOperationException($"Unknown normalization method: '{method}'")
+        };
+    }
+
+    private static AggregationMethod ParseAggregationMethod(string method)
+    {
+        return method.ToLowerInvariant() switch
+        {
+            "mean" or "average" or "avg" => AggregationMethod.Mean,
+            "min" => AggregationMethod.Min,
+            "max" => AggregationMethod.Max,
+            "sum" => AggregationMethod.Sum,
+            "count" => AggregationMethod.Count,
+            "std" or "stdev" => AggregationMethod.Std,
+            _ => throw new InvalidOperationException($"Unknown aggregation method: '{method}'")
         };
     }
 
