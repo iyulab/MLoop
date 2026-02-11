@@ -1,5 +1,6 @@
 using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Preprocessing;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
@@ -192,11 +193,7 @@ public static class PrepRunCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Pipeline failed: {ex.Message}[/]");
-            if (ex.InnerException != null)
-            {
-                AnsiConsole.MarkupLine($"[grey]Details: {ex.InnerException.Message}[/]");
-            }
+            ErrorSuggestions.DisplayError(ex, "preprocessing");
             return 1;
         }
     }

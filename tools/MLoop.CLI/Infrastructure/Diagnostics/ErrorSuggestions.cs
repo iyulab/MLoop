@@ -158,6 +158,37 @@ public static class ErrorSuggestions
             }
         }
 
+        // Promote-specific context
+        if (context == "promote")
+        {
+            if (message.Contains("not found") || message.Contains("does not exist"))
+            {
+                suggestions.Add("Run [cyan]mloop list --all[/] to see available experiments");
+                suggestions.Add("Verify the experiment ID is correct");
+            }
+        }
+
+        // Validate-specific context
+        if (context == "validate")
+        {
+            if (!suggestions.Any())
+            {
+                suggestions.Add("Check mloop.yaml syntax: [cyan]mloop validate[/]");
+                suggestions.Add("Validate YAML format at https://www.yamllint.com/");
+            }
+        }
+
+        // Preprocessing-specific context
+        if (context == "preprocessing")
+        {
+            if (!suggestions.Any())
+            {
+                suggestions.Add("Check prep step configuration in mloop.yaml");
+                suggestions.Add("Run [cyan]mloop prep run --dry-run[/] to preview pipeline");
+                suggestions.Add("Verify input CSV exists and is well-formatted");
+            }
+        }
+
         // Fallback generic suggestions
         if (!suggestions.Any())
         {

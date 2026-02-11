@@ -1,5 +1,6 @@
 using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -180,15 +181,7 @@ public static class ListCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.Markup("[red]Error:[/] ");
-            AnsiConsole.WriteLine(ex.Message);
-
-            if (ex.InnerException != null)
-            {
-                AnsiConsole.Markup("[grey]Details:[/] ");
-                AnsiConsole.WriteLine(ex.InnerException.Message);
-            }
-
+            ErrorSuggestions.DisplayError(ex, "list");
             return 1;
         }
     }
