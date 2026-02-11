@@ -552,30 +552,34 @@ public static class PredictCommand
     {
         try
         {
-            var lines = File.ReadLines(outputPath).ToList();
-            if (lines.Count < 2) return;
-
-            var headers = CsvFieldParser.ParseFields(lines[0]);
-
-            // Find PredictedLabel column, or use first column
-            var predIdx = Array.FindIndex(headers, h =>
-                h.Equals("PredictedLabel", StringComparison.OrdinalIgnoreCase));
-            if (predIdx < 0) predIdx = 0;
-
-            // Collect values
+            // Stream file instead of loading entirely into memory
             var values = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 1; i < lines.Count; i++)
+            string[]? headers = null;
+            int predIdx = 0;
+
+            foreach (var line in File.ReadLines(outputPath))
             {
-                var fields = CsvFieldParser.ParseFields(lines[i]);
+                if (headers == null)
+                {
+                    headers = CsvFieldParser.ParseFields(line);
+                    predIdx = Array.FindIndex(headers, h =>
+                        h.Equals("PredictedLabel", StringComparison.OrdinalIgnoreCase));
+                    if (predIdx < 0) predIdx = 0;
+                    continue;
+                }
+
+                var fields = CsvFieldParser.ParseFields(line);
                 if (predIdx < fields.Length)
                 {
                     var val = fields[predIdx].Trim();
                     values[val] = values.GetValueOrDefault(val) + 1;
                 }
+
+                // Early exit if too many unique values (regression output)
+                if (values.Count > 50) return;
             }
 
-            // Only show distribution for categorical predictions (reasonable number of unique values)
-            if (values.Count < 2 || values.Count > 50) return;
+            if (headers == null || values.Count < 2) return;
 
             AnsiConsole.Write(new Rule($"[blue]Prediction Distribution ({headers[predIdx]})[/]").LeftJustified());
             AnsiConsole.WriteLine();
