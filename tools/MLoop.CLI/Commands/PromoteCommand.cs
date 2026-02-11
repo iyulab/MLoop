@@ -1,5 +1,6 @@
 using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 
@@ -169,23 +170,9 @@ public static class PromoteCommand
 
             return 0;
         }
-        catch (FileNotFoundException ex)
-        {
-            AnsiConsole.Markup("[red]Error:[/] ");
-            AnsiConsole.WriteLine(ex.Message);
-            return 1;
-        }
         catch (Exception ex)
         {
-            AnsiConsole.Markup("[red]Error:[/] ");
-            AnsiConsole.WriteLine(ex.Message);
-
-            if (ex.InnerException != null)
-            {
-                AnsiConsole.Markup("[grey]Details:[/] ");
-                AnsiConsole.WriteLine(ex.InnerException.Message);
-            }
-
+            ErrorSuggestions.DisplayError(ex, "promote");
             return 1;
         }
     }

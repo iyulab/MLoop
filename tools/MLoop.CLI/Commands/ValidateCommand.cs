@@ -2,6 +2,7 @@ using System.CommandLine;
 using CsvHelper;
 using CsvHelper.Configuration;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 
@@ -161,8 +162,7 @@ public static class ValidateCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.Markup("[red]Error:[/] ");
-            AnsiConsole.WriteLine(ex.Message);
+            ErrorSuggestions.DisplayError(ex, "validate");
             return 1;
         }
     }
