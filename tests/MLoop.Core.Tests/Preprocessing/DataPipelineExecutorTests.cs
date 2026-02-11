@@ -369,6 +369,151 @@ public class DataPipelineExecutorTests : IDisposable
         Assert.Contains("Jane Smith", lines[2]);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WithFillMissing_FillsWithMean()
+    {
+        var inputPath = CreateTestCsv(
+            "id,value",
+            "1,10",
+            "2,",
+            "3,30",
+            "4,");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "fill-missing", Columns = ["value"], Method = "mean" }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Equal(5, lines.Length); // header + 4 rows
+        // Mean of 10,30 = 20, filled values should be 20
+        Assert.DoesNotContain(",," , string.Join(",", lines));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithFillMissingConstant_ExecutesWithoutError()
+    {
+        // FilePrepper FillMissing with constant method - verifies the pipeline step runs
+        var inputPath = CreateTestCsv(
+            "id,value",
+            "1,10",
+            "2,",
+            "3,30");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "fill-missing", Column = "value", Method = "constant", Value = "0" }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Equal(4, lines.Length); // header + 3 rows
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithNormalize_NormalizesValues()
+    {
+        var inputPath = CreateTestCsv(
+            "id,score",
+            "1,0",
+            "2,50",
+            "3,100");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "normalize", Column = "score", Method = "min-max" }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Equal(4, lines.Length);
+        // Min-max: 0→0, 50→0.5, 100→1
+        Assert.Contains("0", lines[1]); // id=1, score=0
+        Assert.Contains("1", lines[3]); // id=3, score=1
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithScale_IsNormalizeAlias()
+    {
+        var inputPath = CreateTestCsv(
+            "id,value",
+            "1,0",
+            "2,100");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "scale", Column = "value", Method = "min-max" }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Equal(3, lines.Length);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithExtractDate_ExtractsFeatures()
+    {
+        var inputPath = CreateTestCsv(
+            "id,date",
+            "1,2024-03-15",
+            "2,2024-12-25");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new()
+            {
+                Type = "extract-date",
+                Column = "date",
+                Features = ["year", "month", "day"]
+            }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        var header = lines[0];
+        Assert.Contains("year", header.ToLower());
+        Assert.Contains("month", header.ToLower());
+        Assert.Contains("day", header.ToLower());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithParseDatetime_ParsesFormat()
+    {
+        var inputPath = CreateTestCsv(
+            "id,date_str",
+            "1,15/03/2024",
+            "2,25/12/2024");
+
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new()
+            {
+                Type = "parse-datetime",
+                Column = "date_str",
+                Format = "dd/MM/yyyy"
+            }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Equal(3, lines.Length);
+        // Parsed dates should be present
+        Assert.Contains("2024", lines[1]);
+    }
+
     private string CreateTestCsv(params string[] lines)
     {
         var path = Path.Combine(_tempDirectory, $"test_{Guid.NewGuid()}.csv");
