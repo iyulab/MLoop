@@ -5,6 +5,7 @@ using MLoop.Core.Contracts;
 using MLoop.Core.Models;
 using MLoop.Core.Scripting;
 using MLoop.Extensibility;
+using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.Core.AutoML;
@@ -40,75 +41,84 @@ public class AutoMLRunner
         // Split data
         var (trainSet, testSet) = _dataLoader.SplitData(dataView, config.TestSplit);
 
-        // NOTE: Phase 1 (Hooks & Metrics) - Disabled for Phase 0 (Preprocessing)
-        // TODO: Re-enable when implementing Phase 1
+        // Discover hooks (zero-overhead if .mloop/scripts/hooks/ doesn't exist)
+        var hooks = await _scriptDiscovery.DiscoverHooksAsync();
 
-        //// Discover hooks and metrics (zero-overhead if not present)
-        //var hooks = await _scriptDiscovery.DiscoverHooksAsync();
-        //var customMetrics = await _scriptDiscovery.DiscoverMetricsAsync();
+        // Execute pre-train hooks
+        if (hooks.Count > 0)
+        {
+            var preTrainContext = new HookContext
+            {
+                HookType = HookType.PreTrain,
+                HookName = "pre-train",
+                MLContext = _mlContext,
+                DataView = trainSet,
+                ProjectRoot = _projectRoot!,
+                Logger = _logger,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["LabelColumn"] = config.LabelColumn,
+                    ["TaskType"] = config.Task,
+                    ["TimeLimitSeconds"] = config.TimeLimitSeconds
+                }
+            };
 
-        //// Execute pre-train hooks
-        //var preTrainContext = new HookContext
-        //{
-        //    MLContext = _mlContext,
-        //    DataView = trainSet,
-        //    Logger = _logger
-        //};
-        //preTrainContext.InitializeMetadata(new Dictionary<string, object>
-        //{
-        //    ["ExperimentId"] = Guid.NewGuid().ToString(),
-        //    ["LabelColumn"] = config.LabelColumn,
-        //    ["Task"] = config.Task,
-        //    ["TimeLimitSeconds"] = config.TimeLimitSeconds
-        //});
-
-        //foreach (var hook in hooks)
-        //{
-        //    var hookResult = await hook.ExecuteAsync(preTrainContext);
-        //    if (!hookResult.ShouldContinue)
-        //    {
-        //        throw new InvalidOperationException($"Hook '{hook.Name}' aborted training: {hookResult.Message}");
-        //    }
-        //}
-
-        // Phase 0: No hooks/metrics yet - use empty lists
-        var customMetrics = new List<object>(); // Will be List<IMLoopMetric> in Phase 1
+            foreach (var hook in hooks)
+            {
+                var hookResult = await hook.ExecuteAsync(preTrainContext);
+                if (hookResult.Action == HookAction.Abort)
+                {
+                    throw new InvalidOperationException(
+                        $"Hook '{hook.Name}' aborted training: {hookResult.Message}");
+                }
+            }
+        }
 
         // Run AutoML based on task type
         var result = config.Task.ToLowerInvariant() switch
         {
             "binary-classification" => await RunBinaryClassificationAsync(
-                trainSet, testSet, config, customMetrics, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken),
             "multiclass-classification" => await RunMulticlassClassificationAsync(
-                trainSet, testSet, config, customMetrics, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken),
             "regression" => await RunRegressionAsync(
-                trainSet, testSet, config, customMetrics, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
-        // NOTE: Phase 1 (Hooks & Metrics) - Disabled for Phase 0 (Preprocessing)
-        // TODO: Re-enable when implementing Phase 1
+        // Execute post-train hooks
+        if (hooks.Count > 0)
+        {
+            var postTrainContext = new HookContext
+            {
+                HookType = HookType.PostTrain,
+                HookName = "post-train",
+                MLContext = _mlContext,
+                DataView = testSet,
+                Model = result.Model,
+                ProjectRoot = _projectRoot!,
+                Logger = _logger,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["LabelColumn"] = config.LabelColumn,
+                    ["TaskType"] = config.Task,
+                    ["BestTrainer"] = result.BestTrainer,
+                    ["Metrics"] = result.Metrics
+                }
+            };
 
-        //// Execute post-train hooks
-        //var postTrainContext = new HookContext
-        //{
-        //    MLContext = _mlContext,
-        //    DataView = testSet,
-        //    Logger = _logger
-        //};
-        //postTrainContext.InitializeMetadata(new Dictionary<string, object>
-        //{
-        //    ["ExperimentId"] = preTrainContext.GetMetadata<string>("ExperimentId")!,
-        //    ["LabelColumn"] = config.LabelColumn,
-        //    ["Task"] = config.Task,
-        //    ["BestTrainer"] = result.BestTrainer,
-        //    ["Metrics"] = result.Metrics
-        //});
-
-        //foreach (var hook in hooks)
-        //{
-        //    await hook.ExecuteAsync(postTrainContext);
-        //}
+            foreach (var hook in hooks)
+            {
+                try
+                {
+                    await hook.ExecuteAsync(postTrainContext);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Post-train hook '{hook.Name}' failed: {ex.Message}");
+                }
+            }
+        }
 
         return result;
     }
@@ -117,7 +127,6 @@ public class AutoMLRunner
         IDataView trainSet,
         IDataView testSet,
         TrainingConfig config,
-        List<object> customMetrics,  // Phase 0: Changed from List<IMLoopMetric>
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -139,7 +148,6 @@ public class AutoMLRunner
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
         var metrics = _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn);
 
-        // Evaluate custom metrics
         var metricsDict = new Dictionary<string, double>
         {
             ["accuracy"] = metrics.Accuracy,
@@ -148,33 +156,6 @@ public class AutoMLRunner
             ["precision"] = metrics.PositivePrecision,
             ["recall"] = metrics.PositiveRecall
         };
-
-        // NOTE: Phase 1 (Custom Metrics) - Disabled for Phase 0
-        // TODO: Re-enable when implementing Phase 1
-        //if (customMetrics.Count > 0)
-        //{
-        //    var metricContext = new MetricContext
-        //    {
-        //        MLContext = _mlContext,
-        //        Predictions = predictions,
-        //        LabelColumn = config.LabelColumn,
-        //        ScoreColumn = "Score",
-        //        Logger = _logger
-        //    };
-
-        //    foreach (var customMetric in customMetrics)
-        //    {
-        //        try
-        //        {
-        //            var value = await customMetric.CalculateAsync(metricContext);
-        //            metricsDict[$"custom_{customMetric.Name.ToLowerInvariant().Replace(" ", "_")}"] = value;
-        //        }
-        //        catch (Exception ex)
-        //        {
-        //            _logger.Warning($"Custom metric '{customMetric.Name}' failed: {ex.Message}");
-        //        }
-        //    }
-        //}
 
         return new AutoMLResult
         {
@@ -189,7 +170,6 @@ public class AutoMLRunner
         IDataView trainSet,
         IDataView testSet,
         TrainingConfig config,
-        List<object> customMetrics,  // Phase 0: Changed from List<IMLoopMetric>
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -211,40 +191,12 @@ public class AutoMLRunner
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
         var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, config.LabelColumn);
 
-        // Evaluate custom metrics
         var metricsDict = new Dictionary<string, double>
         {
             ["macro_accuracy"] = metrics.MacroAccuracy,
             ["micro_accuracy"] = metrics.MicroAccuracy,
             ["log_loss"] = metrics.LogLoss
         };
-
-        // NOTE: Phase 1 (Custom Metrics) - Disabled for Phase 0
-        // TODO: Re-enable when implementing Phase 1
-        //if (customMetrics.Count > 0)
-        //{
-        //    var metricContext = new MetricContext
-        //    {
-        //        MLContext = _mlContext,
-        //        Predictions = predictions,
-        //        LabelColumn = config.LabelColumn,
-        //        ScoreColumn = "Score",
-        //        Logger = _logger
-        //    };
-
-        //    foreach (var customMetric in customMetrics)
-        //    {
-        //        try
-        //        {
-        //            var value = await customMetric.CalculateAsync(metricContext);
-        //            metricsDict[$"custom_{customMetric.Name.ToLowerInvariant().Replace(" ", "_")}"] = value;
-        //        }
-        //        catch (Exception ex)
-        //        {
-        //            _logger.Warning($"Custom metric '{customMetric.Name}' failed: {ex.Message}");
-        //        }
-        //    }
-        //}
 
         return new AutoMLResult
         {
@@ -259,7 +211,6 @@ public class AutoMLRunner
         IDataView trainSet,
         IDataView testSet,
         TrainingConfig config,
-        List<object> customMetrics,  // Phase 0: Changed from List<IMLoopMetric>
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -281,7 +232,6 @@ public class AutoMLRunner
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
         var metrics = _mlContext.Regression.Evaluate(predictions, config.LabelColumn);
 
-        // Evaluate custom metrics
         var metricsDict = new Dictionary<string, double>
         {
             ["r_squared"] = metrics.RSquared,
@@ -289,33 +239,6 @@ public class AutoMLRunner
             ["mae"] = metrics.MeanAbsoluteError,
             ["mse"] = metrics.MeanSquaredError
         };
-
-        // NOTE: Phase 1 (Custom Metrics) - Disabled for Phase 0
-        // TODO: Re-enable when implementing Phase 1
-        //if (customMetrics.Count > 0)
-        //{
-        //    var metricContext = new MetricContext
-        //    {
-        //        MLContext = _mlContext,
-        //        Predictions = predictions,
-        //        LabelColumn = config.LabelColumn,
-        //        ScoreColumn = "Score",
-        //        Logger = _logger
-        //    };
-
-        //    foreach (var customMetric in customMetrics)
-        //    {
-        //        try
-        //        {
-        //            var value = await customMetric.CalculateAsync(metricContext);
-        //            metricsDict[$"custom_{customMetric.Name.ToLowerInvariant().Replace(" ", "_")}"] = value;
-        //        }
-        //        catch (Exception ex)
-        //        {
-        //            _logger.Warning($"Custom metric '{customMetric.Name}' failed: {ex.Message}");
-        //        }
-        //    }
-        //}
 
         return new AutoMLResult
         {

@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Diagnostics;
 using MLoop.CLI.Infrastructure;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 
@@ -156,8 +157,8 @@ public class ServeCommand : Command
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]❌ Failed to start server: {ex.Message}[/]");
-            throw;
+            ErrorSuggestions.DisplayError(ex, "serve");
+            return;
         }
     }
 

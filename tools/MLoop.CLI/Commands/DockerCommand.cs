@@ -1,4 +1,5 @@
 using System.CommandLine;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 
@@ -107,8 +108,7 @@ public static class DockerCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.Markup("[red]Error:[/] ");
-            AnsiConsole.WriteLine(ex.Message);
+            ErrorSuggestions.DisplayError(ex, "docker");
             return 1;
         }
     }

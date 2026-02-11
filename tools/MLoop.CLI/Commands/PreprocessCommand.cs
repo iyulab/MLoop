@@ -2,6 +2,7 @@ using System.CommandLine;
 using Microsoft.Data.Analysis;
 using Microsoft.Extensions.Logging;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Preprocessing;
 using MLoop.Core.Preprocessing.Incremental;
@@ -123,15 +124,7 @@ public static class PreprocessCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.Markup("[red]Error:[/] ");
-            AnsiConsole.WriteLine(ex.Message);
-
-            if (ex.InnerException != null)
-            {
-                AnsiConsole.Markup("[grey]Details:[/] ");
-                AnsiConsole.WriteLine(ex.InnerException.Message);
-            }
-
+            ErrorSuggestions.DisplayError(ex, "preprocessing");
             return 1;
         }
     }

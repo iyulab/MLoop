@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
@@ -185,7 +186,7 @@ public static class FeedbackCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            ErrorSuggestions.DisplayError(ex, "feedback");
             return 1;
         }
     }
@@ -237,7 +238,7 @@ public static class FeedbackCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            ErrorSuggestions.DisplayError(ex, "feedback");
             return 1;
         }
     }
@@ -287,7 +288,7 @@ public static class FeedbackCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            ErrorSuggestions.DisplayError(ex, "feedback");
             return 1;
         }
     }

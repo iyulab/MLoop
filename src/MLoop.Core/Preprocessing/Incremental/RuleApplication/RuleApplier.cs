@@ -160,9 +160,13 @@ public sealed class RuleApplier : IRuleApplier
     public bool ValidateRule(DataFrame data, PreprocessingRule rule)
     {
         // Check all required columns exist
+        var existingColumns = new HashSet<string>(
+            data.Columns.Select(c => c.Name),
+            StringComparer.OrdinalIgnoreCase);
+
         foreach (var columnName in rule.ColumnNames)
         {
-            if (data.Columns[columnName] == null)
+            if (!existingColumns.Contains(columnName))
             {
                 _logger.LogWarning("Validation failed: Column {ColumnName} not found in DataFrame", columnName);
                 return false;

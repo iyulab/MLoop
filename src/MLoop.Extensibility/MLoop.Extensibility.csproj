@@ -8,7 +8,6 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>MLoop.Extensibility</PackageId>
-    <Version>0.2.0</Version>
     <Authors>MLoop Contributors</Authors>
     <Description>Extensibility interfaces for MLoop - preprocessing scripts, hooks, and custom metrics</Description>
     <PackageTags>mlops;automl;mlnet;extensibility;preprocessing</PackageTags>

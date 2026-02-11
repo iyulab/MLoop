@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
@@ -135,7 +136,7 @@ public static class LogsCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            ErrorSuggestions.DisplayError(ex, "logs");
             return 1;
         }
     }

@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Text.Json;
 using Microsoft.ML;
 using MLoop.CLI.Infrastructure;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Pipeline;
 using Spectre.Console;
@@ -151,8 +152,8 @@ public class PipelineCommand : Command
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]❌ Pipeline execution failed: {ex.Message}[/]");
-            throw;
+            ErrorSuggestions.DisplayError(ex, "pipeline");
+            return;
         }
     }
 

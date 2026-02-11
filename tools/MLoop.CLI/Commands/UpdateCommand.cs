@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Diagnostics;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.Update;
 using Spectre.Console;
 
@@ -139,7 +140,7 @@ public static class UpdateCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Update failed: {ex.Message}[/]");
+            ErrorSuggestions.DisplayError(ex, "update");
 
             // Cleanup temp file
             if (File.Exists(tempPath))

@@ -20,6 +20,10 @@
     <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="MLoop.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>

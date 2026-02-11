@@ -104,6 +104,9 @@ internal static class ColumnTypeHelper
         int totalNonNull = 0;
 
         var sampleSize = Math.Min(100, (int)column.Length);
+        if (sampleSize == 0)
+            return InferredType.Unknown;
+
         var step = column.Length / sampleSize;
 
         for (long i = 0; i < column.Length; i += step)

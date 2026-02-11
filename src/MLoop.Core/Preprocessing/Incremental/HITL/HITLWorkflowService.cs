@@ -55,6 +55,7 @@ public sealed class HITLWorkflowService
         _logger.LogInformation("Generated {QuestionCount} HITL questions", questions.Count);
 
         var decisions = new List<HITLDecisionLog>();
+        var sessionId = Guid.NewGuid().ToString();
 
         // Process each question
         foreach (var question in questions)
@@ -85,7 +86,7 @@ public sealed class HITLWorkflowService
                 var decisionLog = new HITLDecisionLog
                 {
                     Id = Guid.NewGuid().ToString(),
-                    SessionId = Guid.NewGuid().ToString(), // TODO: Use actual session ID
+                    SessionId = sessionId,
                     Question = question,
                     Answer = answer,
                     ApprovedRule = approvedRule,
@@ -157,10 +158,11 @@ public sealed class HITLWorkflowService
         approvedRule.UserFeedback = $"{selectedAction}: {selectedOption?.Label ?? "Unknown"}";
 
         // Create decision log
+        var sessionId = Guid.NewGuid().ToString();
         var decisionLog = new HITLDecisionLog
         {
             Id = Guid.NewGuid().ToString(),
-            SessionId = Guid.NewGuid().ToString(), // TODO: Use actual session ID
+            SessionId = sessionId,
             Question = question,
             Answer = answer,
             ApprovedRule = approvedRule,

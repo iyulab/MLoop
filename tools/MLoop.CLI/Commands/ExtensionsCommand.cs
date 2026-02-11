@@ -1,11 +1,11 @@
 using System.CommandLine;
-using MLoop.Core.Scripting;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
 
 /// <summary>
-/// mloop extensions - Lists all discovered extensibility scripts (hooks and metrics)
+/// mloop extensions - Lists all discovered extensibility scripts (hooks and metrics).
+/// Phase 1 feature — currently shows placeholder message.
 /// </summary>
 public static class ExtensionsCommand
 {
@@ -22,117 +22,14 @@ public static class ExtensionsCommand
         return command;
     }
 
-    private static async Task<int> ExecuteListAsync()
+    private static Task<int> ExecuteListAsync()
     {
-        // NOTE: Phase 1 (Hooks & Metrics) - Disabled for Phase 0 (Preprocessing)
-        // TODO: Re-enable when implementing Phase 1
-
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[yellow]⚠️  This command is not yet available[/]");
+        AnsiConsole.MarkupLine("[yellow]This command is not yet available[/]");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[grey]The 'extensions' command lists hooks and metrics (Phase 1 features).[/]");
-        AnsiConsole.MarkupLine("[grey]Currently implementing Phase 0 (preprocessing scripts).[/]");
         AnsiConsole.MarkupLine("[grey]This command will be enabled in a future release.[/]");
         AnsiConsole.WriteLine();
-        return 0;
-
-#if false
-        try
-        {
-            var projectRoot = Directory.GetCurrentDirectory();
-            var discovery = new ScriptDiscovery(projectRoot);
-
-            AnsiConsole.MarkupLine("[blue]MLoop Extensibility Scripts[/]");
-            AnsiConsole.WriteLine();
-
-            // Check if extensibility is available
-            if (!discovery.IsExtensibilityAvailable())
-            {
-                AnsiConsole.MarkupLine("[yellow]ℹ️  No extensibility scripts found[/]");
-                AnsiConsole.MarkupLine("[grey]   Scripts directory: .mloop/scripts/[/]");
-                AnsiConsole.MarkupLine("[grey]   To add extensions, place .cs files in:[/]");
-                AnsiConsole.MarkupLine("[grey]   - .mloop/scripts/hooks/[/]");
-                AnsiConsole.MarkupLine("[grey]   - .mloop/scripts/metrics/[/]");
-                return 0;
-            }
-
-            // Discover hooks
-            AnsiConsole.MarkupLine("[cyan]📋 Hooks[/]");
-            var hooks = await discovery.DiscoverHooksAsync();
-
-            if (hooks.Count == 0)
-            {
-                AnsiConsole.MarkupLine("  [grey]No hooks found[/]");
-            }
-            else
-            {
-                var hookTable = new Table();
-                hookTable.Border(TableBorder.Rounded);
-                hookTable.AddColumn("[green]Name[/]");
-                hookTable.AddColumn("[cyan]Type[/]");
-
-                foreach (var hook in hooks)
-                {
-                    hookTable.AddRow(
-                        $"[green]{hook.Name}[/]",
-                        $"[cyan]{hook.GetType().Name}[/]"
-                    );
-                }
-
-                AnsiConsole.Write(hookTable);
-                AnsiConsole.MarkupLine($"  [grey]Total: {hooks.Count} hook(s)[/]");
-            }
-
-            AnsiConsole.WriteLine();
-
-            // Discover metrics
-            AnsiConsole.MarkupLine("[cyan]📊 Metrics[/]");
-            var metrics = await discovery.DiscoverMetricsAsync();
-
-            if (metrics.Count == 0)
-            {
-                AnsiConsole.MarkupLine("  [grey]No metrics found[/]");
-            }
-            else
-            {
-                var metricTable = new Table();
-                metricTable.Border(TableBorder.Rounded);
-                metricTable.AddColumn("[green]Name[/]");
-                metricTable.AddColumn("[cyan]Type[/]");
-                metricTable.AddColumn("[yellow]Direction[/]");
-
-                foreach (var metric in metrics)
-                {
-                    var direction = metric.HigherIsBetter ? "↑ Higher is better" : "↓ Lower is better";
-                    metricTable.AddRow(
-                        $"[green]{metric.Name}[/]",
-                        $"[cyan]{metric.GetType().Name}[/]",
-                        $"[yellow]{direction}[/]"
-                    );
-                }
-
-                AnsiConsole.Write(metricTable);
-                AnsiConsole.MarkupLine($"  [grey]Total: {metrics.Count} metric(s)[/]");
-            }
-
-            AnsiConsole.WriteLine();
-
-            // Summary
-            var totalExtensions = hooks.Count + metrics.Count;
-            if (totalExtensions > 0)
-            {
-                AnsiConsole.MarkupLine($"[green]✓[/] Found {totalExtensions} extension(s) total");
-                AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[grey]Use 'mloop validate' to check for compilation errors[/]");
-            }
-
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
-            return 1;
-        }
-#endif
+        return Task.FromResult(0);
     }
 }

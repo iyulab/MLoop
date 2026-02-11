@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.DataStore.Services;
 using MLoop.Ops.Interfaces;
@@ -113,7 +114,7 @@ public static class TriggerCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            ErrorSuggestions.DisplayError(ex, "trigger");
             return 1;
         }
     }
