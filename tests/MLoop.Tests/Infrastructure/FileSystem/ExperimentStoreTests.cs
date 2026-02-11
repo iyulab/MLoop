@@ -232,6 +232,44 @@ public class ExperimentStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ListAsync_WithResult_IncludesTrainerAndMetricName()
+    {
+        // Arrange
+        var experimentData = new ExperimentData
+        {
+            ModelName = DefaultModelName,
+            ExperimentId = "exp-001",
+            Timestamp = DateTime.UtcNow,
+            Status = "Completed",
+            Task = "regression",
+            Config = new ExperimentConfig
+            {
+                DataFile = "test.csv",
+                LabelColumn = "label",
+                TimeLimitSeconds = 120,
+                Metric = "RSquared",
+                TestSplit = 0.2
+            },
+            Result = new ExperimentResult
+            {
+                BestTrainer = "FastForestRegression",
+                TrainingTimeSeconds = 45.3
+            },
+            Metrics = new Dictionary<string, double> { ["RSquared"] = 0.92 }
+        };
+        await _experimentStore.SaveAsync(DefaultModelName, experimentData, CancellationToken.None);
+
+        // Act
+        var experiments = await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None);
+        var experiment = experiments.First();
+
+        // Assert
+        Assert.Equal("FastForestRegression", experiment.BestTrainer);
+        Assert.Equal("RSquared", experiment.MetricName);
+        Assert.Equal(45.3, experiment.TrainingTimeSeconds);
+    }
+
+    [Fact]
     public void GetExperimentPath_ReturnsCorrectPath()
     {
         // Arrange

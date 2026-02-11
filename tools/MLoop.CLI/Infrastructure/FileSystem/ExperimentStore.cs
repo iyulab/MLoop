@@ -259,7 +259,10 @@ public class ExperimentStore : IExperimentStore
             Timestamp = experiment.Timestamp,
             Status = experiment.Status,
             BestMetric = experiment.Metrics?.Values.FirstOrDefault(),
-            LabelColumn = experiment.Config.LabelColumn
+            LabelColumn = experiment.Config.LabelColumn,
+            BestTrainer = experiment.Result?.BestTrainer,
+            MetricName = experiment.Config.Metric,
+            TrainingTimeSeconds = experiment.Result?.TrainingTimeSeconds
         });
 
         index.Experiments = experiments;
