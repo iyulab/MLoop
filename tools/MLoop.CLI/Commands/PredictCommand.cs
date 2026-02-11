@@ -6,8 +6,10 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Preprocessing;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
+using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
 using static MLoop.CLI.Infrastructure.ML.CategoricalMapper;
 
@@ -301,6 +303,35 @@ public static class PredictCommand
             AnsiConsole.MarkupLine("[green]>[/] Schema validation passed");
             AnsiConsole.WriteLine();
 
+            // Apply YAML-defined preprocessing pipeline (same as training)
+            try
+            {
+                var configLoader = new ConfigLoader(fileSystem, projectDiscovery);
+                var config = await configLoader.LoadUserConfigAsync();
+
+                if (config.Models.TryGetValue(resolvedModelName, out var modelDef) &&
+                    modelDef.Prep is { Count: > 0 })
+                {
+                    AnsiConsole.MarkupLine($"[green]>[/] Applying {modelDef.Prep.Count} preprocessing step(s)...");
+
+                    var prepLogger = new PredictPrepLogger();
+                    var pipelineExecutor = new DataPipelineExecutor(prepLogger);
+                    var prepOutputPath = Path.Combine(
+                        Path.GetDirectoryName(resolvedDataFile)!,
+                        $"{Path.GetFileNameWithoutExtension(resolvedDataFile)}_prep{Path.GetExtension(resolvedDataFile)}");
+
+                    resolvedDataFile = await pipelineExecutor.ExecuteAsync(
+                        resolvedDataFile, modelDef.Prep, prepOutputPath);
+
+                    AnsiConsole.MarkupLine("[green]>[/] Preprocessing complete");
+                    AnsiConsole.WriteLine();
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Not in a project or no config — skip preprocessing
+            }
+
             // Parse unknown value strategy
             var strategy = unknownStrategy.ToLowerInvariant() switch
             {
@@ -475,5 +506,14 @@ public static class PredictCommand
         {
             await logger.LogBatchAsync(modelName, experimentId, entries);
         }
+    }
+
+    private class PredictPrepLogger : ILogger
+    {
+        public void Debug(string message) { }
+        public void Info(string message) => AnsiConsole.MarkupLine($"[grey]  {Markup.Escape(message)}[/]");
+        public void Warning(string message) => AnsiConsole.MarkupLine($"[yellow]  {Markup.Escape(message)}[/]");
+        public void Error(string message) => AnsiConsole.MarkupLine($"[red]  {Markup.Escape(message)}[/]");
+        public void Error(string message, Exception ex) => AnsiConsole.MarkupLine($"[red]  {Markup.Escape(message)}: {Markup.Escape(ex.Message)}[/]");
     }
 }
