@@ -395,6 +395,10 @@ public static class PredictCommand
             }
             AnsiConsole.WriteLine();
 
+            // Show prediction preview and distribution
+            DisplayPredictionPreview(resolvedOutputPath);
+            DisplayPredictionDistribution(resolvedOutputPath);
+
             return 0;
         }
         catch (Exception ex)
@@ -505,6 +509,91 @@ public static class PredictCommand
         if (entries.Count > 0)
         {
             await logger.LogBatchAsync(modelName, experimentId, entries);
+        }
+    }
+
+    private static void DisplayPredictionPreview(string outputPath)
+    {
+        try
+        {
+            var lines = File.ReadLines(outputPath).Take(6).ToList(); // header + 5 rows
+            if (lines.Count < 2) return;
+
+            var headers = CsvFieldParser.ParseFields(lines[0]);
+
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .BorderColor(Color.Grey)
+                .Title("[bold]Prediction Preview (first 5 rows)[/]");
+
+            foreach (var header in headers)
+            {
+                table.AddColumn(new TableColumn($"[bold]{Markup.Escape(header)}[/]"));
+            }
+
+            for (int i = 1; i < lines.Count; i++)
+            {
+                var fields = CsvFieldParser.ParseFields(lines[i]);
+                var cells = headers.Select((_, idx) =>
+                    idx < fields.Length ? Markup.Escape(fields[idx]) : "[grey]-[/]").ToArray();
+                table.AddRow(cells);
+            }
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
+        }
+        catch
+        {
+            // Non-critical — skip preview on error
+        }
+    }
+
+    private static void DisplayPredictionDistribution(string outputPath)
+    {
+        try
+        {
+            var lines = File.ReadLines(outputPath).ToList();
+            if (lines.Count < 2) return;
+
+            var headers = CsvFieldParser.ParseFields(lines[0]);
+
+            // Find PredictedLabel column, or use first column
+            var predIdx = Array.FindIndex(headers, h =>
+                h.Equals("PredictedLabel", StringComparison.OrdinalIgnoreCase));
+            if (predIdx < 0) predIdx = 0;
+
+            // Collect values
+            var values = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 1; i < lines.Count; i++)
+            {
+                var fields = CsvFieldParser.ParseFields(lines[i]);
+                if (predIdx < fields.Length)
+                {
+                    var val = fields[predIdx].Trim();
+                    values[val] = values.GetValueOrDefault(val) + 1;
+                }
+            }
+
+            // Only show distribution for categorical predictions (reasonable number of unique values)
+            if (values.Count < 2 || values.Count > 50) return;
+
+            AnsiConsole.Write(new Rule($"[blue]Prediction Distribution ({headers[predIdx]})[/]").LeftJustified());
+            AnsiConsole.WriteLine();
+
+            var total = values.Values.Sum();
+            foreach (var (label, count) in values.OrderByDescending(kv => kv.Value))
+            {
+                var pct = (double)count / total * 100;
+                var barWidth = (int)(pct / 100 * 30);
+                var bar = new string('#', Math.Max(barWidth, 1));
+                AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape(label),-20}[/] [yellow]{bar}[/] {count} ({pct:F1}%)");
+            }
+
+            AnsiConsole.WriteLine();
+        }
+        catch
+        {
+            // Non-critical — skip distribution on error
         }
     }
 
