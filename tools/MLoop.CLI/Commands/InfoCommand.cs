@@ -141,19 +141,25 @@ public static class InfoCommand
             // Use converted path for all operations
             dataFile = convertedPath;
 
-            // Read file info
+            // Read file info and count lines in a single pass
             var fileInfo = new FileInfo(dataFile);
 
-            // Count lines with UTF-8 encoding
             int lineCount = 0;
+            string? firstLine = null;
             using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {
+                firstLine = reader.ReadLine(); // Read header
                 while (reader.ReadLine() != null)
                 {
                     lineCount++;
                 }
             }
-            lineCount--; // Exclude header
+
+            if (string.IsNullOrEmpty(firstLine))
+            {
+                AnsiConsole.MarkupLine("[red]File is empty[/]");
+                return;
+            }
 
             AnsiConsole.Write(new Rule("[yellow]File Information[/]").LeftJustified());
             AnsiConsole.WriteLine();
@@ -168,19 +174,6 @@ public static class InfoCommand
 
             AnsiConsole.Write(fileTable);
             AnsiConsole.WriteLine();
-
-            // Infer columns with UTF-8 encoding
-            string? firstLine;
-            using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
-            {
-                firstLine = reader.ReadLine();
-            }
-
-            if (string.IsNullOrEmpty(firstLine))
-            {
-                AnsiConsole.MarkupLine("[red]File is empty[/]");
-                return;
-            }
 
             var columns = MLoop.CLI.Infrastructure.ML.CsvFieldParser.ParseFields(firstLine);
 
