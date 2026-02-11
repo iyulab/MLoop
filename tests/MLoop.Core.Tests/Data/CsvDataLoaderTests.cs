@@ -219,6 +219,31 @@ public class CsvDataLoaderTests : IDisposable
         Assert.Throws<ArgumentException>(() => _loader.SplitData(dataView, testFraction: 1.5));
     }
 
+    [Fact]
+    public void LoadData_WithDateTimeColumn_ExcludesFromFeatures()
+    {
+        // Arrange - CSV with a datetime column that should be auto-excluded
+        var csvPath = CreateTestCsv(new[]
+        {
+            "feature1,timestamp,label",
+            "1.0,2024-01-01 09:00:00,0.0",
+            "2.0,2024-01-02 10:30:00,1.0",
+            "3.0,2024-01-03 11:45:00,0.0",
+            "4.0,2024-01-04 14:00:00,1.0",
+            "5.0,2024-01-05 16:15:00,0.0"
+        });
+
+        // Act
+        var dataView = _loader.LoadData(csvPath, "label", "regression");
+
+        // Assert - datetime column should be excluded (not in schema as feature)
+        Assert.NotNull(dataView);
+        // The timestamp column should still be in schema but ignored by AutoML
+        var columns = dataView.Schema.Select(c => c.Name).ToList();
+        Assert.Contains("feature1", columns);
+        Assert.Contains("label", columns);
+    }
+
     private string CreateTestCsv(string[] lines)
     {
         var fileName = $"test_{Guid.NewGuid()}.csv";

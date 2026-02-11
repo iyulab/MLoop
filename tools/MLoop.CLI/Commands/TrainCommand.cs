@@ -218,6 +218,13 @@ public static class TrainCommand
                 return 1;
             }
 
+            // Validate required fields (defensive guard for nullable flow analysis)
+            if (string.IsNullOrEmpty(effectiveDefinition.Task) || string.IsNullOrEmpty(effectiveDefinition.Label))
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] Task and Label must be specified. Use --task and <label> arguments, or define them in mloop.yaml");
+                return 1;
+            }
+
             // Resolve data file path
             string? resolvedDataFile;
             var datasetDiscovery = new DatasetDiscovery(fileSystem);
@@ -366,7 +373,7 @@ public static class TrainCommand
 
             // Handle missing label values (T4.2)
             // Default behavior: drop missing labels for classification tasks
-            var isClassificationTask = effectiveDefinition.Task?.ToLowerInvariant() switch
+            var isClassificationTask = effectiveDefinition.Task.ToLowerInvariant() switch
             {
                 "binary-classification" => true,
                 "multiclass-classification" => true,
@@ -572,7 +579,38 @@ public static class TrainCommand
                 }
             }
 
-            // Execute preprocessing scripts if available
+            // Execute YAML-defined preprocessing pipeline (FilePrepper DataPipeline API)
+            if (effectiveDefinition.Prep is { Count: > 0 })
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.Write(new Rule("[blue]Preprocessing Pipeline[/]").LeftJustified());
+                AnsiConsole.WriteLine();
+
+                try
+                {
+                    var pipelineExecutor = new DataPipelineExecutor(new TrainCommandLogger());
+                    var prepOutputPath = Path.Combine(
+                        Path.GetDirectoryName(resolvedDataFile)!,
+                        $"{Path.GetFileNameWithoutExtension(resolvedDataFile)}_prep{Path.GetExtension(resolvedDataFile)}");
+
+                    resolvedDataFile = await pipelineExecutor.ExecuteAsync(
+                        resolvedDataFile,
+                        effectiveDefinition.Prep,
+                        prepOutputPath);
+
+                    allDataFilesUsed.Add(resolvedDataFile);
+                    AnsiConsole.MarkupLine($"[green]>[/] Preprocessed data: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+                    AnsiConsole.WriteLine();
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine("[red]Preprocessing pipeline failed:[/]");
+                    AnsiConsole.WriteLine(ex.Message);
+                    return 1;
+                }
+            }
+
+            // Execute preprocessing scripts if available (Roslyn .cs scripts)
             var preprocessingEngine = new PreprocessingEngine(
                 projectRoot,
                 new TrainCommandLogger());

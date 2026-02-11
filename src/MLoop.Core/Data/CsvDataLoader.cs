@@ -56,6 +56,11 @@ public class CsvDataLoader : IDataProvider
             }
         }
 
+        // Auto-detect datetime columns and exclude them from features.
+        // ML.NET treats datetime strings as text and applies FeaturizeText,
+        // creating thousands of character n-gram features that are meaningless.
+        ExcludeDateTimeColumns(columnInference, mlnetCompatiblePath, labelColumn);
+
         // Create text loader with inferred schema
         // Ensure RFC 4180 compliance: handle commas inside quoted fields
         columnInference.TextLoaderOptions.AllowQuoting = true;
@@ -163,6 +168,150 @@ public class CsvDataLoader : IDataProvider
         }
 
         return rowCount;
+    }
+
+    /// <summary>
+    /// Detects datetime-like columns and moves them to IgnoredColumnNames.
+    /// Prevents ML.NET from applying FeaturizeText to datetime strings,
+    /// which would create thousands of useless character n-gram features.
+    /// </summary>
+    private static void ExcludeDateTimeColumns(
+        ColumnInferenceResults columnInference,
+        string filePath,
+        string? labelColumn)
+    {
+        var textColumns = columnInference.ColumnInformation.TextColumnNames;
+        if (textColumns == null || textColumns.Count == 0) return;
+
+        // Sample first few data rows to detect datetime values
+        var dateTimeColumns = new List<string>();
+        var sampled = SampleColumnValues(filePath, textColumns, maxRows: 10);
+
+        foreach (var colName in textColumns.ToList())
+        {
+            // Skip label column
+            if (!string.IsNullOrEmpty(labelColumn) &&
+                colName.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            bool isDateTime = false;
+
+            // Heuristic 1: Column name patterns
+            var lowerName = colName.ToLowerInvariant();
+            if (lowerName.Contains("datetime") || lowerName.Contains("timestamp") ||
+                lowerName == "date" || lowerName == "time" ||
+                lowerName.EndsWith("_date") || lowerName.EndsWith("_time") ||
+                lowerName.StartsWith("date_") || lowerName.StartsWith("time_"))
+            {
+                isDateTime = true;
+            }
+
+            // Heuristic 2: Value-based detection (more reliable)
+            if (!isDateTime && sampled.TryGetValue(colName, out var values) && values.Count > 0)
+            {
+                var parsedCount = values.Count(v =>
+                    !string.IsNullOrWhiteSpace(v) &&
+                    DateTime.TryParse(v, System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None, out _));
+
+                var nonEmptyCount = values.Count(v => !string.IsNullOrWhiteSpace(v));
+                if (nonEmptyCount > 0 && parsedCount >= nonEmptyCount * 0.8)
+                {
+                    isDateTime = true;
+                }
+            }
+
+            if (isDateTime)
+            {
+                dateTimeColumns.Add(colName);
+            }
+        }
+
+        // Move detected datetime columns to ignored
+        foreach (var col in dateTimeColumns)
+        {
+            textColumns.Remove(col);
+            columnInference.ColumnInformation.IgnoredColumnNames.Add(col);
+            Console.WriteLine($"[Info] DateTime column '{col}' excluded from features (use FilePrepper to extract date features if needed)");
+        }
+    }
+
+    /// <summary>
+    /// Samples values from specific columns by reading the CSV header + first N rows.
+    /// </summary>
+    private static Dictionary<string, List<string>> SampleColumnValues(
+        string filePath, ICollection<string> columnNames, int maxRows)
+    {
+        var result = new Dictionary<string, List<string>>();
+        foreach (var col in columnNames)
+            result[col] = new List<string>();
+
+        using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var headerLine = reader.ReadLine();
+        if (headerLine == null) return result;
+
+        // Parse header to find column indices
+        var headers = ParseCsvLine(headerLine);
+        var colIndices = new Dictionary<string, int>();
+        for (int i = 0; i < headers.Length; i++)
+        {
+            if (columnNames.Contains(headers[i]))
+                colIndices[headers[i]] = i;
+        }
+
+        // Read sample rows
+        int rowsRead = 0;
+        string? line;
+        while (rowsRead < maxRows && (line = reader.ReadLine()) != null)
+        {
+            var fields = ParseCsvLine(line);
+            foreach (var (colName, idx) in colIndices)
+            {
+                if (idx < fields.Length)
+                    result[colName].Add(fields[idx]);
+            }
+            rowsRead++;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Simple CSV line parser that handles quoted fields.
+    /// </summary>
+    private static string[] ParseCsvLine(string line)
+    {
+        var fields = new List<string>();
+        bool inQuote = false;
+        var current = new System.Text.StringBuilder();
+
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (c == '"')
+            {
+                if (inQuote && i + 1 < line.Length && line[i + 1] == '"')
+                {
+                    current.Append('"');
+                    i++;
+                }
+                else
+                {
+                    inQuote = !inQuote;
+                }
+            }
+            else if (c == ',' && !inQuote)
+            {
+                fields.Add(current.ToString().Trim());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+        fields.Add(current.ToString().Trim());
+        return fields.ToArray();
     }
 
     /// <summary>
