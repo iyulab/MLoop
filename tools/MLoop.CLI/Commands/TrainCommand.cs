@@ -671,6 +671,9 @@ public static class TrainCommand
                 AnsiConsole.MarkupLine("[yellow]Warning:[/] --balance option is only applicable to classification tasks");
             }
 
+            // Display data summary
+            DisplayDataSummary(resolvedDataFile, effectiveDefinition.Label);
+
             // Display training configuration
             DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition);
 
@@ -856,50 +859,84 @@ public static class TrainCommand
             if (!noPromote)
             {
                 AnsiConsole.WriteLine();
-                await AnsiConsole.Status()
-                    .Spinner(Spinner.Known.Dots)
-                    .StartAsync("[yellow]Checking promotion eligibility...[/]", async ctx =>
+                var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
+                var primaryMetric = trainingConfig.Metric;
+
+                // Get current production model for comparison
+                var production = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
+
+                // Show comparison if production model exists
+                if (production?.Metrics != null && result.Metrics != null)
+                {
+                    AnsiConsole.Write(new Rule("[blue]Production Comparison[/]").LeftJustified());
+                    AnsiConsole.WriteLine();
+
+                    var compTable = new Table()
+                        .BorderColor(Color.Grey)
+                        .AddColumn("Metric")
+                        .AddColumn(new TableColumn($"[grey]Production ({production.ExperimentId})[/]").RightAligned())
+                        .AddColumn(new TableColumn($"[cyan]New ({result.ExperimentId})[/]").RightAligned())
+                        .AddColumn(new TableColumn("Delta").RightAligned());
+
+                    foreach (var (metricName, newValue) in result.Metrics.OrderByDescending(m => m.Value))
                     {
-                        var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
-                        var primaryMetric = trainingConfig.Metric;
+                        var prodValue = production.Metrics.TryGetValue(metricName, out var pv) ? pv : (double?)null;
+                        var prodStr = prodValue.HasValue ? $"{prodValue.Value:F4}" : "[grey]-[/]";
+                        var newStr = $"{newValue:F4}";
 
-                        var promoted = await modelRegistry.AutoPromoteAsync(
-                            resolvedModelName,
-                            result.ExperimentId,
-                            primaryMetric,
-                            CancellationToken.None);
-
-                        if (promoted)
+                        string deltaStr;
+                        if (prodValue.HasValue)
                         {
-                            ctx.Status("[green]Model promoted to production![/]");
-                            AnsiConsole.MarkupLine($"[green]Model promoted to production![/]");
-                            AnsiConsole.WriteLine($"   Better {primaryMetric} than current production model");
+                            var delta = newValue - prodValue.Value;
+                            var sign = delta >= 0 ? "+" : "";
+                            var color = delta > 0 ? "green" : delta < 0 ? "red" : "grey";
+                            deltaStr = $"[{color}]{sign}{delta:F4}[/]";
                         }
                         else
                         {
-                            // IMP-9: Check if metrics are identical (convergence)
-                            var production = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
-                            bool isConverged = false;
-                            if (production?.Metrics != null && result.Metrics != null && production.Metrics.ContainsKey(primaryMetric))
-                            {
-                                var prodValue = production.Metrics[primaryMetric];
-                                var newValue = result.Metrics.TryGetValue(primaryMetric, out var v) ? v : double.NaN;
-                                isConverged = Math.Abs(prodValue - newValue) < 1e-10;
-                            }
-
-                            ctx.Status("[yellow]Model saved to staging[/]");
-                            AnsiConsole.MarkupLine("[yellow]Model saved to staging[/]");
-                            if (isConverged)
-                            {
-                                AnsiConsole.WriteLine($"   Performance converged — same {primaryMetric} as production model");
-                                AnsiConsole.MarkupLine("[grey]   Tip: Additional training time may not improve this dataset further.[/]");
-                            }
-                            else
-                            {
-                                AnsiConsole.WriteLine($"   Current production model has better {primaryMetric}");
-                            }
+                            deltaStr = "[grey]-[/]";
                         }
-                    });
+
+                        compTable.AddRow(
+                            metricName.Replace("_", " ").ToUpperInvariant(),
+                            prodStr, newStr, deltaStr);
+                    }
+
+                    AnsiConsole.Write(compTable);
+                    AnsiConsole.WriteLine();
+                }
+
+                var promoted = await modelRegistry.AutoPromoteAsync(
+                    resolvedModelName,
+                    result.ExperimentId,
+                    primaryMetric,
+                    CancellationToken.None);
+
+                if (promoted)
+                {
+                    AnsiConsole.MarkupLine($"[green]Model promoted to production![/]");
+                    AnsiConsole.WriteLine($"   Better {primaryMetric} than current production model");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[yellow]Model saved to staging[/]");
+
+                    // Check convergence
+                    if (production?.Metrics != null && result.Metrics != null && production.Metrics.ContainsKey(primaryMetric))
+                    {
+                        var prodValue = production.Metrics[primaryMetric];
+                        var newValue = result.Metrics.TryGetValue(primaryMetric, out var v) ? v : double.NaN;
+                        if (Math.Abs(prodValue - newValue) < 1e-10)
+                        {
+                            AnsiConsole.WriteLine($"   Performance converged — same {primaryMetric} as production model");
+                            AnsiConsole.MarkupLine("[grey]   Tip: Additional training time may not improve this dataset further.[/]");
+                        }
+                        else
+                        {
+                            AnsiConsole.WriteLine($"   Current production model has better {primaryMetric}");
+                        }
+                    }
+                }
 
                 AnsiConsole.WriteLine();
             }
@@ -961,6 +998,51 @@ public static class TrainCommand
             // T8.3: Enhanced error messaging with actionable suggestions
             ErrorSuggestions.DisplayError(ex, "training");
             return 1;
+        }
+    }
+
+    private static void DisplayDataSummary(string dataFile, string labelColumn)
+    {
+        try
+        {
+            using var reader = new StreamReader(dataFile);
+            var header = reader.ReadLine();
+            if (string.IsNullOrEmpty(header)) return;
+
+            var columns = header.Split(',').Length;
+            var rowCount = 0;
+            while (reader.ReadLine() != null) rowCount++;
+
+            AnsiConsole.WriteLine();
+            AnsiConsole.Write(new Rule("[blue]Data Summary[/]").LeftJustified());
+            AnsiConsole.WriteLine();
+
+            var table = new Table()
+                .BorderColor(Color.Grey)
+                .AddColumn("Property")
+                .AddColumn("Value");
+
+            table.AddRow("Rows", $"[cyan]{rowCount:N0}[/]");
+            table.AddRow("Columns", $"[cyan]{columns}[/]");
+            table.AddRow("Features", $"[cyan]{columns - 1}[/]");
+            table.AddRow("Label", $"[cyan]{labelColumn}[/]");
+
+            // Check file size
+            var fileSize = new FileInfo(dataFile).Length;
+            var sizeStr = fileSize switch
+            {
+                < 1024 => $"{fileSize} B",
+                < 1024 * 1024 => $"{fileSize / 1024.0:F1} KB",
+                _ => $"{fileSize / (1024.0 * 1024.0):F1} MB"
+            };
+            table.AddRow("File Size", $"[grey]{sizeStr}[/]");
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
+        }
+        catch
+        {
+            // Non-critical — skip data summary on error
         }
     }
 
