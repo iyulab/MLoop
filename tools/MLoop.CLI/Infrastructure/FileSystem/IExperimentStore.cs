@@ -189,6 +189,21 @@ public class ExperimentSummary
     /// Label column used in training
     /// </summary>
     public string? LabelColumn { get; init; }
+
+    /// <summary>
+    /// Best trainer/algorithm selected by AutoML
+    /// </summary>
+    public string? BestTrainer { get; init; }
+
+    /// <summary>
+    /// Optimization metric name (e.g., "MacroAccuracy", "RSquared")
+    /// </summary>
+    public string? MetricName { get; init; }
+
+    /// <summary>
+    /// Training duration in seconds
+    /// </summary>
+    public double? TrainingTimeSeconds { get; init; }
 }
 
 /// <summary>

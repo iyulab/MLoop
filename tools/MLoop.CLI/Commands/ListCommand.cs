@@ -100,9 +100,10 @@ public static class ListCommand
             }
 
             table.AddColumn(new TableColumn("[bold]ID[/]").Centered());
-            table.AddColumn(new TableColumn("[bold]Timestamp[/]"));
+            table.AddColumn(new TableColumn("[bold]When[/]"));
             table.AddColumn(new TableColumn("[bold]Status[/]").Centered());
-            table.AddColumn(new TableColumn("[bold]Best Metric[/]").RightAligned());
+            table.AddColumn(new TableColumn("[bold]Trainer[/]"));
+            table.AddColumn(new TableColumn("[bold]Metric[/]").RightAligned());
             table.AddColumn(new TableColumn("[bold]Stage[/]").Centered());
 
             foreach (var exp in experimentsList)
@@ -114,7 +115,7 @@ public static class ListCommand
                     ? $"[green bold]{exp.ExperimentId}[/]"
                     : $"[cyan]{exp.ExperimentId}[/]";
 
-                var timestamp = exp.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+                var when = FormatRelativeTime(exp.Timestamp);
 
                 var status = exp.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)
                     ? "[green]Completed[/]"
@@ -122,9 +123,11 @@ public static class ListCommand
                         ? "[red]Failed[/]"
                         : $"[yellow]{exp.Status}[/]";
 
-                var metric = exp.BestMetric.HasValue
-                    ? $"[yellow]{exp.BestMetric.Value:F4}[/]"
+                var trainer = !string.IsNullOrEmpty(exp.BestTrainer)
+                    ? $"[cyan]{Markup.Escape(exp.BestTrainer)}[/]"
                     : "[grey]-[/]";
+
+                var metricDisplay = FormatMetric(exp);
 
                 var stage = isProduction
                     ? "[green bold]Production[/]"
@@ -132,11 +135,11 @@ public static class ListCommand
 
                 if (resolvedModelName == null)
                 {
-                    table.AddRow($"[blue]{expModelName}[/]", id, timestamp, status, metric, stage);
+                    table.AddRow($"[blue]{expModelName}[/]", id, when, status, trainer, metricDisplay, stage);
                 }
                 else
                 {
-                    table.AddRow(id, timestamp, status, metric, stage);
+                    table.AddRow(id, when, status, trainer, metricDisplay, stage);
                 }
             }
 
@@ -188,5 +191,32 @@ public static class ListCommand
 
             return 1;
         }
+    }
+
+    private static string FormatRelativeTime(DateTime timestamp)
+    {
+        var local = timestamp.Kind == DateTimeKind.Utc ? timestamp.ToLocalTime() : timestamp;
+        var elapsed = DateTime.Now - local;
+
+        var relative = elapsed.TotalMinutes switch
+        {
+            < 1 => "just now",
+            < 60 => $"{(int)elapsed.TotalMinutes}m ago",
+            < 1440 => $"{(int)elapsed.TotalHours}h ago",
+            < 10080 => $"{(int)elapsed.TotalDays}d ago",
+            _ => local.ToString("yyyy-MM-dd")
+        };
+
+        return $"[grey]{relative}[/]";
+    }
+
+    private static string FormatMetric(Infrastructure.FileSystem.ExperimentSummary exp)
+    {
+        if (!exp.BestMetric.HasValue)
+            return "[grey]-[/]";
+
+        var value = $"{exp.BestMetric.Value:F4}";
+        var name = !string.IsNullOrEmpty(exp.MetricName) ? $" [grey]({exp.MetricName})[/]" : "";
+        return $"[yellow]{value}[/]{name}";
     }
 }
