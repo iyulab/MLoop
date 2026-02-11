@@ -77,4 +77,40 @@ public class ErrorSuggestionsTests
         Assert.NotEmpty(suggestions);
         Assert.Contains(suggestions, s => s.Contains("github.com") || s.Contains("Review"));
     }
+
+    [Fact]
+    public void GetSuggestions_EvaluateContext_SuggestsModelCheck()
+    {
+        var ex = new Exception("Something went wrong during evaluation");
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "evaluate");
+
+        Assert.Contains(suggestions, s => s.Contains("mloop list"));
+    }
+
+    [Fact]
+    public void GetSuggestions_ServeContext_SuggestsPort()
+    {
+        var ex = new Exception("Address already in use");
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "serve");
+
+        Assert.Contains(suggestions, s => s.Contains("port"));
+    }
+
+    [Fact]
+    public void GetSuggestions_UpdateContext_SuggestsManualDownload()
+    {
+        var ex = new Exception("Failed to download latest release");
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "update");
+
+        Assert.Contains(suggestions, s => s.Contains("github.com") || s.Contains("releases") || s.Contains("internet"));
+    }
+
+    [Fact]
+    public void GetSuggestions_InitContext_DirectoryExists()
+    {
+        var ex = new Exception("Directory already exists: my-project");
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "init");
+
+        Assert.Contains(suggestions, s => s.Contains("project name") || s.Contains("directory"));
+    }
 }

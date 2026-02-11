@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -29,17 +30,25 @@ public static class PromoteCommand
             DefaultValueFactory = _ => false
         };
 
+        var noBackupOption = new Option<bool>("--no-backup")
+        {
+            Description = "Skip backup of current production model before promotion",
+            DefaultValueFactory = _ => false
+        };
+
         var command = new Command("promote", "Promote an experiment to production");
         command.Arguments.Add(experimentIdArg);
         command.Options.Add(nameOption);
         command.Options.Add(forceOption);
+        command.Options.Add(noBackupOption);
 
         command.SetAction((parseResult) =>
         {
             var experimentId = parseResult.GetValue(experimentIdArg)!;
             var name = parseResult.GetValue(nameOption);
             var force = parseResult.GetValue(forceOption);
-            return ExecuteAsync(experimentId, name, force);
+            var noBackup = parseResult.GetValue(noBackupOption);
+            return ExecuteAsync(experimentId, name, force, noBackup);
         });
 
         return command;
@@ -48,7 +57,8 @@ public static class PromoteCommand
     private static async Task<int> ExecuteAsync(
         string experimentId,
         string? modelName,
-        bool force)
+        bool force,
+        bool noBackup)
     {
         try
         {
@@ -145,6 +155,20 @@ public static class PromoteCommand
                 }
             }
 
+            // Backup current production before promotion
+            string? backupPath = null;
+            if (!noBackup && currentProduction != null)
+            {
+                var productionPath = modelRegistry.GetProductionPath(resolvedModelName);
+                if (Directory.Exists(productionPath))
+                {
+                    var backupsDir = Path.Combine(projectRoot, "models", resolvedModelName, "backups");
+                    backupPath = Path.Combine(backupsDir, $"{currentProduction.ExperimentId}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}");
+                    Directory.CreateDirectory(backupsDir);
+                    CopyDirectory(productionPath, backupPath);
+                }
+            }
+
             // Promote with progress indicator
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
@@ -154,6 +178,11 @@ public static class PromoteCommand
                     ctx.Status("[green]Promotion complete![/]");
                 });
 
+            // Record promotion history
+            await RecordPromotionHistoryAsync(
+                projectRoot, resolvedModelName, experimentId,
+                currentProduction?.ExperimentId, "promote");
+
             AnsiConsole.WriteLine();
             AnsiConsole.Write(new Rule("[green]Promotion Complete![/]").LeftJustified());
             AnsiConsole.WriteLine();
@@ -161,6 +190,10 @@ public static class PromoteCommand
             AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
             AnsiConsole.MarkupLine($"[green]>[/] Experiment: [cyan]{experimentId}[/]");
             AnsiConsole.MarkupLine($"[green]>[/] Status: [green bold]production[/]");
+            if (backupPath != null)
+            {
+                AnsiConsole.MarkupLine($"[green]>[/] Backup: [grey]{backupPath}[/]");
+            }
             AnsiConsole.WriteLine();
 
             AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
@@ -174,6 +207,51 @@ public static class PromoteCommand
         {
             ErrorSuggestions.DisplayError(ex, "promote");
             return 1;
+        }
+    }
+
+    private static async Task RecordPromotionHistoryAsync(
+        string projectRoot,
+        string modelName,
+        string experimentId,
+        string? previousExpId,
+        string action)
+    {
+        var historyPath = Path.Combine(projectRoot, "models", modelName, "promotion-history.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(historyPath)!);
+
+        var records = new List<Dictionary<string, object?>>();
+        if (File.Exists(historyPath))
+        {
+            var json = await File.ReadAllTextAsync(historyPath);
+            records = JsonSerializer.Deserialize<List<Dictionary<string, object?>>>(json) ?? [];
+        }
+
+        records.Add(new Dictionary<string, object?>
+        {
+            ["modelName"] = modelName,
+            ["experimentId"] = experimentId,
+            ["previousExperimentId"] = previousExpId,
+            ["action"] = action,
+            ["timestamp"] = DateTimeOffset.UtcNow
+        });
+
+        var options = new JsonSerializerOptions { WriteIndented = true };
+        await File.WriteAllTextAsync(historyPath, JsonSerializer.Serialize(records, options));
+    }
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+
+        foreach (var file in Directory.GetFiles(source))
+        {
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
+        }
+
+        foreach (var dir in Directory.GetDirectories(source))
+        {
+            CopyDirectory(dir, Path.Combine(destination, Path.GetFileName(dir)));
         }
     }
 }

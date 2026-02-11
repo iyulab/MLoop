@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Centralized error suggestions across all CLI commands (ErrorSuggestions)
 - 5 new DataPipelineExecutor operations: extract-date, parse-datetime, normalize, scale, fill-missing
 - Pipeline tests for all 14 preprocessing step types
+- `mloop status` command with config summary and latest prediction display
+- Backup and promotion history in `mloop promote`
+- FilePromotionManager for filesystem-based model promotion
+- Phase 1 hook/metric extensibility in ScriptDiscovery and AutoMLRunner
 
 ### Fixed
 - ServeCommand TFM discovery for .NET 10
@@ -24,10 +28,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - TrainCommand nullable warnings
 - Datetime columns auto-excluded from training features
 - File I/O optimization in PredictCommand and InfoCommand
+- HITL workflow session IDs now shared across decisions in a single workflow execution
+- Version consistency: removed hard-coded version from MLoop.Extensibility
 
 ### Changed
 - FilePrepper integrated via submodule with project reference
 - Improved error messages with actionable suggestions and context
+- Dead code cleanup and standardized Phase 1 TODO comments
+- Assembly version used for accurate SemVer display
 
 ## [0.5.1-alpha] - 2025-12-20
 

@@ -11,6 +11,7 @@ using AspNetCoreRateLimit;
 using Serilog;
 using Serilog.Events;
 using System.Diagnostics;
+using System.Reflection;
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -154,7 +155,9 @@ app.MapGet("/health", (ILogger<Program> logger) =>
     {
         status = "healthy",
         timestamp = DateTime.UtcNow,
-        version = "0.2.0-alpha"
+        version = typeof(Program).Assembly
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown"
     });
 })
 .WithName("HealthCheck")

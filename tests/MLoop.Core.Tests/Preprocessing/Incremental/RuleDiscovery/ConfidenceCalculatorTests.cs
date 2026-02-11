@@ -98,6 +98,124 @@ public sealed class ConfidenceCalculatorTests
         Assert.Equal(0.0, score.Consistency);
     }
 
+    [Fact]
+    public async Task CalculateAsync_CancellationRequested_ThrowsOperationCanceled()
+    {
+        var rule = CreateTestRule("TestColumn", PatternType.MissingValue);
+        var sample = CreateSampleWithMissingValues(10, 0.1);
+        var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            _calculator.CalculateAsync(rule, sample, sample, cts.Token));
+    }
+
+    [Fact]
+    public async Task CalculateAsync_NoApplicableRows_PerfectConsistency()
+    {
+        var rule = CreateTestRule("TestColumn", PatternType.MissingValue);
+        var sample = CreateSampleWithMissingValues(100, 0.0);
+
+        var score = await _calculator.CalculateAsync(rule, sample, sample);
+
+        Assert.Equal(1.0, score.Consistency);
+    }
+
+    [Fact]
+    public async Task CalculateAsync_AllMissing_FullCoverage()
+    {
+        var rule = CreateTestRule("TestColumn", PatternType.MissingValue);
+        var sample = CreateSampleWithMissingValues(10, 1.0);
+
+        var score = await _calculator.CalculateAsync(rule, sample, sample);
+
+        Assert.Equal(1.0, score.Coverage);
+    }
+
+    #region ConfidenceScore Model Tests
+
+    [Fact]
+    public void ConfidenceScore_HighConfidence_IsHighConfidence()
+    {
+        var score = new ConfidenceScore
+        {
+            Consistency = 1.0,
+            Coverage = 1.0,
+            Stability = 1.0,
+            Overall = 0.99
+        };
+
+        Assert.True(score.IsHighConfidence);
+        Assert.True(score.IsMediumConfidence);
+        Assert.Equal("High", score.Level);
+    }
+
+    [Fact]
+    public void ConfidenceScore_MediumConfidence_IsMediumOnly()
+    {
+        var score = new ConfidenceScore
+        {
+            Consistency = 0.9,
+            Coverage = 0.9,
+            Stability = 0.9,
+            Overall = 0.92
+        };
+
+        Assert.False(score.IsHighConfidence);
+        Assert.True(score.IsMediumConfidence);
+        Assert.Equal("Medium", score.Level);
+    }
+
+    [Fact]
+    public void ConfidenceScore_LowConfidence_IsLow()
+    {
+        var score = new ConfidenceScore
+        {
+            Consistency = 0.5,
+            Coverage = 0.5,
+            Stability = 0.5,
+            Overall = 0.5
+        };
+
+        Assert.False(score.IsHighConfidence);
+        Assert.False(score.IsMediumConfidence);
+        Assert.Equal("Low", score.Level);
+    }
+
+    [Fact]
+    public void ConfidenceScore_ExceptionRate_ComputedCorrectly()
+    {
+        var score = new ConfidenceScore
+        {
+            Consistency = 1.0,
+            Coverage = 1.0,
+            Stability = 1.0,
+            Overall = 1.0,
+            ExceptionCount = 3,
+            TotalAttempts = 10
+        };
+
+        Assert.Equal(0.3, score.ExceptionRate);
+    }
+
+    [Fact]
+    public void ConfidenceScore_ZeroAttempts_ZeroExceptionRate()
+    {
+        var score = new ConfidenceScore
+        {
+            Consistency = 1.0,
+            Coverage = 1.0,
+            Stability = 1.0,
+            Overall = 1.0,
+            ExceptionCount = 0,
+            TotalAttempts = 0
+        };
+
+        Assert.Equal(0.0, score.ExceptionRate);
+    }
+
+    #endregion
+
     private static PreprocessingRule CreateTestRule(string columnName, PatternType patternType)
     {
         return new PreprocessingRule

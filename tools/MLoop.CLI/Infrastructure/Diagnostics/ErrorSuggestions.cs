@@ -189,6 +189,48 @@ public static class ErrorSuggestions
             }
         }
 
+        // Evaluate-specific context
+        if (context == "evaluate")
+        {
+            if (!suggestions.Any())
+            {
+                suggestions.Add("Ensure a production model exists: [cyan]mloop list[/]");
+                suggestions.Add("Check test data has same schema as training data");
+                suggestions.Add("Create datasets/test.csv or specify: [cyan]mloop evaluate <exp-id> <test-file>[/]");
+            }
+        }
+
+        // Serve-specific context
+        if (context == "serve")
+        {
+            if (!suggestions.Any())
+            {
+                suggestions.Add("Ensure MLoop.API is available (check MLOOP_API_PATH env var)");
+                suggestions.Add("Try specifying a different port: [cyan]mloop serve --port 5001[/]");
+                suggestions.Add("Check if another process is using the port");
+            }
+        }
+
+        // Update-specific context
+        if (context == "update")
+        {
+            if (!suggestions.Any())
+            {
+                suggestions.Add("Check your internet connection");
+                suggestions.Add("Download manually from https://github.com/iyulab/MLoop/releases");
+            }
+        }
+
+        // Init-specific context
+        if (context == "init")
+        {
+            if (message.Contains("already exists") || message.Contains("directory"))
+            {
+                suggestions.Add("Choose a different project name");
+                suggestions.Add("Delete the existing directory first if you want to start fresh");
+            }
+        }
+
         // Fallback generic suggestions
         if (!suggestions.Any())
         {

@@ -61,6 +61,8 @@ public class ScriptLoader
                             "System.Threading.Tasks",
                             "Microsoft.ML",
                             "MLoop.Extensibility",
+                            "MLoop.Extensibility.Hooks",
+                            "MLoop.Extensibility.Metrics",
                             "MLoop.Extensibility.Preprocessing",
                             "FilePrepper.Pipeline"
                         );

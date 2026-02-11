@@ -1,4 +1,5 @@
 using System.CommandLine;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Hooks;
 using MLoop.Extensibility.Hooks;
@@ -116,7 +117,7 @@ public static class NewHookCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            ErrorSuggestions.DisplayError(ex);
             return 1;
         }
     }

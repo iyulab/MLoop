@@ -159,6 +159,69 @@ public class DataBalancerTests : IDisposable
         Assert.Contains("Only one class found", result.Message);
     }
 
+    [Fact]
+    public void Balance_WithWhitespaceOption_DoesNotOversample()
+    {
+        var dataFile = CreateImbalancedDataset(50, 1);
+        var balancer = new DataBalancer();
+
+        var result = balancer.Balance(dataFile, "Label", "  ");
+
+        Assert.False(result.Applied);
+    }
+
+    [Fact]
+    public void Balance_WithInvalidOption_ReturnsError()
+    {
+        var dataFile = CreateImbalancedDataset(10, 2);
+        var balancer = new DataBalancer();
+
+        var result = balancer.Balance(dataFile, "Label", "invalid");
+
+        Assert.False(result.Applied);
+        Assert.Contains("Invalid balance option", result.Message);
+    }
+
+    [Fact]
+    public void Balance_NoDataRows_ReturnsNotApplied()
+    {
+        var filePath = Path.Combine(_testDir, "empty.csv");
+        File.WriteAllText(filePath, "Feature1,Label\n");
+        var balancer = new DataBalancer();
+
+        var result = balancer.Balance(filePath, "Label", "auto");
+
+        Assert.False(result.Applied);
+        Assert.Contains("No data rows", result.Message);
+    }
+
+    [Fact]
+    public void Balance_CustomRatio_AlreadyMet_DoesNotApply()
+    {
+        // 10:5 = 2:1, target ratio 5:1 - already within target
+        var dataFile = CreateImbalancedDataset(10, 5);
+        var balancer = new DataBalancer();
+
+        var result = balancer.Balance(dataFile, "Label", "5");
+
+        Assert.False(result.Applied);
+        Assert.Contains("already meets", result.Message);
+    }
+
+    [Fact]
+    public void Balance_TracksOriginalAndNewCounts()
+    {
+        var dataFile = CreateImbalancedDataset(50, 3);
+        var balancer = new DataBalancer();
+
+        var result = balancer.Balance(dataFile, "Label", "auto");
+
+        Assert.True(result.Applied);
+        Assert.Equal(3, result.OriginalMinorityCount);
+        Assert.True(result.NewMinorityCount > 3);
+        Assert.True(result.OriginalRatio > result.NewRatio);
+    }
+
     private string CreateImbalancedDataset(int majorityCount, int minorityCount)
     {
         var filePath = Path.Combine(_testDir, $"imbalanced_{majorityCount}_{minorityCount}.csv");

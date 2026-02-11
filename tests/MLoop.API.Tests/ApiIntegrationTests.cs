@@ -136,4 +136,100 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
         // Assert
         response.Headers.Should().ContainKey("Access-Control-Allow-Origin");
     }
+
+    [Fact]
+    public async Task HealthEndpoint_ReturnsValidJsonStructure()
+    {
+        // Act
+        var response = await _client.GetAsync("/health");
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonSerializer.Deserialize<JsonElement>(content);
+
+        // Assert
+        json.GetProperty("status").GetString().Should().Be("healthy");
+        json.TryGetProperty("timestamp", out _).Should().BeTrue();
+        json.TryGetProperty("version", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InfoEndpoint_WithNameParam_ReturnsNotFoundForMissingModel()
+    {
+        // Act
+        var response = await _client.GetAsync("/info?name=nonexistent-model");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("nonexistent-model");
+    }
+
+    [Fact]
+    public async Task ModelsEndpoint_WithNameFilter_ReturnsFilteredResult()
+    {
+        // Act
+        var response = await _client.GetAsync("/models?name=nonexistent");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonSerializer.Deserialize<JsonElement>(content);
+
+        json.GetProperty("count").GetInt32().Should().Be(0);
+        json.GetProperty("filter").GetString().Should().Be("nonexistent");
+    }
+
+    [Fact]
+    public async Task ModelsEndpoint_ReturnsValidJsonStructure()
+    {
+        // Act
+        var response = await _client.GetAsync("/models");
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonSerializer.Deserialize<JsonElement>(content);
+
+        // Assert
+        json.TryGetProperty("count", out _).Should().BeTrue();
+        json.TryGetProperty("models", out var models).Should().BeTrue();
+        models.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task PredictEndpoint_WithNameParam_ReturnsNotFoundForMissingModel()
+    {
+        // Arrange
+        var input = new { feature1 = 1.0 };
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/predict?name=missing-model", input);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task SwaggerEndpoint_ContainsAllEndpoints()
+    {
+        // Act
+        var response = await _client.GetAsync("/swagger/v1/swagger.json");
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonSerializer.Deserialize<JsonElement>(content);
+
+        // Assert
+        var paths = json.GetProperty("paths");
+        paths.TryGetProperty("/health", out _).Should().BeTrue();
+        paths.TryGetProperty("/info", out _).Should().BeTrue();
+        paths.TryGetProperty("/predict", out _).Should().BeTrue();
+        paths.TryGetProperty("/models", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HealthEndpoint_ResponseContentTypeIsJson()
+    {
+        // Act
+        var response = await _client.GetAsync("/health");
+
+        // Assert
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
 }

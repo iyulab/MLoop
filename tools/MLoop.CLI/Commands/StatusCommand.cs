@@ -1,5 +1,6 @@
 using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -53,6 +54,9 @@ public static class StatusCommand
             AnsiConsole.Write(projectPanel);
             AnsiConsole.WriteLine();
 
+            // Config Summary
+            await ShowConfigSummaryAsync(ctx);
+
             // Get all data
             var models = await ctx.ModelRegistry.ListAsync(null, CancellationToken.None);
             var productionDict = models.ToDictionary(m => m.ModelName, m => m.ExperimentId);
@@ -86,6 +90,9 @@ public static class StatusCommand
             modelsTable.AddColumn(new TableColumn("[bold]Completed[/]").Centered());
             modelsTable.AddColumn(new TableColumn("[bold]Production[/]").Centered());
             modelsTable.AddColumn(new TableColumn("[bold]Best Metric[/]").RightAligned());
+            modelsTable.AddColumn(new TableColumn("[bold]Last Prediction[/]").RightAligned());
+
+            var predictionsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "predictions");
 
             foreach (var modelName in modelNames)
             {
@@ -111,12 +118,15 @@ public static class StatusCommand
                     ? $"[yellow]{bestMetric.Value:F4}[/]"
                     : "[grey]-[/]";
 
+                var lastPrediction = GetLatestPrediction(predictionsDir, modelName);
+
                 modelsTable.AddRow(
                     $"[cyan]{modelName}[/]",
                     total.ToString(),
                     completed > 0 ? $"[green]{completed}[/]" : "[grey]0[/]",
                     productionStatus,
-                    bestMetricStr);
+                    bestMetricStr,
+                    lastPrediction);
             }
 
             AnsiConsole.Write(modelsTable);
@@ -135,7 +145,6 @@ public static class StatusCommand
                 dataTable.AddColumn(new TableColumn("[bold]Status[/]").Centered());
 
                 var datasetsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "datasets");
-                var predictionsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "predictions");
 
                 // Check for common data files
                 CheckDataFile(dataTable, ctx, "Train", datasetsDir, "train.csv");
@@ -213,17 +222,79 @@ public static class StatusCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.Markup("[red]Error:[/] ");
-            AnsiConsole.WriteLine(ex.Message);
-
-            if (ex.InnerException != null)
-            {
-                AnsiConsole.Markup("[grey]Details:[/] ");
-                AnsiConsole.WriteLine(ex.InnerException.Message);
-            }
-
+            ErrorSuggestions.DisplayError(ex, "status");
             return 1;
         }
+    }
+
+    private static async Task ShowConfigSummaryAsync(CommandContext ctx)
+    {
+        try
+        {
+            var config = await ctx.ConfigLoader.LoadUserConfigAsync();
+
+            if (config.Models.Count == 0)
+                return;
+
+            var configTable = new Table()
+                .Border(TableBorder.Rounded)
+                .BorderColor(Color.Grey)
+                .Title("[bold]Configuration[/] [grey](mloop.yaml)[/]");
+
+            configTable.AddColumn(new TableColumn("[bold]Model[/]"));
+            configTable.AddColumn(new TableColumn("[bold]Task[/]"));
+            configTable.AddColumn(new TableColumn("[bold]Label[/]"));
+            configTable.AddColumn(new TableColumn("[bold]Time Limit[/]").RightAligned());
+            configTable.AddColumn(new TableColumn("[bold]Metric[/]").Centered());
+
+            foreach (var (name, model) in config.Models)
+            {
+                var timeLimit = model.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds;
+                var metric = model.Training?.Metric ?? ConfigDefaults.DefaultMetric;
+
+                configTable.AddRow(
+                    $"[cyan]{name}[/]",
+                    model.Task,
+                    model.Label,
+                    $"{timeLimit}s",
+                    metric);
+            }
+
+            AnsiConsole.Write(configTable);
+            AnsiConsole.WriteLine();
+        }
+        catch
+        {
+            // Config not available — skip silently
+        }
+    }
+
+    private static string GetLatestPrediction(string predictionsDir, string modelName)
+    {
+        if (!Directory.Exists(predictionsDir))
+            return "[grey]-[/]";
+
+        var pattern = $"{modelName}-predictions-*.csv";
+        var files = Directory.GetFiles(predictionsDir, pattern);
+
+        if (files.Length == 0)
+            return "[grey]-[/]";
+
+        var latestFile = files
+            .OrderByDescending(f => File.GetLastWriteTimeUtc(f))
+            .First();
+
+        var lastWrite = File.GetLastWriteTimeUtc(latestFile);
+        var age = DateTime.UtcNow - lastWrite;
+
+        if (age.TotalMinutes < 60)
+            return $"[green]{(int)age.TotalMinutes}m ago[/]";
+        if (age.TotalHours < 24)
+            return $"[green]{(int)age.TotalHours}h ago[/]";
+        if (age.TotalDays < 30)
+            return $"[yellow]{(int)age.TotalDays}d ago[/]";
+
+        return $"[grey]{lastWrite:yyyy-MM-dd}[/]";
     }
 
     private static void CheckDataFile(

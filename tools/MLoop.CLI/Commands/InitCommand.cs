@@ -1,5 +1,7 @@
 using System.CommandLine;
+using System.Reflection;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 
@@ -234,7 +236,7 @@ public static class InitCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            ErrorSuggestions.DisplayError(ex, "init");
             return 1;
         }
     }
@@ -279,9 +281,11 @@ public static class InitCommand
         var configData = new
         {
             project = projectName,
-            version = "0.2.0",
+            version = "1.0",
             created_at = DateTime.UtcNow,
-            mloop_version = "0.2.0-alpha"
+            mloop_version = typeof(InitCommand).Assembly
+                .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion ?? typeof(InitCommand).Assembly.GetName().Version?.ToString() ?? "unknown"
         };
 
         var configPath = fileSystem.CombinePath(projectPath, ".mloop", "config.json");
