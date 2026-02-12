@@ -229,4 +229,24 @@ public class ClassDistributionAnalyzerTests : IDisposable
         Assert.True(result.BalanceLevel >= ClassBalanceLevel.HighlyImbalanced);
         Assert.Contains(SamplingStrategy.SMOTE, result.SuggestedStrategies);
     }
+
+    [Fact]
+    public async Task AnalyzeAsync_SingleClass_ReturnsSeverelyImbalanced()
+    {
+        // Arrange - all rows have the same label
+        var csvPath = Path.Combine(_tempDirectory, "single_class.csv");
+        var lines = new List<string> { "Feature,Label" };
+        for (int i = 0; i < 100; i++) lines.Add($"{i},Normal");
+        await File.WriteAllTextAsync(csvPath, string.Join("\n", lines));
+
+        // Act
+        var result = await _analyzer.AnalyzeAsync(csvPath, "Label");
+
+        // Assert
+        Assert.Equal(1, result.ClassCount);
+        Assert.Equal(ClassBalanceLevel.SeverelyImbalanced, result.BalanceLevel);
+        Assert.Contains("Only 1 class found", result.Summary);
+        Assert.Contains(result.Warnings, w => w.Contains("only one unique value"));
+        Assert.Contains(result.Suggestions, s => s.Contains("correct label column"));
+    }
 }

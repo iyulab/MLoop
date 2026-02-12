@@ -123,7 +123,7 @@ public class DataQualityValidatorTests : IDisposable
         var result = _validator.ValidateTrainingData(path, "Price", "regression");
 
         Assert.True(result.IsValid);
-        Assert.True(result.Warnings.Any(w => w.Contains("low variance")));
+        Assert.Contains(result.Warnings, w => w.Contains("low variance"));
     }
 
     #endregion
@@ -163,7 +163,7 @@ public class DataQualityValidatorTests : IDisposable
         var result = _validator.ValidateTrainingData(path, "Target", "binary-classification");
 
         Assert.True(result.IsValid);
-        Assert.True(result.Warnings.Any(w => w.Contains("classes") && w.Contains("binary")));
+        Assert.Contains(result.Warnings, w => w.Contains("classes") && w.Contains("binary"));
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public class DataQualityValidatorTests : IDisposable
         var result = _validator.ValidateTrainingData(path, "Target", "binary-classification");
 
         Assert.True(result.IsValid);
-        Assert.True(result.Warnings.Any(w => w.Contains("imbalance")));
+        Assert.Contains(result.Warnings, w => w.Contains("imbalance"));
         Assert.True(result.ImbalanceRatio >= 10.0);
     }
 
@@ -193,7 +193,92 @@ public class DataQualityValidatorTests : IDisposable
         var result = _validator.ValidateTrainingData(path, "Target", "binary-classification");
 
         Assert.True(result.IsValid);
-        Assert.False(result.Warnings.Any(w => w.Contains("imbalance")));
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("imbalance"));
+    }
+
+    #endregion
+
+    #region Multiclass Minimum Samples
+
+    [Fact]
+    public void ValidateTrainingData_MulticlassTinyClasses_ReturnsWarning()
+    {
+        // 4 classes, some with only 2-3 samples → below 5 threshold
+        var lines = new List<string> { "F1,Target" };
+        for (int i = 0; i < 3; i++) lines.Add($"{i},ClassA");
+        for (int i = 0; i < 2; i++) lines.Add($"{10 + i},ClassB");
+        for (int i = 0; i < 50; i++) lines.Add($"{20 + i},ClassC");
+        for (int i = 0; i < 4; i++) lines.Add($"{70 + i},ClassD");
+        var path = CreateCsv(string.Join("\n", lines));
+
+        var result = _validator.ValidateTrainingData(path, "Target", "multiclass-classification");
+
+        Assert.True(result.IsValid); // warning, not error
+        Assert.Contains(result.Warnings, w => w.Contains("Multiclass training at risk"));
+        Assert.Contains(result.Warnings, w => w.Contains("ClassB")); // 2 samples
+    }
+
+    [Fact]
+    public void ValidateTrainingData_MulticlassSmallButViable_ReturnsWarning()
+    {
+        // 3 classes with 8-10 samples each → above 5 but below 15
+        var lines = new List<string> { "F1,Target" };
+        for (int i = 0; i < 10; i++) lines.Add($"{i},Alpha");
+        for (int i = 0; i < 8; i++) lines.Add($"{10 + i},Beta");
+        for (int i = 0; i < 9; i++) lines.Add($"{20 + i},Gamma");
+        var path = CreateCsv(string.Join("\n", lines));
+
+        var result = _validator.ValidateTrainingData(path, "Target", "multiclass-classification");
+
+        Assert.True(result.IsValid);
+        Assert.Contains(result.Warnings, w => w.Contains("may be unstable"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_MulticlassSufficientSamples_NoWarning()
+    {
+        // 3 classes with 20+ samples each → above 15 threshold
+        var lines = new List<string> { "F1,Target" };
+        for (int i = 0; i < 25; i++) lines.Add($"{i},Alpha");
+        for (int i = 0; i < 20; i++) lines.Add($"{25 + i},Beta");
+        for (int i = 0; i < 22; i++) lines.Add($"{45 + i},Gamma");
+        var path = CreateCsv(string.Join("\n", lines));
+
+        var result = _validator.ValidateTrainingData(path, "Target", "multiclass-classification");
+
+        Assert.True(result.IsValid);
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("Multiclass"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_BinaryClassification_SkipsMulticlassCheck()
+    {
+        // Binary classification with small classes → should NOT trigger multiclass warning
+        var lines = new List<string> { "F1,Target" };
+        for (int i = 0; i < 3; i++) lines.Add($"{i},Yes");
+        for (int i = 0; i < 3; i++) lines.Add($"{10 + i},No");
+        var path = CreateCsv(string.Join("\n", lines));
+
+        var result = _validator.ValidateTrainingData(path, "Target", "binary-classification");
+
+        Assert.True(result.IsValid);
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("Multiclass"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_MulticlassNumericLabels_ChecksMinSamples()
+    {
+        // Numeric multiclass labels with tiny classes
+        var lines = new List<string> { "F1,Target" };
+        for (int i = 0; i < 2; i++) lines.Add($"{i},1");
+        for (int i = 0; i < 3; i++) lines.Add($"{10 + i},2");
+        for (int i = 0; i < 50; i++) lines.Add($"{20 + i},3");
+        var path = CreateCsv(string.Join("\n", lines));
+
+        var result = _validator.ValidateTrainingData(path, "Target", "multiclass-classification");
+
+        Assert.True(result.IsValid);
+        Assert.Contains(result.Warnings, w => w.Contains("Multiclass training at risk"));
     }
 
     #endregion
@@ -210,7 +295,7 @@ public class DataQualityValidatorTests : IDisposable
         var result = _validator.ValidateTrainingData(path, "Label", "regression");
 
         Assert.True(result.IsValid);
-        Assert.True(result.Warnings.Any(w => w.Contains("Small dataset") || w.Contains("Borderline")));
+        Assert.Contains(result.Warnings, w => w.Contains("Small dataset") || w.Contains("Borderline"));
     }
 
     #endregion

@@ -644,7 +644,10 @@ MLoop/
 │   ├── MLoop.CLI/                       # Command-line interface
 │   │   ├── Commands/                    # CLI commands
 │   │   │   ├── InitCommand.cs          # mloop init
-│   │   │   ├── TrainCommand.cs         # mloop train
+│   │   │   ├── TrainCommand.cs         # mloop train (863 lines, orchestration)
+│   │   │   ├── TrainPresenter.cs       # Training display logic (414 lines)
+│   │   │   ├── TrainDataValidator.cs   # Data file/label validation (88 lines)
+│   │   │   ├── CommandContext.cs       # Shared command dependencies
 │   │   │   ├── PredictCommand.cs       # mloop predict
 │   │   │   ├── EvaluateCommand.cs      # mloop evaluate
 │   │   │   ├── ListCommand.cs          # mloop list
@@ -652,7 +655,7 @@ MLoop/
 │   │   │   ├── ServeCommand.cs         # mloop serve (launches API)
 │   │   │   ├── DockerCommand.cs        # mloop docker
 │   │   │   └── InfoCommand.cs          # mloop info
-│   │   ├── Infrastructure/              # Console output, DI setup
+│   │   ├── Infrastructure/              # FileSystem, Configuration, ML, Update, Diagnostics
 │   │   └── Templates/                   # Dockerfile templates
 │   │
 │   ├── MLoop.API/                       # REST API server (ASP.NET Core)
@@ -672,9 +675,13 @@ MLoop/
 │           └── IPromotionManager.cs     # Automated model promotion
 │
 ├── tests/
-│   ├── MLoop.Core.Tests/
-│   ├── MLoop.API.Tests/
-│   └── MLoop.Pipeline.Tests/
+│   ├── MLoop.Core.Tests/           # 650+ tests (AutoML, data, schema)
+│   ├── MLoop.Tests/                # 350+ tests (CLI, infrastructure)
+│   ├── MLoop.Ops.Tests/            # 45 tests (comparison, triggers)
+│   ├── MLoop.DataStore.Tests/      # 26 tests (logging, feedback)
+│   ├── MLoop.API.Tests/            # 15 tests (REST endpoints)
+│   ├── MLoop.Pipeline.Tests/       # 13 tests (pipeline integration)
+│   └── MLoop.Tests.Common/         # Shared test utilities
 │
 ├── examples/                            # Example projects
 │   ├── customer-churn/
@@ -1157,45 +1164,68 @@ $ mloop experiment show exp-005  # Read metadata.json, metrics.json
 
 ## 12. Testing Strategy
 
-### 12.1 Unit Testing
+### 12.1 Test Projects & Coverage
+
+**1110+ tests** across 6 test projects (0 warnings, 0 errors):
+
+| Test Project | Tests | Scope |
+|-------------|-------|-------|
+| `MLoop.Core.Tests` | 650+ | AutoML, data loading, preprocessing, schema validation, encoding |
+| `MLoop.Tests` | 350+ | CLI commands, infrastructure, filesystem, configuration |
+| `MLoop.Ops.Tests` | 45 | Model comparison, retraining triggers |
+| `MLoop.DataStore.Tests` | 26 | Prediction logging, feedback collection |
+| `MLoop.API.Tests` | 15 | REST API endpoints |
+| `MLoop.Pipeline.Tests` | 13 | Pipeline integration |
+
+### 12.2 Unit Testing
 
 **Scope:**
 - Individual components in isolation
-- Mock filesystem operations
+- Real filesystem with temp directories (preferred over mocking)
 - Interface-based dependency injection
+- `[Collection("FileSystem")]` for tests that modify working directory
 
-### 12.2 Integration Testing
+**Pattern: Temp Directory Setup**
+```csharp
+[Collection("FileSystem")]
+public class ModelNameResolverTests : IDisposable
+{
+    private readonly string _testProjectRoot;
+    private readonly string _originalDirectory;
+
+    public ModelNameResolverTests()
+    {
+        _originalDirectory = Directory.GetCurrentDirectory();
+        _testProjectRoot = Path.Combine(Path.GetTempPath(), "mloop-test-" + Guid.NewGuid());
+        Directory.CreateDirectory(Path.Combine(_testProjectRoot, ".mloop"));
+        Directory.SetCurrentDirectory(_testProjectRoot);
+    }
+
+    public void Dispose()
+    {
+        Directory.SetCurrentDirectory(_originalDirectory);
+        Directory.Delete(_testProjectRoot, recursive: true);
+    }
+}
+```
+
+### 12.3 Integration Testing
 
 **Scope:**
 - Multi-component interactions
 - Real filesystem operations
 - Concurrent execution scenarios
 
-**Example: Concurrent Training Test**
-```csharp
-[Fact]
-public async Task ConcurrentTraining_ShouldGenerateUniqueExperimentIds()
-{
-    using var tempDir = new TempDirectory();
-    await InitProject(tempDir.Path);
+### 12.4 Tested Infrastructure Coverage
 
-    // Run two training jobs concurrently
-    var task1 = RunTrainAsync(tempDir.Path, "data1.csv");
-    var task2 = RunTrainAsync(tempDir.Path, "data2.csv");
-
-    var results = await Task.WhenAll(task1, task2);
-
-    // Both should succeed with different IDs
-    Assert.NotEqual(results[0].ExperimentId, results[1].ExperimentId);
-}
-```
-
-### 12.3 E2E Testing
-
-**Scope:**
-- Full CLI command execution
-- Process lifecycle verification
-- Multi-terminal concurrent execution
+| Layer | Components | Status |
+|-------|-----------|--------|
+| FileSystem | FileSystemManager, ProjectDiscovery, DatasetDiscovery, ModelRegistry, ModelNameResolver, ExperimentStore | ✅ Tested |
+| Configuration | ConfigMerger, ConfigLoader, ConfigValidator | ✅ Tested |
+| ML | DataQualityValidator, SchemaValidator, DataBalancer, CategoricalMapper, TrainingEngine | ✅ Tested |
+| Utilities | CsvFieldParser, UpdateChecker, InstallDetector, ErrorSuggestions | ✅ Tested |
+| Commands | InitCommand, TrainDataValidator, CommandContext | ✅ Tested |
+| ML Engines | PredictionEngine, EvaluationEngine | ⚠️ ML.NET integration tests needed |
 
 ---
 
@@ -2125,8 +2155,9 @@ Terminal 2: cd project-B && mloop train ...
 ---
 
 **Version**: 0.5.1-alpha
-**Last Updated**: 2026-02-07
+**Last Updated**: 2026-02-12
 **Status**: Living Document
 **Process Model**: Multi-Process Casual
 **Multi-Model Support**: Yes (v0.2.0+)
 **Project Count**: 6 (Core, CLI, API, Extensibility, DataStore, Ops)
+**Test Count**: 1110+ (0 warnings, 0 errors)

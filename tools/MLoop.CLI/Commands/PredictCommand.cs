@@ -6,6 +6,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Data;
 using MLoop.Core.Preprocessing;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
@@ -249,6 +250,17 @@ public static class PredictCommand
                     await fileSystem.CreateDirectoryAsync(outputDir, CancellationToken.None);
                 }
             }
+
+            // Ensure UTF-8 encoding for prediction data (same as training)
+            var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(resolvedDataFile);
+            if (detection.WasConverted && detection.EncodingName != "UTF-8")
+            {
+                AnsiConsole.MarkupLine($"[green]>[/] Converted {detection.EncodingName} → UTF-8: [cyan]{Path.GetFileName(resolvedDataFile)}[/]");
+                resolvedDataFile = convertedPath;
+            }
+
+            // Flatten multi-line quoted headers (same as training)
+            resolvedDataFile = CsvDataLoader.FlattenMultiLineHeaders(resolvedDataFile);
 
             AnsiConsole.WriteLine();
 

@@ -141,6 +141,9 @@ public static class InfoCommand
             // Use converted path for all operations
             dataFile = convertedPath;
 
+            // Flatten multi-line quoted headers (ML.NET doesn't support them)
+            dataFile = CsvDataLoader.FlattenMultiLineHeaders(dataFile);
+
             // Read file info and count lines in a single pass
             var fileInfo = new FileInfo(dataFile);
 

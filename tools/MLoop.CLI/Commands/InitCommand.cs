@@ -525,7 +525,7 @@ See: docs/EXTENSIBILITY.md for more information
         await fileSystem.WriteTextAsync(metricReadmePath, metricReadme);
     }
 
-    private static string GetYamlTemplate(string projectName, string task, string modelName, string labelColumn)
+    internal static string GetYamlTemplate(string projectName, string task, string modelName, string labelColumn)
     {
         var metricExample = task switch
         {
@@ -568,7 +568,7 @@ data:
 ";
     }
 
-    private static bool IsValidModelName(string name)
+    internal static bool IsValidModelName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             return false;

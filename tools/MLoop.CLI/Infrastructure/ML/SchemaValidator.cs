@@ -284,13 +284,17 @@ public class SchemaValidator
                 }
             }
 
-            // Check for extra columns (warning only)
+            // Check for extra columns (warning only) and identify index columns
+            var indexColumns = new List<string>();
             foreach (var inputCol in inputColumns)
             {
                 if (!savedSchema.Columns.Any(sc => sc.Name == inputCol ||
                     sc.Name.Equals(inputCol, StringComparison.OrdinalIgnoreCase)))
                 {
-                    extraColumns.Add(inputCol);
+                    if (MLoop.Core.Data.CsvDataLoader.IsLikelyIndexColumn(inputCol))
+                        indexColumns.Add(string.IsNullOrWhiteSpace(inputCol) ? "(empty)" : inputCol);
+                    else
+                        extraColumns.Add(inputCol);
                 }
             }
 
@@ -326,12 +330,21 @@ public class SchemaValidator
                     result.Suggestions.Add("Check: Ensure prediction data contains all Feature columns used during training");
                 }
             }
-            else if (extraColumns.Any())
+            else if (indexColumns.Any() || extraColumns.Any())
             {
                 // Extra columns are ok, just warn
                 result.IsValid = true;
-                result.Suggestions.Add($"참고: 추가 컬럼 발견 (무시됨): {string.Join(", ", extraColumns)}");
-                result.Suggestions.Add($"Note: Extra columns found (will be ignored): {string.Join(", ", extraColumns)}");
+                if (indexColumns.Any())
+                {
+                    result.Suggestions.Add($"참고: 인덱스 컬럼 감지됨 (자동 제거): {string.Join(", ", indexColumns)}");
+                    result.Suggestions.Add($"Note: Index column(s) detected (auto-removed): {string.Join(", ", indexColumns)}");
+                    result.Suggestions.Add("💡 pandas에서 CSV 저장 시 index=False 옵션 사용을 권장합니다.");
+                }
+                if (extraColumns.Any())
+                {
+                    result.Suggestions.Add($"참고: 추가 컬럼 발견 (무시됨): {string.Join(", ", extraColumns)}");
+                    result.Suggestions.Add($"Note: Extra columns found (will be ignored): {string.Join(", ", extraColumns)}");
+                }
             }
 
             return result;

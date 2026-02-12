@@ -340,23 +340,23 @@ public static class TrainCommand
                         {
                             AnsiConsole.MarkupLine($"[yellow]Warning:[/] Auto-merge failed: {mergeResult.Error}");
                             AnsiConsole.MarkupLine("[yellow]Falling back to standard discovery...[/]");
-                            resolvedDataFile = await ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
+                            resolvedDataFile = await TrainDataValidator.ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
                         }
                     }
                     else
                     {
                         AnsiConsole.MarkupLine("[grey]No mergeable CSV groups found, using standard discovery[/]");
-                        resolvedDataFile = await ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
+                        resolvedDataFile = await TrainDataValidator.ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
                     }
                 }
                 else
                 {
-                    resolvedDataFile = await ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
+                    resolvedDataFile = await TrainDataValidator.ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
                 }
             }
             else
             {
-                resolvedDataFile = await ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
+                resolvedDataFile = await TrainDataValidator.ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
             }
 
             if (resolvedDataFile == null)
@@ -444,39 +444,7 @@ public static class TrainCommand
                         resolvedDataFile,
                         effectiveDefinition.Label);
 
-                    if (distributionResult.Error == null)
-                    {
-                        AnsiConsole.WriteLine();
-                        AnsiConsole.Write(new Rule("[blue]Class Distribution[/]").LeftJustified());
-                        AnsiConsole.WriteLine();
-                        AnsiConsole.WriteLine(distributionResult.DistributionVisualization);
-                        AnsiConsole.WriteLine();
-
-                        if (distributionResult.NeedsAttention)
-                        {
-                            AnsiConsole.MarkupLine($"[yellow]⚠ {distributionResult.Summary}[/]");
-
-                            foreach (var warning in distributionResult.Warnings)
-                            {
-                                AnsiConsole.MarkupLine($"[yellow]  • {warning}[/]");
-                            }
-
-                            if (distributionResult.Suggestions.Count > 0)
-                            {
-                                AnsiConsole.MarkupLine("[grey]Suggestions:[/]");
-                                foreach (var suggestion in distributionResult.Suggestions)
-                                {
-                                    AnsiConsole.MarkupLine($"[grey]  • {suggestion}[/]");
-                                }
-                            }
-                            AnsiConsole.WriteLine();
-                        }
-                        else
-                        {
-                            AnsiConsole.MarkupLine($"[green]✓[/] {distributionResult.Summary}");
-                            AnsiConsole.WriteLine();
-                        }
-                    }
+                    TrainPresenter.DisplayClassDistribution(distributionResult);
                 }
                 catch (Exception ex)
                 {
@@ -487,70 +455,10 @@ public static class TrainCommand
             // Data quality analysis if requested
             if (analyzeData || !string.IsNullOrEmpty(generateScript))
             {
-                AnsiConsole.WriteLine();
-                AnsiConsole.Write(new Rule("[blue]Data Quality Analysis[/]").LeftJustified());
-                AnsiConsole.WriteLine();
-
                 var analyzer = new DataQualityAnalyzer(new TrainCommandLogger());
                 var issues = await analyzer.AnalyzeAsync(resolvedDataFile, effectiveDefinition.Label);
 
-                if (issues.Count == 0)
-                {
-                    AnsiConsole.MarkupLine("[green]✓[/] No data quality issues detected!");
-                    AnsiConsole.WriteLine();
-                }
-                else
-                {
-                    // Display issues grouped by severity
-                    var criticalIssues = issues.Where(i => i.Severity == IssueSeverity.Critical).ToList();
-                    var highIssues = issues.Where(i => i.Severity == IssueSeverity.High).ToList();
-                    var mediumIssues = issues.Where(i => i.Severity == IssueSeverity.Medium).ToList();
-                    var lowIssues = issues.Where(i => i.Severity == IssueSeverity.Low).ToList();
-
-                    if (criticalIssues.Any())
-                    {
-                        AnsiConsole.MarkupLine("[red]CRITICAL Issues:[/]");
-                        foreach (var issue in criticalIssues)
-                        {
-                            AnsiConsole.MarkupLine($"  [red]•[/] {issue.Description}");
-                            if (!string.IsNullOrEmpty(issue.SuggestedFix))
-                            {
-                                AnsiConsole.MarkupLine($"    [grey]Fix: {issue.SuggestedFix.Replace("\n", "\n    ")}[/]");
-                            }
-                        }
-                        AnsiConsole.WriteLine();
-                    }
-
-                    if (highIssues.Any())
-                    {
-                        AnsiConsole.MarkupLine("[yellow]HIGH Priority Issues:[/]");
-                        foreach (var issue in highIssues)
-                        {
-                            AnsiConsole.MarkupLine($"  [yellow]•[/] {issue.Description}");
-                            if (!string.IsNullOrEmpty(issue.SuggestedFix))
-                            {
-                                AnsiConsole.MarkupLine($"    [grey]Fix: {issue.SuggestedFix.Replace("\n", "\n    ")}[/]");
-                            }
-                        }
-                        AnsiConsole.WriteLine();
-                    }
-
-                    if (mediumIssues.Any())
-                    {
-                        AnsiConsole.MarkupLine("[blue]MEDIUM Priority Issues:[/]");
-                        foreach (var issue in mediumIssues)
-                        {
-                            AnsiConsole.MarkupLine($"  [blue]•[/] {issue.Description}");
-                        }
-                        AnsiConsole.WriteLine();
-                    }
-
-                    if (lowIssues.Any())
-                    {
-                        AnsiConsole.MarkupLine("[grey]LOW Priority Issues: {0}[/]", lowIssues.Count);
-                        AnsiConsole.WriteLine();
-                    }
-                }
+                TrainPresenter.DisplayDataQualityIssues(issues);
 
                 // Generate preprocessing script if requested
                 if (!string.IsNullOrEmpty(generateScript))
@@ -672,13 +580,13 @@ public static class TrainCommand
             }
 
             // Display data summary
-            DisplayDataSummary(resolvedDataFile, effectiveDefinition.Label);
+            TrainPresenter.DisplayDataSummary(resolvedDataFile, effectiveDefinition.Label);
 
             // Display training configuration
-            DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition);
+            TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition);
 
             // Validate label column exists
-            await ValidateLabelColumnAsync(resolvedDataFile, effectiveDefinition.Label, resolvedModelName);
+            await TrainDataValidator.ValidateLabelColumnAsync(resolvedDataFile, effectiveDefinition.Label, resolvedModelName);
 
             // Initialize training components
             var modelNameResolver = new ModelNameResolver(fileSystem, projectDiscovery, configLoader);
@@ -809,8 +717,11 @@ public static class TrainCommand
                 // Don't return 1 here - training succeeded, only post-processing failed
             }
 
+            // Sync mloop.yaml if CLI overrode label or task
+            await SyncYamlConfigAsync(configLoader, userConfig, resolvedModelName, effectiveDefinition, label, task);
+
             // Display results
-            DisplayResults(result, resolvedModelName);
+            TrainPresenter.DisplayResults(result, resolvedModelName);
 
             // T4.4: Performance diagnostics
             var performanceDiagnostics = new PerformanceDiagnostics();
@@ -818,42 +729,7 @@ public static class TrainCommand
                 trainingConfig.Task,
                 result.Metrics);
 
-            if (diagnosticResult.NeedsAttention)
-            {
-                AnsiConsole.WriteLine();
-                AnsiConsole.Write(new Rule("[yellow]Performance Diagnostics[/]").LeftJustified());
-                AnsiConsole.WriteLine();
-
-                var levelColor = diagnosticResult.OverallAssessment switch
-                {
-                    PerformanceLevel.Poor => "red",
-                    PerformanceLevel.Low => "yellow",
-                    _ => "orange1"
-                };
-
-                AnsiConsole.MarkupLine($"[{levelColor}]⚠ {diagnosticResult.Summary}[/]");
-                AnsiConsole.WriteLine();
-
-                if (diagnosticResult.Warnings.Count > 0)
-                {
-                    AnsiConsole.MarkupLine("[yellow]Warnings:[/]");
-                    foreach (var warning in diagnosticResult.Warnings)
-                    {
-                        AnsiConsole.MarkupLine($"  [yellow]•[/] {warning}");
-                    }
-                    AnsiConsole.WriteLine();
-                }
-
-                if (diagnosticResult.Suggestions.Count > 0)
-                {
-                    AnsiConsole.MarkupLine("[blue]Suggestions to improve performance:[/]");
-                    foreach (var suggestion in diagnosticResult.Suggestions)
-                    {
-                        AnsiConsole.MarkupLine($"  [grey]•[/] {suggestion}");
-                    }
-                    AnsiConsole.WriteLine();
-                }
-            }
+            TrainPresenter.DisplayDiagnostics(diagnosticResult);
 
             // Auto-promote to production if enabled
             if (!noPromote)
@@ -868,42 +744,7 @@ public static class TrainCommand
                 // Show comparison if production model exists
                 if (production?.Metrics != null && result.Metrics != null)
                 {
-                    AnsiConsole.Write(new Rule("[blue]Production Comparison[/]").LeftJustified());
-                    AnsiConsole.WriteLine();
-
-                    var compTable = new Table()
-                        .BorderColor(Color.Grey)
-                        .AddColumn("Metric")
-                        .AddColumn(new TableColumn($"[grey]Production ({production.ExperimentId})[/]").RightAligned())
-                        .AddColumn(new TableColumn($"[cyan]New ({result.ExperimentId})[/]").RightAligned())
-                        .AddColumn(new TableColumn("Delta").RightAligned());
-
-                    foreach (var (metricName, newValue) in result.Metrics.OrderByDescending(m => m.Value))
-                    {
-                        var prodValue = production.Metrics.TryGetValue(metricName, out var pv) ? pv : (double?)null;
-                        var prodStr = prodValue.HasValue ? $"{prodValue.Value:F4}" : "[grey]-[/]";
-                        var newStr = $"{newValue:F4}";
-
-                        string deltaStr;
-                        if (prodValue.HasValue)
-                        {
-                            var delta = newValue - prodValue.Value;
-                            var sign = delta >= 0 ? "+" : "";
-                            var color = delta > 0 ? "green" : delta < 0 ? "red" : "grey";
-                            deltaStr = $"[{color}]{sign}{delta:F4}[/]";
-                        }
-                        else
-                        {
-                            deltaStr = "[grey]-[/]";
-                        }
-
-                        compTable.AddRow(
-                            metricName.Replace("_", " ").ToUpperInvariant(),
-                            prodStr, newStr, deltaStr);
-                    }
-
-                    AnsiConsole.Write(compTable);
-                    AnsiConsole.WriteLine();
+                    TrainPresenter.DisplayProductionComparison(result, production);
                 }
 
                 var promoted = await modelRegistry.AutoPromoteAsync(
@@ -912,33 +753,23 @@ public static class TrainCommand
                     primaryMetric,
                     CancellationToken.None);
 
-                if (promoted)
+                // Resolve class count for quality gate threshold
+                int? classCount = null;
+                if (!promoted)
                 {
-                    AnsiConsole.MarkupLine($"[green]Model promoted to production![/]");
-                    AnsiConsole.WriteLine($"   Better {primaryMetric} than current production model");
-                }
-                else
-                {
-                    AnsiConsole.MarkupLine("[yellow]Model saved to staging[/]");
-
-                    // Check convergence
-                    if (production?.Metrics != null && result.Metrics != null && production.Metrics.ContainsKey(primaryMetric))
+                    try
                     {
-                        var prodValue = production.Metrics[primaryMetric];
-                        var newValue = result.Metrics.TryGetValue(primaryMetric, out var v) ? v : double.NaN;
-                        if (Math.Abs(prodValue - newValue) < 1e-10)
-                        {
-                            AnsiConsole.WriteLine($"   Performance converged — same {primaryMetric} as production model");
-                            AnsiConsole.MarkupLine("[grey]   Tip: Additional training time may not improve this dataset further.[/]");
-                        }
-                        else
-                        {
-                            AnsiConsole.WriteLine($"   Current production model has better {primaryMetric}");
-                        }
+                        var expData = await experimentStore.LoadAsync(resolvedModelName, result.ExperimentId, CancellationToken.None);
+                        var labelSchema = expData.Config?.InputSchema?.Columns?
+                            .FirstOrDefault(s => s.Name.Equals(trainingConfig.LabelColumn, StringComparison.OrdinalIgnoreCase));
+                        if (labelSchema?.UniqueValueCount > 0)
+                            classCount = labelSchema.UniqueValueCount;
                     }
+                    catch { /* schema unavailable, use default threshold */ }
                 }
 
-                AnsiConsole.WriteLine();
+                var minThreshold = ModelRegistry.GetMinimumMetricThreshold(primaryMetric, classCount);
+                TrainPresenter.DisplayPromotionResult(promoted, primaryMetric, result, production, minThreshold);
             }
 
             // T4.6: Unused data warning
@@ -946,49 +777,8 @@ public static class TrainCommand
             if (!string.IsNullOrEmpty(dataDirectory) && Directory.Exists(dataDirectory))
             {
                 var unusedDataScanner = new UnusedDataScanner();
-                var usedFiles = allDataFilesUsed;
-
-                var scanResult = unusedDataScanner.Scan(dataDirectory, usedFiles);
-
-                if (scanResult.HasUnusedFiles)
-                {
-                    AnsiConsole.Write(new Rule("[grey]Data Directory Summary[/]").LeftJustified());
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine($"[grey]{scanResult.Summary}[/]");
-
-                    // Show warnings if any
-                    foreach (var warning in scanResult.Warnings.Take(3))
-                    {
-                        AnsiConsole.MarkupLine($"[yellow]  ⚠ {warning}[/]");
-                    }
-
-                    // Show suggestions if any
-                    foreach (var suggestion in scanResult.Suggestions.Take(2))
-                    {
-                        AnsiConsole.MarkupLine($"[grey]  💡 {suggestion}[/]");
-                    }
-
-                    // List unused files (limit to 5)
-                    if (scanResult.UnusedFiles.Count <= 5)
-                    {
-                        AnsiConsole.MarkupLine("[grey]  Unused files:[/]");
-                        foreach (var file in scanResult.UnusedFiles)
-                        {
-                            AnsiConsole.MarkupLine($"[grey]    • {file.FileName} ({file.SizeFormatted})[/]");
-                        }
-                    }
-                    else
-                    {
-                        var remaining = scanResult.UnusedFiles.Count - 3;
-                        AnsiConsole.MarkupLine("[grey]  Unused files:[/]");
-                        foreach (var file in scanResult.UnusedFiles.Take(3))
-                        {
-                            AnsiConsole.MarkupLine($"[grey]    • {file.FileName} ({file.SizeFormatted})[/]");
-                        }
-                        AnsiConsole.MarkupLine($"[grey]    ... and {remaining} more[/]");
-                    }
-                    AnsiConsole.WriteLine();
-                }
+                var scanResult = unusedDataScanner.Scan(dataDirectory, allDataFilesUsed);
+                TrainPresenter.DisplayUnusedDataWarning(scanResult);
             }
 
             return 0;
@@ -1001,184 +791,61 @@ public static class TrainCommand
         }
     }
 
-    private static void DisplayDataSummary(string dataFile, string labelColumn)
+    /// <summary>
+    /// Updates mloop.yaml when CLI-specified label or task differs from the stored config.
+    /// This ensures predict can find the correct label after training with --label override.
+    /// </summary>
+    internal static async Task SyncYamlConfigAsync(
+        ConfigLoader configLoader,
+        MLoopConfig userConfig,
+        string modelName,
+        ModelDefinition effectiveDefinition,
+        string? cliLabel,
+        string? cliTask)
     {
+        // Only sync if CLI actually overrode something
+        if (string.IsNullOrEmpty(cliLabel) && string.IsNullOrEmpty(cliTask))
+            return;
+
+        var yamlModel = userConfig.Models.TryGetValue(modelName, out var m) ? m : null;
+
+        bool needsUpdate = false;
+        if (!string.IsNullOrEmpty(cliLabel) && (yamlModel == null || !string.Equals(yamlModel.Label, cliLabel, StringComparison.Ordinal)))
+            needsUpdate = true;
+        if (!string.IsNullOrEmpty(cliTask) && (yamlModel == null || !string.Equals(yamlModel.Task, cliTask, StringComparison.OrdinalIgnoreCase)))
+            needsUpdate = true;
+
+        if (!needsUpdate)
+            return;
+
+        if (yamlModel != null)
+        {
+            // Update existing model definition
+            if (!string.IsNullOrEmpty(cliLabel))
+                yamlModel.Label = cliLabel;
+            if (!string.IsNullOrEmpty(cliTask))
+                yamlModel.Task = cliTask;
+        }
+        else
+        {
+            // Create new model definition in yaml
+            userConfig.Models[modelName] = new ModelDefinition
+            {
+                Task = effectiveDefinition.Task,
+                Label = effectiveDefinition.Label,
+                Training = effectiveDefinition.Training
+            };
+        }
+
         try
         {
-            using var reader = new StreamReader(dataFile);
-            var header = reader.ReadLine();
-            if (string.IsNullOrEmpty(header)) return;
-
-            var columns = header.Split(',').Length;
-            var rowCount = 0;
-            while (reader.ReadLine() != null) rowCount++;
-
-            AnsiConsole.WriteLine();
-            AnsiConsole.Write(new Rule("[blue]Data Summary[/]").LeftJustified());
-            AnsiConsole.WriteLine();
-
-            var table = new Table()
-                .BorderColor(Color.Grey)
-                .AddColumn("Property")
-                .AddColumn("Value");
-
-            table.AddRow("Rows", $"[cyan]{rowCount:N0}[/]");
-            table.AddRow("Columns", $"[cyan]{columns}[/]");
-            table.AddRow("Features", $"[cyan]{columns - 1}[/]");
-            table.AddRow("Label", $"[cyan]{labelColumn}[/]");
-
-            // Check file size
-            var fileSize = new FileInfo(dataFile).Length;
-            var sizeStr = fileSize switch
-            {
-                < 1024 => $"{fileSize} B",
-                < 1024 * 1024 => $"{fileSize / 1024.0:F1} KB",
-                _ => $"{fileSize / (1024.0 * 1024.0):F1} MB"
-            };
-            table.AddRow("File Size", $"[grey]{sizeStr}[/]");
-
-            AnsiConsole.Write(table);
-            AnsiConsole.WriteLine();
+            await configLoader.SaveUserConfigAsync(userConfig);
+            AnsiConsole.MarkupLine($"[grey]Updated mloop.yaml: model '{modelName}' → label={effectiveDefinition.Label}, task={effectiveDefinition.Task}[/]");
         }
-        catch
+        catch (Exception ex)
         {
-            // Non-critical — skip data summary on error
+            AnsiConsole.MarkupLine($"[yellow]Warning:[/] Could not update mloop.yaml: {ex.Message}");
         }
-    }
-
-    private static void DisplayTrainingConfig(string dataFile, string modelName, ModelDefinition definition)
-    {
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[blue]Training Configuration[/]").LeftJustified());
-        AnsiConsole.WriteLine();
-
-        var table = new Table()
-            .BorderColor(Color.Grey)
-            .AddColumn("Setting")
-            .AddColumn("Value");
-
-        table.AddRow("Model", $"[cyan]{modelName}[/]");
-        table.AddRow("Task", definition.Task);
-        table.AddRow("Data File", Path.GetFileName(dataFile));
-        table.AddRow("Label Column", definition.Label);
-        table.AddRow("Time Limit", $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
-        table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
-        table.AddRow("Test Split", $"{(definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit) * 100:F0}%");
-
-        AnsiConsole.Write(table);
-        AnsiConsole.WriteLine();
-    }
-
-    private static void DisplayResults(TrainingResult result, string modelName)
-    {
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Rule("[green]Training Complete![/]").LeftJustified());
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{modelName}[/]");
-        AnsiConsole.MarkupLine($"[green]>[/] Experiment ID: [blue]{result.ExperimentId}[/]");
-        AnsiConsole.MarkupLine($"[green]>[/] Best Trainer: [yellow]{result.BestTrainer}[/]");
-        AnsiConsole.MarkupLine($"[green]>[/] Training Time: [cyan]{result.TrainingTimeSeconds:F2}s[/]");
-        AnsiConsole.WriteLine();
-
-        // Metrics table
-        var metricsTable = new Table()
-            .BorderColor(Color.Grey)
-            .AddColumn("Metric")
-            .AddColumn("Value");
-
-        foreach (var (metricName, metricValue) in result.Metrics.OrderByDescending(m => m.Value))
-        {
-            var formattedValue = metricValue.ToString("F4");
-            var color = metricValue >= 0.9 ? "green" :
-                       metricValue >= 0.8 ? "yellow" :
-                       metricValue >= 0.7 ? "orange1" : "red";
-
-            metricsTable.AddRow(
-                metricName.Replace("_", " ").ToUpperInvariant(),
-                $"[{color}]{formattedValue}[/]");
-        }
-
-        AnsiConsole.Write(metricsTable);
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.MarkupLine($"[grey]Model saved to:[/] {result.ModelPath}");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
-        AnsiConsole.MarkupLine($"  mloop list --name {modelName}");
-        AnsiConsole.MarkupLine($"  mloop predict data.csv --name {modelName}");
-        AnsiConsole.MarkupLine($"  mloop promote {result.ExperimentId} --name {modelName}");
-        AnsiConsole.WriteLine();
-    }
-
-    private static async Task ValidateLabelColumnAsync(string dataFilePath, string labelColumn, string modelName)
-    {
-        var csvHelper = new MLoop.Core.Data.CsvHelperImpl();
-        var data = await csvHelper.ReadAsync(dataFilePath);
-
-        if (data.Count == 0)
-        {
-            throw new InvalidOperationException($"Data file is empty: {dataFilePath}");
-        }
-
-        var firstRow = data[0];
-        var availableColumns = firstRow.Keys.ToArray();
-
-        if (!firstRow.ContainsKey(labelColumn))
-        {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[red]Error:[/] Label column not found in data for model '[cyan]{modelName}[/]'");
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"  [yellow]Label specified:[/] '{labelColumn}'");
-            AnsiConsole.MarkupLine($"  [yellow]Available columns:[/] {string.Join(", ", availableColumns)}");
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[yellow]Tip:[/] Update the label in mloop.yaml or use --label option for --name {modelName}");
-            AnsiConsole.WriteLine();
-
-            throw new ArgumentException(
-                $"Label column '{labelColumn}' not found in data for model '{modelName}'.\n" +
-                $"Available columns: {string.Join(", ", availableColumns)}",
-                nameof(labelColumn));
-        }
-    }
-
-    /// <summary>
-    /// Resolves the data file path from various sources (explicit path, config, or auto-discovery).
-    /// </summary>
-    private static Task<string?> ResolveDataFileAsync(
-        string? dataFile,
-        MLoopConfig userConfig,
-        string projectRoot,
-        IDatasetDiscovery datasetDiscovery,
-        IFileSystemManager fileSystem)
-    {
-        if (!string.IsNullOrEmpty(dataFile))
-        {
-            var resolvedPath = Path.IsPathRooted(dataFile)
-                ? dataFile
-                : Path.Combine(projectRoot, dataFile);
-
-            return File.Exists(resolvedPath)
-                ? Task.FromResult<string?>(resolvedPath)
-                : Task.FromResult<string?>(null);
-        }
-
-        // Try config data path
-        if (!string.IsNullOrEmpty(userConfig.Data?.Train))
-        {
-            var configPath = Path.IsPathRooted(userConfig.Data.Train)
-                ? userConfig.Data.Train
-                : Path.Combine(projectRoot, userConfig.Data.Train);
-
-            if (File.Exists(configPath))
-            {
-                return Task.FromResult<string?>(configPath);
-            }
-        }
-
-        // Auto-discover datasets/train.csv
-        var datasets = datasetDiscovery.FindDatasets(projectRoot);
-        return Task.FromResult(datasets?.TrainPath);
     }
 
     private class TrainCommandLogger : ILogger

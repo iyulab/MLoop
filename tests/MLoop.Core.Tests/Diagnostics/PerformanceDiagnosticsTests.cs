@@ -176,4 +176,58 @@ public class PerformanceDiagnosticsTests
         // Assert
         Assert.Contains(result.Suggestions, s => s.Contains("feature selection") || s.Contains("feature count"));
     }
+
+    #region Degenerate Model Detection
+
+    [Fact]
+    public void Analyze_BinaryHighAccuracyZeroF1_DetectsDegenerate()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.95,
+            ["f1_score"] = 0.0,
+            ["auc"] = 0.52
+        };
+
+        var result = _diagnostics.Analyze("binary-classification", metrics);
+
+        Assert.Equal(PerformanceLevel.Poor, result.OverallAssessment);
+        Assert.Contains(result.Warnings, w => w.Contains("majority class"));
+    }
+
+    [Fact]
+    public void Analyze_MulticlassHighAccuracyZeroF1_DetectsDegenerate()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["macro_accuracy"] = 0.80,
+            ["micro_accuracy"] = 0.80,
+            ["macro_f1"] = 0.0,
+            ["log_loss"] = 1.5
+        };
+
+        var result = _diagnostics.Analyze("multiclass-classification", metrics);
+
+        Assert.Equal(PerformanceLevel.Poor, result.OverallAssessment);
+        Assert.Contains(result.Warnings, w => w.Contains("majority class"));
+    }
+
+    [Fact]
+    public void Analyze_MulticlassGoodF1_NoDegenerate()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["macro_accuracy"] = 0.85,
+            ["micro_accuracy"] = 0.87,
+            ["macro_f1"] = 0.82,
+            ["log_loss"] = 0.5
+        };
+
+        var result = _diagnostics.Analyze("multiclass-classification", metrics);
+
+        Assert.NotEqual(PerformanceLevel.Poor, result.OverallAssessment);
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("majority class"));
+    }
+
+    #endregion
 }

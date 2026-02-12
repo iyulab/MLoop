@@ -275,4 +275,199 @@ public class CsvDataLoaderTests : IDisposable
         }
         return rowCount;
     }
+
+    [Fact]
+    public void FlattenMultiLineHeaders_SingleLineHeader_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "single_line.csv");
+        File.WriteAllText(csvPath, "A,B,C\n1,2,3\n4,5,6\n");
+
+        var result = CsvDataLoader.FlattenMultiLineHeaders(csvPath);
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineHeaders_MultiLineHeader_ReturnsFlattenedFile()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "multi_line.csv");
+        // Header with newlines inside quoted fields: "Col A", "Col\nB", "Col\nC\nD"
+        File.WriteAllText(csvPath, "\"Col A\",\"Col\nB\",\"Col\nC\nD\"\n1,2,3\n4,5,6\n");
+
+        var result = CsvDataLoader.FlattenMultiLineHeaders(csvPath);
+
+        // Should return a different file (temp)
+        Assert.NotEqual(csvPath, result);
+        Assert.True(File.Exists(result));
+
+        // Read the flattened file
+        var lines = File.ReadAllLines(result);
+        Assert.True(lines.Length >= 3); // header + 2 data rows
+
+        // Header should be single line with spaces instead of newlines
+        Assert.Contains("Col A", lines[0]);
+        Assert.Contains("Col B", lines[0]);
+        Assert.Contains("Col C D", lines[0]);
+
+        // Data rows should be preserved
+        Assert.Equal("1,2,3", lines[1]);
+        Assert.Equal("4,5,6", lines[2]);
+
+        // Cleanup
+        File.Delete(result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineHeaders_EmptyFile_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "empty.csv");
+        File.WriteAllText(csvPath, "");
+
+        var result = CsvDataLoader.FlattenMultiLineHeaders(csvPath);
+
+        Assert.Equal(csvPath, result);
+    }
+
+    #region IsLikelyIndexColumn
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("  ", true)]
+    [InlineData("Unnamed: 0", true)]
+    [InlineData("Unnamed: 1", true)]
+    [InlineData("unnamed: 0", true)]
+    [InlineData("Unnamed", true)]
+    [InlineData("Feature1", false)]
+    [InlineData("id", false)]
+    [InlineData("index", false)]
+    [InlineData("Price", false)]
+    public void IsLikelyIndexColumn_DetectsCorrectly(string columnName, bool expected)
+    {
+        Assert.Equal(expected, CsvDataLoader.IsLikelyIndexColumn(columnName));
+    }
+
+    #endregion
+
+    #region RemoveIndexColumns
+
+    [Fact]
+    public void RemoveIndexColumns_NoIndexColumns_ReturnsOriginalPath()
+    {
+        var csv = "Feature1,Feature2,Label\n1,2,A\n3,4,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "noidx.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveIndexColumns(csvPath);
+
+        Assert.Equal(csvPath, result); // No change
+    }
+
+    [Fact]
+    public void RemoveIndexColumns_EmptyNameColumn_RemovesIt()
+    {
+        // Pandas default: ",Feature1,Feature2,Label\n0,1,2,A\n1,3,4,B"
+        var csv = ",Feature1,Feature2,Label\n0,1,2,A\n1,3,4,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "pandas_idx.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveIndexColumns(csvPath);
+
+        Assert.NotEqual(csvPath, result); // New file created
+        var content = File.ReadAllText(result);
+        Assert.StartsWith("Feature1,Feature2,Label", content);
+        Assert.Contains("1,2,A", content);
+        Assert.DoesNotContain(",0,", content.Split('\n')[0]); // Index values removed
+    }
+
+    [Fact]
+    public void RemoveIndexColumns_UnnamedColumn_RemovesIt()
+    {
+        var csv = "Unnamed: 0,Feature1,Label\n0,1,A\n1,2,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "unnamed_idx.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveIndexColumns(csvPath);
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.StartsWith("Feature1,Label", content);
+    }
+
+    [Fact]
+    public void RemoveIndexColumns_EmptyFile_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "empty_idx.csv");
+        File.WriteAllText(csvPath, "", System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveIndexColumns(csvPath);
+
+        Assert.Equal(csvPath, result);
+    }
+
+    #endregion
+
+    #region IsLikelyHeaderless
+
+    [Fact]
+    public void IsLikelyHeaderless_AllNumericFirstRow_ReturnsTrue()
+    {
+        var csv = "1,2,3,4,5\n10.5,20.3,15.2,5.1,8.0\n8.9,12.4,18.7,3.2,6.0\n";
+        var csvPath = Path.Combine(_tempDirectory, "headerless.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        Assert.True(CsvDataLoader.IsLikelyHeaderless(csvPath));
+    }
+
+    [Fact]
+    public void IsLikelyHeaderless_TextHeaders_ReturnsFalse()
+    {
+        var csv = "Feature1,Feature2,Label\n1.0,2.0,0\n3.0,4.0,1\n";
+        var csvPath = Path.Combine(_tempDirectory, "with_header.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        Assert.False(CsvDataLoader.IsLikelyHeaderless(csvPath));
+    }
+
+    [Fact]
+    public void IsLikelyHeaderless_MixedFirstRow_ReturnsFalse()
+    {
+        // Some text + some numbers in first row → likely a header
+        var csv = "Name,Age,Score\nAlice,30,95.5\nBob,25,87.3\n";
+        var csvPath = Path.Combine(_tempDirectory, "mixed_header.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        Assert.False(CsvDataLoader.IsLikelyHeaderless(csvPath));
+    }
+
+    [Fact]
+    public void IsLikelyHeaderless_EmptyFile_ReturnsFalse()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "empty_headerless.csv");
+        File.WriteAllText(csvPath, "", System.Text.Encoding.UTF8);
+
+        Assert.False(CsvDataLoader.IsLikelyHeaderless(csvPath));
+    }
+
+    [Fact]
+    public void IsLikelyHeaderless_SingleColumn_ReturnsFalse()
+    {
+        // Only one column - can't reliably judge
+        var csv = "42\n100\n200\n";
+        var csvPath = Path.Combine(_tempDirectory, "single_col.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        Assert.False(CsvDataLoader.IsLikelyHeaderless(csvPath));
+    }
+
+    [Fact]
+    public void IsLikelyHeaderless_SequentialIntegers_ReturnsTrue()
+    {
+        var csv = "0,1,2,3,4\n5,6,7,8,9\n10,11,12,13,14\n";
+        var csvPath = Path.Combine(_tempDirectory, "sequential.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        Assert.True(CsvDataLoader.IsLikelyHeaderless(csvPath));
+    }
+
+    #endregion
 }

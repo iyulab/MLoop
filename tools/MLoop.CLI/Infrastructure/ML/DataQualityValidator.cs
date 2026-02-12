@@ -137,6 +137,9 @@ public class DataQualityValidator
                     // Check 3: Class imbalance detection
                     CheckClassImbalance(textLabelValues, uniqueClasses, result);
 
+                    // Check 4: Multiclass insufficient samples per class
+                    CheckMulticlassMinimumSamples(textLabelValues, uniqueClasses, taskType, result);
+
                     // Valid text labels for classification
                     return result;
                 }
@@ -148,6 +151,7 @@ public class DataQualityValidator
                 var uniqueNumericClasses = numericLabelValues.Select(v => v.ToString()).Distinct().ToList();
                 var allLabelStrings = numericLabelValues.Select(v => v.ToString()).ToList();
                 CheckClassImbalance(allLabelStrings, uniqueNumericClasses, result);
+                CheckMulticlassMinimumSamples(allLabelStrings, uniqueNumericClasses, taskType, result);
             }
 
             // For regression or mixed labels, require numeric values
@@ -289,6 +293,59 @@ public class DataQualityValidator
         {
             result.Warnings.Add($"⚠ Moderate class imbalance: {imbalanceRatio:F1}:1 ratio");
             result.Suggestions.Add("💡 Consider using F1-score for evaluation: --metric f1_score");
+        }
+    }
+
+    /// <summary>
+    /// Checks if multiclass classification has enough samples per class for reliable training.
+    /// Issues warnings when classes have too few samples for cross-validation to work properly.
+    /// </summary>
+    private static void CheckMulticlassMinimumSamples(
+        List<string> labelValues, List<string> uniqueClasses, string? taskType, DataQualityResult result)
+    {
+        if (taskType?.ToLowerInvariant() != "multiclass-classification" || uniqueClasses.Count <= 2)
+            return;
+
+        var classCounts = uniqueClasses
+            .Select(c => new { Class = c, Count = labelValues.Count(v => v == c) })
+            .OrderBy(x => x.Count)
+            .ToList();
+
+        var totalSamples = labelValues.Count;
+        var classCount = uniqueClasses.Count;
+        var smallestClass = classCounts.First();
+
+        // Per-class minimum: need at least 5 samples per class for any CV fold to work
+        const int MINIMUM_PER_CLASS = 5;
+        // Recommended minimum: 15 samples per class for stable cross-validation
+        const int RECOMMENDED_PER_CLASS = 15;
+
+        var classesBelow5 = classCounts.Where(c => c.Count < MINIMUM_PER_CLASS).ToList();
+        var classesBelow15 = classCounts.Where(c => c.Count < RECOMMENDED_PER_CLASS).ToList();
+
+        if (classesBelow5.Count > 0)
+        {
+            result.Warnings.Add($"🔴 Multiclass training at risk: {classesBelow5.Count} of {classCount} classes have fewer than {MINIMUM_PER_CLASS} samples");
+            foreach (var c in classesBelow5)
+            {
+                result.Warnings.Add($"   Class '{c.Class}': {c.Count} samples");
+            }
+            result.Warnings.Add($"   Total dataset: {totalSamples} rows, {classCount} classes");
+            result.Warnings.Add("");
+            result.Warnings.Add("   Cross-validation folds will likely have empty classes, causing AutoML to fail");
+            result.Warnings.Add("");
+            result.Suggestions.Add("🔧 For small multiclass datasets:");
+            result.Suggestions.Add($"   1. Collect more data (target: ≥{RECOMMENDED_PER_CLASS} samples per class, ≥{classCount * RECOMMENDED_PER_CLASS} total)");
+            result.Suggestions.Add("   2. Merge similar classes to reduce class count");
+            result.Suggestions.Add("   3. Remove classes with very few samples");
+            result.Suggestions.Add("   4. Use --time 30 to limit training complexity");
+        }
+        else if (classesBelow15.Count > 0)
+        {
+            result.Warnings.Add($"🟡 Multiclass training may be unstable: {classesBelow15.Count} of {classCount} classes have fewer than {RECOMMENDED_PER_CLASS} samples");
+            result.Warnings.Add($"   Smallest class '{smallestClass.Class}': {smallestClass.Count} samples");
+            result.Warnings.Add($"   Total dataset: {totalSamples} rows, {classCount} classes");
+            result.Suggestions.Add($"💡 Target: ≥{RECOMMENDED_PER_CLASS} samples per class for stable training");
         }
     }
 
