@@ -1,0 +1,24 @@
+# MLoop user project .gitignore
+
+# .NET Build outputs (if any scripts)
+bin/
+obj/
+*.user
+*.suo
+
+# MLoop internal (keep metadata, ignore binaries)
+.mloop/cache/
+.mloop/.cache/
+
+# Model binaries (large files)
+models/*/staging/*/model.zip
+models/*/production/model.zip
+models/*/staging/*/training.log
+
+# Prediction outputs
+predictions/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp

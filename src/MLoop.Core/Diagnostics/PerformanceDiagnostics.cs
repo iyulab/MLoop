@@ -178,9 +178,20 @@ public class PerformanceDiagnostics
 
         // Check F1 Score
         if (metrics.TryGetValue("F1Score", out var f1) ||
-            metrics.TryGetValue("F1", out f1))
+            metrics.TryGetValue("F1", out f1) ||
+            metrics.TryGetValue("f1_score", out f1))
         {
             result.SecondaryMetrics["F1"] = f1;
+
+            // Degenerate model detection: high accuracy but zero F1
+            if (f1 < 0.001 && result.SecondaryMetrics.TryGetValue("Accuracy", out var accVal) && accVal > 0.5)
+            {
+                result.OverallAssessment = PerformanceLevel.Poor;
+                result.Summary = $"Degenerate model: Accuracy = {accVal:F4} but F1 = 0";
+                result.Warnings.Add("⚠ Model only predicts the majority class (F1 = 0)");
+                result.Warnings.Add("High accuracy is misleading due to class imbalance");
+                result.Suggestions.Add("Check class distribution and consider balancing the dataset");
+            }
         }
     }
 
@@ -244,6 +255,22 @@ public class PerformanceDiagnostics
                 result.Summary = $"Poor multiclass classification ({primaryMetricName} = {primaryMetricValue:F4})";
                 result.Warnings.Add("Model performance is near random");
                 result.Suggestions.Add("Verify class labels and data quality");
+            }
+        }
+
+        // Check Macro F1 for degenerate model detection
+        if (metrics.TryGetValue("macro_f1", out var macroF1))
+        {
+            result.SecondaryMetrics["Macro F1"] = macroF1;
+
+            if (primaryMetricValue.HasValue && primaryMetricValue > 0.5 && macroF1 < 0.001)
+            {
+                result.OverallAssessment = PerformanceLevel.Poor;
+                result.Summary = $"Degenerate model: {primaryMetricName} = {primaryMetricValue:F4} but Macro F1 = 0";
+                result.Warnings.Add("⚠ Model only predicts the majority class (F1 = 0)");
+                result.Warnings.Add("High accuracy is misleading due to class imbalance");
+                result.Suggestions.Add("Check class distribution and consider balancing the dataset");
+                result.Suggestions.Add("Try using F1-score as optimization metric: --metric f1_score");
             }
         }
 

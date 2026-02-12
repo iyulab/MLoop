@@ -191,6 +191,40 @@ public class ModelRegistry : IModelRegistry
 
         var newMetricValue = experiment.Metrics[primaryMetric];
 
+        // Extract class count from schema for dynamic thresholds
+        int? classCount = null;
+        if (experiment.Config?.InputSchema?.Columns != null && experiment.Config.LabelColumn != null)
+        {
+            var labelSchema = experiment.Config.InputSchema.Columns
+                .FirstOrDefault(s => s.Name.Equals(experiment.Config.LabelColumn, StringComparison.OrdinalIgnoreCase));
+            if (labelSchema?.UniqueValueCount > 0)
+            {
+                classCount = labelSchema.UniqueValueCount;
+            }
+        }
+
+        // Check minimum metric threshold (quality gate)
+        var minThreshold = GetMinimumMetricThreshold(primaryMetric, classCount);
+        if (minThreshold.HasValue)
+        {
+            var isError = IsErrorMetric(primaryMetric);
+            var belowThreshold = isError
+                ? false // No universal minimum for error metrics (scale-dependent)
+                : newMetricValue < minThreshold.Value;
+
+            if (belowThreshold)
+            {
+                return false; // Below minimum viable threshold
+            }
+        }
+
+        // Degenerate model detection: high accuracy but zero F1
+        // This indicates the model only predicts the majority class
+        if (experiment.Metrics != null && IsClassificationDegenerateModel(experiment.Metrics))
+        {
+            return false; // Block promotion for degenerate models
+        }
+
         // Get current production model
         var currentProduction = await GetProductionAsync(resolvedName, cancellationToken);
 
@@ -373,6 +407,28 @@ public class ModelRegistry : IModelRegistry
         return null;
     }
 
+    /// <summary>
+    /// Returns the minimum viable metric threshold for quality gate.
+    /// Models scoring below this threshold are not promoted to production.
+    /// Returns null for metrics without a universal minimum (e.g., error metrics).
+    /// </summary>
+    public static double? GetMinimumMetricThreshold(string metricName, int? classCount = null)
+    {
+        return metricName.ToLowerInvariant() switch
+        {
+            "r_squared" or "r2" => 0.0,                // Must be better than mean prediction
+            "auc" or "area_under_roc_curve" => 0.5,     // Must be better than random
+            "accuracy" or "micro_accuracy" => classCount.HasValue && classCount.Value > 1
+                ? 1.0 / classCount.Value                 // Must be better than random (1/N)
+                : 0.0,
+            "macro_accuracy" => classCount.HasValue && classCount.Value > 1
+                ? 1.0 / classCount.Value                 // Must be better than random (1/N)
+                : 0.0,
+            "f1" or "f1_score" => 0.0,                  // Must predict at least some positives
+            _ => null                                    // No threshold for unknown/error metrics
+        };
+    }
+
     private static bool IsErrorMetric(string metricName)
     {
         var lower = metricName.ToLowerInvariant();
@@ -381,6 +437,31 @@ public class ModelRegistry : IModelRegistry
                lower.Contains("mse") ||
                lower.Contains("rmse") ||
                lower.Contains("loss");
+    }
+
+    /// <summary>
+    /// Detects degenerate classification models that achieve high accuracy by only
+    /// predicting the majority class. Returns true if accuracy > 0.5 but F1 ≈ 0.
+    /// </summary>
+    public static bool IsClassificationDegenerateModel(Dictionary<string, double> metrics)
+    {
+        // Check binary: accuracy > 0.5 but f1_score == 0
+        if (metrics.TryGetValue("f1_score", out var f1) &&
+            metrics.TryGetValue("accuracy", out var acc))
+        {
+            if (acc > 0.5 && f1 < 0.001)
+                return true;
+        }
+
+        // Check multiclass: macro_accuracy > random but macro_f1 == 0
+        if (metrics.TryGetValue("macro_f1", out var macroF1) &&
+            metrics.TryGetValue("macro_accuracy", out var macroAcc))
+        {
+            if (macroAcc > 0.3 && macroF1 < 0.001)
+                return true;
+        }
+
+        return false;
     }
 
     private static string ResolveModelName(string? name)

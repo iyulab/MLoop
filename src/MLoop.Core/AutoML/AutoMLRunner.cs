@@ -130,10 +130,42 @@ public class AutoMLRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
+        var optimizingMetric = GetBinaryMetric(config.Metric);
+        string? metricFallbackNote = null;
+
+        try
+        {
+            return await RunBinaryClassificationCoreAsync(
+                trainSet, testSet, config, optimizingMetric, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (
+            optimizingMetric == BinaryClassificationMetric.AreaUnderRocCurve &&
+            (ex.Message.Contains("AUC") || ex.Message.Contains("positive class")))
+        {
+            // AUC requires both positive and negative samples in the test set.
+            // With extreme class imbalance, the test split may have only one class.
+            // Fall back to F1Score which is more robust for imbalanced data.
+            Console.WriteLine("[Warning] AUC metric failed (extreme class imbalance). Falling back to F1Score.");
+            metricFallbackNote = "AUC→F1Score (extreme imbalance)";
+
+            return await RunBinaryClassificationCoreAsync(
+                trainSet, testSet, config, BinaryClassificationMetric.F1Score, cancellationToken,
+                metricFallbackNote);
+        }
+    }
+
+    private async Task<AutoMLResult> RunBinaryClassificationCoreAsync(
+        IDataView trainSet,
+        IDataView testSet,
+        TrainingConfig config,
+        BinaryClassificationMetric optimizingMetric,
+        CancellationToken cancellationToken,
+        string? metricFallbackNote = null)
+    {
         var settings = new BinaryExperimentSettings
         {
             MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
-            OptimizingMetric = GetBinaryMetric(config.Metric),
+            OptimizingMetric = optimizingMetric,
             CancellationToken = cancellationToken
         };
 
@@ -151,15 +183,26 @@ public class AutoMLRunner
         var metricsDict = new Dictionary<string, double>
         {
             ["accuracy"] = metrics.Accuracy,
-            ["auc"] = metrics.AreaUnderRocCurve,
             ["f1_score"] = metrics.F1Score,
             ["precision"] = metrics.PositivePrecision,
             ["recall"] = metrics.PositiveRecall
         };
 
+        // Only include AUC if it's a valid number (may be NaN for imbalanced data)
+        if (!double.IsNaN(metrics.AreaUnderRocCurve))
+        {
+            metricsDict["auc"] = metrics.AreaUnderRocCurve;
+        }
+
+        var trainerName = experimentResult.BestRun.TrainerName;
+        if (metricFallbackNote != null)
+        {
+            trainerName += $" [metric fallback: {metricFallbackNote}]";
+        }
+
         return new AutoMLResult
         {
-            BestTrainer = experimentResult.BestRun.TrainerName,
+            BestTrainer = trainerName,
             Model = experimentResult.BestRun.Model,
             Metrics = metricsDict,
             RowCount = trainSet.GetRowCount() ?? 0
@@ -197,6 +240,28 @@ public class AutoMLRunner
             ["micro_accuracy"] = metrics.MicroAccuracy,
             ["log_loss"] = metrics.LogLoss
         };
+
+        // Calculate Macro F1 from confusion matrix per-class precision/recall
+        try
+        {
+            var cm = metrics.ConfusionMatrix;
+            var classCount = cm.PerClassPrecision.Count;
+            if (classCount > 0)
+            {
+                double f1Sum = 0;
+                for (int i = 0; i < classCount; i++)
+                {
+                    var p = cm.PerClassPrecision[i];
+                    var r = cm.PerClassRecall[i];
+                    f1Sum += (p + r) > 0 ? 2 * p * r / (p + r) : 0;
+                }
+                metricsDict["macro_f1"] = f1Sum / classCount;
+            }
+        }
+        catch
+        {
+            // Non-critical: skip if confusion matrix unavailable
+        }
 
         return new AutoMLResult
         {

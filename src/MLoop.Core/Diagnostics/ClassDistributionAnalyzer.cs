@@ -110,6 +110,12 @@ public class ClassDistributionAnalyzer
 
     private static ClassBalanceLevel DetermineBalanceLevel(double imbalanceRatio, int classCount)
     {
+        // Single class: not trainable, report as severely imbalanced
+        if (classCount <= 1)
+        {
+            return ClassBalanceLevel.SeverelyImbalanced;
+        }
+
         // For binary classification
         if (classCount == 2)
         {
@@ -150,6 +156,16 @@ public class ClassDistributionAnalyzer
 
     private static void AddWarningsAndSuggestions(ClassDistributionResult result)
     {
+        // Check for single-class dataset (not trainable for classification)
+        if (result.ClassCount <= 1)
+        {
+            result.Summary = $"Only {result.ClassCount} class found — cannot train a classifier";
+            result.Warnings.Add("Label column contains only one unique value");
+            result.Suggestions.Add("Check if the correct label column is specified");
+            result.Suggestions.Add("This dataset may only contain one category (e.g., all 'normal' samples)");
+            return;
+        }
+
         // Check for empty class
         if (result.ClassDistribution.ContainsKey("(empty)"))
         {

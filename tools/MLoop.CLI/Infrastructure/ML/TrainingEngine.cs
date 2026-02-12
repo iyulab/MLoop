@@ -82,6 +82,24 @@ public class TrainingEngine : ITrainingEngine
                 Console.WriteLine($"[Info] Converted {detection.EncodingName} → UTF-8: {Path.GetFileName(originalDataFile)}");
             }
 
+            // Flatten multi-line quoted headers (ML.NET doesn't support them)
+            dataFilePath = CsvDataLoader.FlattenMultiLineHeaders(dataFilePath);
+
+            // Update config DataFile so AutoMLRunner uses the processed file
+            if (dataFilePath != config.DataFile)
+            {
+                config = new TrainingConfig
+                {
+                    ModelName = config.ModelName,
+                    DataFile = dataFilePath,
+                    LabelColumn = config.LabelColumn,
+                    Task = config.Task,
+                    TimeLimitSeconds = config.TimeLimitSeconds,
+                    Metric = config.Metric,
+                    TestSplit = config.TestSplit
+                };
+            }
+
             // Validate data quality before training (label column + dataset size)
             var dataQualityValidator = new DataQualityValidator(_mlContext);
             var qualityResult = dataQualityValidator.ValidateTrainingData(dataFilePath, config.LabelColumn, config.Task);
@@ -282,131 +300,6 @@ public class TrainingEngine : ITrainingEngine
     }
 
     /// <summary>
-    /// Captures input schema information from the data file
-    /// </summary>
-    private InputSchemaInfo? CaptureInputSchema(string dataFile, string labelColumn)
-    {
-        try
-        {
-            // Infer column information
-            var columnInference = _mlContext.Auto().InferColumns(
-                dataFile,
-                labelColumnName: labelColumn,
-                separatorChar: ',');
-
-            if (columnInference == null || columnInference.ColumnInformation == null)
-            {
-                return null;
-            }
-
-            var columns = new List<ColumnSchema>();
-            var columnInfo = columnInference.ColumnInformation;
-
-            // Get all columns from the file with UTF-8 encoding
-            string? firstLine;
-            using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
-            {
-                firstLine = reader.ReadLine();
-            }
-
-            if (string.IsNullOrEmpty(firstLine))
-            {
-                return null;
-            }
-
-            var columnNames = CsvFieldParser.ParseFields(firstLine);
-
-            // Read all data lines to collect categorical values with UTF-8 encoding
-            var allLines = File.ReadAllLines(dataFile, System.Text.Encoding.UTF8);
-            var dataLines = allLines.Skip(1).ToArray(); // Skip header
-
-            foreach (var colName in columnNames)
-            {
-                var purpose = GetColumnPurpose(colName, columnInfo);
-                var dataType = GetColumnDataType(colName, columnInfo);
-
-                // For categorical columns, collect all unique values
-                List<string>? categoricalValues = null;
-                int? uniqueCount = null;
-
-                if (dataType == "Categorical" && purpose == "Feature")
-                {
-                    var colIndex = Array.IndexOf(columnNames, colName);
-                    if (colIndex >= 0)
-                    {
-                        var uniqueValues = new HashSet<string>();
-
-                        foreach (var line in dataLines)
-                        {
-                            var values = CsvFieldParser.ParseFields(line);
-                            if (colIndex < values.Length)
-                            {
-                                var value = values[colIndex].Trim();
-                                if (!string.IsNullOrEmpty(value))
-                                {
-                                    uniqueValues.Add(value);
-                                }
-                            }
-                        }
-
-                        categoricalValues = uniqueValues.OrderBy(v => v).ToList();
-                        uniqueCount = uniqueValues.Count;
-                    }
-                }
-
-                columns.Add(new ColumnSchema
-                {
-                    Name = colName,
-                    DataType = dataType,
-                    Purpose = purpose,
-                    CategoricalValues = categoricalValues,
-                    UniqueValueCount = uniqueCount
-                });
-            }
-
-            return new InputSchemaInfo
-            {
-                Columns = columns,
-                CapturedAt = DateTime.UtcNow
-            };
-        }
-        catch
-        {
-            // If schema capture fails, return null (non-critical)
-            return null;
-        }
-    }
-
-    private string GetColumnPurpose(string columnName, Microsoft.ML.AutoML.ColumnInformation columnInfo)
-    {
-        if (columnInfo.LabelColumnName == columnName)
-            return "Label";
-        if (columnInfo.IgnoredColumnNames?.Contains(columnName) == true)
-            return "Ignore";
-        if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true ||
-            columnInfo.NumericColumnNames?.Contains(columnName) == true ||
-            columnInfo.TextColumnNames?.Contains(columnName) == true)
-            return "Feature";
-
-        // Fallback: treat as Feature if not explicitly ignored or label
-        return "Feature";
-    }
-
-    private string GetColumnDataType(string columnName, Microsoft.ML.AutoML.ColumnInformation columnInfo)
-    {
-        if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
-            return "Categorical";
-        if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
-            return "Numeric";
-        if (columnInfo.TextColumnNames?.Contains(columnName) == true)
-            return "Text";
-
-        // ML.NET InferColumns may not populate column lists correctly
-        // Return Unknown and let CaptureInputSchema infer from actual data
-        return "Unknown";
-    }
-
-    /// <summary>
     /// Captures input schema with enhanced type detection using actual data values
     /// </summary>
     private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn)
@@ -427,9 +320,18 @@ public class TrainingEngine : ITrainingEngine
 
             var columnNames = CsvFieldParser.ParseFields(firstLine);
 
-            // Read sample of data lines for type inference
-            var allLines = File.ReadAllLines(dataFile, System.Text.Encoding.UTF8);
-            var dataLines = allLines.Skip(1).Take(1000).ToArray(); // Sample first 1000 rows
+            // Read sample of data lines for type inference (not full file — saves memory)
+            var sampleLines = new List<string>();
+            using (var sampleReader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                sampleReader.ReadLine(); // skip header
+                string? sampleLine;
+                while (sampleLines.Count < 1000 && (sampleLine = sampleReader.ReadLine()) != null)
+                {
+                    sampleLines.Add(sampleLine);
+                }
+            }
+            var dataLines = sampleLines.ToArray();
 
             // Try ML.NET InferColumns first
             Microsoft.ML.AutoML.ColumnInformation? columnInfo = null;
@@ -489,6 +391,16 @@ public class TrainingEngine : ITrainingEngine
                     UniqueValueCount = uniqueCount
                 });
             }
+
+            // IMP-R2-10: Mark DateTime columns as "Exclude" in schema
+            // CsvDataLoader.ExcludeDateTimeColumns removes these during training,
+            // so the schema should reflect they are not used as features.
+            MarkDateTimeColumnsAsExcluded(columns, columnNames, dataLines);
+
+            // BUG-R2-06: Collect complete categorical values from the FULL file.
+            // The 1000-row sample above is only for type inference heuristics.
+            // For ordered data, the sample may miss categorical values that appear later.
+            CollectCompleteCategoricalValues(dataFile, columns, columnNames);
 
             return new InputSchemaInfo
             {
@@ -615,6 +527,114 @@ public class TrainingEngine : ITrainingEngine
         }
 
         return (uniqueValues.OrderBy(v => v).ToList(), uniqueValues.Count);
+    }
+
+    /// <summary>
+    /// Streams through the entire file to collect all unique categorical values.
+    /// The initial type inference uses a 1000-row sample, but categorical values
+    /// <summary>
+    /// Marks DateTime columns as "Exclude" in the schema.
+    /// Mirrors the logic in CsvDataLoader.ExcludeDateTimeColumns so the saved schema
+    /// accurately reflects which columns are actually used during training.
+    /// </summary>
+    private static void MarkDateTimeColumnsAsExcluded(
+        List<ColumnSchema> columns, string[] columnNames, string[] dataLines)
+    {
+        foreach (var col in columns)
+        {
+            if (col.Purpose != "Feature") continue;
+            if (col.DataType != "Text" && col.DataType != "Unknown") continue;
+
+            // Collect sample values for this column
+            List<string>? sampleValues = null;
+            var colIndex = Array.IndexOf(columnNames, col.Name);
+            if (colIndex >= 0)
+            {
+                sampleValues = new List<string>();
+                var checkCount = Math.Min(dataLines.Length, 10);
+                for (int i = 0; i < checkCount; i++)
+                {
+                    var fields = CsvFieldParser.ParseFields(dataLines[i]);
+                    if (colIndex < fields.Length)
+                    {
+                        sampleValues.Add(fields[colIndex].Trim());
+                    }
+                }
+            }
+
+            if (DateTimeDetector.IsDateTimeColumn(col.Name, sampleValues))
+            {
+                var index = columns.IndexOf(col);
+                columns[index] = new ColumnSchema
+                {
+                    Name = col.Name,
+                    DataType = "DateTime",
+                    Purpose = "Exclude",
+                    CategoricalValues = null,
+                    UniqueValueCount = null
+                };
+            }
+        }
+    }
+
+    /// must be complete to prevent predict-time failures when unseen categories appear.
+    /// Memory-efficient: only stores unique values per column, not all rows.
+    /// </summary>
+    private static void CollectCompleteCategoricalValues(
+        string dataFile, List<ColumnSchema> columns, string[] columnNames)
+    {
+        // Find categorical Feature columns that need complete value collection
+        var catColumns = new Dictionary<int, ColumnSchema>();
+        foreach (var col in columns)
+        {
+            if (col.DataType == "Categorical" && col.Purpose == "Feature")
+            {
+                var idx = Array.IndexOf(columnNames, col.Name);
+                if (idx >= 0) catColumns[idx] = col;
+            }
+        }
+
+        if (catColumns.Count == 0) return;
+
+        // Stream through file collecting unique values (no full-file memory load)
+        var uniqueSets = catColumns.ToDictionary(kv => kv.Key, _ => new HashSet<string>());
+
+        using var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        reader.ReadLine(); // skip header
+
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var fields = CsvFieldParser.ParseFields(line);
+            foreach (var (colIndex, _) in catColumns)
+            {
+                if (colIndex < fields.Length)
+                {
+                    var value = fields[colIndex].Trim();
+                    if (!string.IsNullOrEmpty(value))
+                        uniqueSets[colIndex].Add(value);
+                }
+            }
+        }
+
+        // Update column schemas with complete categorical values
+        // ColumnSchema uses init-only properties, so replace items in the list
+        foreach (var (colIndex, col) in catColumns)
+        {
+            var unique = uniqueSets[colIndex];
+            var listIndex = columns.IndexOf(col);
+            if (listIndex >= 0)
+            {
+                columns[listIndex] = new ColumnSchema
+                {
+                    Name = col.Name,
+                    DataType = col.DataType,
+                    Purpose = col.Purpose,
+                    CategoricalValues = unique.OrderBy(v => v).ToList(),
+                    UniqueValueCount = unique.Count
+                };
+            }
+        }
     }
 
     private class TrainingEngineLogger : ILogger

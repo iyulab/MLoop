@@ -31,6 +31,21 @@ public class ExperimentStore : IExperimentStore
         _modelsPath = _fileSystem.CombinePath(_projectRoot, ModelsDirectory);
     }
 
+    /// <summary>
+    /// Constructor with explicit project root (for testing).
+    /// </summary>
+    internal ExperimentStore(
+        IFileSystemManager fileSystem,
+        IProjectDiscovery projectDiscovery,
+        string projectRoot)
+    {
+        _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+        _projectDiscovery = projectDiscovery ?? throw new ArgumentNullException(nameof(projectDiscovery));
+
+        _projectRoot = projectRoot ?? throw new ArgumentNullException(nameof(projectRoot));
+        _modelsPath = _fileSystem.CombinePath(_projectRoot, ModelsDirectory);
+    }
+
     /// <inheritdoc />
     public async Task<string> GenerateIdAsync(string modelName, CancellationToken cancellationToken = default)
     {

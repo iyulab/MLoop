@@ -251,6 +251,17 @@ public class PredictionEngine : IPredictionEngine
             // Make predictions
             var predictions = trainedModel.Transform(processedData);
 
+            // IMP-R2-07: Restore original class names for PredictedLabel
+            // ML.NET classification models use MapValueToKey on the label column during training,
+            // which outputs numeric Key values (0, 1, 2, ...) in PredictedLabel.
+            // MapKeyToValue reverses this mapping to show original class names.
+            var predictedLabelCol = predictions.Schema.GetColumnOrNull("PredictedLabel");
+            if (predictedLabelCol.HasValue && predictedLabelCol.Value.Type is KeyDataViewType)
+            {
+                var keyToValue = _mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel");
+                predictions = keyToValue.Fit(predictions).Transform(predictions);
+            }
+
             // Select only prediction output columns (exclude duplicated input features)
             // ML.NET prediction output columns: PredictedLabel, Score, Probability (for classification)
             // For regression: Score only

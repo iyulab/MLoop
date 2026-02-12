@@ -28,6 +28,15 @@ public class CsvDataLoader : IDataProvider
         // Ensure UTF-8 BOM for ML.NET compatibility (ML.NET's InferColumns relies on BOM detection)
         string mlnetCompatiblePath = EnsureUtf8Bom(filePath);
 
+        // Flatten multi-line quoted headers (ML.NET doesn't support them)
+        mlnetCompatiblePath = FlattenMultiLineHeaders(mlnetCompatiblePath);
+
+        // Remove unnamed/index columns (e.g., pandas default index, "Unnamed: 0")
+        mlnetCompatiblePath = RemoveIndexColumns(mlnetCompatiblePath);
+
+        // Warn if CSV appears to have no header row
+        WarnIfHeaderless(mlnetCompatiblePath);
+
         // Infer columns from the file
         var columnInference = _mlContext.Auto().InferColumns(
             mlnetCompatiblePath,
@@ -78,6 +87,18 @@ public class CsvDataLoader : IDataProvider
                 throw new InvalidOperationException(
                     $"Label column '{labelColumn}' not found in the data. " +
                     $"Available columns: {string.Join(", ", GetColumnNames(dataView))}");
+            }
+        }
+
+        // For binary classification with String label, convert to Boolean.
+        // ML.NET binary classification AutoML requires Boolean labels.
+        // String labels like "OK"/"NG", "Pass"/"Fail" are common in manufacturing data.
+        if (isBinaryTask && !string.IsNullOrEmpty(labelColumn))
+        {
+            var labelSchema = dataView.Schema.GetColumnOrNull(labelColumn);
+            if (labelSchema.HasValue && labelSchema.Value.Type is TextDataViewType)
+            {
+                dataView = ConvertStringLabelToBoolean(dataView, labelColumn);
             }
         }
 
@@ -183,51 +204,22 @@ public class CsvDataLoader : IDataProvider
         var textColumns = columnInference.ColumnInformation.TextColumnNames;
         if (textColumns == null || textColumns.Count == 0) return;
 
-        // Sample first few data rows to detect datetime values
         var dateTimeColumns = new List<string>();
         var sampled = SampleColumnValues(filePath, textColumns, maxRows: 10);
 
         foreach (var colName in textColumns.ToList())
         {
-            // Skip label column
             if (!string.IsNullOrEmpty(labelColumn) &&
                 colName.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            bool isDateTime = false;
-
-            // Heuristic 1: Column name patterns
-            var lowerName = colName.ToLowerInvariant();
-            if (lowerName.Contains("datetime") || lowerName.Contains("timestamp") ||
-                lowerName == "date" || lowerName == "time" ||
-                lowerName.EndsWith("_date") || lowerName.EndsWith("_time") ||
-                lowerName.StartsWith("date_") || lowerName.StartsWith("time_"))
-            {
-                isDateTime = true;
-            }
-
-            // Heuristic 2: Value-based detection (more reliable)
-            if (!isDateTime && sampled.TryGetValue(colName, out var values) && values.Count > 0)
-            {
-                var parsedCount = values.Count(v =>
-                    !string.IsNullOrWhiteSpace(v) &&
-                    DateTime.TryParse(v, System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.None, out _));
-
-                var nonEmptyCount = values.Count(v => !string.IsNullOrWhiteSpace(v));
-                if (nonEmptyCount > 0 && parsedCount >= nonEmptyCount * 0.8)
-                {
-                    isDateTime = true;
-                }
-            }
-
-            if (isDateTime)
+            sampled.TryGetValue(colName, out var values);
+            if (DateTimeDetector.IsDateTimeColumn(colName, values))
             {
                 dateTimeColumns.Add(colName);
             }
         }
 
-        // Move detected datetime columns to ignored
         foreach (var col in dateTimeColumns)
         {
             textColumns.Remove(col);
@@ -279,6 +271,64 @@ public class CsvDataLoader : IDataProvider
     /// <summary>
     /// Simple CSV line parser that handles quoted fields.
     /// </summary>
+    /// <summary>
+    /// Converts a String label column to Boolean for binary classification.
+    /// Maps unique label values alphabetically: first → false, second → true.
+    /// e.g., "NG"/"OK" → NG=false, OK=true; "Fail"/"Pass" → Fail=false, Pass=true
+    /// </summary>
+    private IDataView ConvertStringLabelToBoolean(IDataView dataView, string labelColumn)
+    {
+        // Collect unique label values (stop at 3 to detect non-binary)
+        var uniqueValues = new HashSet<string>();
+        var labelCol = dataView.Schema[labelColumn];
+
+        using (var cursor = dataView.GetRowCursor(new[] { labelCol }))
+        {
+            var getter = cursor.GetGetter<ReadOnlyMemory<char>>(labelCol);
+            while (cursor.MoveNext() && uniqueValues.Count <= 3)
+            {
+                ReadOnlyMemory<char> val = default;
+                getter(ref val);
+                var str = val.ToString().Trim();
+                if (!string.IsNullOrEmpty(str))
+                {
+                    uniqueValues.Add(str);
+                }
+            }
+        }
+
+        if (uniqueValues.Count != 2)
+        {
+            return dataView; // Not binary, return as-is
+        }
+
+        // Sort alphabetically: first → negative (false), second → positive (true)
+        var sorted = uniqueValues.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToArray();
+        Console.WriteLine($"[Info] Converting label: '{sorted[0]}' → False, '{sorted[1]}' → True");
+
+        // Build lookup IDataView for MapValue transform
+        var lookupData = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new LabelMapping { Key = sorted[0], Value = false },
+            new LabelMapping { Key = sorted[1], Value = true }
+        });
+
+        var pipeline = _mlContext.Transforms.Conversion.MapValue(
+            labelColumn,
+            lookupData,
+            lookupData.Schema["Key"],
+            lookupData.Schema["Value"],
+            labelColumn);
+
+        return pipeline.Fit(dataView).Transform(dataView);
+    }
+
+    private sealed class LabelMapping
+    {
+        public string Key { get; set; } = "";
+        public bool Value { get; set; }
+    }
+
     private static string[] ParseCsvLine(string line)
     {
         var fields = new List<string>();
@@ -329,5 +379,250 @@ public class CsvDataLoader : IDataProvider
         }
 
         return convertedPath;
+    }
+
+    /// <summary>
+    /// Detects and removes unnamed/index columns from CSV files.
+    /// Common patterns: empty column name (pandas default index), "Unnamed: 0", "Unnamed: N".
+    /// These columns are auto-generated row numbers that should not be used as features.
+    /// Returns original path if no index columns found, or a temp file path otherwise.
+    /// </summary>
+
+    /// <summary>
+    /// Warns if the CSV file appears to have no header row (first row looks like data).
+    /// Detection heuristic: all fields in the first row are numeric.
+    /// </summary>
+    private static void WarnIfHeaderless(string filePath)
+    {
+        if (IsLikelyHeaderless(filePath))
+        {
+            Console.WriteLine("[Warning] Possible headerless CSV detected: first row appears to be data (all numeric values).");
+            Console.WriteLine("[Warning] ML.NET will treat the first row as column names, which may cause incorrect results.");
+            Console.WriteLine("[Info] Solution: Add a header row with column names (e.g., Feature1,Feature2,...,Label).");
+        }
+    }
+
+    /// <summary>
+    /// Determines if a CSV file likely has no header row.
+    /// Returns true if all fields in the first row are numeric (int/float/double).
+    /// </summary>
+    public static bool IsLikelyHeaderless(string filePath)
+    {
+        try
+        {
+            string? firstLine;
+            string? secondLine;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                firstLine = reader.ReadLine();
+                secondLine = reader.ReadLine();
+            }
+
+            if (string.IsNullOrEmpty(firstLine)) return false;
+
+            var fields = ParseCsvLine(firstLine);
+            if (fields.Length < 2) return false; // Too few fields to judge
+
+            // Check if ALL fields in the first row are numeric
+            var allNumeric = fields.All(f =>
+                !string.IsNullOrWhiteSpace(f) && double.TryParse(f.Trim(), System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out _));
+
+            if (!allNumeric) return false;
+
+            // Additional check: if second row exists and has same pattern, more confident
+            if (string.IsNullOrEmpty(secondLine)) return true; // Only one row, but all numeric = suspicious
+
+            var secondFields = ParseCsvLine(secondLine);
+
+            // If both rows have same field count and both all-numeric, very likely headerless
+            return secondFields.Length == fields.Length;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static string RemoveIndexColumns(string filePath)
+    {
+        try
+        {
+            string? firstLine;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                firstLine = reader.ReadLine();
+            }
+
+            if (string.IsNullOrEmpty(firstLine)) return filePath;
+
+            var headers = ParseCsvLine(firstLine);
+            var indexColumns = new List<int>();
+
+            for (int i = 0; i < headers.Length; i++)
+            {
+                if (IsLikelyIndexColumn(headers[i]))
+                {
+                    indexColumns.Add(i);
+                }
+            }
+
+            if (indexColumns.Count == 0) return filePath;
+
+            // Create temp file without the index columns
+            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_noidx_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var keepIndices = Enumerable.Range(0, headers.Length).Except(indexColumns).ToArray();
+
+            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
+            {
+                foreach (var line in allLines)
+                {
+                    var fields = ParseCsvLine(line);
+                    var kept = keepIndices
+                        .Where(idx => idx < fields.Length)
+                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
+                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
+                            : fields[idx]);
+                    writer.WriteLine(string.Join(",", kept));
+                }
+            }
+
+            var removedNames = indexColumns.Select(i => string.IsNullOrWhiteSpace(headers[i]) ? "(empty)" : headers[i]);
+            Console.WriteLine($"[Info] Removed index column(s): {string.Join(", ", removedNames)}");
+            return tempPath;
+        }
+        catch
+        {
+            return filePath; // Non-critical, continue with original
+        }
+    }
+
+    /// <summary>
+    /// Determines if a column name is likely an auto-generated index column.
+    /// Matches: empty/whitespace names, "Unnamed: N" (pandas), "Unnamed".
+    /// Does NOT match common feature names like "id", "index" as they may be intentional.
+    /// </summary>
+    public static bool IsLikelyIndexColumn(string columnName)
+    {
+        // Pattern 1: Empty or whitespace-only name (pandas df.to_csv() with index=True default)
+        if (string.IsNullOrWhiteSpace(columnName))
+            return true;
+
+        // Pattern 2: Pandas "Unnamed: 0", "Unnamed: 1", etc.
+        if (columnName.StartsWith("Unnamed:", StringComparison.OrdinalIgnoreCase) ||
+            columnName.Equals("Unnamed", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Detects and normalizes multi-line quoted headers in CSV files.
+    /// ML.NET's TextLoader and InferColumns do not support multi-line quoted headers.
+    /// If newlines are found within quoted header fields, they are replaced with spaces.
+    /// Returns the original path if no multi-line header is detected, or a temp file path otherwise.
+    /// </summary>
+    public static string FlattenMultiLineHeaders(string filePath)
+    {
+        // Quick check: read first line and see if quotes are unbalanced
+        string? firstLine;
+        using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        {
+            firstLine = reader.ReadLine();
+        }
+
+        if (string.IsNullOrEmpty(firstLine)) return filePath;
+
+        // Count quotes - if even number, header is single-line (no unterminated quoted field)
+        int quoteCount = firstLine.Count(c => c == '"');
+        if (quoteCount % 2 == 0)
+        {
+            // BUG-R2-07: Detect possible multi-row header pattern
+            // Row1 has many duplicate values = likely category headers, not real column names
+            DetectMultiRowHeaderPattern(filePath, firstLine);
+            return filePath;
+        }
+
+        // Multi-line header detected - need to flatten
+        var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_flat_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+
+        using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
+        {
+            // Read and flatten the header (may span multiple physical lines)
+            var headerBuilder = new System.Text.StringBuilder();
+            bool inQuote = false;
+
+            while (true)
+            {
+                var line = reader.ReadLine();
+                if (line == null) break;
+
+                if (headerBuilder.Length > 0) headerBuilder.Append(' ');
+                headerBuilder.Append(line);
+
+                foreach (char c in line)
+                {
+                    if (c == '"') inQuote = !inQuote;
+                }
+
+                if (!inQuote) break;
+            }
+
+            writer.WriteLine(headerBuilder.ToString());
+
+            // Copy remaining data lines as-is
+            string? dataLine;
+            while ((dataLine = reader.ReadLine()) != null)
+            {
+                writer.WriteLine(dataLine);
+            }
+        }
+
+        Console.WriteLine($"[Info] Flattened multi-line CSV headers: {Path.GetFileName(filePath)}");
+        return tempPath;
+    }
+
+    /// <summary>
+    /// Detects multi-row header pattern where Row 1 contains category names
+    /// and Row 2 contains actual column names (common in Excel exports).
+    /// Warns the user if detected.
+    /// </summary>
+    private static void DetectMultiRowHeaderPattern(string filePath, string firstLine)
+    {
+        try
+        {
+            var row1Fields = ParseCsvLine(firstLine);
+            if (row1Fields.Length < 3) return;
+
+            var uniqueRow1 = new HashSet<string>(row1Fields, StringComparer.OrdinalIgnoreCase);
+
+            // If Row1 has very few unique values relative to total columns,
+            // it's likely a category header row (e.g., "Process, Process, Sensor, Sensor, Defects")
+            var uniqueRatio = (double)uniqueRow1.Count / row1Fields.Length;
+            if (uniqueRatio >= 0.5) return; // More than half unique — probably a real header
+
+            // Read Row 2 to compare
+            using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            reader.ReadLine(); // skip Row 1
+            var secondLine = reader.ReadLine();
+            if (string.IsNullOrEmpty(secondLine)) return;
+
+            var row2Fields = ParseCsvLine(secondLine);
+            var uniqueRow2 = new HashSet<string>(row2Fields, StringComparer.OrdinalIgnoreCase);
+
+            // If Row2 has significantly more unique values than Row1, confirm multi-row header
+            if (uniqueRow2.Count > uniqueRow1.Count * 2)
+            {
+                Console.WriteLine($"[Warning] Possible multi-row header detected: Row 1 has only {uniqueRow1.Count} unique values across {row1Fields.Length} columns.");
+                Console.WriteLine($"[Warning] Row 1 may be category headers (e.g., '{string.Join("', '", uniqueRow1.Take(3))}').");
+                Console.WriteLine($"[Warning] If columns appear incorrect, preprocess the CSV to use Row 2 as the header.");
+            }
+        }
+        catch
+        {
+            // Non-critical detection — ignore errors
+        }
     }
 }

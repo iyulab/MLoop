@@ -378,6 +378,117 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task ShouldPromoteAsync_NegativeRSquared_ReturnsFalse()
+    {
+        // Arrange — R² below 0.0 should be rejected
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["r_squared"] = -0.05
+        });
+
+        // Act
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
+            experimentId,
+            "r_squared",
+            CancellationToken.None);
+
+        // Assert
+        Assert.False(result); // Below minimum threshold (0.0)
+    }
+
+    [Fact]
+    public async Task ShouldPromoteAsync_AucBelowRandom_ReturnsFalse()
+    {
+        // Arrange — AUC below 0.5 should be rejected (worse than random)
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["auc"] = 0.45
+        });
+
+        // Act
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
+            experimentId,
+            "auc",
+            CancellationToken.None);
+
+        // Assert
+        Assert.False(result); // Below minimum threshold (0.5)
+    }
+
+    [Fact]
+    public async Task ShouldPromoteAsync_AucAboveRandom_ReturnsTrue()
+    {
+        // Arrange — AUC above 0.5 should be promoted (no production model)
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["auc"] = 0.55
+        });
+
+        // Act
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
+            experimentId,
+            "auc",
+            CancellationToken.None);
+
+        // Assert
+        Assert.True(result); // Above minimum threshold, no production model
+    }
+
+    [Theory]
+    [InlineData("r_squared", 0.0)]
+    [InlineData("auc", 0.5)]
+    [InlineData("accuracy", 0.0)]
+    [InlineData("f1_score", 0.0)]
+    public void GetMinimumMetricThreshold_ReturnsExpectedValues(string metric, double expected)
+    {
+        var threshold = ModelRegistry.GetMinimumMetricThreshold(metric);
+        Assert.NotNull(threshold);
+        Assert.Equal(expected, threshold.Value);
+    }
+
+    [Theory]
+    [InlineData("mae")]
+    [InlineData("rmse")]
+    [InlineData("mse")]
+    public void GetMinimumMetricThreshold_ErrorMetrics_ReturnsNull(string metric)
+    {
+        var threshold = ModelRegistry.GetMinimumMetricThreshold(metric);
+        Assert.Null(threshold);
+    }
+
+    [Theory]
+    [InlineData("accuracy", 2, 0.5)]     // Binary: 1/2
+    [InlineData("accuracy", 3, 0.3333)]  // 3-class: 1/3
+    [InlineData("accuracy", 10, 0.1)]    // 10-class: 1/10
+    [InlineData("macro_accuracy", 5, 0.2)] // 5-class: 1/5
+    public void GetMinimumMetricThreshold_WithClassCount_ReturnsDynamicThreshold(
+        string metric, int classCount, double expected)
+    {
+        var threshold = ModelRegistry.GetMinimumMetricThreshold(metric, classCount);
+        Assert.NotNull(threshold);
+        Assert.Equal(expected, threshold.Value, 3); // precision to 3 decimal places
+    }
+
+    [Fact]
+    public void GetMinimumMetricThreshold_AccuracyWithoutClassCount_ReturnsZero()
+    {
+        var threshold = ModelRegistry.GetMinimumMetricThreshold("accuracy");
+        Assert.NotNull(threshold);
+        Assert.Equal(0.0, threshold.Value);
+    }
+
+    [Fact]
+    public void GetMinimumMetricThreshold_AccuracyWithClassCount_HigherThanWithout()
+    {
+        var withoutClass = ModelRegistry.GetMinimumMetricThreshold("accuracy");
+        var withClass = ModelRegistry.GetMinimumMetricThreshold("accuracy", 3);
+        Assert.True(withClass > withoutClass);
+    }
+
+    [Fact]
     public void GetProductionPath_ReturnsCorrectPath()
     {
         // Act
@@ -422,4 +533,107 @@ public class ModelRegistryTests : IDisposable
 
         return experimentId;
     }
+
+    #region IsClassificationDegenerateModel
+
+    [Fact]
+    public void IsClassificationDegenerateModel_BinaryHighAccZeroF1_ReturnsTrue()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.95,
+            ["f1_score"] = 0.0
+        };
+
+        Assert.True(ModelRegistry.IsClassificationDegenerateModel(metrics));
+    }
+
+    [Fact]
+    public void IsClassificationDegenerateModel_MulticlassHighAccZeroF1_ReturnsTrue()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["macro_accuracy"] = 0.80,
+            ["macro_f1"] = 0.0
+        };
+
+        Assert.True(ModelRegistry.IsClassificationDegenerateModel(metrics));
+    }
+
+    [Fact]
+    public void IsClassificationDegenerateModel_NormalMetrics_ReturnsFalse()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.85,
+            ["f1_score"] = 0.78
+        };
+
+        Assert.False(ModelRegistry.IsClassificationDegenerateModel(metrics));
+    }
+
+    [Fact]
+    public void IsClassificationDegenerateModel_LowAccZeroF1_ReturnsFalse()
+    {
+        // Low accuracy + zero F1 = just a bad model, not degenerate
+        var metrics = new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.3,
+            ["f1_score"] = 0.0
+        };
+
+        Assert.False(ModelRegistry.IsClassificationDegenerateModel(metrics));
+    }
+
+    [Fact]
+    public void IsClassificationDegenerateModel_RegressionMetrics_ReturnsFalse()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["r_squared"] = 0.9,
+            ["rmse"] = 0.5
+        };
+
+        Assert.False(ModelRegistry.IsClassificationDegenerateModel(metrics));
+    }
+
+    #endregion
+
+    #region GetMinimumMetricThreshold
+
+    [Theory]
+    [InlineData("r_squared", null, 0.0)]
+    [InlineData("auc", null, 0.5)]
+    [InlineData("f1_score", null, 0.0)]
+    public void GetMinimumMetricThreshold_KnownMetrics_ReturnsThreshold(string metric, int? classCount, double expected)
+    {
+        var result = ModelRegistry.GetMinimumMetricThreshold(metric, classCount);
+        Assert.NotNull(result);
+        Assert.Equal(expected, result!.Value, precision: 4);
+    }
+
+    [Fact]
+    public void GetMinimumMetricThreshold_AccuracyWithClassCount_ReturnsDynamic()
+    {
+        // 5 classes → threshold = 1/5 = 0.2
+        var result = ModelRegistry.GetMinimumMetricThreshold("accuracy", 5);
+        Assert.NotNull(result);
+        Assert.Equal(0.2, result!.Value, precision: 4);
+    }
+
+    [Fact]
+    public void GetMinimumMetricThreshold_UnknownMetric_ReturnsNull()
+    {
+        var result = ModelRegistry.GetMinimumMetricThreshold("custom_metric");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void GetMinimumMetricThreshold_ErrorMetric_ReturnsNull()
+    {
+        var result = ModelRegistry.GetMinimumMetricThreshold("rmse");
+        Assert.Null(result);
+    }
+
+    #endregion
 }
