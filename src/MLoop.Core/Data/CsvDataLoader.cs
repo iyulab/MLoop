@@ -37,6 +37,9 @@ public class CsvDataLoader : IDataProvider
         // Warn if CSV appears to have no header row
         WarnIfHeaderless(mlnetCompatiblePath);
 
+        // Warn about monotonically increasing columns that may be IDs
+        WarnMonotonicColumns(mlnetCompatiblePath, labelColumn);
+
         // Pre-InferColumns: Remove DateTime columns from CSV.
         // ML.NET treats datetime strings as text and applies FeaturizeText,
         // creating tens of thousands of character n-gram features.
@@ -519,6 +522,22 @@ public class CsvDataLoader : IDataProvider
     /// </summary>
 
     /// <summary>
+    /// Warns about monotonically increasing integer columns that are likely ID/index columns.
+    /// These columns cause overfitting when used as features.
+    /// </summary>
+    private static void WarnMonotonicColumns(string filePath, string? labelColumn)
+    {
+        var monotonicCols = DetectMonotonicColumns(filePath, labelColumn);
+        if (monotonicCols.Count > 0)
+        {
+            var colNames = string.Join(", ", monotonicCols);
+            Console.WriteLine($"[Warning] Possible ID/index column(s) detected (strictly increasing integers): {colNames}");
+            Console.WriteLine($"[Info] These columns may cause overfitting. Consider excluding them:");
+            Console.WriteLine($"[Info]   mloop train data.csv --label target --exclude {monotonicCols.First()}");
+        }
+    }
+
+    /// <summary>
     /// Warns if the CSV file appears to have no header row (first row looks like data).
     /// Detection heuristic: all fields in the first row are numeric.
     /// </summary>
@@ -645,6 +664,69 @@ public class CsvDataLoader : IDataProvider
             return true;
 
         return false;
+    }
+
+    /// <summary>
+    /// Detects columns that are strictly monotonically increasing integers.
+    /// These are likely ID/index columns that would cause overfitting if used as features.
+    /// Samples up to first 100 data rows for performance.
+    /// </summary>
+    public static List<string> DetectMonotonicColumns(string filePath, string? labelColumn)
+    {
+        var result = new List<string>();
+        const int minRows = 5;
+        const int maxSampleRows = 100;
+
+        try
+        {
+            var lines = File.ReadLines(filePath, System.Text.Encoding.UTF8).Take(maxSampleRows + 1).ToList();
+            if (lines.Count < minRows + 1) return result; // Need header + at least minRows data
+
+            var headers = ParseCsvLine(lines[0]);
+            var dataRows = lines.Skip(1).ToList();
+
+            for (int col = 0; col < headers.Length; col++)
+            {
+                var colName = headers[col].Trim();
+
+                // Skip label column
+                if (!string.IsNullOrEmpty(labelColumn) &&
+                    colName.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Check if all values are integers and strictly increasing
+                bool isMonotonic = true;
+                long? prevValue = null;
+
+                foreach (var row in dataRows)
+                {
+                    var fields = ParseCsvLine(row);
+                    if (col >= fields.Length || !long.TryParse(fields[col].Trim(), out var value))
+                    {
+                        isMonotonic = false;
+                        break;
+                    }
+
+                    if (prevValue.HasValue && value <= prevValue.Value)
+                    {
+                        isMonotonic = false;
+                        break;
+                    }
+                    prevValue = value;
+                }
+
+                if (isMonotonic && prevValue.HasValue)
+                {
+                    result.Add(colName);
+                }
+            }
+        }
+        catch
+        {
+            // Non-critical, return empty
+        }
+
+        return result;
     }
 
     /// <summary>

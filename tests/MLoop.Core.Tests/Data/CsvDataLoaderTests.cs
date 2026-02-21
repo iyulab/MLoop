@@ -561,6 +561,65 @@ public class CsvDataLoaderTests : IDisposable
 
     #endregion
 
+    #region DetectMonotonicColumns
+
+    [Fact]
+    public void DetectMonotonicColumns_ConsecutiveIntegers_ReturnsColumn()
+    {
+        var csv = "ID,Feature1,Label\n1,0.5,A\n2,0.6,B\n3,0.7,A\n4,0.8,B\n5,0.9,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "mono_consec.csv");
+        File.WriteAllText(csvPath, csv);
+
+        var result = CsvDataLoader.DetectMonotonicColumns(csvPath, "Label");
+        Assert.Contains("ID", result);
+    }
+
+    [Fact]
+    public void DetectMonotonicColumns_NonConsecutiveIncreasing_ReturnsColumn()
+    {
+        var csv = "SeqNo,Feature1,Label\n1001,0.5,A\n1005,0.6,B\n1012,0.7,A\n1020,0.8,B\n1035,0.9,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "mono_nonconsec.csv");
+        File.WriteAllText(csvPath, csv);
+
+        var result = CsvDataLoader.DetectMonotonicColumns(csvPath, "Label");
+        Assert.Contains("SeqNo", result);
+    }
+
+    [Fact]
+    public void DetectMonotonicColumns_NormalFeature_DoesNotReturn()
+    {
+        var csv = "Temperature,Pressure,Label\n25,100,A\n30,95,B\n22,105,A\n28,98,B\n26,102,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "mono_normal.csv");
+        File.WriteAllText(csvPath, csv);
+
+        var result = CsvDataLoader.DetectMonotonicColumns(csvPath, "Label");
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void DetectMonotonicColumns_LabelColumn_Excluded()
+    {
+        var csv = "Feature1,Label\n0.5,1\n0.6,2\n0.7,3\n0.8,4\n0.9,5\n";
+        var csvPath = Path.Combine(_tempDirectory, "mono_label.csv");
+        File.WriteAllText(csvPath, csv);
+
+        var result = CsvDataLoader.DetectMonotonicColumns(csvPath, "Label");
+        Assert.DoesNotContain("Label", result);
+    }
+
+    [Fact]
+    public void DetectMonotonicColumns_TooFewRows_ReturnsEmpty()
+    {
+        var csv = "ID,Feature1,Label\n1,0.5,A\n2,0.6,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "mono_few.csv");
+        File.WriteAllText(csvPath, csv);
+
+        var result = CsvDataLoader.DetectMonotonicColumns(csvPath, "Label");
+        Assert.Empty(result);
+    }
+
+    #endregion
+
     #region RemoveDateTimeColumns
 
     [Fact]
