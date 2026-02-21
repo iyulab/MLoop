@@ -245,6 +245,66 @@ public class DataBalancerTests : IDisposable
         return filePath;
     }
 
+    [Fact]
+    public void Balance_Multiclass_OversamplesAllMinorityClasses()
+    {
+        // 100:3:2 → target = ceil(100/10) = 10, so B(3) and C(2) both need oversampling
+        var dataFile = CreateMulticlassImbalancedDataset(100, 3, 2);
+        var balancer = new DataBalancer();
+
+        var result = balancer.Balance(dataFile, "Label", "auto");
+
+        Assert.True(result.Applied);
+        Assert.NotNull(result.BalancedFilePath);
+
+        var lines = File.ReadAllLines(result.BalancedFilePath!);
+        var classCounts = lines.Skip(1)
+            .Select(l => CsvFieldParser.ParseFields(l))
+            .Where(f => f.Length >= 4)
+            .GroupBy(f => f[3].Trim())
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        // With the bug, only C (smallest) gets oversampled; B stays at 3
+        Assert.True(classCounts["B"] >= 10, $"Class B count {classCounts["B"]} should be >= 10 (intermediate minority must also be oversampled)");
+        Assert.True(classCounts["C"] >= 10, $"Class C count {classCounts["C"]} should be >= 10");
+    }
+
+    [Fact]
+    public void Balance_Multiclass_MajorityClassUnchanged()
+    {
+        var dataFile = CreateMulticlassImbalancedDataset(100, 3, 2);
+        var balancer = new DataBalancer();
+
+        var result = balancer.Balance(dataFile, "Label", "auto");
+
+        Assert.True(result.Applied);
+        var lines = File.ReadAllLines(result.BalancedFilePath!);
+        var classCounts = lines.Skip(1)
+            .Select(l => CsvFieldParser.ParseFields(l))
+            .Where(f => f.Length >= 4)
+            .GroupBy(f => f[3].Trim())
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        Assert.Equal(100, classCounts["A"]);
+    }
+
+    private string CreateMulticlassImbalancedDataset(int classACount, int classBCount, int classCCount)
+    {
+        var filePath = Path.Combine(_testDir, $"multiclass_{classACount}_{classBCount}_{classCCount}.csv");
+        var lines = new List<string> { "Feature1,Feature2,Feature3,Label" };
+        var random = new Random(42);
+
+        for (int i = 0; i < classACount; i++)
+            lines.Add($"{random.NextDouble():F4},{random.NextDouble():F4},{random.NextDouble():F4},A");
+        for (int i = 0; i < classBCount; i++)
+            lines.Add($"{random.NextDouble():F4},{random.NextDouble():F4},{random.NextDouble():F4},B");
+        for (int i = 0; i < classCCount; i++)
+            lines.Add($"{random.NextDouble():F4},{random.NextDouble():F4},{random.NextDouble():F4},C");
+
+        File.WriteAllLines(filePath, lines);
+        return filePath;
+    }
+
     private string CreateSingleClassDataset(int count)
     {
         var filePath = Path.Combine(_testDir, $"single_class_{count}.csv");

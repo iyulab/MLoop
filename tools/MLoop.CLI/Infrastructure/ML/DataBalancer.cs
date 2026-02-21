@@ -132,24 +132,33 @@ public class DataBalancer
             return result;
         }
 
-        // Calculate how many minority samples needed
+        // Calculate target count per class
         var targetMinorityCount = (int)Math.Ceiling(majorityClass.Value.Count / targetRatio);
-        var samplesToAdd = targetMinorityCount - minorityClass.Value.Count;
 
-        if (samplesToAdd <= 0)
+        // Oversample ALL classes below target count
+        var random = new Random(42); // Fixed seed for reproducibility
+        var oversampledRows = new List<string>();
+        var oversampledClasses = new List<string>();
+
+        foreach (var cls in sortedClasses)
+        {
+            if (cls.Key == majorityClass.Key) continue; // Skip majority class
+
+            var samplesToAdd = targetMinorityCount - cls.Value.Count;
+            if (samplesToAdd <= 0) continue;
+
+            for (int i = 0; i < samplesToAdd; i++)
+            {
+                var randomIndex = random.Next(cls.Value.Count);
+                oversampledRows.Add(cls.Value[randomIndex]);
+            }
+            oversampledClasses.Add($"'{cls.Key}' ({cls.Value.Count} → {cls.Value.Count + samplesToAdd})");
+        }
+
+        if (oversampledRows.Count == 0)
         {
             result.Message = "No oversampling needed";
             return result;
-        }
-
-        // Oversample minority class (simple random oversampling with repetition)
-        var random = new Random(42); // Fixed seed for reproducibility
-        var oversampledRows = new List<string>();
-
-        for (int i = 0; i < samplesToAdd; i++)
-        {
-            var randomIndex = random.Next(minorityClass.Value.Count);
-            oversampledRows.Add(minorityClass.Value[randomIndex]);
         }
 
         // Write balanced file
@@ -165,9 +174,9 @@ public class DataBalancer
 
         result.Applied = true;
         result.BalancedFilePath = outputPath;
-        result.NewMinorityCount = minorityClass.Value.Count + samplesToAdd;
+        result.NewMinorityCount = minorityClass.Value.Count + (targetMinorityCount - minorityClass.Value.Count);
         result.NewRatio = (double)majorityClass.Value.Count / result.NewMinorityCount;
-        result.Message = $"Oversampled minority class '{minorityClass.Key}' from {minorityClass.Value.Count} to {result.NewMinorityCount} samples (ratio: {result.OriginalRatio:F1}:1 → {result.NewRatio:F1}:1)";
+        result.Message = $"Oversampled {oversampledClasses.Count} class(es): {string.Join(", ", oversampledClasses)} (ratio: {result.OriginalRatio:F1}:1 → {result.NewRatio:F1}:1)";
 
         return result;
     }
