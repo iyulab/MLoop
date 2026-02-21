@@ -4,10 +4,6 @@
     <ProjectReference Include="..\..\src\MLoop.Core\MLoop.Core.csproj" />
     <ProjectReference Include="..\..\src\MLoop.DataStore\MLoop.DataStore.csproj" />
     <ProjectReference Include="..\..\src\MLoop.Ops\MLoop.Ops.csproj" />
-    <ProjectReference Include="..\..\submodules\FilePrepper\src\FilePrepper.CLI\FilePrepper.CLI.csproj">
-      <SetConfiguration>Configuration=Release</SetConfiguration>
-      <Properties>IsLibraryBuild=true</Properties>
-    </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -17,6 +13,8 @@
     <PackageReference Include="Microsoft.ML.AutoML" />
     <PackageReference Include="Spectre.Console" />
     <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="DataLens" />
+    <PackageReference Include="UInsight" />
     <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 

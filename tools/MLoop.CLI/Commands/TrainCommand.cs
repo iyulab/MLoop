@@ -4,6 +4,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
 using MLoop.Core.Diagnostics;
@@ -94,6 +95,12 @@ public static class TrainCommand
             AllowMultipleArgumentsPerToken = true
         };
 
+        var noAutoTimeOption = new Option<bool>("--no-auto-time")
+        {
+            Description = "Disable automatic time estimation (use default 300s)",
+            DefaultValueFactory = _ => false
+        };
+
         var balanceOption = new Option<string?>("--balance", "-b")
         {
             Description = "Class balancing strategy: 'auto' (balance to 10:1 if ratio > 10:1), 'none' (no balancing), or target ratio (e.g., '5' for 5:1). Use without value for 'auto'.",
@@ -114,6 +121,7 @@ public static class TrainCommand
         command.Options.Add(autoMergeOption);
         command.Options.Add(dropMissingLabelsOption);
         command.Options.Add(dataOption);
+        command.Options.Add(noAutoTimeOption);
         command.Options.Add(balanceOption);
 
         command.SetAction((parseResult) =>
@@ -131,13 +139,14 @@ public static class TrainCommand
             var autoMerge = parseResult.GetValue(autoMergeOption);
             var dropMissingLabels = parseResult.GetValue(dropMissingLabelsOption);
             var dataPaths = parseResult.GetValue(dataOption);
+            var noAutoTime = parseResult.GetValue(noAutoTimeOption);
             var balance = parseResult.GetValue(balanceOption);
             // Handle --balance without argument: default to "auto"
             if (balance == null && parseResult.Tokens.Any(t => t.Value == "--balance" || t.Value == "-b"))
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, balance);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, balance);
         });
 
         return command;
@@ -157,6 +166,7 @@ public static class TrainCommand
         bool autoMerge,
         bool? dropMissingLabels,
         string[]? dataPaths,
+        bool noAutoTime,
         string? balance)
     {
         try
@@ -600,6 +610,13 @@ public static class TrainCommand
             // Ensure model directory structure exists
             await modelNameResolver.EnsureModelDirectoryAsync(resolvedModelName);
 
+            // Determine auto-time eligibility:
+            // - If --time was explicitly specified, use that value (no auto-time)
+            // - If --no-auto-time was specified, use default 300s (no auto-time)
+            // - If neither --time nor yaml time_limit_seconds is set, enable auto-time
+            var yamlHasTimeLimit = effectiveDefinition.Training?.TimeLimitSeconds != null;
+            var useAutoTime = !time.HasValue && !yamlHasTimeLimit && !noAutoTime;
+
             var trainingConfig = new TrainingConfig
             {
                 ModelName = resolvedModelName,
@@ -608,7 +625,8 @@ public static class TrainCommand
                 Task = effectiveDefinition.Task,
                 TimeLimitSeconds = effectiveDefinition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
                 Metric = effectiveDefinition.Training?.Metric ?? ConfigDefaults.DefaultMetric,
-                TestSplit = effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit
+                TestSplit = effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit,
+                UseAutoTime = useAutoTime
             };
 
             // Initialize hook engine
@@ -645,8 +663,19 @@ public static class TrainCommand
                 return 1;
             }
 
+            // If auto-time, display static estimate before progress bar starts
+            if (useAutoTime)
+            {
+                var (rowCount, colCount, hasText, classCount) = TrainingEngine.CollectDataStats(
+                    trainingConfig.DataFile, trainingConfig.LabelColumn, trainingConfig.Task);
+                var staticEstimate = TimeEstimator.EstimateStatic(rowCount, colCount, trainingConfig.Task, classCount, hasText);
+                TrainPresenter.DisplayAutoTimeEstimate(staticEstimate, rowCount, colCount, trainingConfig.Task, classCount);
+                AnsiConsole.WriteLine();
+            }
+
             // Train with progress display
             TrainingResult? result = null;
+            TrainingProgress? lastAutoTimeEvent = null;
 
             await AnsiConsole.Progress()
                 .AutoClear(false)
@@ -662,6 +691,19 @@ public static class TrainCommand
 
                     var progress = new Progress<TrainingProgress>(p =>
                     {
+                        if (p.Phase.HasValue)
+                        {
+                            lastAutoTimeEvent = p;
+                            progressTask.Description = p.Phase switch
+                            {
+                                AutoTimePhase.ProbeStart => $"[cyan]Phase 1:[/] Probe ({p.ProbeTimeSeconds}s)...",
+                                AutoTimePhase.ProbeComplete => $"[cyan]Phase 2:[/] Main training ({p.FinalTimeSeconds}s)...",
+                                AutoTimePhase.ProbeConverged => $"[green]Converged[/] in probe phase",
+                                _ => progressTask.Description
+                            };
+                            return;
+                        }
+
                         progressTask.Description = $"[green]Trial {p.TrialNumber}:[/] {p.TrainerName} - {p.MetricName}={p.Metric:F4}";
 
                         var progressPercent = Math.Min(
@@ -674,6 +716,24 @@ public static class TrainCommand
                     progressTask.Value = 100;
                     progressTask.StopTask();
                 });
+
+            // Display auto-time phase summary after progress bar completes
+            if (lastAutoTimeEvent?.Phase == AutoTimePhase.ProbeComplete)
+            {
+                TrainPresenter.DisplayProbeResult(
+                    lastAutoTimeEvent.ProbeTimeSeconds,
+                    lastAutoTimeEvent.Metric,
+                    lastAutoTimeEvent.TrialNumber,
+                    lastAutoTimeEvent.FinalTimeSeconds);
+                AnsiConsole.WriteLine();
+            }
+            else if (lastAutoTimeEvent?.Phase == AutoTimePhase.ProbeConverged)
+            {
+                TrainPresenter.DisplayProbeConverged(
+                    lastAutoTimeEvent.ProbeTimeSeconds,
+                    lastAutoTimeEvent.Metric);
+                AnsiConsole.WriteLine();
+            }
 
             if (result == null)
             {

@@ -70,7 +70,14 @@ public static class ErrorSuggestions
         }
 
         // ML.NET specific errors
-        if (message.Contains("schema") || message.Contains("column"))
+        if (message.Contains("feature vector dimension mismatch") || message.Contains("onehotencoding"))
+        {
+            suggestions.Add("Categorical columns in test data contain values not seen during training");
+            suggestions.Add("OneHotEncoding creates different vector dimensions for different category sets");
+            suggestions.Add("Try evaluating with a test split from the same dataset used for training");
+            suggestions.Add("Consider using [cyan]mloop prep[/] to preprocess categorical columns before training");
+        }
+        else if (message.Contains("schema") || message.Contains("column"))
         {
             suggestions.Add("Verify the data file has the expected columns");
             suggestions.Add("Check if the label column name matches (case-sensitive)");

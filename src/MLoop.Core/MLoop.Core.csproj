@@ -31,10 +31,8 @@
     <None Include="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
-  <!-- FilePrepper Integration: Always use submodule project reference -->
-  <!-- This enables direct development and ensures CI/local consistency -->
   <ItemGroup>
-    <ProjectReference Include="..\..\submodules\FilePrepper\src\FilePrepper\FilePrepper.csproj" />
+    <PackageReference Include="FilePrepper" />
   </ItemGroup>
 
 </Project>

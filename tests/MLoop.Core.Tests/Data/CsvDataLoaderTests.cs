@@ -470,4 +470,241 @@ public class CsvDataLoaderTests : IDisposable
     }
 
     #endregion
+
+    #region Sparse Column Exclusion Tests
+
+    [Fact]
+    public void LoadData_WithSparseColumns_ExcludesFromFeatures()
+    {
+        // Arrange: Create CSV with a column that is >90% empty
+        var lines = new List<string> { "Feature1,SparseCol,Label" };
+        for (int i = 0; i < 100; i++)
+        {
+            var sparse = i < 5 ? "1.0" : ""; // Only 5% filled
+            lines.Add($"{i * 1.5},{sparse},{i % 3}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "sparse.csv");
+        File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
+
+        // Act
+        var output = CaptureConsoleOutput(() =>
+        {
+            _loader.LoadData(csvPath, "Label");
+        });
+
+        // Assert: SparseCol should be excluded
+        Assert.Contains("Sparse column 'SparseCol' excluded", output);
+    }
+
+    [Fact]
+    public void LoadData_WithNonSparseColumns_DoesNotExclude()
+    {
+        // Arrange: All columns have data
+        var lines = new List<string> { "Feature1,Feature2,Label" };
+        for (int i = 0; i < 100; i++)
+        {
+            lines.Add($"{i * 1.5},{i * 2.5},{i % 3}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "dense.csv");
+        File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
+
+        // Act
+        var output = CaptureConsoleOutput(() =>
+        {
+            _loader.LoadData(csvPath, "Label");
+        });
+
+        // Assert: No sparse exclusion warnings
+        Assert.DoesNotContain("Sparse column", output);
+    }
+
+    [Fact]
+    public void LoadData_SparseLabel_IsNotExcluded()
+    {
+        // Arrange: Label column is sparse but should NOT be excluded
+        var lines = new List<string> { "Feature1,Label" };
+        for (int i = 0; i < 100; i++)
+        {
+            var label = i < 5 ? "1.0" : ""; // Label is mostly empty
+            lines.Add($"{i * 1.5},{label}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "sparse_label.csv");
+        File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
+
+        // Act
+        var output = CaptureConsoleOutput(() =>
+        {
+            _loader.LoadData(csvPath, "Label");
+        });
+
+        // Assert: Label should NOT be excluded
+        Assert.DoesNotContain("Sparse column 'Label' excluded", output);
+    }
+
+
+
+    private static string CaptureConsoleOutput(Action action)
+    {
+        var originalOut = Console.Out;
+        using var writer = new StringWriter();
+        Console.SetOut(writer);
+        try
+        {
+            action();
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+        return writer.ToString();
+    }
+
+    #endregion
+
+    #region RemoveDateTimeColumns
+
+    [Fact]
+    public void RemoveDateTimeColumns_NoDateTimeColumns_ReturnsOriginalPath()
+    {
+        var csv = "Feature1,Feature2,Label\n1,2,A\n3,4,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "nodt.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveDateTimeColumns_StrongNameColumn_RemovesWithoutValueCheck()
+    {
+        // "datetime" is a strong pattern — removed regardless of values
+        var csv = "datetime,Feature1,Label\n2024-01-15,1,A\n2024-02-20,2,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "strong_dt.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.StartsWith("Feature1,Label", content);
+        Assert.DoesNotContain("datetime", content);
+        Assert.DoesNotContain("2024-01-15", content);
+    }
+
+    [Fact]
+    public void RemoveDateTimeColumns_WeakNameWithDateValues_RemovesColumn()
+    {
+        var csv = "created_date,Feature1,Label\n2024-01-15,1,A\n2024-02-20,2,B\n2024-03-25,3,C\n";
+        var csvPath = Path.Combine(_tempDirectory, "weak_dt.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.StartsWith("Feature1,Label", content);
+    }
+
+    [Fact]
+    public void RemoveDateTimeColumns_WeakNameWithNumericValues_KeepsColumn()
+    {
+        // "Cycle_Time" with numeric values should NOT be removed
+        var csv = "Cycle_Time,Feature1,Label\n20.7,1,A\n0.044,2,B\n7.8,3,C\n";
+        var csvPath = Path.Combine(_tempDirectory, "weak_numeric.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result); // No change — numeric values prevent removal
+    }
+
+    [Fact]
+    public void RemoveDateTimeColumns_LabelColumnIsDateTime_KeepsLabel()
+    {
+        // Label column should never be removed even if it's DateTime
+        var csv = "Feature1,datetime_label\n1,2024-01-15\n2,2024-02-20\n";
+        var csvPath = Path.Combine(_tempDirectory, "label_dt.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveDateTimeColumns(csvPath, "datetime_label");
+
+        Assert.Equal(csvPath, result); // Label preserved
+    }
+
+    [Fact]
+    public void RemoveDateTimeColumns_ValueBasedDetection_RemovesUnnamedDateColumn()
+    {
+        // Column name doesn't match any pattern, but values are DateTime
+        var csv = "col_x,Feature1,Label\n2024-01-15 08:30:00,1,A\n2024-02-20 14:15:00,2,B\n2024-03-25 09:00:00,3,C\n";
+        var csvPath = Path.Combine(_tempDirectory, "value_dt.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.StartsWith("Feature1,Label", content);
+    }
+
+    [Fact]
+    public void RemoveDateTimeColumns_DtSuffixWithDateValues_RemovesColumn()
+    {
+        // _DT suffix (KAMP pattern) with DateTime values should be removed
+        var csv = "STD_DT,MFG_DT,Feature1,Label\n2024-01-15,2024-01-15,1,A\n2024-02-20,2024-02-20,2,B\n2024-03-25,2024-03-25,3,C\n";
+        var csvPath = Path.Combine(_tempDirectory, "kamp_dt.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.StartsWith("Feature1,Label", content);
+        Assert.DoesNotContain("STD_DT", content);
+        Assert.DoesNotContain("MFG_DT", content);
+    }
+
+    [Fact]
+    public void RemoveDateTimeColumns_EmptyFile_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "empty_dt.csv");
+        File.WriteAllText(csvPath, "", System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveDateTimeColumns_MultipleColumns_RemovesAllDateTime()
+    {
+        var csv = "timestamp,Feature1,created_date,Label\n2024-01-15 08:00,1,2024-01-15,A\n2024-02-20 09:00,2,2024-02-20,B\n2024-03-25 10:00,3,2024-03-25,C\n";
+        var csvPath = Path.Combine(_tempDirectory, "multi_dt.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.StartsWith("Feature1,Label", content);
+        Assert.DoesNotContain("timestamp", content);
+        Assert.DoesNotContain("created_date", content);
+    }
+
+    [Fact]
+    public void RemoveDateTimeColumns_LogsExcludedColumns()
+    {
+        var csv = "datetime,Feature1,Label\n2024-01-15,1,A\n2024-02-20,2,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "log_dt.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var output = CaptureConsoleOutput(() =>
+        {
+            CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
+        });
+
+        Assert.Contains("DateTime column 'datetime' excluded from features", output);
+    }
+
+    #endregion
 }

@@ -411,4 +411,37 @@ internal static class TrainPresenter
             AnsiConsole.WriteLine();
         }
     }
+
+    /// <summary>
+    /// Displays the auto-time static estimate summary.
+    /// </summary>
+    public static void DisplayAutoTimeEstimate(
+        int staticEstimate, int rows, int columns, string task, int classCount)
+    {
+        AnsiConsole.MarkupLine(
+            $"[cyan]⏱ Auto-time:[/] {staticEstimate}s estimated " +
+            $"({rows:N0} rows × {columns} cols, {task}" +
+            (classCount > 0 ? $", {classCount} classes" : "") + ")");
+        AnsiConsole.MarkupLine("  [dim]Tip: Override with --time <seconds>[/]");
+    }
+
+    /// <summary>
+    /// Displays probe and main training phase results.
+    /// </summary>
+    public static void DisplayProbeResult(int probeTime, double bestMetric, int trials, int finalTime)
+    {
+        AnsiConsole.MarkupLine(
+            $"  Phase 1: Quick probe ({probeTime}s) → {bestMetric:F4}, {trials} trials");
+        AnsiConsole.MarkupLine(
+            $"  Phase 2: Main training ({finalTime}s)");
+    }
+
+    /// <summary>
+    /// Displays message when probe phase converged early.
+    /// </summary>
+    public static void DisplayProbeConverged(int probeTime, double bestMetric)
+    {
+        AnsiConsole.MarkupLine(
+            $"  [green]✓[/] Converged in probe phase ({probeTime}s, {bestMetric:F4}) — skipping main training");
+    }
 }

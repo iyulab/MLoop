@@ -223,34 +223,39 @@ public class PerformanceTests
 
     [Fact]
     [Trait("Category", "Slow")]
-    public async Task Scalability_VaryingDataSizes_ScalesLinearly()
+    public async Task Scalability_VaryingDataSizes_ScalesReasonably()
     {
         // Arrange - use larger base sizes for stable timing ratios
         var sizes = new[] { 10_000, 50_000, 100_000 };
-        var times = new List<long>();
+        var times = new List<double>();
         var engine = new SamplingEngine(new RandomSamplingStrategy(), NullLogger<SamplingEngine>.Instance);
 
-        // Warmup: JIT compile and stabilize
-        var warmupData = SampleDataGenerator.GenerateLargeScaleData(1_000, columnCount: 5);
+        // Warmup: JIT compile and stabilize with larger data
+        var warmupData = SampleDataGenerator.GenerateLargeScaleData(10_000, columnCount: 5);
         await engine.SampleAsync(warmupData, 0.1);
 
-        // Act
+        // Act - run each size multiple times and take median for stability
         foreach (var size in sizes)
         {
-            var data = SampleDataGenerator.GenerateLargeScaleData(size, columnCount: 5);
-            var stopwatch = Stopwatch.StartNew();
-            var sample = await engine.SampleAsync(data, 0.1);
-            stopwatch.Stop();
-            times.Add(stopwatch.ElapsedMilliseconds);
+            var runTimes = new List<long>();
+            for (int i = 0; i < 3; i++)
+            {
+                var data = SampleDataGenerator.GenerateLargeScaleData(size, columnCount: 5);
+                var stopwatch = Stopwatch.StartNew();
+                var sample = await engine.SampleAsync(data, 0.1);
+                stopwatch.Stop();
+                runTimes.Add(stopwatch.ElapsedMilliseconds);
+            }
+            runTimes.Sort();
+            times.Add(runTimes[1]); // median
         }
 
-        // Assert - Performance should scale roughly linearly
-        // 5x size increase should not take more than 20x longer
-        var ratio1 = times[1] / Math.Max(1.0, times[0]); // 50K / 10K
-        var ratio2 = times[2] / Math.Max(1.0, times[1]); // 100K / 50K
-
-        Assert.True(ratio1 < 20, $"50K took {ratio1:F1}x longer than 10K");
-        Assert.True(ratio2 < 20, $"100K took {ratio2:F1}x longer than 50K");
+        // Assert - 10x size increase should complete within reasonable time
+        // Each size should complete within 5 seconds
+        Assert.All(times, t => Assert.True(t < 5000, $"Sampling took {t}ms, expected < 5000ms"));
+        // 100K should be less than 50x of 10K (very generous bound for CI environments)
+        var overallRatio = times[2] / Math.Max(1.0, times[0]);
+        Assert.True(overallRatio < 50, $"100K took {overallRatio:F1}x longer than 10K");
     }
 
     [Fact]

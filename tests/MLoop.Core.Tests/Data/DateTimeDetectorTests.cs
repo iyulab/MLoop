@@ -15,10 +15,16 @@ public class DateTimeDetectorTests
     [InlineData("time_stamp", true)]
     [InlineData("DateTime", true)]
     [InlineData("TIMESTAMP", true)]
+    [InlineData("STD_DT", true)]
+    [InlineData("MFG_DT", true)]
+    [InlineData("PROC_DT", true)]
+    [InlineData("std_dt", true)]
     [InlineData("name", false)]
     [InlineData("value", false)]
     [InlineData("datevalue", false)]
     [InlineData("update", false)]
+    [InlineData("PRODUCT", false)]
+    [InlineData("RESULT", false)]
     public void IsDateTimeColumnName_ReturnsExpected(string columnName, bool expected)
     {
         Assert.Equal(expected, DateTimeDetector.IsDateTimeColumnName(columnName));
@@ -62,10 +68,34 @@ public class DateTimeDetectorTests
     }
 
     [Fact]
-    public void IsDateTimeColumn_NameMatch_NoValuesNeeded()
+    public void IsDateTimeColumn_StrongName_NoValuesNeeded()
     {
-        Assert.True(DateTimeDetector.IsDateTimeColumn("created_date"));
-        Assert.True(DateTimeDetector.IsDateTimeColumn("created_date", null));
+        // Strong names (datetime, timestamp) don't need value confirmation
+        Assert.True(DateTimeDetector.IsDateTimeColumn("datetime"));
+        Assert.True(DateTimeDetector.IsDateTimeColumn("created_timestamp", null));
+    }
+
+    [Fact]
+    public void IsDateTimeColumn_WeakName_RequiresValueConfirmation()
+    {
+        // Weak names (_date, _time) require value confirmation
+        // to avoid false positives on columns like "Cycle_Time", "Spray_Time"
+        Assert.False(DateTimeDetector.IsDateTimeColumn("created_date"));
+        Assert.False(DateTimeDetector.IsDateTimeColumn("created_date", null));
+
+        // With DateTime values, weak names return true
+        var dateValues = new[] { "2024-01-15", "2024-02-20" };
+        Assert.True(DateTimeDetector.IsDateTimeColumn("created_date", dateValues));
+    }
+
+    [Fact]
+    public void IsDateTimeColumn_WeakName_WithNumericValues_ReturnsFalse()
+    {
+        // Numeric durations like "Cycle_Time" should NOT be detected as DateTime
+        var numericValues = new[] { "20.7", "0.044", "7.8", "0.7" };
+        Assert.False(DateTimeDetector.IsDateTimeColumn("Cycle_Time", numericValues));
+        Assert.False(DateTimeDetector.IsDateTimeColumn("Spray_Time", numericValues));
+        Assert.False(DateTimeDetector.IsDateTimeColumn("Melting_Furnace_Temp", numericValues));
     }
 
     [Fact]
@@ -79,5 +109,27 @@ public class DateTimeDetectorTests
     public void IsDateTimeColumn_NoNameMatch_NoValues_ReturnsFalse()
     {
         Assert.False(DateTimeDetector.IsDateTimeColumn("some_column"));
+    }
+
+    [Fact]
+    public void IsDateTimeColumn_DtSuffix_RequiresValueConfirmation()
+    {
+        // _DT suffix is a weak pattern — requires value confirmation
+        Assert.False(DateTimeDetector.IsDateTimeColumn("STD_DT"));
+        Assert.False(DateTimeDetector.IsDateTimeColumn("MFG_DT", null));
+
+        // With DateTime values, _DT columns return true
+        var dateValues = new[] { "2024-01-15 08:30:00", "2024-02-20 14:15:00" };
+        Assert.True(DateTimeDetector.IsDateTimeColumn("STD_DT", dateValues));
+        Assert.True(DateTimeDetector.IsDateTimeColumn("MFG_DT", dateValues));
+        Assert.True(DateTimeDetector.IsDateTimeColumn("PROC_DT", dateValues));
+    }
+
+    [Fact]
+    public void IsDateTimeColumn_DtSuffix_WithNumericValues_ReturnsFalse()
+    {
+        // _DT columns with numeric values should not be detected as DateTime
+        var numericValues = new[] { "100", "200", "300", "400" };
+        Assert.False(DateTimeDetector.IsDateTimeColumn("STD_DT", numericValues));
     }
 }

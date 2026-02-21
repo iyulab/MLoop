@@ -7,6 +7,8 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
+using DataLens;
+using DataLens.Models;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -34,23 +36,40 @@ public static class InfoCommand
             DefaultValueFactory = _ => "default"
         };
 
+        var analyzeOption = new Option<bool>("--analyze", "-a")
+        {
+            Description = "Run deep analysis: correlation, feature importance, distribution, anomaly detection"
+        };
+
+        var sampleSizeOption = new Option<int>("--sample-size")
+        {
+            Description = "Maximum rows to sample for deep analysis",
+            DefaultValueFactory = _ => 50_000
+        };
+
         var command = new Command("info", "Display dataset profiling information");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(labelOption);
         command.Options.Add(nameOption);
+        command.Options.Add(analyzeOption);
+        command.Options.Add(sampleSizeOption);
 
         command.SetAction((parseResult) =>
         {
             var dataFile = parseResult.GetValue(dataFileArg)!;
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
-            return ExecuteAsync(dataFile, label, modelName);
+            var analyze = parseResult.GetValue(analyzeOption);
+            var sampleSize = parseResult.GetValue(sampleSizeOption);
+            return ExecuteAsync(dataFile, label, modelName, analyze, sampleSize);
         });
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(string dataFile, string? labelOption, string modelName)
+    private static async Task<int> ExecuteAsync(
+        string dataFile, string? labelOption, string modelName,
+        bool analyze, int sampleSize)
     {
         try
         {
@@ -114,7 +133,7 @@ public static class InfoCommand
             AnsiConsole.WriteLine();
 
             // Profile the dataset
-            await ProfileDatasetAsync(resolvedDataFile, labelColumn);
+            await ProfileDatasetAsync(resolvedDataFile, labelColumn, analyze, sampleSize);
 
             return 0;
         }
@@ -125,249 +144,200 @@ public static class InfoCommand
         }
     }
 
-    private static async Task ProfileDatasetAsync(string dataFile, string? labelColumn)
+    private static async Task ProfileDatasetAsync(
+        string dataFile, string? labelColumn, bool analyze, int sampleSize)
     {
-        await Task.Run(() =>
+        var mlContext = new MLContext(seed: 42);
+
+        // Keep original path for DataLens (which requires .csv extension via CsvBridge)
+        var originalDataFile = dataFile;
+
+        // Detect and convert encoding to UTF-8 with BOM for ML.NET compatibility
+        var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(dataFile);
+        if (detection.WasConverted && detection.EncodingName != "UTF-8")
         {
-            var mlContext = new MLContext(seed: 42);
+            AnsiConsole.MarkupLine($"[green]Info:[/] Converted {detection.EncodingName} -> UTF-8");
+        }
 
-            // Detect and convert encoding to UTF-8 with BOM for ML.NET compatibility
-            var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(dataFile);
-            if (detection.WasConverted && detection.EncodingName != "UTF-8")
+        // Use converted path for ML.NET operations
+        dataFile = convertedPath;
+
+        // Flatten multi-line quoted headers (ML.NET doesn't support them)
+        dataFile = CsvDataLoader.FlattenMultiLineHeaders(dataFile);
+
+        // Read file info and count lines in a single pass
+        var fileInfo = new FileInfo(dataFile);
+
+        int lineCount = 0;
+        string? firstLine = null;
+        using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        {
+            firstLine = reader.ReadLine(); // Read header
+            while (reader.ReadLine() != null)
             {
-                AnsiConsole.MarkupLine($"[green]Info:[/] Converted {detection.EncodingName} → UTF-8");
+                lineCount++;
+            }
+        }
+
+        if (string.IsNullOrEmpty(firstLine))
+        {
+            AnsiConsole.MarkupLine("[red]File is empty[/]");
+            return;
+        }
+
+        // 1. File Information
+        InfoPresenter.DisplayFileInfo(
+            Path.GetFileName(dataFile), fileInfo.Length, lineCount, fileInfo.LastWriteTime);
+
+        var columns = CsvFieldParser.ParseFields(firstLine);
+
+        // Determine label for InferColumns
+        string inferLabel;
+        if (!string.IsNullOrEmpty(labelColumn) && columns.Contains(labelColumn))
+        {
+            inferLabel = labelColumn;
+        }
+        else
+        {
+            inferLabel = columns.Length > 0 ? columns[0] : "dummy";
+            if (!string.IsNullOrEmpty(labelColumn) && !columns.Contains(labelColumn))
+            {
+                AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label column '{labelColumn}' not found in file, using '{inferLabel}'");
+            }
+        }
+
+        var columnInference = mlContext.Auto().InferColumns(
+            dataFile,
+            labelColumnName: inferLabel,
+            separatorChar: ',');
+
+        // Ensure RFC 4180 compliance
+        columnInference.TextLoaderOptions.AllowQuoting = true;
+
+        // 2. Column Information
+        InfoPresenter.DisplayColumnInfo(
+            columns,
+            (colName, colIdx) => InferDisplayType(colName, columnInference, colIdx),
+            (colName, dataType) => GetColumnPurpose(colName, columnInference.ColumnInformation, dataType));
+
+        // 3. DataLens Profile (always-on, nullable)
+        // DataLens uses its own CSV loading (FilePrepper CsvBridge) which requires .csv extension,
+        // so we pass the original file path instead of the ML.NET-converted .tmp path.
+        var dataLens = new DataLensAnalyzer();
+        ProfileReport? profile = null;
+
+        if (dataLens.IsAvailable)
+        {
+            // Size gate: skip profiling for files > 200MB (unless --analyze forces deep analysis)
+            if (fileInfo.Length <= 200 * 1024 * 1024 || analyze)
+            {
+                profile = await dataLens.ProfileAsync(originalDataFile);
             }
 
-            // Use converted path for all operations
-            dataFile = convertedPath;
-
-            // Flatten multi-line quoted headers (ML.NET doesn't support them)
-            dataFile = CsvDataLoader.FlattenMultiLineHeaders(dataFile);
-
-            // Read file info and count lines in a single pass
-            var fileInfo = new FileInfo(dataFile);
-
-            int lineCount = 0;
-            string? firstLine = null;
-            using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            if (dataLens.Version != null)
             {
-                firstLine = reader.ReadLine(); // Read header
-                while (reader.ReadLine() != null)
-                {
-                    lineCount++;
-                }
-            }
-
-            if (string.IsNullOrEmpty(firstLine))
-            {
-                AnsiConsole.MarkupLine("[red]File is empty[/]");
-                return;
-            }
-
-            AnsiConsole.Write(new Rule("[yellow]File Information[/]").LeftJustified());
-            AnsiConsole.WriteLine();
-
-            var fileTable = new Table().Border(TableBorder.Rounded);
-            fileTable.AddColumn("Property");
-            fileTable.AddColumn("Value");
-
-            fileTable.AddRow("File Size", FormatFileSize(fileInfo.Length));
-            fileTable.AddRow("Rows (excluding header)", lineCount.ToString("N0"));
-            fileTable.AddRow("Last Modified", fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"));
-
-            AnsiConsole.Write(fileTable);
-            AnsiConsole.WriteLine();
-
-            var columns = MLoop.CLI.Infrastructure.ML.CsvFieldParser.ParseFields(firstLine);
-
-            // Determine label for InferColumns:
-            // 1) Use provided labelColumn if it exists in the file
-            // 2) Fall back to first column
-            string inferLabel;
-            if (!string.IsNullOrEmpty(labelColumn) && columns.Contains(labelColumn))
-            {
-                inferLabel = labelColumn;
-            }
-            else
-            {
-                inferLabel = columns.Length > 0 ? columns[0] : "dummy";
-                if (!string.IsNullOrEmpty(labelColumn) && !columns.Contains(labelColumn))
-                {
-                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label column '{labelColumn}' not found in file, using '{inferLabel}'");
-                }
-            }
-
-            var columnInference = mlContext.Auto().InferColumns(
-                dataFile,
-                labelColumnName: inferLabel,
-                separatorChar: ',');
-
-            // Ensure RFC 4180 compliance: handle commas inside quoted fields
-            columnInference.TextLoaderOptions.AllowQuoting = true;
-
-            AnsiConsole.Write(new Rule("[yellow]Column Information[/]").LeftJustified());
-            AnsiConsole.WriteLine();
-
-            var columnTable = new Table().Border(TableBorder.Rounded);
-            columnTable.AddColumn("#");
-            columnTable.AddColumn("Column Name");
-            columnTable.AddColumn("Data Type");
-            columnTable.AddColumn("Purpose");
-
-            for (int colIdx = 0; colIdx < columns.Length; colIdx++)
-            {
-                var column = columns[colIdx];
-                var dataType = InferDisplayType(column, columnInference, colIdx);
-                var purpose = GetColumnPurpose(column, columnInference.ColumnInformation, dataType);
-
-                columnTable.AddRow(
-                    (colIdx + 1).ToString(),
-                    column,
-                    dataType,
-                    purpose);
-            }
-
-            AnsiConsole.Write(columnTable);
-            AnsiConsole.WriteLine();
-
-            // Calculate statistics from raw CSV (avoids ML.NET DataView type compatibility issues)
-            AnsiConsole.Write(new Rule("[yellow]Data Statistics[/]").LeftJustified());
-            AnsiConsole.WriteLine();
-
-            var (columnStats, labelDistribution) = CalculateColumnStats(dataFile, columns, labelColumn);
-
-            var statsTable = new Table().Border(TableBorder.Rounded);
-            statsTable.AddColumn("Column");
-            statsTable.AddColumn("Missing Count");
-            statsTable.AddColumn("Missing %");
-            statsTable.AddColumn("Unique Values (sample)");
-
-            foreach (var colName in columns)
-            {
-                if (columnStats.TryGetValue(colName, out var stats))
-                {
-                    statsTable.AddRow(
-                        colName,
-                        stats.MissingCount.ToString("N0"),
-                        $"{(stats.MissingCount / (double)lineCount) * 100:F2}%",
-                        stats.UniqueCount > 0 ? $"~{stats.UniqueCount}" : "N/A");
-                }
-            }
-
-            AnsiConsole.Write(statsTable);
-            AnsiConsole.WriteLine();
-
-            // Show label column class distribution
-            if (labelDistribution != null && labelDistribution.Count > 0)
-            {
-                // IMP-8: Detect regression target (many unique numeric values) and show stats instead
-                var nonEmptyClasses = labelDistribution.Where(p => p.Key != "(empty)").ToList();
-                bool isLikelyRegression = nonEmptyClasses.Count > 20
-                    && nonEmptyClasses.All(p => double.TryParse(p.Key, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out _));
-
-                if (isLikelyRegression)
-                {
-                    AnsiConsole.Write(new Rule("[yellow]Label Statistics (Regression)[/]").LeftJustified());
-                    AnsiConsole.WriteLine();
-
-                    var values = nonEmptyClasses
-                        .SelectMany(p => Enumerable.Repeat(double.Parse(p.Key, System.Globalization.CultureInfo.InvariantCulture), p.Value))
-                        .OrderBy(v => v)
-                        .ToList();
-
-                    var mean = values.Average();
-                    var stdDev = Math.Sqrt(values.Average(v => (v - mean) * (v - mean)));
-                    var median = values.Count % 2 == 0
-                        ? (values[values.Count / 2 - 1] + values[values.Count / 2]) / 2.0
-                        : values[values.Count / 2];
-
-                    var statsTable2 = new Table().Border(TableBorder.Rounded);
-                    statsTable2.AddColumn("Statistic");
-                    statsTable2.AddColumn("Value");
-
-                    statsTable2.AddRow("Count", values.Count.ToString("N0"));
-                    statsTable2.AddRow("Unique Values", nonEmptyClasses.Count.ToString("N0"));
-                    statsTable2.AddRow("Min", values.First().ToString("F4"));
-                    statsTable2.AddRow("Max", values.Last().ToString("F4"));
-                    statsTable2.AddRow("Mean", mean.ToString("F4"));
-                    statsTable2.AddRow("Median", median.ToString("F4"));
-                    statsTable2.AddRow("Std Dev", stdDev.ToString("F4"));
-
-                    AnsiConsole.Write(statsTable2);
-                    AnsiConsole.WriteLine();
-
-                    if (labelDistribution.ContainsKey("(empty)"))
-                    {
-                        var emptyCount = labelDistribution["(empty)"];
-                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] {emptyCount} rows have empty label values. These will be dropped during training.");
-                        AnsiConsole.WriteLine();
-                    }
-
-                    AnsiConsole.MarkupLine("[green]Info:[/] Continuous label detected — suitable for [blue]regression[/] task.");
-                    AnsiConsole.MarkupLine("[grey]  Tip: [blue]mloop init . --task regression[/][/]");
-                    AnsiConsole.WriteLine();
-                }
-                else
-                {
-                AnsiConsole.Write(new Rule("[yellow]Label Distribution[/]").LeftJustified());
+                AnsiConsole.MarkupLine($"[grey]DataLens {dataLens.Version} active[/]");
                 AnsiConsole.WriteLine();
-
-                var labelTable = new Table().Border(TableBorder.Rounded);
-                labelTable.AddColumn("Class");
-                labelTable.AddColumn("Count");
-                labelTable.AddColumn("Percentage");
-
-                foreach (var pair in labelDistribution.OrderByDescending(p => p.Value))
-                {
-                    var percent = (pair.Value / (double)lineCount) * 100;
-                    labelTable.AddRow(pair.Key, pair.Value.ToString("N0"), $"{percent:F2}%");
-                }
-
-                AnsiConsole.Write(labelTable);
-                AnsiConsole.WriteLine();
-
-                // Imbalance warning for binary classification
-                var realClasses = labelDistribution.Where(p => p.Key != "(empty)").OrderByDescending(p => p.Value).ToList();
-                if (realClasses.Count == 2)
-                {
-                    var ratio = (double)realClasses[0].Value / realClasses[1].Value;
-                    if (ratio > 10)
-                    {
-                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Severe class imbalance detected (ratio {ratio:F1}:1). Consider using [blue]--balance auto[/] during training.");
-                    }
-                    else if (ratio > 3)
-                    {
-                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Class imbalance detected (ratio {ratio:F1}:1). Consider using [blue]--balance auto[/] during training.");
-                    }
-                    AnsiConsole.WriteLine();
-                }
-
-                // IMP-7: Warn about empty label values
-                if (labelDistribution.ContainsKey("(empty)"))
-                {
-                    var emptyCount = labelDistribution["(empty)"];
-                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] {emptyCount} rows have empty label values. These will be dropped during training.");
-                    AnsiConsole.MarkupLine("[grey]  Tip: Clean data with [blue]mloop train --drop-missing-labels[/] (default for classification)[/]");
-                    AnsiConsole.WriteLine();
-                }
-                } // end else (classification branch)
             }
+        }
 
-            // BUG-8: Warn about potential date columns
-            for (int ci = 0; ci < columns.Length; ci++)
+        // 4. Calculate column stats from raw CSV
+        var (columnStats, labelDistribution) = CalculateColumnStats(dataFile, columns, labelColumn);
+
+        // Convert to the format InfoPresenter expects
+        var statsDict = columnStats.ToDictionary(
+            kvp => kvp.Key,
+            kvp => (kvp.Value.MissingCount, kvp.Value.UniqueCount));
+
+        // 5. Display enhanced stats (with profile data if available)
+        InfoPresenter.DisplayDataStatistics(columns, statsDict, lineCount, profile);
+
+        // 6. Label distribution
+        if (labelDistribution != null && labelDistribution.Count > 0)
+        {
+            InfoPresenter.DisplayLabelDistribution(labelDistribution, lineCount);
+        }
+
+        // 7. Date column warning (uses shared DateTimeDetector for consistent detection)
+        for (int ci = 0; ci < columns.Length; ci++)
+        {
+            if (DateTimeDetector.IsDateTimeColumnName(columns[ci]))
             {
-                var colName = columns[ci].ToLowerInvariant();
-                if (colName.Contains("date") || colName.Contains("time") || colName.Contains("timestamp"))
-                {
-                    AnsiConsole.MarkupLine($"[yellow]Note:[/] Column '[cyan]{columns[ci]}[/]' appears to be a date/time column. ML.NET will treat it as text — consider excluding it if not relevant to the prediction task.");
-                    AnsiConsole.WriteLine();
-                    break; // Only warn once
-                }
+                AnsiConsole.MarkupLine($"[yellow]Note:[/] Column '[cyan]{columns[ci]}[/]' appears to be a date/time column. ML.NET will treat it as text -- consider excluding it if not relevant to the prediction task.");
+                AnsiConsole.WriteLine();
+                break;
             }
-        });
+        }
+
+        // 8. Deep analysis (--analyze)
+        if (analyze)
+        {
+            await RunDeepAnalysisAsync(dataLens, originalDataFile, labelColumn);
+        }
     }
 
-    private static string GetColumnPurpose(string columnName, Microsoft.ML.AutoML.ColumnInformation columnInfo, string dataType)
+    private static async Task RunDeepAnalysisAsync(
+        DataLensAnalyzer dataLens, string dataFile, string? labelColumn)
+    {
+        if (!dataLens.IsAvailable)
+        {
+            AnsiConsole.MarkupLine("[yellow]Warning:[/] --analyze requires DataLens library. Skipping deep analysis.");
+            AnsiConsole.MarkupLine("[grey]  Install DataLens NuGet package to enable.[/]");
+            AnsiConsole.WriteLine();
+            return;
+        }
+
+        AnsiConsole.Write(new Rule("[blue]Deep Analysis (DataLens)[/]").LeftJustified());
+        AnsiConsole.WriteLine();
+
+        var options = new AnalysisOptions
+        {
+            IncludeProfiling = false, // Already done above
+            IncludeDescriptive = true,
+            IncludeCorrelation = true,
+            IncludeDistribution = true,
+            IncludeOutliers = true,
+            IncludeFeatures = !string.IsNullOrEmpty(labelColumn),
+            IncludeRegression = false,
+            IncludeClustering = false,
+            IncludePca = false,
+            TargetColumn = labelColumn
+        };
+
+        var result = await dataLens.AnalyzeAsync(dataFile, options);
+        if (result == null)
+        {
+            AnsiConsole.MarkupLine("[yellow]Deep analysis returned no results.[/]");
+            AnsiConsole.WriteLine();
+            return;
+        }
+
+        // a. Correlation
+        if (result.Correlation != null)
+        {
+            InfoPresenter.DisplayCorrelation(result.Correlation);
+        }
+
+        // b. Feature Importance
+        if (result.Features?.Importance != null)
+        {
+            InfoPresenter.DisplayFeatureImportance(result.Features.Importance);
+        }
+
+        // c. Distribution
+        if (result.Distribution?.Columns is { Count: > 0 })
+        {
+            InfoPresenter.DisplayDistributions(result.Distribution);
+        }
+
+        // d. Outlier detection
+        if (result.Outliers != null)
+        {
+            InfoPresenter.DisplayOutlierSummary(result.Outliers);
+        }
+    }
+
+    private static string GetColumnPurpose(string columnName, ColumnInformation columnInfo, string dataType)
     {
         if (columnInfo.LabelColumnName == columnName)
             return "[green]Label[/]";
@@ -380,7 +350,6 @@ public static class InfoCommand
         if (columnInfo.TextColumnNames?.Contains(columnName) == true)
             return "[blue]Text Feature[/]";
 
-        // Fall back: use inferred data type for purpose display
         return dataType switch
         {
             "Numeric" or "Integer" => "[cyan]Numeric Feature[/]",
@@ -390,7 +359,7 @@ public static class InfoCommand
         };
     }
 
-    private static string InferDisplayType(string columnName, Microsoft.ML.AutoML.ColumnInferenceResults results, int csvColumnIndex)
+    private static string InferDisplayType(string columnName, ColumnInferenceResults results, int csvColumnIndex)
     {
         var columnInfo = results.ColumnInformation;
 
@@ -408,12 +377,10 @@ public static class InfoCommand
             {
                 bool matched = false;
 
-                // Match by name
                 if (col.Name == columnName)
                 {
                     matched = true;
                 }
-                // Match by source column index
                 else if (col.Source != null)
                 {
                     foreach (var range in col.Source)
@@ -473,7 +440,6 @@ public static class InfoCommand
                         uniqueSets[i].Add(fields[i]);
                 }
 
-                // Label distribution (all rows)
                 if (labelDistribution != null && labelIndex >= 0 && labelIndex < fields.Length)
                 {
                     var value = fields[labelIndex];
@@ -491,20 +457,5 @@ public static class InfoCommand
         }
 
         return (result, labelDistribution);
-    }
-
-    private static string FormatFileSize(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
-        double len = bytes;
-        int order = 0;
-
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len = len / 1024;
-        }
-
-        return $"{len:0.##} {sizes[order]}";
     }
 }

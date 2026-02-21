@@ -113,4 +113,17 @@ public class ErrorSuggestionsTests
 
         Assert.Contains(suggestions, s => s.Contains("project name") || s.Contains("directory"));
     }
+
+    [Fact]
+    public void GetSuggestions_FeatureVectorMismatch_SuggestsCategoricalIssue()
+    {
+        var ex = new InvalidOperationException(
+            "Feature vector dimension mismatch during evaluation. " +
+            "This typically occurs when categorical columns in the test data contain values " +
+            "not seen during training (OneHotEncoding creates different dimensions).");
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "evaluate");
+
+        Assert.Contains(suggestions, s => s.Contains("Categorical") || s.Contains("categorical"));
+        Assert.Contains(suggestions, s => s.Contains("OneHotEncoding") || s.Contains("dimension"));
+    }
 }
