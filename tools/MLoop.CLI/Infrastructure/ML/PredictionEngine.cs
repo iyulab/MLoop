@@ -131,12 +131,24 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
 
-            // Apply same preprocessing as CsvDataLoader.LoadData to ensure schema consistency
-            // between training and prediction data. Must run BEFORE reading headers
-            // because these steps may remove columns (DateTime, sparse, index).
+            // Apply data-independent preprocessing: index columns use sequential detection
+            // which is safe regardless of dataset size.
             mlnetCompatiblePath = CsvDataLoader.RemoveIndexColumns(mlnetCompatiblePath);
-            mlnetCompatiblePath = CsvDataLoader.RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn);
-            mlnetCompatiblePath = CsvDataLoader.RemoveSparseColumns(mlnetCompatiblePath, labelColumn);
+
+            // Schema-based column exclusion: DateTime, constant, and sparse columns are
+            // marked as "Exclude" in the trained schema during CaptureInputSchemaEnhanced.
+            // RemoveExcludedColumns deterministically removes them based on training-time
+            // analysis, not prediction data characteristics (avoids BUG-21 class of issues).
+            if (trainedSchema != null)
+            {
+                mlnetCompatiblePath = RemoveExcludedColumns(mlnetCompatiblePath, trainedSchema);
+            }
+            else
+            {
+                // Fallback when no trained schema: use data-dependent removal
+                mlnetCompatiblePath = CsvDataLoader.RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn);
+                mlnetCompatiblePath = CsvDataLoader.RemoveSparseColumns(mlnetCompatiblePath, labelColumn);
+            }
 
             // Read the header to get column names (after preprocessing)
             string firstLine;
@@ -351,6 +363,60 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Removes columns marked as "Exclude" in the trained schema from the CSV file.
+    /// This ensures prediction data matches the exact column set used during training,
+    /// handling constant columns, DateTime columns, and any other excluded columns
+    /// deterministically based on training-time analysis.
+    /// </summary>
+    private static string RemoveExcludedColumns(string filePath, InputSchemaInfo trainedSchema)
+    {
+        var excludedNames = new HashSet<string>(
+            trainedSchema.Columns
+                .Where(c => c.Purpose == "Exclude")
+                .Select(c => c.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        if (excludedNames.Count == 0)
+            return filePath;
+
+        var lines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+        if (lines.Length == 0)
+            return filePath;
+
+        var headers = CsvFieldParser.ParseFields(lines[0]);
+        var excludeIndices = new HashSet<int>();
+        for (int i = 0; i < headers.Length; i++)
+        {
+            if (excludedNames.Contains(headers[i].Trim()))
+            {
+                excludeIndices.Add(i);
+            }
+        }
+
+        if (excludeIndices.Count == 0)
+            return filePath;
+
+        var tempFile = Path.GetTempFileName();
+        using var writer = new StreamWriter(tempFile, false, new System.Text.UTF8Encoding(true));
+
+        for (int lineIdx = 0; lineIdx < lines.Length; lineIdx++)
+        {
+            var fields = CsvFieldParser.ParseFields(lines[lineIdx]);
+            var kept = new List<string>();
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (!excludeIndices.Contains(i))
+                {
+                    kept.Add(fields[i]);
+                }
+            }
+            writer.WriteLine(CsvFieldParser.FormatLine(kept.ToArray()));
+        }
+
+        return tempFile;
     }
 
     /// <summary>

@@ -766,4 +766,364 @@ public class CsvDataLoaderTests : IDisposable
     }
 
     #endregion
+
+    #region RemoveConstantColumns
+
+    [Fact]
+    public void RemoveConstantColumns_NoConstantColumns_ReturnsOriginalPath()
+    {
+        var csv = "Feature1,Feature2,Label\n1,2,A\n3,4,B\n5,6,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "noconst.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveConstantColumns_SingleConstantColumn_RemovesIt()
+    {
+        var csv = "Feature1,ConstCol,Label\n1,X,A\n2,X,B\n3,X,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "oneconst.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.StartsWith("Feature1,Label", content);
+        Assert.DoesNotContain("ConstCol", content);
+    }
+
+    [Fact]
+    public void RemoveConstantColumns_MultipleConstantColumns_RemovesAll()
+    {
+        var csv = "Feature1,Const1,Const2,Label\n1,X,99,A\n2,X,99,B\n3,X,99,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "multiconst.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.StartsWith("Feature1,Label", content);
+        Assert.DoesNotContain("Const1", content);
+        Assert.DoesNotContain("Const2", content);
+    }
+
+    [Fact]
+    public void RemoveConstantColumns_LabelColumnIsConstant_KeepsLabel()
+    {
+        // Label column should never be removed even if constant
+        var csv = "Feature1,Feature2,Label\n1,2,A\n3,4,A\n5,6,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "constlabel.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+
+        // Label is constant but should be kept
+        var content = File.ReadAllText(result);
+        Assert.Contains("Label", content);
+    }
+
+    [Fact]
+    public void RemoveConstantColumns_EmptyFile_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "empty_const.csv");
+        File.WriteAllText(csvPath, "", System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveConstantColumns_AllMissing_NotConstant()
+    {
+        // Column with all empty values has 0 unique values, not 1 — should NOT be removed as constant
+        var csv = "Feature1,EmptyCol,Label\n1,,A\n2,,B\n3,,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "allempty.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result); // Empty column has 0 unique values, not treated as constant
+    }
+
+    [Fact]
+    public void RemoveConstantColumns_LogsExcludedColumns()
+    {
+        var csv = "Feature1,AlwaysZero,Label\n1,0,A\n2,0,B\n3,0,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "logconst.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var output = CaptureConsoleOutput(() =>
+        {
+            CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+        });
+
+        Assert.Contains("Constant column 'AlwaysZero' excluded", output);
+    }
+
+    [Fact]
+    public void RemoveConstantColumns_QuotedValues_DetectsConstant()
+    {
+        // Quoted values should be compared after quote stripping
+        var csv = "Feature1,QuotedConst,Label\n1,\"value\",A\n2,\"value\",B\n3,\"value\",A\n";
+        var csvPath = Path.Combine(_tempDirectory, "quotedconst.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.DoesNotContain("QuotedConst", content);
+    }
+
+    [Fact]
+    public void RemoveConstantColumns_MixedWithSparse_OnlyRemovesConstant()
+    {
+        // Sparse (empty) column should NOT be removed by constant detection
+        // Only truly constant (1 unique non-empty value) columns removed
+        var csv = "Feature1,SparseCol,ConstCol,Label\n1,,X,A\n2,,X,B\n3,,X,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "mixed.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var content = File.ReadAllText(result);
+        Assert.Contains("SparseCol", content); // Sparse kept (0 unique, not 1)
+        Assert.DoesNotContain("ConstCol", content); // Constant removed
+    }
+
+    [Fact]
+    public void RemoveConstantColumns_SingleColumn_ReturnsOriginal()
+    {
+        // Only one column (label) — nothing to remove
+        var csv = "Label\nA\nB\nA\n";
+        var csvPath = Path.Combine(_tempDirectory, "singlecol.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    #endregion
+
+    #region RemoveSparseColumns
+
+    [Fact]
+    public void RemoveSparseColumns_NoSparseColumns_ReturnsOriginalPath()
+    {
+        var csv = "Feature1,Feature2,Label\n1,2,A\n3,4,B\n5,6,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "nosparse.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveSparseColumns_ColumnOver90PercentMissing_RemovesIt()
+    {
+        // Feature2 has >90% missing (10 out of 10 rows)
+        var lines = new List<string> { "Feature1,Feature2,Label" };
+        for (int i = 0; i < 10; i++)
+        {
+            lines.Add($"{i},,{(i % 2 == 0 ? "A" : "B")}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "sparse_column.csv");
+        File.WriteAllText(csvPath, string.Join("\n", lines), System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var resultLines = File.ReadAllLines(result);
+        Assert.Equal("Feature1,Label", resultLines[0]);
+    }
+
+    [Fact]
+    public void RemoveSparseColumns_LabelColumnSparse_KeepsLabel()
+    {
+        // Label column has >90% missing, but should not be removed
+        var lines = new List<string> { "Feature1,Label" };
+        for (int i = 0; i < 10; i++)
+        {
+            lines.Add($"{i},");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "sparse_label.csv");
+        File.WriteAllText(csvPath, string.Join("\n", lines), System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result); // Nothing removed since label is protected
+    }
+
+    [Fact]
+    public void RemoveSparseColumns_ExactlyAtThreshold_RemovesColumn()
+    {
+        // Feature2 has exactly 90% missing (9 out of 10 rows)
+        var lines = new List<string> { "Feature1,Feature2,Label" };
+        for (int i = 0; i < 10; i++)
+        {
+            var feat2 = i == 0 ? "value" : "";
+            lines.Add($"{i},{feat2},{(i % 2 == 0 ? "A" : "B")}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "sparse_threshold.csv");
+        File.WriteAllText(csvPath, string.Join("\n", lines), System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var resultLines = File.ReadAllLines(result);
+        Assert.Equal("Feature1,Label", resultLines[0]);
+    }
+
+    [Fact]
+    public void RemoveSparseColumns_BelowThreshold_KeepsColumn()
+    {
+        // Feature2 has 80% missing (8 out of 10 rows) — below 90% threshold
+        var lines = new List<string> { "Feature1,Feature2,Label" };
+        for (int i = 0; i < 10; i++)
+        {
+            var feat2 = i < 2 ? "value" : "";
+            lines.Add($"{i},{feat2},{(i % 2 == 0 ? "A" : "B")}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "not_sparse.csv");
+        File.WriteAllText(csvPath, string.Join("\n", lines), System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveSparseColumns_MultipleSparseColumns_RemovesAll()
+    {
+        var lines = new List<string> { "Feature1,Sparse1,Sparse2,Label" };
+        for (int i = 0; i < 10; i++)
+        {
+            lines.Add($"{i},,,{(i % 2 == 0 ? "A" : "B")}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "multi_sparse.csv");
+        File.WriteAllText(csvPath, string.Join("\n", lines), System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var resultLines = File.ReadAllLines(result);
+        Assert.Equal("Feature1,Label", resultLines[0]);
+    }
+
+    [Fact]
+    public void RemoveSparseColumns_EmptyFile_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "empty_sparse.csv");
+        File.WriteAllText(csvPath, "", System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveSparseColumns_LogsExcludedColumns()
+    {
+        var lines = new List<string> { "Feature1,SparseCol,Label" };
+        for (int i = 0; i < 10; i++)
+        {
+            lines.Add($"{i},,{(i % 2 == 0 ? "A" : "B")}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "sparse_log.csv");
+        File.WriteAllText(csvPath, string.Join("\n", lines), System.Text.Encoding.UTF8);
+
+        var output = CaptureConsoleOutput(() =>
+        {
+            CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+        });
+
+        Assert.Contains("Sparse column 'SparseCol' excluded", output);
+    }
+
+    #endregion
+
+    #region Column Exclusion Pipeline Integration
+
+    [Fact]
+    public void ExclusionPipeline_SparseAndConstant_BothRemoved()
+    {
+        // SparseCol: 100% missing, ConstCol: all same value
+        var lines = new List<string> { "Feature1,SparseCol,ConstCol,Label" };
+        for (int i = 0; i < 10; i++)
+        {
+            lines.Add($"{i},,42,{(i % 2 == 0 ? "A" : "B")}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "pipeline_both.csv");
+        File.WriteAllText(csvPath, string.Join("\n", lines), System.Text.Encoding.UTF8);
+
+        // Apply in training order
+        var path = CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+        path = CsvDataLoader.RemoveConstantColumns(path, "Label");
+
+        var resultLines = File.ReadAllLines(path);
+        Assert.Equal("Feature1,Label", resultLines[0]);
+        Assert.Equal(11, resultLines.Length); // header + 10 data
+    }
+
+    [Fact]
+    public void ExclusionPipeline_AllMissing_IsSparseNotConstant()
+    {
+        // A column that is 100% empty is sparse (not constant since 0 unique values)
+        var lines = new List<string> { "Feature1,EmptyCol,Label" };
+        for (int i = 0; i < 10; i++)
+        {
+            lines.Add($"{i},,{(i % 2 == 0 ? "A" : "B")}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, "pipeline_empty.csv");
+        File.WriteAllText(csvPath, string.Join("\n", lines), System.Text.Encoding.UTF8);
+
+        // RemoveSparseColumns should catch it (100% missing > 90%)
+        var sparseResult = CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
+        Assert.NotEqual(csvPath, sparseResult);
+
+        // RemoveConstantColumns should NOT catch it (0 unique values != 1)
+        var constResult = CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
+        Assert.Equal(csvPath, constResult);
+    }
+
+    [Fact]
+    public void ExclusionPipeline_OrderIndependent_SameResult()
+    {
+        // Both sparse and constant columns present — order should not matter for final result
+        var lines = new List<string> { "Feature1,SparseCol,ConstCol,Label" };
+        for (int i = 0; i < 10; i++)
+        {
+            lines.Add($"{i},,99,{(i % 2 == 0 ? "A" : "B")}");
+        }
+        var csvPath1 = Path.Combine(_tempDirectory, "pipeline_order1.csv");
+        var csvPath2 = Path.Combine(_tempDirectory, "pipeline_order2.csv");
+        var content = string.Join("\n", lines);
+        File.WriteAllText(csvPath1, content, System.Text.Encoding.UTF8);
+        File.WriteAllText(csvPath2, content, System.Text.Encoding.UTF8);
+
+        // Order 1: sparse → constant
+        var result1 = CsvDataLoader.RemoveSparseColumns(csvPath1, "Label");
+        result1 = CsvDataLoader.RemoveConstantColumns(result1, "Label");
+
+        // Order 2: constant → sparse
+        var result2 = CsvDataLoader.RemoveConstantColumns(csvPath2, "Label");
+        result2 = CsvDataLoader.RemoveSparseColumns(result2, "Label");
+
+        var lines1 = File.ReadAllLines(result1);
+        var lines2 = File.ReadAllLines(result2);
+
+        Assert.Equal(lines1[0], lines2[0]); // Same headers
+        Assert.Equal(lines1.Length, lines2.Length);
+    }
+
+    #endregion
 }

@@ -455,6 +455,14 @@ public static class TrainCommand
                         effectiveDefinition.Label);
 
                     TrainPresenter.DisplayClassDistribution(distributionResult);
+
+                    // Single-class early termination: cannot train a classifier with one class
+                    if (distributionResult.ClassCount <= 1)
+                    {
+                        AnsiConsole.MarkupLine("[red]Error:[/] Cannot train a classifier with only one class.");
+                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Check if the correct label column is specified, or if the data contains only one category.");
+                        return 1;
+                    }
                 }
                 catch (Exception ex)
                 {

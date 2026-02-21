@@ -597,6 +597,32 @@ public class ModelRegistryTests : IDisposable
         Assert.False(ModelRegistry.IsClassificationDegenerateModel(metrics));
     }
 
+    [Fact]
+    public void IsClassificationDegenerateModel_MulticlassNearZeroF1_ReturnsTrue()
+    {
+        // macro_f1 = 0.0005 (below 0.001 threshold) with decent macro_accuracy
+        var metrics = new Dictionary<string, double>
+        {
+            ["macro_accuracy"] = 0.85,
+            ["macro_f1"] = 0.0005
+        };
+
+        Assert.True(ModelRegistry.IsClassificationDegenerateModel(metrics));
+    }
+
+    [Fact]
+    public void IsClassificationDegenerateModel_MulticlassLowButNotZeroF1_ReturnsFalse()
+    {
+        // macro_f1 = 0.05 (above 0.001 threshold) — poor but not degenerate
+        var metrics = new Dictionary<string, double>
+        {
+            ["macro_accuracy"] = 0.6,
+            ["macro_f1"] = 0.05
+        };
+
+        Assert.False(ModelRegistry.IsClassificationDegenerateModel(metrics));
+    }
+
     #endregion
 
     #region GetMinimumMetricThreshold
@@ -633,6 +659,31 @@ public class ModelRegistryTests : IDisposable
     {
         var result = ModelRegistry.GetMinimumMetricThreshold("rmse");
         Assert.Null(result);
+    }
+
+    [Theory]
+    [InlineData("f1_score", 2, 0.5)]
+    [InlineData("f1_score", 3, 0.3333)]
+    [InlineData("f1_score", 5, 0.2)]
+    [InlineData("f1", 10, 0.1)]
+    [InlineData("macro_f1", 4, 0.25)]
+    [InlineData("macro_f1", 2, 0.5)]
+    public void GetMinimumMetricThreshold_F1WithClassCount_ReturnsDynamic(string metric, int classCount, double expected)
+    {
+        var result = ModelRegistry.GetMinimumMetricThreshold(metric, classCount);
+        Assert.NotNull(result);
+        Assert.Equal(expected, result!.Value, precision: 4);
+    }
+
+    [Theory]
+    [InlineData("f1_score")]
+    [InlineData("f1")]
+    [InlineData("macro_f1")]
+    public void GetMinimumMetricThreshold_F1WithoutClassCount_ReturnsZero(string metric)
+    {
+        var result = ModelRegistry.GetMinimumMetricThreshold(metric);
+        Assert.NotNull(result);
+        Assert.Equal(0.0, result!.Value);
     }
 
     #endregion
