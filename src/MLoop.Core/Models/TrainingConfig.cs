@@ -41,6 +41,11 @@ public class TrainingConfig
     public double TestSplit { get; init; } = 0.2;
 
     /// <summary>
+    /// Path to separate test data file (when pre-split, e.g. for balanced training)
+    /// </summary>
+    public string? TestDataFile { get; init; }
+
+    /// <summary>
     /// Whether to use automatic time estimation (true when --time not specified and YAML has no time_limit_seconds)
     /// </summary>
     public bool UseAutoTime { get; init; } = false;
