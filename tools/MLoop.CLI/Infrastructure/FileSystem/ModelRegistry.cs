@@ -424,7 +424,12 @@ public class ModelRegistry : IModelRegistry
             "macro_accuracy" => classCount.HasValue && classCount.Value > 1
                 ? 1.0 / classCount.Value                 // Must be better than random (1/N)
                 : 0.0,
-            "f1" or "f1_score" => 0.0,                  // Must predict at least some positives
+            "f1" or "f1_score" => classCount.HasValue && classCount.Value > 1
+                ? 1.0 / classCount.Value                 // Must be better than random (1/N)
+                : 0.0,
+            "macro_f1" => classCount.HasValue && classCount.Value > 1
+                ? 1.0 / classCount.Value                 // Must be better than random (1/N)
+                : 0.0,
             _ => null                                    // No threshold for unknown/error metrics
         };
     }

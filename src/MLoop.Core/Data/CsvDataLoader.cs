@@ -51,6 +51,10 @@ public class CsvDataLoader : IDataProvider
         // post-InferColumns detection. Pre-removing prevents OOM from FeaturizeText.
         mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn);
 
+        // Pre-InferColumns: Remove constant columns (all identical values) from CSV.
+        // Constant columns provide zero predictive signal and waste compute resources.
+        mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn);
+
         // Infer columns from the file
         var columnInference = _mlContext.Auto().InferColumns(
             mlnetCompatiblePath,
@@ -391,6 +395,106 @@ public class CsvDataLoader : IDataProvider
             foreach (var name in removedNames)
             {
                 Console.WriteLine($"[Warning] Sparse column '{name}' excluded (>{threshold:P0} missing values)");
+            }
+
+            return tempPath;
+        }
+        catch
+        {
+            return filePath; // Non-critical, continue with original
+        }
+    }
+
+    /// <summary>
+    /// Removes constant columns (all values identical) from CSV before InferColumns.
+    /// Constant columns provide zero predictive signal and waste compute resources.
+    /// Returns original path if no constant columns found.
+    /// </summary>
+    public static string RemoveConstantColumns(string filePath, string? labelColumn)
+    {
+        try
+        {
+            const int sampleRows = 200;
+
+            string? headerLine;
+            string[] headers;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                headerLine = reader.ReadLine();
+                if (headerLine == null) return filePath;
+                headers = ParseCsvLine(headerLine);
+            }
+
+            if (headers.Length <= 1) return filePath;
+
+            // Track unique values per column by sampling
+            var uniqueValues = new HashSet<string>[headers.Length];
+            for (int i = 0; i < headers.Length; i++)
+                uniqueValues[i] = new HashSet<string>();
+
+            int totalRows = 0;
+
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                reader.ReadLine(); // skip header
+                string? line;
+                while ((line = reader.ReadLine()) != null && totalRows < sampleRows)
+                {
+                    totalRows++;
+                    var fields = ParseCsvLine(line);
+                    for (int i = 0; i < headers.Length && i < fields.Length; i++)
+                    {
+                        var value = fields[i].Trim();
+                        if (!string.IsNullOrEmpty(value))
+                        {
+                            uniqueValues[i].Add(value);
+                        }
+                    }
+                }
+            }
+
+            if (totalRows == 0) return filePath;
+
+            // Identify constant columns (exactly 1 unique value, skip label & missing-only columns)
+            var constantIndices = new HashSet<int>();
+            for (int i = 0; i < headers.Length; i++)
+            {
+                if (uniqueValues[i].Count == 1)
+                {
+                    // Don't remove label column
+                    if (!string.IsNullOrEmpty(labelColumn) &&
+                        headers[i].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    constantIndices.Add(i);
+                }
+            }
+
+            if (constantIndices.Count == 0) return filePath;
+
+            // Create new CSV without constant columns
+            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_noconst_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var keepIndices = Enumerable.Range(0, headers.Length).Except(constantIndices).ToArray();
+
+            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
+            {
+                foreach (var line in allLines)
+                {
+                    var fields = ParseCsvLine(line);
+                    var kept = keepIndices
+                        .Where(idx => idx < fields.Length)
+                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
+                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
+                            : fields[idx]);
+                    writer.WriteLine(string.Join(",", kept));
+                }
+            }
+
+            var removedNames = constantIndices.Select(i => headers[i]);
+            foreach (var name in removedNames)
+            {
+                Console.WriteLine($"[Warning] Constant column '{name}' excluded (all values identical)");
             }
 
             return tempPath;

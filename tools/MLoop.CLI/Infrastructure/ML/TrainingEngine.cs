@@ -599,6 +599,16 @@ public class TrainingEngine : ITrainingEngine
             // so the schema should reflect they are not used as features.
             MarkDateTimeColumnsAsExcluded(columns, columnNames, dataLines);
 
+            // BUG-21: Mark constant columns as "Exclude" in schema
+            // CsvDataLoader.RemoveConstantColumns removes these during training,
+            // so the schema should reflect they are not used as features.
+            MarkConstantColumnsAsExcluded(columns, columnNames, dataLines, labelColumn);
+
+            // Mark sparse columns (>90% missing) as "Exclude" in schema
+            // CsvDataLoader.RemoveSparseColumns removes these during training,
+            // so the schema should reflect they are not used as features.
+            MarkSparseColumnsAsExcluded(columns, columnNames, dataLines, labelColumn);
+
             // BUG-R2-06: Collect complete categorical values from the FULL file.
             // The 1000-row sample above is only for type inference heuristics.
             // For ordered data, the sample may miss categorical values that appear later.
@@ -776,6 +786,116 @@ public class TrainingEngine : ITrainingEngine
                     UniqueValueCount = null
                 };
             }
+        }
+    }
+
+    /// <summary>
+    /// Marks constant columns as "Exclude" in the schema.
+    /// Mirrors the logic in CsvDataLoader.RemoveConstantColumns so the saved schema
+    /// accurately reflects which columns are actually used during training.
+    /// </summary>
+    private static void MarkConstantColumnsAsExcluded(
+        List<ColumnSchema> columns, string[] columnNames, string[] dataLines, string labelColumn)
+    {
+        if (dataLines.Length == 0) return;
+
+        // Sample up to 200 rows (same as CsvDataLoader.RemoveConstantColumns)
+        var sampleCount = Math.Min(dataLines.Length, 200);
+        var uniqueValues = new HashSet<string>[columnNames.Length];
+        for (int i = 0; i < columnNames.Length; i++)
+        {
+            uniqueValues[i] = new HashSet<string>();
+        }
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            var fields = CsvFieldParser.ParseFields(dataLines[i]);
+            for (int j = 0; j < Math.Min(fields.Length, columnNames.Length); j++)
+            {
+                var val = fields[j].Trim();
+                if (!string.IsNullOrEmpty(val))
+                {
+                    uniqueValues[j].Add(val);
+                }
+            }
+        }
+
+        for (int j = 0; j < columnNames.Length; j++)
+        {
+            // Skip label column
+            if (columnNames[j].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Constant = exactly 1 unique non-empty value
+            if (uniqueValues[j].Count != 1)
+                continue;
+
+            var col = columns.FirstOrDefault(c => c.Name == columnNames[j]);
+            if (col == null || col.Purpose == "Label" || col.Purpose == "Exclude")
+                continue;
+
+            var index = columns.IndexOf(col);
+            columns[index] = new ColumnSchema
+            {
+                Name = col.Name,
+                DataType = "Constant",
+                Purpose = "Exclude",
+                CategoricalValues = null,
+                UniqueValueCount = 1
+            };
+        }
+    }
+
+    /// <summary>
+    /// Marks sparse columns (>threshold missing values) as "Exclude" in the schema.
+    /// Mirrors the logic in CsvDataLoader.RemoveSparseColumns so the saved schema
+    /// accurately reflects which columns are actually used during training.
+    /// </summary>
+    private static void MarkSparseColumnsAsExcluded(
+        List<ColumnSchema> columns, string[] columnNames, string[] dataLines, string labelColumn,
+        double threshold = 0.90)
+    {
+        if (dataLines.Length == 0) return;
+
+        // Sample up to 200 rows (same as CsvDataLoader.RemoveSparseColumns)
+        var sampleCount = Math.Min(dataLines.Length, 200);
+        var missingCounts = new int[columnNames.Length];
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            var fields = CsvFieldParser.ParseFields(dataLines[i]);
+            for (int j = 0; j < columnNames.Length; j++)
+            {
+                if (j >= fields.Length || string.IsNullOrWhiteSpace(fields[j].Trim()))
+                {
+                    missingCounts[j]++;
+                }
+            }
+        }
+
+        for (int j = 0; j < columnNames.Length; j++)
+        {
+            // Skip label column
+            if (columnNames[j].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            double missingRate = (double)missingCounts[j] / sampleCount;
+            if (missingRate < threshold)
+                continue;
+
+            var col = columns.FirstOrDefault(c => c.Name == columnNames[j]);
+            if (col == null || col.Purpose == "Label" || col.Purpose == "Exclude")
+                continue;
+
+            var index = columns.IndexOf(col);
+            columns[index] = new ColumnSchema
+            {
+                Name = col.Name,
+                DataType = "Sparse",
+                Purpose = "Exclude",
+                CategoricalValues = null,
+                UniqueValueCount = null
+            };
         }
     }
 
