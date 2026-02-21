@@ -51,7 +51,7 @@ internal class Program
             // Phase 2 Commands
             new ServeCommand(),
             new PipelineCommand(),
-            new PrepCommand(),  // FilePrepper integration
+            new PrepCommand(),  // Data preprocessing pipeline
 
             // Phase 4: Production Deployment
             DockerCommand.Create(),
@@ -128,7 +128,7 @@ internal class Program
         AnsiConsole.MarkupLine("  [green]serve[/]       Start REST API for model serving");
         AnsiConsole.MarkupLine("  [green]docker[/]      Generate Docker configuration for deployment");
         AnsiConsole.MarkupLine("  [green]pipeline[/]    Execute ML workflow from YAML");
-        AnsiConsole.MarkupLine("  [green]prep[/]        Data preprocessing tools (FilePrepper)");
+        AnsiConsole.MarkupLine("  [green]prep[/]        Data preprocessing pipeline");
         AnsiConsole.MarkupLine("  [green]update[/]      Check for and install CLI updates");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("Use [blue]mloop [[command]] --help[/] for more information about a command.");

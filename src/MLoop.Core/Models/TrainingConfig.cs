@@ -39,4 +39,9 @@ public class TrainingConfig
     /// Test data split ratio
     /// </summary>
     public double TestSplit { get; init; } = 0.2;
+
+    /// <summary>
+    /// Whether to use automatic time estimation (true when --time not specified and YAML has no time_limit_seconds)
+    /// </summary>
+    public bool UseAutoTime { get; init; } = false;
 }

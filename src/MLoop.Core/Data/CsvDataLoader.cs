@@ -37,6 +37,17 @@ public class CsvDataLoader : IDataProvider
         // Warn if CSV appears to have no header row
         WarnIfHeaderless(mlnetCompatiblePath);
 
+        // Pre-InferColumns: Remove DateTime columns from CSV.
+        // ML.NET treats datetime strings as text and applies FeaturizeText,
+        // creating tens of thousands of character n-gram features.
+        // Removing from CSV ensures InferColumns never sees them.
+        mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn);
+
+        // Pre-InferColumns: Remove sparse columns (>90% missing) from CSV.
+        // ML.NET may combine sparse columns into a "Features" vector, preventing
+        // post-InferColumns detection. Pre-removing prevents OOM from FeaturizeText.
+        mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn);
+
         // Infer columns from the file
         var columnInference = _mlContext.Auto().InferColumns(
             mlnetCompatiblePath,
@@ -65,10 +76,8 @@ public class CsvDataLoader : IDataProvider
             }
         }
 
-        // Auto-detect datetime columns and exclude them from features.
-        // ML.NET treats datetime strings as text and applies FeaturizeText,
-        // creating thousands of character n-gram features that are meaningless.
-        ExcludeDateTimeColumns(columnInference, mlnetCompatiblePath, labelColumn);
+
+
 
         // Create text loader with inferred schema
         // Ensure RFC 4180 compliance: handle commas inside quoted fields
@@ -196,76 +205,197 @@ public class CsvDataLoader : IDataProvider
     /// Prevents ML.NET from applying FeaturizeText to datetime strings,
     /// which would create thousands of useless character n-gram features.
     /// </summary>
-    private static void ExcludeDateTimeColumns(
-        ColumnInferenceResults columnInference,
+    /// <summary>
+    /// Pre-InferColumns step: removes DateTime columns from the CSV file.
+    /// Returns a new file path without the DateTime columns, or the original path if none detected.
+    /// </summary>
+    public static string RemoveDateTimeColumns(
         string filePath,
         string? labelColumn)
     {
-        var textColumns = columnInference.ColumnInformation.TextColumnNames;
-        if (textColumns == null || textColumns.Count == 0) return;
-
-        var dateTimeColumns = new List<string>();
-        var sampled = SampleColumnValues(filePath, textColumns, maxRows: 10);
-
-        foreach (var colName in textColumns.ToList())
+        try
         {
-            if (!string.IsNullOrEmpty(labelColumn) &&
-                colName.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            sampled.TryGetValue(colName, out var values);
-            if (DateTimeDetector.IsDateTimeColumn(colName, values))
+            string? headerLine;
+            string[] headers;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {
-                dateTimeColumns.Add(colName);
+                headerLine = reader.ReadLine();
+                if (headerLine == null) return filePath;
+                headers = ParseCsvLine(headerLine);
             }
-        }
 
-        foreach (var col in dateTimeColumns)
+            if (headers.Length <= 1) return filePath;
+
+            // Sample values to detect DateTime columns
+            const int sampleRows = 10;
+            var columnValues = new Dictionary<string, List<string>>();
+            foreach (var h in headers)
+                columnValues[h] = new List<string>();
+
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                reader.ReadLine(); // skip header
+                int count = 0;
+                string? line;
+                while ((line = reader.ReadLine()) != null && count < sampleRows)
+                {
+                    count++;
+                    var fields = ParseCsvLine(line);
+                    for (int i = 0; i < headers.Length && i < fields.Length; i++)
+                    {
+                        if (!string.IsNullOrWhiteSpace(fields[i]))
+                            columnValues[headers[i]].Add(fields[i]);
+                    }
+                }
+            }
+
+            // Detect DateTime columns
+            var dateTimeIndices = new HashSet<int>();
+            for (int i = 0; i < headers.Length; i++)
+            {
+                // Don't remove label column
+                if (!string.IsNullOrEmpty(labelColumn) &&
+                    headers[i].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                columnValues.TryGetValue(headers[i], out var values);
+                if (DateTimeDetector.IsDateTimeColumn(headers[i], values))
+                {
+                    dateTimeIndices.Add(i);
+                }
+            }
+
+            if (dateTimeIndices.Count == 0) return filePath;
+
+            // Create new CSV without DateTime columns
+            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_nodt_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var keepIndices = Enumerable.Range(0, headers.Length).Except(dateTimeIndices).ToArray();
+
+            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
+            {
+                foreach (var line in allLines)
+                {
+                    var fields = ParseCsvLine(line);
+                    var kept = keepIndices
+                        .Where(idx => idx < fields.Length)
+                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
+                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
+                            : fields[idx]);
+                    writer.WriteLine(string.Join(",", kept));
+                }
+            }
+
+            foreach (var idx in dateTimeIndices)
+            {
+                Console.WriteLine($"[Info] DateTime column '{headers[idx]}' excluded from features (use FilePrepper to extract date features if needed)");
+            }
+
+            return tempPath;
+        }
+        catch
         {
-            textColumns.Remove(col);
-            columnInference.ColumnInformation.IgnoredColumnNames.Add(col);
-            Console.WriteLine($"[Info] DateTime column '{col}' excluded from features (use FilePrepper to extract date features if needed)");
+            return filePath; // Non-critical, continue with original
         }
     }
 
     /// <summary>
-    /// Samples values from specific columns by reading the CSV header + first N rows.
+    /// Pre-InferColumns step: removes columns with >threshold missing values from the CSV file.
+    /// Returns a new file path without the sparse columns, or the original path if none are sparse.
     /// </summary>
-    private static Dictionary<string, List<string>> SampleColumnValues(
-        string filePath, ICollection<string> columnNames, int maxRows)
+    public static string RemoveSparseColumns(
+        string filePath,
+        string? labelColumn,
+        double threshold = 0.90)
     {
-        var result = new Dictionary<string, List<string>>();
-        foreach (var col in columnNames)
-            result[col] = new List<string>();
-
-        using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        var headerLine = reader.ReadLine();
-        if (headerLine == null) return result;
-
-        // Parse header to find column indices
-        var headers = ParseCsvLine(headerLine);
-        var colIndices = new Dictionary<string, int>();
-        for (int i = 0; i < headers.Length; i++)
+        try
         {
-            if (columnNames.Contains(headers[i]))
-                colIndices[headers[i]] = i;
-        }
+            const int sampleRows = 200;
 
-        // Read sample rows
-        int rowsRead = 0;
-        string? line;
-        while (rowsRead < maxRows && (line = reader.ReadLine()) != null)
-        {
-            var fields = ParseCsvLine(line);
-            foreach (var (colName, idx) in colIndices)
+            string? headerLine;
+            string[] headers;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {
-                if (idx < fields.Length)
-                    result[colName].Add(fields[idx]);
+                headerLine = reader.ReadLine();
+                if (headerLine == null) return filePath;
+                headers = ParseCsvLine(headerLine);
             }
-            rowsRead++;
-        }
 
-        return result;
+            if (headers.Length <= 1) return filePath;
+
+            // Count missing values per column by sampling
+            var missingCounts = new int[headers.Length];
+            int totalRows = 0;
+
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                reader.ReadLine(); // skip header
+                string? line;
+                while ((line = reader.ReadLine()) != null && totalRows < sampleRows)
+                {
+                    totalRows++;
+                    var fields = ParseCsvLine(line);
+                    for (int i = 0; i < headers.Length; i++)
+                    {
+                        if (i >= fields.Length || string.IsNullOrWhiteSpace(fields[i]))
+                        {
+                            missingCounts[i]++;
+                        }
+                    }
+                }
+            }
+
+            if (totalRows == 0) return filePath;
+
+            // Identify sparse columns (skip label column)
+            var sparseIndices = new HashSet<int>();
+            for (int i = 0; i < headers.Length; i++)
+            {
+                double missingRate = (double)missingCounts[i] / totalRows;
+                if (missingRate >= threshold)
+                {
+                    // Don't remove label column
+                    if (!string.IsNullOrEmpty(labelColumn) &&
+                        headers[i].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    sparseIndices.Add(i);
+                }
+            }
+
+            if (sparseIndices.Count == 0) return filePath;
+
+            // Create new CSV without sparse columns
+            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_nosparse_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var keepIndices = Enumerable.Range(0, headers.Length).Except(sparseIndices).ToArray();
+
+            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
+            {
+                foreach (var line in allLines)
+                {
+                    var fields = ParseCsvLine(line);
+                    var kept = keepIndices
+                        .Where(idx => idx < fields.Length)
+                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
+                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
+                            : fields[idx]);
+                    writer.WriteLine(string.Join(",", kept));
+                }
+            }
+
+            var removedNames = sparseIndices.Select(i => headers[i]);
+            foreach (var name in removedNames)
+            {
+                Console.WriteLine($"[Warning] Sparse column '{name}' excluded (>{threshold:P0} missing values)");
+            }
+
+            return tempPath;
+        }
+        catch
+        {
+            return filePath; // Non-critical, continue with original
+        }
     }
 
     /// <summary>

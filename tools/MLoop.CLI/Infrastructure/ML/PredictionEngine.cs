@@ -3,6 +3,7 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Contracts;
+using MLoop.Core.Data;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
@@ -46,7 +47,8 @@ public class PredictionEngine : IPredictionEngine
         string outputPath,
         InputSchemaInfo? trainedSchema,
         CategoricalMapper.UnknownValueStrategy strategy,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? labelColumnOverride = null)
     {
         if (!File.Exists(modelPath))
         {
@@ -118,8 +120,25 @@ public class PredictionEngine : IPredictionEngine
             DataViewSchema modelSchema;
             var trainedModel = _mlContext.Model.Load(modelPath, out modelSchema);
 
-            // Load input data
-            // Read the header to get column names with UTF-8 encoding
+            // Find the label column: prefer override, then trained schema
+            string? labelColumn = labelColumnOverride;
+            if (labelColumn == null && trainedSchema != null)
+            {
+                var labelInfo = trainedSchema.Columns.FirstOrDefault(c => c.Purpose == "Label");
+                if (labelInfo != null)
+                {
+                    labelColumn = labelInfo.Name;
+                }
+            }
+
+            // Apply same preprocessing as CsvDataLoader.LoadData to ensure schema consistency
+            // between training and prediction data. Must run BEFORE reading headers
+            // because these steps may remove columns (DateTime, sparse, index).
+            mlnetCompatiblePath = CsvDataLoader.RemoveIndexColumns(mlnetCompatiblePath);
+            mlnetCompatiblePath = CsvDataLoader.RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn);
+            mlnetCompatiblePath = CsvDataLoader.RemoveSparseColumns(mlnetCompatiblePath, labelColumn);
+
+            // Read the header to get column names (after preprocessing)
             string firstLine;
             using (var reader = new StreamReader(mlnetCompatiblePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {
@@ -132,17 +151,6 @@ public class PredictionEngine : IPredictionEngine
             }
 
             var columns = CsvFieldParser.ParseFields(firstLine);
-
-            // Find the label column from trained schema to exclude it from features
-            string? labelColumn = null;
-            if (trainedSchema != null)
-            {
-                var labelInfo = trainedSchema.Columns.FirstOrDefault(c => c.Purpose == "Label");
-                if (labelInfo != null)
-                {
-                    labelColumn = labelInfo.Name;
-                }
-            }
 
             // If label column is expected but missing from prediction data,
             // add a dummy label column so the ML.NET model schema is satisfied

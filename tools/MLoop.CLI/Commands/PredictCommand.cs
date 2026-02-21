@@ -125,6 +125,7 @@ public static class PredictCommand
             string resolvedModelPath;
             string? experimentId = null;
             InputSchemaInfo? trainedSchema = null;
+            string? configLabelColumn = null;
 
             if (string.IsNullOrEmpty(modelPath))
             {
@@ -144,11 +145,12 @@ public static class PredictCommand
                 AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
                 AnsiConsole.MarkupLine($"[green]>[/] Using production model: [cyan]{productionModel.ExperimentId}[/]");
 
-                // Load experiment data to get schema
+                // Load experiment data to get schema and label column
                 try
                 {
                     var experimentData = await experimentStore.LoadAsync(resolvedModelName, experimentId, CancellationToken.None);
                     trainedSchema = experimentData?.Config?.InputSchema;
+                    configLabelColumn = experimentData?.Config?.LabelColumn;
                 }
                 catch
                 {
@@ -183,6 +185,7 @@ public static class PredictCommand
                         {
                             var experimentData = await experimentStore.LoadAsync(resolvedModelName, possibleExpId, CancellationToken.None);
                             trainedSchema = experimentData?.Config?.InputSchema;
+                            configLabelColumn = experimentData?.Config?.LabelColumn;
                             experimentId = possibleExpId;
                         }
                         catch
@@ -369,7 +372,8 @@ public static class PredictCommand
                         resolvedOutputPath,
                         trainedSchema,
                         strategy,
-                        CancellationToken.None);
+                        CancellationToken.None,
+                        configLabelColumn);
 
                     ctx.Status("[green]Predictions complete![/]");
                 });

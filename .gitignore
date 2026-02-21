@@ -71,5 +71,6 @@ publish/
 nulcoverage/
 nul
 CLAUDE.md
+.mcp.json
 tmpclaude-*
 .claude/

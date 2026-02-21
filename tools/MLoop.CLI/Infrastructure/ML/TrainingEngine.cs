@@ -79,7 +79,7 @@ public class TrainingEngine : ITrainingEngine
             {
                 tempEncodingFile = convertedPath;
                 dataFilePath = convertedPath;
-                Console.WriteLine($"[Info] Converted {detection.EncodingName} → UTF-8: {Path.GetFileName(originalDataFile)}");
+                Console.WriteLine($"[Info] Converted {detection.EncodingName} \u2192 UTF-8: {Path.GetFileName(originalDataFile)}");
             }
 
             // Flatten multi-line quoted headers (ML.NET doesn't support them)
@@ -96,7 +96,8 @@ public class TrainingEngine : ITrainingEngine
                     Task = config.Task,
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.Metric,
-                    TestSplit = config.TestSplit
+                    TestSplit = config.TestSplit,
+                    UseAutoTime = config.UseAutoTime
                 };
             }
 
@@ -171,8 +172,17 @@ public class TrainingEngine : ITrainingEngine
                 }
             }
 
-            // Run AutoML
-            var autoMLResult = await _autoMLRunner.RunAsync(config, progress, cancellationToken);
+            // Run AutoML (with optional auto-time two-phase training)
+            AutoMLResult autoMLResult;
+
+            if (config.UseAutoTime)
+            {
+                autoMLResult = await RunAutoTimeTrainingAsync(config, dataFilePath, progress, cancellationToken);
+            }
+            else
+            {
+                autoMLResult = await _autoMLRunner.RunAsync(config, progress, cancellationToken);
+            }
 
             stopwatch.Stop();
 
@@ -300,6 +310,198 @@ public class TrainingEngine : ITrainingEngine
     }
 
     /// <summary>
+    /// Two-phase auto-time training: static estimate -> probe run -> reactive estimate -> main run
+    /// </summary>
+    private async Task<AutoMLResult> RunAutoTimeTrainingAsync(
+        TrainingConfig config,
+        string dataFilePath,
+        IProgress<TrainingProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        // Collect data statistics for estimation
+        var (rowCount, columnCount, hasTextFeatures, classCount) = CollectDataStats(dataFilePath, config.LabelColumn, config.Task);
+
+        var staticEstimate = TimeEstimator.EstimateStatic(
+            rowCount, columnCount, config.Task, classCount, hasTextFeatures);
+
+        var probeTime = TimeEstimator.GetProbeTime(staticEstimate);
+
+        // Phase 1: Quick Probe
+        var probeConfig = new TrainingConfig
+        {
+            ModelName = config.ModelName,
+            DataFile = config.DataFile,
+            LabelColumn = config.LabelColumn,
+            Task = config.Task,
+            TimeLimitSeconds = probeTime,
+            Metric = config.Metric,
+            TestSplit = config.TestSplit,
+            UseAutoTime = false
+        };
+
+        var probeTrialCount = 0;
+        progress?.Report(new TrainingProgress
+        {
+            TrialNumber = 0, TrainerName = "", Metric = 0, MetricName = "", ElapsedSeconds = 0,
+            Phase = AutoTimePhase.ProbeStart,
+            ProbeTimeSeconds = probeTime
+        });
+
+        var probeProgress = progress != null
+            ? new Progress<TrainingProgress>(p =>
+            {
+                probeTrialCount++;
+                progress.Report(p);
+            })
+            : null;
+
+        var probeAutoMLResult = await _autoMLRunner.RunAsync(probeConfig, probeProgress, cancellationToken);
+
+        // Determine best metric from probe
+        var bestMetric = GetPrimaryMetricValue(probeAutoMLResult.Metrics, config.Metric, config.Task);
+
+        var probe = new ProbeResult
+        {
+            BestMetric = bestMetric,
+            ProbeTimeSeconds = probeTime,
+            TrialsCompleted = probeTrialCount
+        };
+
+        var finalTime = TimeEstimator.EstimateReactive(probe, staticEstimate);
+
+        // Phase 2: Main Training (only if not already converged)
+        if (bestMetric > 0.95)
+        {
+            progress?.Report(new TrainingProgress
+            {
+                TrialNumber = probeTrialCount, TrainerName = "", Metric = bestMetric, MetricName = "", ElapsedSeconds = 0,
+                Phase = AutoTimePhase.ProbeConverged,
+                ProbeTimeSeconds = probeTime
+            });
+            return probeAutoMLResult;
+        }
+
+        progress?.Report(new TrainingProgress
+        {
+            TrialNumber = probeTrialCount, TrainerName = "", Metric = bestMetric, MetricName = "", ElapsedSeconds = 0,
+            Phase = AutoTimePhase.ProbeComplete,
+            ProbeTimeSeconds = probeTime,
+            FinalTimeSeconds = finalTime
+        });
+
+        var mainConfig = new TrainingConfig
+        {
+            ModelName = config.ModelName,
+            DataFile = config.DataFile,
+            LabelColumn = config.LabelColumn,
+            Task = config.Task,
+            TimeLimitSeconds = finalTime,
+            Metric = config.Metric,
+            TestSplit = config.TestSplit,
+            UseAutoTime = false
+        };
+
+        var mainResult = await _autoMLRunner.RunAsync(mainConfig, progress, cancellationToken);
+
+        // Pick best between probe and main
+        var mainMetric = GetPrimaryMetricValue(mainResult.Metrics, config.Metric, config.Task);
+        if (mainMetric >= bestMetric)
+        {
+            return mainResult;
+        }
+
+        return probeAutoMLResult;
+    }
+
+    /// <summary>
+    /// Collects basic data statistics from CSV for time estimation
+    /// </summary>
+    internal static (int rowCount, int columnCount, bool hasTextFeatures, int classCount) CollectDataStats(
+        string dataFilePath, string labelColumn, string task)
+    {
+        int rowCount = 0;
+        int columnCount = 0;
+        bool hasTextFeatures = false;
+        var labelValues = new HashSet<string>();
+
+        using var reader = new StreamReader(dataFilePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+
+        var header = reader.ReadLine();
+        if (string.IsNullOrEmpty(header))
+            return (0, 0, false, 0);
+
+        var columnNames = CsvFieldParser.ParseFields(header);
+        columnCount = columnNames.Length;
+        var labelIndex = Array.FindIndex(columnNames, c =>
+            c.Equals(labelColumn, StringComparison.OrdinalIgnoreCase));
+
+        // Read all lines, but only analyze first 1000 for text/class detection
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            rowCount++;
+
+            if (rowCount <= 1000)
+            {
+                var fields = CsvFieldParser.ParseFields(line);
+
+                // Collect label values for class counting
+                if (labelIndex >= 0 && labelIndex < fields.Length)
+                {
+                    var value = fields[labelIndex].Trim();
+                    if (!string.IsNullOrEmpty(value))
+                        labelValues.Add(value);
+                }
+
+                // Check for text features (any field with spaces likely text)
+                if (!hasTextFeatures)
+                {
+                    for (int i = 0; i < fields.Length; i++)
+                    {
+                        if (i == labelIndex) continue;
+                        var val = fields[i].Trim();
+                        if (val.Contains(' ') && val.Length > 20 && !double.TryParse(val, out _))
+                        {
+                            hasTextFeatures = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        var isClassification = task.ToLowerInvariant() switch
+        {
+            "binary-classification" => true,
+            "multiclass-classification" => true,
+            _ => false
+        };
+
+        int classCount = isClassification ? labelValues.Count : 0;
+
+        return (rowCount, columnCount, hasTextFeatures, classCount);
+    }
+
+    /// <summary>
+    /// Gets the primary metric value from metrics dictionary based on task type
+    /// </summary>
+    internal static double GetPrimaryMetricValue(Dictionary<string, double> metrics, string metricName, string task)
+    {
+        // Try exact match first
+        if (metrics.TryGetValue(metricName, out var value))
+            return value;
+
+        // Fall back to known defaults per task
+        return task.ToLowerInvariant() switch
+        {
+            "binary-classification" => metrics.GetValueOrDefault("accuracy", 0),
+            "multiclass-classification" => metrics.GetValueOrDefault("macro_accuracy", 0),
+            "regression" => metrics.GetValueOrDefault("r_squared", 0),
+            _ => metrics.Values.FirstOrDefault()
+        };
+    }
+
+    /// <summary>
     /// Captures input schema with enhanced type detection using actual data values
     /// </summary>
     private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn)
@@ -320,7 +522,7 @@ public class TrainingEngine : ITrainingEngine
 
             var columnNames = CsvFieldParser.ParseFields(firstLine);
 
-            // Read sample of data lines for type inference (not full file — saves memory)
+            // Read sample of data lines for type inference (not full file -- saves memory)
             var sampleLines = new List<string>();
             using (var sampleReader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {
@@ -345,7 +547,7 @@ public class TrainingEngine : ITrainingEngine
                 columnInfo = columnInference?.ColumnInformation;
 
                 // BUG-15: Track label column's inferred DataKind.
-                // CsvDataLoader converts Boolean labels → String for MapValueToKey compatibility.
+                // CsvDataLoader converts Boolean labels -> String for MapValueToKey compatibility.
                 // Schema must reflect this so PredictionEngine uses the correct type.
                 if (columnInference?.TextLoaderOptions?.Columns != null)
                 {

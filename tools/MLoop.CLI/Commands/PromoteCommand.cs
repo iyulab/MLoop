@@ -145,7 +145,7 @@ public static class PromoteCommand
                 AnsiConsole.MarkupLine($"[yellow]Warning:[/] This will replace the current production model: [cyan]{currentProduction.ExperimentId}[/]");
                 AnsiConsole.WriteLine();
 
-                if (!force)
+                if (!force && !Console.IsInputRedirected)
                 {
                     if (!AnsiConsole.Confirm("Continue with promotion?"))
                     {
