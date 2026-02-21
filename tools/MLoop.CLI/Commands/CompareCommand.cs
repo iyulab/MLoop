@@ -145,11 +145,28 @@ public static class CompareCommand
                 .OrderBy(m => m)
                 .ToList();
 
-            // Sort experiments by metric if specified
-            if (!string.IsNullOrEmpty(sortMetric) && allMetricNames.Contains(sortMetric))
+            // Sort experiments by metric: --metric flag, or optimizing metric from config
+            var effectiveSortMetric = sortMetric;
+            if (string.IsNullOrEmpty(effectiveSortMetric))
             {
+                effectiveSortMetric = experimentsToCompare
+                    .Select(e => e.Config.Metric)
+                    .Where(m => !string.IsNullOrEmpty(m))
+                    .FirstOrDefault();
+            }
+
+            if (!string.IsNullOrEmpty(effectiveSortMetric) && allMetricNames.Contains(effectiveSortMetric))
+            {
+                var sortLowerBetter = effectiveSortMetric.Contains("Loss", StringComparison.OrdinalIgnoreCase) ||
+                                      effectiveSortMetric.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+                                      effectiveSortMetric.Contains("MAE", StringComparison.OrdinalIgnoreCase) ||
+                                      effectiveSortMetric.Contains("MSE", StringComparison.OrdinalIgnoreCase) ||
+                                      effectiveSortMetric.Contains("RMSE", StringComparison.OrdinalIgnoreCase);
+
                 experimentsToCompare = experimentsToCompare
-                    .OrderByDescending(e => e.Metrics?.GetValueOrDefault(sortMetric, 0) ?? 0)
+                    .OrderBy(e => sortLowerBetter
+                        ? (e.Metrics?.GetValueOrDefault(effectiveSortMetric, 0) ?? 0)
+                        : -(e.Metrics?.GetValueOrDefault(effectiveSortMetric, 0) ?? 0))
                     .ToList();
             }
 
@@ -252,7 +269,29 @@ public static class CompareCommand
             // Recommendation: find the experiment with the best primary metric
             if (allMetricNames.Count > 0)
             {
-                var primaryMetric = sortMetric ?? allMetricNames.First();
+                // Use --metric flag if specified, otherwise read from experiment metadata
+                string primaryMetric;
+                if (!string.IsNullOrEmpty(sortMetric))
+                {
+                    primaryMetric = sortMetric;
+                }
+                else
+                {
+                    // Try to get optimizing metric from experiment config
+                    var configMetric = experimentsToCompare
+                        .Select(e => e.Config.Metric)
+                        .Where(m => !string.IsNullOrEmpty(m))
+                        .FirstOrDefault();
+
+                    if (!string.IsNullOrEmpty(configMetric) && allMetricNames.Contains(configMetric))
+                    {
+                        primaryMetric = configMetric;
+                    }
+                    else
+                    {
+                        primaryMetric = allMetricNames.First();
+                    }
+                }
                 var isLowerBetter = primaryMetric.Contains("Loss", StringComparison.OrdinalIgnoreCase) ||
                                     primaryMetric.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
                                     primaryMetric.Contains("MAE", StringComparison.OrdinalIgnoreCase) ||
