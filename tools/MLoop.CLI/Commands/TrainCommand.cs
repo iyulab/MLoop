@@ -552,36 +552,86 @@ public static class TrainCommand
             }
 
             // Apply class balancing if requested (only for classification tasks)
+            // HD-02 fix: split BEFORE balancing to prevent data leakage
             string? balancedFilePath = null;
+            string? testDataFile = null;
             if (!string.IsNullOrEmpty(balance) && isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
             {
-                var dataBalancer = new DataBalancer();
-                var balanceResult = dataBalancer.Balance(resolvedDataFile, effectiveDefinition.Label, balance);
+                var effectiveTestSplit = effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit;
 
-                if (balanceResult.Applied && balanceResult.BalancedFilePath != null)
+                if (effectiveTestSplit > 0)
                 {
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.Write(new Rule("[blue]Class Balancing[/]").LeftJustified());
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
-                    AnsiConsole.MarkupLine($"[green]>[/] Using balanced data: [cyan]{Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath)}[/]");
+                    // Step 1: Stratified split BEFORE balancing
+                    var splitter = new CsvSplitter();
+                    var splitResult = splitter.StratifiedSplit(resolvedDataFile, effectiveDefinition.Label, effectiveTestSplit);
 
-                    // IMP-5: Warn about overfitting risk from high replication
-                    var replicationRatio = (double)balanceResult.NewMinorityCount / balanceResult.OriginalMinorityCount;
-                    if (replicationRatio > 10)
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.Write(new Rule("[blue]Pre-Balance Split[/]").LeftJustified());
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine($"[green]✓[/] Stratified split: train={splitResult.TrainRows}, test={splitResult.TestRows}");
+                    AnsiConsole.MarkupLine("[grey]  Test set is isolated from balancing to prevent data leakage.[/]");
+                    AnsiConsole.WriteLine();
+
+                    allDataFilesUsed.Add(splitResult.TrainFile);
+                    allDataFilesUsed.Add(splitResult.TestFile);
+                    testDataFile = splitResult.TestFile;
+
+                    // Step 2: Balance only the train split
+                    var dataBalancer = new DataBalancer();
+                    var balanceResult = dataBalancer.Balance(splitResult.TrainFile, effectiveDefinition.Label, balance);
+
+                    if (balanceResult.Applied && balanceResult.BalancedFilePath != null)
                     {
-                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Minority class replicated {replicationRatio:F0}x — high risk of overfitting with duplicated samples.");
-                        AnsiConsole.MarkupLine("[grey]  Consider using independent test data for evaluation.[/]");
-                    }
-                    AnsiConsole.WriteLine();
+                        AnsiConsole.Write(new Rule("[blue]Class Balancing (train only)[/]").LeftJustified());
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
+                        AnsiConsole.MarkupLine($"[green]>[/] Balanced train: [cyan]{Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath)}[/]");
+                        AnsiConsole.MarkupLine($"[green]>[/] Clean test: [cyan]{Path.GetRelativePath(projectRoot, splitResult.TestFile)}[/]");
 
-                    resolvedDataFile = balanceResult.BalancedFilePath;
-                    allDataFilesUsed.Add(resolvedDataFile);
-                    balancedFilePath = balanceResult.BalancedFilePath;
+                        var replicationRatio = (double)balanceResult.NewMinorityCount / balanceResult.OriginalMinorityCount;
+                        if (replicationRatio > 10)
+                        {
+                            AnsiConsole.MarkupLine($"[yellow]Warning:[/] Minority class replicated {replicationRatio:F0}x in train set.");
+                        }
+                        AnsiConsole.WriteLine();
+
+                        resolvedDataFile = balanceResult.BalancedFilePath;
+                        allDataFilesUsed.Add(resolvedDataFile);
+                        balancedFilePath = balanceResult.BalancedFilePath;
+                    }
+                    else
+                    {
+                        // Balancing not applied (e.g., ratio within threshold) — use train split as-is
+                        if (!string.IsNullOrEmpty(balanceResult.Message))
+                        {
+                            AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
+                        }
+                        resolvedDataFile = splitResult.TrainFile;
+                    }
                 }
-                else if (!string.IsNullOrEmpty(balanceResult.Message))
+                else
                 {
-                    AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
+                    // testSplit == 0: no split needed, balance entire dataset
+                    var dataBalancer = new DataBalancer();
+                    var balanceResult = dataBalancer.Balance(resolvedDataFile, effectiveDefinition.Label, balance);
+
+                    if (balanceResult.Applied && balanceResult.BalancedFilePath != null)
+                    {
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.Write(new Rule("[blue]Class Balancing[/]").LeftJustified());
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
+                        AnsiConsole.MarkupLine($"[green]>[/] Using balanced data: [cyan]{Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath)}[/]");
+                        AnsiConsole.WriteLine();
+
+                        resolvedDataFile = balanceResult.BalancedFilePath;
+                        allDataFilesUsed.Add(resolvedDataFile);
+                        balancedFilePath = balanceResult.BalancedFilePath;
+                    }
+                    else if (!string.IsNullOrEmpty(balanceResult.Message))
+                    {
+                        AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
+                    }
                 }
             }
             else if (!string.IsNullOrEmpty(balance) && !isClassificationTask)
@@ -625,7 +675,8 @@ public static class TrainCommand
                 Task = effectiveDefinition.Task,
                 TimeLimitSeconds = effectiveDefinition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
                 Metric = effectiveDefinition.Training?.Metric ?? ConfigDefaults.DefaultMetric,
-                TestSplit = effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit,
+                TestSplit = testDataFile != null ? 0 : (effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit),
+                TestDataFile = testDataFile != null ? Path.GetFullPath(testDataFile) : null,
                 UseAutoTime = useAutoTime
             };
 

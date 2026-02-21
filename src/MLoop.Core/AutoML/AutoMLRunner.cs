@@ -35,11 +35,19 @@ public class AutoMLRunner
         IProgress<TrainingProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        // Load data
-        var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task);
-
-        // Split data
-        var (trainSet, testSet) = _dataLoader.SplitData(dataView, config.TestSplit);
+        // Load and split data
+        IDataView trainSet, testSet;
+        if (!string.IsNullOrEmpty(config.TestDataFile))
+        {
+            // Pre-split data (e.g. balanced training with separate test set)
+            trainSet = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task);
+            testSet = _dataLoader.LoadData(config.TestDataFile, config.LabelColumn, config.Task);
+        }
+        else
+        {
+            var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task);
+            (trainSet, testSet) = _dataLoader.SplitData(dataView, config.TestSplit);
+        }
 
         // Discover hooks (zero-overhead if .mloop/scripts/hooks/ doesn't exist)
         var hooks = await _scriptDiscovery.DiscoverHooksAsync();

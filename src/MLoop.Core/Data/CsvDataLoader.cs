@@ -829,7 +829,9 @@ public class CsvDataLoader : IDataProvider
             {
                 Console.WriteLine($"[Warning] Possible multi-row header detected: Row 1 has only {uniqueRow1.Count} unique values across {row1Fields.Length} columns.");
                 Console.WriteLine($"[Warning] Row 1 may be category headers (e.g., '{string.Join("', '", uniqueRow1.Take(3))}').");
-                Console.WriteLine($"[Warning] If columns appear incorrect, preprocess the CSV to use Row 2 as the header.");
+                Console.WriteLine("[Info] MLoop expects a single header row. Please preprocess your CSV:");
+                Console.WriteLine("[Info]   1. Remove the first row manually, or");
+                Console.WriteLine("[Info]   2. Use: mloop prep run --drop-rows 1 --input data.csv --output clean.csv");
             }
         }
         catch
