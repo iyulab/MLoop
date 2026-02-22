@@ -165,6 +165,14 @@ public static class InfoCommand
         // Flatten multi-line quoted headers (ML.NET doesn't support them)
         dataFile = CsvDataLoader.FlattenMultiLineHeaders(dataFile);
 
+        // Remove unnamed/pandas index columns (matches CsvDataLoader.LoadData behavior)
+        var preIndexPath = dataFile;
+        dataFile = CsvDataLoader.RemoveIndexColumns(dataFile);
+        if (dataFile != preIndexPath)
+        {
+            AnsiConsole.MarkupLine("[green]Info:[/] Removed unnamed index column(s) (pandas artifact)");
+        }
+
         // Read file info and count lines in a single pass
         var fileInfo = new FileInfo(dataFile);
 
@@ -312,25 +320,31 @@ public static class InfoCommand
             return;
         }
 
-        // a. Correlation
+        // a. Descriptive Statistics (quartiles, skewness, kurtosis)
+        if (result.Descriptive?.Columns is { Count: > 0 })
+        {
+            InfoPresenter.DisplayDescriptiveStatistics(result.Descriptive);
+        }
+
+        // b. Correlation
         if (result.Correlation != null)
         {
             InfoPresenter.DisplayCorrelation(result.Correlation);
         }
 
-        // b. Feature Importance
+        // c. Feature Importance
         if (result.Features?.Importance != null)
         {
             InfoPresenter.DisplayFeatureImportance(result.Features.Importance);
         }
 
-        // c. Distribution
+        // d. Distribution
         if (result.Distribution?.Columns is { Count: > 0 })
         {
             InfoPresenter.DisplayDistributions(result.Distribution);
         }
 
-        // d. Outlier detection
+        // e. Outlier detection
         if (result.Outliers != null)
         {
             InfoPresenter.DisplayOutlierSummary(result.Outliers);

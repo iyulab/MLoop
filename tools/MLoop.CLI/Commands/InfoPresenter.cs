@@ -336,7 +336,59 @@ internal static class InfoPresenter
         AnsiConsole.WriteLine();
     }
 
+    public static void DisplayDescriptiveStatistics(DescriptiveReport report)
+    {
+        if (report.Columns.Count == 0) return;
+
+        AnsiConsole.Write(new Rule("[yellow]Descriptive Statistics[/]").LeftJustified());
+        AnsiConsole.WriteLine();
+
+        var table = new Table().Border(TableBorder.Rounded);
+        table.AddColumn("Column");
+        table.AddColumn(new TableColumn("Median").RightAligned());
+        table.AddColumn(new TableColumn("Q1").RightAligned());
+        table.AddColumn(new TableColumn("Q3").RightAligned());
+        table.AddColumn(new TableColumn("IQR").RightAligned());
+        table.AddColumn(new TableColumn("Skewness").RightAligned());
+        table.AddColumn(new TableColumn("Kurtosis").RightAligned());
+
+        foreach (var col in report.Columns)
+        {
+            table.AddRow(
+                col.Name,
+                col.Median.ToString("F4"),
+                col.Q1.ToString("F4"),
+                col.Q3.ToString("F4"),
+                col.Iqr.ToString("F4"),
+                FormatSkewness(col.Skewness),
+                col.Kurtosis.HasValue ? col.Kurtosis.Value.ToString("F2") : "[grey]-[/]");
+        }
+
+        AnsiConsole.Write(table);
+
+        // Highlight highly skewed columns
+        var skewed = report.Columns
+            .Where(c => c.Skewness.HasValue && Math.Abs(c.Skewness.Value) > 1)
+            .ToList();
+        if (skewed.Count > 0)
+        {
+            var names = string.Join(", ", skewed.Select(c => c.Name));
+            AnsiConsole.MarkupLine($"[yellow]Note:[/] {skewed.Count} column(s) are highly skewed: {names}");
+            AnsiConsole.MarkupLine("[grey]  Consider log-transform or normalization before training.[/]");
+        }
+
+        AnsiConsole.WriteLine();
+    }
+
     #region Private Helpers
+
+    private static string FormatSkewness(double? skewness)
+    {
+        if (!skewness.HasValue) return "[grey]-[/]";
+        var v = skewness.Value;
+        var color = Math.Abs(v) > 1 ? "red" : Math.Abs(v) > 0.5 ? "yellow" : "green";
+        return $"[{color}]{v:F2}[/]";
+    }
 
     private static void DisplayRegressionLabelStats(
         Dictionary<string, int> labelDistribution,
@@ -405,12 +457,12 @@ internal static class InfoPresenter
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
 
-        // Imbalance warning for binary classification
+        // Imbalance warning for classification (binary and multiclass)
         var realClasses = labelDistribution.Where(p => p.Key != "(empty)")
             .OrderByDescending(p => p.Value).ToList();
-        if (realClasses.Count == 2)
+        if (realClasses.Count >= 2)
         {
-            var ratio = (double)realClasses[0].Value / realClasses[1].Value;
+            var ratio = (double)realClasses[0].Value / realClasses[^1].Value;
             if (ratio > 10)
             {
                 AnsiConsole.MarkupLine($"[yellow]Warning:[/] Severe class imbalance detected (ratio {ratio:F1}:1). Consider using [blue]--balance auto[/] during training.");
@@ -418,6 +470,17 @@ internal static class InfoPresenter
             else if (ratio > 3)
             {
                 AnsiConsole.MarkupLine($"[yellow]Warning:[/] Class imbalance detected (ratio {ratio:F1}:1). Consider using [blue]--balance auto[/] during training.");
+            }
+
+            // Multiclass: warn about rare classes (< 10 samples)
+            if (realClasses.Count > 2)
+            {
+                var rareClasses = realClasses.Where(c => c.Value < 10).ToList();
+                if (rareClasses.Count > 0)
+                {
+                    var names = string.Join(", ", rareClasses.Select(c => c.Key));
+                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] {rareClasses.Count} class(es) have fewer than 10 samples: {names}");
+                }
             }
             AnsiConsole.WriteLine();
         }
