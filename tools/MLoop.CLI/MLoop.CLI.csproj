@@ -14,7 +14,6 @@
     <PackageReference Include="Spectre.Console" />
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="DataLens" />
-    <PackageReference Include="UInsight" />
     <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
