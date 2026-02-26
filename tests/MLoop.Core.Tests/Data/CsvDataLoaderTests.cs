@@ -244,6 +244,54 @@ public class CsvDataLoaderTests : IDisposable
         Assert.Contains("label", columns);
     }
 
+    [Fact]
+    public void LoadData_RegressionWithBooleanLabel_InfersAsSingle()
+    {
+        // BUG-23: When --task regression is specified and label has 0/1 values,
+        // InferColumns detects Boolean but regression needs Single, not String.
+        var csvPath = CreateTestCsv(new[]
+        {
+            "feature1,feature2,Label",
+            "1.0,2.0,0",
+            "3.0,4.0,1",
+            "5.0,6.0,0",
+            "7.0,8.0,1",
+            "9.0,10.0,0"
+        });
+
+        // Act - should not throw (previously threw "Schema mismatch...expected Single, got String")
+        var dataView = _loader.LoadData(csvPath, "Label", "regression");
+
+        // Assert
+        Assert.NotNull(dataView);
+        var labelCol = dataView.Schema["Label"];
+        // Label should be Single (numeric) for regression, not String or Boolean
+        Assert.Equal(typeof(float), labelCol.Type.RawType);
+    }
+
+    [Fact]
+    public void LoadData_MulticlassWithBooleanLabel_InfersAsString()
+    {
+        // BUG-15/17: Multiclass should still convert Boolean label to String
+        var csvPath = CreateTestCsv(new[]
+        {
+            "feature1,feature2,Label",
+            "1.0,2.0,0",
+            "3.0,4.0,1",
+            "5.0,6.0,0",
+            "7.0,8.0,1",
+            "9.0,10.0,0"
+        });
+
+        // Act
+        var dataView = _loader.LoadData(csvPath, "Label", "multiclass-classification");
+
+        // Assert - label should be String for multiclass (MapValueToKey compatibility)
+        Assert.NotNull(dataView);
+        var labelCol = dataView.Schema["Label"];
+        Assert.Equal(typeof(ReadOnlyMemory<char>), labelCol.Type.RawType);
+    }
+
     private string CreateTestCsv(string[] lines)
     {
         var fileName = $"test_{Guid.NewGuid()}.csv";

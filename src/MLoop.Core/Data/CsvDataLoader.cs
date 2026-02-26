@@ -67,10 +67,14 @@ public class CsvDataLoader : IDataProvider
         // so MapValueToKey can handle any discrete class values.
         // BUG-17: Skip this conversion for binary-classification — ML.NET binary
         // classification pipeline expects Boolean labels and will fail with String.
+        // BUG-23: Skip this conversion for regression — regression pipeline expects
+        // numeric (Single) labels. Boolean 0/1 should become Single, not String.
         var isBinaryTask = string.Equals(taskType, "binary-classification", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(taskType, "BinaryClassification", StringComparison.OrdinalIgnoreCase);
+        var isRegressionTask = string.Equals(taskType, "regression", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(taskType, "Regression", StringComparison.OrdinalIgnoreCase);
 
-        if (!isBinaryTask && !string.IsNullOrEmpty(labelColumn) && columnInference.TextLoaderOptions.Columns != null)
+        if (!isBinaryTask && !isRegressionTask && !string.IsNullOrEmpty(labelColumn) && columnInference.TextLoaderOptions.Columns != null)
         {
             foreach (var col in columnInference.TextLoaderOptions.Columns)
             {
@@ -79,6 +83,21 @@ public class CsvDataLoader : IDataProvider
                     col.DataKind == DataKind.Boolean)
                 {
                     col.DataKind = DataKind.String;
+                }
+            }
+        }
+
+        // BUG-23: For regression, override Boolean label to Single.
+        // InferColumns may detect 0/1 numeric labels as Boolean, but regression needs Single.
+        if (isRegressionTask && !string.IsNullOrEmpty(labelColumn) && columnInference.TextLoaderOptions.Columns != null)
+        {
+            foreach (var col in columnInference.TextLoaderOptions.Columns)
+            {
+                if (col.Name != null &&
+                    col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) &&
+                    col.DataKind == DataKind.Boolean)
+                {
+                    col.DataKind = DataKind.Single;
                 }
             }
         }

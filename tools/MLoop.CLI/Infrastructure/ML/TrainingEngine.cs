@@ -132,7 +132,7 @@ public class TrainingEngine : ITrainingEngine
             }
 
             // Capture input schema before training (using enhanced detection)
-            var inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn);
+            var inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task);
 
             // Execute PreTrain hooks
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PreTrain))
@@ -504,7 +504,7 @@ public class TrainingEngine : ITrainingEngine
     /// <summary>
     /// Captures input schema with enhanced type detection using actual data values
     /// </summary>
-    private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn)
+    private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn, string? taskType = null)
     {
         try
         {
@@ -579,7 +579,12 @@ public class TrainingEngine : ITrainingEngine
                 // BUG-15: If label column was inferred as Boolean by InferColumns,
                 // CsvDataLoader converts it to String (for MapValueToKey compatibility).
                 // Record as "Categorical" so PredictionEngine overrides to String type.
-                if (purpose == "Label" && labelInferredKind == DataKind.Boolean && dataType == "Numeric")
+                // BUG-23: Skip this for regression — Boolean labels become Single (numeric),
+                // so schema should remain "Numeric" for regression tasks.
+                var isRegressionCapture = string.Equals(taskType, "regression", StringComparison.OrdinalIgnoreCase)
+                                       || string.Equals(taskType, "Regression", StringComparison.OrdinalIgnoreCase);
+                if (purpose == "Label" && labelInferredKind == DataKind.Boolean && dataType == "Numeric"
+                    && !isRegressionCapture)
                 {
                     dataType = "Categorical";
                 }
