@@ -146,13 +146,15 @@ public class AutoMLRunner
             return await RunBinaryClassificationCoreAsync(
                 trainSet, testSet, config, optimizingMetric, cancellationToken);
         }
-        catch (InvalidOperationException ex) when (
+        catch (Exception ex) when (
             optimizingMetric == BinaryClassificationMetric.AreaUnderRocCurve &&
-            (ex.Message.Contains("AUC") || ex.Message.Contains("positive class")))
+            IsAucUndefinedException(ex))
         {
             // AUC requires both positive and negative samples in the test set.
             // With extreme class imbalance, the test split may have only one class.
             // Fall back to F1Score which is more robust for imbalanced data.
+            // BUG-22: Also catch AggregateException wrapping the AUC error from AutoML's
+            // internal threading (error: "One or more errors occurred. (AUC is not defined...)").
             Console.WriteLine("[Warning] AUC metric failed (extreme class imbalance). Falling back to F1Score.");
             metricFallbackNote = "AUC→F1Score (extreme imbalance)";
 
@@ -389,6 +391,33 @@ public class AutoMLRunner
             "mse" => metrics.MeanSquaredError,
             _ => metrics.RSquared
         };
+    }
+
+    /// <summary>
+    /// BUG-22: Check if exception is an AUC undefined error, handling both direct
+    /// InvalidOperationException and AggregateException wrappers from AutoML's internal threading.
+    /// </summary>
+    private static bool IsAucUndefinedException(Exception ex)
+    {
+        // Direct exception
+        if (ex.Message.Contains("AUC") || ex.Message.Contains("positive class"))
+            return true;
+
+        // AggregateException from Task.Run or AutoML internal threading
+        if (ex is AggregateException aggEx)
+        {
+            return aggEx.InnerExceptions.Any(inner =>
+                inner.Message.Contains("AUC") || inner.Message.Contains("positive class"));
+        }
+
+        // Nested inner exception
+        if (ex.InnerException != null)
+        {
+            return ex.InnerException.Message.Contains("AUC") ||
+                   ex.InnerException.Message.Contains("positive class");
+        }
+
+        return false;
     }
 }
 
