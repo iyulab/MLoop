@@ -219,8 +219,11 @@ public class CategoricalMapper
 
         message += "Solutions:\n";
         message += "1. Ensure prediction data uses same categorical values as training data\n";
-        message += "2. Retrain model with combined set of categorical values\n";
-        message += "3. Map unknown values to known values before prediction\n";
+        message += "2. Retrain model with more diverse training data\n";
+        message += "3. Use --unknown-strategy option to handle unknown values:\n";
+        message += "   mloop predict data.csv --unknown-strategy use-missing   (replace with empty)\n";
+        message += "   mloop predict data.csv --unknown-strategy use-most-frequent   (replace with most common value)\n";
+        message += "   mloop predict data.csv --unknown-strategy auto   (auto-select based on ratio, default)\n";
 
         return message;
     }

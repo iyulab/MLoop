@@ -56,10 +56,24 @@ public class CsvDataLoader : IDataProvider
         mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn);
 
         // Infer columns from the file
-        var columnInference = _mlContext.Auto().InferColumns(
-            mlnetCompatiblePath,
-            labelColumnName: labelColumn,
-            separatorChar: ',');
+        ColumnInferenceResults columnInference;
+        try
+        {
+            columnInference = _mlContext.Auto().InferColumns(
+                mlnetCompatiblePath,
+                labelColumnName: labelColumn,
+                separatorChar: ',');
+        }
+        catch (Exception ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
+        {
+            throw new InvalidOperationException(
+                $"Failed to parse CSV file: {ex.Message}\n\n" +
+                "If your data contains commas within fields, ensure they are properly quoted (RFC 4180):\n" +
+                "  WRONG:  app-18,Data hash table of /run/log/journal, suggesting rotation.\n" +
+                "  RIGHT:  app-18,\"Data hash table of /run/log/journal, suggesting rotation.\"\n\n" +
+                "Fields containing commas, double quotes, or newlines must be wrapped in double quotes.\n" +
+                "Double quotes inside a field must be escaped as \"\" (two double quotes).", ex);
+        }
 
         // BUG-15: Fix InferColumns misdetecting multiclass label as Boolean.
         // When label column only has 0/1 in early rows, InferColumns infers Boolean,
