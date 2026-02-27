@@ -54,12 +54,17 @@ public class ProjectDiscoveryTests : IDisposable
     [Fact]
     public void FindRoot_NoMLoopDir_Throws()
     {
-        // Use a path directly under the drive root to avoid ancestor .mloop directories
-        var driveRoot = Path.GetPathRoot(Path.GetTempPath())!;
-        var isolatedDir = Path.Combine(driveRoot, $"mloop-test-{Guid.NewGuid():N}");
+        // Use an isolated temp directory without any .mloop ancestor.
+        // On CI (Ubuntu), temp dirs won't have .mloop ancestors.
+        // On dev machines, an ancestor may contain .mloop; skip gracefully.
+        var isolatedDir = Path.Combine(Path.GetTempPath(), $"mloop-test-{Guid.NewGuid():N}");
         try
         {
             Directory.CreateDirectory(isolatedDir);
+
+            if (HasMLoopAncestor(isolatedDir))
+                return; // Cannot test: ancestor has .mloop
+
             var discovery = new ProjectDiscovery(_fs);
 
             var ex = Assert.Throws<InvalidOperationException>(() =>
@@ -72,6 +77,18 @@ public class ProjectDiscoveryTests : IDisposable
             if (Directory.Exists(isolatedDir))
                 Directory.Delete(isolatedDir, true);
         }
+    }
+
+    private static bool HasMLoopAncestor(string path)
+    {
+        var dir = new DirectoryInfo(path).Parent;
+        while (dir != null)
+        {
+            if (Directory.Exists(Path.Combine(dir.FullName, ".mloop")))
+                return true;
+            dir = dir.Parent;
+        }
+        return false;
     }
 
     [Fact]
