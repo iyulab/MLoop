@@ -417,6 +417,25 @@ public class DataQualityValidator
                 return; // Already handled by label validation
             }
 
+            // Absolute minimum row count check
+            const int CRITICAL_MINIMUM = 10;
+            const int RECOMMENDED_MINIMUM = 30;
+
+            if (sampleCount < CRITICAL_MINIMUM)
+            {
+                result.Warnings.Add($"🔴 Critically small dataset: only {sampleCount} rows");
+                result.Warnings.Add($"   Minimum recommended: {CRITICAL_MINIMUM} rows for any ML task");
+                result.Warnings.Add("   Train/Test split may produce empty test sets, causing metric calculation failures");
+                result.Warnings.Add("");
+                result.Suggestions.Add($"💡 Collect at least {RECOMMENDED_MINIMUM}+ rows before training");
+            }
+            else if (sampleCount < RECOMMENDED_MINIMUM)
+            {
+                result.Warnings.Add($"🟡 Very small dataset: {sampleCount} rows");
+                result.Warnings.Add($"   Recommended minimum: {RECOMMENDED_MINIMUM} rows for reliable results");
+                result.Warnings.Add("   Model performance may be unreliable with limited data");
+            }
+
             // Statistical rule of thumb: minimum 10× features
             var recommendedMin = featureCount * 10;
 

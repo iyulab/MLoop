@@ -665,6 +665,14 @@ public class TrainingEngine : ITrainingEngine
             if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
             {
                 var (values, count) = CollectCategoricalValues(colIndex, dataLines);
+                // High-cardinality override: if unique values > 50% of rows,
+                // this is likely free-text (e.g., log messages) not categorical.
+                // ML.NET InferColumns misclassifies these with small training data.
+                if (count > 0 && dataLines.Length > 0 && (double)count / dataLines.Length > 0.5)
+                {
+                    Console.WriteLine($"[Info] Column '{columnName}' reclassified: Categorical → Text (high cardinality: {count} unique values in {dataLines.Length} rows)");
+                    return ("Text", null, count);
+                }
                 return ("Categorical", values, count);
             }
             if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
@@ -715,9 +723,14 @@ public class TrainingEngine : ITrainingEngine
         }
 
         // Low unique count relative to total = likely Categorical
-        // Or explicit non-numeric values = Categorical
+        // But if unique values > 50% of rows, treat as Text (high cardinality)
         if (uniqueCount <= 100 || (numericRatio < 0.5 && uniqueCount < totalCount * 0.1))
         {
+            // High-cardinality override: free-text data (log messages, URLs, etc.)
+            if (totalCount > 0 && (double)uniqueCount / totalCount > 0.5)
+            {
+                return ("Text", null, uniqueCount);
+            }
             var categoricalValues = uniqueValues.OrderBy(v => v).ToList();
             return ("Categorical", categoricalValues, uniqueCount);
         }

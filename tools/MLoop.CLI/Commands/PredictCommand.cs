@@ -57,7 +57,8 @@ public static class PredictCommand
 
         var includeFeaturesOption = new Option<bool>("--include-features")
         {
-            Description = "Include original feature columns in prediction output"
+            Description = "Include original feature columns in prediction output (default: true)",
+            DefaultValueFactory = _ => true
         };
 
         var command = new Command("predict", "Make predictions with a trained model");
