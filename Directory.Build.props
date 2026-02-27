@@ -16,10 +16,7 @@
     <RepositoryUrl>https://github.com/iyulab/MLoop</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
-    <!-- Version: Can be overridden via -p:Version=x.y.z from CI/CD -->
-    <!-- Default version for local development -->
-    <VersionPrefix Condition="'$(Version)' == ''">0.5.1</VersionPrefix>
-    <VersionSuffix Condition="'$(Version)' == ''">alpha</VersionSuffix>
+    <Version>0.6.0-alpha</Version>
 
     <!-- Build settings -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
