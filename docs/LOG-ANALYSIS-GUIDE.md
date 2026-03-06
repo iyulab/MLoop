@@ -96,7 +96,7 @@ Copy `train.csv` to `my-log-project/datasets/`.
 
 ```bash
 cd my-log-project
-mloop train datasets/train.csv Content --label Label
+mloop train datasets/train.csv --label Label --task binary-classification
 ```
 
 ### 4. Predict

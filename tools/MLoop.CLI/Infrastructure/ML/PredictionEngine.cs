@@ -285,9 +285,13 @@ public class PredictionEngine : IPredictionEngine
             // Select only prediction output columns (exclude duplicated input features)
             // ML.NET prediction output columns: PredictedLabel, Score, Probability (for classification)
             // For regression: Score only
+            // Note: After MapKeyToValue("PredictedLabel"), the schema contains both the original
+            // hidden key-type PredictedLabel and the new visible string PredictedLabel.
+            // Must skip hidden columns to avoid duplicate names in SelectColumns.
             var predictionColumns = new List<string>();
             foreach (var col in predictions.Schema)
             {
+                if (col.IsHidden) continue; // Skip hidden columns (e.g., key-type PredictedLabel after MapKeyToValue)
                 // Include standard prediction output columns
                 if (col.Name == "PredictedLabel" || col.Name == "Score" || col.Name == "Probability")
                 {
