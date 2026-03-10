@@ -65,6 +65,10 @@ local-tests/
 # Serena (개발용)
 .serena/
 
+# Node.js (agent, mcp)
+node_modules/
+build/
+
 # Local
 .env
 publish/
