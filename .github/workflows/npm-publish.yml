@@ -1,0 +1,66 @@
+name: Publish mloop-mcp to npm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mcp/package.json'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Check if version is already published
+        id: version-check
+        working-directory: mcp
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          LOCAL_VERSION=$(node -p "require('./package.json').version")
+          PUBLISHED_VERSION=$(npm view "$PACKAGE_NAME" version 2>/dev/null || echo "0.0.0")
+          echo "package=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "local=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
+          echo "published=$PUBLISHED_VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$LOCAL_VERSION" = "$PUBLISHED_VERSION" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Version $LOCAL_VERSION is already published. Skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Publishing $PACKAGE_NAME@$LOCAL_VERSION (current: $PUBLISHED_VERSION)"
+          fi
+
+      - name: Install dependencies
+        if: steps.version-check.outputs.skip == 'false'
+        working-directory: mcp
+        run: npm ci
+
+      - name: Build
+        if: steps.version-check.outputs.skip == 'false'
+        working-directory: mcp
+        run: npm run build
+
+      - name: Publish to npm
+        if: steps.version-check.outputs.skip == 'false'
+        working-directory: mcp
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.version-check.outputs.skip }}" = "true" ]; then
+            echo "### ⏭️ Skipped" >> "$GITHUB_SUMMARY"
+            echo "${{ steps.version-check.outputs.package }}@${{ steps.version-check.outputs.local }} is already published." >> "$GITHUB_SUMMARY"
+          else
+            echo "### ✅ Published" >> "$GITHUB_SUMMARY"
+            echo "${{ steps.version-check.outputs.package }}@${{ steps.version-check.outputs.local }}" >> "$GITHUB_SUMMARY"
+          fi
