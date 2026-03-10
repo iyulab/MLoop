@@ -891,12 +891,12 @@ public static class TrainCommand
                 TrainPresenter.DisplayPromotionResult(promoted, primaryMetric, result, production, minThreshold);
             }
 
-            // T4.6: Unused data warning
-            var dataDirectory = Path.GetDirectoryName(resolvedDataFile);
-            if (!string.IsNullOrEmpty(dataDirectory) && Directory.Exists(dataDirectory))
+            // T4.6: Unused data warning - only scan project's datasets/ directory
+            var datasetsDir = datasetDiscovery.GetDatasetsPath(projectRoot);
+            if (Directory.Exists(datasetsDir))
             {
                 var unusedDataScanner = new UnusedDataScanner();
-                var scanResult = unusedDataScanner.Scan(dataDirectory, allDataFilesUsed);
+                var scanResult = unusedDataScanner.Scan(datasetsDir, allDataFilesUsed);
                 TrainPresenter.DisplayUnusedDataWarning(scanResult);
             }
 
