@@ -1,0 +1,42 @@
+{
+  "name": "@iyulab/mloop-agent",
+  "version": "0.1.0",
+  "description": "Autonomous ML model builder using LLM + MLoop tools",
+  "type": "module",
+  "main": "build/index.js",
+  "bin": {
+    "mloop-agent": "build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:test": "tsc -p tsconfig.test.json",
+    "watch": "tsc --watch",
+    "start": "node build/index.js",
+    "dev": "npm run build && npm run start",
+    "test": "npm run build:test && node --test build/tests/*.test.js",
+    "clean": "rimraf build"
+  },
+  "keywords": ["mloop", "automl", "agent", "llm"],
+  "author": "iyulab",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iyulab/MLoop.git",
+    "directory": "agent"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@iyulab/mloop-mcp": "file:../mcp"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "rimraf": "^6.0.0",
+    "typescript": "^5.7.0"
+  },
+  "files": [
+    "build",
+    "README.md"
+  ]
+}
