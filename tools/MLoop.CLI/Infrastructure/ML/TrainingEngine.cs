@@ -665,12 +665,9 @@ public class TrainingEngine : ITrainingEngine
             if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
             {
                 var (values, count) = CollectCategoricalValues(colIndex, dataLines);
-                // High-cardinality override: if unique values > 50% of rows,
-                // this is likely free-text (e.g., log messages) not categorical.
-                // ML.NET InferColumns misclassifies these with small training data.
-                if (count > 0 && dataLines.Length > 0 && (double)count / dataLines.Length > 0.5)
+                if (count > 0 && dataLines.Length > 0 && LooksLikeText(colIndex, dataLines, count))
                 {
-                    Console.WriteLine($"[Info] Column '{columnName}' reclassified: Categorical → Text (high cardinality: {count} unique values in {dataLines.Length} rows)");
+                    Console.WriteLine($"[Info] Column '{columnName}' reclassified: Categorical → Text (text-like content: {count} unique values in {dataLines.Length} rows)");
                     return ("Text", null, count);
                 }
                 return ("Categorical", values, count);
@@ -723,11 +720,10 @@ public class TrainingEngine : ITrainingEngine
         }
 
         // Low unique count relative to total = likely Categorical
-        // But if unique values > 50% of rows, treat as Text (high cardinality)
+        // But text-like content should be treated as Text even with low unique ratio
         if (uniqueCount <= 100 || (numericRatio < 0.5 && uniqueCount < totalCount * 0.1))
         {
-            // High-cardinality override: free-text data (log messages, URLs, etc.)
-            if (totalCount > 0 && (double)uniqueCount / totalCount > 0.5)
+            if (totalCount > 0 && LooksLikeText(colIndex, dataLines, uniqueCount))
             {
                 return ("Text", null, uniqueCount);
             }
@@ -757,6 +753,64 @@ public class TrainingEngine : ITrainingEngine
         }
 
         return (uniqueValues.OrderBy(v => v).ToList(), uniqueValues.Count);
+    }
+
+    /// <summary>
+    /// Determines whether a column's values look like natural text rather than categorical codes.
+    /// Uses multiple heuristics: unique ratio, average token count, and average string length.
+    /// This prevents log messages, descriptions, and other free-text from being treated as
+    /// categorical features (which would use OneHotEncoding instead of FeaturizeText).
+    /// </summary>
+    internal static bool LooksLikeText(int colIndex, string[] dataLines, int uniqueCount)
+    {
+        if (dataLines.Length == 0)
+            return false;
+
+        // Criterion 1: High unique ratio (original heuristic)
+        double uniqueRatio = (double)uniqueCount / dataLines.Length;
+        if (uniqueRatio > 0.5)
+            return true;
+
+        // Sample values for text-likeness analysis
+        int sampleSize = Math.Min(dataLines.Length, 200);
+        int totalTokens = 0;
+        int totalLength = 0;
+        int validCount = 0;
+
+        for (int i = 0; i < sampleSize; i++)
+        {
+            var fields = CsvFieldParser.ParseFields(dataLines[i]);
+            if (colIndex >= fields.Length)
+                continue;
+
+            var value = fields[colIndex].Trim();
+            if (string.IsNullOrEmpty(value))
+                continue;
+
+            validCount++;
+            totalLength += value.Length;
+            totalTokens += value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        }
+
+        if (validCount == 0)
+            return false;
+
+        double avgTokens = (double)totalTokens / validCount;
+        double avgLength = (double)totalLength / validCount;
+
+        // Criterion 2: Average 3+ tokens (words) per value → natural language text
+        if (avgTokens >= 3)
+            return true;
+
+        // Criterion 3: Average length > 30 chars → long strings, likely text
+        if (avgLength > 30)
+            return true;
+
+        // Criterion 4: High cardinality (200+) with moderate unique ratio (10%+)
+        if (uniqueCount > 200 && uniqueRatio > 0.1)
+            return true;
+
+        return false;
     }
 
     /// <summary>

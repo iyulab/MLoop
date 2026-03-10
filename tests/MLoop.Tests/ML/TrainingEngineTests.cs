@@ -180,6 +180,99 @@ public class TrainingEngineTests : IDisposable
 
     #endregion
 
+    #region LooksLikeText
+
+    [Fact]
+    public void LooksLikeText_HighUniqueRatio_ReturnsTrue()
+    {
+        // 10 unique values in 10 lines = 100% unique ratio (> 50%)
+        var lines = Enumerable.Range(0, 10)
+            .Select(i => $"value_{i}")
+            .ToArray();
+
+        Assert.True(TrainingEngine.LooksLikeText(0, lines, 10));
+    }
+
+    [Fact]
+    public void LooksLikeText_ShortCategoricalCodes_ReturnsFalse()
+    {
+        // Short codes like OK/NG/HIGH/LOW — few unique, short strings, single token
+        var values = new[] { "OK", "NG", "OK", "HIGH", "LOW", "OK", "NG", "OK", "LOW", "OK" };
+        var lines = values.Select(v => v).ToArray();
+
+        Assert.False(TrainingEngine.LooksLikeText(0, lines, 4));
+    }
+
+    [Fact]
+    public void LooksLikeText_LongLogMessages_ReturnsTrue()
+    {
+        // Log messages with 3+ tokens and long strings — should be text
+        var lines = new[]
+        {
+            "\"Application started successfully on port 8080\",INFO",
+            "\"Database connection pool initialized with 20 connections\",INFO",
+            "\"User authentication failed for admin@example.com\",ERROR",
+            "\"Memory usage threshold exceeded at 95 percent\",WARNING",
+            "\"Application started successfully on port 8080\",INFO",
+            "\"Database connection pool initialized with 20 connections\",INFO",
+            "\"Cache invalidation completed for session store\",INFO",
+            "\"Application started successfully on port 8080\",INFO",
+        };
+
+        // 5 unique values in 8 lines = 62.5% unique — but even with lower unique ratio
+        // the text heuristic (avgTokens >= 3) should catch it
+        Assert.True(TrainingEngine.LooksLikeText(0, lines, 5));
+    }
+
+    [Fact]
+    public void LooksLikeText_RepeatedLogMessages_LowUniqueRatio_ReturnsTrue()
+    {
+        // Simulates sim-17 scenario: log messages with low unique ratio (~32%)
+        // but still text-like (long strings, multiple tokens)
+        var templates = new[]
+        {
+            "[arp_up] _> start /clusterplex/script/lin/mysql/arp_up.sh",
+            "[arp_up] ... ARPING 10.68.40.1 from 10.68.40.173 ens192",
+            "[Data_Mirror] Synchronization completed successfully"
+        };
+        var lines = new string[20];
+        for (int i = 0; i < 20; i++)
+            lines[i] = templates[i % templates.Length];
+
+        // 3 unique in 20 = 15% unique ratio — below 50% threshold
+        // but avgTokens >= 3 should trigger text classification
+        Assert.True(TrainingEngine.LooksLikeText(0, lines, 3));
+    }
+
+    [Fact]
+    public void LooksLikeText_NumericIds_ReturnsFalse()
+    {
+        // Numeric-like IDs that happen to be strings
+        var lines = new[] { "001", "002", "001", "003", "002", "001", "003", "001", "002", "001" };
+
+        Assert.False(TrainingEngine.LooksLikeText(0, lines, 3));
+    }
+
+    [Fact]
+    public void LooksLikeText_EmptyLines_ReturnsFalse()
+    {
+        Assert.False(TrainingEngine.LooksLikeText(0, Array.Empty<string>(), 0));
+    }
+
+    [Fact]
+    public void LooksLikeText_HighCardinality_ModerateUniqueRatio_ReturnsTrue()
+    {
+        // 250 unique values in 1000 lines = 25% unique ratio
+        // uniqueCount > 200 AND uniqueRatio > 10% → criterion 4
+        var lines = new string[1000];
+        for (int i = 0; i < 1000; i++)
+            lines[i] = $"log entry {i % 250}";
+
+        Assert.True(TrainingEngine.LooksLikeText(0, lines, 250));
+    }
+
+    #endregion
+
     private string CreateCsv(string fileName, string content)
     {
         var path = Path.Combine(_tempDir, fileName);

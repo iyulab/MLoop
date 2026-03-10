@@ -65,7 +65,8 @@ internal static class TrainPresenter
     /// <summary>
     /// Displays the training configuration before training starts.
     /// </summary>
-    public static void DisplayTrainingConfig(string dataFile, string modelName, ModelDefinition definition)
+    public static void DisplayTrainingConfig(
+        string dataFile, string modelName, ModelDefinition definition, string? testDataFile = null)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[blue]Training Configuration[/]").LeftJustified());
@@ -82,7 +83,15 @@ internal static class TrainPresenter
         table.AddRow("Label Column", definition.Label);
         table.AddRow("Time Limit", $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
-        table.AddRow("Test Split", $"{(definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit) * 100:F0}%");
+
+        if (testDataFile != null)
+        {
+            table.AddRow("Test Split", $"Pre-split ([cyan]{Path.GetFileName(testDataFile)}[/])");
+        }
+        else
+        {
+            table.AddRow("Test Split", $"{(definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit) * 100:F0}%");
+        }
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();

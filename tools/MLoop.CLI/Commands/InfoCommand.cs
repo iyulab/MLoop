@@ -236,10 +236,13 @@ public static class InfoCommand
         // Ensure RFC 4180 compliance
         columnInference.TextLoaderOptions.AllowQuoting = true;
 
+        // Sample data lines for text-likeness analysis (reuses TrainingEngine logic)
+        var sampleLines = ReadSampleLines(dataFile, 200);
+
         // 2. Column Information
         InfoPresenter.DisplayColumnInfo(
             columns,
-            (colName, colIdx) => InferDisplayType(colName, columnInference, colIdx),
+            (colName, colIdx) => InferDisplayType(colName, columnInference, colIdx, sampleLines),
             (colName, dataType) => GetColumnPurpose(colName, columnInference.ColumnInformation, dataType));
 
         // 3. DataLens Profile (always-on, nullable)
@@ -371,6 +374,10 @@ public static class InfoCommand
             return "[green]Label[/]";
         if (columnInfo.IgnoredColumnNames?.Contains(columnName) == true)
             return "[grey]Ignored[/]";
+
+        // Use dataType (which incorporates text-likeness reclassification) over raw ML.NET inference
+        if (dataType == "Text")
+            return "[blue]Text Feature[/]";
         if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
             return "[yellow]Categorical Feature[/]";
         if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
@@ -381,18 +388,33 @@ public static class InfoCommand
         return dataType switch
         {
             "Numeric" or "Integer" => "[cyan]Numeric Feature[/]",
-            "Text" => "[blue]Text Feature[/]",
             "Boolean" => "[cyan]Numeric Feature[/]",
             _ => "[grey]Feature[/]"
         };
     }
 
-    private static string InferDisplayType(string columnName, ColumnInferenceResults results, int csvColumnIndex)
+    private static string InferDisplayType(string columnName, ColumnInferenceResults results, int csvColumnIndex, string[] sampleLines)
     {
         var columnInfo = results.ColumnInformation;
 
         if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
+        {
+            // Apply text-likeness check: reclassify categorical columns that look like text
+            var uniqueValues = new HashSet<string>();
+            foreach (var line in sampleLines)
+            {
+                var fields = CsvFieldParser.ParseFields(line);
+                if (csvColumnIndex < fields.Length)
+                {
+                    var value = fields[csvColumnIndex].Trim();
+                    if (!string.IsNullOrEmpty(value))
+                        uniqueValues.Add(value);
+                }
+            }
+            if (TrainingEngine.LooksLikeText(csvColumnIndex, sampleLines, uniqueValues.Count))
+                return "Text";
             return "Text/Categorical";
+        }
         if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
             return "Numeric";
         if (columnInfo.TextColumnNames?.Contains(columnName) == true)
@@ -436,6 +458,19 @@ public static class InfoCommand
         }
 
         return "Unknown";
+    }
+
+    private static string[] ReadSampleLines(string dataFile, int maxLines)
+    {
+        var lines = new List<string>();
+        using var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        reader.ReadLine(); // skip header
+        string? line;
+        while ((line = reader.ReadLine()) != null && lines.Count < maxLines)
+        {
+            lines.Add(line);
+        }
+        return lines.ToArray();
     }
 
     private record ColumnStatInfo(long MissingCount, int UniqueCount);
