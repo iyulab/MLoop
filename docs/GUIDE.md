@@ -119,6 +119,10 @@ mloop train <data-file> <label-column> [options]
 #                               'none'  - No balancing (default)
 #                               '<n>'   - Target ratio (e.g., '5' for 5:1)
 
+# Model Management (v0.6.1+):
+#   --no-promote                Skip automatic promotion to production
+#   --no-auto-time              Disable automatic training time estimation
+
 # Examples
 mloop train datasets/train.csv price --time 120
 mloop train data/sales.csv revenue --time 300 --metric r_squared
@@ -156,12 +160,19 @@ mloop predict
 mloop predict <model-path> <data-file> [options]
 
 # Options:
-#   --output <path>      Output file path (default: predictions/predictions-TIMESTAMP.csv)
+#   --output <path>              Output file path (default: predictions/predictions-TIMESTAMP.csv)
+#   --unknown-strategy <mode>    Handle unknown categorical values (v0.6.1+):
+#                                'auto'               - Auto-select based on ratio (default)
+#                                'error'              - Fail on unknown values
+#                                'use-most-frequent'  - Replace with most common value
+#                                'use-missing'        - Replace with empty
+#   --log                        Enable prediction logging to DataStore
 
 # Examples
 mloop predict                                          # Auto mode
 mloop predict models/staging/exp-003/model.zip data/test.csv
 mloop predict --output results/forecast.csv
+mloop predict --unknown-strategy use-most-frequent     # Handle unseen categorical values
 ```
 
 ### `mloop list`
@@ -1019,6 +1030,23 @@ mloop train data.csv label --task binary-classification --drop-missing-labels
 3. **Check label column**: Ensure it's the correct target variable
 4. **Check class imbalance**: MLoop shows distribution automatically for classification
 5. **Consider preprocessing**: Add feature engineering scripts in `.mloop/scripts/preprocessing/`
+
+### Prediction Fails with "Unknown Categorical Values"
+
+**Problem**: Prediction fails with "Categorical values in prediction data do not match training data"
+
+This occurs when a text column was treated as categorical during training, and new prediction data contains values not seen in training.
+
+**Solution** (v0.6.1+):
+```bash
+# Use unknown-strategy to handle unseen values
+mloop predict --unknown-strategy use-most-frequent
+
+# Or use auto mode (replaces if ratio is low, errors if high)
+mloop predict --unknown-strategy auto
+```
+
+**Note**: MLoop v0.6.1+ uses a composite heuristic to detect text columns more accurately (based on token count, string length, and cardinality), which prevents most cases of this error. If you still encounter it, consider retraining the model.
 
 ### Class Imbalance / AUC Calculation Error
 

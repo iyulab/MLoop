@@ -55,6 +55,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 - **Filesystem MLOps**: Git-friendly experiment tracking (no database required)
 - **Fast Preprocessing**: Integrated FilePrepper (20x faster than pandas)
 - **Extensibility**: Code-based hooks and custom metrics
+- **Smart Data Detection**: Composite heuristic distinguishes text from categorical columns automatically
 - **Zero Config**: Works immediately with intelligent defaults
 - **Multi-CSV Support**: Auto-merge same-schema files with `--data` or `--auto-merge`
 - **Encoding Detection**: Automatic CP949/EUC-KR to UTF-8 conversion for Korean text
