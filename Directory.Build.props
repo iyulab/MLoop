@@ -16,7 +16,7 @@
     <RepositoryUrl>https://github.com/iyulab/MLoop</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
-    <Version>0.6.0-alpha</Version>
+    <Version>0.6.1-alpha</Version>
 
     <!-- Build settings -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
