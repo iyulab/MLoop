@@ -207,10 +207,24 @@ public static class InfoCommand
         }
         else
         {
-            inferLabel = columns.Length > 0 ? columns[0] : "dummy";
             if (!string.IsNullOrEmpty(labelColumn) && !columns.Contains(labelColumn))
             {
-                AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label column '{labelColumn}' not found in file, using '{inferLabel}'");
+                AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label column '{labelColumn}' not found in file");
+            }
+
+            // Heuristic: prefer common label column names (case-insensitive)
+            var commonLabelNames = new[] { "label", "target", "class", "category", "y", "output" };
+            var matched = columns.FirstOrDefault(c =>
+                commonLabelNames.Contains(c, StringComparer.OrdinalIgnoreCase));
+
+            if (matched != null)
+            {
+                inferLabel = matched;
+            }
+            else
+            {
+                // Fall back to last column (ML convention: label is typically the last column)
+                inferLabel = columns.Length > 0 ? columns[^1] : "dummy";
             }
         }
 
