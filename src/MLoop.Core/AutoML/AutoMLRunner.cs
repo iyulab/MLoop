@@ -195,20 +195,34 @@ public class AutoMLRunner
 
         // Evaluate on test set
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
-        var metrics = _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn);
 
-        var metricsDict = new Dictionary<string, double>
-        {
-            ["accuracy"] = metrics.Accuracy,
-            ["f1_score"] = metrics.F1Score,
-            ["precision"] = metrics.PositivePrecision,
-            ["recall"] = metrics.PositiveRecall
-        };
+        // BUG-24: Some AutoML pipelines (non-calibrated models) don't produce a Probability column.
+        // Use EvaluateNonCalibrated when Probability column is missing.
+        var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
 
-        // Only include AUC if it's a valid number (may be NaN for imbalanced data)
-        if (!double.IsNaN(metrics.AreaUnderRocCurve))
+        var metricsDict = new Dictionary<string, double>();
+
+        if (hasProbability)
         {
-            metricsDict["auc"] = metrics.AreaUnderRocCurve;
+            var metrics = _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn);
+            metricsDict["accuracy"] = metrics.Accuracy;
+            metricsDict["f1_score"] = metrics.F1Score;
+            metricsDict["precision"] = metrics.PositivePrecision;
+            metricsDict["recall"] = metrics.PositiveRecall;
+
+            if (!double.IsNaN(metrics.AreaUnderRocCurve))
+                metricsDict["auc"] = metrics.AreaUnderRocCurve;
+        }
+        else
+        {
+            var metrics = _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn);
+            metricsDict["accuracy"] = metrics.Accuracy;
+            metricsDict["f1_score"] = metrics.F1Score;
+            metricsDict["precision"] = metrics.PositivePrecision;
+            metricsDict["recall"] = metrics.PositiveRecall;
+
+            if (!double.IsNaN(metrics.AreaUnderRocCurve))
+                metricsDict["auc"] = metrics.AreaUnderRocCurve;
         }
 
         var trainerName = experimentResult.BestRun.TrainerName;
