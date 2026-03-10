@@ -146,17 +146,24 @@ public class AutoMLRunner
             return await RunBinaryClassificationCoreAsync(
                 trainSet, testSet, config, optimizingMetric, cancellationToken);
         }
-        catch (Exception ex) when (
-            optimizingMetric == BinaryClassificationMetric.AreaUnderRocCurve &&
-            IsAucUndefinedException(ex))
+        catch (Exception ex) when (IsAucUndefinedException(ex))
         {
-            // AUC requires both positive and negative samples in the test set.
-            // With extreme class imbalance, the test split may have only one class.
+            // BUG-22: AUC requires both positive and negative samples in the test set.
+            // BUG-24: AutoML internally computes AUC regardless of the user's requested metric,
+            // so this error can occur even with --metric accuracy or other non-AUC metrics.
             // Fall back to F1Score which is more robust for imbalanced data.
-            // BUG-22: Also catch AggregateException wrapping the AUC error from AutoML's
-            // internal threading (error: "One or more errors occurred. (AUC is not defined...)").
-            Console.WriteLine("[Warning] AUC metric failed (extreme class imbalance). Falling back to F1Score.");
-            metricFallbackNote = "AUC→F1Score (extreme imbalance)";
+            if (optimizingMetric == BinaryClassificationMetric.F1Score)
+            {
+                // Already using F1Score — cannot fall back further
+                throw new InvalidOperationException(
+                    "Training failed: dataset too small or too imbalanced for binary classification. " +
+                    "AUC computation failed even with F1Score metric. " +
+                    "Try increasing dataset size (100+ rows recommended) or using --balance auto.", ex);
+            }
+
+            var originalMetric = optimizingMetric.ToString();
+            Console.WriteLine($"[Warning] AUC computation failed during {originalMetric} optimization (extreme class imbalance). Falling back to F1Score.");
+            metricFallbackNote = $"{originalMetric}→F1Score (AUC imbalance)";
 
             return await RunBinaryClassificationCoreAsync(
                 trainSet, testSet, config, BinaryClassificationMetric.F1Score, cancellationToken,
@@ -394,30 +401,39 @@ public class AutoMLRunner
     }
 
     /// <summary>
-    /// BUG-22: Check if exception is an AUC undefined error, handling both direct
+    /// BUG-22/24: Check if exception is an AUC undefined error, handling both direct
     /// InvalidOperationException and AggregateException wrappers from AutoML's internal threading.
+    /// Matches errors like "AUC is not defined when there is no positive class" and
+    /// "AUC is not defined when there is no negative class".
     /// </summary>
     private static bool IsAucUndefinedException(Exception ex)
     {
         // Direct exception
-        if (ex.Message.Contains("AUC") || ex.Message.Contains("positive class"))
+        if (IsAucMessage(ex.Message))
             return true;
 
         // AggregateException from Task.Run or AutoML internal threading
         if (ex is AggregateException aggEx)
         {
-            return aggEx.InnerExceptions.Any(inner =>
-                inner.Message.Contains("AUC") || inner.Message.Contains("positive class"));
+            return aggEx.InnerExceptions.Any(inner => IsAucMessage(inner.Message));
         }
 
         // Nested inner exception
         if (ex.InnerException != null)
         {
-            return ex.InnerException.Message.Contains("AUC") ||
-                   ex.InnerException.Message.Contains("positive class");
+            return IsAucMessage(ex.InnerException.Message);
         }
 
         return false;
+    }
+
+    private static bool IsAucMessage(string message)
+    {
+        return message.Contains("AUC") ||
+               message.Contains("positive class") ||
+               message.Contains("negative class") ||
+               message.Contains("PosSample") ||
+               message.Contains("NegSample");
     }
 }
 
