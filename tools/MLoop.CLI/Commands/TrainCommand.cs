@@ -651,7 +651,7 @@ public static class TrainCommand
             TrainPresenter.DisplayDataSummary(resolvedDataFile, effectiveDefinition.Label);
 
             // Display training configuration
-            TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition);
+            TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition, testDataFile);
 
             // Validate label column exists
             await TrainDataValidator.ValidateLabelColumnAsync(resolvedDataFile, effectiveDefinition.Label, resolvedModelName);
