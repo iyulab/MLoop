@@ -589,6 +589,15 @@ public class TrainingEngine : ITrainingEngine
                     dataType = "Categorical";
                 }
 
+                // BUG-25: If InferColumns classified a text column as Ignored,
+                // but InferColumnTypeFromData detected it as Text, override purpose to Feature.
+                // This aligns schema metadata with AutoMLRunner's BuildColumnInformation behavior.
+                if (purpose == "Ignore" && dataType == "Text")
+                {
+                    purpose = "Feature";
+                    Console.WriteLine($"[Info] Column '{colName}' reclassified: Ignored → Text Feature");
+                }
+
                 columns.Add(new ColumnSchema
                 {
                     Name = colName,
