@@ -188,9 +188,14 @@ public class AutoMLRunner
 
         var experiment = _mlContext.Auto().CreateBinaryClassificationExperiment(settings);
 
-        // Execute AutoML (progress tracking via settings callback)
+        // BUG-25: Build explicit ColumnInformation to ensure text columns get
+        // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn);
+
         var experimentResult = await Task.Run(
-            () => experiment.Execute(trainSet, config.LabelColumn),
+            () => columnInfo != null
+                ? experiment.Execute(trainSet, columnInfo)
+                : experiment.Execute(trainSet, config.LabelColumn),
             cancellationToken);
 
         // Evaluate on test set
@@ -256,9 +261,13 @@ public class AutoMLRunner
 
         var experiment = _mlContext.Auto().CreateMulticlassClassificationExperiment(settings);
 
-        // Execute AutoML (progress tracking via settings callback)
+        // BUG-25: Explicit ColumnInformation for text column featurization
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn);
+
         var experimentResult = await Task.Run(
-            () => experiment.Execute(trainSet, config.LabelColumn),
+            () => columnInfo != null
+                ? experiment.Execute(trainSet, columnInfo)
+                : experiment.Execute(trainSet, config.LabelColumn),
             cancellationToken);
 
         // Evaluate on test set
@@ -319,9 +328,13 @@ public class AutoMLRunner
 
         var experiment = _mlContext.Auto().CreateRegressionExperiment(settings);
 
-        // Execute AutoML (progress tracking via settings callback)
+        // BUG-25: Explicit ColumnInformation for text column featurization
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn);
+
         var experimentResult = await Task.Run(
-            () => experiment.Execute(trainSet, config.LabelColumn),
+            () => columnInfo != null
+                ? experiment.Execute(trainSet, columnInfo)
+                : experiment.Execute(trainSet, config.LabelColumn),
             cancellationToken);
 
         // Evaluate on test set
@@ -439,6 +452,48 @@ public class AutoMLRunner
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// BUG-25: Builds explicit ColumnInformation when text columns are present.
+    /// ML.NET's InferColumns may classify text columns as Ignored (especially in text-only datasets),
+    /// causing AutoML to generate an empty __Features__ pipeline and crash.
+    /// Returns null if no text columns are found (existing behavior sufficient).
+    /// </summary>
+    public static ColumnInformation? BuildColumnInformation(IDataView data, string labelColumn)
+    {
+        var textColumns = new List<string>();
+        var numericColumns = new List<string>();
+
+        foreach (var col in data.Schema)
+        {
+            if (col.IsHidden) continue;
+            if (col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (col.Type is TextDataViewType)
+            {
+                textColumns.Add(col.Name);
+            }
+            else if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType)
+            {
+                numericColumns.Add(col.Name);
+            }
+        }
+
+        if (textColumns.Count == 0)
+            return null;
+
+        var columnInfo = new ColumnInformation { LabelColumnName = labelColumn };
+
+        foreach (var tc in textColumns)
+            columnInfo.TextColumnNames.Add(tc);
+
+        foreach (var nc in numericColumns)
+            columnInfo.NumericColumnNames.Add(nc);
+
+        Console.WriteLine($"[Info] Text column(s) detected: {string.Join(", ", textColumns)} — applying text featurization (TF-IDF, n-gram)");
+
+        return columnInfo;
     }
 
     private static bool IsAucMessage(string message)
