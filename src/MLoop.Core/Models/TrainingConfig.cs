@@ -65,4 +65,19 @@ public class TrainingConfig
     /// Group column name for ranking task (groups rows into query contexts)
     /// </summary>
     public string? GroupColumn { get; init; }
+
+    /// <summary>
+    /// Forecast horizon — number of future time steps to predict (forecasting task)
+    /// </summary>
+    public int Horizon { get; init; } = 0;
+
+    /// <summary>
+    /// SSA window size for time series decomposition (0 = auto: series_length / 4)
+    /// </summary>
+    public int WindowSize { get; init; } = 0;
+
+    /// <summary>
+    /// Number of past data points to consider in SSA model (0 = auto: total rows)
+    /// </summary>
+    public int SeriesLength { get; init; } = 0;
 }

@@ -217,6 +217,13 @@ public static class ConfigValidator
             errors.Add($"models.{modelName}.group_column: Group column is required for ranking task");
         }
 
+        // Forecasting requires horizon
+        if (model.Task?.Equals("forecasting", StringComparison.OrdinalIgnoreCase) == true &&
+            (model.Horizon ?? 0) <= 0)
+        {
+            errors.Add($"models.{modelName}.horizon: Horizon (number of future steps) is required for forecasting task");
+        }
+
         if (model.Prep is { Count: > 0 })
         {
             var prepErrors = ValidatePrepSteps(model.Prep);

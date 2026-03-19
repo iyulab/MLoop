@@ -73,6 +73,22 @@ public class ModelDefinition
     /// Groups rows into query contexts for learning-to-rank.
     /// </summary>
     public string? GroupColumn { get; set; }
+
+    /// <summary>
+    /// Forecast horizon — number of future time steps to predict.
+    /// Required for forecasting task.
+    /// </summary>
+    public int? Horizon { get; set; }
+
+    /// <summary>
+    /// SSA window size (0 or null = auto: series_length / 4).
+    /// </summary>
+    public int? WindowSize { get; set; }
+
+    /// <summary>
+    /// Number of past data points for SSA model (0 or null = auto: total rows).
+    /// </summary>
+    public int? SeriesLength { get; set; }
 }
 
 /// <summary>

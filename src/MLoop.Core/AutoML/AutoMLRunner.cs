@@ -97,6 +97,8 @@ public class AutoMLRunner
                 trainSet, testSet, config, progress, cancellationToken),
             "ranking" => await RunRankingAsync(
                 trainSet, testSet, config, progress, cancellationToken),
+            "forecasting" => await RunForecastingAsync(
+                trainSet, testSet, config, progress, cancellationToken),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
@@ -720,6 +722,147 @@ public class AutoMLRunner
         }, cancellationToken);
     }
 
+    private async Task<AutoMLResult> RunForecastingAsync(
+        IDataView trainSet,
+        IDataView testSet,
+        TrainingConfig config,
+        IProgress<TrainingProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            if (config.Horizon <= 0)
+                throw new InvalidOperationException("Forecasting task requires horizon > 0.");
+
+            // Find the value column (label column = the series to forecast)
+            var valueColumn = config.LabelColumn;
+            var valueCol = trainSet.Schema.GetColumnOrNull(valueColumn);
+            if (!valueCol.HasValue)
+                throw new InvalidOperationException($"Value column '{valueColumn}' not found in data.");
+
+            if (valueCol.Value.Type is not NumberDataViewType)
+                throw new InvalidOperationException($"Value column '{valueColumn}' must be numeric for forecasting.");
+
+            // Determine parameters
+            var totalRows = (int)(trainSet.GetRowCount() ?? 0);
+            if (totalRows == 0)
+                throw new InvalidOperationException("Training data is empty.");
+
+            var horizon = config.Horizon;
+            var seriesLength = config.SeriesLength > 0 ? config.SeriesLength : totalRows;
+            var windowSize = config.WindowSize > 0 ? config.WindowSize : Math.Max(2, seriesLength / 4);
+            var trainSize = totalRows - horizon; // Hold out last `horizon` points for evaluation
+
+            if (trainSize <= windowSize)
+                throw new InvalidOperationException(
+                    $"Insufficient data: {totalRows} rows with horizon={horizon}, need at least {windowSize + horizon + 1} rows.");
+
+            _logger.Info($"Forecasting: series='{valueColumn}', {totalRows} rows, horizon={horizon}, window={windowSize}, seriesLength={seriesLength}");
+
+            // Build SSA forecasting pipeline
+            var pipeline = _mlContext.Forecasting.ForecastBySsa(
+                outputColumnName: "ForecastedValues",
+                inputColumnName: valueColumn,
+                windowSize: windowSize,
+                seriesLength: seriesLength,
+                trainSize: trainSize,
+                horizon: horizon,
+                confidenceLowerBoundColumn: "LowerBound",
+                confidenceUpperBoundColumn: "UpperBound",
+                confidenceLevel: 0.95f);
+
+            progress?.Report(new TrainingProgress
+            {
+                TrialNumber = 1,
+                TrainerName = "SsaForecasting",
+                MetricName = "mae",
+                Metric = 0,
+                ElapsedSeconds = 0
+            });
+
+            var model = pipeline.Fit(trainSet);
+
+            // Evaluate: extract actual holdout values and compare with forecasts
+            var metricsDict = new Dictionary<string, double>();
+
+            // Get the actual values from the series (last `horizon` values are holdout)
+            var actualValues = new List<float>();
+            using (var cursor = trainSet.GetRowCursor(new[] { valueCol.Value }))
+            {
+                var getter = cursor.GetGetter<float>(valueCol.Value);
+                while (cursor.MoveNext())
+                {
+                    float val = 0;
+                    getter(ref val);
+                    actualValues.Add(val);
+                }
+            }
+
+            if (actualValues.Count >= trainSize + horizon)
+            {
+                // Get forecasted values via Transform
+                var predictions = model.Transform(trainSet);
+                var forecastCol = predictions.Schema.GetColumnOrNull("ForecastedValues");
+
+                if (forecastCol.HasValue)
+                {
+                    // ForecastedValues is a VBuffer<float> containing the horizon-length forecast
+                    using var forecastCursor = predictions.GetRowCursor(new[] { forecastCol.Value });
+                    var forecastGetter = forecastCursor.GetGetter<VBuffer<float>>(forecastCol.Value);
+
+                    // Move to last row to get the final forecast
+                    VBuffer<float> forecastBuffer = default;
+                    while (forecastCursor.MoveNext())
+                    {
+                        forecastGetter(ref forecastBuffer);
+                    }
+
+                    var forecastedValues = forecastBuffer.DenseValues().ToArray();
+                    var holdoutActual = actualValues.Skip(trainSize).Take(horizon).ToArray();
+
+                    if (forecastedValues.Length >= horizon && holdoutActual.Length == horizon)
+                    {
+                        double sumAbsError = 0, sumSqError = 0, sumAbsPercentError = 0;
+                        int validMapeCount = 0;
+
+                        for (int i = 0; i < horizon; i++)
+                        {
+                            var actual = (double)holdoutActual[i];
+                            var predicted = (double)forecastedValues[i];
+                            var error = actual - predicted;
+
+                            sumAbsError += Math.Abs(error);
+                            sumSqError += error * error;
+
+                            if (Math.Abs(actual) > 1e-10)
+                            {
+                                sumAbsPercentError += Math.Abs(error / actual);
+                                validMapeCount++;
+                            }
+                        }
+
+                        metricsDict["mae"] = sumAbsError / horizon;
+                        metricsDict["rmse"] = Math.Sqrt(sumSqError / horizon);
+                        metricsDict["mape"] = validMapeCount > 0 ? sumAbsPercentError / validMapeCount : 0;
+                    }
+                }
+            }
+
+            metricsDict["horizon"] = horizon;
+            metricsDict["window_size"] = windowSize;
+            metricsDict["series_length"] = seriesLength;
+            metricsDict["train_size"] = trainSize;
+
+            return new AutoMLResult
+            {
+                BestTrainer = $"SsaForecasting (window={windowSize}, horizon={horizon})",
+                Model = model,
+                Metrics = metricsDict,
+                RowCount = totalRows
+            };
+        }, cancellationToken);
+    }
+
     private BinaryClassificationMetric GetBinaryMetric(string metricName)
     {
         return metricName.ToLowerInvariant() switch
@@ -906,6 +1049,24 @@ public class AutoMLRunner
                message.Contains("PosSample") ||
                message.Contains("NegSample");
     }
+}
+
+/// <summary>
+/// Input schema for time series prediction engine
+/// </summary>
+public class ForecastInput
+{
+    public float Value { get; set; }
+}
+
+/// <summary>
+/// Output schema for time series prediction engine
+/// </summary>
+public class ForecastOutput
+{
+    public float[] ForecastedValues { get; set; } = [];
+    public float[] LowerBound { get; set; } = [];
+    public float[] UpperBound { get; set; } = [];
 }
 
 /// <summary>

@@ -99,7 +99,10 @@ public class TrainingEngine : ITrainingEngine
                     TestSplit = config.TestSplit,
                     UseAutoTime = config.UseAutoTime,
                     NumClusters = config.NumClusters,
-                    GroupColumn = config.GroupColumn
+                    GroupColumn = config.GroupColumn,
+                    Horizon = config.Horizon,
+                    WindowSize = config.WindowSize,
+                    SeriesLength = config.SeriesLength
                 };
             }
 
@@ -342,7 +345,10 @@ public class TrainingEngine : ITrainingEngine
             TestSplit = config.TestSplit,
             UseAutoTime = false,
             NumClusters = config.NumClusters,
-            GroupColumn = config.GroupColumn
+            GroupColumn = config.GroupColumn,
+            Horizon = config.Horizon,
+            WindowSize = config.WindowSize,
+            SeriesLength = config.SeriesLength
         };
 
         var probeTrialCount = 0;
@@ -406,7 +412,10 @@ public class TrainingEngine : ITrainingEngine
             TestSplit = config.TestSplit,
             UseAutoTime = false,
             NumClusters = config.NumClusters,
-            GroupColumn = config.GroupColumn
+            GroupColumn = config.GroupColumn,
+            Horizon = config.Horizon,
+            WindowSize = config.WindowSize,
+            SeriesLength = config.SeriesLength
         };
 
         var mainResult = await _autoMLRunner.RunAsync(mainConfig, progress, cancellationToken);
