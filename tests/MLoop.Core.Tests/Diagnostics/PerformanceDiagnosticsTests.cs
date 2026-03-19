@@ -298,4 +298,112 @@ public class PerformanceDiagnosticsTests
     }
 
     #endregion
+
+    #region Clustering
+
+    [Fact]
+    public void Analyze_Clustering_LowDBI_ReturnsExcellent()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["davies_bouldin_index"] = 0.3,
+            ["average_distance"] = 1.5
+        };
+
+        var result = _diagnostics.Analyze("clustering", metrics);
+
+        Assert.Equal(PerformanceLevel.Excellent, result.OverallAssessment);
+        Assert.Equal("Davies-Bouldin Index", result.PrimaryMetric);
+    }
+
+    [Fact]
+    public void Analyze_Clustering_ModerateDBI_ReturnsModerate()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["davies_bouldin_index"] = 1.5,
+            ["average_distance"] = 5.0
+        };
+
+        var result = _diagnostics.Analyze("clustering", metrics);
+
+        Assert.Equal(PerformanceLevel.Moderate, result.OverallAssessment);
+        Assert.True(result.Suggestions.Count > 0);
+    }
+
+    [Fact]
+    public void Analyze_Clustering_HighDBI_ReturnsLow()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["davies_bouldin_index"] = 3.0,
+            ["average_distance"] = 10.0
+        };
+
+        var result = _diagnostics.Analyze("clustering", metrics);
+
+        Assert.Equal(PerformanceLevel.Low, result.OverallAssessment);
+        Assert.True(result.Suggestions.Count >= 2);
+    }
+
+    [Fact]
+    public void Analyze_Clustering_NoDBI_UsesAverageDistance()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["average_distance"] = 2.0
+        };
+
+        var result = _diagnostics.Analyze("clustering", metrics);
+
+        Assert.Equal("Average Distance", result.PrimaryMetric);
+        Assert.Equal(PerformanceLevel.Moderate, result.OverallAssessment);
+    }
+
+    [Fact]
+    public void Analyze_Clustering_NoMetrics_ReturnsUnknown()
+    {
+        var metrics = new Dictionary<string, double>();
+
+        var result = _diagnostics.Analyze("clustering", metrics);
+
+        Assert.Equal(PerformanceLevel.Unknown, result.OverallAssessment);
+    }
+
+    [Fact]
+    public void Analyze_Clustering_ImbalancedClusters_WarnsImbalance()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["davies_bouldin_index"] = 0.8,
+            ["average_distance"] = 2.0,
+            ["largest_cluster_ratio"] = 0.9,
+            ["cluster_count"] = 3
+        };
+
+        var result = _diagnostics.Analyze("clustering", metrics);
+
+        Assert.Equal(PerformanceLevel.Good, result.OverallAssessment);
+        Assert.Contains(result.Warnings, w => w.Contains("imbalance"));
+    }
+
+    [Fact]
+    public void Analyze_Clustering_GoodDBI_ReturnsGood()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["davies_bouldin_index"] = 0.7,
+            ["average_distance"] = 3.0,
+            ["normalized_mutual_information"] = 0.85,
+            ["num_clusters"] = 5
+        };
+
+        var result = _diagnostics.Analyze("clustering", metrics);
+
+        Assert.Equal(PerformanceLevel.Good, result.OverallAssessment);
+        Assert.True(result.SecondaryMetrics.ContainsKey("NMI"));
+        Assert.True(result.SecondaryMetrics.ContainsKey("Number of Clusters"));
+    }
+
+    #endregion
 }

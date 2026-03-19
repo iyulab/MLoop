@@ -93,6 +93,8 @@ public class AutoMLRunner
                 trainSet, testSet, config, progress, cancellationToken),
             "anomaly-detection" => await RunAnomalyDetectionAsync(
                 trainSet, testSet, config, progress, cancellationToken),
+            "clustering" => await RunClusteringAsync(
+                trainSet, testSet, config, progress, cancellationToken),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
@@ -456,6 +458,133 @@ public class AutoMLRunner
                 BestTrainer = $"RandomizedPca (rank={rank})",
                 Model = model,
                 Metrics = metricsDict,
+                RowCount = trainSet.GetRowCount() ?? 0
+            };
+        }, cancellationToken);
+    }
+
+    private async Task<AutoMLResult> RunClusteringAsync(
+        IDataView trainSet,
+        IDataView testSet,
+        TrainingConfig config,
+        IProgress<TrainingProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            // Identify numeric feature columns (exclude label, hidden, and non-numeric)
+            var featureColumns = new List<string>();
+            foreach (var col in trainSet.Schema)
+            {
+                if (col.IsHidden) continue;
+                if (!string.IsNullOrEmpty(config.LabelColumn) &&
+                    col.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) continue;
+                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType)
+                    featureColumns.Add(col.Name);
+            }
+
+            if (featureColumns.Count == 0)
+                throw new InvalidOperationException("No numeric feature columns found for clustering.");
+
+            var concatenate = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray());
+
+            // Determine K values to try
+            int[] kValues;
+            if (config.NumClusters > 0)
+            {
+                kValues = [config.NumClusters];
+                _logger.Info($"Clustering: {featureColumns.Count} features, fixed k={config.NumClusters}");
+            }
+            else
+            {
+                // Auto-search: k=2..min(10, sqrt(rowCount))
+                var rowCount = trainSet.GetRowCount() ?? 100;
+                var maxK = Math.Min(10, Math.Max(2, (int)Math.Sqrt(rowCount)));
+                kValues = Enumerable.Range(2, maxK - 1).ToArray();
+                _logger.Info($"Clustering: {featureColumns.Count} features, searching k=2..{maxK}");
+            }
+
+            ITransformer? bestModel = null;
+            double bestScore = double.MaxValue; // average_distance: lower is better
+            int bestK = kValues[0];
+            Dictionary<string, double>? bestMetrics = null;
+
+            for (int i = 0; i < kValues.Length; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var k = kValues[i];
+
+                var pipeline = concatenate
+                    .Append(_mlContext.Clustering.Trainers.KMeans(
+                        featureColumnName: "Features",
+                        numberOfClusters: k));
+
+                var model = pipeline.Fit(trainSet);
+                var predictions = model.Transform(testSet);
+
+                // Evaluate
+                var clusterMetrics = _mlContext.Clustering.Evaluate(predictions, scoreColumnName: "Score");
+                var avgDistance = double.IsNaN(clusterMetrics.AverageDistance) ? double.MaxValue : clusterMetrics.AverageDistance;
+                var dbi = double.IsNaN(clusterMetrics.DaviesBouldinIndex) ? double.MaxValue : clusterMetrics.DaviesBouldinIndex;
+                var nmi = double.IsNaN(clusterMetrics.NormalizedMutualInformation) ? 0 : clusterMetrics.NormalizedMutualInformation;
+
+                progress?.Report(new TrainingProgress
+                {
+                    TrialNumber = i + 1,
+                    TrainerName = $"KMeans (k={k})",
+                    MetricName = "average_distance",
+                    Metric = avgDistance,
+                    ElapsedSeconds = 0
+                });
+
+                if (avgDistance < bestScore)
+                {
+                    bestScore = avgDistance;
+                    bestModel = model;
+                    bestK = k;
+                    bestMetrics = new Dictionary<string, double>
+                    {
+                        ["average_distance"] = avgDistance,
+                        ["davies_bouldin_index"] = dbi,
+                        ["normalized_mutual_information"] = nmi,
+                        ["num_clusters"] = k
+                    };
+                }
+            }
+
+            // Add cluster distribution info from best model
+            if (bestModel != null && bestMetrics != null)
+            {
+                var bestPredictions = bestModel.Transform(testSet);
+                var clusterCounts = new Dictionary<uint, long>();
+                var predictedLabelCol = bestPredictions.Schema.GetColumnOrNull("PredictedLabel");
+
+                if (predictedLabelCol.HasValue)
+                {
+                    using var cursor = bestPredictions.GetRowCursor(new[] { predictedLabelCol.Value });
+                    var getter = cursor.GetGetter<uint>(predictedLabelCol.Value);
+                    while (cursor.MoveNext())
+                    {
+                        uint clusterId = 0;
+                        getter(ref clusterId);
+                        clusterCounts[clusterId] = clusterCounts.GetValueOrDefault(clusterId) + 1;
+                    }
+                }
+
+                if (clusterCounts.Count > 0)
+                {
+                    var totalCount = clusterCounts.Values.Sum();
+                    var largestCluster = clusterCounts.Values.Max();
+                    bestMetrics["cluster_count"] = clusterCounts.Count;
+                    bestMetrics["largest_cluster_ratio"] = totalCount > 0 ? (double)largestCluster / totalCount : 0;
+                }
+            }
+
+            return new AutoMLResult
+            {
+                BestTrainer = $"KMeans (k={bestK})",
+                Model = bestModel!,
+                Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = trainSet.GetRowCount() ?? 0
             };
         }, cancellationToken);

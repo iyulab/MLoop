@@ -45,6 +45,9 @@ public class PerformanceDiagnostics
             case "anomalydetection":
                 AnalyzeAnomalyDetection(result);
                 break;
+            case "clustering":
+                AnalyzeClustering(result);
+                break;
             default:
                 result.OverallAssessment = PerformanceLevel.Unknown;
                 result.Summary = $"Unknown task type: {taskType}";
@@ -355,6 +358,73 @@ public class PerformanceDiagnostics
             result.SecondaryMetrics["Anomaly Count"] = anomalyCount;
         if (metrics.TryGetValue("total_count", out var totalCount))
             result.SecondaryMetrics["Total Count"] = totalCount;
+    }
+
+    private void AnalyzeClustering(PerformanceDiagnosticResult result)
+    {
+        var metrics = result.Metrics;
+
+        // Primary metric: Davies-Bouldin Index (lower = better, 0 = perfect)
+        if (metrics.TryGetValue("davies_bouldin_index", out var dbi) && dbi > 0)
+        {
+            result.PrimaryMetric = "Davies-Bouldin Index";
+            result.PrimaryMetricValue = dbi;
+
+            if (dbi < 0.5)
+            {
+                result.OverallAssessment = PerformanceLevel.Excellent;
+                result.Summary = $"Excellent cluster separation (DBI = {dbi:F4})";
+            }
+            else if (dbi < 1.0)
+            {
+                result.OverallAssessment = PerformanceLevel.Good;
+                result.Summary = $"Good cluster separation (DBI = {dbi:F4})";
+            }
+            else if (dbi < 2.0)
+            {
+                result.OverallAssessment = PerformanceLevel.Moderate;
+                result.Summary = $"Moderate cluster separation (DBI = {dbi:F4})";
+                result.Suggestions.Add("Consider adjusting the number of clusters or feature selection");
+            }
+            else
+            {
+                result.OverallAssessment = PerformanceLevel.Low;
+                result.Summary = $"Poor cluster separation (DBI = {dbi:F4})";
+                result.Suggestions.Add("Clusters are poorly separated — try different k values or feature engineering");
+                result.Suggestions.Add("Consider normalizing features before clustering");
+            }
+        }
+        else if (metrics.TryGetValue("average_distance", out var avgDist))
+        {
+            // Fallback to average distance (no universal threshold, lower = tighter clusters)
+            result.PrimaryMetric = "Average Distance";
+            result.PrimaryMetricValue = avgDist;
+            result.OverallAssessment = PerformanceLevel.Moderate;
+            result.Summary = $"Clustering completed (Average Distance = {avgDist:F4})";
+            result.Suggestions.Add("Compare with different k values to find optimal clustering");
+        }
+        else
+        {
+            result.OverallAssessment = PerformanceLevel.Unknown;
+            result.Summary = "Clustering completed (no evaluation metrics available)";
+        }
+
+        // Secondary metrics
+        if (metrics.TryGetValue("average_distance", out var dist))
+            result.SecondaryMetrics["Average Distance"] = dist;
+        if (metrics.TryGetValue("normalized_mutual_information", out var nmi) && nmi > 0)
+            result.SecondaryMetrics["NMI"] = nmi;
+        if (metrics.TryGetValue("num_clusters", out var numClusters))
+            result.SecondaryMetrics["Number of Clusters"] = numClusters;
+        if (metrics.TryGetValue("cluster_count", out var clusterCount))
+            result.SecondaryMetrics["Observed Clusters"] = clusterCount;
+
+        // Cluster imbalance warning
+        if (metrics.TryGetValue("largest_cluster_ratio", out var ratio) && ratio > 0.8)
+        {
+            result.Warnings.Add($"Cluster imbalance: largest cluster contains {ratio:P0} of data");
+            result.Suggestions.Add("Data may have a dominant group — consider increasing k or preprocessing");
+        }
     }
 
     private void AddDataBasedSuggestions(PerformanceDiagnosticResult result)

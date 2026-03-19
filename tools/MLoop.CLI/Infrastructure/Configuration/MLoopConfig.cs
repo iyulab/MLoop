@@ -61,6 +61,12 @@ public class ModelDefinition
     /// Key: column name, Value: column override settings
     /// </summary>
     public Dictionary<string, ColumnOverride>? Columns { get; set; }
+
+    /// <summary>
+    /// Number of clusters for clustering task.
+    /// 0 or null = auto-select via silhouette search (k=2..10).
+    /// </summary>
+    public int? NumClusters { get; set; }
 }
 
 /// <summary>

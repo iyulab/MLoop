@@ -97,7 +97,8 @@ public class TrainingEngine : ITrainingEngine
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.Metric,
                     TestSplit = config.TestSplit,
-                    UseAutoTime = config.UseAutoTime
+                    UseAutoTime = config.UseAutoTime,
+                    NumClusters = config.NumClusters
                 };
             }
 
@@ -336,7 +337,8 @@ public class TrainingEngine : ITrainingEngine
             TimeLimitSeconds = probeTime,
             Metric = config.Metric,
             TestSplit = config.TestSplit,
-            UseAutoTime = false
+            UseAutoTime = false,
+            NumClusters = config.NumClusters
         };
 
         var probeTrialCount = 0;
@@ -398,7 +400,8 @@ public class TrainingEngine : ITrainingEngine
             TimeLimitSeconds = finalTime,
             Metric = config.Metric,
             TestSplit = config.TestSplit,
-            UseAutoTime = false
+            UseAutoTime = false,
+            NumClusters = config.NumClusters
         };
 
         var mainResult = await _autoMLRunner.RunAsync(mainConfig, progress, cancellationToken);
