@@ -634,8 +634,9 @@ public class TrainingEngine : ITrainingEngine
                 CapturedAt = DateTime.UtcNow
             };
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[Warning] Failed to capture input schema: {ex.Message}");
             return null;
         }
     }
@@ -833,8 +834,13 @@ public class TrainingEngine : ITrainingEngine
     private static void MarkDateTimeColumnsAsExcluded(
         List<ColumnSchema> columns, string[] columnNames, string[] dataLines)
     {
-        foreach (var col in columns)
+        // BUG-24: Collect replacements first, then apply — modifying a List<T>
+        // during foreach enumeration throws "Collection was modified" exception.
+        var replacements = new List<(int Index, ColumnSchema NewCol)>();
+
+        for (int ci = 0; ci < columns.Count; ci++)
         {
+            var col = columns[ci];
             if (col.Purpose != "Feature") continue;
             if (col.DataType != "Text" && col.DataType != "Unknown") continue;
 
@@ -857,16 +863,20 @@ public class TrainingEngine : ITrainingEngine
 
             if (DateTimeDetector.IsDateTimeColumn(col.Name, sampleValues))
             {
-                var index = columns.IndexOf(col);
-                columns[index] = new ColumnSchema
+                replacements.Add((ci, new ColumnSchema
                 {
                     Name = col.Name,
                     DataType = "DateTime",
                     Purpose = "Exclude",
                     CategoricalValues = null,
                     UniqueValueCount = null
-                };
+                }));
             }
+        }
+
+        foreach (var (index, newCol) in replacements)
+        {
+            columns[index] = newCol;
         }
     }
 
