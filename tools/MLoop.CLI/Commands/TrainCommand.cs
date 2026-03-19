@@ -259,6 +259,16 @@ public static class TrainCommand
                 return 1;
             }
 
+            // Recommendation requires user_column and item_column
+            if (effectiveDefinition.Task.Equals("recommendation", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrEmpty(effectiveDefinition.UserColumn) || string.IsNullOrEmpty(effectiveDefinition.ItemColumn))
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] Recommendation task requires user_column and item_column. Set them in mloop.yaml");
+                    return 1;
+                }
+            }
+
             // Forecasting requires horizon
             if (effectiveDefinition.Task.Equals("forecasting", StringComparison.OrdinalIgnoreCase) &&
                 (effectiveDefinition.Horizon ?? 0) <= 0)
@@ -725,7 +735,9 @@ public static class TrainCommand
                 GroupColumn = effectiveDefinition.GroupColumn,
                 Horizon = effectiveDefinition.Horizon ?? 0,
                 WindowSize = effectiveDefinition.WindowSize ?? 0,
-                SeriesLength = effectiveDefinition.SeriesLength ?? 0
+                SeriesLength = effectiveDefinition.SeriesLength ?? 0,
+                UserColumn = effectiveDefinition.UserColumn,
+                ItemColumn = effectiveDefinition.ItemColumn
             };
 
             // Initialize hook engine

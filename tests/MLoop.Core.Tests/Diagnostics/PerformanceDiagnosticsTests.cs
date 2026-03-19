@@ -595,4 +595,55 @@ public class PerformanceDiagnosticsTests
     }
 
     #endregion
+
+    #region Recommendation
+
+    [Fact]
+    public void Analyze_Recommendation_LowRMSE_ReturnsExcellent()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["rmse"] = 0.4,
+            ["mae"] = 0.3,
+            ["r_squared"] = 0.85
+        };
+
+        var result = _diagnostics.Analyze("recommendation", metrics);
+
+        Assert.Equal(PerformanceLevel.Excellent, result.OverallAssessment);
+        Assert.Equal("RMSE", result.PrimaryMetric);
+    }
+
+    [Fact]
+    public void Analyze_Recommendation_HighRMSE_ReturnsLow()
+    {
+        var metrics = new Dictionary<string, double> { ["rmse"] = 2.0 };
+
+        var result = _diagnostics.Analyze("recommendation", metrics);
+
+        Assert.Equal(PerformanceLevel.Low, result.OverallAssessment);
+        Assert.True(result.Suggestions.Count >= 2);
+    }
+
+    [Fact]
+    public void Analyze_Recommendation_ModerateRMSE_ReturnsModerate()
+    {
+        var metrics = new Dictionary<string, double> { ["rmse"] = 1.2 };
+
+        var result = _diagnostics.Analyze("recommendation", metrics);
+
+        Assert.Equal(PerformanceLevel.Moderate, result.OverallAssessment);
+    }
+
+    [Fact]
+    public void Analyze_Recommendation_NoMetrics_ReturnsUnknown()
+    {
+        var metrics = new Dictionary<string, double>();
+
+        var result = _diagnostics.Analyze("recommendation", metrics);
+
+        Assert.Equal(PerformanceLevel.Unknown, result.OverallAssessment);
+    }
+
+    #endregion
 }

@@ -81,7 +81,9 @@ public class ConfigMerger
             GroupColumn = baseDefinition?.GroupColumn,
             Horizon = baseDefinition?.Horizon,
             WindowSize = baseDefinition?.WindowSize,
-            SeriesLength = baseDefinition?.SeriesLength
+            SeriesLength = baseDefinition?.SeriesLength,
+            UserColumn = baseDefinition?.UserColumn,
+            ItemColumn = baseDefinition?.ItemColumn
         };
     }
 
@@ -174,7 +176,9 @@ public class ConfigMerger
             GroupColumn = !string.IsNullOrEmpty(source.GroupColumn) ? source.GroupColumn : existing.GroupColumn,
             Horizon = source.Horizon ?? existing.Horizon,
             WindowSize = source.WindowSize ?? existing.WindowSize,
-            SeriesLength = source.SeriesLength ?? existing.SeriesLength
+            SeriesLength = source.SeriesLength ?? existing.SeriesLength,
+            UserColumn = !string.IsNullOrEmpty(source.UserColumn) ? source.UserColumn : existing.UserColumn,
+            ItemColumn = !string.IsNullOrEmpty(source.ItemColumn) ? source.ItemColumn : existing.ItemColumn
         };
     }
 

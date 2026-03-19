@@ -217,6 +217,15 @@ public static class ConfigValidator
             errors.Add($"models.{modelName}.group_column: Group column is required for ranking task");
         }
 
+        // Recommendation requires user_column and item_column
+        if (model.Task?.Equals("recommendation", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            if (string.IsNullOrWhiteSpace(model.UserColumn))
+                errors.Add($"models.{modelName}.user_column: User column is required for recommendation task");
+            if (string.IsNullOrWhiteSpace(model.ItemColumn))
+                errors.Add($"models.{modelName}.item_column: Item column is required for recommendation task");
+        }
+
         // Forecasting requires horizon
         if (model.Task?.Equals("forecasting", StringComparison.OrdinalIgnoreCase) == true &&
             (model.Horizon ?? 0) <= 0)

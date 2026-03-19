@@ -94,6 +94,10 @@ public class EvaluationEngine
                 {
                     metrics = EvaluateTimeSeriesAnomaly(predictions);
                 }
+                else if (taskType.Equals("recommendation", StringComparison.OrdinalIgnoreCase))
+                {
+                    metrics = EvaluateRecommendation(predictions, labelColumn);
+                }
                 else
                 {
                     throw new NotSupportedException($"Task type '{taskType}' is not supported for evaluation.");
@@ -278,6 +282,25 @@ public class EvaluationEngine
             { "micro_accuracy", metrics.MicroAccuracy },
             { "log_loss", metrics.LogLoss }
         };
+    }
+
+    private Dictionary<string, double> EvaluateRecommendation(IDataView predictions, string labelColumn)
+    {
+        var metricsDict = new Dictionary<string, double>();
+
+        try
+        {
+            var metrics = _mlContext.Regression.Evaluate(predictions, labelColumnName: labelColumn);
+            metricsDict["rmse"] = double.IsNaN(metrics.RootMeanSquaredError) ? 0 : metrics.RootMeanSquaredError;
+            metricsDict["mae"] = double.IsNaN(metrics.MeanAbsoluteError) ? 0 : metrics.MeanAbsoluteError;
+            metricsDict["r_squared"] = double.IsNaN(metrics.RSquared) ? 0 : metrics.RSquared;
+        }
+        catch
+        {
+            // Evaluation may fail with schema mismatch
+        }
+
+        return metricsDict;
     }
 
     private Dictionary<string, double> EvaluateTimeSeriesAnomaly(IDataView predictions)
