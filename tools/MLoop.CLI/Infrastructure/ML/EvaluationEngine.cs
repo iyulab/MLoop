@@ -90,6 +90,10 @@ public class EvaluationEngine
                 {
                     metrics = EvaluateForecasting(predictions, labelColumn);
                 }
+                else if (taskType.Equals("time-series-anomaly", StringComparison.OrdinalIgnoreCase))
+                {
+                    metrics = EvaluateTimeSeriesAnomaly(predictions);
+                }
                 else
                 {
                     throw new NotSupportedException($"Task type '{taskType}' is not supported for evaluation.");
@@ -274,6 +278,37 @@ public class EvaluationEngine
             { "micro_accuracy", metrics.MicroAccuracy },
             { "log_loss", metrics.LogLoss }
         };
+    }
+
+    private Dictionary<string, double> EvaluateTimeSeriesAnomaly(IDataView predictions)
+    {
+        var metricsDict = new Dictionary<string, double>();
+
+        var predCol = predictions.Schema.GetColumnOrNull("Prediction");
+        if (predCol.HasValue)
+        {
+            long anomalyCount = 0;
+            long totalCount = 0;
+
+            using var cursor = predictions.GetRowCursor(new[] { predCol.Value });
+            var getter = cursor.GetGetter<VBuffer<double>>(predCol.Value);
+
+            while (cursor.MoveNext())
+            {
+                VBuffer<double> pred = default;
+                getter(ref pred);
+                var values = pred.DenseValues().ToArray();
+                totalCount++;
+                if (values.Length > 0 && values[0] != 0)
+                    anomalyCount++;
+            }
+
+            metricsDict["anomaly_count"] = anomalyCount;
+            metricsDict["total_count"] = totalCount;
+            metricsDict["detection_rate"] = totalCount > 0 ? (double)anomalyCount / totalCount : 0;
+        }
+
+        return metricsDict;
     }
 
     private Dictionary<string, double> EvaluateForecasting(IDataView predictions, string labelColumn)

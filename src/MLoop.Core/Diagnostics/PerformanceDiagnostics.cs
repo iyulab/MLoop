@@ -54,6 +54,9 @@ public class PerformanceDiagnostics
             case "forecasting":
                 AnalyzeForecasting(result);
                 break;
+            case "timeseriesanomaly":
+                AnalyzeTimeSeriesAnomaly(result);
+                break;
             default:
                 result.OverallAssessment = PerformanceLevel.Unknown;
                 result.Summary = $"Unknown task type: {taskType}";
@@ -364,6 +367,52 @@ public class PerformanceDiagnostics
             result.SecondaryMetrics["Anomaly Count"] = anomalyCount;
         if (metrics.TryGetValue("total_count", out var totalCount))
             result.SecondaryMetrics["Total Count"] = totalCount;
+    }
+
+    private void AnalyzeTimeSeriesAnomaly(PerformanceDiagnosticResult result)
+    {
+        var metrics = result.Metrics;
+
+        if (metrics.TryGetValue("detection_rate", out var detRate))
+        {
+            result.PrimaryMetric = "Detection Rate";
+            result.PrimaryMetricValue = detRate;
+
+            if (detRate > 0.5)
+            {
+                result.OverallAssessment = PerformanceLevel.Low;
+                result.Summary = $"High anomaly rate ({detRate:P1}) — detector may be oversensitive";
+                result.Warnings.Add("More than half of data flagged as anomalous");
+                result.Suggestions.Add("Increase confidence level or adjust threshold");
+            }
+            else if (detRate > 0.2)
+            {
+                result.OverallAssessment = PerformanceLevel.Moderate;
+                result.Summary = $"Moderate anomaly rate ({detRate:P1})";
+                result.Suggestions.Add("Review detected anomalies for false positives");
+            }
+            else if (detRate > 0.001)
+            {
+                result.OverallAssessment = PerformanceLevel.Good;
+                result.Summary = $"Anomaly detection rate: {detRate:P1}";
+            }
+            else
+            {
+                result.OverallAssessment = PerformanceLevel.Moderate;
+                result.Summary = $"Very low anomaly rate ({detRate:P2}) — may be too conservative";
+                result.Suggestions.Add("Consider lowering confidence threshold to detect more anomalies");
+            }
+        }
+        else
+        {
+            result.OverallAssessment = PerformanceLevel.Unknown;
+            result.Summary = "Time series anomaly detection completed (no metrics available)";
+        }
+
+        if (metrics.TryGetValue("anomaly_count", out var count))
+            result.SecondaryMetrics["Anomaly Count"] = count;
+        if (metrics.TryGetValue("total_count", out var total))
+            result.SecondaryMetrics["Total Count"] = total;
     }
 
     private void AnalyzeForecasting(PerformanceDiagnosticResult result)
