@@ -229,9 +229,14 @@ public static class TrainCommand
             }
 
             // Validate required fields (defensive guard for nullable flow analysis)
-            if (string.IsNullOrEmpty(effectiveDefinition.Task) || string.IsNullOrEmpty(effectiveDefinition.Label))
+            var unsupervisedTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "anomaly-detection", "clustering" };
+            var requiresLabel = !unsupervisedTasks.Contains(effectiveDefinition.Task ?? "");
+
+            if (string.IsNullOrEmpty(effectiveDefinition.Task) ||
+                (requiresLabel && string.IsNullOrEmpty(effectiveDefinition.Label)))
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Task and Label must be specified. Use --task and <label> arguments, or define them in mloop.yaml");
+                AnsiConsole.MarkupLine("[red]Error:[/] Task is required. Label is required for supervised tasks. Use --task and <label> arguments, or define them in mloop.yaml");
                 return 1;
             }
 
@@ -688,7 +693,8 @@ public static class TrainCommand
                 UseAutoTime = useAutoTime,
                 ColumnOverrides = effectiveDefinition.Columns?.ToDictionary(
                     kvp => kvp.Key,
-                    kvp => kvp.Value.Type)
+                    kvp => kvp.Value.Type),
+                NumClusters = effectiveDefinition.NumClusters ?? 0
             };
 
             // Initialize hook engine

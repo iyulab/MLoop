@@ -441,7 +441,9 @@ public class ModelRegistry : IModelRegistry
                lower.Contains("mae") ||
                lower.Contains("mse") ||
                lower.Contains("rmse") ||
-               lower.Contains("loss");
+               lower.Contains("loss") ||
+               lower == "average_distance" ||
+               lower == "davies_bouldin_index";
     }
 
     /// <summary>

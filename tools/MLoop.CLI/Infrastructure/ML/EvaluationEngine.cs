@@ -77,6 +77,10 @@ public class EvaluationEngine
                 {
                     metrics = EvaluateAnomalyDetection(predictions, labelColumn);
                 }
+                else if (taskType.Equals("clustering", StringComparison.OrdinalIgnoreCase))
+                {
+                    metrics = EvaluateClustering(predictions, labelColumn);
+                }
                 else
                 {
                     throw new NotSupportedException($"Task type '{taskType}' is not supported for evaluation.");
@@ -261,6 +265,52 @@ public class EvaluationEngine
             { "micro_accuracy", metrics.MicroAccuracy },
             { "log_loss", metrics.LogLoss }
         };
+    }
+
+    private Dictionary<string, double> EvaluateClustering(IDataView predictions, string labelColumn)
+    {
+        var metricsDict = new Dictionary<string, double>();
+
+        // ML.NET built-in clustering evaluation
+        try
+        {
+            var metrics = _mlContext.Clustering.Evaluate(predictions, scoreColumnName: "Score");
+            metricsDict["average_distance"] = double.IsNaN(metrics.AverageDistance) ? 0 : metrics.AverageDistance;
+            metricsDict["davies_bouldin_index"] = double.IsNaN(metrics.DaviesBouldinIndex) ? 0 : metrics.DaviesBouldinIndex;
+            metricsDict["normalized_mutual_information"] = double.IsNaN(metrics.NormalizedMutualInformation) ? 0 : metrics.NormalizedMutualInformation;
+        }
+        catch
+        {
+            // Evaluation may fail if label column has incompatible format
+        }
+
+        // Cluster distribution from PredictedLabel
+        var predictedLabelCol = predictions.Schema.GetColumnOrNull("PredictedLabel");
+        if (predictedLabelCol.HasValue)
+        {
+            var clusterCounts = new Dictionary<uint, long>();
+
+            using (var cursor = predictions.GetRowCursor(new[] { predictedLabelCol.Value }))
+            {
+                var getter = cursor.GetGetter<uint>(predictedLabelCol.Value);
+                while (cursor.MoveNext())
+                {
+                    uint clusterId = 0;
+                    getter(ref clusterId);
+                    clusterCounts[clusterId] = clusterCounts.GetValueOrDefault(clusterId) + 1;
+                }
+            }
+
+            if (clusterCounts.Count > 0)
+            {
+                var totalCount = clusterCounts.Values.Sum();
+                var largestCluster = clusterCounts.Values.Max();
+                metricsDict["cluster_count"] = clusterCounts.Count;
+                metricsDict["largest_cluster_ratio"] = totalCount > 0 ? (double)largestCluster / totalCount : 0;
+            }
+        }
+
+        return metricsDict;
     }
 
     private Dictionary<string, double> EvaluateAnomalyDetection(IDataView predictions, string labelColumn)

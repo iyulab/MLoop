@@ -55,4 +55,9 @@ public class TrainingConfig
     /// Key: column name, Value: type string (text, categorical, numeric, ignore)
     /// </summary>
     public Dictionary<string, string>? ColumnOverrides { get; init; }
+
+    /// <summary>
+    /// Number of clusters for clustering task (0 = auto-select via silhouette search)
+    /// </summary>
+    public int NumClusters { get; init; } = 0;
 }
