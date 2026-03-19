@@ -18,6 +18,7 @@ namespace MLoop.Core.Scripting;
 public class ScriptLoader
 {
     private readonly string _cacheDirectory;
+    private readonly Action<string> _log;
     private ScriptOptions? _scriptOptions;
     private readonly object _scriptOptionsLock = new();
 
@@ -25,9 +26,11 @@ public class ScriptLoader
     /// Initializes a new instance of ScriptLoader.
     /// </summary>
     /// <param name="cacheDirectory">Directory for cached DLL storage (default: .mloop/.cache/scripts/)</param>
-    public ScriptLoader(string? cacheDirectory = null)
+    /// <param name="log">Optional logging callback (default: Console.WriteLine)</param>
+    public ScriptLoader(string? cacheDirectory = null, Action<string>? log = null)
     {
         _cacheDirectory = cacheDirectory ?? Path.Combine(".mloop", ".cache", "scripts");
+        _log = log ?? Console.WriteLine;
         // Note: _scriptOptions is lazily initialized to avoid Assembly.Location issues in single-file publish
     }
 
@@ -85,7 +88,7 @@ public class ScriptLoader
         {
             if (!File.Exists(scriptPath))
             {
-                Console.WriteLine($"⚠️ Script not found: {scriptPath}");
+                _log($"⚠️ Script not found: {scriptPath}");
                 return new List<T>();
             }
 
@@ -113,7 +116,7 @@ public class ScriptLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Failed to load script {scriptPath}: {ex.Message}");
+            _log($"❌ Failed to load script {scriptPath}: {ex.Message}");
             return new List<T>();  // Graceful degradation
         }
     }
@@ -230,7 +233,7 @@ public class ScriptLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ Error instantiating types: {ex.Message}");
+            _log($"⚠️ Error instantiating types: {ex.Message}");
         }
 
         return instances;
@@ -270,7 +273,7 @@ public class ScriptLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ Failed to clear cache: {ex.Message}");
+            _log($"⚠️ Failed to clear cache: {ex.Message}");
         }
     }
 

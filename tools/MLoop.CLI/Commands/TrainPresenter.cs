@@ -93,6 +93,13 @@ internal static class TrainPresenter
             table.AddRow("Test Split", $"{(definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit) * 100:F0}%");
         }
 
+        if (definition.Columns is { Count: > 0 })
+        {
+            var overrideSummary = string.Join(", ",
+                definition.Columns.Select(c => $"{c.Key}→{c.Value.Type}"));
+            table.AddRow("Column Overrides", $"[yellow]{Markup.Escape(overrideSummary)}[/]");
+        }
+
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
     }

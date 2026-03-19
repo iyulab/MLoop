@@ -29,7 +29,8 @@ internal static class InfoPresenter
     public static void DisplayColumnInfo(
         string[] columns,
         Func<string, int, string> inferDisplayType,
-        Func<string, string, string> getColumnPurpose)
+        Func<string, string, string> getColumnPurpose,
+        Dictionary<string, string>? columnOverrides = null)
     {
         AnsiConsole.Write(new Rule("[yellow]Column Information[/]").LeftJustified());
         AnsiConsole.WriteLine();
@@ -44,6 +45,16 @@ internal static class InfoPresenter
         {
             var dataType = inferDisplayType(columns[i], i);
             var purpose = getColumnPurpose(columns[i], dataType);
+
+            // Show override indicator if column has a type override
+            if (columnOverrides != null &&
+                columnOverrides.TryGetValue(columns[i], out var overrideType))
+            {
+                dataType = $"[yellow]{Markup.Escape(overrideType)}[/] [grey](override)[/]";
+                if (overrideType.Equals("ignore", StringComparison.OrdinalIgnoreCase))
+                    purpose = "[grey]Excluded[/]";
+            }
+
             table.AddRow((i + 1).ToString(), columns[i], dataType, purpose);
         }
 

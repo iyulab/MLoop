@@ -108,20 +108,22 @@ public static class InfoCommand
             // Determine label column: 1) --label option, 2) mloop.yaml, 3) first column (fallback)
             string? labelColumn = labelOption;
             string? labelSource = labelOption != null ? "--label option" : null;
+            MLoopConfig? config = null;
 
-            if (labelColumn == null && projectRoot != null)
+            if (projectRoot != null)
             {
-                // Try to load label from mloop.yaml
+                // Try to load config from mloop.yaml
                 var configLoader = new ConfigLoader(fileSystem, projectDiscovery);
-                var config = await configLoader.LoadUserConfigAsync();
+                config = await configLoader.LoadUserConfigAsync();
+            }
 
-                if (config?.Models != null && config.Models.TryGetValue(modelName, out var modelDef))
+            if (labelColumn == null && config?.Models != null &&
+                config.Models.TryGetValue(modelName, out var modelDef))
+            {
+                if (!string.IsNullOrEmpty(modelDef.Label))
                 {
-                    if (!string.IsNullOrEmpty(modelDef.Label))
-                    {
-                        labelColumn = modelDef.Label;
-                        labelSource = $"mloop.yaml (model: {modelName})";
-                    }
+                    labelColumn = modelDef.Label;
+                    labelSource = $"mloop.yaml (model: {modelName})";
                 }
             }
 
@@ -132,8 +134,16 @@ public static class InfoCommand
             }
             AnsiConsole.WriteLine();
 
+            // Get column overrides from config
+            Dictionary<string, string>? columnOverrides = null;
+            if (config?.Models != null && config.Models.TryGetValue(modelName, out var modelDefForOverrides))
+            {
+                columnOverrides = modelDefForOverrides.Columns?.ToDictionary(
+                    kvp => kvp.Key, kvp => kvp.Value.Type);
+            }
+
             // Profile the dataset
-            await ProfileDatasetAsync(resolvedDataFile, labelColumn, analyze, sampleSize);
+            await ProfileDatasetAsync(resolvedDataFile, labelColumn, analyze, sampleSize, columnOverrides);
 
             return 0;
         }
@@ -145,7 +155,8 @@ public static class InfoCommand
     }
 
     private static async Task ProfileDatasetAsync(
-        string dataFile, string? labelColumn, bool analyze, int sampleSize)
+        string dataFile, string? labelColumn, bool analyze, int sampleSize,
+        Dictionary<string, string>? columnOverrides = null)
     {
         var mlContext = new MLContext(seed: 42);
 
@@ -243,7 +254,8 @@ public static class InfoCommand
         InfoPresenter.DisplayColumnInfo(
             columns,
             (colName, colIdx) => InferDisplayType(colName, columnInference, colIdx, sampleLines),
-            (colName, dataType) => GetColumnPurpose(colName, columnInference.ColumnInformation, dataType));
+            (colName, dataType) => GetColumnPurpose(colName, columnInference.ColumnInformation, dataType),
+            columnOverrides);
 
         // 3. DataLens Profile (always-on, nullable)
         // DataLens uses its own CSV loading (FilePrepper CsvBridge) which requires .csv extension,

@@ -685,7 +685,10 @@ public static class TrainCommand
                 Metric = effectiveDefinition.Training?.Metric ?? ConfigDefaults.DefaultMetric,
                 TestSplit = testDataFile != null ? 0 : (effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit),
                 TestDataFile = testDataFile != null ? Path.GetFullPath(testDataFile) : null,
-                UseAutoTime = useAutoTime
+                UseAutoTime = useAutoTime,
+                ColumnOverrides = effectiveDefinition.Columns?.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value.Type)
             };
 
             // Initialize hook engine

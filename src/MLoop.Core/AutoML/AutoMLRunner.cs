@@ -162,7 +162,7 @@ public class AutoMLRunner
             }
 
             var originalMetric = optimizingMetric.ToString();
-            Console.WriteLine($"[Warning] AUC computation failed during {originalMetric} optimization (extreme class imbalance). Falling back to F1Score.");
+            _logger.Warning($"AUC computation failed during {originalMetric} optimization (extreme class imbalance). Falling back to F1Score.");
             metricFallbackNote = $"{originalMetric}→F1Score (AUC imbalance)";
 
             return await RunBinaryClassificationCoreAsync(
@@ -190,7 +190,7 @@ public class AutoMLRunner
 
         // BUG-25: Build explicit ColumnInformation to ensure text columns get
         // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
         var experimentResult = await Task.Run(
             () => columnInfo != null
@@ -262,7 +262,7 @@ public class AutoMLRunner
         var experiment = _mlContext.Auto().CreateMulticlassClassificationExperiment(settings);
 
         // BUG-25: Explicit ColumnInformation for text column featurization
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
         var experimentResult = await Task.Run(
             () => columnInfo != null
@@ -329,7 +329,7 @@ public class AutoMLRunner
         var experiment = _mlContext.Auto().CreateRegressionExperiment(settings);
 
         // BUG-25: Explicit ColumnInformation for text column featurization
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
         var experimentResult = await Task.Run(
             () => columnInfo != null
@@ -460,16 +460,43 @@ public class AutoMLRunner
     /// causing AutoML to generate an empty __Features__ pipeline and crash.
     /// Returns null if no text columns are found (existing behavior sufficient).
     /// </summary>
-    public static ColumnInformation? BuildColumnInformation(IDataView data, string labelColumn)
+    public static ColumnInformation? BuildColumnInformation(
+        IDataView data, string labelColumn,
+        Action<string>? log = null,
+        Dictionary<string, string>? columnOverrides = null)
     {
         var textColumns = new List<string>();
         var numericColumns = new List<string>();
+        var categoricalColumns = new List<string>();
+        var ignoredColumns = new List<string>();
 
         foreach (var col in data.Schema)
         {
             if (col.IsHidden) continue;
             if (col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)) continue;
 
+            // Check for column override
+            if (columnOverrides != null &&
+                columnOverrides.TryGetValue(col.Name, out var overrideType))
+            {
+                switch (overrideType.ToLowerInvariant())
+                {
+                    case "text":
+                        textColumns.Add(col.Name);
+                        continue;
+                    case "categorical":
+                        categoricalColumns.Add(col.Name);
+                        continue;
+                    case "numeric":
+                        numericColumns.Add(col.Name);
+                        continue;
+                    case "ignore":
+                        ignoredColumns.Add(col.Name);
+                        continue;
+                }
+            }
+
+            // Default: infer from IDataView type
             if (col.Type is TextDataViewType)
             {
                 textColumns.Add(col.Name);
@@ -480,7 +507,8 @@ public class AutoMLRunner
             }
         }
 
-        if (textColumns.Count == 0)
+        // If no text columns and no overrides applied, return null (default behavior)
+        if (textColumns.Count == 0 && categoricalColumns.Count == 0 && ignoredColumns.Count == 0)
             return null;
 
         var columnInfo = new ColumnInformation { LabelColumnName = labelColumn };
@@ -491,7 +519,19 @@ public class AutoMLRunner
         foreach (var nc in numericColumns)
             columnInfo.NumericColumnNames.Add(nc);
 
-        Console.WriteLine($"[Info] Text column(s) detected: {string.Join(", ", textColumns)} — applying text featurization (TF-IDF, n-gram)");
+        foreach (var cc in categoricalColumns)
+            columnInfo.CategoricalColumnNames.Add(cc);
+
+        foreach (var ic in ignoredColumns)
+            columnInfo.IgnoredColumnNames.Add(ic);
+
+        var write = log ?? Console.WriteLine;
+        if (textColumns.Count > 0)
+            write($"[Info] Text column(s): {string.Join(", ", textColumns)} — applying text featurization (TF-IDF, n-gram)");
+        if (categoricalColumns.Count > 0)
+            write($"[Info] Categorical column(s) (override): {string.Join(", ", categoricalColumns)}");
+        if (ignoredColumns.Count > 0)
+            write($"[Info] Ignored column(s) (override): {string.Join(", ", ignoredColumns)}");
 
         return columnInfo;
     }

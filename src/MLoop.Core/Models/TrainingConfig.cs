@@ -49,4 +49,10 @@ public class TrainingConfig
     /// Whether to use automatic time estimation (true when --time not specified and YAML has no time_limit_seconds)
     /// </summary>
     public bool UseAutoTime { get; init; } = false;
+
+    /// <summary>
+    /// Column type overrides from mloop.yaml.
+    /// Key: column name, Value: type string (text, categorical, numeric, ignore)
+    /// </summary>
+    public Dictionary<string, string>? ColumnOverrides { get; init; }
 }

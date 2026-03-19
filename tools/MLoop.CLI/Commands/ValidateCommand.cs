@@ -27,6 +27,11 @@ public static class ValidateCommand
         "r2", "rmse", "mae", "mse", "rSquared"
     };
 
+    private static readonly HashSet<string> ValidColumnTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "text", "categorical", "numeric", "ignore"
+    };
+
     private static readonly HashSet<string> ValidPrepStepTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "fill-missing", "fill_missing",
@@ -214,6 +219,31 @@ public static class ValidateCommand
         if (model.Prep is { Count: > 0 })
         {
             ValidatePrepSteps($"{prefix}.prep", model.Prep, errors, warnings);
+        }
+
+        // Validate column overrides
+        if (model.Columns is { Count: > 0 })
+        {
+            foreach (var (colName, colOverride) in model.Columns)
+            {
+                var colPrefix = $"{prefix}.columns.{colName}";
+                if (string.IsNullOrWhiteSpace(colOverride.Type))
+                {
+                    errors.Add(new ValidationError(colPrefix, "Column type is required"));
+                }
+                else if (!ValidColumnTypes.Contains(colOverride.Type))
+                {
+                    errors.Add(new ValidationError($"{colPrefix}.type",
+                        $"Invalid column type '{colOverride.Type}'. Valid values: {string.Join(", ", ValidColumnTypes)}"));
+                }
+            }
+
+            // Warn if label column has an override
+            if (!string.IsNullOrEmpty(model.Label) && model.Columns.ContainsKey(model.Label))
+            {
+                warnings.Add(new ValidationWarning($"{prefix}.columns.{model.Label}",
+                    "Overriding the label column type may cause unexpected behavior"));
+            }
         }
     }
 
