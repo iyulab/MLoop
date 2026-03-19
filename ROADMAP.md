@@ -37,10 +37,11 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
 
 ---
 
-## Current Status (v0.5.1-alpha - February 2026)
+## Current Status (v0.7.0 — March 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
+- **7개 ML 태스크 지원**: Binary/Multiclass Classification, Regression, Anomaly Detection, Clustering, Ranking, Forecasting
 - Filesystem-based MLOps with git-friendly experiment tracking
 - Multi-process concurrent training support
 - Production model promotion and discovery
@@ -48,7 +49,7 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
 - Prediction logging and feedback collection
 - Data sampling for retraining datasets
 - Feedback-based retraining triggers with CLI evaluation
-- CLI with comprehensive command set (including `mloop trigger check`)
+- CLI with comprehensive command set
 - SDK packages ready for NuGet distribution
 - .NET 10.0 + C# 13 modern codebase
 - Zero AI dependencies (pure ML CLI tool)
@@ -58,29 +59,11 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
 
 - **mloop-mcp**: MCP server exposing MLoop CLI to AI clients
   - Repository: https://github.com/iyulab/mloop-mcp
-  - Tools: train, predict, list, promote, info, serve
 - **mloop-studio**: Web platform for visual ML workflows (planned)
   - Repository: https://github.com/iyulab/mloop-studio
 
-### Project Structure (6 projects)
-
-**SDK (`src/`) - NuGet Package Distribution**
-- **MLoop.Core**: Pure ML engine (AutoML, preprocessing, encoding detection)
-- **MLoop.DataStore**: Prediction logging, feedback collection, data sampling (JSONL)
-- **MLoop.Extensibility**: Hooks, scripts, metrics interfaces
-- **MLoop.Ops**: Model comparison, feedback-based retraining triggers
-
-**Tools (`tools/`) - Executable Distribution**
-- **MLoop.CLI**: Command-line interface (dotnet tool)
-- **MLoop.API**: REST API server (Docker/standalone)
-
-**Usage Pattern:**
-- **.NET 앱 (MLoop Studio)**: SDK 직접 참조 (`dotnet add package MLoop.Core`)
-- **외부 시스템 (mloop-mcp)**: CLI subprocess 호출
-- **비-.NET 시스템**: API HTTP 호출
-
 ### Quality
-- 429+ tests passing (Core + API + CLI + DataStore + Ops)
+- 1,300+ tests passing (Core + API + CLI + DataStore + Ops + Pipeline)
 
 ---
 
@@ -1033,6 +1016,38 @@ Out of MLoop CLI scope (requires Image Classification support):
 
 ---
 
+## Active: ML Task Type Expansion (v0.7.0+)
+
+**목표**: ML.NET이 지원하는 모든 ML 태스크를 MLoop에서 다룰 수 있도록 확장
+**상세 계획**: [`claudedocs/roadmap/08-mlnet-task-expansion-roadmap.md`](claudedocs/roadmap/08-mlnet-task-expansion-roadmap.md)
+
+### 진행 현황: 7/15 태스크 (47%)
+
+| ID | Task | Tier | 상태 |
+|----|------|:----:|:----:|
+| MLOOP-101 | Anomaly Detection (PCA) | 1 | ✅ 완료 |
+| MLOOP-102 | Clustering (K-Means) | 1 | ✅ 완료 |
+| MLOOP-103 | Ranking (Learning to Rank) | 1 | ✅ 완료 |
+| MLOOP-104 | Time Series Forecasting (SSA) | 2 | ✅ 완료 |
+| **MLOOP-105** | **Time Series Anomaly (Spike/CP)** | **2** | **P1 — 다음** |
+| MLOOP-106 | Recommendation (Matrix Factorization) | 3 | P2 |
+| MLOOP-113 | `mloop runtime` 명령 (DL infra) | Infra | P1 |
+| MLOOP-107 | Image Classification | 4a | P1 (MLOOP-113 종속) |
+| MLOOP-108 | Object Detection | 4b | P2 (MLOOP-113 종속) |
+| MLOOP-109 | Text Classification | 4b | P2 (MLOOP-113 종속) |
+| MLOOP-110 | Sentence Similarity | 4b | P3 |
+| MLOOP-111 | NER | 4b | P3 |
+| MLOOP-112 | Question Answering | 4b | P3 |
+
+### 남은 작업 분류
+
+| 그룹 | 태스크 | 추가 비용 | 비고 |
+|------|--------|:---------:|------|
+| **즉시 구현 가능** (코드만 추가) | MLOOP-105, 106 | **0** | DLL 이미 번들 |
+| **인프라 필요** (native runtime) | MLOOP-113 → 107~112 | +80~182MB on-demand | Tier 4 전제조건 |
+
+---
+
 ## Future Considerations (P3 LOW)
 
 ### Advanced Features
@@ -1130,11 +1145,10 @@ Submit proposals via GitHub Issues with `roadmap` label.
 
 ---
 
-**Last Updated**: February 7, 2026
-**Current Release**: v0.5.1-alpha ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
+**Last Updated**: March 20, 2026
+**Current Version**: v0.7.0 ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
 **Recent Changes**:
+- v0.7.0: ML Task Expansion — Clustering, Ranking, Forecasting 추가 (MLOOP-102~104)
+- v0.6.2: Anomaly Detection (PCA), column type override, bug fixes
 - v0.5.1-alpha: Self-update system (`mloop update`), CI/CD refinement
-- v0.5.0-alpha: First GitHub Release with multiplatform binaries (win-x64, linux-x64, osx-x64)
-- All 19 development phases complete (see Development Phases table above)
-- 429+ tests passing across all projects
-- Distribution: GitHub Releases (standalone binaries) with self-update support
+- 1,300+ tests passing across all projects
