@@ -37,11 +37,15 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
 
 ---
 
-## Current Status (v0.9.0 — March 2026)
+## Current Status (v0.10.0 — March 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
-- **9개 ML 태스크 지원**: Binary/Multiclass Classification, Regression, Anomaly Detection, Clustering, Ranking, Forecasting, Time Series Anomaly, Recommendation
+- **15개 ML 태스크 지원**: ML.NET 전체 태스크 커버리지 달성
+  - Tabular: Binary/Multiclass Classification, Regression, Anomaly Detection, Clustering, Ranking
+  - Time Series: Forecasting (SSA), Time Series Anomaly (SrCnn/SSA)
+  - Collaborative Filtering: Recommendation (Matrix Factorization)
+  - Deep Learning (on-demand runtime): Image Classification, Object Detection, Text Classification, Sentence Similarity, NER, Question Answering
 - Filesystem-based MLOps with git-friendly experiment tracking
 - Multi-process concurrent training support
 - Production model promotion and discovery
@@ -1021,7 +1025,7 @@ Out of MLoop CLI scope (requires Image Classification support):
 **목표**: ML.NET이 지원하는 모든 ML 태스크를 MLoop에서 다룰 수 있도록 확장
 **상세 계획**: [`claudedocs/roadmap/08-mlnet-task-expansion-roadmap.md`](claudedocs/roadmap/08-mlnet-task-expansion-roadmap.md)
 
-### 진행 현황: 9/15 태스크 (60%) — Tier 1~3 완료
+### 진행 현황: 15/15 태스크 (100%) — 전체 완료
 
 | ID | Task | Tier | 상태 |
 |----|------|:----:|:----:|
@@ -1032,24 +1036,27 @@ Out of MLoop CLI scope (requires Image Classification support):
 | MLOOP-105 | Time Series Anomaly (Spike/CP) | 2 | ✅ 완료 |
 | MLOOP-106 | Recommendation (Matrix Factorization) | 3 | ✅ 완료 |
 | MLOOP-113 | `mloop runtime` 명령 (DL infra) | Infra | ✅ 완료 |
-| MLOOP-107 | Image Classification | 4a | 등록됨 (MLoop.DL 필요) |
-| MLOOP-108 | Object Detection | 4b | 등록됨 (MLoop.DL 필요) |
-| MLOOP-109 | Text Classification | 4b | 등록됨 (MLoop.DL 필요) |
-| MLOOP-110 | Sentence Similarity | 4b | 등록됨 (MLoop.DL 필요) |
-| MLOOP-111 | NER | 4b | 등록됨 (MLoop.DL 필요) |
-| MLOOP-112 | Question Answering | 4b | 등록됨 (MLoop.DL 필요) |
+| MLOOP-107 | Image Classification | 4a | ✅ 완료 (TF, on-demand) |
+| MLOOP-108 | Object Detection | 4b | ✅ 완료 (TorchSharp, on-demand) |
+| MLOOP-109 | Text Classification | 4b | ✅ 완료 (NAS-BERT, on-demand) |
+| MLOOP-110 | Sentence Similarity | 4b | ✅ 완료 (NAS-BERT, on-demand) |
+| MLOOP-111 | NER | 4b | ✅ 완료 (NAS-BERT, on-demand) |
+| MLOOP-112 | Question Answering | 4b | ✅ 완료 (NAS-BERT, on-demand) |
 
-### 남은 작업: Tier 4 DL Trainer 구현
+### On-Demand Runtime 아키텍처
 
-Runtime infrastructure (MLOOP-113) 완료. DL trainer 구현은 별도 `MLoop.DL` 어셈블리가 필요:
-- **문제**: `Microsoft.ML.TorchSharp`/`Vision` 패키지 참조가 native runtime을 강제 번들
-- **해결**: `MLoop.DL` 어셈블리를 동적 로딩하여 on-demand 철학 유지
-- **현황**: 태스크 타입 등록 + runtime check + 명확한 에러 메시지 완료
+DL 태스크는 native runtime을 on-demand로 다운로드합니다:
+```bash
+mloop runtime install tf      # TensorFlow (~182MB, Image Classification)
+mloop runtime install torch    # libtorch (~100MB, Object Detection/NLP)
+mloop runtime list             # 설치된 런타임 확인
+mloop runtime remove torch     # 런타임 제거
+```
 
-| 그룹 | 태스크 | 런타임 | 비고 |
-|------|--------|:------:|------|
-| **TensorFlow** | MLOOP-107 Image Classification | `mloop runtime install tf` | +182MB on-demand |
-| **TorchSharp** | MLOOP-108~112 (5개) | `mloop runtime install torch` | +100MB on-demand |
+| 런타임 | 태스크 | 크기 |
+|--------|--------|:----:|
+| `tf` | Image Classification | ~182MB |
+| `torch` | Object Detection, Text Classification, Sentence Similarity, NER, QA | ~100MB |
 
 ---
 
@@ -1151,9 +1158,10 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: March 20, 2026
-**Current Version**: v0.9.0 ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
+**Current Version**: v0.10.0 ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
 **Recent Changes**:
-- v0.9.0: On-demand runtime management (`mloop runtime install/remove`), DL task registration
-- v0.8.0: Time Series Anomaly, Recommendation 추가 — Tier 1~3 완료 (9/15 태스크)
+- v0.10.0: ML.NET 전체 태스크 커버리지 달성 (15/15) — DL trainer 구현
+- v0.9.0: On-demand runtime management (`mloop runtime install/remove`)
+- v0.8.0: Time Series Anomaly, Recommendation 추가 — Tier 1~3 완료
 - v0.7.0: Clustering, Ranking, Forecasting 추가 (MLOOP-102~104)
 - 1,311 tests passing across all projects
