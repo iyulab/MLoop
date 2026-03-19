@@ -101,6 +101,8 @@ public class AutoMLRunner
                 trainSet, testSet, config, progress, cancellationToken),
             "time-series-anomaly" => await RunTimeSeriesAnomalyAsync(
                 trainSet, testSet, config, progress, cancellationToken),
+            "recommendation" => await RunRecommendationAsync(
+                trainSet, testSet, config, progress, cancellationToken),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
@@ -997,6 +999,77 @@ public class AutoMLRunner
                 Model = bestModel,
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = totalRows
+            };
+        }, cancellationToken);
+    }
+
+    private async Task<AutoMLResult> RunRecommendationAsync(
+        IDataView trainSet,
+        IDataView testSet,
+        TrainingConfig config,
+        IProgress<TrainingProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            if (string.IsNullOrEmpty(config.UserColumn))
+                throw new InvalidOperationException("Recommendation task requires user_column.");
+            if (string.IsNullOrEmpty(config.ItemColumn))
+                throw new InvalidOperationException("Recommendation task requires item_column.");
+
+            // Validate columns exist
+            var userCol = trainSet.Schema.GetColumnOrNull(config.UserColumn);
+            var itemCol = trainSet.Schema.GetColumnOrNull(config.ItemColumn);
+            var labelCol = trainSet.Schema.GetColumnOrNull(config.LabelColumn);
+
+            if (!userCol.HasValue)
+                throw new InvalidOperationException($"User column '{config.UserColumn}' not found.");
+            if (!itemCol.HasValue)
+                throw new InvalidOperationException($"Item column '{config.ItemColumn}' not found.");
+            if (!labelCol.HasValue)
+                throw new InvalidOperationException($"Rating/label column '{config.LabelColumn}' not found.");
+
+            _logger.Info($"Recommendation: user='{config.UserColumn}', item='{config.ItemColumn}', rating='{config.LabelColumn}'");
+
+            // Build pipeline: MapValueToKey for user & item, then MatrixFactorization
+            var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("UserKey", config.UserColumn)
+                .Append(_mlContext.Transforms.Conversion.MapValueToKey("ItemKey", config.ItemColumn))
+                .Append(_mlContext.Recommendation().Trainers.MatrixFactorization(
+                    labelColumnName: config.LabelColumn,
+                    matrixColumnIndexColumnName: "UserKey",
+                    matrixRowIndexColumnName: "ItemKey",
+                    numberOfIterations: 20,
+                    approximationRank: 32));
+
+            progress?.Report(new TrainingProgress
+            {
+                TrialNumber = 1,
+                TrainerName = "MatrixFactorization",
+                MetricName = "rmse",
+                Metric = 0,
+                ElapsedSeconds = 0
+            });
+
+            var model = pipeline.Fit(trainSet);
+
+            // Evaluate on test set
+            var predictions = model.Transform(testSet);
+            var regressionMetrics = _mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
+
+            var metricsDict = new Dictionary<string, double>
+            {
+                ["rmse"] = double.IsNaN(regressionMetrics.RootMeanSquaredError) ? 0 : regressionMetrics.RootMeanSquaredError,
+                ["mae"] = double.IsNaN(regressionMetrics.MeanAbsoluteError) ? 0 : regressionMetrics.MeanAbsoluteError,
+                ["r_squared"] = double.IsNaN(regressionMetrics.RSquared) ? 0 : regressionMetrics.RSquared,
+                ["loss_function"] = double.IsNaN(regressionMetrics.LossFunction) ? 0 : regressionMetrics.LossFunction
+            };
+
+            return new AutoMLResult
+            {
+                BestTrainer = "MatrixFactorization (rank=32, iter=20)",
+                Model = model,
+                Metrics = metricsDict,
+                RowCount = trainSet.GetRowCount() ?? 0
             };
         }, cancellationToken);
     }

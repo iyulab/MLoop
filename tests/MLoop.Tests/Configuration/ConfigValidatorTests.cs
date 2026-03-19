@@ -466,4 +466,44 @@ public class ConfigValidatorTests
 
         Assert.DoesNotContain(result.Errors, e => e.Contains("Horizon"));
     }
+
+    [Fact]
+    public void Validate_RecommendationWithoutColumns_ReturnsErrors()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition { Task = "recommendation", Label = "rating" }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.Contains(result.Errors, e => e.Contains("User column is required"));
+        Assert.Contains(result.Errors, e => e.Contains("Item column is required"));
+    }
+
+    [Fact]
+    public void Validate_RecommendationWithColumns_NoColumnErrors()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition
+                {
+                    Task = "recommendation", Label = "rating",
+                    UserColumn = "user_id", ItemColumn = "item_id"
+                }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(result.Errors, e => e.Contains("User column"));
+        Assert.DoesNotContain(result.Errors, e => e.Contains("Item column"));
+    }
 }

@@ -57,6 +57,9 @@ public class PerformanceDiagnostics
             case "timeseriesanomaly":
                 AnalyzeTimeSeriesAnomaly(result);
                 break;
+            case "recommendation":
+                AnalyzeRecommendation(result);
+                break;
             default:
                 result.OverallAssessment = PerformanceLevel.Unknown;
                 result.Summary = $"Unknown task type: {taskType}";
@@ -367,6 +370,52 @@ public class PerformanceDiagnostics
             result.SecondaryMetrics["Anomaly Count"] = anomalyCount;
         if (metrics.TryGetValue("total_count", out var totalCount))
             result.SecondaryMetrics["Total Count"] = totalCount;
+    }
+
+    private void AnalyzeRecommendation(PerformanceDiagnosticResult result)
+    {
+        var metrics = result.Metrics;
+
+        // Primary metric: RMSE (lower = better, typical rating scale 1-5)
+        if (metrics.TryGetValue("rmse", out var rmse) && rmse > 0)
+        {
+            result.PrimaryMetric = "RMSE";
+            result.PrimaryMetricValue = rmse;
+
+            if (rmse < 0.5)
+            {
+                result.OverallAssessment = PerformanceLevel.Excellent;
+                result.Summary = $"Excellent recommendation accuracy (RMSE = {rmse:F4})";
+            }
+            else if (rmse < 1.0)
+            {
+                result.OverallAssessment = PerformanceLevel.Good;
+                result.Summary = $"Good recommendation accuracy (RMSE = {rmse:F4})";
+            }
+            else if (rmse < 1.5)
+            {
+                result.OverallAssessment = PerformanceLevel.Moderate;
+                result.Summary = $"Moderate recommendation accuracy (RMSE = {rmse:F4})";
+                result.Suggestions.Add("Consider increasing training iterations or approximation rank");
+            }
+            else
+            {
+                result.OverallAssessment = PerformanceLevel.Low;
+                result.Summary = $"Low recommendation accuracy (RMSE = {rmse:F4})";
+                result.Suggestions.Add("Check data quality — ensure user/item/rating columns are correct");
+                result.Suggestions.Add("Consider normalizing ratings or filtering sparse users/items");
+            }
+        }
+        else
+        {
+            result.OverallAssessment = PerformanceLevel.Unknown;
+            result.Summary = "Recommendation completed (no evaluation metrics available)";
+        }
+
+        if (metrics.TryGetValue("mae", out var mae))
+            result.SecondaryMetrics["MAE"] = mae;
+        if (metrics.TryGetValue("r_squared", out var r2))
+            result.SecondaryMetrics["R²"] = r2;
     }
 
     private void AnalyzeTimeSeriesAnomaly(PerformanceDiagnosticResult result)

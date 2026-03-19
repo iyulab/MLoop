@@ -80,4 +80,14 @@ public class TrainingConfig
     /// Number of past data points to consider in SSA model (0 = auto: total rows)
     /// </summary>
     public int SeriesLength { get; init; } = 0;
+
+    /// <summary>
+    /// User column name for recommendation task
+    /// </summary>
+    public string? UserColumn { get; init; }
+
+    /// <summary>
+    /// Item column name for recommendation task
+    /// </summary>
+    public string? ItemColumn { get; init; }
 }

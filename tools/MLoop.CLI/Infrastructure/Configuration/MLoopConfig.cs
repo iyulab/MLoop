@@ -89,6 +89,16 @@ public class ModelDefinition
     /// Number of past data points for SSA model (0 or null = auto: total rows).
     /// </summary>
     public int? SeriesLength { get; set; }
+
+    /// <summary>
+    /// User column for recommendation task.
+    /// </summary>
+    public string? UserColumn { get; set; }
+
+    /// <summary>
+    /// Item column for recommendation task.
+    /// </summary>
+    public string? ItemColumn { get; set; }
 }
 
 /// <summary>

@@ -102,7 +102,9 @@ public class TrainingEngine : ITrainingEngine
                     GroupColumn = config.GroupColumn,
                     Horizon = config.Horizon,
                     WindowSize = config.WindowSize,
-                    SeriesLength = config.SeriesLength
+                    SeriesLength = config.SeriesLength,
+                    UserColumn = config.UserColumn,
+                    ItemColumn = config.ItemColumn
                 };
             }
 
