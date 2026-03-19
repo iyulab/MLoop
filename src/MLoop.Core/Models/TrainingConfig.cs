@@ -60,4 +60,9 @@ public class TrainingConfig
     /// Number of clusters for clustering task (0 = auto-select via silhouette search)
     /// </summary>
     public int NumClusters { get; init; } = 0;
+
+    /// <summary>
+    /// Group column name for ranking task (groups rows into query contexts)
+    /// </summary>
+    public string? GroupColumn { get; init; }
 }

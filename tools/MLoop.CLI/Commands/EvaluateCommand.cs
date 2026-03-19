@@ -212,7 +212,8 @@ public static class EvaluateCommand
                         experimentData!.Config.LabelColumn,
                         experimentData.Task,
                         CancellationToken.None,
-                        experimentData.Config.InputSchema);
+                        experimentData.Config.InputSchema,
+                        experimentData.Config.GroupColumn);
 
                     ctx.Status("[green]Evaluation complete![/]");
                 });

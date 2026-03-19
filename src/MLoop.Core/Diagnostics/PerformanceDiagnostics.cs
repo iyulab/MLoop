@@ -48,6 +48,9 @@ public class PerformanceDiagnostics
             case "clustering":
                 AnalyzeClustering(result);
                 break;
+            case "ranking":
+                AnalyzeRanking(result);
+                break;
             default:
                 result.OverallAssessment = PerformanceLevel.Unknown;
                 result.Summary = $"Unknown task type: {taskType}";
@@ -358,6 +361,58 @@ public class PerformanceDiagnostics
             result.SecondaryMetrics["Anomaly Count"] = anomalyCount;
         if (metrics.TryGetValue("total_count", out var totalCount))
             result.SecondaryMetrics["Total Count"] = totalCount;
+    }
+
+    private void AnalyzeRanking(PerformanceDiagnosticResult result)
+    {
+        var metrics = result.Metrics;
+
+        // Primary metric: NDCG (highest level available, typically NDCG@10)
+        if (metrics.TryGetValue("ndcg", out var ndcg) && ndcg > 0)
+        {
+            result.PrimaryMetric = "NDCG";
+            result.PrimaryMetricValue = ndcg;
+
+            if (ndcg >= 0.9)
+            {
+                result.OverallAssessment = PerformanceLevel.Excellent;
+                result.Summary = $"Excellent ranking quality (NDCG = {ndcg:F4})";
+            }
+            else if (ndcg >= 0.7)
+            {
+                result.OverallAssessment = PerformanceLevel.Good;
+                result.Summary = $"Good ranking quality (NDCG = {ndcg:F4})";
+            }
+            else if (ndcg >= 0.5)
+            {
+                result.OverallAssessment = PerformanceLevel.Moderate;
+                result.Summary = $"Moderate ranking quality (NDCG = {ndcg:F4})";
+                result.Suggestions.Add("Consider adding more features or tuning hyperparameters");
+            }
+            else
+            {
+                result.OverallAssessment = PerformanceLevel.Low;
+                result.Summary = $"Low ranking quality (NDCG = {ndcg:F4})";
+                result.Suggestions.Add("Review feature selection and relevance labels");
+                result.Suggestions.Add("Ensure group column correctly identifies query contexts");
+            }
+        }
+        else
+        {
+            result.OverallAssessment = PerformanceLevel.Unknown;
+            result.Summary = "Ranking completed (no evaluation metrics available)";
+        }
+
+        // Secondary metrics: NDCG@1, NDCG@3, NDCG@5
+        foreach (var key in new[] { "ndcg_at_1", "ndcg_at_3", "ndcg_at_5" })
+        {
+            if (metrics.TryGetValue(key, out var val) && val > 0)
+                result.SecondaryMetrics[key.ToUpperInvariant().Replace("_AT_", "@")] = val;
+        }
+
+        // DCG at highest level
+        if (metrics.TryGetValue("dcg_at_10", out var dcg10) && dcg10 > 0)
+            result.SecondaryMetrics["DCG@10"] = dcg10;
     }
 
     private void AnalyzeClustering(PerformanceDiagnosticResult result)

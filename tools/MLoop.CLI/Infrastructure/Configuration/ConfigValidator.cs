@@ -210,6 +210,13 @@ public static class ConfigValidator
                 warnings.Add($"models.{modelName}.label: No label column — evaluation metrics will be limited");
         }
 
+        // Ranking requires group_column
+        if (model.Task?.Equals("ranking", StringComparison.OrdinalIgnoreCase) == true &&
+            string.IsNullOrWhiteSpace(model.GroupColumn))
+        {
+            errors.Add($"models.{modelName}.group_column: Group column is required for ranking task");
+        }
+
         if (model.Prep is { Count: > 0 })
         {
             var prepErrors = ValidatePrepSteps(model.Prep);

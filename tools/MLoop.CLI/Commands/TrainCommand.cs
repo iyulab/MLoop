@@ -106,6 +106,10 @@ public static class TrainCommand
             Description = "Class balancing strategy: 'auto' (balance to 10:1 if ratio > 10:1), 'none' (no balancing), or target ratio (e.g., '5' for 5:1). Use without value for 'auto'.",
             Arity = ArgumentArity.ZeroOrOne
         };
+        var groupColumnOption = new Option<string?>("--group-column")
+        {
+            Description = "Group column for ranking task (groups rows into query contexts)"
+        };
 
         var command = new Command("train", "Train a model using AutoML");
         command.Arguments.Add(dataFileArg);
@@ -123,6 +127,7 @@ public static class TrainCommand
         command.Options.Add(dataOption);
         command.Options.Add(noAutoTimeOption);
         command.Options.Add(balanceOption);
+        command.Options.Add(groupColumnOption);
 
         command.SetAction((parseResult) =>
         {
@@ -141,12 +146,13 @@ public static class TrainCommand
             var dataPaths = parseResult.GetValue(dataOption);
             var noAutoTime = parseResult.GetValue(noAutoTimeOption);
             var balance = parseResult.GetValue(balanceOption);
+            var groupColumn = parseResult.GetValue(groupColumnOption);
             // Handle --balance without argument: default to "auto"
             if (balance == null && parseResult.Tokens.Any(t => t.Value == "--balance" || t.Value == "-b"))
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, balance);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, balance, groupColumn);
         });
 
         return command;
@@ -167,7 +173,8 @@ public static class TrainCommand
         bool? dropMissingLabels,
         string[]? dataPaths,
         bool noAutoTime,
-        string? balance)
+        string? balance,
+        string? groupColumn)
     {
         try
         {
@@ -228,6 +235,10 @@ public static class TrainCommand
                 return 1;
             }
 
+            // Apply CLI --group-column override
+            if (!string.IsNullOrEmpty(groupColumn))
+                effectiveDefinition.GroupColumn = groupColumn;
+
             // Validate required fields (defensive guard for nullable flow analysis)
             var unsupervisedTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 { "anomaly-detection", "clustering" };
@@ -237,6 +248,14 @@ public static class TrainCommand
                 (requiresLabel && string.IsNullOrEmpty(effectiveDefinition.Label)))
             {
                 AnsiConsole.MarkupLine("[red]Error:[/] Task is required. Label is required for supervised tasks. Use --task and <label> arguments, or define them in mloop.yaml");
+                return 1;
+            }
+
+            // Ranking requires group column
+            if (effectiveDefinition.Task.Equals("ranking", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrEmpty(effectiveDefinition.GroupColumn))
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] Ranking task requires a group column. Use --group-column or set 'group_column' in mloop.yaml");
                 return 1;
             }
 
@@ -694,7 +713,8 @@ public static class TrainCommand
                 ColumnOverrides = effectiveDefinition.Columns?.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value.Type),
-                NumClusters = effectiveDefinition.NumClusters ?? 0
+                NumClusters = effectiveDefinition.NumClusters ?? 0,
+                GroupColumn = effectiveDefinition.GroupColumn
             };
 
             // Initialize hook engine
