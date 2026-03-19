@@ -60,6 +60,16 @@ public class PerformanceDiagnostics
             case "recommendation":
                 AnalyzeRecommendation(result);
                 break;
+            case "imageclassification":
+            case "textclassification":
+            case "objectdetection":
+            case "ner":
+            case "questionanswering":
+                AnalyzeMulticlassClassification(result);
+                break;
+            case "sentencesimilarity":
+                AnalyzeRegression(result);
+                break;
             default:
                 result.OverallAssessment = PerformanceLevel.Unknown;
                 result.Summary = $"Unknown task type: {taskType}";

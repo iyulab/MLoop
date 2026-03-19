@@ -82,6 +82,18 @@ public class AutoMLRunner
             }
         }
 
+        // Check if task requires an on-demand native runtime
+        var requiredRuntime = Runtime.RuntimeRegistry.GetRequiredByTask(config.Task);
+        if (requiredRuntime != null)
+        {
+            var runtimeManager = new Runtime.RuntimeManager();
+            if (!runtimeManager.IsInstalled(requiredRuntime))
+                throw new InvalidOperationException(
+                    $"Task '{config.Task}' requires {requiredRuntime.DisplayName} runtime (~{requiredRuntime.ApproximateSizeMB}MB). " +
+                    $"Install it with: mloop runtime install {requiredRuntime.Id}");
+            runtimeManager.EnsureLoaded(requiredRuntime);
+        }
+
         // Run AutoML based on task type
         var result = config.Task.ToLowerInvariant() switch
         {
@@ -103,6 +115,13 @@ public class AutoMLRunner
                 trainSet, testSet, config, progress, cancellationToken),
             "recommendation" => await RunRecommendationAsync(
                 trainSet, testSet, config, progress, cancellationToken),
+            "image-classification" or "object-detection" or "text-classification"
+                or "sentence-similarity" or "ner" or "question-answering"
+                => throw new NotSupportedException(
+                    $"Task '{config.Task}' requires deep learning runtime. " +
+                    $"Ensure runtime is installed via 'mloop runtime install' and " +
+                    $"that Microsoft.ML.TorchSharp/TensorFlow packages are referenced. " +
+                    $"DL task support is registered but requires runtime-specific package references."),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
@@ -1073,6 +1092,12 @@ public class AutoMLRunner
             };
         }, cancellationToken);
     }
+
+    // MLOOP-107~112: DL task trainer implementations require Microsoft.ML.TorchSharp and
+    // Microsoft.ML.Vision compile-time references, which pull native runtime dependencies.
+    // To maintain on-demand download, these will be implemented in a separate MLoop.DL assembly
+    // loaded dynamically when the runtime is available via `mloop runtime install`.
+    // The runtime infrastructure (MLOOP-113) is ready: download, cache, and native loading.
 
     private BinaryClassificationMetric GetBinaryMetric(string metricName)
     {
