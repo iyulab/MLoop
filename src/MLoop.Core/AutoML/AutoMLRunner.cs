@@ -99,6 +99,8 @@ public class AutoMLRunner
                 trainSet, testSet, config, progress, cancellationToken),
             "forecasting" => await RunForecastingAsync(
                 trainSet, testSet, config, progress, cancellationToken),
+            "time-series-anomaly" => await RunTimeSeriesAnomalyAsync(
+                trainSet, testSet, config, progress, cancellationToken),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
@@ -858,6 +860,142 @@ public class AutoMLRunner
                 BestTrainer = $"SsaForecasting (window={windowSize}, horizon={horizon})",
                 Model = model,
                 Metrics = metricsDict,
+                RowCount = totalRows
+            };
+        }, cancellationToken);
+    }
+
+    private async Task<AutoMLResult> RunTimeSeriesAnomalyAsync(
+        IDataView trainSet,
+        IDataView testSet,
+        TrainingConfig config,
+        IProgress<TrainingProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            // Find the value column (label = the series to monitor)
+            var valueColumn = config.LabelColumn;
+            var valueCol = trainSet.Schema.GetColumnOrNull(valueColumn);
+            if (!valueCol.HasValue)
+                throw new InvalidOperationException($"Value column '{valueColumn}' not found in data.");
+
+            if (valueCol.Value.Type is not NumberDataViewType)
+                throw new InvalidOperationException($"Value column '{valueColumn}' must be numeric for time series anomaly detection.");
+
+            var totalRows = (int)(trainSet.GetRowCount() ?? 0);
+            if (totalRows < 12)
+                throw new InvalidOperationException($"Time series anomaly detection requires at least 12 data points (got {totalRows}).");
+
+            _logger.Info($"Time series anomaly: series='{valueColumn}', {totalRows} rows");
+
+            // Try multiple detectors: SrCnn (best), then SSA Spike, then SSA ChangePoint
+            var detectors = new List<(string Name, Func<IEstimator<ITransformer>> Factory)>();
+
+            // SR-CNN: Spectral Residual based — best general-purpose detector
+            var srCnnWindowSize = Math.Min(64, Math.Max(8, totalRows / 4));
+            detectors.Add(("SrCnnAnomaly", () =>
+                _mlContext.Transforms.DetectAnomalyBySrCnn(
+                    outputColumnName: "Prediction",
+                    inputColumnName: valueColumn,
+                    windowSize: srCnnWindowSize,
+                    backAddWindowSize: 5,
+                    lookaheadWindowSize: 5,
+                    averagingWindowSize: 3,
+                    judgementWindowSize: 21,
+                    threshold: 0.3)));
+
+            // SSA Spike Detector
+            var ssaWindowSize = Math.Max(2, Math.Min(totalRows / 4, 50));
+            var ssaPValueSize = Math.Max(2, ssaWindowSize / 2);
+            var ssaTrainingSize = Math.Min(totalRows, Math.Max(ssaWindowSize * 2, 100));
+            detectors.Add(("SsaSpikeDetector", () =>
+                _mlContext.Transforms.DetectSpikeBySsa(
+                    outputColumnName: "Prediction",
+                    inputColumnName: valueColumn,
+                    confidence: 95.0,
+                    pvalueHistoryLength: ssaPValueSize,
+                    trainingWindowSize: ssaTrainingSize,
+                    seasonalityWindowSize: ssaWindowSize)));
+
+            ITransformer? bestModel = null;
+            string bestDetectorName = "";
+            Dictionary<string, double>? bestMetrics = null;
+            long bestAnomalyCount = -1;
+
+            for (int i = 0; i < detectors.Count; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var (name, factory) = detectors[i];
+
+                try
+                {
+                    var estimator = factory();
+                    var model = estimator.Fit(trainSet);
+                    var predictions = model.Transform(trainSet);
+
+                    // Count anomalies from Prediction column (VBuffer<double>: [alert, score, p-value])
+                    var predCol = predictions.Schema.GetColumnOrNull("Prediction");
+                    long anomalyCount = 0;
+                    long rowCount = 0;
+
+                    if (predCol.HasValue)
+                    {
+                        using var cursor = predictions.GetRowCursor(new[] { predCol.Value });
+                        var getter = cursor.GetGetter<VBuffer<double>>(predCol.Value);
+
+                        while (cursor.MoveNext())
+                        {
+                            VBuffer<double> pred = default;
+                            getter(ref pred);
+                            var values = pred.DenseValues().ToArray();
+                            rowCount++;
+                            // values[0] = alert (1 = anomaly), values[1] = score, values[2] = p-value
+                            if (values.Length > 0 && values[0] != 0)
+                                anomalyCount++;
+                        }
+                    }
+
+                    var detectionRate = rowCount > 0 ? (double)anomalyCount / rowCount : 0;
+                    var metricsDict = new Dictionary<string, double>
+                    {
+                        ["anomaly_count"] = anomalyCount,
+                        ["total_count"] = rowCount,
+                        ["detection_rate"] = detectionRate
+                    };
+
+                    progress?.Report(new TrainingProgress
+                    {
+                        TrialNumber = i + 1,
+                        TrainerName = name,
+                        MetricName = "detection_rate",
+                        Metric = detectionRate,
+                        ElapsedSeconds = 0
+                    });
+
+                    // Pick the first detector that produces reasonable results
+                    if (bestModel == null)
+                    {
+                        bestModel = model;
+                        bestDetectorName = name;
+                        bestMetrics = metricsDict;
+                        bestAnomalyCount = anomalyCount;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Info($"Time series anomaly detector '{name}' failed: {ex.Message}");
+                }
+            }
+
+            if (bestModel == null)
+                throw new InvalidOperationException("All time series anomaly detectors failed.");
+
+            return new AutoMLResult
+            {
+                BestTrainer = bestDetectorName,
+                Model = bestModel,
+                Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = totalRows
             };
         }, cancellationToken);

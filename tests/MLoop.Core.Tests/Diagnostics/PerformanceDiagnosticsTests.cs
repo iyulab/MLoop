@@ -533,4 +533,66 @@ public class PerformanceDiagnosticsTests
     }
 
     #endregion
+
+    #region Time Series Anomaly
+
+    [Fact]
+    public void Analyze_TimeSeriesAnomaly_GoodRate_ReturnsGood()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["detection_rate"] = 0.05,
+            ["anomaly_count"] = 50,
+            ["total_count"] = 1000
+        };
+
+        var result = _diagnostics.Analyze("time-series-anomaly", metrics);
+
+        Assert.Equal(PerformanceLevel.Good, result.OverallAssessment);
+        Assert.Equal("Detection Rate", result.PrimaryMetric);
+    }
+
+    [Fact]
+    public void Analyze_TimeSeriesAnomaly_HighRate_ReturnsLow()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["detection_rate"] = 0.6,
+            ["anomaly_count"] = 600,
+            ["total_count"] = 1000
+        };
+
+        var result = _diagnostics.Analyze("time-series-anomaly", metrics);
+
+        Assert.Equal(PerformanceLevel.Low, result.OverallAssessment);
+        Assert.Contains(result.Warnings, w => w.Contains("anomalous"));
+    }
+
+    [Fact]
+    public void Analyze_TimeSeriesAnomaly_VeryLowRate_SuggestsLowerThreshold()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["detection_rate"] = 0.0005,
+            ["anomaly_count"] = 1,
+            ["total_count"] = 2000
+        };
+
+        var result = _diagnostics.Analyze("time-series-anomaly", metrics);
+
+        Assert.Equal(PerformanceLevel.Moderate, result.OverallAssessment);
+        Assert.True(result.Suggestions.Count > 0);
+    }
+
+    [Fact]
+    public void Analyze_TimeSeriesAnomaly_NoMetrics_ReturnsUnknown()
+    {
+        var metrics = new Dictionary<string, double>();
+
+        var result = _diagnostics.Analyze("time-series-anomaly", metrics);
+
+        Assert.Equal(PerformanceLevel.Unknown, result.OverallAssessment);
+    }
+
+    #endregion
 }
