@@ -73,6 +73,10 @@ public class EvaluationEngine
                 {
                     metrics = EvaluateMulticlassClassification(predictions, labelColumn);
                 }
+                else if (taskType.Equals("anomaly-detection", StringComparison.OrdinalIgnoreCase))
+                {
+                    metrics = EvaluateAnomalyDetection(predictions, labelColumn);
+                }
                 else
                 {
                     throw new NotSupportedException($"Task type '{taskType}' is not supported for evaluation.");
@@ -257,5 +261,48 @@ public class EvaluationEngine
             { "micro_accuracy", metrics.MicroAccuracy },
             { "log_loss", metrics.LogLoss }
         };
+    }
+
+    private Dictionary<string, double> EvaluateAnomalyDetection(IDataView predictions, string labelColumn)
+    {
+        var metricsDict = new Dictionary<string, double>();
+
+        // Try ML.NET built-in anomaly evaluation
+        try
+        {
+            var metrics = _mlContext.AnomalyDetection.Evaluate(predictions, labelColumnName: labelColumn);
+            metricsDict["auc"] = double.IsNaN(metrics.AreaUnderRocCurve) ? 0 : metrics.AreaUnderRocCurve;
+            metricsDict["detection_rate_at_fp5"] = metrics.DetectionRateAtFalsePositiveCount;
+        }
+        catch
+        {
+            // Label format may not match expected type - fall back to manual
+        }
+
+        // Manual counting from PredictedLabel
+        var predictedLabelCol = predictions.Schema.GetColumnOrNull("PredictedLabel");
+        if (predictedLabelCol.HasValue)
+        {
+            long totalCount = 0;
+            long anomalyCount = 0;
+
+            using (var cursor = predictions.GetRowCursor(new[] { predictedLabelCol.Value }))
+            {
+                var getter = cursor.GetGetter<bool>(predictedLabelCol.Value);
+                while (cursor.MoveNext())
+                {
+                    bool isAnomaly = false;
+                    getter(ref isAnomaly);
+                    totalCount++;
+                    if (isAnomaly) anomalyCount++;
+                }
+            }
+
+            metricsDict["anomaly_count"] = anomalyCount;
+            metricsDict["total_count"] = totalCount;
+            metricsDict["detection_rate"] = totalCount > 0 ? (double)anomalyCount / totalCount : 0;
+        }
+
+        return metricsDict;
     }
 }

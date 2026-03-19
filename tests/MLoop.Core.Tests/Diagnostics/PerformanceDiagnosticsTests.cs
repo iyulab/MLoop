@@ -230,4 +230,72 @@ public class PerformanceDiagnosticsTests
     }
 
     #endregion
+
+    #region Anomaly Detection
+
+    [Fact]
+    public void Analyze_AnomalyDetection_HighAuc_ReturnsExcellent()
+    {
+        var metrics = new Dictionary<string, double> { ["auc"] = 0.97 };
+
+        var result = _diagnostics.Analyze("anomaly-detection", metrics);
+
+        Assert.Equal(PerformanceLevel.Excellent, result.OverallAssessment);
+        Assert.Equal("AUC", result.PrimaryMetric);
+    }
+
+    [Fact]
+    public void Analyze_AnomalyDetection_LowAuc_ReturnsLow()
+    {
+        var metrics = new Dictionary<string, double> { ["auc"] = 0.55 };
+
+        var result = _diagnostics.Analyze("anomaly-detection", metrics);
+
+        Assert.Equal(PerformanceLevel.Low, result.OverallAssessment);
+        Assert.True(result.Suggestions.Count > 0);
+    }
+
+    [Fact]
+    public void Analyze_AnomalyDetection_NoAuc_UsesDetectionRate()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["detection_rate"] = 0.05,
+            ["anomaly_count"] = 50,
+            ["total_count"] = 1000
+        };
+
+        var result = _diagnostics.Analyze("anomaly-detection", metrics);
+
+        Assert.Equal("Detection Rate", result.PrimaryMetric);
+        Assert.Equal(PerformanceLevel.Good, result.OverallAssessment);
+    }
+
+    [Fact]
+    public void Analyze_AnomalyDetection_HighDetectionRate_WarnsOversensitive()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["detection_rate"] = 0.65,
+            ["anomaly_count"] = 650,
+            ["total_count"] = 1000
+        };
+
+        var result = _diagnostics.Analyze("anomaly-detection", metrics);
+
+        Assert.Equal(PerformanceLevel.Low, result.OverallAssessment);
+        Assert.Contains(result.Warnings, w => w.Contains("anomalous"));
+    }
+
+    [Fact]
+    public void Analyze_AnomalyDetection_NoMetrics_ReturnsUnknown()
+    {
+        var metrics = new Dictionary<string, double>();
+
+        var result = _diagnostics.Analyze("anomaly-detection", metrics);
+
+        Assert.Equal(PerformanceLevel.Unknown, result.OverallAssessment);
+    }
+
+    #endregion
 }

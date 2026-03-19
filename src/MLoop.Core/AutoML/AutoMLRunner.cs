@@ -91,6 +91,8 @@ public class AutoMLRunner
                 trainSet, testSet, config, progress, cancellationToken),
             "regression" => await RunRegressionAsync(
                 trainSet, testSet, config, progress, cancellationToken),
+            "anomaly-detection" => await RunAnomalyDetectionAsync(
+                trainSet, testSet, config, progress, cancellationToken),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
@@ -356,6 +358,107 @@ public class AutoMLRunner
             Metrics = metricsDict,
             RowCount = trainSet.GetRowCount() ?? 0
         };
+    }
+
+    private async Task<AutoMLResult> RunAnomalyDetectionAsync(
+        IDataView trainSet,
+        IDataView testSet,
+        TrainingConfig config,
+        IProgress<TrainingProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            // Identify numeric feature columns (exclude label, hidden, and non-numeric)
+            var featureColumns = new List<string>();
+            foreach (var col in trainSet.Schema)
+            {
+                if (col.IsHidden) continue;
+                if (col.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) continue;
+                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType)
+                    featureColumns.Add(col.Name);
+            }
+
+            if (featureColumns.Count == 0)
+                throw new InvalidOperationException("No numeric feature columns found for anomaly detection.");
+
+            _logger.Info($"Anomaly detection: {featureColumns.Count} feature columns, using RandomizedPca");
+
+            // Determine PCA rank (auto: min of feature count and 20)
+            var rank = Math.Min(featureColumns.Count, 20);
+
+            // Build pipeline: Concatenate features → RandomizedPca
+            var pipeline = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray())
+                .Append(_mlContext.AnomalyDetection.Trainers.RandomizedPca(
+                    featureColumnName: "Features",
+                    rank: rank,
+                    oversampling: 20));
+
+            // Train
+            progress?.Report(new TrainingProgress
+            {
+                TrialNumber = 1,
+                TrainerName = "RandomizedPca",
+                MetricName = "detection_rate",
+                Metric = 0,
+                ElapsedSeconds = 0
+            });
+
+            var model = pipeline.Fit(trainSet);
+
+            // Evaluate on test set
+            var predictions = model.Transform(testSet);
+
+            var metricsDict = new Dictionary<string, double>();
+
+            // Try ML.NET's built-in anomaly evaluation (requires label column)
+            if (!string.IsNullOrEmpty(config.LabelColumn))
+            {
+                try
+                {
+                    var metrics = _mlContext.AnomalyDetection.Evaluate(predictions, config.LabelColumn);
+                    metricsDict["auc"] = double.IsNaN(metrics.AreaUnderRocCurve) ? 0 : metrics.AreaUnderRocCurve;
+                    metricsDict["detection_rate_at_fp5"] = metrics.DetectionRateAtFalsePositiveCount;
+                }
+                catch
+                {
+                    // Label column may not have correct format for AnomalyDetection.Evaluate
+                    // Fall back to manual counting
+                }
+            }
+
+            // Manual anomaly counting from predictions
+            var predictedLabelCol = predictions.Schema.GetColumnOrNull("PredictedLabel");
+            if (predictedLabelCol.HasValue)
+            {
+                long totalCount = 0;
+                long anomalyCount = 0;
+
+                using (var cursor = predictions.GetRowCursor(new[] { predictedLabelCol.Value }))
+                {
+                    var getter = cursor.GetGetter<bool>(predictedLabelCol.Value);
+                    while (cursor.MoveNext())
+                    {
+                        bool isAnomaly = false;
+                        getter(ref isAnomaly);
+                        totalCount++;
+                        if (isAnomaly) anomalyCount++;
+                    }
+                }
+
+                metricsDict["anomaly_count"] = anomalyCount;
+                metricsDict["total_count"] = totalCount;
+                metricsDict["detection_rate"] = totalCount > 0 ? (double)anomalyCount / totalCount : 0;
+            }
+
+            return new AutoMLResult
+            {
+                BestTrainer = $"RandomizedPca (rank={rank})",
+                Model = model,
+                Metrics = metricsDict,
+                RowCount = trainSet.GetRowCount() ?? 0
+            };
+        }, cancellationToken);
     }
 
     private BinaryClassificationMetric GetBinaryMetric(string metricName)

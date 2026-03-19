@@ -15,9 +15,23 @@ public static class ValidateCommand
 {
     private static readonly HashSet<string> ValidTaskTypes = new(StringComparer.OrdinalIgnoreCase)
     {
+        // Supervised (AutoML)
         "regression",
         "binary-classification",
-        "multiclass-classification"
+        "multiclass-classification",
+        // Unsupervised / Semi-supervised (direct trainer)
+        "anomaly-detection",
+        "clustering",
+        "ranking",
+        // Time Series (Microsoft.ML.TimeSeries)
+        "forecasting",
+        "time-series-anomaly",
+        // Deep Learning (Microsoft.ML.Vision / TorchSharp)
+        "image-classification",
+        "object-detection",
+        "text-classification",
+        // Collaborative Filtering (Microsoft.ML.Recommender)
+        "recommendation"
     };
 
     private static readonly HashSet<string> ValidMetrics = new(StringComparer.OrdinalIgnoreCase)

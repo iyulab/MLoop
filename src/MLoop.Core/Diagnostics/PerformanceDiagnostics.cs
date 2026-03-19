@@ -42,6 +42,9 @@ public class PerformanceDiagnostics
             case "multiclassclassification":
                 AnalyzeMulticlassClassification(result);
                 break;
+            case "anomalydetection":
+                AnalyzeAnomalyDetection(result);
+                break;
             default:
                 result.OverallAssessment = PerformanceLevel.Unknown;
                 result.Summary = $"Unknown task type: {taskType}";
@@ -279,6 +282,79 @@ public class PerformanceDiagnostics
         {
             result.SecondaryMetrics["LogLoss"] = logLoss;
         }
+    }
+
+    private void AnalyzeAnomalyDetection(PerformanceDiagnosticResult result)
+    {
+        var metrics = result.Metrics;
+
+        // Check AUC if available (requires labeled anomaly data)
+        if (metrics.TryGetValue("auc", out var auc) && auc > 0)
+        {
+            result.PrimaryMetric = "AUC";
+            result.PrimaryMetricValue = auc;
+
+            if (auc >= 0.95)
+            {
+                result.OverallAssessment = PerformanceLevel.Excellent;
+                result.Summary = $"Excellent anomaly detection (AUC = {auc:F4})";
+            }
+            else if (auc >= 0.85)
+            {
+                result.OverallAssessment = PerformanceLevel.Good;
+                result.Summary = $"Good anomaly detection (AUC = {auc:F4})";
+            }
+            else if (auc >= 0.7)
+            {
+                result.OverallAssessment = PerformanceLevel.Moderate;
+                result.Summary = $"Moderate anomaly detection (AUC = {auc:F4})";
+                result.Suggestions.Add("Consider increasing PCA rank or adding more features");
+            }
+            else
+            {
+                result.OverallAssessment = PerformanceLevel.Low;
+                result.Summary = $"Low anomaly detection (AUC = {auc:F4})";
+                result.Suggestions.Add("Review feature selection — current features may not capture anomaly patterns");
+                result.Suggestions.Add("Consider using more training data of normal behavior");
+            }
+        }
+        else
+        {
+            // No AUC — use detection rate as descriptive metric
+            if (metrics.TryGetValue("detection_rate", out var detRate))
+            {
+                result.PrimaryMetric = "Detection Rate";
+                result.PrimaryMetricValue = detRate;
+
+                if (detRate > 0.5)
+                {
+                    result.OverallAssessment = PerformanceLevel.Low;
+                    result.Summary = $"High anomaly rate ({detRate:P1}) — model may be oversensitive";
+                    result.Warnings.Add("More than half of data flagged as anomalous");
+                    result.Suggestions.Add("Verify training data represents normal behavior");
+                }
+                else if (detRate > 0.1)
+                {
+                    result.OverallAssessment = PerformanceLevel.Moderate;
+                    result.Summary = $"Anomaly detection rate: {detRate:P1}";
+                }
+                else
+                {
+                    result.OverallAssessment = PerformanceLevel.Good;
+                    result.Summary = $"Anomaly detection rate: {detRate:P1}";
+                }
+            }
+            else
+            {
+                result.OverallAssessment = PerformanceLevel.Unknown;
+                result.Summary = "Anomaly detection completed (no evaluation metrics available)";
+            }
+        }
+
+        if (metrics.TryGetValue("anomaly_count", out var anomalyCount))
+            result.SecondaryMetrics["Anomaly Count"] = anomalyCount;
+        if (metrics.TryGetValue("total_count", out var totalCount))
+            result.SecondaryMetrics["Total Count"] = totalCount;
     }
 
     private void AddDataBasedSuggestions(PerformanceDiagnosticResult result)
