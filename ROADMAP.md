@@ -37,7 +37,7 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
 
 ---
 
-## Current Status (v0.8.0 — March 2026)
+## Current Status (v0.9.0 — March 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
@@ -1031,21 +1031,25 @@ Out of MLoop CLI scope (requires Image Classification support):
 | MLOOP-104 | Time Series Forecasting (SSA) | 2 | ✅ 완료 |
 | MLOOP-105 | Time Series Anomaly (Spike/CP) | 2 | ✅ 완료 |
 | MLOOP-106 | Recommendation (Matrix Factorization) | 3 | ✅ 완료 |
-| **MLOOP-113** | **`mloop runtime` 명령 (DL infra)** | **Infra** | **다음 — Tier 4 전제조건** |
-| MLOOP-107 | Image Classification | 4a | MLOOP-113 종속 |
-| MLOOP-108 | Object Detection | 4b | MLOOP-113 종속 |
-| MLOOP-109 | Text Classification | 4b | MLOOP-113 종속 |
-| MLOOP-110 | Sentence Similarity | 4b | P3 |
-| MLOOP-111 | NER | 4b | P3 |
-| MLOOP-112 | Question Answering | 4b | P3 |
+| MLOOP-113 | `mloop runtime` 명령 (DL infra) | Infra | ✅ 완료 |
+| MLOOP-107 | Image Classification | 4a | 등록됨 (MLoop.DL 필요) |
+| MLOOP-108 | Object Detection | 4b | 등록됨 (MLoop.DL 필요) |
+| MLOOP-109 | Text Classification | 4b | 등록됨 (MLoop.DL 필요) |
+| MLOOP-110 | Sentence Similarity | 4b | 등록됨 (MLoop.DL 필요) |
+| MLOOP-111 | NER | 4b | 등록됨 (MLoop.DL 필요) |
+| MLOOP-112 | Question Answering | 4b | 등록됨 (MLoop.DL 필요) |
 
-### 남은 작업: Tier 4 (Deep Learning)
+### 남은 작업: Tier 4 DL Trainer 구현
 
-| 그룹 | 태스크 | 추가 비용 | 비고 |
-|------|--------|:---------:|------|
-| **인프라** | MLOOP-113 `mloop runtime` | 0 | on-demand 다운로드 매니저 |
-| **TensorFlow** | MLOOP-107 Image Classification | +182MB (on-demand) | TF native runtime |
-| **TorchSharp** | MLOOP-108~112 (5개) | +80~120MB (on-demand) | libtorch native 공유 |
+Runtime infrastructure (MLOOP-113) 완료. DL trainer 구현은 별도 `MLoop.DL` 어셈블리가 필요:
+- **문제**: `Microsoft.ML.TorchSharp`/`Vision` 패키지 참조가 native runtime을 강제 번들
+- **해결**: `MLoop.DL` 어셈블리를 동적 로딩하여 on-demand 철학 유지
+- **현황**: 태스크 타입 등록 + runtime check + 명확한 에러 메시지 완료
+
+| 그룹 | 태스크 | 런타임 | 비고 |
+|------|--------|:------:|------|
+| **TensorFlow** | MLOOP-107 Image Classification | `mloop runtime install tf` | +182MB on-demand |
+| **TorchSharp** | MLOOP-108~112 (5개) | `mloop runtime install torch` | +100MB on-demand |
 
 ---
 
@@ -1147,9 +1151,9 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: March 20, 2026
-**Current Version**: v0.8.0 ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
+**Current Version**: v0.9.0 ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
 **Recent Changes**:
-- v0.8.0: ML Task Expansion Tier 1~3 완료 — Time Series Anomaly, Recommendation 추가 (9/15 태스크)
+- v0.9.0: On-demand runtime management (`mloop runtime install/remove`), DL task registration
+- v0.8.0: Time Series Anomaly, Recommendation 추가 — Tier 1~3 완료 (9/15 태스크)
 - v0.7.0: Clustering, Ranking, Forecasting 추가 (MLOOP-102~104)
-- v0.6.2: Anomaly Detection (PCA), column type override, bug fixes
 - 1,311 tests passing across all projects
