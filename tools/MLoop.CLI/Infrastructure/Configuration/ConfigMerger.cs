@@ -74,7 +74,11 @@ public class ConfigMerger
             Task = task,
             Label = label,
             Training = training,
-            Description = baseDefinition?.Description
+            Description = baseDefinition?.Description,
+            Prep = baseDefinition?.Prep,
+            Columns = baseDefinition?.Columns,
+            NumClusters = baseDefinition?.NumClusters,
+            GroupColumn = baseDefinition?.GroupColumn
         };
     }
 
@@ -160,7 +164,11 @@ public class ConfigMerger
             Task = !string.IsNullOrEmpty(source.Task) ? source.Task : existing.Task,
             Label = !string.IsNullOrEmpty(source.Label) ? source.Label : existing.Label,
             Training = MergeTrainingSettings(existing.Training, source.Training, null),
-            Description = !string.IsNullOrEmpty(source.Description) ? source.Description : existing.Description
+            Description = !string.IsNullOrEmpty(source.Description) ? source.Description : existing.Description,
+            Prep = source.Prep ?? existing.Prep,
+            Columns = source.Columns ?? existing.Columns,
+            NumClusters = source.NumClusters ?? existing.NumClusters,
+            GroupColumn = !string.IsNullOrEmpty(source.GroupColumn) ? source.GroupColumn : existing.GroupColumn
         };
     }
 

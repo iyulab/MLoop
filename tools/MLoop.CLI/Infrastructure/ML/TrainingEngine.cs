@@ -98,7 +98,8 @@ public class TrainingEngine : ITrainingEngine
                     Metric = config.Metric,
                     TestSplit = config.TestSplit,
                     UseAutoTime = config.UseAutoTime,
-                    NumClusters = config.NumClusters
+                    NumClusters = config.NumClusters,
+                    GroupColumn = config.GroupColumn
                 };
             }
 
@@ -240,7 +241,8 @@ public class TrainingEngine : ITrainingEngine
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.Metric,
                     TestSplit = config.TestSplit,
-                    InputSchema = inputSchema
+                    InputSchema = inputSchema,
+                    GroupColumn = config.GroupColumn
                 },
                 Result = new ExperimentResult
                 {
@@ -284,7 +286,8 @@ public class TrainingEngine : ITrainingEngine
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.Metric,
-                    TestSplit = config.TestSplit
+                    TestSplit = config.TestSplit,
+                    GroupColumn = config.GroupColumn
                 },
                 Result = new ExperimentResult
                 {
@@ -338,7 +341,8 @@ public class TrainingEngine : ITrainingEngine
             Metric = config.Metric,
             TestSplit = config.TestSplit,
             UseAutoTime = false,
-            NumClusters = config.NumClusters
+            NumClusters = config.NumClusters,
+            GroupColumn = config.GroupColumn
         };
 
         var probeTrialCount = 0;
@@ -401,7 +405,8 @@ public class TrainingEngine : ITrainingEngine
             Metric = config.Metric,
             TestSplit = config.TestSplit,
             UseAutoTime = false,
-            NumClusters = config.NumClusters
+            NumClusters = config.NumClusters,
+            GroupColumn = config.GroupColumn
         };
 
         var mainResult = await _autoMLRunner.RunAsync(mainConfig, progress, cancellationToken);

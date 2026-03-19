@@ -406,4 +406,68 @@ public class PerformanceDiagnosticsTests
     }
 
     #endregion
+
+    #region Ranking
+
+    [Fact]
+    public void Analyze_Ranking_HighNDCG_ReturnsExcellent()
+    {
+        var metrics = new Dictionary<string, double> { ["ndcg"] = 0.95 };
+
+        var result = _diagnostics.Analyze("ranking", metrics);
+
+        Assert.Equal(PerformanceLevel.Excellent, result.OverallAssessment);
+        Assert.Equal("NDCG", result.PrimaryMetric);
+    }
+
+    [Fact]
+    public void Analyze_Ranking_GoodNDCG_ReturnsGood()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["ndcg"] = 0.75,
+            ["ndcg_at_1"] = 0.6,
+            ["ndcg_at_3"] = 0.7,
+            ["ndcg_at_5"] = 0.72
+        };
+
+        var result = _diagnostics.Analyze("ranking", metrics);
+
+        Assert.Equal(PerformanceLevel.Good, result.OverallAssessment);
+        Assert.True(result.SecondaryMetrics.ContainsKey("NDCG@1"));
+    }
+
+    [Fact]
+    public void Analyze_Ranking_ModerateNDCG_ReturnsModerate()
+    {
+        var metrics = new Dictionary<string, double> { ["ndcg"] = 0.55 };
+
+        var result = _diagnostics.Analyze("ranking", metrics);
+
+        Assert.Equal(PerformanceLevel.Moderate, result.OverallAssessment);
+        Assert.True(result.Suggestions.Count > 0);
+    }
+
+    [Fact]
+    public void Analyze_Ranking_LowNDCG_ReturnsLow()
+    {
+        var metrics = new Dictionary<string, double> { ["ndcg"] = 0.3 };
+
+        var result = _diagnostics.Analyze("ranking", metrics);
+
+        Assert.Equal(PerformanceLevel.Low, result.OverallAssessment);
+        Assert.True(result.Suggestions.Count >= 2);
+    }
+
+    [Fact]
+    public void Analyze_Ranking_NoMetrics_ReturnsUnknown()
+    {
+        var metrics = new Dictionary<string, double>();
+
+        var result = _diagnostics.Analyze("ranking", metrics);
+
+        Assert.Equal(PerformanceLevel.Unknown, result.OverallAssessment);
+    }
+
+    #endregion
 }

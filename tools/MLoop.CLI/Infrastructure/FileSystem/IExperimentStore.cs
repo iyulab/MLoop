@@ -114,6 +114,7 @@ public class ExperimentConfig
     public required string Metric { get; init; }
     public required double TestSplit { get; init; }
     public InputSchemaInfo? InputSchema { get; init; }
+    public string? GroupColumn { get; init; }
 }
 
 /// <summary>

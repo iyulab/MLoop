@@ -95,6 +95,8 @@ public class AutoMLRunner
                 trainSet, testSet, config, progress, cancellationToken),
             "clustering" => await RunClusteringAsync(
                 trainSet, testSet, config, progress, cancellationToken),
+            "ranking" => await RunRankingAsync(
+                trainSet, testSet, config, progress, cancellationToken),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
@@ -584,6 +586,134 @@ public class AutoMLRunner
             {
                 BestTrainer = $"KMeans (k={bestK})",
                 Model = bestModel!,
+                Metrics = bestMetrics ?? new Dictionary<string, double>(),
+                RowCount = trainSet.GetRowCount() ?? 0
+            };
+        }, cancellationToken);
+    }
+
+    private async Task<AutoMLResult> RunRankingAsync(
+        IDataView trainSet,
+        IDataView testSet,
+        TrainingConfig config,
+        IProgress<TrainingProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            if (string.IsNullOrEmpty(config.GroupColumn))
+                throw new InvalidOperationException("Ranking task requires a group column. Set 'group_column' in mloop.yaml or use --group-column.");
+
+            // Validate group column exists
+            var groupCol = trainSet.Schema.GetColumnOrNull(config.GroupColumn);
+            if (!groupCol.HasValue)
+                throw new InvalidOperationException($"Group column '{config.GroupColumn}' not found in data.");
+
+            // Identify numeric feature columns (exclude label, group, hidden, non-numeric)
+            var featureColumns = new List<string>();
+            foreach (var col in trainSet.Schema)
+            {
+                if (col.IsHidden) continue;
+                if (col.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) continue;
+                if (col.Name.Equals(config.GroupColumn, StringComparison.OrdinalIgnoreCase)) continue;
+                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType)
+                    featureColumns.Add(col.Name);
+            }
+
+            if (featureColumns.Count == 0)
+                throw new InvalidOperationException("No numeric feature columns found for ranking.");
+
+            _logger.Info($"Ranking: {featureColumns.Count} features, group='{config.GroupColumn}', label='{config.LabelColumn}'");
+
+            // Build pipeline: convert label to Single, hash group to Key, concatenate features
+            var pipeline = _mlContext.Transforms.Conversion.ConvertType(config.LabelColumn, outputKind: Microsoft.ML.Data.DataKind.Single)
+                .Append(_mlContext.Transforms.Conversion.MapValueToKey("GroupId", config.GroupColumn))
+                .Append(_mlContext.Transforms.Concatenate("Features", featureColumns.ToArray()));
+
+            // Try both trainers: LightGbm and FastTree
+            var trainers = new (string Name, Microsoft.ML.IEstimator<Microsoft.ML.ITransformer> Trainer)[]
+            {
+                ("LightGbmRanking", _mlContext.Ranking.Trainers.LightGbm(
+                    labelColumnName: config.LabelColumn,
+                    featureColumnName: "Features",
+                    rowGroupColumnName: "GroupId")),
+                ("FastTreeRanking", _mlContext.Ranking.Trainers.FastTree(
+                    labelColumnName: config.LabelColumn,
+                    featureColumnName: "Features",
+                    rowGroupColumnName: "GroupId"))
+            };
+
+            ITransformer? bestModel = null;
+            double bestNdcg = double.MinValue;
+            string bestTrainerName = trainers[0].Name;
+            Dictionary<string, double>? bestMetrics = null;
+
+            for (int i = 0; i < trainers.Length; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var (trainerName, trainer) = trainers[i];
+
+                try
+                {
+                    var fullPipeline = pipeline.Append(trainer);
+                    var model = fullPipeline.Fit(trainSet);
+                    var predictions = model.Transform(testSet);
+
+                    var rankMetrics = _mlContext.Ranking.Evaluate(predictions,
+                        labelColumnName: config.LabelColumn,
+                        rowGroupColumnName: "GroupId");
+
+                    var ndcg = rankMetrics.NormalizedDiscountedCumulativeGains;
+                    var dcg = rankMetrics.DiscountedCumulativeGains;
+
+                    var metricsDict = new Dictionary<string, double>();
+
+                    // Store per-level NDCG (NDCG@1, NDCG@2, ..., NDCG@10)
+                    for (int level = 0; level < ndcg.Count; level++)
+                    {
+                        metricsDict[$"ndcg_at_{level + 1}"] = double.IsNaN(ndcg[level]) ? 0 : ndcg[level];
+                    }
+                    for (int level = 0; level < dcg.Count; level++)
+                    {
+                        metricsDict[$"dcg_at_{level + 1}"] = double.IsNaN(dcg[level]) ? 0 : dcg[level];
+                    }
+
+                    // Primary metric: NDCG@10 (or last available level)
+                    var primaryNdcg = ndcg.Count > 0 ? ndcg[ndcg.Count - 1] : 0;
+                    if (double.IsNaN(primaryNdcg)) primaryNdcg = 0;
+                    metricsDict["ndcg"] = primaryNdcg;
+
+                    progress?.Report(new TrainingProgress
+                    {
+                        TrialNumber = i + 1,
+                        TrainerName = trainerName,
+                        MetricName = "ndcg",
+                        Metric = primaryNdcg,
+                        ElapsedSeconds = 0
+                    });
+
+                    if (primaryNdcg > bestNdcg)
+                    {
+                        bestNdcg = primaryNdcg;
+                        bestModel = model;
+                        bestTrainerName = trainerName;
+                        bestMetrics = metricsDict;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Info($"Ranking trainer '{trainerName}' failed: {ex.Message}");
+                    // Continue to next trainer
+                }
+            }
+
+            if (bestModel == null)
+                throw new InvalidOperationException("All ranking trainers failed. Check data format and group column.");
+
+            return new AutoMLResult
+            {
+                BestTrainer = bestTrainerName,
+                Model = bestModel,
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = trainSet.GetRowCount() ?? 0
             };

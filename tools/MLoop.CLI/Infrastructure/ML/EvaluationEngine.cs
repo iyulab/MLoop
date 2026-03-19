@@ -26,7 +26,8 @@ public class EvaluationEngine
         string labelColumn,
         string taskType,
         CancellationToken cancellationToken = default,
-        InputSchemaInfo? trainedSchema = null)
+        InputSchemaInfo? trainedSchema = null,
+        string? groupColumn = null)
     {
         return await Task.Run(() =>
         {
@@ -80,6 +81,10 @@ public class EvaluationEngine
                 else if (taskType.Equals("clustering", StringComparison.OrdinalIgnoreCase))
                 {
                     metrics = EvaluateClustering(predictions, labelColumn);
+                }
+                else if (taskType.Equals("ranking", StringComparison.OrdinalIgnoreCase))
+                {
+                    metrics = EvaluateRanking(predictions, labelColumn, groupColumn);
                 }
                 else
                 {
@@ -265,6 +270,40 @@ public class EvaluationEngine
             { "micro_accuracy", metrics.MicroAccuracy },
             { "log_loss", metrics.LogLoss }
         };
+    }
+
+    private Dictionary<string, double> EvaluateRanking(IDataView predictions, string labelColumn, string? groupColumn)
+    {
+        var metricsDict = new Dictionary<string, double>();
+
+        try
+        {
+            // GroupId is the mapped Key column created during training pipeline
+            var groupIdCol = "GroupId";
+            if (predictions.Schema.GetColumnOrNull(groupIdCol) == null && !string.IsNullOrEmpty(groupColumn))
+                groupIdCol = groupColumn;
+
+            var metrics = _mlContext.Ranking.Evaluate(predictions,
+                labelColumnName: labelColumn,
+                rowGroupColumnName: groupIdCol);
+
+            var ndcg = metrics.NormalizedDiscountedCumulativeGains;
+            var dcg = metrics.DiscountedCumulativeGains;
+
+            for (int level = 0; level < ndcg.Count; level++)
+                metricsDict[$"ndcg_at_{level + 1}"] = double.IsNaN(ndcg[level]) ? 0 : ndcg[level];
+            for (int level = 0; level < dcg.Count; level++)
+                metricsDict[$"dcg_at_{level + 1}"] = double.IsNaN(dcg[level]) ? 0 : dcg[level];
+
+            var primaryNdcg = ndcg.Count > 0 ? ndcg[ndcg.Count - 1] : 0;
+            metricsDict["ndcg"] = double.IsNaN(primaryNdcg) ? 0 : primaryNdcg;
+        }
+        catch
+        {
+            // Evaluation may fail if group column format is incompatible
+        }
+
+        return metricsDict;
     }
 
     private Dictionary<string, double> EvaluateClustering(IDataView predictions, string labelColumn)

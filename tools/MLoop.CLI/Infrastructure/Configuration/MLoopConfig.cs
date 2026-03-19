@@ -67,6 +67,12 @@ public class ModelDefinition
     /// 0 or null = auto-select via silhouette search (k=2..10).
     /// </summary>
     public int? NumClusters { get; set; }
+
+    /// <summary>
+    /// Group column name for ranking task.
+    /// Groups rows into query contexts for learning-to-rank.
+    /// </summary>
+    public string? GroupColumn { get; set; }
 }
 
 /// <summary>

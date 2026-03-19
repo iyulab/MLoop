@@ -398,4 +398,38 @@ public class ConfigValidatorTests
 
         Assert.Contains(result.Errors, e => e.Contains("Label column is required"));
     }
+
+    [Fact]
+    public void Validate_RankingWithoutGroupColumn_ReturnsError()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition { Task = "ranking", Label = "relevance" }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.Contains(result.Errors, e => e.Contains("Group column is required for ranking"));
+    }
+
+    [Fact]
+    public void Validate_RankingWithGroupColumn_NoGroupError()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition { Task = "ranking", Label = "relevance", GroupColumn = "query_id" }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(result.Errors, e => e.Contains("Group column is required"));
+    }
 }
