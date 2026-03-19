@@ -51,6 +51,9 @@ public class PerformanceDiagnostics
             case "ranking":
                 AnalyzeRanking(result);
                 break;
+            case "forecasting":
+                AnalyzeForecasting(result);
+                break;
             default:
                 result.OverallAssessment = PerformanceLevel.Unknown;
                 result.Summary = $"Unknown task type: {taskType}";
@@ -361,6 +364,66 @@ public class PerformanceDiagnostics
             result.SecondaryMetrics["Anomaly Count"] = anomalyCount;
         if (metrics.TryGetValue("total_count", out var totalCount))
             result.SecondaryMetrics["Total Count"] = totalCount;
+    }
+
+    private void AnalyzeForecasting(PerformanceDiagnosticResult result)
+    {
+        var metrics = result.Metrics;
+
+        // Primary metric: MAPE (Mean Absolute Percentage Error) — most interpretable
+        if (metrics.TryGetValue("mape", out var mape) && mape > 0)
+        {
+            result.PrimaryMetric = "MAPE";
+            result.PrimaryMetricValue = mape;
+
+            if (mape < 0.05)
+            {
+                result.OverallAssessment = PerformanceLevel.Excellent;
+                result.Summary = $"Excellent forecast accuracy (MAPE = {mape:P1})";
+            }
+            else if (mape < 0.15)
+            {
+                result.OverallAssessment = PerformanceLevel.Good;
+                result.Summary = $"Good forecast accuracy (MAPE = {mape:P1})";
+            }
+            else if (mape < 0.30)
+            {
+                result.OverallAssessment = PerformanceLevel.Moderate;
+                result.Summary = $"Moderate forecast accuracy (MAPE = {mape:P1})";
+                result.Suggestions.Add("Consider increasing training data or adjusting window size");
+            }
+            else
+            {
+                result.OverallAssessment = PerformanceLevel.Low;
+                result.Summary = $"Low forecast accuracy (MAPE = {mape:P1})";
+                result.Suggestions.Add("Reduce forecast horizon or increase training data");
+                result.Suggestions.Add("Check for seasonality patterns and adjust window_size accordingly");
+            }
+        }
+        else if (metrics.TryGetValue("mae", out var mae))
+        {
+            // Fallback to MAE (no universal threshold — depends on scale)
+            result.PrimaryMetric = "MAE";
+            result.PrimaryMetricValue = mae;
+            result.OverallAssessment = PerformanceLevel.Moderate;
+            result.Summary = $"Forecasting completed (MAE = {mae:F4})";
+            result.Suggestions.Add("Compare MAE against data scale to assess quality");
+        }
+        else
+        {
+            result.OverallAssessment = PerformanceLevel.Unknown;
+            result.Summary = "Forecasting completed (no evaluation metrics available)";
+        }
+
+        // Secondary metrics
+        if (metrics.TryGetValue("mae", out var maeVal))
+            result.SecondaryMetrics["MAE"] = maeVal;
+        if (metrics.TryGetValue("rmse", out var rmse))
+            result.SecondaryMetrics["RMSE"] = rmse;
+        if (metrics.TryGetValue("horizon", out var horizon))
+            result.SecondaryMetrics["Horizon"] = horizon;
+        if (metrics.TryGetValue("window_size", out var windowSize))
+            result.SecondaryMetrics["Window Size"] = windowSize;
     }
 
     private void AnalyzeRanking(PerformanceDiagnosticResult result)

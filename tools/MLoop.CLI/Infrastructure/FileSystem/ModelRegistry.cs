@@ -443,7 +443,8 @@ public class ModelRegistry : IModelRegistry
                lower.Contains("rmse") ||
                lower.Contains("loss") ||
                lower == "average_distance" ||
-               lower == "davies_bouldin_index";
+               lower == "davies_bouldin_index" ||
+               lower == "mape";
     }
 
     /// <summary>

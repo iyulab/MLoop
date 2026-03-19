@@ -259,6 +259,14 @@ public static class TrainCommand
                 return 1;
             }
 
+            // Forecasting requires horizon
+            if (effectiveDefinition.Task.Equals("forecasting", StringComparison.OrdinalIgnoreCase) &&
+                (effectiveDefinition.Horizon ?? 0) <= 0)
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] Forecasting task requires horizon > 0. Set 'horizon' in mloop.yaml");
+                return 1;
+            }
+
             // Resolve data file path
             string? resolvedDataFile;
             var datasetDiscovery = new DatasetDiscovery(fileSystem);
@@ -714,7 +722,10 @@ public static class TrainCommand
                     kvp => kvp.Key,
                     kvp => kvp.Value.Type),
                 NumClusters = effectiveDefinition.NumClusters ?? 0,
-                GroupColumn = effectiveDefinition.GroupColumn
+                GroupColumn = effectiveDefinition.GroupColumn,
+                Horizon = effectiveDefinition.Horizon ?? 0,
+                WindowSize = effectiveDefinition.WindowSize ?? 0,
+                SeriesLength = effectiveDefinition.SeriesLength ?? 0
             };
 
             // Initialize hook engine

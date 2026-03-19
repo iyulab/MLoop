@@ -470,4 +470,67 @@ public class PerformanceDiagnosticsTests
     }
 
     #endregion
+
+    #region Forecasting
+
+    [Fact]
+    public void Analyze_Forecasting_LowMAPE_ReturnsExcellent()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["mape"] = 0.03,
+            ["mae"] = 1.5,
+            ["rmse"] = 2.0,
+            ["horizon"] = 10
+        };
+
+        var result = _diagnostics.Analyze("forecasting", metrics);
+
+        Assert.Equal(PerformanceLevel.Excellent, result.OverallAssessment);
+        Assert.Equal("MAPE", result.PrimaryMetric);
+    }
+
+    [Fact]
+    public void Analyze_Forecasting_GoodMAPE_ReturnsGood()
+    {
+        var metrics = new Dictionary<string, double> { ["mape"] = 0.10 };
+
+        var result = _diagnostics.Analyze("forecasting", metrics);
+
+        Assert.Equal(PerformanceLevel.Good, result.OverallAssessment);
+    }
+
+    [Fact]
+    public void Analyze_Forecasting_HighMAPE_ReturnsLow()
+    {
+        var metrics = new Dictionary<string, double> { ["mape"] = 0.45 };
+
+        var result = _diagnostics.Analyze("forecasting", metrics);
+
+        Assert.Equal(PerformanceLevel.Low, result.OverallAssessment);
+        Assert.True(result.Suggestions.Count >= 2);
+    }
+
+    [Fact]
+    public void Analyze_Forecasting_NoMAPE_UsesMAE()
+    {
+        var metrics = new Dictionary<string, double> { ["mae"] = 5.0 };
+
+        var result = _diagnostics.Analyze("forecasting", metrics);
+
+        Assert.Equal("MAE", result.PrimaryMetric);
+        Assert.Equal(PerformanceLevel.Moderate, result.OverallAssessment);
+    }
+
+    [Fact]
+    public void Analyze_Forecasting_NoMetrics_ReturnsUnknown()
+    {
+        var metrics = new Dictionary<string, double>();
+
+        var result = _diagnostics.Analyze("forecasting", metrics);
+
+        Assert.Equal(PerformanceLevel.Unknown, result.OverallAssessment);
+    }
+
+    #endregion
 }

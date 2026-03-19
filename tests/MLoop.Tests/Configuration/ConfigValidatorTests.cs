@@ -432,4 +432,38 @@ public class ConfigValidatorTests
 
         Assert.DoesNotContain(result.Errors, e => e.Contains("Group column is required"));
     }
+
+    [Fact]
+    public void Validate_ForecastingWithoutHorizon_ReturnsError()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition { Task = "forecasting", Label = "value" }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.Contains(result.Errors, e => e.Contains("Horizon"));
+    }
+
+    [Fact]
+    public void Validate_ForecastingWithHorizon_NoHorizonError()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition { Task = "forecasting", Label = "value", Horizon = 10 }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(result.Errors, e => e.Contains("Horizon"));
+    }
 }

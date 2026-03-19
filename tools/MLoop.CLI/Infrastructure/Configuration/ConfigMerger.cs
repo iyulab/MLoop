@@ -78,7 +78,10 @@ public class ConfigMerger
             Prep = baseDefinition?.Prep,
             Columns = baseDefinition?.Columns,
             NumClusters = baseDefinition?.NumClusters,
-            GroupColumn = baseDefinition?.GroupColumn
+            GroupColumn = baseDefinition?.GroupColumn,
+            Horizon = baseDefinition?.Horizon,
+            WindowSize = baseDefinition?.WindowSize,
+            SeriesLength = baseDefinition?.SeriesLength
         };
     }
 
@@ -168,7 +171,10 @@ public class ConfigMerger
             Prep = source.Prep ?? existing.Prep,
             Columns = source.Columns ?? existing.Columns,
             NumClusters = source.NumClusters ?? existing.NumClusters,
-            GroupColumn = !string.IsNullOrEmpty(source.GroupColumn) ? source.GroupColumn : existing.GroupColumn
+            GroupColumn = !string.IsNullOrEmpty(source.GroupColumn) ? source.GroupColumn : existing.GroupColumn,
+            Horizon = source.Horizon ?? existing.Horizon,
+            WindowSize = source.WindowSize ?? existing.WindowSize,
+            SeriesLength = source.SeriesLength ?? existing.SeriesLength
         };
     }
 

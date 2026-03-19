@@ -86,6 +86,10 @@ public class EvaluationEngine
                 {
                     metrics = EvaluateRanking(predictions, labelColumn, groupColumn);
                 }
+                else if (taskType.Equals("forecasting", StringComparison.OrdinalIgnoreCase))
+                {
+                    metrics = EvaluateForecasting(predictions, labelColumn);
+                }
                 else
                 {
                     throw new NotSupportedException($"Task type '{taskType}' is not supported for evaluation.");
@@ -270,6 +274,76 @@ public class EvaluationEngine
             { "micro_accuracy", metrics.MicroAccuracy },
             { "log_loss", metrics.LogLoss }
         };
+    }
+
+    private Dictionary<string, double> EvaluateForecasting(IDataView predictions, string labelColumn)
+    {
+        var metricsDict = new Dictionary<string, double>();
+
+        // Forecasting evaluation: extract forecast vs actual from the transformed data
+        // The SSA model outputs ForecastedValues as VBuffer<float>
+        try
+        {
+            var forecastCol = predictions.Schema.GetColumnOrNull("ForecastedValues");
+            var actualCol = predictions.Schema.GetColumnOrNull(labelColumn);
+
+            if (forecastCol.HasValue && actualCol.HasValue)
+            {
+                // Get actual values and last forecast
+                var actualValues = new List<float>();
+                VBuffer<float> lastForecast = default;
+
+                using var cursor = predictions.GetRowCursor(new[] { forecastCol.Value, actualCol.Value });
+                var forecastGetter = cursor.GetGetter<VBuffer<float>>(forecastCol.Value);
+                var actualGetter = cursor.GetGetter<float>(actualCol.Value);
+
+                while (cursor.MoveNext())
+                {
+                    float val = 0;
+                    actualGetter(ref val);
+                    actualValues.Add(val);
+                    forecastGetter(ref lastForecast);
+                }
+
+                var forecastedValues = lastForecast.DenseValues().ToArray();
+                if (forecastedValues.Length > 0 && actualValues.Count > forecastedValues.Length)
+                {
+                    var horizon = forecastedValues.Length;
+                    var holdoutStart = actualValues.Count - horizon;
+                    var holdoutActual = actualValues.Skip(holdoutStart).Take(horizon).ToArray();
+
+                    double sumAbsError = 0, sumSqError = 0, sumAbsPercentError = 0;
+                    int validMapeCount = 0;
+
+                    for (int i = 0; i < horizon; i++)
+                    {
+                        var actual = (double)holdoutActual[i];
+                        var predicted = (double)forecastedValues[i];
+                        var error = actual - predicted;
+
+                        sumAbsError += Math.Abs(error);
+                        sumSqError += error * error;
+
+                        if (Math.Abs(actual) > 1e-10)
+                        {
+                            sumAbsPercentError += Math.Abs(error / actual);
+                            validMapeCount++;
+                        }
+                    }
+
+                    metricsDict["mae"] = sumAbsError / horizon;
+                    metricsDict["rmse"] = Math.Sqrt(sumSqError / horizon);
+                    metricsDict["mape"] = validMapeCount > 0 ? sumAbsPercentError / validMapeCount : 0;
+                    metricsDict["horizon"] = horizon;
+                }
+            }
+        }
+        catch
+        {
+            // Forecasting evaluation may fail with schema mismatch
+        }
+
+        return metricsDict;
     }
 
     private Dictionary<string, double> EvaluateRanking(IDataView predictions, string labelColumn, string? groupColumn)
