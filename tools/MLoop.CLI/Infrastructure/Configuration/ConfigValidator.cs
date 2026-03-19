@@ -10,9 +10,23 @@ public static class ConfigValidator
 {
     private static readonly HashSet<string> ValidTaskTypes = new(StringComparer.OrdinalIgnoreCase)
     {
+        // Supervised (AutoML)
         "regression",
         "binary-classification",
-        "multiclass-classification"
+        "multiclass-classification",
+        // Unsupervised / Semi-supervised (direct trainer)
+        "anomaly-detection",
+        "clustering",
+        "ranking",
+        // Time Series (Microsoft.ML.TimeSeries)
+        "forecasting",
+        "time-series-anomaly",
+        // Deep Learning (Microsoft.ML.Vision / TorchSharp)
+        "image-classification",
+        "object-detection",
+        "text-classification",
+        // Collaborative Filtering (Microsoft.ML.Recommender)
+        "recommendation"
     };
 
     private static readonly HashSet<string> ValidPrepStepTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -184,8 +198,17 @@ public static class ConfigValidator
         else if (!ValidTaskTypes.Contains(model.Task))
             errors.Add($"models.{modelName}.task: Invalid task type '{model.Task}'");
 
+        // Label is optional for unsupervised tasks (anomaly-detection, clustering)
+        var unsupervisedTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "anomaly-detection", "clustering" };
+
         if (string.IsNullOrWhiteSpace(model.Label))
-            errors.Add($"models.{modelName}.label: Label column is required");
+        {
+            if (!unsupervisedTasks.Contains(model.Task ?? ""))
+                errors.Add($"models.{modelName}.label: Label column is required");
+            else
+                warnings.Add($"models.{modelName}.label: No label column — evaluation metrics will be limited");
+        }
 
         if (model.Prep is { Count: > 0 })
         {

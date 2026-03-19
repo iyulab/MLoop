@@ -315,4 +315,87 @@ public class ConfigValidatorTests
         Assert.Contains("model-b", errors[0]);
         Assert.Contains("missing_col", errors[0]);
     }
+
+    // New task type validation tests
+
+    [Theory]
+    [InlineData("anomaly-detection")]
+    [InlineData("clustering")]
+    [InlineData("ranking")]
+    [InlineData("forecasting")]
+    [InlineData("time-series-anomaly")]
+    [InlineData("image-classification")]
+    [InlineData("object-detection")]
+    [InlineData("text-classification")]
+    [InlineData("recommendation")]
+    public void Validate_NewTaskTypes_AcceptedAsValid(string taskType)
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition { Task = taskType, Label = "target" }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(result.Errors, e => e.Contains("Invalid task type"));
+    }
+
+    [Fact]
+    public void Validate_AnomalyDetectionWithoutLabel_ReturnsWarningNotError()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition { Task = "anomaly-detection", Label = "" }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        // Should NOT have label required error
+        Assert.DoesNotContain(result.Errors, e => e.Contains("Label column is required"));
+        // Should have warning about limited metrics
+        Assert.Contains(result.Warnings, w => w.Contains("evaluation metrics will be limited"));
+    }
+
+    [Fact]
+    public void Validate_ClusteringWithoutLabel_ReturnsWarningNotError()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition { Task = "clustering", Label = "" }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.DoesNotContain(result.Errors, e => e.Contains("Label column is required"));
+        Assert.Contains(result.Warnings, w => w.Contains("evaluation metrics will be limited"));
+    }
+
+    [Fact]
+    public void Validate_RegressionWithoutLabel_StillReturnsError()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "test",
+            Models = new()
+            {
+                ["default"] = new ModelDefinition { Task = "regression", Label = "" }
+            }
+        };
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.Contains(result.Errors, e => e.Contains("Label column is required"));
+    }
 }
