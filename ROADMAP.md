@@ -37,11 +37,11 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
 
 ---
 
-## Current Status (v0.7.0 — March 2026)
+## Current Status (v0.8.0 — March 2026)
 
 ### Core Platform
 - ML.NET 5.0 with AutoML 0.23.0
-- **7개 ML 태스크 지원**: Binary/Multiclass Classification, Regression, Anomaly Detection, Clustering, Ranking, Forecasting
+- **9개 ML 태스크 지원**: Binary/Multiclass Classification, Regression, Anomaly Detection, Clustering, Ranking, Forecasting, Time Series Anomaly, Recommendation
 - Filesystem-based MLOps with git-friendly experiment tracking
 - Multi-process concurrent training support
 - Production model promotion and discovery
@@ -63,7 +63,7 @@ v1.0.1 → v1.1.0 → ... → v1.9.0 → Community Validation → v2.0.0
   - Repository: https://github.com/iyulab/mloop-studio
 
 ### Quality
-- 1,300+ tests passing (Core + API + CLI + DataStore + Ops + Pipeline)
+- 1,311 tests passing (Core + API + CLI + DataStore + Ops + Pipeline)
 
 ---
 
@@ -1021,7 +1021,7 @@ Out of MLoop CLI scope (requires Image Classification support):
 **목표**: ML.NET이 지원하는 모든 ML 태스크를 MLoop에서 다룰 수 있도록 확장
 **상세 계획**: [`claudedocs/roadmap/08-mlnet-task-expansion-roadmap.md`](claudedocs/roadmap/08-mlnet-task-expansion-roadmap.md)
 
-### 진행 현황: 7/15 태스크 (47%)
+### 진행 현황: 9/15 태스크 (60%) — Tier 1~3 완료
 
 | ID | Task | Tier | 상태 |
 |----|------|:----:|:----:|
@@ -1029,22 +1029,23 @@ Out of MLoop CLI scope (requires Image Classification support):
 | MLOOP-102 | Clustering (K-Means) | 1 | ✅ 완료 |
 | MLOOP-103 | Ranking (Learning to Rank) | 1 | ✅ 완료 |
 | MLOOP-104 | Time Series Forecasting (SSA) | 2 | ✅ 완료 |
-| **MLOOP-105** | **Time Series Anomaly (Spike/CP)** | **2** | **P1 — 다음** |
-| MLOOP-106 | Recommendation (Matrix Factorization) | 3 | P2 |
-| MLOOP-113 | `mloop runtime` 명령 (DL infra) | Infra | P1 |
-| MLOOP-107 | Image Classification | 4a | P1 (MLOOP-113 종속) |
-| MLOOP-108 | Object Detection | 4b | P2 (MLOOP-113 종속) |
-| MLOOP-109 | Text Classification | 4b | P2 (MLOOP-113 종속) |
+| MLOOP-105 | Time Series Anomaly (Spike/CP) | 2 | ✅ 완료 |
+| MLOOP-106 | Recommendation (Matrix Factorization) | 3 | ✅ 완료 |
+| **MLOOP-113** | **`mloop runtime` 명령 (DL infra)** | **Infra** | **다음 — Tier 4 전제조건** |
+| MLOOP-107 | Image Classification | 4a | MLOOP-113 종속 |
+| MLOOP-108 | Object Detection | 4b | MLOOP-113 종속 |
+| MLOOP-109 | Text Classification | 4b | MLOOP-113 종속 |
 | MLOOP-110 | Sentence Similarity | 4b | P3 |
 | MLOOP-111 | NER | 4b | P3 |
 | MLOOP-112 | Question Answering | 4b | P3 |
 
-### 남은 작업 분류
+### 남은 작업: Tier 4 (Deep Learning)
 
 | 그룹 | 태스크 | 추가 비용 | 비고 |
 |------|--------|:---------:|------|
-| **즉시 구현 가능** (코드만 추가) | MLOOP-105, 106 | **0** | DLL 이미 번들 |
-| **인프라 필요** (native runtime) | MLOOP-113 → 107~112 | +80~182MB on-demand | Tier 4 전제조건 |
+| **인프라** | MLOOP-113 `mloop runtime` | 0 | on-demand 다운로드 매니저 |
+| **TensorFlow** | MLOOP-107 Image Classification | +182MB (on-demand) | TF native runtime |
+| **TorchSharp** | MLOOP-108~112 (5개) | +80~120MB (on-demand) | libtorch native 공유 |
 
 ---
 
@@ -1146,9 +1147,9 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: March 20, 2026
-**Current Version**: v0.7.0 ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
+**Current Version**: v0.8.0 ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
 **Recent Changes**:
-- v0.7.0: ML Task Expansion — Clustering, Ranking, Forecasting 추가 (MLOOP-102~104)
+- v0.8.0: ML Task Expansion Tier 1~3 완료 — Time Series Anomaly, Recommendation 추가 (9/15 태스크)
+- v0.7.0: Clustering, Ranking, Forecasting 추가 (MLOOP-102~104)
 - v0.6.2: Anomaly Detection (PCA), column type override, bug fixes
-- v0.5.1-alpha: Self-update system (`mloop update`), CI/CD refinement
-- 1,300+ tests passing across all projects
+- 1,311 tests passing across all projects
