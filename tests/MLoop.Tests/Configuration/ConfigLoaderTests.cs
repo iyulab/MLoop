@@ -271,4 +271,88 @@ models:
     }
 
     #endregion
+
+    #region ColumnOverride Tests
+
+    [Fact]
+    public async Task LoadUserConfigAsync_WithColumnOverrides_ParsesCorrectly()
+    {
+        var yaml = @"
+project: col-override-test
+models:
+  default:
+    task: binary-classification
+    label: Y_RESULT
+    columns:
+      content:
+        type: text
+        description: Log message text
+      machine_id:
+        type: ignore
+      temperature:
+        type: numeric
+";
+        _fs.SetTextFile("/project/mloop.yaml", yaml);
+
+        var result = await _loader.LoadUserConfigAsync();
+
+        Assert.Equal("col-override-test", result.Project);
+        var model = result.Models["default"];
+        Assert.NotNull(model.Columns);
+        Assert.Equal(3, model.Columns.Count);
+
+        Assert.Equal("text", model.Columns["content"].Type);
+        Assert.Equal("Log message text", model.Columns["content"].Description);
+        Assert.Equal("ignore", model.Columns["machine_id"].Type);
+        Assert.Equal("numeric", model.Columns["temperature"].Type);
+    }
+
+    [Fact]
+    public async Task LoadUserConfigAsync_WithoutColumnOverrides_ColumnsIsNull()
+    {
+        var yaml = @"
+project: no-columns
+models:
+  default:
+    task: regression
+    label: price
+";
+        _fs.SetTextFile("/project/mloop.yaml", yaml);
+
+        var result = await _loader.LoadUserConfigAsync();
+
+        Assert.Null(result.Models["default"].Columns);
+    }
+
+    [Fact]
+    public async Task SaveUserConfigAsync_WithColumnOverrides_WritesYaml()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "col-save-test",
+            Models = new Dictionary<string, ModelDefinition>
+            {
+                ["default"] = new()
+                {
+                    Task = "binary-classification",
+                    Label = "Y_RESULT",
+                    Columns = new Dictionary<string, ColumnOverride>
+                    {
+                        ["content"] = new() { Type = "text" },
+                        ["machine_id"] = new() { Type = "ignore" }
+                    }
+                }
+            }
+        };
+
+        await _loader.SaveUserConfigAsync(config);
+
+        Assert.NotNull(_fs.LastWrittenTextContent);
+        Assert.Contains("columns", _fs.LastWrittenTextContent);
+        Assert.Contains("content", _fs.LastWrittenTextContent);
+        Assert.Contains("text", _fs.LastWrittenTextContent);
+        Assert.Contains("ignore", _fs.LastWrittenTextContent);
+    }
+
+    #endregion
 }

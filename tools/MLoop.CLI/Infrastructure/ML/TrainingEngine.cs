@@ -132,7 +132,7 @@ public class TrainingEngine : ITrainingEngine
             }
 
             // Capture input schema before training (using enhanced detection)
-            var inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task);
+            var inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides);
 
             // Execute PreTrain hooks
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PreTrain))
@@ -504,7 +504,7 @@ public class TrainingEngine : ITrainingEngine
     /// <summary>
     /// Captures input schema with enhanced type detection using actual data values
     /// </summary>
-    private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn, string? taskType = null)
+    private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn, string? taskType = null, Dictionary<string, string>? columnOverrides = null)
     {
         try
         {
@@ -596,6 +596,39 @@ public class TrainingEngine : ITrainingEngine
                 {
                     purpose = "Feature";
                     Console.WriteLine($"[Info] Column '{colName}' reclassified: Ignored → Text Feature");
+                }
+
+                // Apply column type overrides from mloop.yaml
+                if (columnOverrides != null &&
+                    columnOverrides.TryGetValue(colName, out var overrideType))
+                {
+                    var normalizedType = overrideType.ToLowerInvariant();
+                    var originalType = dataType;
+                    var originalPurpose = purpose;
+
+                    switch (normalizedType)
+                    {
+                        case "text":
+                            dataType = "Text";
+                            if (purpose != "Label") purpose = "Feature";
+                            break;
+                        case "categorical":
+                            dataType = "Categorical";
+                            if (purpose != "Label") purpose = "Feature";
+                            break;
+                        case "numeric":
+                            dataType = "Numeric";
+                            if (purpose != "Label") purpose = "Feature";
+                            break;
+                        case "ignore":
+                            purpose = "Exclude";
+                            break;
+                    }
+
+                    if (dataType != originalType || purpose != originalPurpose)
+                    {
+                        Console.WriteLine($"[Info] Column '{colName}' overridden: {originalType}/{originalPurpose} → {dataType}/{purpose} (mloop.yaml)");
+                    }
                 }
 
                 columns.Add(new ColumnSchema

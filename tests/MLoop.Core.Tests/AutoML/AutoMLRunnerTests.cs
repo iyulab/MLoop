@@ -129,6 +129,126 @@ public class AutoMLRunnerTests
 
     #endregion
 
+    #region ColumnOverride Tests
+
+    [Fact]
+    public void BuildColumnInformation_WithTextOverride_ForcesTextClassification()
+    {
+        // Arrange: numeric-only dataset, but override Feature1 as text
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new NumericData { Feature1 = 1.0f, Feature2 = 2.0f, Label = true },
+        });
+        // Note: ML.NET loads float as NumberDataViewType, but override should still add to correct list
+        var overrides = new Dictionary<string, string> { ["Feature1"] = "text" };
+
+        // Act
+        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+
+        // Assert: non-null because override was applied
+        Assert.NotNull(result);
+        Assert.Contains("Feature1", result.TextColumnNames);
+        Assert.Contains("Feature2", result.NumericColumnNames);
+    }
+
+    [Fact]
+    public void BuildColumnInformation_WithIgnoreOverride_ExcludesColumn()
+    {
+        // Arrange: text dataset, but override Content as ignore
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new TextBinaryData { Content = "some text", Label = true },
+        });
+        var overrides = new Dictionary<string, string> { ["Content"] = "ignore" };
+
+        // Act
+        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.DoesNotContain("Content", result.TextColumnNames);
+        Assert.Contains("Content", result.IgnoredColumnNames);
+    }
+
+    [Fact]
+    public void BuildColumnInformation_WithCategoricalOverride_ClassifiesAsCategorical()
+    {
+        // Arrange: text dataset, but override Content as categorical
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new TextBinaryData { Content = "category_A", Label = true },
+        });
+        var overrides = new Dictionary<string, string> { ["Content"] = "categorical" };
+
+        // Act
+        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.DoesNotContain("Content", result.TextColumnNames);
+        Assert.Contains("Content", result.CategoricalColumnNames);
+    }
+
+    [Fact]
+    public void BuildColumnInformation_WithNumericOverride_ClassifiesAsNumeric()
+    {
+        // Arrange: text dataset, but override Description as numeric
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new MixedData { Description = "text", Price = 10.0f, Label = true },
+        });
+        var overrides = new Dictionary<string, string> { ["Description"] = "numeric" };
+
+        // Act
+        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+
+        // Assert: Description forced to numeric — no text columns remain,
+        // so ColumnInformation is null (AutoML default behavior handles numeric fine)
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void BuildColumnInformation_WithMixedOverrides_AllClassifiedCorrectly()
+    {
+        // Arrange: dataset with text + numeric, apply mixed overrides
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new MultiTextData { Title = "title", Body = "body text", Label = true },
+        });
+        var overrides = new Dictionary<string, string>
+        {
+            ["Title"] = "categorical",  // force text → categorical
+            // Body stays as text (no override)
+        };
+
+        // Act
+        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Contains("Title", result.CategoricalColumnNames);
+        Assert.Contains("Body", result.TextColumnNames);
+        Assert.DoesNotContain("Title", result.TextColumnNames);
+    }
+
+    [Fact]
+    public void BuildColumnInformation_NoOverrides_BehavesAsOriginal()
+    {
+        // Arrange
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new NumericData { Feature1 = 1.0f, Feature2 = 2.0f, Label = true },
+        });
+
+        // Act: pass empty overrides
+        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: new Dictionary<string, string>());
+
+        // Assert: same as no overrides — returns null for numeric-only
+        Assert.Null(result);
+    }
+
+    #endregion
+
     #region Test Data Classes
 
     private class TextBinaryData

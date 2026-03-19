@@ -54,6 +54,34 @@ public class ModelDefinition
     /// Steps are executed sequentially in order.
     /// </summary>
     public List<PrepStep>? Prep { get; set; }
+
+    /// <summary>
+    /// Column type overrides. Allows explicit specification of how columns should be treated.
+    /// Overrides auto-detected column types during training and prediction.
+    /// Key: column name, Value: column override settings
+    /// </summary>
+    public Dictionary<string, ColumnOverride>? Columns { get; set; }
+}
+
+/// <summary>
+/// Column type override for a single column.
+/// Allows users to explicitly specify column treatment when auto-detection is incorrect.
+/// </summary>
+public class ColumnOverride
+{
+    /// <summary>
+    /// Column type: "text", "categorical", "numeric", or "ignore".
+    /// - text: Treated as free-form text (TF-IDF featurization)
+    /// - categorical: Treated as categorical (OneHotEncoding)
+    /// - numeric: Treated as numeric feature
+    /// - ignore: Excluded from features entirely
+    /// </summary>
+    public required string Type { get; set; }
+
+    /// <summary>
+    /// Optional description for documentation
+    /// </summary>
+    public string? Description { get; set; }
 }
 
 /// <summary>

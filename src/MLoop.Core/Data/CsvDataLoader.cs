@@ -12,10 +12,12 @@ namespace MLoop.Core.Data;
 public class CsvDataLoader : IDataProvider
 {
     private readonly MLContext _mlContext;
+    private readonly Action<string> _log;
 
-    public CsvDataLoader(MLContext mlContext)
+    public CsvDataLoader(MLContext mlContext, Action<string>? log = null)
     {
         _mlContext = mlContext ?? throw new ArgumentNullException(nameof(mlContext));
+        _log = log ?? Console.WriteLine;
     }
 
     public IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null)
@@ -251,8 +253,10 @@ public class CsvDataLoader : IDataProvider
     /// </summary>
     public static string RemoveDateTimeColumns(
         string filePath,
-        string? labelColumn)
+        string? labelColumn,
+        Action<string>? log = null)
     {
+        var write = log ?? Console.WriteLine;
         try
         {
             string? headerLine;
@@ -328,7 +332,7 @@ public class CsvDataLoader : IDataProvider
 
             foreach (var idx in dateTimeIndices)
             {
-                Console.WriteLine($"[Info] DateTime column '{headers[idx]}' excluded from features (use FilePrepper to extract date features if needed)");
+                write($"[Info] DateTime column '{headers[idx]}' excluded from features (use FilePrepper to extract date features if needed)");
             }
 
             return tempPath;
@@ -346,8 +350,10 @@ public class CsvDataLoader : IDataProvider
     public static string RemoveSparseColumns(
         string filePath,
         string? labelColumn,
-        double threshold = 0.90)
+        double threshold = 0.90,
+        Action<string>? log = null)
     {
+        var write = log ?? Console.WriteLine;
         try
         {
             const int sampleRows = 200;
@@ -427,7 +433,7 @@ public class CsvDataLoader : IDataProvider
             var removedNames = sparseIndices.Select(i => headers[i]);
             foreach (var name in removedNames)
             {
-                Console.WriteLine($"[Warning] Sparse column '{name}' excluded (>{threshold:P0} missing values)");
+                write($"[Warning] Sparse column '{name}' excluded (>{threshold:P0} missing values)");
             }
 
             return tempPath;
@@ -443,8 +449,9 @@ public class CsvDataLoader : IDataProvider
     /// Constant columns provide zero predictive signal and waste compute resources.
     /// Returns original path if no constant columns found.
     /// </summary>
-    public static string RemoveConstantColumns(string filePath, string? labelColumn)
+    public static string RemoveConstantColumns(string filePath, string? labelColumn, Action<string>? log = null)
     {
+        var write = log ?? Console.WriteLine;
         try
         {
             const int sampleRows = 200;
@@ -527,7 +534,7 @@ public class CsvDataLoader : IDataProvider
             var removedNames = constantIndices.Select(i => headers[i]);
             foreach (var name in removedNames)
             {
-                Console.WriteLine($"[Warning] Constant column '{name}' excluded (all values identical)");
+                write($"[Warning] Constant column '{name}' excluded (all values identical)");
             }
 
             return tempPath;
@@ -574,7 +581,7 @@ public class CsvDataLoader : IDataProvider
 
         // Sort alphabetically: first → negative (false), second → positive (true)
         var sorted = uniqueValues.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToArray();
-        Console.WriteLine($"[Info] Converting label: '{sorted[0]}' → False, '{sorted[1]}' → True");
+        _log($"[Info] Converting label: '{sorted[0]}' → False, '{sorted[1]}' → True");
 
         // Build lookup IDataView for MapValue transform
         var lookupData = _mlContext.Data.LoadFromEnumerable(new[]
@@ -639,13 +646,13 @@ public class CsvDataLoader : IDataProvider
     /// ML.NET's InferColumns doesn't have encoding parameters and relies on BOM detection.
     /// Detects encoding (UTF-8, CP949, EUC-KR) and converts to UTF-8 with BOM if needed.
     /// </summary>
-    private static string EnsureUtf8Bom(string filePath)
+    private string EnsureUtf8Bom(string filePath)
     {
         var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(filePath);
 
         if (detection.WasConverted && detection.EncodingName != "UTF-8")
         {
-            Console.WriteLine($"[Info] Converted {detection.EncodingName} → UTF-8: {Path.GetFileName(filePath)}");
+            _log($"[Info] Converted {detection.EncodingName} → UTF-8: {Path.GetFileName(filePath)}");
         }
 
         return convertedPath;
@@ -662,15 +669,15 @@ public class CsvDataLoader : IDataProvider
     /// Warns about monotonically increasing integer columns that are likely ID/index columns.
     /// These columns cause overfitting when used as features.
     /// </summary>
-    private static void WarnMonotonicColumns(string filePath, string? labelColumn)
+    private void WarnMonotonicColumns(string filePath, string? labelColumn)
     {
         var monotonicCols = DetectMonotonicColumns(filePath, labelColumn);
         if (monotonicCols.Count > 0)
         {
             var colNames = string.Join(", ", monotonicCols);
-            Console.WriteLine($"[Warning] Possible ID/index column(s) detected (strictly increasing integers): {colNames}");
-            Console.WriteLine($"[Info] These columns may cause overfitting. Consider excluding them:");
-            Console.WriteLine($"[Info]   mloop train data.csv --label target --exclude {monotonicCols.First()}");
+            _log($"[Warning] Possible ID/index column(s) detected (strictly increasing integers): {colNames}");
+            _log($"[Info] These columns may cause overfitting. Consider excluding them:");
+            _log($"[Info]   mloop train data.csv --label target --exclude {monotonicCols.First()}");
         }
     }
 
@@ -678,13 +685,13 @@ public class CsvDataLoader : IDataProvider
     /// Warns if the CSV file appears to have no header row (first row looks like data).
     /// Detection heuristic: all fields in the first row are numeric.
     /// </summary>
-    private static void WarnIfHeaderless(string filePath)
+    private void WarnIfHeaderless(string filePath)
     {
         if (IsLikelyHeaderless(filePath))
         {
-            Console.WriteLine("[Warning] Possible headerless CSV detected: first row appears to be data (all numeric values).");
-            Console.WriteLine("[Warning] ML.NET will treat the first row as column names, which may cause incorrect results.");
-            Console.WriteLine("[Info] Solution: Add a header row with column names (e.g., Feature1,Feature2,...,Label).");
+            _log("[Warning] Possible headerless CSV detected: first row appears to be data (all numeric values).");
+            _log("[Warning] ML.NET will treat the first row as column names, which may cause incorrect results.");
+            _log("[Info] Solution: Add a header row with column names (e.g., Feature1,Feature2,...,Label).");
         }
     }
 
@@ -730,8 +737,9 @@ public class CsvDataLoader : IDataProvider
         }
     }
 
-    public static string RemoveIndexColumns(string filePath)
+    public static string RemoveIndexColumns(string filePath, Action<string>? log = null)
     {
+        var write = log ?? Console.WriteLine;
         try
         {
             string? firstLine;
@@ -775,7 +783,7 @@ public class CsvDataLoader : IDataProvider
             }
 
             var removedNames = indexColumns.Select(i => string.IsNullOrWhiteSpace(headers[i]) ? "(empty)" : headers[i]);
-            Console.WriteLine($"[Info] Removed index column(s): {string.Join(", ", removedNames)}");
+            write($"[Info] Removed index column(s): {string.Join(", ", removedNames)}");
             return tempPath;
         }
         catch
@@ -872,8 +880,9 @@ public class CsvDataLoader : IDataProvider
     /// If newlines are found within quoted header fields, they are replaced with spaces.
     /// Returns the original path if no multi-line header is detected, or a temp file path otherwise.
     /// </summary>
-    public static string FlattenMultiLineHeaders(string filePath)
+    public static string FlattenMultiLineHeaders(string filePath, Action<string>? log = null)
     {
+        var write = log ?? Console.WriteLine;
         // Quick check: read first line and see if quotes are unbalanced
         string? firstLine;
         using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
@@ -889,7 +898,7 @@ public class CsvDataLoader : IDataProvider
         {
             // BUG-R2-07: Detect possible multi-row header pattern
             // Row1 has many duplicate values = likely category headers, not real column names
-            DetectMultiRowHeaderPattern(filePath, firstLine);
+            DetectMultiRowHeaderPattern(filePath, firstLine, write);
             return filePath;
         }
 
@@ -929,7 +938,7 @@ public class CsvDataLoader : IDataProvider
             }
         }
 
-        Console.WriteLine($"[Info] Flattened multi-line CSV headers: {Path.GetFileName(filePath)}");
+        write($"[Info] Flattened multi-line CSV headers: {Path.GetFileName(filePath)}");
         return tempPath;
     }
 
@@ -938,7 +947,7 @@ public class CsvDataLoader : IDataProvider
     /// and Row 2 contains actual column names (common in Excel exports).
     /// Warns the user if detected.
     /// </summary>
-    private static void DetectMultiRowHeaderPattern(string filePath, string firstLine)
+    private static void DetectMultiRowHeaderPattern(string filePath, string firstLine, Action<string> write)
     {
         try
         {
@@ -964,11 +973,11 @@ public class CsvDataLoader : IDataProvider
             // If Row2 has significantly more unique values than Row1, confirm multi-row header
             if (uniqueRow2.Count > uniqueRow1.Count * 2)
             {
-                Console.WriteLine($"[Warning] Possible multi-row header detected: Row 1 has only {uniqueRow1.Count} unique values across {row1Fields.Length} columns.");
-                Console.WriteLine($"[Warning] Row 1 may be category headers (e.g., '{string.Join("', '", uniqueRow1.Take(3))}').");
-                Console.WriteLine("[Info] MLoop expects a single header row. Please preprocess your CSV:");
-                Console.WriteLine("[Info]   1. Remove the first row manually, or");
-                Console.WriteLine("[Info]   2. Use: mloop prep run --drop-rows 1 --input data.csv --output clean.csv");
+                write($"[Warning] Possible multi-row header detected: Row 1 has only {uniqueRow1.Count} unique values across {row1Fields.Length} columns.");
+                write($"[Warning] Row 1 may be category headers (e.g., '{string.Join("', '", uniqueRow1.Take(3))}').");
+                write("[Info] MLoop expects a single header row. Please preprocess your CSV:");
+                write("[Info]   1. Remove the first row manually, or");
+                write("[Info]   2. Use: mloop prep run --drop-rows 1 --input data.csv --output clean.csv");
             }
         }
         catch
