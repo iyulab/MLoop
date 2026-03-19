@@ -98,6 +98,18 @@ public class EvaluationEngine
                 {
                     metrics = EvaluateRecommendation(predictions, labelColumn);
                 }
+                else if (taskType.Equals("image-classification", StringComparison.OrdinalIgnoreCase) ||
+                         taskType.Equals("text-classification", StringComparison.OrdinalIgnoreCase) ||
+                         taskType.Equals("ner", StringComparison.OrdinalIgnoreCase) ||
+                         taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase) ||
+                         taskType.Equals("question-answering", StringComparison.OrdinalIgnoreCase))
+                {
+                    metrics = EvaluateMulticlassClassification(predictions, "Label");
+                }
+                else if (taskType.Equals("sentence-similarity", StringComparison.OrdinalIgnoreCase))
+                {
+                    metrics = EvaluateRegression(predictions, labelColumn);
+                }
                 else
                 {
                     throw new NotSupportedException($"Task type '{taskType}' is not supported for evaluation.");

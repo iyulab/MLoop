@@ -56,6 +56,9 @@ internal class Program
             // Phase 4: Production Deployment
             DockerCommand.Create(),
 
+            // Runtime Management
+            RuntimeCommand.Create(),
+
             // Utility
             UpdateCommand.Create(),
         };
