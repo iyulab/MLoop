@@ -15,6 +15,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.ML" />
     <PackageReference Include="Microsoft.ML.AutoML" />
+    <PackageReference Include="Microsoft.ML.TorchSharp" />
+    <PackageReference Include="Microsoft.ML.Vision" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" />
     <PackageReference Include="CsvHelper" />

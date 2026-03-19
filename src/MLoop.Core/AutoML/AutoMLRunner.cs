@@ -1,6 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
+using Microsoft.ML.TorchSharp;
 using MLoop.Core.Contracts;
 using MLoop.Core.Models;
 using MLoop.Core.Scripting;
@@ -115,13 +116,18 @@ public class AutoMLRunner
                 trainSet, testSet, config, progress, cancellationToken),
             "recommendation" => await RunRecommendationAsync(
                 trainSet, testSet, config, progress, cancellationToken),
-            "image-classification" or "object-detection" or "text-classification"
-                or "sentence-similarity" or "ner" or "question-answering"
-                => throw new NotSupportedException(
-                    $"Task '{config.Task}' requires deep learning runtime. " +
-                    $"Ensure runtime is installed via 'mloop runtime install' and " +
-                    $"that Microsoft.ML.TorchSharp/TensorFlow packages are referenced. " +
-                    $"DL task support is registered but requires runtime-specific package references."),
+            "image-classification" => await RunImageClassificationAsync(
+                trainSet, testSet, config, progress, cancellationToken),
+            "text-classification" => await RunTextClassificationAsync(
+                trainSet, testSet, config, progress, cancellationToken),
+            "sentence-similarity" => await RunSentenceSimilarityAsync(
+                trainSet, testSet, config, progress, cancellationToken),
+            "ner" => await RunNerAsync(
+                trainSet, testSet, config, progress, cancellationToken),
+            "object-detection" => await RunObjectDetectionAsync(
+                trainSet, testSet, config, progress, cancellationToken),
+            "question-answering" => await RunQuestionAnsweringAsync(
+                trainSet, testSet, config, progress, cancellationToken),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
@@ -1093,11 +1099,236 @@ public class AutoMLRunner
         }, cancellationToken);
     }
 
-    // MLOOP-107~112: DL task trainer implementations require Microsoft.ML.TorchSharp and
-    // Microsoft.ML.Vision compile-time references, which pull native runtime dependencies.
-    // To maintain on-demand download, these will be implemented in a separate MLoop.DL assembly
-    // loaded dynamically when the runtime is available via `mloop runtime install`.
-    // The runtime infrastructure (MLOOP-113) is ready: download, cache, and native loading.
+    private async Task<AutoMLResult> RunImageClassificationAsync(
+        IDataView trainSet, IDataView testSet, TrainingConfig config,
+        IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            _logger.Info($"Image classification: label='{config.LabelColumn}', TensorFlow transfer learning");
+
+            var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
+                .Append(_mlContext.MulticlassClassification.Trainers.ImageClassification(
+                    featureColumnName: "ImagePath", labelColumnName: "Label"))
+                .Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+
+            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "ImageClassification (TF)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
+
+            var model = pipeline.Fit(trainSet);
+            var predictions = model.Transform(testSet);
+            var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+
+            return new AutoMLResult
+            {
+                BestTrainer = "ImageClassification (TensorFlow)",
+                Model = model,
+                Metrics = new Dictionary<string, double>
+                {
+                    ["accuracy"] = NanSafe(metrics.MacroAccuracy),
+                    ["micro_accuracy"] = NanSafe(metrics.MicroAccuracy),
+                    ["log_loss"] = NanSafe(metrics.LogLoss)
+                },
+                RowCount = trainSet.GetRowCount() ?? 0
+            };
+        }, cancellationToken);
+    }
+
+    private async Task<AutoMLResult> RunTextClassificationAsync(
+        IDataView trainSet, IDataView testSet, TrainingConfig config,
+        IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            var textCol = FindFirstTextColumn(trainSet.Schema, config.LabelColumn)
+                ?? throw new InvalidOperationException("No text column found for text classification.");
+
+            _logger.Info($"Text classification: text='{textCol}', label='{config.LabelColumn}'");
+
+            var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
+                .Append(_mlContext.MulticlassClassification.Trainers.TextClassification(
+                    labelColumnName: "Label", sentence1ColumnName: textCol))
+                .Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+
+            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "TextClassification (NAS-BERT)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
+
+            var model = pipeline.Fit(trainSet);
+            var predictions = model.Transform(testSet);
+            var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+
+            return new AutoMLResult
+            {
+                BestTrainer = "TextClassification (NAS-BERT)",
+                Model = model,
+                Metrics = new Dictionary<string, double>
+                {
+                    ["accuracy"] = NanSafe(metrics.MacroAccuracy),
+                    ["micro_accuracy"] = NanSafe(metrics.MicroAccuracy),
+                    ["log_loss"] = NanSafe(metrics.LogLoss)
+                },
+                RowCount = trainSet.GetRowCount() ?? 0
+            };
+        }, cancellationToken);
+    }
+
+    private async Task<AutoMLResult> RunSentenceSimilarityAsync(
+        IDataView trainSet, IDataView testSet, TrainingConfig config,
+        IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            var textCols = FindTextColumns(trainSet.Schema, config.LabelColumn, 2);
+            if (textCols.Count < 2)
+                throw new InvalidOperationException("Sentence similarity requires at least two text columns.");
+
+            _logger.Info($"Sentence similarity: s1='{textCols[0]}', s2='{textCols[1]}', label='{config.LabelColumn}'");
+
+            var pipeline = _mlContext.Regression.Trainers.SentenceSimilarity(
+                labelColumnName: config.LabelColumn,
+                sentence1ColumnName: textCols[0],
+                sentence2ColumnName: textCols[1]);
+
+            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "SentenceSimilarity (NAS-BERT)", MetricName = "r_squared", Metric = 0, ElapsedSeconds = 0 });
+
+            var model = pipeline.Fit(trainSet);
+            var predictions = model.Transform(testSet);
+            var metrics = _mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
+
+            return new AutoMLResult
+            {
+                BestTrainer = "SentenceSimilarity (NAS-BERT)",
+                Model = model,
+                Metrics = new Dictionary<string, double>
+                {
+                    ["r_squared"] = NanSafe(metrics.RSquared),
+                    ["rmse"] = NanSafe(metrics.RootMeanSquaredError),
+                    ["mae"] = NanSafe(metrics.MeanAbsoluteError)
+                },
+                RowCount = trainSet.GetRowCount() ?? 0
+            };
+        }, cancellationToken);
+    }
+
+    private async Task<AutoMLResult> RunNerAsync(
+        IDataView trainSet, IDataView testSet, TrainingConfig config,
+        IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            var textCol = FindFirstTextColumn(trainSet.Schema, config.LabelColumn)
+                ?? throw new InvalidOperationException("No text column found for NER.");
+
+            _logger.Info($"NER: text='{textCol}', label='{config.LabelColumn}'");
+
+            var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
+                .Append(_mlContext.MulticlassClassification.Trainers.NamedEntityRecognition(
+                    labelColumnName: "Label", sentence1ColumnName: textCol))
+                .Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+
+            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "NER (NAS-BERT)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
+
+            var model = pipeline.Fit(trainSet);
+            var predictions = model.Transform(testSet);
+            var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+
+            return new AutoMLResult
+            {
+                BestTrainer = "NER (NAS-BERT)",
+                Model = model,
+                Metrics = new Dictionary<string, double>
+                {
+                    ["accuracy"] = NanSafe(metrics.MacroAccuracy),
+                    ["micro_accuracy"] = NanSafe(metrics.MicroAccuracy)
+                },
+                RowCount = trainSet.GetRowCount() ?? 0
+            };
+        }, cancellationToken);
+    }
+
+    private async Task<AutoMLResult> RunObjectDetectionAsync(
+        IDataView trainSet, IDataView testSet, TrainingConfig config,
+        IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            _logger.Info($"Object detection: label='{config.LabelColumn}'");
+
+            var pipeline = _mlContext.MulticlassClassification.Trainers.ObjectDetection(
+                labelColumnName: config.LabelColumn, imageColumnName: "ImagePath");
+
+            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "ObjectDetection (AutoFormerV2)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
+
+            var model = pipeline.Fit(trainSet);
+            var predictions = model.Transform(testSet);
+
+            return new AutoMLResult
+            {
+                BestTrainer = "ObjectDetection (AutoFormerV2)",
+                Model = model,
+                Metrics = new Dictionary<string, double>(),
+                RowCount = trainSet.GetRowCount() ?? 0
+            };
+        }, cancellationToken);
+    }
+
+    private async Task<AutoMLResult> RunQuestionAnsweringAsync(
+        IDataView trainSet, IDataView testSet, TrainingConfig config,
+        IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
+    {
+        return await Task.Run(() =>
+        {
+            var textCols = FindTextColumns(trainSet.Schema, config.LabelColumn, 2);
+            var contextCol = textCols.Count > 0 ? textCols[0] : throw new InvalidOperationException("No context column found.");
+            var questionCol = textCols.Count > 1 ? textCols[1] : contextCol;
+
+            _logger.Info($"Question answering: context='{contextCol}', question='{questionCol}', answer='{config.LabelColumn}'");
+
+            var pipeline = _mlContext.MulticlassClassification.Trainers.QuestionAnswer(
+                contextColumnName: contextCol,
+                questionColumnName: questionCol);
+
+            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "QA (NAS-BERT)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
+
+            var model = pipeline.Fit(trainSet);
+
+            return new AutoMLResult
+            {
+                BestTrainer = "QA (NAS-BERT)",
+                Model = model,
+                Metrics = new Dictionary<string, double>(),
+                RowCount = trainSet.GetRowCount() ?? 0
+            };
+        }, cancellationToken);
+    }
+
+    private static double NanSafe(double value) => double.IsNaN(value) ? 0 : value;
+
+    private static string? FindFirstTextColumn(DataViewSchema schema, string labelColumn)
+    {
+        foreach (var col in schema)
+        {
+            if (col.IsHidden) continue;
+            if (col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)) continue;
+            if (col.Type is TextDataViewType)
+                return col.Name;
+        }
+        return null;
+    }
+
+    private static List<string> FindTextColumns(DataViewSchema schema, string labelColumn, int maxCount)
+    {
+        var result = new List<string>();
+        foreach (var col in schema)
+        {
+            if (col.IsHidden) continue;
+            if (col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)) continue;
+            if (col.Type is TextDataViewType)
+            {
+                result.Add(col.Name);
+                if (result.Count >= maxCount) break;
+            }
+        }
+        return result;
+    }
 
     private BinaryClassificationMetric GetBinaryMetric(string metricName)
     {
