@@ -558,7 +558,7 @@ public class AutoMLRunner
             }
 
             ITransformer? bestModel = null;
-            double bestScore = double.MaxValue; // average_distance: lower is better
+            double bestDbi = double.MaxValue; // DBI: lower is better (considers both separation and cohesion)
             int bestK = kValues[0];
             Dictionary<string, double>? bestMetrics = null;
 
@@ -585,14 +585,23 @@ public class AutoMLRunner
                 {
                     TrialNumber = i + 1,
                     TrainerName = $"KMeans (k={k})",
-                    MetricName = "average_distance",
-                    Metric = avgDistance,
+                    MetricName = "davies_bouldin_index",
+                    Metric = dbi,
                     ElapsedSeconds = 0
                 });
 
-                if (avgDistance < bestScore)
+                // Select K with lowest DBI (Davies-Bouldin Index).
+                // Unlike average_distance which monotonically decreases with K,
+                // DBI considers both cluster separation and cohesion, finding the natural K.
+                // Fallback to average_distance if DBI is unavailable (0 or MaxValue).
+                var useDbi = dbi > 0 && dbi < double.MaxValue;
+                var isBetter = useDbi
+                    ? dbi < bestDbi
+                    : (bestDbi == double.MaxValue && avgDistance < (bestMetrics?.GetValueOrDefault("average_distance") ?? double.MaxValue));
+
+                if (isBetter || bestModel == null)
                 {
-                    bestScore = avgDistance;
+                    bestDbi = useDbi ? dbi : bestDbi;
                     bestModel = model;
                     bestK = k;
                     bestMetrics = new Dictionary<string, double>
