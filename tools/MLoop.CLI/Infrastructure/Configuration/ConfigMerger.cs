@@ -60,9 +60,13 @@ public class ConfigMerger
             ?? baseDefinition?.Task
             ?? throw new InvalidOperationException($"Task not specified for model '{modelName}'. Use --task or define in mloop.yaml");
 
+        // Label is optional for unsupervised tasks
+        var unsupervisedTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "anomaly-detection", "clustering", "time-series-anomaly" };
         var label = cliLabel
             ?? baseDefinition?.Label
-            ?? throw new InvalidOperationException($"Label not specified for model '{modelName}'. Use <label> argument or define in mloop.yaml");
+            ?? (unsupervisedTasks.Contains(task) ? "" : throw new InvalidOperationException(
+                $"Label not specified for model '{modelName}'. Use <label> argument or define in mloop.yaml"));
 
         var training = MergeTrainingSettings(
             ConfigDefaults.CreateDefaultTrainingSettings(),
