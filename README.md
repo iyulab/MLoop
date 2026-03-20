@@ -49,18 +49,28 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 
 ### Key Features
 
+- **15 ML Task Types**: Full ML.NET coverage — classification, regression, clustering, ranking, forecasting, recommendation, anomaly detection, NLP, image, and more
 - **AutoML Training**: Automatic model selection with ML.NET AutoML
 - **Multi-Model Projects**: Manage multiple models (churn, revenue, etc.) in one project
+- **On-Demand DL Runtimes**: `mloop runtime install torch` downloads native runtimes only when needed
 - **Smart Predictions**: Production model auto-discovery and batch processing
 - **Filesystem MLOps**: Git-friendly experiment tracking (no database required)
 - **Fast Preprocessing**: Integrated FilePrepper (20x faster than pandas)
 - **Extensibility**: Code-based hooks and custom metrics
-- **Smart Data Detection**: Composite heuristic distinguishes text from categorical columns automatically
 - **Zero Config**: Works immediately with intelligent defaults
-- **Multi-CSV Support**: Auto-merge same-schema files with `--data` or `--auto-merge`
 - **Encoding Detection**: Automatic CP949/EUC-KR to UTF-8 conversion for Korean text
-- **Docker Deployment**: Generate production-ready containerization with `mloop docker`
 - **Self-Update**: Update to latest version with `mloop update`
+
+### Supported ML Tasks
+
+| Category | Tasks | Runtime |
+|----------|-------|:-------:|
+| **Tabular** | Binary Classification, Multiclass Classification, Regression | Built-in |
+| **Unsupervised** | Anomaly Detection (PCA), Clustering (K-Means) | Built-in |
+| **Ranking** | Learning to Rank (LightGBM, FastTree) | Built-in |
+| **Time Series** | Forecasting (SSA), Time Series Anomaly (SR-CNN) | Built-in |
+| **Recommendation** | Matrix Factorization (collaborative filtering) | Built-in |
+| **Deep Learning** | Image Classification, Object Detection, Text Classification, NER, Sentence Similarity, QA | On-demand (`mloop runtime install`) |
 
 ## Quick Start
 

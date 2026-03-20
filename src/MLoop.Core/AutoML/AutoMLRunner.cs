@@ -763,13 +763,17 @@ public class AutoMLRunner
                 }
                 catch (Exception ex)
                 {
-                    _logger.Info($"Ranking trainer '{trainerName}' failed: {ex.Message}");
-                    // Continue to next trainer
+                    var hint = ex.Message.Contains("invalid label")
+                        ? " (FastTree requires labels in range 0-4)"
+                        : "";
+                    _logger.Info($"Ranking trainer '{trainerName}' failed: {ex.Message}{hint}");
                 }
             }
 
             if (bestModel == null)
-                throw new InvalidOperationException("All ranking trainers failed. Check data format and group column.");
+                throw new InvalidOperationException(
+                    "All ranking trainers failed. Check data format and group column. " +
+                    "Note: FastTree requires label values 0-4; LightGbm accepts any numeric range.");
 
             return new AutoMLResult
             {
@@ -962,10 +966,10 @@ public class AutoMLRunner
                     judgementWindowSize: 21,
                     threshold: 0.3)));
 
-            // SSA Spike Detector
-            var ssaWindowSize = Math.Max(2, Math.Min(totalRows / 4, 50));
+            // SSA Spike Detector — trainingWindowSize must be > 2 * seasonalityWindowSize
+            var ssaWindowSize = Math.Max(2, Math.Min(totalRows / 8, 50));
             var ssaPValueSize = Math.Max(2, ssaWindowSize / 2);
-            var ssaTrainingSize = Math.Min(totalRows, Math.Max(ssaWindowSize * 2, 100));
+            var ssaTrainingSize = Math.Max(ssaWindowSize * 2 + 1, Math.Min(totalRows, 100));
             detectors.Add(("SsaSpikeDetector", () =>
                 _mlContext.Transforms.DetectSpikeBySsa(
                     outputColumnName: "Prediction",

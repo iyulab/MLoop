@@ -58,6 +58,21 @@ public class CsvDataLoader : IDataProvider
         // Constant columns provide zero predictive signal and waste compute resources.
         mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn);
 
+        // Handle single-column CSV (e.g., univariate time series)
+        // InferColumns cannot determine delimiter for single-column files
+        var csvHeaders = ReadCsvHeaders(mlnetCompatiblePath);
+        if (csvHeaders.Length == 1)
+        {
+            var singleColName = csvHeaders[0];
+            var singleColLoader = _mlContext.Data.LoadFromTextFile(
+                mlnetCompatiblePath,
+                new[] { new Microsoft.ML.Data.TextLoader.Column(singleColName, Microsoft.ML.Data.DataKind.Single, 0) },
+                separatorChar: ',',
+                hasHeader: true,
+                allowQuoting: true);
+            return singleColLoader;
+        }
+
         // Infer columns from the file
         ColumnInferenceResults columnInference;
         try
