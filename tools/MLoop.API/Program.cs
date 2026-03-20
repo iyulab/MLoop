@@ -2,6 +2,7 @@ using Microsoft.ML;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure;
+using MLoop.Core.Prediction;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -232,6 +233,7 @@ app.MapPost("/predict", async (
     [FromQuery] string? name,
     JsonElement input,
     IModelRegistry registry,
+    IExperimentStore experimentStore,
     MLContext mlContext,
     ILogger<Program> logger,
     CancellationToken ct) =>
@@ -260,45 +262,49 @@ app.MapPost("/predict", async (
             return Results.NotFound(new { error = $"Model file not found: {modelPath}" });
         }
 
-        // Load model
-        var loadStart = Stopwatch.StartNew();
-        ITransformer model;
-        using (var stream = File.OpenRead(modelPath))
-        {
-            model = mlContext.Model.Load(stream, out var modelSchema);
-        }
-        logger.LogDebug("Model '{ModelName}' loaded in {LoadTimeMs}ms", modelName, loadStart.ElapsedMilliseconds);
+        // Load experiment data to get InputSchema
+        var expData = await experimentStore.LoadAsync(modelName, productionModel.ExperimentId, ct);
+        var schema = expData?.Config?.InputSchema;
 
-        // Handle both single object and array of objects
-        var predictions = new List<Dictionary<string, object>>();
+        if (schema == null)
+        {
+            logger.LogError("InputSchema not available for '{ModelName}' experiment {ExperimentId}. " +
+                "This model was trained before schema capture was implemented. Please retrain.",
+                modelName, productionModel.ExperimentId);
+            return Results.Problem(
+                title: "Schema not available",
+                detail: $"InputSchema not found for model '{modelName}' experiment {productionModel.ExperimentId}. " +
+                    "This model was trained before schema capture was implemented. Please retrain the model.",
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
 
-        if (input.ValueKind == JsonValueKind.Array)
-        {
-            // Batch prediction
-            foreach (var item in input.EnumerateArray())
-            {
-                var prediction = MakePrediction(mlContext, model, item);
-                predictions.Add(prediction);
-            }
-        }
-        else
-        {
-            // Single prediction
-            var prediction = MakePrediction(mlContext, model, input);
-            predictions.Add(prediction);
-        }
+        // Parse JSON input to dictionary rows
+        var rows = ParseJsonInput(input);
+
+        // Run prediction through shared PredictionService
+        var taskType = productionModel.Task ?? "regression";
+        var labelColumn = expData?.Config?.LabelColumn;
+        var predictionService = new PredictionService(mlContext);
+
+        logger.LogDebug("Running prediction for '{ModelName}' with task '{TaskType}', label '{LabelColumn}'",
+            modelName, taskType, labelColumn);
+
+        var result = predictionService.Predict(rows, schema, modelPath, taskType, labelColumn);
 
         logger.LogInformation("Predictions completed for '{ModelName}': {Count} predictions in {ElapsedMs}ms (avg: {AvgMs}ms/prediction)",
-            modelName, predictions.Count, stopwatch.ElapsedMilliseconds,
-            stopwatch.ElapsedMilliseconds / (double)predictions.Count);
+            modelName, result.Rows.Count, stopwatch.ElapsedMilliseconds,
+            stopwatch.ElapsedMilliseconds / Math.Max(1.0, result.Rows.Count));
 
         return Results.Ok(new
         {
-            modelName = modelName,
+            modelName,
             experimentId = productionModel.ExperimentId,
             predictedAt = DateTime.UtcNow,
-            count = predictions.Count,
-            predictions = predictions.Count == 1 ? (object)predictions[0] : predictions
+            task = result.TaskType,
+            count = result.Rows.Count,
+            predictions = result.Rows,
+            warnings = result.Warnings
         });
     }
     catch (Exception ex)
@@ -382,46 +388,30 @@ finally
     await Log.CloseAndFlushAsync();
 }
 
-static Dictionary<string, object> MakePrediction(MLContext mlContext, ITransformer model, JsonElement input)
+static Dictionary<string, object>[] ParseJsonInput(JsonElement input)
 {
-    // Convert JSON to dynamic data view
-    var features = new Dictionary<string, object>();
+    var items = new List<JsonElement>();
+    if (input.ValueKind == JsonValueKind.Array)
+        foreach (var item in input.EnumerateArray()) items.Add(item);
+    else
+        items.Add(input);
 
-    foreach (var property in input.EnumerateObject())
+    return items.Select(item =>
     {
-        features[property.Name] = property.Value.ValueKind switch
+        var row = new Dictionary<string, object>();
+        foreach (var prop in item.EnumerateObject())
         {
-            JsonValueKind.Number => property.Value.GetDouble(),
-            JsonValueKind.String => property.Value.GetString() ?? string.Empty,
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            _ => property.Value.ToString()
-        };
-    }
-
-    // Create prediction engine and predict
-    // Note: This is a simplified implementation
-    // In production, you'd need schema-aware prediction based on model metadata
-    var predictionEngine = mlContext.Model.CreatePredictionEngine<DynamicData, DynamicPrediction>(model);
-    var inputData = new DynamicData { Features = features };
-    var result = predictionEngine.Predict(inputData);
-
-    return new Dictionary<string, object>
-    {
-        ["score"] = result.Score,
-        ["input"] = features
-    };
-}
-
-// Dynamic classes for flexible prediction
-public class DynamicData
-{
-    public Dictionary<string, object> Features { get; set; } = new();
-}
-
-public class DynamicPrediction
-{
-    public float Score { get; set; }
+            row[prop.Name] = prop.Value.ValueKind switch
+            {
+                JsonValueKind.Number => prop.Value.GetDouble(),
+                JsonValueKind.String => prop.Value.GetString() ?? string.Empty,
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => prop.Value.ToString()
+            };
+        }
+        return row;
+    }).ToArray();
 }
 
 namespace MLoop.API

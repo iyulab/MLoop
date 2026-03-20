@@ -1,4 +1,5 @@
 using System.Text;
+using MLoop.Core.Prediction;
 
 namespace MLoop.CLI.Infrastructure.ML;
 

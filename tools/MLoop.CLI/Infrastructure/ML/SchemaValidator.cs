@@ -3,6 +3,8 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Models;
+using MLoop.Core.Prediction;
 
 namespace MLoop.CLI.Infrastructure.ML;
 

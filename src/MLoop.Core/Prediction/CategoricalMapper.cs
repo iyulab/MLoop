@@ -1,6 +1,6 @@
-using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Models;
 
-namespace MLoop.CLI.Infrastructure.ML;
+namespace MLoop.Core.Prediction;
 
 /// <summary>
 /// Handles categorical value mapping and preprocessing for prediction

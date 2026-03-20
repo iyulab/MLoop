@@ -2,6 +2,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.DataQuality;
+using MLoop.Core.Prediction;
 using MLoop.Core.Diagnostics;
 using MLoop.Core.Models;
 using Spectre.Console;
