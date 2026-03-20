@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using MLoop.Core.Prediction;
 
 namespace MLoop.CLI.Infrastructure.ML;
 

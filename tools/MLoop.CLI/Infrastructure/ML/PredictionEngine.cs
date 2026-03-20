@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Contracts;
 using MLoop.Core.Models;
 using MLoop.Core.Data;
+using MLoop.Core.Prediction;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
