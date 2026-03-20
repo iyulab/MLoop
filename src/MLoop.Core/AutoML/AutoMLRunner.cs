@@ -38,11 +38,22 @@ public class AutoMLRunner
     {
         // Load and split data
         IDataView trainSet, testSet;
+        var isTimeSeriesTask = config.Task.Equals("forecasting", StringComparison.OrdinalIgnoreCase) ||
+                               config.Task.Equals("time-series-anomaly", StringComparison.OrdinalIgnoreCase);
+
         if (!string.IsNullOrEmpty(config.TestDataFile))
         {
             // Pre-split data (e.g. balanced training with separate test set)
             trainSet = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task);
             testSet = _dataLoader.LoadData(config.TestDataFile, config.LabelColumn, config.Task);
+        }
+        else if (isTimeSeriesTask)
+        {
+            // Time series: use full dataset (no random split — temporal order matters)
+            // Forecasting/TS-Anomaly handle holdout internally
+            var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task);
+            trainSet = dataView;
+            testSet = dataView; // same data — internal holdout handles evaluation
         }
         else
         {
@@ -410,7 +421,8 @@ public class AutoMLRunner
             {
                 if (col.IsHidden) continue;
                 if (col.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) continue;
-                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType)
+                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType
+                    || (col.Type is VectorDataViewType vt && vt.ItemType is NumberDataViewType))
                     featureColumns.Add(col.Name);
             }
 
@@ -512,7 +524,8 @@ public class AutoMLRunner
                 if (col.IsHidden) continue;
                 if (!string.IsNullOrEmpty(config.LabelColumn) &&
                     col.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) continue;
-                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType)
+                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType
+                    || (col.Type is VectorDataViewType vt && vt.ItemType is NumberDataViewType))
                     featureColumns.Add(col.Name);
             }
 
@@ -531,7 +544,7 @@ public class AutoMLRunner
             else
             {
                 // Auto-search: k=2..min(10, sqrt(rowCount))
-                var rowCount = trainSet.GetRowCount() ?? 100;
+                var rowCount = CountRows(trainSet);
                 var maxK = Math.Min(10, Math.Max(2, (int)Math.Sqrt(rowCount)));
                 kValues = Enumerable.Range(2, maxK - 1).ToArray();
                 _logger.Info($"Clustering: {featureColumns.Count} features, searching k=2..{maxK}");
@@ -647,7 +660,8 @@ public class AutoMLRunner
                 if (col.IsHidden) continue;
                 if (col.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) continue;
                 if (col.Name.Equals(config.GroupColumn, StringComparison.OrdinalIgnoreCase)) continue;
-                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType)
+                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType
+                    || (col.Type is VectorDataViewType vt && vt.ItemType is NumberDataViewType))
                     featureColumns.Add(col.Name);
             }
 
@@ -769,11 +783,11 @@ public class AutoMLRunner
             if (!valueCol.HasValue)
                 throw new InvalidOperationException($"Value column '{valueColumn}' not found in data.");
 
-            if (valueCol.Value.Type is not NumberDataViewType)
+            if (valueCol.Value.Type is not NumberDataViewType and not (VectorDataViewType { ItemType: NumberDataViewType }))
                 throw new InvalidOperationException($"Value column '{valueColumn}' must be numeric for forecasting.");
 
-            // Determine parameters
-            var totalRows = (int)(trainSet.GetRowCount() ?? 0);
+            // Determine parameters — use CountRows for lazy IDataView
+            var totalRows = (int)CountRows(trainSet);
             if (totalRows == 0)
                 throw new InvalidOperationException("Training data is empty.");
 
@@ -907,10 +921,10 @@ public class AutoMLRunner
             if (!valueCol.HasValue)
                 throw new InvalidOperationException($"Value column '{valueColumn}' not found in data.");
 
-            if (valueCol.Value.Type is not NumberDataViewType)
+            if (valueCol.Value.Type is not NumberDataViewType and not (VectorDataViewType { ItemType: NumberDataViewType }))
                 throw new InvalidOperationException($"Value column '{valueColumn}' must be numeric for time series anomaly detection.");
 
-            var totalRows = (int)(trainSet.GetRowCount() ?? 0);
+            var totalRows = (int)CountRows(trainSet);
             if (totalRows < 12)
                 throw new InvalidOperationException($"Time series anomaly detection requires at least 12 data points (got {totalRows}).");
 
@@ -1473,7 +1487,8 @@ public class AutoMLRunner
             {
                 textColumns.Add(col.Name);
             }
-            else if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType)
+            else if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType
+                || (col.Type is VectorDataViewType vt2 && vt2.ItemType is NumberDataViewType))
             {
                 numericColumns.Add(col.Name);
             }
@@ -1506,6 +1521,21 @@ public class AutoMLRunner
             write($"[Info] Ignored column(s) (override): {string.Join(", ", ignoredColumns)}");
 
         return columnInfo;
+    }
+
+    /// <summary>
+    /// Gets row count from IDataView, counting manually if lazy view returns null.
+    /// </summary>
+    private static long CountRows(IDataView data)
+    {
+        var count = data.GetRowCount();
+        if (count.HasValue) return count.Value;
+
+        // Manual count for lazy IDataView (TextLoader)
+        long rows = 0;
+        using var cursor = data.GetRowCursor(Array.Empty<DataViewSchema.Column>());
+        while (cursor.MoveNext()) rows++;
+        return rows;
     }
 
     private static bool IsAucMessage(string message)

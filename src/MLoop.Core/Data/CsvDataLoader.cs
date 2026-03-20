@@ -61,9 +61,11 @@ public class CsvDataLoader : IDataProvider
         ColumnInferenceResults columnInference;
         try
         {
+            // Pass null (not empty string) for unsupervised tasks
+            var effectiveLabelColumn = string.IsNullOrEmpty(labelColumn) ? null : labelColumn;
             columnInference = _mlContext.Auto().InferColumns(
                 mlnetCompatiblePath,
-                labelColumnName: labelColumn,
+                labelColumnName: effectiveLabelColumn,
                 separatorChar: ',');
         }
         catch (Exception ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
