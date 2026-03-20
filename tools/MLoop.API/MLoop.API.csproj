@@ -19,6 +19,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MLoop.Core\MLoop.Core.csproj" />
+    <ProjectReference Include="..\..\src\MLoop.DataStore\MLoop.DataStore.csproj" />
+    <ProjectReference Include="..\..\src\MLoop.Ops\MLoop.Ops.csproj" />
     <ProjectReference Include="..\MLoop.CLI\MLoop.CLI.csproj" />
   </ItemGroup>
 

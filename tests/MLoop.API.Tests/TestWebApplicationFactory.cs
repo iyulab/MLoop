@@ -3,6 +3,10 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using MLoop.CLI.Infrastructure;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.DataStore.Interfaces;
+using MLoop.DataStore.Services;
+using MLoop.Ops.Interfaces;
+using MLoop.Ops.Services;
 using MLoop.API;
 using Microsoft.AspNetCore.Authentication;
 using System.Security.Claims;
@@ -50,6 +54,14 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
 
                 return discovery;
             });
+
+            // Override Ops/DataStore services to use test directory
+            ReplaceService<IModelComparer>(services, new FileModelComparer(_testProjectRoot));
+            ReplaceService<IRetrainingTrigger>(services, new TimeBasedTrigger(_testProjectRoot));
+            ReplaceService<IPredictionLogger>(services, new FilePredictionLogger(_testProjectRoot));
+            ReplaceService<IFeedbackCollector>(services, new FileFeedbackCollector(_testProjectRoot));
+            ReplaceService<IPromotionManager>(services, sp =>
+                new FilePromotionManager(_testProjectRoot, sp.GetRequiredService<IModelComparer>()));
         });
 
         // Disable authentication for tests
@@ -59,6 +71,20 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
                 .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TestAuthHandler>("Test", options => { });
             services.AddAuthorization();
         });
+    }
+
+    private static void ReplaceService<T>(IServiceCollection services, T implementation) where T : class
+    {
+        var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(T));
+        if (descriptor != null) services.Remove(descriptor);
+        services.AddSingleton<T>(implementation);
+    }
+
+    private static void ReplaceService<T>(IServiceCollection services, Func<IServiceProvider, T> factory) where T : class
+    {
+        var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(T));
+        if (descriptor != null) services.Remove(descriptor);
+        services.AddSingleton<T>(factory);
     }
 
     protected override void Dispose(bool disposing)

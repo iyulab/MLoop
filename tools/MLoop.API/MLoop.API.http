@@ -1,6 +1,136 @@
-@MLoop.API_HostAddress = http://localhost:5045
+@host = http://localhost:5045
+@token = YOUR_JWT_TOKEN_HERE
 
-GET {{MLoop.API_HostAddress}}/weatherforecast/
+### Health Check
+GET {{host}}/health
 Accept: application/json
 
-###
+### Get Project Status
+GET {{host}}/status
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### List Production Models
+GET {{host}}/models
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Get Model Info
+GET {{host}}/info?name=default
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### List Experiments
+GET {{host}}/experiments
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### List Experiments (filtered by model)
+GET {{host}}/experiments?name=default
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Get Experiment Detail
+GET {{host}}/experiments/exp-001?name=default
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Run Prediction (single)
+POST {{host}}/predict?name=default
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "feature1": 1.0,
+    "feature2": 2.0
+}
+
+### Run Prediction (batch)
+POST {{host}}/predict?name=default
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+[
+    { "feature1": 1.0, "feature2": 2.0 },
+    { "feature1": 3.0, "feature2": 4.0 }
+]
+
+### Compare Experiments
+GET {{host}}/compare?candidate=exp-002&baseline=exp-001&name=default
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Promote Experiment
+POST {{host}}/promote
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "experimentId": "exp-001",
+    "name": "default",
+    "createBackup": true
+}
+
+### Evaluate Model
+POST {{host}}/evaluate
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "testDataPath": "datasets/test.csv",
+    "name": "default"
+}
+
+### Start Training (async)
+POST {{host}}/train
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "dataFile": "datasets/train.csv",
+    "labelColumn": "target",
+    "task": "regression",
+    "timeLimitSeconds": 60
+}
+
+### List Training Jobs
+GET {{host}}/jobs
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Get Job Status
+GET {{host}}/jobs/job-20260321-120000-abc12345
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Get Prediction Logs
+GET {{host}}/logs?name=default&limit=100
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Get Feedback
+GET {{host}}/feedback?name=default
+Accept: application/json
+Authorization: Bearer {{token}}
+
+### Submit Feedback
+POST {{host}}/feedback
+Accept: application/json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "predictionId": "pred-001",
+    "actualValue": "positive",
+    "source": "human-review"
+}
+
+### Evaluate Retraining Trigger
+GET {{host}}/trigger?name=default
+Accept: application/json
+Authorization: Bearer {{token}}
