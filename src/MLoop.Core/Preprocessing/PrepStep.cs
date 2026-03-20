@@ -97,4 +97,14 @@ public class PrepStep
     /// Expression for add-column (simple expressions: concat, math, constant)
     /// </summary>
     public string? Expression { get; set; }
+
+    /// <summary>
+    /// Sample count for data-sampling step (absolute number if >= 1, ratio if 0 &lt; value &lt; 1)
+    /// </summary>
+    public int Count { get; set; }
+
+    /// <summary>
+    /// Random seed for data-sampling step (default: 42 for reproducibility)
+    /// </summary>
+    public int Seed { get; set; } = 42;
 }

@@ -111,6 +111,27 @@ public static class TrainCommand
             Description = "Group column for ranking task (groups rows into query contexts)"
         };
 
+        var maxRowsOption = new Option<int?>("--max-rows")
+        {
+            Description = "Maximum training rows. Data exceeding this is auto-sampled (random for regression/anomaly, stratified for classification)"
+        };
+
+        var samplingStrategyOption = new Option<string?>("--sampling-strategy")
+        {
+            Description = "Sampling strategy when --max-rows is used: 'random' or 'stratified' (default: task-aware)"
+        };
+
+        var samplingStrategyAliasOption = new Option<string?>("--sampling")
+        {
+            Description = "Alias for --sampling-strategy"
+        };
+        samplingStrategyAliasOption.Hidden = true;
+
+        var seedOption = new Option<int?>("--seed")
+        {
+            Description = "Random seed for sampling reproducibility (default: 42)"
+        };
+
         var command = new Command("train", "Train a model using AutoML");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
@@ -128,6 +149,10 @@ public static class TrainCommand
         command.Options.Add(noAutoTimeOption);
         command.Options.Add(balanceOption);
         command.Options.Add(groupColumnOption);
+        command.Options.Add(maxRowsOption);
+        command.Options.Add(samplingStrategyOption);
+        command.Options.Add(samplingStrategyAliasOption);
+        command.Options.Add(seedOption);
 
         command.SetAction((parseResult) =>
         {
@@ -147,12 +172,15 @@ public static class TrainCommand
             var noAutoTime = parseResult.GetValue(noAutoTimeOption);
             var balance = parseResult.GetValue(balanceOption);
             var groupColumn = parseResult.GetValue(groupColumnOption);
+            var maxRows = parseResult.GetValue(maxRowsOption);
+            var samplingStrategy = parseResult.GetValue(samplingStrategyOption) ?? parseResult.GetValue(samplingStrategyAliasOption);
+            var seed = parseResult.GetValue(seedOption);
             // Handle --balance without argument: default to "auto"
             if (balance == null && parseResult.Tokens.Any(t => t.Value == "--balance" || t.Value == "-b"))
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, balance, groupColumn);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, balance, groupColumn, maxRows, samplingStrategy, seed);
         });
 
         return command;
@@ -174,7 +202,10 @@ public static class TrainCommand
         string[]? dataPaths,
         bool noAutoTime,
         string? balance,
-        string? groupColumn)
+        string? groupColumn,
+        int? maxRows = null,
+        string? samplingStrategy = null,
+        int? seed = null)
     {
         try
         {
@@ -419,6 +450,19 @@ public static class TrainCommand
             }
 
             AnsiConsole.MarkupLine($"[green]>[/] Using data: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+
+            // Auto-sampling for large datasets (--max-rows)
+            if (maxRows.HasValue && maxRows.Value > 0)
+            {
+                resolvedDataFile = await TrainDataValidator.ApplySamplingIfNeededAsync(
+                    resolvedDataFile,
+                    maxRows.Value,
+                    effectiveDefinition.Task,
+                    effectiveDefinition.Label,
+                    samplingStrategy,
+                    seed ?? 42,
+                    projectRoot);
+            }
 
             // Track all data files used during pipeline (for unused file scanner)
             var allDataFilesUsed = new List<string> { resolvedDataFile };

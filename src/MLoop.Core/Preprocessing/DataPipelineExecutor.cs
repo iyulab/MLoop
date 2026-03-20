@@ -64,6 +64,7 @@ public class DataPipelineExecutor
             "parse-excel-date" or "parse_excel_date" => ApplyParseExcelDate(pipeline, step),
             "rolling" => ApplyRolling(pipeline, step),
             "resample" => ApplyResample(pipeline, step),
+            "sample" or "data-sampling" or "data_sampling" => ApplySample(pipeline, step),
             _ => throw new InvalidOperationException($"Unknown prep step type: '{step.Type}'")
         };
     }
@@ -256,6 +257,68 @@ public class DataPipelineExecutor
         var method = ParseAggregationMethod(step.Method ?? "mean");
 
         return pipeline.Resample(timeColumn, window, method, columns);
+    }
+
+    private DataPipeline ApplySample(DataPipeline pipeline, PrepStep step)
+    {
+        var count = step.Count;
+        if (count <= 0)
+            throw new InvalidOperationException("sample step requires 'count' > 0");
+
+        if (pipeline.RowCount <= count)
+            return pipeline; // No sampling needed
+
+        var method = (step.Method ?? "random").ToLowerInvariant();
+        var seed = step.Seed;
+        var random = new Random(seed);
+        var totalRows = pipeline.RowCount;
+
+        if (method == "stratified")
+        {
+            var stratifyColumn = step.Column;
+            if (string.IsNullOrEmpty(stratifyColumn))
+                throw new InvalidOperationException("sample step with stratified method requires 'column' parameter");
+
+            // Two-pass: first collect group info via FilterRows side-effect, then sample
+            var groups = new Dictionary<string, List<int>>();
+            int scanIndex = 0;
+            pipeline.FilterRows(row =>
+            {
+                var key = row.GetValueOrDefault(stratifyColumn, "");
+                if (!groups.ContainsKey(key))
+                    groups[key] = [];
+                groups[key].Add(scanIndex++);
+                return true; // Keep all rows in scan pass
+            });
+
+            // Select indices proportionally from each group
+            var ratio = (double)count / totalRows;
+            var selected = new HashSet<int>();
+            foreach (var group in groups.Values)
+            {
+                var groupSampleSize = Math.Max(1, (int)(group.Count * ratio));
+                foreach (var idx in group.OrderBy(_ => random.NextDouble()).Take(groupSampleSize))
+                    selected.Add(idx);
+            }
+
+            int filterIndex = 0;
+            return pipeline.FilterRows(_ => selected.Contains(filterIndex++));
+        }
+        else // random
+        {
+            // Pre-select random indices
+            var selected = new HashSet<int>();
+            var allIndices = Enumerable.Range(0, totalRows).ToArray();
+            for (int i = totalRows - 1; i >= 0 && selected.Count < count; i--)
+            {
+                int j = random.Next(i + 1);
+                (allIndices[i], allIndices[j]) = (allIndices[j], allIndices[i]);
+                selected.Add(allIndices[i]);
+            }
+
+            int filterIndex = 0;
+            return pipeline.FilterRows(_ => selected.Contains(filterIndex++));
+        }
     }
 
     private string[] ResolveColumns(PrepStep step)

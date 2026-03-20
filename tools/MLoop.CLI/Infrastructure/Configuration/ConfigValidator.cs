@@ -43,7 +43,8 @@ public static class ConfigValidator
         "parse-korean-time", "parse_korean_time",
         "parse-excel-date", "parse_excel_date",
         "rolling",
-        "resample"
+        "resample",
+        "sample", "data-sampling", "data_sampling"
     };
 
     public record ValidationResult(List<string> Errors, List<string> Warnings);
@@ -157,6 +158,18 @@ public static class ConfigValidator
                         errors.Add($"{prefix}: 'resample' requires 'window'");
                     if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
                         errors.Add($"{prefix}: 'resample' requires 'columns'");
+                    break;
+
+                case "sample":
+                case "data-sampling":
+                case "data_sampling":
+                    if (step.Count <= 0)
+                        errors.Add($"{prefix}: 'sample' requires 'count' > 0");
+                    var sampleMethod = (step.Method ?? "random").ToLowerInvariant();
+                    if (sampleMethod != "random" && sampleMethod != "stratified")
+                        errors.Add($"{prefix}: 'sample' method must be 'random' or 'stratified'");
+                    if (sampleMethod == "stratified" && string.IsNullOrEmpty(step.Column))
+                        errors.Add($"{prefix}: 'sample' with stratified method requires 'column'");
                     break;
             }
         }

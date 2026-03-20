@@ -506,4 +506,85 @@ public class ConfigValidatorTests
         Assert.DoesNotContain(result.Errors, e => e.Contains("User column"));
         Assert.DoesNotContain(result.Errors, e => e.Contains("Item column"));
     }
+
+    [Fact]
+    public void ValidatePrepSteps_SampleStep_ValidRandomConfig_NoErrors()
+    {
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "sample", Method = "random", Count = 1000 }
+        };
+
+        var errors = ConfigValidator.ValidatePrepSteps(steps);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ValidatePrepSteps_SampleStep_ValidStratifiedConfig_NoErrors()
+    {
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "sample", Method = "stratified", Count = 1000, Column = "label" }
+        };
+
+        var errors = ConfigValidator.ValidatePrepSteps(steps);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void ValidatePrepSteps_SampleStep_MissingCount_ReturnsError()
+    {
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "sample", Method = "random", Count = 0 }
+        };
+
+        var errors = ConfigValidator.ValidatePrepSteps(steps);
+
+        Assert.Single(errors);
+        Assert.Contains("count", errors[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ValidatePrepSteps_SampleStep_StratifiedWithoutColumn_ReturnsError()
+    {
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "sample", Method = "stratified", Count = 1000 }
+        };
+
+        var errors = ConfigValidator.ValidatePrepSteps(steps);
+
+        Assert.Single(errors);
+        Assert.Contains("column", errors[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ValidatePrepSteps_SampleStep_InvalidMethod_ReturnsError()
+    {
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "sample", Method = "invalid", Count = 1000 }
+        };
+
+        var errors = ConfigValidator.ValidatePrepSteps(steps);
+
+        Assert.Single(errors);
+        Assert.Contains("method", errors[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ValidatePrepSteps_DataSamplingAlias_ValidConfig_NoErrors()
+    {
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "data-sampling", Method = "random", Count = 500 }
+        };
+
+        var errors = ConfigValidator.ValidatePrepSteps(steps);
+
+        Assert.Empty(errors);
+    }
 }

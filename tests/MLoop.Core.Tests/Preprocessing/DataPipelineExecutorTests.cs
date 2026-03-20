@@ -514,6 +514,122 @@ public class DataPipelineExecutorTests : IDisposable
         Assert.Contains("2024", lines[1]);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WithSampleRandom_ReducesRows()
+    {
+        // Arrange: 100 rows
+        var lines = new List<string> { "id,value" };
+        for (int i = 1; i <= 100; i++)
+            lines.Add($"{i},{i * 10}");
+
+        var inputPath = CreateTestCsv(lines.ToArray());
+        var outputPath = Path.Combine(_tempDirectory, "sampled.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "sample", Method = "random", Count = 20, Seed = 42 }
+        };
+
+        // Act
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        // Assert
+        var outputLines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Equal(21, outputLines.Length); // header + 20 rows
+        Assert.Contains("id", outputLines[0]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithSampleStratified_PreservesClassDistribution()
+    {
+        // Arrange: 80 rows class A, 20 rows class B = 100 total
+        var lines = new List<string> { "id,label,value" };
+        for (int i = 1; i <= 80; i++)
+            lines.Add($"{i},A,{i}");
+        for (int i = 81; i <= 100; i++)
+            lines.Add($"{i},B,{i}");
+
+        var inputPath = CreateTestCsv(lines.ToArray());
+        var outputPath = Path.Combine(_tempDirectory, "stratified.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "sample", Method = "stratified", Count = 20, Seed = 42, Column = "label" }
+        };
+
+        // Act
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        // Assert
+        var outputLines = await File.ReadAllLinesAsync(outputPath);
+        var dataRows = outputLines.Skip(1).ToArray();
+        Assert.InRange(dataRows.Length, 15, 25); // ~20 rows
+
+        // Both classes should be present
+        var classA = dataRows.Count(r => r.Contains(",A,"));
+        var classB = dataRows.Count(r => r.Contains(",B,"));
+        Assert.True(classA > 0, "Class A should be present");
+        Assert.True(classB > 0, "Class B should be present");
+        Assert.True(classA > classB, "Class A should have more samples (80% of original)");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithSample_WhenDataSmallerThanCount_KeepsAllRows()
+    {
+        // Arrange: 5 rows, sample count = 100
+        var inputPath = CreateTestCsv(
+            "id,value",
+            "1,10",
+            "2,20",
+            "3,30",
+            "4,40",
+            "5,50");
+        var outputPath = Path.Combine(_tempDirectory, "no_sample.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "sample", Method = "random", Count = 100, Seed = 42 }
+        };
+
+        // Act
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        // Assert
+        var outputLines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Equal(6, outputLines.Length); // header + 5 rows (no sampling)
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithSample_MissingCount_ThrowsException()
+    {
+        var inputPath = CreateTestCsv("id,value", "1,10");
+        var outputPath = Path.Combine(_tempDirectory, "err.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "sample", Method = "random", Count = 0 }
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _executor.ExecuteAsync(inputPath, steps, outputPath));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithDataSamplingAlias_Works()
+    {
+        var lines = new List<string> { "id,value" };
+        for (int i = 1; i <= 50; i++)
+            lines.Add($"{i},{i * 10}");
+
+        var inputPath = CreateTestCsv(lines.ToArray());
+        var outputPath = Path.Combine(_tempDirectory, "alias.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "data-sampling", Method = "random", Count = 10, Seed = 42 }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var outputLines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Equal(11, outputLines.Length); // header + 10
+    }
+
     private string CreateTestCsv(params string[] lines)
     {
         var path = Path.Combine(_tempDirectory, $"test_{Guid.NewGuid()}.csv");

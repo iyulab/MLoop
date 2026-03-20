@@ -222,6 +222,10 @@ public static class PrepRunCommand
             parts.Add($"time: {step.TimeColumn}");
         if (step.RemoveOriginal)
             parts.Add("remove_original");
+        if (step.Count > 0)
+            parts.Add($"count: {step.Count}");
+        if (step.Seed != 42 && step.Count > 0) // Only show non-default seed for sample steps
+            parts.Add($"seed: {step.Seed}");
 
         return parts.Count > 0 ? string.Join(", ", parts) : "[grey]-[/]";
     }

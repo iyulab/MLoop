@@ -38,7 +38,7 @@
     <!-- Documentation / API -->
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.5" />
     <!-- External Dependencies -->
-    <PackageVersion Include="FilePrepper" Version="0.5.0" />
+    <PackageVersion Include="FilePrepper" Version="0.6.0" />
     <PackageVersion Include="DataLens" Version="0.3.0" />
     <!-- Resilience / Polly -->
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
