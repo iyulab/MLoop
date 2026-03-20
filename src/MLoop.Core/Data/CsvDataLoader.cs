@@ -62,8 +62,11 @@ public class CsvDataLoader : IDataProvider
         ColumnInferenceResults columnInference;
         try
         {
-            // Pass null (not empty string) for unsupervised tasks
-            var effectiveLabelColumn = string.IsNullOrEmpty(labelColumn) ? null : labelColumn;
+            // For unsupervised tasks (no label), use a placeholder that won't match any column.
+            // InferColumns requires non-null labelColumnName but will silently skip it if not found.
+            var effectiveLabelColumn = string.IsNullOrEmpty(labelColumn)
+                ? "__mloop_no_label__"
+                : labelColumn;
             columnInference = _mlContext.Auto().InferColumns(
                 mlnetCompatiblePath,
                 labelColumnName: effectiveLabelColumn,
