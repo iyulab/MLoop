@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-03-20
+
+### Added
+- **Auto-sampling for large datasets**: `mloop train --max-rows N` with task-aware strategy (stratified for classification, random for others)
+- `--sampling-strategy` and `--seed` options for explicit sampling control
+- `sample` step type in `mloop prep` pipeline (DataPipelineExecutor)
+- Shared PredictionService engine (MLoop.Core.Prediction) used by both CLI and API
+- API `/predict` endpoint with real prediction (replacing placeholder)
+- SSA forecasting predict via model Transform (T-29)
+
+### Fixed
+- BUG-25b: EvaluateCommand Boolean/String label mismatch for multiclass
+- BUG-30: PredictCommand fails for unsupervised tasks with empty label
+- Spectre.Console markup escaping in ServeCommand output
+
+### Changed
+- FilePrepper dependency upgraded 0.5.0 → 0.6.0 (StripCarriageReturn support)
+- ConfigureAwait(false) applied to all library async code
+- CLI test coverage expanded (17/25 commands covered)
+
+### Validated
+- 89 KAMP datasets tested (Sprint-13 + Sprint-14), 0 new bugs
+- All 15 ML.NET task types implemented and verified
+- 1,595 tests passing, 0 warnings, 0 errors
+
+## [0.10.1] - 2026-03-15
+
+### Fixed
+- BUG-25: VectorDataViewType feature detection
+- BUG-26: GetRowCount null handling with CountRows helper
+- BUG-27: Unsupervised label skip in data validation
+- InitCommand updated to allow all 15 task types
+- DataQualityValidator updated for unsupervised learning
+
+## [0.10.0] - 2026-03-12
+
+### Added
+- ML.NET full 15 task types: Anomaly Detection, Clustering, Ranking, Forecasting (SSA), Time-Series Anomaly, Recommendation, Image Classification, Object Detection, Text Classification, Sentence Similarity, NER, Question Answering
+- `mloop runtime` command for on-demand DL runtime management (TorchSharp, TensorFlow)
+
 ## [0.6.1-alpha] - 2026-03-10
 
 ### Added
