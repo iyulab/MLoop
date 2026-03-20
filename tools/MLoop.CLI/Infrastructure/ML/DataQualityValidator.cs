@@ -81,8 +81,25 @@ public class DataQualityValidator
             {
                 "binary-classification" => true,
                 "multiclass-classification" => true,
+                "text-classification" => true,
+                "image-classification" => true,
                 _ => false
             };
+
+            // Unsupervised tasks don't require label validation
+            var isUnsupervisedTask = taskType?.ToLowerInvariant() switch
+            {
+                "anomaly-detection" => true,
+                "clustering" => true,
+                "time-series-anomaly" => true,
+                _ => false
+            };
+
+            if (isUnsupervisedTask)
+            {
+                // Skip label-related warnings for unsupervised tasks
+                return result;
+            }
 
             // Extract label column values - support both numeric and text labels
             var numericLabelValues = new List<double>();
