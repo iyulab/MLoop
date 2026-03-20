@@ -1088,33 +1088,28 @@ mloop runtime remove torch     # 런타임 제거
 > All roadmap features are developed in minor versions (v0.x.x).
 > Phase version numbers below are internal development milestones, not GitHub Release versions.
 
-### v0.5.x (Current Release Series)
+### GitHub Releases
 
-| GitHub Release | Focus | Status |
-|----------------|-------|--------|
+| Release | Focus | Status |
+|---------|-------|--------|
 | **v0.5.0-alpha** | First GitHub Release + multiplatform binaries | ✅ Released |
 | **v0.5.1-alpha** | Self-update system + CI/CD refinement | ✅ Released |
+| **v0.10.0** | ML.NET 전체 태스크 커버리지 (15/15) + on-demand runtime | 🔧 Local |
 
-### Development Phases (Internal Milestones)
+### Development Phases
 
 | Phase | Focus | Status |
 |-------|-------|--------|
 | Phase 0-3 | Preprocessing, Extensibility, AI Agents, FilePrepper | ✅ Complete |
 | Phase 4 | Autonomous MLOps (Auto-merge, Label handling) | ✅ Complete |
 | Phase 5 | Intelligent Memory System | ⚠️ Deprecated |
-| Phase 6 | Data Quality + Encoding Detection | ✅ Complete |
-| Phase 7 | Production Readiness | ✅ Complete |
-| Phase 8 | Polish & Documentation | ✅ Complete |
+| Phase 6-8 | Data Quality, Production Readiness, Polish | ✅ Complete |
 | Phase 9 | CLI Intelligence | ❌ Cancelled |
-| Phase 10 | DataStore + Prediction Logging | ✅ Complete |
-| Phase 11 | Ops + Model Comparison | ✅ Complete |
-| Phase 12 | Feedback Collection | ✅ Complete |
-| Phase 13 | Data Sampling & Triggers | ✅ Complete |
-| Phase 14 | Trigger CLI Enhancement | ✅ Complete |
-| Phase 15 | NuGet Package Preparation | ✅ Complete |
-| Phase 16 | Project Refinement (SDK/Tools separation) | ✅ Complete |
+| Phase 10-14 | DataStore, Ops, Feedback, Sampling, Triggers | ✅ Complete |
+| Phase 15-16 | NuGet Prep, SDK/Tools separation | ✅ Complete |
 | Phase 17-18 | Studio API & UI | ✅ Complete |
 | Phase 19 | ML-Resource E2E Validation | ✅ Complete |
+| **ML Task Expansion** | **15개 ML 태스크 + on-demand runtime** | **✅ Complete** |
 
 ### v1.0.0 (Community Validation Milestone)
 - **Status**: 🎯 Pending community validation
@@ -1158,10 +1153,10 @@ Submit proposals via GitHub Issues with `roadmap` label.
 ---
 
 **Last Updated**: March 20, 2026
-**Current Version**: v0.10.0 ([GitHub Releases](https://github.com/iyulab/MLoop/releases))
+**Current Version**: v0.10.0
+**Last Updated**: March 20, 2026
 **Recent Changes**:
-- v0.10.0: ML.NET 전체 태스크 커버리지 달성 (15/15) — DL trainer 구현
-- v0.9.0: On-demand runtime management (`mloop runtime install/remove`)
-- v0.8.0: Time Series Anomaly, Recommendation 추가 — Tier 1~3 완료
-- v0.7.0: Clustering, Ranking, Forecasting 추가 (MLOOP-102~104)
-- 1,311 tests passing across all projects
+- v0.10.0: ML.NET 전체 태스크 커버리지 (15/15), DL on-demand runtime, 1,311 tests
+- v0.8.0~0.9.0: Tier 1~3 완료 + on-demand runtime infra
+- v0.7.0: Clustering, Ranking, Forecasting
+- v0.5.1-alpha: Latest GitHub Release
