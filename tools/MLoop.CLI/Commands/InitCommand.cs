@@ -111,6 +111,12 @@ public static class InitCommand
                 return 1;
             }
 
+            // For unsupervised tasks, clear default label if user didn't explicitly set one
+            var unsupervisedTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "anomaly-detection", "clustering", "time-series-anomaly" };
+            if (unsupervisedTasks.Contains(task) && labelColumn == "Label")
+                labelColumn = "";
+
             // Resolve project path (allow "." for current directory)
             var projectPath = projectName == "."
                 ? Directory.GetCurrentDirectory()

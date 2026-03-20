@@ -695,8 +695,9 @@ public static class TrainCommand
             // Display training configuration
             TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition, testDataFile);
 
-            // Validate label column exists
-            await TrainDataValidator.ValidateLabelColumnAsync(resolvedDataFile, effectiveDefinition.Label, resolvedModelName);
+            // Validate label column exists (skip for unsupervised tasks)
+            if (requiresLabel)
+                await TrainDataValidator.ValidateLabelColumnAsync(resolvedDataFile, effectiveDefinition.Label, resolvedModelName);
 
             // Initialize training components
             var modelNameResolver = new ModelNameResolver(fileSystem, projectDiscovery, configLoader);
