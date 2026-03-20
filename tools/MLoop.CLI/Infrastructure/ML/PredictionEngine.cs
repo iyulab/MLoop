@@ -273,7 +273,24 @@ public class PredictionEngine : IPredictionEngine
             IDataView processedData = inputData;
 
             // Make predictions
-            var predictions = trainedModel.Transform(processedData);
+            IDataView predictions;
+            try
+            {
+                predictions = trainedModel.Transform(processedData);
+            }
+            catch (Exception ex) when (ex.Message.Contains("Schema mismatch") ||
+                                       ex.Message.Contains("Vector<Single"))
+            {
+                throw new InvalidOperationException(
+                    $"Feature vector dimension mismatch during prediction. " +
+                    $"This typically occurs when text columns (FeaturizeText/TF-IDF) in the prediction data " +
+                    $"have different value distributions than the training data. " +
+                    $"Workaround: Force text columns to use categorical encoding by adding column_overrides " +
+                    $"in mloop.yaml:\n" +
+                    $"  column_overrides:\n" +
+                    $"    <text_column_name>: categorical\n\n" +
+                    $"Then retrain the model. Original error: {ex.Message}", ex);
+            }
 
             // IMP-R2-07: Restore original class names for PredictedLabel
             // ML.NET classification models use MapValueToKey on the label column during training,
