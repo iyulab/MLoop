@@ -154,7 +154,7 @@ public static class PredictCommand
                 {
                     var experimentData = await experimentStore.LoadAsync(resolvedModelName, experimentId, CancellationToken.None);
                     trainedSchema = experimentData?.Config?.InputSchema;
-                    configLabelColumn = experimentData?.Config?.LabelColumn;
+                    configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
                     taskType = experimentData?.Task;
                 }
                 catch
@@ -190,7 +190,7 @@ public static class PredictCommand
                         {
                             var experimentData = await experimentStore.LoadAsync(resolvedModelName, possibleExpId, CancellationToken.None);
                             trainedSchema = experimentData?.Config?.InputSchema;
-                            configLabelColumn = experimentData?.Config?.LabelColumn;
+                            configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
                             taskType = experimentData?.Task;
                             experimentId = possibleExpId;
                         }
