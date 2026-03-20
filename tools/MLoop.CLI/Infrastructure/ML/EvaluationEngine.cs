@@ -184,6 +184,25 @@ public class EvaluationEngine
             }
         }
 
+        // BUG-15/BUG-25b: Multiclass classification — InferColumns may detect label as Boolean
+        // when values are 0/1/2 etc. CsvDataLoader converts Boolean→String for multiclass
+        // during training. Override BEFORE loading so TextLoader can parse all values.
+        bool isMulticlass = taskType.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase);
+        bool isRegressionEval = taskType.Equals("regression", StringComparison.OrdinalIgnoreCase);
+        if (columnInference.TextLoaderOptions.Columns != null)
+        {
+            foreach (var col in columnInference.TextLoaderOptions.Columns)
+            {
+                if (col.Name != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) && col.DataKind == DataKind.Boolean)
+                {
+                    if (isMulticlass)
+                        col.DataKind = DataKind.String;
+                    else if (isRegressionEval)
+                        col.DataKind = DataKind.Single;
+                }
+            }
+        }
+
         // Create text loader with inferred schema
         var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
 
@@ -257,6 +276,7 @@ public class EvaluationEngine
         public string Key { get; set; } = "";
         public bool Value { get; set; }
     }
+
 
     private Dictionary<string, double> EvaluateRegression(IDataView predictions, string labelColumn)
     {
