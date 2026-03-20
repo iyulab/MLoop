@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
@@ -15,6 +16,11 @@ public static class UpdateChecker
     private static readonly string CachePath = Path.Combine(CacheDir, "update-check.json");
 
     private const string GitHubReleasesUrl = "https://api.github.com/repos/iyulab/MLoop/releases?per_page=15";
+
+    private static readonly SocketsHttpHandler SharedHandler = new()
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    };
 
     public static string GetCurrentVersion()
     {
@@ -48,7 +54,7 @@ public static class UpdateChecker
 
             var timeout = forceCheck ? TimeSpan.FromSeconds(30) : TimeSpan.FromSeconds(2);
 
-            using var http = new HttpClient { Timeout = timeout };
+            using var http = new HttpClient(SharedHandler, disposeHandler: false) { Timeout = timeout };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("MLoop-CLI");
 
             var releases = await http.GetFromJsonAsync(
@@ -84,9 +90,10 @@ public static class UpdateChecker
             WriteCache(info);
             return info;
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail - update check should never break CLI
+            // Update check should never break CLI, but log for diagnostics
+            Debug.WriteLine($"[MLoop] Update check failed: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
@@ -98,7 +105,7 @@ public static class UpdateChecker
         var assetName = $"mloop-{rid}{ext}";
         var downloadUrl = $"https://github.com/iyulab/MLoop/releases/download/v{version}/{assetName}";
 
-        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        using var http = new HttpClient(SharedHandler, disposeHandler: false) { Timeout = TimeSpan.FromMinutes(5) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("MLoop-CLI");
 
         using var response = await http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
@@ -235,8 +242,9 @@ public static class UpdateChecker
             return new UpdateInfo(cache.LatestVersion, GetCurrentVersion(),
                 CompareVersions(cache.LatestVersion, GetCurrentVersion()) > 0);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"[MLoop] Cache read failed: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
@@ -254,9 +262,9 @@ public static class UpdateChecker
             var json = JsonSerializer.Serialize(cache, UpdateCacheContext.Default.UpdateCache);
             File.WriteAllText(CachePath, json);
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort cache write
+            Debug.WriteLine($"[MLoop] Cache write failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 }

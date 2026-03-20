@@ -426,7 +426,7 @@ public static class FeedbackCommand
         AnsiConsole.WriteLine();
     }
 
-    private static bool ValuesMatch(object? predicted, object? actual)
+    internal static bool ValuesMatch(object? predicted, object? actual)
     {
         if (predicted == null && actual == null)
             return true;

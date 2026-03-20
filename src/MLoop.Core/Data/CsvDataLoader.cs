@@ -188,6 +188,8 @@ public class CsvDataLoader : IDataProvider
                         h.Equals(colName, StringComparison.OrdinalIgnoreCase));
                     if (headerIdx < 0) continue;
 
+                    if (options.Columns is null) continue;
+
                     // Check if this column is already defined individually
                     var existsIndividually = options.Columns.Any(c =>
                         c.Name.Equals(colName, StringComparison.OrdinalIgnoreCase) &&

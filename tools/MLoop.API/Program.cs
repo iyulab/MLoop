@@ -70,30 +70,28 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-// Add Rate Limiting
+// Add Rate Limiting (configurable via appsettings.json "IpRateLimiting" section)
 builder.Services.AddMemoryCache();
-builder.Services.Configure<IpRateLimitOptions>(options =>
+var rateLimitSection = builder.Configuration.GetSection("IpRateLimiting");
+if (rateLimitSection.Exists())
 {
-    options.EnableEndpointRateLimiting = true;
-    options.StackBlockedRequests = false;
-    options.HttpStatusCode = 429;
-    options.RealIpHeader = "X-Real-IP";
-    options.GeneralRules = new List<RateLimitRule>
+    builder.Services.Configure<IpRateLimitOptions>(rateLimitSection);
+}
+else
+{
+    builder.Services.Configure<IpRateLimitOptions>(options =>
     {
-        new RateLimitRule
-        {
-            Endpoint = "POST:/predict",
-            Period = "1m",
-            Limit = 60  // 60 requests per minute
-        },
-        new RateLimitRule
-        {
-            Endpoint = "*",
-            Period = "1m",
-            Limit = 100  // 100 requests per minute for all other endpoints
-        }
-    };
-});
+        options.EnableEndpointRateLimiting = true;
+        options.StackBlockedRequests = false;
+        options.HttpStatusCode = 429;
+        options.RealIpHeader = "X-Real-IP";
+        options.GeneralRules =
+        [
+            new() { Endpoint = "POST:/predict", Period = "1m", Limit = 60 },
+            new() { Endpoint = "*", Period = "1m", Limit = 100 }
+        ];
+    });
+}
 builder.Services.AddInMemoryRateLimiting();
 builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
 

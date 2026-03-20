@@ -474,7 +474,7 @@ public static class PredictCommand
         }
     }
 
-    private static string QuoteCsvField(string value)
+    internal static string QuoteCsvField(string value)
     {
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
             return "\"" + value.Replace("\"", "\"\"") + "\"";
