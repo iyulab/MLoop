@@ -62,15 +62,41 @@ public class CsvDataLoader : IDataProvider
         ColumnInferenceResults columnInference;
         try
         {
-            // For unsupervised tasks (no label), use a placeholder that won't match any column.
-            // InferColumns requires non-null labelColumnName but will silently skip it if not found.
-            var effectiveLabelColumn = string.IsNullOrEmpty(labelColumn)
-                ? "__mloop_no_label__"
-                : labelColumn;
+            // InferColumns requires a valid label column name that exists in the CSV.
+            // For unsupervised tasks (no label), use the first CSV column as a dummy label
+            // so InferColumns can parse the schema, then treat all columns as features.
+            string effectiveLabelColumn;
+            bool usingDummyLabel = false;
+            if (string.IsNullOrEmpty(labelColumn))
+            {
+                var headers = ReadCsvHeaders(mlnetCompatiblePath);
+                effectiveLabelColumn = headers.Length > 0 ? headers[0] : "Label";
+                usingDummyLabel = true;
+            }
+            else
+            {
+                effectiveLabelColumn = labelColumn;
+            }
+
             columnInference = _mlContext.Auto().InferColumns(
                 mlnetCompatiblePath,
                 labelColumnName: effectiveLabelColumn,
                 separatorChar: ',');
+
+            // For unsupervised tasks, remove the label role from TextLoaderOptions
+            // so the dummy label column is loaded as a regular feature column
+            if (usingDummyLabel)
+            {
+                // Find and rename the "Label" column back to original name in TextLoaderOptions
+                foreach (var col in columnInference.TextLoaderOptions.Columns)
+                {
+                    if (col.Name == "Label")
+                    {
+                        col.Name = effectiveLabelColumn;
+                        break;
+                    }
+                }
+            }
         }
         catch (Exception ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
         {
