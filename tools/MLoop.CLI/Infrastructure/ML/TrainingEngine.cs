@@ -8,6 +8,7 @@ using MLoop.Core.Contracts;
 using MLoop.Core.Data;
 using MLoop.Core.Hooks;
 using MLoop.Core.Models;
+using MLoop.Core.Prediction;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 

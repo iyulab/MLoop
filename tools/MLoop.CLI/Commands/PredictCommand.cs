@@ -8,12 +8,13 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Models;
 using MLoop.Core.Data;
+using MLoop.Core.Prediction;
 using MLoop.Core.Preprocessing;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
-using static MLoop.CLI.Infrastructure.ML.CategoricalMapper;
+using static MLoop.Core.Prediction.CategoricalMapper;
 
 namespace MLoop.CLI.Commands;
 
