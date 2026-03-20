@@ -41,23 +41,30 @@ public class AutoMLRunner
         var isTimeSeriesTask = config.Task.Equals("forecasting", StringComparison.OrdinalIgnoreCase) ||
                                config.Task.Equals("time-series-anomaly", StringComparison.OrdinalIgnoreCase);
 
+        // Collect columns that must be preserved as individual columns (not merged into Features vector)
+        var preserveColumns = new List<string>();
+        if (!string.IsNullOrEmpty(config.GroupColumn)) preserveColumns.Add(config.GroupColumn);
+        if (!string.IsNullOrEmpty(config.UserColumn)) preserveColumns.Add(config.UserColumn);
+        if (!string.IsNullOrEmpty(config.ItemColumn)) preserveColumns.Add(config.ItemColumn);
+        var preserve = preserveColumns.Count > 0 ? preserveColumns : null;
+
         if (!string.IsNullOrEmpty(config.TestDataFile))
         {
             // Pre-split data (e.g. balanced training with separate test set)
-            trainSet = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task);
-            testSet = _dataLoader.LoadData(config.TestDataFile, config.LabelColumn, config.Task);
+            trainSet = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
+            testSet = _dataLoader.LoadData(config.TestDataFile, config.LabelColumn, config.Task, preserve);
         }
         else if (isTimeSeriesTask)
         {
             // Time series: use full dataset (no random split — temporal order matters)
             // Forecasting/TS-Anomaly handle holdout internally
-            var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task);
+            var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
             trainSet = dataView;
             testSet = dataView; // same data — internal holdout handles evaluation
         }
         else
         {
-            var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task);
+            var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
             (trainSet, testSet) = _dataLoader.SplitData(dataView, config.TestSplit);
         }
 

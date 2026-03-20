@@ -19,6 +19,10 @@ public class DataQualityValidator
     /// </summary>
     public DataQualityResult ValidateTrainingData(string dataFile, string labelColumn, string? taskType = null)
     {
+        // Skip label validation for unsupervised tasks
+        if (string.IsNullOrEmpty(labelColumn))
+            return new DataQualityResult { IsValid = true };
+
         // First validate label column
         var result = ValidateLabelColumn(dataFile, labelColumn, taskType);
         if (!result.IsValid)

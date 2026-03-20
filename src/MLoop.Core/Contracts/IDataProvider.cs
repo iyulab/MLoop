@@ -11,7 +11,8 @@ public interface IDataProvider
     /// <summary>
     /// Loads data from a file path
     /// </summary>
-    IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null);
+    IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
+        IEnumerable<string>? preserveColumns = null);
 
     /// <summary>
     /// Validates that the label column exists in the data

@@ -20,7 +20,8 @@ public class CsvDataLoader : IDataProvider
         _log = log ?? Console.WriteLine;
     }
 
-    public IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null)
+    public IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
+        IEnumerable<string>? preserveColumns = null)
     {
         if (!File.Exists(filePath))
         {
@@ -123,6 +124,66 @@ public class CsvDataLoader : IDataProvider
 
 
 
+        // Ensure preserved columns (group_column, user_column, item_column) are not
+        // merged into a Features vector by InferColumns. If InferColumns merged them
+        // into a multi-column range, split them back out as individual Text columns.
+        if (preserveColumns != null)
+        {
+            var preserveSet = new HashSet<string>(preserveColumns, StringComparer.OrdinalIgnoreCase);
+            preserveSet.RemoveWhere(string.IsNullOrEmpty);
+
+            if (preserveSet.Count > 0)
+            {
+                // Read CSV headers to find column indices
+                var headers = ReadCsvHeaders(mlnetCompatiblePath);
+                var options = columnInference.TextLoaderOptions;
+
+                foreach (var colName in preserveSet)
+                {
+                    var headerIdx = Array.FindIndex(headers, h =>
+                        h.Equals(colName, StringComparison.OrdinalIgnoreCase));
+                    if (headerIdx < 0) continue;
+
+                    // Check if this column is already defined individually
+                    var existsIndividually = options.Columns.Any(c =>
+                        c.Name.Equals(colName, StringComparison.OrdinalIgnoreCase) &&
+                        c.Source.Length == 1 && c.Source[0].Min == headerIdx && c.Source[0].Max == headerIdx);
+                    if (existsIndividually) continue;
+
+                    // Remove this index from any existing column ranges that include it
+                    var newColumns = new List<Microsoft.ML.Data.TextLoader.Column>();
+                    foreach (var existingCol in options.Columns)
+                    {
+                        var newSources = new List<Microsoft.ML.Data.TextLoader.Range>();
+                        foreach (var src in existingCol.Source)
+                        {
+                            if (src.Min <= headerIdx && (src.Max ?? src.Min) >= headerIdx)
+                            {
+                                // Split this range, excluding headerIdx
+                                if (src.Min < headerIdx)
+                                    newSources.Add(new(src.Min, headerIdx - 1));
+                                if ((src.Max ?? src.Min) > headerIdx)
+                                    newSources.Add(new(headerIdx + 1, src.Max ?? headerIdx + 1));
+                            }
+                            else
+                            {
+                                newSources.Add(src);
+                            }
+                        }
+                        if (newSources.Count > 0)
+                        {
+                            existingCol.Source = newSources.ToArray();
+                            newColumns.Add(existingCol);
+                        }
+                    }
+
+                    // Add as individual Text column
+                    newColumns.Add(new Microsoft.ML.Data.TextLoader.Column(colName, Microsoft.ML.Data.DataKind.String, headerIdx));
+                    options.Columns = newColumns.ToArray();
+                }
+            }
+        }
+
         // Create text loader with inferred schema
         // Ensure RFC 4180 compliance: handle commas inside quoted fields
         columnInference.TextLoaderOptions.AllowQuoting = true;
@@ -217,6 +278,14 @@ public class CsvDataLoader : IDataProvider
     private IEnumerable<string> GetColumnNames(IDataView data)
     {
         return data.Schema.Select(col => col.Name);
+    }
+
+    private static string[] ReadCsvHeaders(string filePath)
+    {
+        using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8);
+        var headerLine = reader.ReadLine();
+        if (string.IsNullOrEmpty(headerLine)) return [];
+        return headerLine.Split(',').Select(h => h.Trim().Trim('"')).ToArray();
     }
 
     private int GetRowCount(IDataView data)
