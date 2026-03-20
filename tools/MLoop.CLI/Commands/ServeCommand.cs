@@ -111,7 +111,7 @@ public class ServeCommand : Command
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        AnsiConsole.MarkupLine($"[grey]{e.Data}[/]");
+                        AnsiConsole.MarkupLine($"[grey]{Markup.Escape(e.Data)}[/]");
                     }
                 };
 
@@ -119,7 +119,7 @@ public class ServeCommand : Command
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        AnsiConsole.MarkupLine($"[red]{e.Data}[/]");
+                        AnsiConsole.MarkupLine($"[red]{Markup.Escape(e.Data)}[/]");
                     }
                 };
             }
