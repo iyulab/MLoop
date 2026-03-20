@@ -186,7 +186,7 @@ public static class ListCommand
         }
     }
 
-    private static string FormatRelativeTime(DateTime timestamp)
+    internal static string FormatRelativeTime(DateTime timestamp)
     {
         var local = timestamp.Kind == DateTimeKind.Utc ? timestamp.ToLocalTime() : timestamp;
         var elapsed = DateTime.Now - local;
@@ -203,7 +203,7 @@ public static class ListCommand
         return $"[grey]{relative}[/]";
     }
 
-    private static string FormatMetric(Infrastructure.FileSystem.ExperimentSummary exp)
+    internal static string FormatMetric(Infrastructure.FileSystem.ExperimentSummary exp)
     {
         if (!exp.BestMetric.HasValue)
             return "[grey]-[/]";

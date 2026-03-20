@@ -186,7 +186,7 @@ public static class SampleCommand
         }
     }
 
-    private static SamplingStrategy? ParseStrategy(string name)
+    internal static SamplingStrategy? ParseStrategy(string name)
     {
         return name.ToLowerInvariant() switch
         {

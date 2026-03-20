@@ -43,7 +43,7 @@ public static class TrainCommand
 
         var taskOption = new Option<string?>("--task", "-t")
         {
-            Description = "ML task type (binary-classification, multiclass-classification, regression, anomaly-detection, clustering, ranking, forecasting, time-series-anomaly, recommendation, image-classification, ...)"
+            Description = "ML task type (binary-classification, multiclass-classification, regression, anomaly-detection, clustering, ranking, forecasting, time-series-anomaly, recommendation, image-classification, object-detection, text-classification, sentence-similarity, ner, question-answering)"
         };
 
         var timeOption = new Option<int?>("--time")

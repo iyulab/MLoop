@@ -238,20 +238,7 @@ public static class EvaluateCommand
                 var trainingValue = trainingMetrics.ContainsKey(metricName) ? trainingMetrics[metricName] : 0;
                 var difference = testValue - trainingValue;
 
-                var differenceText = difference >= 0
-                    ? $"[green]+{difference:F4}[/]"
-                    : $"[red]{difference:F4}[/]";
-
-                // For some metrics, lower is better (RMSE, MAE, MSE), so invert the color
-                if (metricName.ToLower().Contains("rmse") ||
-                    metricName.ToLower().Contains("mae") ||
-                    metricName.ToLower().Contains("mse") ||
-                    metricName.ToLower().Contains("loss"))
-                {
-                    differenceText = difference <= 0
-                        ? $"[green]{difference:F4}[/]"
-                        : $"[red]+{difference:F4}[/]";
-                }
+                var differenceText = FormatMetricDifference(metricName, difference);
 
                 table.AddRow(
                     metricName,
@@ -264,29 +251,10 @@ public static class EvaluateCommand
             AnsiConsole.WriteLine();
 
             // Overfitting warning
-            if (experimentData.Task == "regression")
+            if (DetectOverfitting(experimentData.Task ?? "", trainingMetrics, testMetrics!))
             {
-                if (trainingMetrics.ContainsKey("r_squared") && testMetrics.ContainsKey("r_squared"))
-                {
-                    var r2Diff = Math.Abs(trainingMetrics["r_squared"] - testMetrics["r_squared"]);
-                    if (r2Diff > 0.1)
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Warning:[/] Large R-squared difference detected. Model may be overfitting.");
-                        AnsiConsole.WriteLine();
-                    }
-                }
-            }
-            else if (experimentData.Task == "classification")
-            {
-                if (trainingMetrics.ContainsKey("accuracy") && testMetrics.ContainsKey("accuracy"))
-                {
-                    var accDiff = Math.Abs(trainingMetrics["accuracy"] - testMetrics["accuracy"]);
-                    if (accDiff > 0.1)
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Warning:[/] Large accuracy difference detected. Model may be overfitting.");
-                        AnsiConsole.WriteLine();
-                    }
-                }
+                AnsiConsole.MarkupLine("[yellow]Warning:[/] Large metric difference detected between training and test. Model may be overfitting.");
+                AnsiConsole.WriteLine();
             }
 
             AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
@@ -301,5 +269,48 @@ public static class EvaluateCommand
             ErrorSuggestions.DisplayError(ex, "evaluate");
             return 1;
         }
+    }
+
+    internal static bool IsLowerBetterMetric(string metricName)
+    {
+        var lower = metricName.ToLower();
+        return lower.Contains("rmse") || lower.Contains("mae") ||
+               lower.Contains("mse") || lower.Contains("loss");
+    }
+
+    internal static string FormatMetricDifference(string metricName, double difference)
+    {
+        if (IsLowerBetterMetric(metricName))
+        {
+            return difference <= 0
+                ? $"[green]{difference:F4}[/]"
+                : $"[red]+{difference:F4}[/]";
+        }
+
+        return difference >= 0
+            ? $"[green]+{difference:F4}[/]"
+            : $"[red]{difference:F4}[/]";
+    }
+
+    internal const double OverfittingThreshold = 0.1;
+
+    internal static bool DetectOverfitting(
+        string task,
+        Dictionary<string, double> trainingMetrics,
+        Dictionary<string, double> testMetrics)
+    {
+        if (task == "regression" &&
+            trainingMetrics.ContainsKey("r_squared") && testMetrics.ContainsKey("r_squared"))
+        {
+            return Math.Abs(trainingMetrics["r_squared"] - testMetrics["r_squared"]) > OverfittingThreshold;
+        }
+
+        if (task == "classification" &&
+            trainingMetrics.ContainsKey("accuracy") && testMetrics.ContainsKey("accuracy"))
+        {
+            return Math.Abs(trainingMetrics["accuracy"] - testMetrics["accuracy"]) > OverfittingThreshold;
+        }
+
+        return false;
     }
 }

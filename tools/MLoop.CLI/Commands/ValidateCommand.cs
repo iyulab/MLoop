@@ -30,6 +30,9 @@ public static class ValidateCommand
         "image-classification",
         "object-detection",
         "text-classification",
+        "sentence-similarity",
+        "ner",
+        "question-answering",
         // Collaborative Filtering (Microsoft.ML.Recommender)
         "recommendation"
     };
@@ -186,7 +189,7 @@ public static class ValidateCommand
         }
     }
 
-    private static void ValidateModel(
+    internal static void ValidateModel(
         string modelName,
         ModelDefinition model,
         List<ValidationError> errors,
@@ -261,7 +264,7 @@ public static class ValidateCommand
         }
     }
 
-    private static void ValidateTrainingSettings(
+    internal static void ValidateTrainingSettings(
         string prefix,
         TrainingSettings training,
         List<ValidationError> errors,
@@ -353,7 +356,7 @@ public static class ValidateCommand
         }
     }
 
-    private static void ValidatePrepSteps(
+    internal static void ValidatePrepSteps(
         string prefix,
         List<MLoop.Core.Preprocessing.PrepStep> steps,
         List<ValidationError> errors,
@@ -498,7 +501,7 @@ public static class ValidateCommand
         }
     }
 
-    private static bool IsValidModelName(string name)
+    internal static bool IsValidModelName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             return false;
@@ -565,6 +568,6 @@ public static class ValidateCommand
         AnsiConsole.WriteLine();
     }
 
-    private record ValidationError(string Path, string Message);
-    private record ValidationWarning(string Path, string Message);
+    internal record ValidationError(string Path, string Message);
+    internal record ValidationWarning(string Path, string Message);
 }
