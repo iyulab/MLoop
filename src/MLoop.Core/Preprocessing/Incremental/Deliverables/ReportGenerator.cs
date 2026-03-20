@@ -60,7 +60,7 @@ public sealed class ReportGenerator
             Directory.CreateDirectory(directory);
         }
 
-        await File.WriteAllTextAsync(outputPath, report, cancellationToken);
+        await File.WriteAllTextAsync(outputPath, report, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Report saved to: {Path}", outputPath);
     }

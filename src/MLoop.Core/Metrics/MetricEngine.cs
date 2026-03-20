@@ -98,7 +98,7 @@ public class MetricEngine
             try
             {
                 // Load and execute metric
-                var metrics = await _scriptLoader.LoadScriptAsync<IMLoopMetric>(scriptFile);
+                var metrics = await _scriptLoader.LoadScriptAsync<IMLoopMetric>(scriptFile).ConfigureAwait(false);
 
                 if (metrics.Count == 0)
                 {
@@ -109,7 +109,7 @@ public class MetricEngine
                 var metric = metrics[0];  // Use first implementation
                 _logger.Info($"📊 Calculating metric: {metric.Name}");
 
-                var result = await metric.CalculateAsync(context);
+                var result = await metric.CalculateAsync(context).ConfigureAwait(false);
                 results.Add(result);
 
                 _logger.Info($"   {result}");

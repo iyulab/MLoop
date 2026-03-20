@@ -19,8 +19,8 @@ public class FilePrepperImpl : IFilePrepper
         CancellationToken cancellationToken = default)
     {
         // Read and write with UTF-8 encoding (FilePrepper default)
-        var pipeline = await DataPipeline.FromCsvAsync(inputPath);
-        await pipeline.ToCsvAsync(outputPath);
+        var pipeline = await DataPipeline.FromCsvAsync(inputPath).ConfigureAwait(false);
+        await pipeline.ToCsvAsync(outputPath).ConfigureAwait(false);
 
         return outputPath;
     }
@@ -31,13 +31,13 @@ public class FilePrepperImpl : IFilePrepper
         string[]? keyColumns = null,
         CancellationToken cancellationToken = default)
     {
-        var pipeline = await DataPipeline.FromCsvAsync(inputPath);
+        var pipeline = await DataPipeline.FromCsvAsync(inputPath).ConfigureAwait(false);
         var beforeCount = pipeline.RowCount;
 
         // Use FilePrepper Pipeline API for duplicate removal
         pipeline = pipeline.DropDuplicates(keyColumns, keepFirst: true);
 
-        await pipeline.ToCsvAsync(outputPath);
+        await pipeline.ToCsvAsync(outputPath).ConfigureAwait(false);
 
         var duplicatesRemoved = beforeCount - pipeline.RowCount;
 
@@ -52,7 +52,7 @@ public class FilePrepperImpl : IFilePrepper
         // FilePrepper provides ToDataFrame() for row access
         // See: FilePrepper_Gaps_Response.md - Gap #2 resolution
         var typeMap = new Dictionary<string, string>();
-        var pipeline = await DataPipeline.FromCsvAsync(inputPath);
+        var pipeline = await DataPipeline.FromCsvAsync(inputPath).ConfigureAwait(false);
 
         // Use ToDataFrame() to access rows (FilePrepper built-in API)
         var dataFrame = pipeline.ToDataFrame();
@@ -79,7 +79,7 @@ public class FilePrepperImpl : IFilePrepper
         }
 
         // Write output (just copy for now, actual type conversion happens in DataPipeline)
-        await pipeline.ToCsvAsync(outputPath);
+        await pipeline.ToCsvAsync(outputPath).ConfigureAwait(false);
 
         return typeMap;
     }
@@ -97,7 +97,7 @@ public class FilePrepperImpl : IFilePrepper
     {
         try
         {
-            var pipeline = await DataPipeline.FromCsvAsync(inputPath);
+            var pipeline = await DataPipeline.FromCsvAsync(inputPath).ConfigureAwait(false);
             var originalRowCount = pipeline.RowCount;
 
             // Perform unpivot transformation using FilePrepper API
@@ -108,7 +108,7 @@ public class FilePrepperImpl : IFilePrepper
                 valueColumn,
                 skipEmptyRows);
 
-            await transformedPipeline.ToCsvAsync(outputPath);
+            await transformedPipeline.ToCsvAsync(outputPath).ConfigureAwait(false);
 
             var transformedRowCount = transformedPipeline.RowCount;
 
@@ -147,7 +147,7 @@ public class FilePrepperImpl : IFilePrepper
     {
         try
         {
-            var pipeline = await DataPipeline.FromCsvAsync(inputPath);
+            var pipeline = await DataPipeline.FromCsvAsync(inputPath).ConfigureAwait(false);
             var totalRows = pipeline.RowCount;
 
             // Validate source column exists
@@ -165,10 +165,10 @@ public class FilePrepperImpl : IFilePrepper
             // Perform Korean time parsing using FilePrepper API
             var transformedPipeline = pipeline.ParseKoreanTime(sourceColumn, targetColumn, baseDate);
 
-            await transformedPipeline.ToCsvAsync(outputPath);
+            await transformedPipeline.ToCsvAsync(outputPath).ConfigureAwait(false);
 
             // Count successful parses by checking for non-empty values in target column
-            var resultPipeline = await DataPipeline.FromCsvAsync(outputPath);
+            var resultPipeline = await DataPipeline.FromCsvAsync(outputPath).ConfigureAwait(false);
             var successfullyParsed = 0;
             var failedToParse = 0;
 

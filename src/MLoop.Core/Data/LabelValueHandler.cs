@@ -34,7 +34,7 @@ public class LabelValueHandler
             throw new FileNotFoundException($"CSV file not found: {csvPath}");
         }
 
-        var data = await _csvHelper.ReadAsync(csvPath, cancellationToken: cancellationToken);
+        var data = await _csvHelper.ReadAsync(csvPath, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (data.Count == 0)
         {
@@ -112,7 +112,7 @@ public class LabelValueHandler
             throw new FileNotFoundException($"CSV file not found: {csvPath}");
         }
 
-        var data = await _csvHelper.ReadAsync(csvPath, cancellationToken: cancellationToken);
+        var data = await _csvHelper.ReadAsync(csvPath, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (data.Count == 0)
         {
@@ -180,7 +180,7 @@ public class LabelValueHandler
         // Write cleaned data
         try
         {
-            var finalPath = await _csvHelper.WriteAsync(outputPath, cleanedData, cancellationToken: cancellationToken);
+            var finalPath = await _csvHelper.WriteAsync(outputPath, cleanedData, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             _logger.Warning($"Dropped {droppedCount}/{originalCount} rows with missing labels ({droppedCount * 100.0 / originalCount:F1}%)");
 

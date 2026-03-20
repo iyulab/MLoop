@@ -57,7 +57,7 @@ internal static class TrainPresenter
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();
         }
-        catch
+        catch (Exception)
         {
             // Non-critical — skip data summary on error
         }

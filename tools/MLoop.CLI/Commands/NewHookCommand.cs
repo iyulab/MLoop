@@ -122,7 +122,7 @@ public static class NewHookCommand
         }
     }
 
-    private static HookType? ValidateAndParseHookType(string type)
+    internal static HookType? ValidateAndParseHookType(string type)
     {
         var validTypes = new Dictionary<string, HookType>(StringComparer.OrdinalIgnoreCase)
         {
@@ -142,7 +142,7 @@ public static class NewHookCommand
         return hookType;
     }
 
-    private static string SelectTemplate(string? template, HookType hookType)
+    internal static string SelectTemplate(string? template, HookType hookType)
     {
         if (!string.IsNullOrEmpty(template))
         {
@@ -160,7 +160,7 @@ public static class NewHookCommand
         };
     }
 
-    private static string GenerateHookContent(string name, HookType hookType, string template)
+    internal static string GenerateHookContent(string name, HookType hookType, string template)
     {
         var className = ToPascalCase(name) + "Hook";
         var hookName = ToTitleCase(name);
@@ -388,14 +388,14 @@ public class {className} : IMLoopHook
 ";
     }
 
-    private static string ToPascalCase(string text)
+    internal static string ToPascalCase(string text)
     {
         return string.Concat(
             text.Split(new[] { '-', '_', ' ' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(word => char.ToUpperInvariant(word[0]) + word.Substring(1).ToLowerInvariant()));
     }
 
-    private static string ToTitleCase(string text)
+    internal static string ToTitleCase(string text)
     {
         return string.Join(" ",
             text.Split(new[] { '-', '_' }, StringSplitOptions.RemoveEmptyEntries)

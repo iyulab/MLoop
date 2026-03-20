@@ -73,7 +73,7 @@ public sealed class SamplingEngine : ISamplingEngine
         {
             cancellationToken.ThrowIfCancellationRequested();
             return _strategy.Sample(data, sampleRatio, config, config.RandomSeed);
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         progress?.Report(0.5);
 

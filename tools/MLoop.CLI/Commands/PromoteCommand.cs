@@ -210,7 +210,7 @@ public static class PromoteCommand
         }
     }
 
-    private static async Task RecordPromotionHistoryAsync(
+    internal static async Task RecordPromotionHistoryAsync(
         string projectRoot,
         string modelName,
         string experimentId,
@@ -240,7 +240,7 @@ public static class PromoteCommand
         await File.WriteAllTextAsync(historyPath, JsonSerializer.Serialize(records, options));
     }
 
-    private static void CopyDirectory(string source, string destination)
+    internal static void CopyDirectory(string source, string destination)
     {
         Directory.CreateDirectory(destination);
 

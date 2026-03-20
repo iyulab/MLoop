@@ -29,7 +29,7 @@ public class DataPipelineExecutor
     {
         _logger.Info($"Running {steps.Count} preprocessing step(s) via DataPipeline...");
 
-        var pipeline = await DataPipeline.FromCsvAsync(inputPath);
+        var pipeline = await DataPipeline.FromCsvAsync(inputPath).ConfigureAwait(false);
         var originalRowCount = pipeline.RowCount;
 
         for (int i = 0; i < steps.Count; i++)
@@ -40,7 +40,7 @@ public class DataPipelineExecutor
             pipeline = ApplyStep(pipeline, step);
         }
 
-        await pipeline.ToCsvAsync(outputPath);
+        await pipeline.ToCsvAsync(outputPath).ConfigureAwait(false);
 
         _logger.Info($"Preprocessing complete: {originalRowCount} rows -> {pipeline.RowCount} rows");
         return outputPath;

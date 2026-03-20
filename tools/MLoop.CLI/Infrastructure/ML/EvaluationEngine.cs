@@ -123,7 +123,7 @@ public class EvaluationEngine
                 // BUG-13: Clean up temp file AFTER all lazy data consumption is complete
                 if (tempFile != null && File.Exists(tempFile))
                 {
-                    try { File.Delete(tempFile); } catch { }
+                    try { File.Delete(tempFile); } catch (IOException) { }
                 }
             }
         }, cancellationToken);

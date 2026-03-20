@@ -87,7 +87,7 @@ public class PreprocessingEngine
                     _logger.Info($"  📝 [{scriptIndex}/{scriptFiles.Count}] {scriptName}");
 
                     // Load script
-                    var scripts = await _scriptLoader.LoadScriptAsync<IPreprocessingScript>(scriptFile);
+                    var scripts = await _scriptLoader.LoadScriptAsync<IPreprocessingScript>(scriptFile).ConfigureAwait(false);
 
                     if (scripts.Count == 0)
                     {
@@ -128,7 +128,7 @@ public class PreprocessingEngine
                     };
 
                     // Execute script
-                    var outputPath = await script.ExecuteAsync(context);
+                    var outputPath = await script.ExecuteAsync(context).ConfigureAwait(false);
 
                     if (string.IsNullOrEmpty(outputPath) || !File.Exists(outputPath))
                     {

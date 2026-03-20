@@ -23,7 +23,7 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
         CancellationToken cancellationToken = default)
     {
         var results = new List<ConditionResult>();
-        var metrics = await _feedbackCollector.CalculateMetricsAsync(modelName, cancellationToken: cancellationToken);
+        var metrics = await _feedbackCollector.CalculateMetricsAsync(modelName, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         foreach (var condition in conditions)
         {

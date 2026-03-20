@@ -126,7 +126,7 @@ public sealed class RuleApplier : IRuleApplier
             });
 
             // Apply rule
-            var result = await ApplyRuleAsync(data, rule, cancellationToken);
+            var result = await ApplyRuleAsync(data, rule, cancellationToken).ConfigureAwait(false);
             results.Add(result);
 
             // Stop on failure if not continuing

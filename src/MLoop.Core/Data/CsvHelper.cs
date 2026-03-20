@@ -60,11 +60,11 @@ public class CsvHelperImpl : ICsvHelper
 
             var records = new List<Dictionary<string, string>>();
 
-            await csv.ReadAsync();
+            await csv.ReadAsync().ConfigureAwait(false);
             csv.ReadHeader();
             var headers = csv.HeaderRecord ?? throw new InvalidOperationException("No headers found in CSV");
 
-            while (await csv.ReadAsync())
+            while (await csv.ReadAsync().ConfigureAwait(false))
             {
                 var record = new Dictionary<string, string>();
                 foreach (var header in headers)
@@ -83,7 +83,7 @@ public class CsvHelperImpl : ICsvHelper
             // Clean up temp file if encoding conversion was performed
             if (tempFile != null && File.Exists(tempFile))
             {
-                try { File.Delete(tempFile); } catch { /* Ignore cleanup errors */ }
+                try { File.Delete(tempFile); } catch (IOException) { /* Ignore cleanup errors */ }
             }
         }
     }
@@ -153,7 +153,7 @@ public class CsvHelperImpl : ICsvHelper
         {
             csv.WriteField(header);
         }
-        await csv.NextRecordAsync();
+        await csv.NextRecordAsync().ConfigureAwait(false);
 
         // Write records
         foreach (var record in data)
@@ -162,7 +162,7 @@ public class CsvHelperImpl : ICsvHelper
             {
                 csv.WriteField(record.TryGetValue(header, out var value) ? value : string.Empty);
             }
-            await csv.NextRecordAsync();
+            await csv.NextRecordAsync().ConfigureAwait(false);
         }
 
         // Return absolute path
@@ -209,7 +209,7 @@ public class CsvHelperImpl : ICsvHelper
         {
             csv.WriteField(header);
         }
-        await csv.NextRecordAsync();
+        await csv.NextRecordAsync().ConfigureAwait(false);
 
         // Write records
         foreach (var record in data)
@@ -218,7 +218,7 @@ public class CsvHelperImpl : ICsvHelper
             {
                 csv.WriteField(record.TryGetValue(header, out var value) ? value : string.Empty);
             }
-            await csv.NextRecordAsync();
+            await csv.NextRecordAsync().ConfigureAwait(false);
         }
 
         return Path.GetFullPath(path);
@@ -269,7 +269,7 @@ public class CsvHelperImpl : ICsvHelper
             using var reader = new StreamReader(readPath, targetEncoding, detectEncodingFromByteOrderMarks: true);
             using var csv = new CsvReader(reader, config);
 
-            await csv.ReadAsync();
+            await csv.ReadAsync().ConfigureAwait(false);
             csv.ReadHeader();
 
             return csv.HeaderRecord?.ToList() ?? new List<string>();
@@ -279,7 +279,7 @@ public class CsvHelperImpl : ICsvHelper
             // Clean up temp file if encoding conversion was performed
             if (tempFile != null && File.Exists(tempFile))
             {
-                try { File.Delete(tempFile); } catch { /* Ignore cleanup errors */ }
+                try { File.Delete(tempFile); } catch (IOException) { /* Ignore cleanup errors */ }
             }
         }
     }

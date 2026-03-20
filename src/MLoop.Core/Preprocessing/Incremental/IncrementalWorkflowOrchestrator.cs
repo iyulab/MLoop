@@ -57,19 +57,19 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
         var state = CreateInitialState(datasetPath, config);
 
         // Execute stages sequentially
-        await ExecuteStage1Async(state, progress, cancellationToken);
-        await SaveCheckpointIfEnabledAsync(state, config);
+        await ExecuteStage1Async(state, progress, cancellationToken).ConfigureAwait(false);
+        await SaveCheckpointIfEnabledAsync(state, config).ConfigureAwait(false);
 
-        await ExecuteStage2Async(state, progress, cancellationToken);
-        await SaveCheckpointIfEnabledAsync(state, config);
+        await ExecuteStage2Async(state, progress, cancellationToken).ConfigureAwait(false);
+        await SaveCheckpointIfEnabledAsync(state, config).ConfigureAwait(false);
 
-        await ExecuteStage3Async(state, progress, cancellationToken);
-        await SaveCheckpointIfEnabledAsync(state, config);
+        await ExecuteStage3Async(state, progress, cancellationToken).ConfigureAwait(false);
+        await SaveCheckpointIfEnabledAsync(state, config).ConfigureAwait(false);
 
-        await ExecuteStage4Async(state, progress, cancellationToken);
-        await SaveCheckpointIfEnabledAsync(state, config);
+        await ExecuteStage4Async(state, progress, cancellationToken).ConfigureAwait(false);
+        await SaveCheckpointIfEnabledAsync(state, config).ConfigureAwait(false);
 
-        await ExecuteStage5Async(state, progress, cancellationToken);
+        await ExecuteStage5Async(state, progress, cancellationToken).ConfigureAwait(false);
 
         // Generate deliverables if applier and generator are available
         if (_ruleApplier != null && _deliverableGenerator != null && state.ApprovedRules.Count > 0)
@@ -85,7 +85,7 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
                 fullData,
                 state.ApprovedRules,
                 null,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Rules applied: {Successful}/{Total} successful",
                 applicationResult.SuccessfulRules, applicationResult.TotalRules);
@@ -95,7 +95,7 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
                 state,
                 fullData,
                 config.OutputDirectory,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Deliverables generated: {CleanedDataPath}", manifest.CleanedDataPath);
             ReportProgress(progress, WorkflowStage.BulkProcessing, 1.0, "Deliverables generated", state);
@@ -126,29 +126,29 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
     {
         _logger.LogInformation("Resuming workflow from checkpoint: {CheckpointPath}", checkpointPath);
 
-        var state = await LoadCheckpointAsync(checkpointPath, cancellationToken);
+        var state = await LoadCheckpointAsync(checkpointPath, cancellationToken).ConfigureAwait(false);
 
         // Resume from current stage
         switch (state.CurrentStage)
         {
             case WorkflowStage.InitialExploration:
-                await ExecuteStage1Async(state, progress, cancellationToken);
+                await ExecuteStage1Async(state, progress, cancellationToken).ConfigureAwait(false);
                 goto case WorkflowStage.PatternExpansion;
 
             case WorkflowStage.PatternExpansion:
-                await ExecuteStage2Async(state, progress, cancellationToken);
+                await ExecuteStage2Async(state, progress, cancellationToken).ConfigureAwait(false);
                 goto case WorkflowStage.HITLDecision;
 
             case WorkflowStage.HITLDecision:
-                await ExecuteStage3Async(state, progress, cancellationToken);
+                await ExecuteStage3Async(state, progress, cancellationToken).ConfigureAwait(false);
                 goto case WorkflowStage.ConfidenceCheckpoint;
 
             case WorkflowStage.ConfidenceCheckpoint:
-                await ExecuteStage4Async(state, progress, cancellationToken);
+                await ExecuteStage4Async(state, progress, cancellationToken).ConfigureAwait(false);
                 goto case WorkflowStage.BulkProcessing;
 
             case WorkflowStage.BulkProcessing:
-                await ExecuteStage5Async(state, progress, cancellationToken);
+                await ExecuteStage5Async(state, progress, cancellationToken).ConfigureAwait(false);
                 break;
 
             case WorkflowStage.Completed:
@@ -178,7 +178,7 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
             WriteIndented = true
         });
 
-        await File.WriteAllTextAsync(path, json, cancellationToken);
+        await File.WriteAllTextAsync(path, json, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Checkpoint saved to: {Path}", path);
     }
@@ -193,7 +193,7 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
             throw new FileNotFoundException($"Checkpoint file not found: {checkpointPath}");
         }
 
-        var json = await File.ReadAllTextAsync(checkpointPath, cancellationToken);
+        var json = await File.ReadAllTextAsync(checkpointPath, cancellationToken).ConfigureAwait(false);
         var state = JsonSerializer.Deserialize<IncrementalWorkflowState>(json);
 
         if (state == null)
@@ -223,13 +223,13 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
         var fullData = LoadDataFrame(state.DatasetPath);
 
         // Sample data
-        var sample = await _samplingEngine.SampleAsync(fullData, sampleRatio, null, null, cancellationToken);
+        var sample = await _samplingEngine.SampleAsync(fullData, sampleRatio, null, null, cancellationToken).ConfigureAwait(false);
 
         // Analyze sample
-        var analysis = await _sampleAnalyzer.AnalyzeAsync(sample, 1, null, cancellationToken);
+        var analysis = await _sampleAnalyzer.AnalyzeAsync(sample, 1, null, cancellationToken).ConfigureAwait(false);
 
         // Discover rules
-        var rules = await _ruleDiscoveryEngine.DiscoverRulesAsync(sample, analysis, cancellationToken);
+        var rules = await _ruleDiscoveryEngine.DiscoverRulesAsync(sample, analysis, cancellationToken).ConfigureAwait(false);
 
         // Update state
         var stageResult = new StageResult
@@ -265,13 +265,13 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
         var fullData = LoadDataFrame(state.DatasetPath);
 
         // Sample data
-        var sample = await _samplingEngine.SampleAsync(fullData, sampleRatio, null, null, cancellationToken);
+        var sample = await _samplingEngine.SampleAsync(fullData, sampleRatio, null, null, cancellationToken).ConfigureAwait(false);
 
         // Analyze sample
-        var analysis = await _sampleAnalyzer.AnalyzeAsync(sample, 2, null, cancellationToken);
+        var analysis = await _sampleAnalyzer.AnalyzeAsync(sample, 2, null, cancellationToken).ConfigureAwait(false);
 
         // Discover additional rules
-        var rules = await _ruleDiscoveryEngine.DiscoverRulesAsync(sample, analysis, cancellationToken);
+        var rules = await _ruleDiscoveryEngine.DiscoverRulesAsync(sample, analysis, cancellationToken).ConfigureAwait(false);
 
         // Filter new rules (not in DiscoveredRules)
         var newRules = rules.Where(r => !state.DiscoveredRules.Any(dr => dr.Id == r.Id)).ToList();
@@ -317,10 +317,10 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
         var fullData = LoadDataFrame(state.DatasetPath);
 
         // Sample data
-        var sample = await _samplingEngine.SampleAsync(fullData, sampleRatio, null, null, cancellationToken);
+        var sample = await _samplingEngine.SampleAsync(fullData, sampleRatio, null, null, cancellationToken).ConfigureAwait(false);
 
         // Analyze sample
-        var analysis = await _sampleAnalyzer.AnalyzeAsync(sample, 3, null, cancellationToken);
+        var analysis = await _sampleAnalyzer.AnalyzeAsync(sample, 3, null, cancellationToken).ConfigureAwait(false);
 
         // Execute HITL workflow (only for unapproved rules)
         var unapprovedRules = state.DiscoveredRules.Where(r => !r.IsApproved).ToList();
@@ -342,7 +342,7 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
         else
         {
             decisions = await _hitlWorkflowService.ExecuteWorkflowAsync(
-                unapprovedRules, sample, analysis);
+                unapprovedRules, sample, analysis).ConfigureAwait(false);
 
             // Update approved rules based on HITL decisions
             foreach (var decision in decisions)
@@ -389,10 +389,10 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
         var fullData = LoadDataFrame(state.DatasetPath);
 
         // Sample data
-        var sample = await _samplingEngine.SampleAsync(fullData, sampleRatio, null, null, cancellationToken);
+        var sample = await _samplingEngine.SampleAsync(fullData, sampleRatio, null, null, cancellationToken).ConfigureAwait(false);
 
         // Analyze sample
-        var analysis = await _sampleAnalyzer.AnalyzeAsync(sample, 4, null, cancellationToken);
+        var analysis = await _sampleAnalyzer.AnalyzeAsync(sample, 4, null, cancellationToken).ConfigureAwait(false);
 
         // Calculate confidence score based on rule stability
         var confidenceScore = CalculateConfidenceScore(state, analysis);
@@ -470,7 +470,7 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
         ReportProgress(progress, WorkflowStage.BulkProcessing, 1.0,
             "Stage 5 complete: Bulk processing finished", state);
 
-        await Task.CompletedTask; // Placeholder for actual bulk processing
+        await Task.CompletedTask.ConfigureAwait(false); // Placeholder for actual bulk processing
     }
 
     // ===== Helper Methods =====
@@ -550,7 +550,7 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
     {
         if (config.EnableCheckpoints)
         {
-            await SaveCheckpointAsync(state);
+            await SaveCheckpointAsync(state).ConfigureAwait(false);
         }
     }
 

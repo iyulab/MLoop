@@ -86,7 +86,7 @@ public class PipelineExecutor
                     currentStep++;
                     logger?.Invoke($"\n📦 Step {currentStep}/{totalSteps}: {step.Name} ({step.Type})");
 
-                    var stepResult = await ExecuteStepAsync(step, logger, cancellationToken);
+                    var stepResult = await ExecuteStepAsync(step, logger, cancellationToken).ConfigureAwait(false);
                     stepResults.Add(stepResult);
 
                     if (stepResult.Status == StepStatus.Failed)
@@ -118,10 +118,10 @@ public class PipelineExecutor
                     {
                         currentStep++;
                         logger?.Invoke($"📦 Starting parallel step: {step.Name} ({step.Type})");
-                        return await ExecuteStepAsync(step, logger, cancellationToken);
+                        return await ExecuteStepAsync(step, logger, cancellationToken).ConfigureAwait(false);
                     }).ToList();
 
-                    var results = await Task.WhenAll(tasks);
+                    var results = await Task.WhenAll(tasks).ConfigureAwait(false);
                     stepResults.AddRange(results);
 
                     // Check for failures
@@ -208,7 +208,7 @@ public class PipelineExecutor
             }
 
             // Execute step using handler
-            outputs = await handler.ExecuteAsync(resolvedParams, logger, cancellationToken);
+            outputs = await handler.ExecuteAsync(resolvedParams, logger, cancellationToken).ConfigureAwait(false);
 
             // Store outputs in context for subsequent steps
             if (outputs != null)

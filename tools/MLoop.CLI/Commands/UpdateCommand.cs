@@ -145,7 +145,7 @@ public static class UpdateCommand
             // Cleanup temp file
             if (File.Exists(tempPath))
             {
-                try { File.Delete(tempPath); } catch { }
+                try { File.Delete(tempPath); } catch (IOException) { }
             }
         }
     }

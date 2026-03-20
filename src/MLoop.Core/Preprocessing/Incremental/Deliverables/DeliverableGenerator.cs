@@ -47,7 +47,7 @@ public sealed class DeliverableGenerator : IDeliverableGenerator
         };
 
         // 1. Save cleaned data
-        await SaveCleanedDataAsync(cleanedData, manifest.CleanedDataPath, cancellationToken);
+        await SaveCleanedDataAsync(cleanedData, manifest.CleanedDataPath, cancellationToken).ConfigureAwait(false);
 
         string? scriptPath = null;
         string? reportPath = null;
@@ -61,19 +61,19 @@ public sealed class DeliverableGenerator : IDeliverableGenerator
                 state.ApprovedRules,
                 scriptPath,
                 null,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
         }
 
         // 3. Generate processing report (if enabled)
         if (state.Config.GenerateReport)
         {
             reportPath = Path.Combine(outputDirectory, "report.md");
-            await GenerateReportAsync(state, reportPath, cancellationToken);
+            await GenerateReportAsync(state, reportPath, cancellationToken).ConfigureAwait(false);
         }
 
         // 4. Generate workflow metadata
         metadataPath = Path.Combine(outputDirectory, "metadata.json");
-        await GenerateMetadataAsync(state, metadataPath, cancellationToken);
+        await GenerateMetadataAsync(state, metadataPath, cancellationToken).ConfigureAwait(false);
 
         // Create final manifest
         manifest = new DeliverableManifest
@@ -120,7 +120,7 @@ public sealed class DeliverableGenerator : IDeliverableGenerator
         _logger.LogInformation("Generating processing report to: {Path}", outputPath);
 
         var report = _reportGenerator.GenerateReport(state);
-        await _reportGenerator.SaveReportAsync(report, outputPath, cancellationToken);
+        await _reportGenerator.SaveReportAsync(report, outputPath, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Report generated successfully");
     }
@@ -190,7 +190,7 @@ public sealed class DeliverableGenerator : IDeliverableGenerator
             WriteIndented = true
         });
 
-        await File.WriteAllTextAsync(outputPath, json, cancellationToken);
+        await File.WriteAllTextAsync(outputPath, json, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Metadata generated successfully");
     }

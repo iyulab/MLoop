@@ -141,7 +141,7 @@ public class HookEngine
                     _logger.Info($"  🪝 [{hookIndex}/{scriptFiles.Count}] {scriptName}");
 
                     // Load hook script (lazy initialize ScriptLoader only when needed)
-                    var hooks = await GetScriptLoader().LoadScriptAsync<IMLoopHook>(scriptFile);
+                    var hooks = await GetScriptLoader().LoadScriptAsync<IMLoopHook>(scriptFile).ConfigureAwait(false);
 
                     if (hooks.Count == 0)
                     {
@@ -173,7 +173,7 @@ public class HookEngine
                         Metadata = context.Metadata
                     };
 
-                    var result = await hook.ExecuteAsync(hookContext);
+                    var result = await hook.ExecuteAsync(hookContext).ConfigureAwait(false);
                     var elapsedMs = (DateTime.UtcNow - startTime).TotalMilliseconds;
 
                     // Handle result

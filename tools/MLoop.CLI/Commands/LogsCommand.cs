@@ -198,7 +198,7 @@ public static class LogsCommand
         AnsiConsole.MarkupLine($"[grey]Showing {logs.Count} entries[/]");
     }
 
-    private static string SummarizeInput(IDictionary<string, object> input)
+    internal static string SummarizeInput(IDictionary<string, object> input)
     {
         if (input.Count == 0)
             return "-";

@@ -122,7 +122,7 @@ public class RuntimeManager
             var tempFile = Path.Combine(Path.GetTempPath(), $"mloop-{runtime.Id}-{rid}-{Guid.NewGuid():N}.nupkg");
             try
             {
-                await DownloadFileAsync(nupkgUrl, tempFile, progress, cancellationToken);
+                await DownloadFileAsync(nupkgUrl, tempFile, progress, cancellationToken).ConfigureAwait(false);
 
                 // Phase 3: Extract native libraries
                 progress?.Report(new RuntimeDownloadProgress
@@ -152,7 +152,7 @@ public class RuntimeManager
 
                 // Write manifest
                 var manifest = $"{runtime.Id}\n{runtime.Version}\n{rid}\n{DateTime.UtcNow:O}";
-                await File.WriteAllTextAsync(Path.Combine(runtimeDir, "manifest.txt"), manifest, cancellationToken);
+                await File.WriteAllTextAsync(Path.Combine(runtimeDir, "manifest.txt"), manifest, cancellationToken).ConfigureAwait(false);
 
                 progress?.Report(new RuntimeDownloadProgress
                 {
@@ -250,22 +250,22 @@ public class RuntimeManager
         IProgress<RuntimeDownloadProgress>? progress,
         CancellationToken cancellationToken)
     {
-        using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         var totalBytes = response.Content.Headers.ContentLength ?? -1;
         long downloaded = 0;
 
-        await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         await using var fileStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
 
         var buffer = new byte[81920];
         int bytesRead;
         var lastReport = DateTime.UtcNow;
 
-        while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
+        while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
         {
-            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
             downloaded += bytesRead;
 
             if ((DateTime.UtcNow - lastReport).TotalMilliseconds > 500)

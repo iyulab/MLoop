@@ -34,7 +34,7 @@ public class ScriptDiscovery
     public async Task<List<IMLoopHook>> DiscoverHooksAsync()
     {
         var hooksPath = Path.Combine(_projectRoot, ".mloop", "scripts", "hooks");
-        return await DiscoverScriptsAsync<IMLoopHook>(hooksPath, "hooks");
+        return await DiscoverScriptsAsync<IMLoopHook>(hooksPath, "hooks").ConfigureAwait(false);
     }
 
     /// <summary>
@@ -44,7 +44,7 @@ public class ScriptDiscovery
     public async Task<List<IMLoopMetric>> DiscoverMetricsAsync()
     {
         var metricsPath = Path.Combine(_projectRoot, ".mloop", "scripts", "metrics");
-        return await DiscoverScriptsAsync<IMLoopMetric>(metricsPath, "metrics");
+        return await DiscoverScriptsAsync<IMLoopMetric>(metricsPath, "metrics").ConfigureAwait(false);
     }
 
     /// <summary>
@@ -79,7 +79,7 @@ public class ScriptDiscovery
             {
                 try
                 {
-                    var loadedInstances = await _scriptLoader.LoadScriptAsync<T>(scriptFile);
+                    var loadedInstances = await _scriptLoader.LoadScriptAsync<T>(scriptFile).ConfigureAwait(false);
                     instances.AddRange(loadedInstances);
 
                     if (loadedInstances.Count > 0)

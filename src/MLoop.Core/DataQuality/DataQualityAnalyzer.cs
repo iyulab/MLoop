@@ -48,7 +48,7 @@ public class DataQualityAnalyzer
         _logger.Info("📊 Analyzing data quality...");
 
         // Check encoding
-        await CheckEncodingAsync(csvPath, issues);
+        await CheckEncodingAsync(csvPath, issues).ConfigureAwait(false);
 
         // Load data with ML.NET for analysis using TextLoader
         var mlContext = new MLContext(seed: 0);
@@ -61,7 +61,7 @@ public class DataQualityAnalyzer
             using (var reader = new StreamReader(csvPath))
             using (var csv = new CsvReader(reader, _csvConfig))
             {
-                await csv.ReadAsync();
+                await csv.ReadAsync().ConfigureAwait(false);
                 csv.ReadHeader();
                 headers = csv.HeaderRecord ?? Array.Empty<string>();
             }
@@ -127,16 +127,16 @@ public class DataQualityAnalyzer
         // Analyze each column
         foreach (var column in schema)
         {
-            await AnalyzeColumnAsync(dataView, column, labelColumn, issues);
+            await AnalyzeColumnAsync(dataView, column, labelColumn, issues).ConfigureAwait(false);
         }
 
         // Check for duplicate rows
-        await CheckDuplicatesAsync(csvPath, issues);
+        await CheckDuplicatesAsync(csvPath, issues).ConfigureAwait(false);
 
         // Check class balance for label column
         if (!string.IsNullOrEmpty(labelColumn) && schema.Any(c => c.Name == labelColumn))
         {
-            await CheckClassBalanceAsync(dataView, labelColumn, issues);
+            await CheckClassBalanceAsync(dataView, labelColumn, issues).ConfigureAwait(false);
         }
 
         _logger.Info($"  Detected {issues.Count} quality issue(s)");
@@ -152,7 +152,7 @@ public class DataQualityAnalyzer
 
         using (var fs = new FileStream(csvPath, FileMode.Open, FileAccess.Read))
         {
-            bytesRead = await fs.ReadAsync(buffer, 0, buffer.Length);
+            bytesRead = await fs.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
         }
 
         // Check for UTF-8 BOM
@@ -194,7 +194,7 @@ public class DataQualityAnalyzer
         var columnName = column.Name;
 
         // Check for constant columns (zero variance)
-        if (await IsConstantColumnAsync(dataView, columnName))
+        if (await IsConstantColumnAsync(dataView, columnName).ConfigureAwait(false))
         {
             issues.Add(new DataQualityIssue
             {
@@ -247,11 +247,11 @@ public class DataQualityAnalyzer
         using var csv = new CsvReader(reader, _csvConfig);
 
         // Skip header
-        await csv.ReadAsync();
+        await csv.ReadAsync().ConfigureAwait(false);
         csv.ReadHeader();
 
         // Sample first 1000 rows for performance
-        while (await csv.ReadAsync() && totalRows < 1000)
+        while (await csv.ReadAsync().ConfigureAwait(false) && totalRows < 1000)
         {
             var rowData = string.Join(",", csv.Parser.Record ?? Array.Empty<string>());
             totalRows++;
@@ -329,7 +329,7 @@ public class DataQualityAnalyzer
             }
         }
 
-        await Task.CompletedTask;
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     /// <summary>
@@ -340,7 +340,7 @@ public class DataQualityAnalyzer
     /// <returns>True if preprocessing is recommended</returns>
     public async Task<bool> NeedsPreprocessingAsync(string csvPath, string? labelColumn = null)
     {
-        var issues = await AnalyzeAsync(csvPath, labelColumn);
+        var issues = await AnalyzeAsync(csvPath, labelColumn).ConfigureAwait(false);
 
         // Recommend preprocessing if any High or Critical issues
         return issues.Any(i => i.Severity == IssueSeverity.Critical ||

@@ -45,7 +45,7 @@ public sealed class RuleDiscoveryEngine : IRuleDiscoveryEngine
 
             var columnPatterns = await DetectPatternsInColumnAsync(
                 column,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             allPatterns.AddRange(columnPatterns);
         }
@@ -80,7 +80,7 @@ public sealed class RuleDiscoveryEngine : IRuleDiscoveryEngine
             rule,
             previousSample,
             currentSample,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
     }
 
     public bool HasConverged(
@@ -113,7 +113,7 @@ public sealed class RuleDiscoveryEngine : IRuleDiscoveryEngine
                 var detectedPatterns = await detector.DetectAsync(
                     column,
                     column.Name,
-                    cancellationToken);
+                    cancellationToken).ConfigureAwait(false);
 
                 patterns.AddRange(detectedPatterns);
             }
