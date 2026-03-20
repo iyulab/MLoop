@@ -6,6 +6,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Models;
 using MLoop.Core.Data;
 using MLoop.Core.Preprocessing;
 using MLoop.DataStore.Interfaces;

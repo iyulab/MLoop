@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Models;
 
 namespace MLoop.CLI.Infrastructure.ML;
 

@@ -2,6 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Models;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
