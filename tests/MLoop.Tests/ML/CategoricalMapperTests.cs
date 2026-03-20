@@ -1,5 +1,6 @@
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Models;
 
 namespace MLoop.Tests.ML;
 
