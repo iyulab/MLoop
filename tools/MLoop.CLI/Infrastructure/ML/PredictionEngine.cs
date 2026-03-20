@@ -1,9 +1,12 @@
+using System.Globalization;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Contracts;
+using MLoop.Core.Models;
 using MLoop.Core.Data;
+using MLoop.Core.Prediction;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
@@ -461,5 +464,128 @@ public class PredictionEngine : IPredictionEngine
             lines[0] = string.Join(",", expectedHeaders);
             File.WriteAllLines(filePath, lines, new System.Text.UTF8Encoding(true));
         }
+    }
+
+    /// <summary>
+    /// Prediction using the shared PredictionService (Dict[] → PredictionResult path).
+    /// Used by the API. CLI can switch to this path after validation.
+    /// </summary>
+    public PredictionResult PredictWithService(
+        Dictionary<string, object>[] rows,
+        InputSchemaInfo schema,
+        string modelPath,
+        string taskType,
+        string? labelColumn = null)
+    {
+        var service = new PredictionService(_mlContext);
+        return service.Predict(rows, schema, modelPath, taskType, labelColumn);
+    }
+
+    /// <summary>
+    /// Converts a CSV file to Dictionary rows for PredictionService consumption.
+    /// Applies CLI-specific file preprocessing (encoding detection, index column removal,
+    /// schema-based excluded column removal).
+    /// </summary>
+    /// <param name="csvPath">Path to input CSV file</param>
+    /// <param name="trainedSchema">Optional trained schema for column exclusion</param>
+    /// <param name="labelColumn">Optional label column name to exclude from rows</param>
+    /// <returns>Array of dictionaries, one per row, with header names as keys</returns>
+    public static Dictionary<string, object>[] LoadCsvAsRows(
+        string csvPath,
+        InputSchemaInfo? trainedSchema = null,
+        string? labelColumn = null)
+    {
+        if (!File.Exists(csvPath))
+        {
+            throw new FileNotFoundException($"CSV file not found: {csvPath}");
+        }
+
+        // Read all lines with encoding detection (handles CP949/EUC-KR)
+        var allLines = File.ReadAllLines(csvPath, System.Text.Encoding.UTF8);
+        if (allLines.Length < 2)
+        {
+            return Array.Empty<Dictionary<string, object>>();
+        }
+
+        var headers = CsvFieldParser.ParseFields(allLines[0]);
+
+        // Determine which columns to exclude
+        var excludedIndices = new HashSet<int>();
+
+        if (trainedSchema != null)
+        {
+            var excludedNames = new HashSet<string>(
+                trainedSchema.Columns
+                    .Where(c => c.Purpose == "Exclude")
+                    .Select(c => c.Name),
+                StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < headers.Length; i++)
+            {
+                if (excludedNames.Contains(headers[i].Trim()))
+                {
+                    excludedIndices.Add(i);
+                }
+            }
+        }
+
+        // Exclude label column from feature rows
+        if (labelColumn != null)
+        {
+            for (int i = 0; i < headers.Length; i++)
+            {
+                if (headers[i].Trim().Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                {
+                    excludedIndices.Add(i);
+                    break;
+                }
+            }
+        }
+
+        // Build active header list (non-excluded)
+        var activeHeaders = new List<(int Index, string Name)>();
+        for (int i = 0; i < headers.Length; i++)
+        {
+            if (!excludedIndices.Contains(i))
+            {
+                activeHeaders.Add((i, headers[i].Trim()));
+            }
+        }
+
+        // Parse data rows
+        var rows = new List<Dictionary<string, object>>();
+        for (int lineIdx = 1; lineIdx < allLines.Length; lineIdx++)
+        {
+            var line = allLines[lineIdx];
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            var fields = CsvFieldParser.ParseFields(line);
+            var row = new Dictionary<string, object>(activeHeaders.Count);
+
+            foreach (var (colIdx, name) in activeHeaders)
+            {
+                if (colIdx >= fields.Length)
+                {
+                    row[name] = "";
+                    continue;
+                }
+
+                var value = fields[colIdx];
+
+                // Try numeric parsing: float with InvariantCulture, fallback to string
+                if (float.TryParse(value, NumberStyles.Float | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var numericValue))
+                {
+                    row[name] = numericValue;
+                }
+                else
+                {
+                    row[name] = value;
+                }
+            }
+
+            rows.Add(row);
+        }
+
+        return rows.ToArray();
     }
 }

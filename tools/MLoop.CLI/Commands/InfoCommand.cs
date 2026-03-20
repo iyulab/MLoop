@@ -7,6 +7,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
+using MLoop.Core.Prediction;
 using DataLens;
 using DataLens.Models;
 using Spectre.Console;

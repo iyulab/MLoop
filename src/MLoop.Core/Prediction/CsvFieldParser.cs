@@ -1,10 +1,10 @@
-namespace MLoop.CLI.Infrastructure.ML;
+namespace MLoop.Core.Prediction;
 
 /// <summary>
 /// RFC 4180 compliant CSV field parser.
 /// Handles commas inside quoted fields correctly.
 /// </summary>
-internal static class CsvFieldParser
+public static class CsvFieldParser
 {
     /// <summary>
     /// Parses a CSV line respecting RFC 4180 quoted fields.
