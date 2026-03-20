@@ -1476,14 +1476,28 @@ public class AutoMLRunner
         var categoricalColumns = new List<string>();
         var ignoredColumns = new List<string>();
 
+
         foreach (var col in data.Schema)
         {
             if (col.IsHidden) continue;
             if (col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)) continue;
 
-            // Check for column override
-            if (columnOverrides != null &&
-                columnOverrides.TryGetValue(col.Name, out var overrideType))
+            // Check for column override (case-insensitive + trimmed for robustness)
+            string? overrideType = null;
+            if (columnOverrides != null)
+            {
+                // Try exact match first
+                if (!columnOverrides.TryGetValue(col.Name, out overrideType))
+                {
+                    // Try trimmed and case-insensitive match
+                    var colNameTrimmed = col.Name.Trim();
+                    var match = columnOverrides.Keys.FirstOrDefault(k =>
+                        k.Trim().Equals(colNameTrimmed, StringComparison.OrdinalIgnoreCase));
+                    if (match != null)
+                        overrideType = columnOverrides[match];
+                }
+            }
+            if (overrideType != null)
             {
                 switch (overrideType.ToLowerInvariant())
                 {
@@ -1534,9 +1548,9 @@ public class AutoMLRunner
 
         var write = log ?? Console.WriteLine;
         if (textColumns.Count > 0)
-            write($"[Info] Text column(s): {string.Join(", ", textColumns)} — applying text featurization (TF-IDF, n-gram)");
+            write($"ℹ️  [Info] Text column(s): {string.Join(", ", textColumns)} — applying text featurization (TF-IDF, n-gram)");
         if (categoricalColumns.Count > 0)
-            write($"[Info] Categorical column(s) (override): {string.Join(", ", categoricalColumns)}");
+            write($"ℹ️  [Info] Categorical column(s) (override): {string.Join(", ", categoricalColumns)}");
         if (ignoredColumns.Count > 0)
             write($"[Info] Ignored column(s) (override): {string.Join(", ", ignoredColumns)}");
 

@@ -56,7 +56,21 @@ public class PredictionService
 
         // Step 5: Load model and transform
         var model = _mlContext.Model.Load(modelPath, out _);
-        var predictions = model.Transform(dataView);
+        IDataView predictions;
+        try
+        {
+            predictions = model.Transform(dataView);
+        }
+        catch (Exception ex) when (ex.Message.Contains("Schema mismatch") ||
+                                   ex.Message.Contains("Vector<Single"))
+        {
+            throw new InvalidOperationException(
+                $"Feature vector dimension mismatch during prediction. " +
+                $"This typically occurs when text columns (FeaturizeText/TF-IDF) in the prediction data " +
+                $"have different value distributions than the training data. " +
+                $"Workaround: Force text columns to use categorical encoding via column_overrides in mloop.yaml. " +
+                $"Original error: {ex.Message}", ex);
+        }
 
         // Step 6: Restore original labels for classification (MapKeyToValue)
         predictions = RestoreOriginalLabels(predictions);
