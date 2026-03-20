@@ -124,11 +124,12 @@ public class PredictionEngine : IPredictionEngine
             var trainedModel = _mlContext.Model.Load(modelPath, out modelSchema);
 
             // Find the label column: prefer override, then trained schema
-            string? labelColumn = labelColumnOverride;
+            // Treat empty string as null (unsupervised tasks like anomaly-detection have no label)
+            string? labelColumn = string.IsNullOrEmpty(labelColumnOverride) ? null : labelColumnOverride;
             if (labelColumn == null && trainedSchema != null)
             {
                 var labelInfo = trainedSchema.Columns.FirstOrDefault(c => c.Purpose == "Label");
-                if (labelInfo != null)
+                if (labelInfo != null && !string.IsNullOrEmpty(labelInfo.Name))
                 {
                     labelColumn = labelInfo.Name;
                 }
