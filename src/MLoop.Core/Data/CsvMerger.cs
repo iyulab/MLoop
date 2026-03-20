@@ -60,7 +60,7 @@ public class CsvMerger : ICsvMerger
         {
             try
             {
-                var headers = await _csvHelper.ReadHeadersAsync(file, cancellationToken: cancellationToken);
+                var headers = await _csvHelper.ReadHeadersAsync(file, cancellationToken: cancellationToken).ConfigureAwait(false);
                 if (headers.Count == 0) continue;
 
                 var schemaId = ComputeSchemaId(headers);
@@ -119,7 +119,7 @@ public class CsvMerger : ICsvMerger
         try
         {
             // Validate schema compatibility first
-            var validation = await ValidateSchemaCompatibilityAsync(paths, cancellationToken);
+            var validation = await ValidateSchemaCompatibilityAsync(paths, cancellationToken).ConfigureAwait(false);
             if (!validation.IsCompatible)
             {
                 return new CsvMergeResult
@@ -139,7 +139,7 @@ public class CsvMerger : ICsvMerger
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var data = await _csvHelper.ReadAsync(path, cancellationToken: cancellationToken);
+                var data = await _csvHelper.ReadAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
                 rowsPerFile[Path.GetFileName(path)] = data.Count;
 
                 if (columnOrder == null && data.Count > 0)
@@ -160,7 +160,7 @@ public class CsvMerger : ICsvMerger
             }
 
             // Write merged data
-            await _csvHelper.WriteAsync(outputPath, allData, cancellationToken: cancellationToken);
+            await _csvHelper.WriteAsync(outputPath, allData, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             return new CsvMergeResult
             {
@@ -203,7 +203,7 @@ public class CsvMerger : ICsvMerger
         {
             try
             {
-                var headers = await _csvHelper.ReadHeadersAsync(path, cancellationToken: cancellationToken);
+                var headers = await _csvHelper.ReadHeadersAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
                 allHeaders[path] = headers;
             }
             catch (Exception ex)
@@ -285,7 +285,7 @@ public class CsvMerger : ICsvMerger
         try
         {
             // Validate schema compatibility first
-            var validation = await ValidateSchemaCompatibilityAsync(paths, cancellationToken);
+            var validation = await ValidateSchemaCompatibilityAsync(paths, cancellationToken).ConfigureAwait(false);
             if (!validation.IsCompatible)
             {
                 return new CsvMergeResult
@@ -309,7 +309,7 @@ public class CsvMerger : ICsvMerger
                 var fileName = Path.GetFileName(path);
                 var metadata = ExtractFilenameMetadata(fileName, metadataOptions);
 
-                var data = await _csvHelper.ReadAsync(path, cancellationToken: cancellationToken);
+                var data = await _csvHelper.ReadAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
                 rowsPerFile[fileName] = data.Count;
 
                 if (columnOrder == null && data.Count > 0)
@@ -340,7 +340,7 @@ public class CsvMerger : ICsvMerger
             }
 
             // Write merged data with metadata columns first
-            await _csvHelper.WriteAsync(outputPath, allData, columnOrder, cancellationToken);
+            await _csvHelper.WriteAsync(outputPath, allData, columnOrder, cancellationToken).ConfigureAwait(false);
 
             return new CsvMergeResult
             {

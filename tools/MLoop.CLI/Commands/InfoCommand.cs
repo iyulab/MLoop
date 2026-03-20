@@ -381,7 +381,7 @@ public static class InfoCommand
         }
     }
 
-    private static string GetColumnPurpose(string columnName, ColumnInformation columnInfo, string dataType)
+    internal static string GetColumnPurpose(string columnName, ColumnInformation columnInfo, string dataType)
     {
         if (columnInfo.LabelColumnName == columnName)
             return "[green]Label[/]";
@@ -486,9 +486,9 @@ public static class InfoCommand
         return lines.ToArray();
     }
 
-    private record ColumnStatInfo(long MissingCount, int UniqueCount);
+    internal record ColumnStatInfo(long MissingCount, int UniqueCount);
 
-    private static (Dictionary<string, ColumnStatInfo> Stats, Dictionary<string, int>? LabelDistribution)
+    internal static (Dictionary<string, ColumnStatInfo> Stats, Dictionary<string, int>? LabelDistribution)
         CalculateColumnStats(string dataFile, string[] columns, string? labelColumn, int maxUniqueRows = 10000)
     {
         var missingCounts = new long[columns.Length];

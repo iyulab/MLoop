@@ -41,7 +41,7 @@ public sealed class HITLDecisionLogger : IHITLDecisionLogger
         try
         {
             var json = JsonSerializer.Serialize(log, _jsonOptions);
-            await File.WriteAllTextAsync(filePath, json);
+            await File.WriteAllTextAsync(filePath, json).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Logged HITL decision {QuestionId} to {FilePath}",
@@ -59,7 +59,7 @@ public sealed class HITLDecisionLogger : IHITLDecisionLogger
     /// <inheritdoc />
     public async Task<IReadOnlyList<HITLDecisionLog>> GetDecisionsByRuleAsync(string ruleId)
     {
-        var allLogs = await LoadAllLogsAsync();
+        var allLogs = await LoadAllLogsAsync().ConfigureAwait(false);
         return allLogs
             .Where(log => log.Question.RelatedRule.Id == ruleId)
             .OrderBy(log => log.LoggedAt)
@@ -71,7 +71,7 @@ public sealed class HITLDecisionLogger : IHITLDecisionLogger
         DateTime startTime,
         DateTime endTime)
     {
-        var allLogs = await LoadAllLogsAsync();
+        var allLogs = await LoadAllLogsAsync().ConfigureAwait(false);
         return allLogs
             .Where(log => log.LoggedAt >= startTime &&
                           log.LoggedAt <= endTime)
@@ -82,7 +82,7 @@ public sealed class HITLDecisionLogger : IHITLDecisionLogger
     /// <inheritdoc />
     public async Task<HITLDecisionSummary> GetDecisionSummaryAsync()
     {
-        var allLogs = await LoadAllLogsAsync();
+        var allLogs = await LoadAllLogsAsync().ConfigureAwait(false);
 
         if (allLogs.Count == 0)
         {
@@ -150,7 +150,7 @@ public sealed class HITLDecisionLogger : IHITLDecisionLogger
         {
             try
             {
-                var json = await File.ReadAllTextAsync(file);
+                var json = await File.ReadAllTextAsync(file).ConfigureAwait(false);
                 var log = JsonSerializer.Deserialize<HITLDecisionLog>(json, _jsonOptions);
 
                 if (log != null)

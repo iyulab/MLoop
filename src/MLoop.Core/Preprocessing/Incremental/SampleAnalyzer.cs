@@ -49,7 +49,7 @@ public sealed class SampleAnalyzer : ISampleAnalyzer
                 var analysis = AnalyzeColumn(column, column.Name, i);
                 columnAnalyses.Add(analysis);
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         // Calculate quality score
         double qualityScore = CalculateQualityScore(columnAnalyses);

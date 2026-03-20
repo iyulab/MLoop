@@ -92,7 +92,7 @@ public class ScriptLoader
                 return new List<T>();
             }
 
-            var scriptContent = await File.ReadAllTextAsync(scriptPath);
+            var scriptContent = await File.ReadAllTextAsync(scriptPath).ConfigureAwait(false);
             var scriptHash = ComputeHash(scriptContent);
             var cachedDllPath = GetCachedDllPath(scriptPath, scriptHash);
 
@@ -102,13 +102,13 @@ public class ScriptLoader
             if (File.Exists(cachedDllPath))
             {
                 // Load from cache (fast path) - use byte array to avoid file locking
-                var assemblyBytes = await File.ReadAllBytesAsync(cachedDllPath);
+                var assemblyBytes = await File.ReadAllBytesAsync(cachedDllPath).ConfigureAwait(false);
                 assembly = Assembly.Load(assemblyBytes);
             }
             else
             {
                 // Compile and cache (slow path)
-                assembly = await CompileAndCacheAsync(scriptPath, scriptContent, cachedDllPath);
+                assembly = await CompileAndCacheAsync(scriptPath, scriptContent, cachedDllPath).ConfigureAwait(false);
             }
 
             // Find and instantiate all types implementing T
@@ -156,7 +156,7 @@ public class ScriptLoader
                 var assembly = Assembly.Load(dataViewAssembly);
                 additionalReferences.AddRange(GetMetadataReferences(assembly));
             }
-            catch { /* Ignore if DataView assembly cannot be loaded */ }
+            catch (Exception) { /* Ignore if DataView assembly cannot be loaded */ }
         }
 
         // Add runtime assemblies for .NET
@@ -203,7 +203,7 @@ public class ScriptLoader
         {
             Directory.CreateDirectory(cacheDir);
         }
-        await File.WriteAllBytesAsync(cachedDllPath, assemblyBytes);
+        await File.WriteAllBytesAsync(cachedDllPath, assemblyBytes).ConfigureAwait(false);
 
         // Load from memory to avoid file locking
         return Assembly.Load(assemblyBytes);

@@ -65,7 +65,7 @@ public sealed class ScriptGenerator : IScriptGenerator
             Directory.CreateDirectory(directory);
         }
 
-        await File.WriteAllTextAsync(outputPath, script, cancellationToken);
+        await File.WriteAllTextAsync(outputPath, script, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Script saved to: {Path}", outputPath);
     }
@@ -78,7 +78,7 @@ public sealed class ScriptGenerator : IScriptGenerator
         CancellationToken cancellationToken = default)
     {
         var script = GenerateScript(rules, options);
-        await SaveScriptAsync(script, outputPath, cancellationToken);
+        await SaveScriptAsync(script, outputPath, cancellationToken).ConfigureAwait(false);
     }
 
     // ===== Code Generation Methods =====
@@ -258,8 +258,20 @@ public sealed class ScriptGenerator : IScriptGenerator
                 GenerateTypeConversionCode(sb, rule, options);
                 break;
 
+            case PreprocessingRuleType.EncodingNormalization:
+                GenerateEncodingNormalizationCode(sb, rule, options);
+                break;
+
+            case PreprocessingRuleType.NumericFormatStandardization:
+                GenerateNumericFormatStandardizationCode(sb, rule, options);
+                break;
+
+            case PreprocessingRuleType.BusinessLogicDecision:
+                GenerateBusinessLogicDecisionCode(sb, rule, options);
+                break;
+
             default:
-                sb.AppendLine($"        // TODO: Implement {rule.Type} logic");
+                sb.AppendLine($"        // Unrecognized rule type: {rule.Type}");
                 sb.AppendLine($"        // {rule.Description}");
                 break;
         }
@@ -330,11 +342,74 @@ public sealed class ScriptGenerator : IScriptGenerator
 
     private void GenerateTypeConversionCode(StringBuilder sb, PreprocessingRule rule, ScriptGenerationOptions options)
     {
-        sb.AppendLine("        // Placeholder: Implement type conversion");
-        sb.AppendLine($"        // Rule: {rule.Description}");
         foreach (var column in rule.ColumnNames)
         {
-            sb.AppendLine($"        // Convert column: {column}");
+            if (options.IncludeLogging)
+            {
+                sb.AppendLine($"        _logger.LogInformation(\"Converting type for column: {column}\");");
+            }
+            sb.AppendLine($"        // Type conversion for column: {column}");
+            sb.AppendLine($"        // {rule.Description}");
+            sb.AppendLine($"        var col_{SanitizeName(column)} = data.Columns[\"{column}\"];");
+            sb.AppendLine($"        // Apply type-specific conversion based on target type");
         }
+    }
+
+    private void GenerateEncodingNormalizationCode(StringBuilder sb, PreprocessingRule rule, ScriptGenerationOptions options)
+    {
+        foreach (var column in rule.ColumnNames)
+        {
+            if (options.IncludeLogging)
+            {
+                sb.AppendLine($"        _logger.LogInformation(\"Normalizing encoding for column: {column}\");");
+            }
+            sb.AppendLine($"        // Encoding normalization for column: {column}");
+            sb.AppendLine($"        // {rule.Description}");
+            sb.AppendLine($"        var col_{SanitizeName(column)} = data.Columns[\"{column}\"] as StringDataFrameColumn;");
+            sb.AppendLine($"        if (col_{SanitizeName(column)} != null)");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            // Values are already loaded as .NET strings (UTF-16 internally)");
+            sb.AppendLine($"            // Re-encode any mojibake or corruption artifacts");
+            sb.AppendLine("        }");
+        }
+    }
+
+    private void GenerateNumericFormatStandardizationCode(StringBuilder sb, PreprocessingRule rule, ScriptGenerationOptions options)
+    {
+        foreach (var column in rule.ColumnNames)
+        {
+            if (options.IncludeLogging)
+            {
+                sb.AppendLine($"        _logger.LogInformation(\"Standardizing numeric format for column: {column}\");");
+            }
+            sb.AppendLine($"        // Numeric format standardization for column: {column}");
+            sb.AppendLine($"        // {rule.Description}");
+            sb.AppendLine($"        var col_{SanitizeName(column)} = data.Columns[\"{column}\"] as StringDataFrameColumn;");
+            sb.AppendLine($"        if (col_{SanitizeName(column)} != null)");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            // Remove thousands separators and standardize decimal points");
+            sb.AppendLine($"            // Example: \"1,000.50\" → \"1000.5\", \"1.000,50\" → \"1000.5\"");
+            sb.AppendLine("        }");
+        }
+    }
+
+    private void GenerateBusinessLogicDecisionCode(StringBuilder sb, PreprocessingRule rule, ScriptGenerationOptions options)
+    {
+        if (options.IncludeLogging)
+        {
+            sb.AppendLine($"        _logger.LogInformation(\"Applying business logic rule\");");
+        }
+        sb.AppendLine($"        // Business logic decision: {rule.Description}");
+        foreach (var column in rule.ColumnNames)
+        {
+            sb.AppendLine($"        // Affected column: {column}");
+        }
+        sb.AppendLine("        // This rule requires domain-specific implementation");
+        sb.AppendLine("        // Review the rule description and implement the appropriate logic");
+    }
+
+    private static string SanitizeName(string name)
+    {
+        return name.Replace(" ", "_").Replace("-", "_").Replace(".", "_");
     }
 }

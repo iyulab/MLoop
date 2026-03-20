@@ -41,7 +41,7 @@ public sealed class TimeBasedTrigger : IRetrainingTrigger
         var evaluatedAt = DateTimeOffset.UtcNow;
 
         // Get the last training timestamp
-        var lastTrainingTime = await GetLastTrainingTimeAsync(modelName, cancellationToken);
+        var lastTrainingTime = await GetLastTrainingTimeAsync(modelName, cancellationToken).ConfigureAwait(false);
 
         foreach (var condition in conditionList)
         {
@@ -175,7 +175,7 @@ public sealed class TimeBasedTrigger : IRetrainingTrigger
 
             try
             {
-                var json = await File.ReadAllTextAsync(metadataPath, cancellationToken);
+                var json = await File.ReadAllTextAsync(metadataPath, cancellationToken).ConfigureAwait(false);
                 var metadata = JsonSerializer.Deserialize<ExperimentMetadata>(json, JsonOptions);
 
                 if (metadata != null &&

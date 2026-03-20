@@ -314,7 +314,7 @@ public class TrainingEngine : ITrainingEngine
             // ML.NET may have lazily loaded data, but by now training is complete
             if (tempEncodingFile != null && File.Exists(tempEncodingFile))
             {
-                try { File.Delete(tempEncodingFile); } catch { /* Ignore cleanup errors */ }
+                try { File.Delete(tempEncodingFile); } catch (IOException) { /* Ignore cleanup errors */ }
             }
         }
     }

@@ -69,7 +69,7 @@ public class AutoMLRunner
         }
 
         // Discover hooks (zero-overhead if .mloop/scripts/hooks/ doesn't exist)
-        var hooks = await _scriptDiscovery.DiscoverHooksAsync();
+        var hooks = await _scriptDiscovery.DiscoverHooksAsync().ConfigureAwait(false);
 
         // Execute pre-train hooks
         if (hooks.Count > 0)
@@ -92,7 +92,7 @@ public class AutoMLRunner
 
             foreach (var hook in hooks)
             {
-                var hookResult = await hook.ExecuteAsync(preTrainContext);
+                var hookResult = await hook.ExecuteAsync(preTrainContext).ConfigureAwait(false);
                 if (hookResult.Action == HookAction.Abort)
                 {
                     throw new InvalidOperationException(
@@ -117,35 +117,35 @@ public class AutoMLRunner
         var result = config.Task.ToLowerInvariant() switch
         {
             "binary-classification" => await RunBinaryClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "multiclass-classification" => await RunMulticlassClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "regression" => await RunRegressionAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "anomaly-detection" => await RunAnomalyDetectionAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "clustering" => await RunClusteringAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "ranking" => await RunRankingAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "forecasting" => await RunForecastingAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "time-series-anomaly" => await RunTimeSeriesAnomalyAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "recommendation" => await RunRecommendationAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "image-classification" => await RunImageClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "text-classification" => await RunTextClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "sentence-similarity" => await RunSentenceSimilarityAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "ner" => await RunNerAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "object-detection" => await RunObjectDetectionAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "question-answering" => await RunQuestionAnsweringAsync(
-                trainSet, testSet, config, progress, cancellationToken),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
@@ -174,7 +174,7 @@ public class AutoMLRunner
             {
                 try
                 {
-                    await hook.ExecuteAsync(postTrainContext);
+                    await hook.ExecuteAsync(postTrainContext).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -199,7 +199,7 @@ public class AutoMLRunner
         try
         {
             return await RunBinaryClassificationCoreAsync(
-                trainSet, testSet, config, optimizingMetric, cancellationToken);
+                trainSet, testSet, config, optimizingMetric, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsAucUndefinedException(ex))
         {
@@ -222,7 +222,7 @@ public class AutoMLRunner
 
             return await RunBinaryClassificationCoreAsync(
                 trainSet, testSet, config, BinaryClassificationMetric.F1Score, cancellationToken,
-                metricFallbackNote);
+                metricFallbackNote).ConfigureAwait(false);
         }
     }
 
@@ -251,7 +251,7 @@ public class AutoMLRunner
             () => columnInfo != null
                 ? experiment.Execute(trainSet, columnInfo)
                 : experiment.Execute(trainSet, config.LabelColumn),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
@@ -323,7 +323,7 @@ public class AutoMLRunner
             () => columnInfo != null
                 ? experiment.Execute(trainSet, columnInfo)
                 : experiment.Execute(trainSet, config.LabelColumn),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
@@ -390,7 +390,7 @@ public class AutoMLRunner
             () => columnInfo != null
                 ? experiment.Execute(trainSet, columnInfo)
                 : experiment.Execute(trainSet, config.LabelColumn),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
@@ -512,7 +512,7 @@ public class AutoMLRunner
                 Metrics = metricsDict,
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunClusteringAsync(
@@ -649,7 +649,7 @@ public class AutoMLRunner
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunRankingAsync(
@@ -782,7 +782,7 @@ public class AutoMLRunner
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunForecastingAsync(
@@ -923,7 +923,7 @@ public class AutoMLRunner
                 Metrics = metricsDict,
                 RowCount = totalRows
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunTimeSeriesAnomalyAsync(
@@ -1059,7 +1059,7 @@ public class AutoMLRunner
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = totalRows
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunRecommendationAsync(
@@ -1130,7 +1130,7 @@ public class AutoMLRunner
                 Metrics = metricsDict,
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunImageClassificationAsync(
@@ -1164,7 +1164,7 @@ public class AutoMLRunner
                 },
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunTextClassificationAsync(
@@ -1201,7 +1201,7 @@ public class AutoMLRunner
                 },
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunSentenceSimilarityAsync(
@@ -1239,7 +1239,7 @@ public class AutoMLRunner
                 },
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunNerAsync(
@@ -1275,7 +1275,7 @@ public class AutoMLRunner
                 },
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunObjectDetectionAsync(
@@ -1301,7 +1301,7 @@ public class AutoMLRunner
                 Metrics = new Dictionary<string, double>(),
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<AutoMLResult> RunQuestionAnsweringAsync(
@@ -1331,7 +1331,7 @@ public class AutoMLRunner
                 Metrics = new Dictionary<string, double>(),
                 RowCount = trainSet.GetRowCount() ?? 0
             };
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private static double NanSafe(double value) => double.IsNaN(value) ? 0 : value;

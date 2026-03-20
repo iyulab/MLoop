@@ -263,13 +263,13 @@ public static class StatusCommand
             AnsiConsole.Write(configTable);
             AnsiConsole.WriteLine();
         }
-        catch
+        catch (Exception)
         {
             // Config not available — skip silently
         }
     }
 
-    private static string GetLatestPrediction(string predictionsDir, string modelName)
+    internal static string GetLatestPrediction(string predictionsDir, string modelName)
     {
         if (!Directory.Exists(predictionsDir))
             return "[grey]-[/]";

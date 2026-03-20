@@ -32,8 +32,8 @@ public sealed class FileModelComparer : IModelComparer
         string baselineExpId,
         CancellationToken cancellationToken = default)
     {
-        var candidateMetrics = await LoadMetricsAsync(modelName, candidateExpId, cancellationToken);
-        var baselineMetrics = await LoadMetricsAsync(modelName, baselineExpId, cancellationToken);
+        var candidateMetrics = await LoadMetricsAsync(modelName, candidateExpId, cancellationToken).ConfigureAwait(false);
+        var baselineMetrics = await LoadMetricsAsync(modelName, baselineExpId, cancellationToken).ConfigureAwait(false);
 
         return CompareMetrics(candidateExpId, baselineExpId, candidateMetrics, baselineMetrics);
     }
@@ -44,12 +44,12 @@ public sealed class FileModelComparer : IModelComparer
         string candidateExpId,
         CancellationToken cancellationToken = default)
     {
-        var productionExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken);
+        var productionExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrEmpty(productionExpId))
         {
             // No production model - candidate wins by default
-            var candidateMetrics = await LoadMetricsAsync(modelName, candidateExpId, cancellationToken);
+            var candidateMetrics = await LoadMetricsAsync(modelName, candidateExpId, cancellationToken).ConfigureAwait(false);
             var primaryMetric = candidateMetrics.Keys.FirstOrDefault() ?? "unknown";
             var candidateScore = candidateMetrics.Values.FirstOrDefault();
 
@@ -68,7 +68,7 @@ public sealed class FileModelComparer : IModelComparer
             );
         }
 
-        return await CompareAsync(modelName, candidateExpId, productionExpId, cancellationToken);
+        return await CompareAsync(modelName, candidateExpId, productionExpId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -94,7 +94,7 @@ public sealed class FileModelComparer : IModelComparer
 
             try
             {
-                var metrics = await LoadMetricsAsync(modelName, expId, cancellationToken);
+                var metrics = await LoadMetricsAsync(modelName, expId, cancellationToken).ConfigureAwait(false);
 
                 if (metrics.TryGetValue(criteria.PrimaryMetric, out var score))
                 {
@@ -115,11 +115,11 @@ public sealed class FileModelComparer : IModelComparer
         // Apply minimum improvement threshold if we have a current best
         if (bestExpId != null && criteria.MinimumImprovement > 0)
         {
-            var productionExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken);
+            var productionExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken).ConfigureAwait(false);
 
             if (!string.IsNullOrEmpty(productionExpId))
             {
-                var productionMetrics = await LoadMetricsAsync(modelName, productionExpId, cancellationToken);
+                var productionMetrics = await LoadMetricsAsync(modelName, productionExpId, cancellationToken).ConfigureAwait(false);
 
                 if (productionMetrics.TryGetValue(criteria.PrimaryMetric, out var productionScore))
                 {
@@ -148,7 +148,7 @@ public sealed class FileModelComparer : IModelComparer
             throw new FileNotFoundException($"Metrics not found for experiment '{experimentId}'", metricsPath);
         }
 
-        var json = await File.ReadAllTextAsync(metricsPath, cancellationToken);
+        var json = await File.ReadAllTextAsync(metricsPath, cancellationToken).ConfigureAwait(false);
         var metrics = JsonSerializer.Deserialize<Dictionary<string, double>>(json, JsonOptions);
 
         return metrics ?? new Dictionary<string, double>();
@@ -165,7 +165,7 @@ public sealed class FileModelComparer : IModelComparer
             return null;
         }
 
-        var json = await File.ReadAllTextAsync(registryPath, cancellationToken);
+        var json = await File.ReadAllTextAsync(registryPath, cancellationToken).ConfigureAwait(false);
         var registry = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOptions);
 
         if (registry == null || !registry.TryGetValue("production", out var productionEntry))

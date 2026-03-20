@@ -28,7 +28,7 @@ public sealed class ConfidenceCalculator
             rule,
             previousSample,
             currentSample,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         var coverage = CalculateCoverage(rule, currentSample);
 
@@ -58,7 +58,7 @@ public sealed class ConfidenceCalculator
         DataFrame currentSample,
         CancellationToken cancellationToken)
     {
-        await Task.CompletedTask; // Async for future extensions
+        await Task.CompletedTask.ConfigureAwait(false); // Async for future extensions
         cancellationToken.ThrowIfCancellationRequested();
 
         // Get the column(s) the rule applies to

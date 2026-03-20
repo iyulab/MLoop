@@ -37,7 +37,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         CancellationToken cancellationToken = default)
     {
         // Find the original prediction to get modelName and predictedValue
-        var prediction = await FindPredictionByIdAsync(predictionId, cancellationToken);
+        var prediction = await FindPredictionByIdAsync(predictionId, cancellationToken).ConfigureAwait(false);
         if (prediction == null)
         {
             throw new InvalidOperationException(
@@ -55,7 +55,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             Timestamp = DateTimeOffset.UtcNow
         };
 
-        await WriteEntryAsync(entry, cancellationToken);
+        await WriteEntryAsync(entry, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -83,7 +83,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             if (cancellationToken.IsCancellationRequested || results.Count >= limit)
                 break;
 
-            var entries = await ReadEntriesFromFileAsync(file, effectiveFrom, effectiveTo, cancellationToken);
+            var entries = await ReadEntriesFromFileAsync(file, effectiveFrom, effectiveTo, cancellationToken).ConfigureAwait(false);
             results.AddRange(entries);
 
             if (results.Count >= limit)
@@ -103,7 +103,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         DateTimeOffset? to = null,
         CancellationToken cancellationToken = default)
     {
-        var feedback = await GetFeedbackAsync(modelName, from, to, int.MaxValue, cancellationToken);
+        var feedback = await GetFeedbackAsync(modelName, from, to, int.MaxValue, cancellationToken).ConfigureAwait(false);
 
         if (feedback.Count == 0)
         {
@@ -178,7 +178,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
 
                 try
                 {
-                    var lines = await File.ReadAllLinesAsync(file, cancellationToken);
+                    var lines = await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false);
                     foreach (var line in lines)
                     {
                         if (string.IsNullOrWhiteSpace(line))
@@ -225,7 +225,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
 
         try
         {
-            var lines = await File.ReadAllLinesAsync(filePath, cancellationToken);
+            var lines = await File.ReadAllLinesAsync(filePath, cancellationToken).ConfigureAwait(false);
             foreach (var line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line))

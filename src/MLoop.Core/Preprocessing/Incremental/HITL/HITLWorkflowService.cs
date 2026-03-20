@@ -97,7 +97,7 @@ public sealed class HITLWorkflowService
                 };
 
                 // Log decision
-                await _decisionLogger.LogDecisionAsync(decisionLog);
+                await _decisionLogger.LogDecisionAsync(decisionLog).ConfigureAwait(false);
 
                 decisions.Add(decisionLog);
 
@@ -173,7 +173,7 @@ public sealed class HITLWorkflowService
         };
 
         // Log decision
-        await _decisionLogger.LogDecisionAsync(decisionLog);
+        await _decisionLogger.LogDecisionAsync(decisionLog).ConfigureAwait(false);
 
         _logger.LogInformation(
             "HITL workflow completed for rule {RuleId}: {Action}",
@@ -188,6 +188,6 @@ public sealed class HITLWorkflowService
     /// <returns>Decision summary statistics.</returns>
     public async Task<HITLDecisionSummary> GetDecisionSummaryAsync()
     {
-        return await _decisionLogger.GetDecisionSummaryAsync();
+        return await _decisionLogger.GetDecisionSummaryAsync().ConfigureAwait(false);
     }
 }

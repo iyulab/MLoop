@@ -44,7 +44,7 @@ public sealed class FilePredictionLogger : IPredictionLogger
             confidence,
             DateTimeOffset.UtcNow);
 
-        await WriteEntryAsync(entry, cancellationToken);
+        await WriteEntryAsync(entry, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -104,7 +104,7 @@ public sealed class FilePredictionLogger : IPredictionLogger
                 if (cancellationToken.IsCancellationRequested || results.Count >= limit)
                     break;
 
-                var entries = await ReadEntriesFromFileAsync(file, effectiveFrom, effectiveTo, cancellationToken);
+                var entries = await ReadEntriesFromFileAsync(file, effectiveFrom, effectiveTo, cancellationToken).ConfigureAwait(false);
                 results.AddRange(entries);
 
                 if (results.Count >= limit)
@@ -144,7 +144,7 @@ public sealed class FilePredictionLogger : IPredictionLogger
 
         try
         {
-            var lines = await File.ReadAllLinesAsync(filePath, cancellationToken);
+            var lines = await File.ReadAllLinesAsync(filePath, cancellationToken).ConfigureAwait(false);
             foreach (var line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line))

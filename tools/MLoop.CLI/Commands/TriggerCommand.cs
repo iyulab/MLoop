@@ -119,7 +119,7 @@ public static class TriggerCommand
         }
     }
 
-    private static List<RetrainingCondition> BuildConditions(
+    internal static List<RetrainingCondition> BuildConditions(
         double? accuracyThreshold,
         int? feedbackThreshold)
     {
@@ -230,7 +230,7 @@ public static class TriggerCommand
         }
     }
 
-    private static string FormatThreshold(RetrainingCondition condition)
+    internal static string FormatThreshold(RetrainingCondition condition)
     {
         return condition.Type switch
         {
@@ -241,7 +241,7 @@ public static class TriggerCommand
         };
     }
 
-    private static string FormatCurrentValue(ConditionResult result)
+    internal static string FormatCurrentValue(ConditionResult result)
     {
         var color = result.IsMet ? "green" : "white";
         return result.Condition.Type switch

@@ -32,7 +32,7 @@ public class ClassDistributionAnalyzer
             throw new FileNotFoundException($"CSV file not found: {csvPath}");
         }
 
-        var data = await _csvHelper.ReadAsync(csvPath, cancellationToken: cancellationToken);
+        var data = await _csvHelper.ReadAsync(csvPath, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (data.Count == 0)
         {

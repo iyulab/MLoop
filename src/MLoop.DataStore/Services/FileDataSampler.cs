@@ -32,8 +32,8 @@ public sealed class FileDataSampler : IDataSampler
         string outputPath,
         CancellationToken cancellationToken = default)
     {
-        var predictions = await LoadPredictionsAsync(modelName, cancellationToken);
-        var feedback = await LoadFeedbackAsync(modelName, cancellationToken);
+        var predictions = await LoadPredictionsAsync(modelName, cancellationToken).ConfigureAwait(false);
+        var feedback = await LoadFeedbackAsync(modelName, cancellationToken).ConfigureAwait(false);
 
         if (predictions.Count == 0)
         {
@@ -58,7 +58,7 @@ public sealed class FileDataSampler : IDataSampler
         var sampled = ApplyStrategy(joinedData, sampleSize, strategy);
 
         // Write to CSV
-        await WriteCsvAsync(sampled, outputPath, cancellationToken);
+        await WriteCsvAsync(sampled, outputPath, cancellationToken).ConfigureAwait(false);
 
         return new SamplingResult(
             OutputPath: outputPath,
@@ -73,8 +73,8 @@ public sealed class FileDataSampler : IDataSampler
         string modelName,
         CancellationToken cancellationToken = default)
     {
-        var predictions = await LoadPredictionsAsync(modelName, cancellationToken);
-        var feedback = await LoadFeedbackAsync(modelName, cancellationToken);
+        var predictions = await LoadPredictionsAsync(modelName, cancellationToken).ConfigureAwait(false);
+        var feedback = await LoadFeedbackAsync(modelName, cancellationToken).ConfigureAwait(false);
 
         if (predictions.Count == 0)
         {
@@ -223,7 +223,7 @@ public sealed class FileDataSampler : IDataSampler
 
             try
             {
-                var lines = await File.ReadAllLinesAsync(file, cancellationToken);
+                var lines = await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false);
                 foreach (var line in lines)
                 {
                     if (string.IsNullOrWhiteSpace(line))
@@ -288,7 +288,7 @@ public sealed class FileDataSampler : IDataSampler
 
             try
             {
-                var lines = await File.ReadAllLinesAsync(file, cancellationToken);
+                var lines = await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false);
                 foreach (var line in lines)
                 {
                     if (string.IsNullOrWhiteSpace(line))
@@ -381,7 +381,7 @@ public sealed class FileDataSampler : IDataSampler
             Directory.CreateDirectory(dir);
         }
 
-        await File.WriteAllTextAsync(outputPath, sb.ToString(), cancellationToken);
+        await File.WriteAllTextAsync(outputPath, sb.ToString(), cancellationToken).ConfigureAwait(false);
     }
 
     private static Dictionary<string, object> ParseInput(JsonElement element)

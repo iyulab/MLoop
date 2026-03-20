@@ -198,7 +198,7 @@ public static class PrepRunCommand
         }
     }
 
-    private static string GetStepDetails(PrepStep step)
+    internal static string GetStepDetails(PrepStep step)
     {
         var parts = new List<string>();
 

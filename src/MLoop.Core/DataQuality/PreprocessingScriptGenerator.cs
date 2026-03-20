@@ -193,7 +193,7 @@ public class PreprocessingScriptGenerator
             Directory.CreateDirectory(directory);
         }
 
-        await File.WriteAllTextAsync(outputPath, scriptContent);
+        await File.WriteAllTextAsync(outputPath, scriptContent).ConfigureAwait(false);
         _logger.Info($"💾 Generated preprocessing script: {outputPath}");
     }
 
@@ -207,7 +207,7 @@ public class PreprocessingScriptGenerator
     public async Task<bool> AnalyzeAndGenerateAsync(string csvPath, string outputScriptPath, string? labelColumn = null)
     {
         var analyzer = new DataQualityAnalyzer(_logger);
-        var issues = await analyzer.AnalyzeAsync(csvPath, labelColumn);
+        var issues = await analyzer.AnalyzeAsync(csvPath, labelColumn).ConfigureAwait(false);
 
         // Only generate script for High or Critical issues
         var criticalIssues = issues
@@ -231,7 +231,7 @@ public class PreprocessingScriptGenerator
             .Replace(" ", "_");
 
         var scriptContent = GenerateScript(criticalIssues, scriptName);
-        await SaveScriptAsync(scriptContent, outputScriptPath);
+        await SaveScriptAsync(scriptContent, outputScriptPath).ConfigureAwait(false);
 
         return true;
     }

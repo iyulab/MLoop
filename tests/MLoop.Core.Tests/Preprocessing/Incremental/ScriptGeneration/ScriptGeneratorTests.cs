@@ -217,13 +217,14 @@ public class ScriptGeneratorTests : IDisposable
     }
 
     [Fact]
-    public void GenerateScript_UnhandledRuleType_GeneratesTodo()
+    public void GenerateScript_BusinessLogicDecision_GeneratesDomainHint()
     {
         var rules = new[] { CreateRule(type: PreprocessingRuleType.BusinessLogicDecision) };
 
         var script = _generator.GenerateScript(rules);
 
-        Assert.Contains("TODO", script);
+        Assert.Contains("domain-specific", script);
+        Assert.DoesNotContain("TODO:", script);
     }
 
     [Fact]
@@ -287,6 +288,90 @@ public class ScriptGeneratorTests : IDisposable
         Assert.True(File.Exists(path));
         var content = await File.ReadAllTextAsync(path);
         Assert.Contains("class PreprocessingScript", content);
+    }
+
+    #endregion
+
+    #region Rule Type Code Generation Coverage
+
+    [Theory]
+    [InlineData(PreprocessingRuleType.EncodingNormalization, "Encoding normalization")]
+    [InlineData(PreprocessingRuleType.NumericFormatStandardization, "Numeric format standardization")]
+    [InlineData(PreprocessingRuleType.BusinessLogicDecision, "Business logic decision")]
+    public void GenerateScript_NewRuleTypes_GeneratesCode(PreprocessingRuleType ruleType, string expectedContent)
+    {
+        var rules = new[] { CreateRule(type: ruleType) };
+
+        var script = _generator.GenerateScript(rules);
+
+        Assert.Contains(expectedContent, script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("TODO:", script);
+    }
+
+    [Fact]
+    public void GenerateScript_EncodingNormalization_ContainsStringColumnCast()
+    {
+        var rules = new[] { CreateRule(type: PreprocessingRuleType.EncodingNormalization) };
+
+        var script = _generator.GenerateScript(rules);
+
+        Assert.Contains("StringDataFrameColumn", script);
+    }
+
+    [Fact]
+    public void GenerateScript_NumericFormatStandardization_ContainsFormatHints()
+    {
+        var rules = new[] { CreateRule(type: PreprocessingRuleType.NumericFormatStandardization) };
+
+        var script = _generator.GenerateScript(rules);
+
+        Assert.Contains("thousands separators", script);
+        Assert.Contains("decimal points", script);
+    }
+
+    [Fact]
+    public void GenerateScript_BusinessLogicDecision_ContainsDomainHint()
+    {
+        var rules = new[] { CreateRule(type: PreprocessingRuleType.BusinessLogicDecision) };
+
+        var script = _generator.GenerateScript(rules);
+
+        Assert.Contains("domain-specific", script);
+    }
+
+    [Theory]
+    [InlineData(PreprocessingRuleType.MissingValueStrategy)]
+    [InlineData(PreprocessingRuleType.OutlierHandling)]
+    [InlineData(PreprocessingRuleType.WhitespaceNormalization)]
+    [InlineData(PreprocessingRuleType.DateFormatStandardization)]
+    [InlineData(PreprocessingRuleType.CategoryMapping)]
+    [InlineData(PreprocessingRuleType.TypeConversion)]
+    [InlineData(PreprocessingRuleType.EncodingNormalization)]
+    [InlineData(PreprocessingRuleType.NumericFormatStandardization)]
+    [InlineData(PreprocessingRuleType.BusinessLogicDecision)]
+    public void GenerateScript_AllRuleTypes_NoTodoComments(PreprocessingRuleType ruleType)
+    {
+        var rules = new[] { CreateRule(type: ruleType) };
+
+        var script = _generator.GenerateScript(rules);
+
+        Assert.DoesNotContain("TODO:", script);
+    }
+
+    [Fact]
+    public void GenerateScript_NewRuleTypes_WithLogging_ContainsLogStatements()
+    {
+        var rules = new[]
+        {
+            CreateRule("r1", PreprocessingRuleType.EncodingNormalization),
+            CreateRule("r2", PreprocessingRuleType.NumericFormatStandardization),
+            CreateRule("r3", PreprocessingRuleType.BusinessLogicDecision)
+        };
+
+        var options = new ScriptGenerationOptions { IncludeLogging = true };
+        var script = _generator.GenerateScript(rules, options);
+
+        Assert.Contains("LogInformation", script);
     }
 
     #endregion

@@ -45,12 +45,12 @@ public sealed class FilePromotionManager : IPromotionManager
         // Check 2: Compare with production if required
         if (policy.RequireComparisonWithProduction)
         {
-            var productionExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken);
+            var productionExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken).ConfigureAwait(false);
 
             if (productionExpId != null)
             {
                 var comparison = await _comparer.CompareAsync(
-                    modelName, candidateExpId, productionExpId, cancellationToken);
+                    modelName, candidateExpId, productionExpId, cancellationToken).ConfigureAwait(false);
 
                 if (!comparison.CandidateIsBetter)
                 {
@@ -77,7 +77,7 @@ public sealed class FilePromotionManager : IPromotionManager
         // Check 3: Required metrics present
         if (policy.RequiredMetrics is { Count: > 0 })
         {
-            var metrics = await LoadMetricsAsync(modelName, candidateExpId, cancellationToken);
+            var metrics = await LoadMetricsAsync(modelName, candidateExpId, cancellationToken).ConfigureAwait(false);
             foreach (var required in policy.RequiredMetrics)
             {
                 if (metrics.ContainsKey(required))
@@ -113,7 +113,7 @@ public sealed class FilePromotionManager : IPromotionManager
         string? backupPath = null;
 
         // Get current production experiment ID
-        previousExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken);
+        previousExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken).ConfigureAwait(false);
 
         // Create backup of current production
         if (createBackup && Directory.Exists(productionPath) && previousExpId != null)
@@ -138,11 +138,11 @@ public sealed class FilePromotionManager : IPromotionManager
         CopyDirectory(experimentPath, productionPath);
 
         // Update model registry
-        await UpdateRegistryAsync(modelName, experimentId, productionPath, cancellationToken);
+        await UpdateRegistryAsync(modelName, experimentId, productionPath, cancellationToken).ConfigureAwait(false);
 
         // Record promotion history
         await RecordHistoryAsync(modelName, experimentId, previousExpId, "promote",
-            $"Promoted {experimentId} (previous: {previousExpId ?? "none"})", cancellationToken);
+            $"Promoted {experimentId} (previous: {previousExpId ?? "none"})", cancellationToken).ConfigureAwait(false);
 
         return new PromotionOutcome(true, modelName, experimentId, previousExpId, backupPath, DateTimeOffset.UtcNow);
     }
@@ -152,7 +152,7 @@ public sealed class FilePromotionManager : IPromotionManager
         string? targetExpId = null,
         CancellationToken cancellationToken = default)
     {
-        var currentExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken);
+        var currentExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken).ConfigureAwait(false);
 
         if (currentExpId == null)
         {
@@ -162,7 +162,7 @@ public sealed class FilePromotionManager : IPromotionManager
         // If no target specified, find the most recent backup
         if (targetExpId == null)
         {
-            var history = await GetHistoryAsync(modelName, 10, cancellationToken);
+            var history = await GetHistoryAsync(modelName, 10, cancellationToken).ConfigureAwait(false);
             var previousPromotion = history
                 .Where(h => h.Action == "promote" && h.ExperimentId != currentExpId)
                 .OrderByDescending(h => h.Timestamp)
@@ -192,10 +192,10 @@ public sealed class FilePromotionManager : IPromotionManager
         }
 
         CopyDirectory(targetPath, productionPath);
-        await UpdateRegistryAsync(modelName, targetExpId, productionPath, cancellationToken);
+        await UpdateRegistryAsync(modelName, targetExpId, productionPath, cancellationToken).ConfigureAwait(false);
 
         await RecordHistoryAsync(modelName, targetExpId, currentExpId, "rollback",
-            $"Rolled back from {currentExpId} to {targetExpId}", cancellationToken);
+            $"Rolled back from {currentExpId} to {targetExpId}", cancellationToken).ConfigureAwait(false);
 
         return new RollbackOutcome(true, modelName, targetExpId, currentExpId, DateTimeOffset.UtcNow);
     }
@@ -212,7 +212,7 @@ public sealed class FilePromotionManager : IPromotionManager
             return Array.Empty<PromotionRecord>();
         }
 
-        var json = await File.ReadAllTextAsync(historyPath, cancellationToken);
+        var json = await File.ReadAllTextAsync(historyPath, cancellationToken).ConfigureAwait(false);
         var records = JsonSerializer.Deserialize<List<PromotionRecord>>(json, JsonOptions)
             ?? new List<PromotionRecord>();
 
@@ -236,7 +236,7 @@ public sealed class FilePromotionManager : IPromotionManager
         var records = new List<PromotionRecord>();
         if (File.Exists(historyPath))
         {
-            var json = await File.ReadAllTextAsync(historyPath, cancellationToken);
+            var json = await File.ReadAllTextAsync(historyPath, cancellationToken).ConfigureAwait(false);
             records = JsonSerializer.Deserialize<List<PromotionRecord>>(json, JsonOptions)
                 ?? new List<PromotionRecord>();
         }
@@ -244,7 +244,7 @@ public sealed class FilePromotionManager : IPromotionManager
         records.Add(new PromotionRecord(modelName, experimentId, previousExpId, action, reason, DateTimeOffset.UtcNow));
 
         await File.WriteAllTextAsync(historyPath,
-            JsonSerializer.Serialize(records, JsonOptions), cancellationToken);
+            JsonSerializer.Serialize(records, JsonOptions), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task UpdateRegistryAsync(
@@ -267,7 +267,7 @@ public sealed class FilePromotionManager : IPromotionManager
         };
 
         await File.WriteAllTextAsync(registryPath,
-            JsonSerializer.Serialize(registry, JsonOptions), cancellationToken);
+            JsonSerializer.Serialize(registry, JsonOptions), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<Dictionary<string, double>> LoadMetricsAsync(
@@ -281,7 +281,7 @@ public sealed class FilePromotionManager : IPromotionManager
             return new Dictionary<string, double>();
         }
 
-        var json = await File.ReadAllTextAsync(metricsPath, cancellationToken);
+        var json = await File.ReadAllTextAsync(metricsPath, cancellationToken).ConfigureAwait(false);
         return JsonSerializer.Deserialize<Dictionary<string, double>>(json, JsonOptions)
             ?? new Dictionary<string, double>();
     }
@@ -296,7 +296,7 @@ public sealed class FilePromotionManager : IPromotionManager
             return null;
         }
 
-        var json = await File.ReadAllTextAsync(registryPath, cancellationToken);
+        var json = await File.ReadAllTextAsync(registryPath, cancellationToken).ConfigureAwait(false);
         var registry = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOptions);
 
         if (registry == null || !registry.TryGetValue("production", out var productionEntry))

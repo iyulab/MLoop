@@ -937,7 +937,7 @@ public static class TrainCommand
                         if (labelSchema?.UniqueValueCount > 0)
                             classCount = labelSchema.UniqueValueCount;
                     }
-                    catch { /* schema unavailable, use default threshold */ }
+                    catch (Exception) { /* schema unavailable, use default threshold */ }
                 }
 
                 var minThreshold = ModelRegistry.GetMinimumMetricThreshold(primaryMetric, classCount);
