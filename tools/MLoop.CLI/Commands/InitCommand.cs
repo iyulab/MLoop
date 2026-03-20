@@ -21,7 +21,7 @@ public static class InitCommand
 
         var taskOption = new Option<string>("--task", "-t")
         {
-            Description = "ML task type: binary-classification, multiclass-classification, regression",
+            Description = "ML task type (e.g., regression, binary-classification, clustering, forecasting, recommendation)",
             DefaultValueFactory = _ => "binary-classification"
         };
 
@@ -89,7 +89,14 @@ public static class InitCommand
             }
 
             // Validate task
-            var validTasks = new[] { "binary-classification", "multiclass-classification", "regression" };
+            var validTasks = new[]
+            {
+                "binary-classification", "multiclass-classification", "regression",
+                "anomaly-detection", "clustering", "ranking", "forecasting",
+                "time-series-anomaly", "recommendation", "image-classification",
+                "object-detection", "text-classification", "sentence-similarity",
+                "ner", "question-answering"
+            };
             if (!validTasks.Contains(task))
             {
                 AnsiConsole.MarkupLine($"[red]Error:[/] Invalid task type. Valid options: {string.Join(", ", validTasks)}");
@@ -532,7 +539,22 @@ See: docs/EXTENSIBILITY.md for more information
             "binary-classification" => "accuracy",
             "multiclass-classification" => "macro_accuracy",
             "regression" => "r_squared",
+            "anomaly-detection" => "auc",
+            "clustering" => "average_distance",
+            "ranking" => "ndcg",
+            "forecasting" => "mae",
+            "time-series-anomaly" => "detection_rate",
+            "recommendation" => "rmse",
             _ => "auto"
+        };
+
+        var taskSpecificFields = task switch
+        {
+            "forecasting" => "\n    horizon: 10",
+            "ranking" => "\n    group_column: query_id",
+            "recommendation" => "\n    user_column: user_id\n    item_column: item_id",
+            "clustering" => "\n    # num_clusters: auto",
+            _ => ""
         };
 
         return $@"# MLoop Project Configuration
@@ -545,7 +567,7 @@ project: {projectName}
 models:
   {modelName}:
     task: {task}
-    label: {labelColumn}
+    label: {labelColumn}{taskSpecificFields}
     description: Default model for {task}
     training:
       time_limit_seconds: 300

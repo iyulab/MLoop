@@ -127,6 +127,7 @@ public static class PredictCommand
             string? experimentId = null;
             InputSchemaInfo? trainedSchema = null;
             string? configLabelColumn = null;
+            string? taskType = null;
 
             if (string.IsNullOrEmpty(modelPath))
             {
@@ -152,6 +153,7 @@ public static class PredictCommand
                     var experimentData = await experimentStore.LoadAsync(resolvedModelName, experimentId, CancellationToken.None);
                     trainedSchema = experimentData?.Config?.InputSchema;
                     configLabelColumn = experimentData?.Config?.LabelColumn;
+                    taskType = experimentData?.Task;
                 }
                 catch
                 {
@@ -187,6 +189,7 @@ public static class PredictCommand
                             var experimentData = await experimentStore.LoadAsync(resolvedModelName, possibleExpId, CancellationToken.None);
                             trainedSchema = experimentData?.Config?.InputSchema;
                             configLabelColumn = experimentData?.Config?.LabelColumn;
+                            taskType = experimentData?.Task;
                             experimentId = possibleExpId;
                         }
                         catch
@@ -357,6 +360,15 @@ public static class PredictCommand
                 "use-missing" => UnknownValueStrategy.UseMissing,
                 _ => UnknownValueStrategy.Auto
             };
+
+            // Warn for specialized prediction formats
+            if (taskType != null &&
+                (taskType.Equals("forecasting", StringComparison.OrdinalIgnoreCase) ||
+                 taskType.Equals("time-series-anomaly", StringComparison.OrdinalIgnoreCase)))
+            {
+                AnsiConsole.MarkupLine("[yellow]Note:[/] Forecasting/time-series predictions output specialized format. Results may differ from standard tabular predictions.");
+                AnsiConsole.WriteLine();
+            }
 
             // Make predictions with progress
             int predictedCount = 0;
