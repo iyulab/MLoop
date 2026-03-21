@@ -4,6 +4,7 @@ using MLoop.Core.Data;
 using MLoop.Core.Models;
 using FilePrepper.Pipeline;
 using Spectre.Console;
+using System.Text;
 
 namespace MLoop.CLI.Commands;
 
@@ -19,18 +20,30 @@ internal static class TrainDataValidator
     /// </summary>
     public static async Task ValidateLabelColumnAsync(string dataFilePath, string labelColumn, string modelName)
     {
-        var csvHelper = new CsvHelperImpl();
-        var data = await csvHelper.ReadAsync(dataFilePath);
+        // Read header with encoding detection
+        var (readPath, detection) = EncodingDetector.ConvertToUtf8WithBom(dataFilePath);
+        string? headerLine;
+        try
+        {
+            using var reader = new StreamReader(readPath, Encoding.UTF8);
+            headerLine = await reader.ReadLineAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            if (readPath != dataFilePath && File.Exists(readPath))
+            {
+                try { File.Delete(readPath); } catch { /* ignore */ }
+            }
+        }
 
-        if (data.Count == 0)
+        if (string.IsNullOrEmpty(headerLine))
         {
             throw new InvalidOperationException($"Data file is empty: {dataFilePath}");
         }
 
-        var firstRow = data[0];
-        var availableColumns = firstRow.Keys.ToArray();
+        var availableColumns = MLoop.Core.Prediction.CsvFieldParser.ParseFields(headerLine);
 
-        if (!firstRow.ContainsKey(labelColumn))
+        if (!availableColumns.Contains(labelColumn))
         {
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine($"[red]Error:[/] Label column not found in data for model '[cyan]{modelName}[/]'");
@@ -101,6 +114,9 @@ internal static class TrainDataValidator
         int seed,
         string projectRoot)
     {
+        // Remember original directory for output (before any encoding conversion)
+        var originalDir = Path.GetDirectoryName(dataFilePath)!;
+
         // Count rows
         int rowCount = 0;
         using (var reader = new StreamReader(dataFilePath))
@@ -112,6 +128,16 @@ internal static class TrainDataValidator
 
         if (rowCount <= maxRows)
             return dataFilePath;
+
+        // Convert encoding before sampling (CP949/EUC-KR → UTF-8)
+        // FilePrepper reads as UTF-8, so non-UTF-8 files must be converted first
+        var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(dataFilePath);
+        if (convertedPath != dataFilePath)
+        {
+            AnsiConsole.MarkupLine(
+                $"[dim]Encoding converted: {detection.Encoding.EncodingName} → UTF-8[/]");
+            dataFilePath = convertedPath;
+        }
 
         // Determine sampling strategy
         var strategy = explicitStrategy?.ToLowerInvariant();
@@ -183,9 +209,8 @@ internal static class TrainDataValidator
             strategyLabel = "random";
         }
 
-        // Write sampled data
-        var outputDir = Path.GetDirectoryName(dataFilePath)!;
-        var sampledPath = Path.Combine(outputDir, "train_sampled.csv");
+        // Write sampled data to original directory (not temp if encoding was converted)
+        var sampledPath = Path.Combine(originalDir, "train_sampled.csv");
         await sampled.ToCsvAsync(sampledPath).ConfigureAwait(false);
 
         AnsiConsole.MarkupLine(

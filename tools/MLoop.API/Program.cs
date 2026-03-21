@@ -62,15 +62,36 @@ builder.Services.AddSwaggerGen(c =>
             "All data endpoints require JWT Bearer authentication. " +
             "Use the 'name' query parameter to target specific models (defaults to 'default')."
     });
+
+    // TD-02: OpenAPI security definition deferred — requires Microsoft.OpenApi package
+    // Swashbuckle v10.1.5 on .NET 10 needs explicit package reference for OpenApi.Models
 });
 
 // Add JWT Authentication
+const string DefaultJwtKey = "MLoop-Default-Secret-Key-Change-In-Production-Min-32-Chars";
 var jwtKey = builder.Configuration["Jwt:Key"];
-if (string.IsNullOrEmpty(jwtKey))
+var isDefaultKey = string.IsNullOrEmpty(jwtKey) || jwtKey == DefaultJwtKey;
+
+if (isDefaultKey)
 {
-    jwtKey = "MLoop-Default-Secret-Key-Change-In-Production-Min-32-Chars";
-    Log.Warning("Using default JWT key. Set Jwt:Key in configuration for production use.");
+    if (builder.Environment.IsProduction())
+    {
+        Log.Fatal("JWT key is not configured. Set Jwt:Key in environment variables or appsettings.json.");
+        Log.Fatal("Example: Jwt__Key=your-secure-random-key-at-least-32-characters");
+        throw new InvalidOperationException(
+            "Cannot start in Production with default JWT key. Set Jwt:Key in configuration.");
+    }
+
+    jwtKey = DefaultJwtKey;
+    Log.Warning("Using default JWT key — NOT SAFE for production. Set Jwt:Key in configuration.");
 }
+
+if (jwtKey!.Length < 32)
+{
+    Log.Fatal("JWT key must be at least 32 characters. Current length: {Length}", jwtKey.Length);
+    throw new InvalidOperationException("JWT key must be at least 32 characters.");
+}
+
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "MLoop.API";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "MLoop.Client";
 
@@ -89,7 +110,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Admin policy: for destructive/write operations (promote, train, feedback)
+    options.AddPolicy("Admin", policy =>
+        policy.RequireRole("admin"));
+
+    // ReadOnly policy: for monitoring/read operations (default for all authenticated users)
+    options.AddPolicy("ReadOnly", policy =>
+        policy.RequireAuthenticatedUser());
+});
 
 // Add Rate Limiting (configurable via appsettings.json "IpRateLimiting" section)
 builder.Services.AddMemoryCache();
@@ -116,14 +146,25 @@ else
 builder.Services.AddInMemoryRateLimiting();
 builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
 
-// Add CORS
+// Add CORS (configurable via Cors:Origins in appsettings.json)
+var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        if (corsOrigins is { Length: > 0 })
+        {
+            policy.WithOrigins(corsOrigins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
+        else
+        {
+            // Default: allow all (development-friendly, non-production)
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
     });
 });
 
@@ -782,7 +823,7 @@ app.MapPost("/promote", async (
 .Produces<object>(StatusCodes.Status400BadRequest)
 .Produces<object>(StatusCodes.Status404NotFound)
 .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
+.RequireAuthorization("Admin");
 
 // Compare experiments endpoint (secured)
 app.MapGet("/compare", async (
@@ -943,7 +984,7 @@ app.MapPost("/evaluate", async (
 .Produces<object>(StatusCodes.Status400BadRequest)
 .Produces<object>(StatusCodes.Status404NotFound)
 .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
+.RequireAuthorization("Admin");
 
 // Prediction logs endpoint (secured)
 app.MapGet("/logs", async (
@@ -1188,7 +1229,7 @@ app.MapPost("/train", (
 .WithTags("Training")
 .Produces<object>(StatusCodes.Status202Accepted)
 .Produces<object>(StatusCodes.Status400BadRequest)
-.RequireAuthorization();
+.RequireAuthorization("Admin");
 
 // List all jobs
 app.MapGet("/jobs", (
