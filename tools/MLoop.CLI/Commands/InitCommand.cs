@@ -613,27 +613,8 @@ data:
         return System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-z][a-z0-9]*(-[a-z0-9]+)*$");
     }
 
-    /// <summary>
-    /// Recursively copies a directory and all its contents.
-    /// </summary>
     private static void CopyDirectory(string sourceDir, string destDir)
-    {
-        Directory.CreateDirectory(destDir);
-
-        foreach (var file in Directory.GetFiles(sourceDir))
-        {
-            var fileName = Path.GetFileName(file);
-            var destFile = Path.Combine(destDir, fileName);
-            File.Copy(file, destFile, overwrite: true);
-        }
-
-        foreach (var subDir in Directory.GetDirectories(sourceDir))
-        {
-            var dirName = Path.GetFileName(subDir);
-            var destSubDir = Path.Combine(destDir, dirName);
-            CopyDirectory(subDir, destSubDir);
-        }
-    }
+        => MLoop.Ops.Services.FilePromotionManager.CopyDirectory(sourceDir, destDir);
 
     private class NullLogger : MLoop.Extensibility.Preprocessing.ILogger
     {

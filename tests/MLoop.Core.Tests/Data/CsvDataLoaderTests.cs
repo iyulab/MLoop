@@ -1174,4 +1174,98 @@ public class CsvDataLoaderTests : IDisposable
     }
 
     #endregion
+
+    private string WriteTempCsv(string fileName, string content)
+    {
+        var path = Path.Combine(_tempDirectory, fileName);
+        File.WriteAllText(path, content, System.Text.Encoding.UTF8);
+        return path;
+    }
+
+    #region WarnMixedTypeColumns
+
+    [Fact]
+    public void WarnMixedTypeColumns_AllNumeric_ReturnsEmpty()
+    {
+        var lines = new List<string> { "A,B,Label" };
+        for (int i = 0; i < 20; i++) lines.Add($"{i},{i * 2},class{i % 3}");
+        var csvPath = WriteTempCsv("all_numeric.csv", string.Join("\n", lines));
+
+        var result = CsvDataLoader.WarnMixedTypeColumns(csvPath, "Label");
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void WarnMixedTypeColumns_AllText_ReturnsEmpty()
+    {
+        var lines = new List<string> { "Name,City,Label" };
+        for (int i = 0; i < 20; i++) lines.Add($"name{i},city{i},label{i}");
+        var csvPath = WriteTempCsv("all_text.csv", string.Join("\n", lines));
+
+        var result = CsvDataLoader.WarnMixedTypeColumns(csvPath, "Label");
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void WarnMixedTypeColumns_MostlyNumericWithSomeText_DetectsMixed()
+    {
+        var lines = new List<string> { "Stock,Price,Label" };
+        for (int i = 0; i < 90; i++) lines.Add($"{i * 100},{i * 1.5},A");
+        // Add text values to Stock column
+        lines.Add("secret,95.0,A");
+        lines.Add("N/A,96.0,B");
+        lines.Add("hidden,97.0,A");
+        var csvPath = WriteTempCsv("mixed.csv", string.Join("\n", lines));
+
+        var result = CsvDataLoader.WarnMixedTypeColumns(csvPath, "Label");
+
+        Assert.Contains("Stock", result);
+        Assert.DoesNotContain("Price", result); // Price is 100% numeric
+        Assert.DoesNotContain("Label", result); // Label column excluded
+    }
+
+    [Fact]
+    public void WarnMixedTypeColumns_LabelColumnExcluded()
+    {
+        var lines = new List<string> { "Feature,Label" };
+        for (int i = 0; i < 90; i++) lines.Add($"{i},{i % 5}");
+        lines.Add("text,3");
+        lines.Add("text2,4");
+        var csvPath = WriteTempCsv("label_excluded.csv", string.Join("\n", lines));
+
+        var result = CsvDataLoader.WarnMixedTypeColumns(csvPath, "Label");
+
+        Assert.DoesNotContain("Label", result);
+    }
+
+    [Fact]
+    public void WarnMixedTypeColumns_TooFewRows_ReturnsEmpty()
+    {
+        var csvPath = WriteTempCsv("few_rows.csv", "A,B\n1,text\n2,3\n");
+
+        var result = CsvDataLoader.WarnMixedTypeColumns(csvPath, null);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void WarnMixedTypeColumns_EmitsWarningLog()
+    {
+        var lines = new List<string> { "Amount,Label" };
+        for (int i = 0; i < 50; i++) lines.Add($"{i * 100},A");
+        lines.Add("closed,B");
+        lines.Add("hidden,A");
+        var csvPath = WriteTempCsv("warn_log.csv", string.Join("\n", lines));
+
+        var warnings = new List<string>();
+        CsvDataLoader.WarnMixedTypeColumns(csvPath, "Label", msg => warnings.Add(msg));
+
+        Assert.Single(warnings);
+        Assert.Contains("Amount", warnings[0]);
+        Assert.Contains("column_overrides", warnings[0]);
+    }
+
+    #endregion
 }

@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="AspNetCoreRateLimit" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.OpenApi" />
     <PackageReference Include="Microsoft.ML" />
     <PackageReference Include="Microsoft.ML.AutoML" />
     <PackageReference Include="Swashbuckle.AspNetCore" />

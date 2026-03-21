@@ -4,6 +4,7 @@ using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using Spectre.Console;
@@ -11,14 +12,14 @@ using Spectre.Console;
 namespace MLoop.CLI.Commands;
 
 /// <summary>
-/// CLI command for sampling prediction data for retraining.
-/// Supports Random, Recent, and FeedbackPriority strategies.
+/// CLI command for sampling data.
+/// Two modes: prediction log sampling (--model) and general CSV sampling (--from).
 /// </summary>
 public static class SampleCommand
 {
     public static Command Create()
     {
-        var command = new Command("sample", "Create retraining datasets from predictions and feedback");
+        var command = new Command("sample", "Sample data from CSV files or prediction logs");
 
         command.Subcommands.Add(CreateCreateCommand());
         command.Subcommands.Add(CreateStatsCommand());
@@ -28,42 +29,67 @@ public static class SampleCommand
 
     private static Command CreateCreateCommand()
     {
-        var nameOption = new Option<string>("--model", "-m")
+        var nameOption = new Option<string?>("--model", "-m")
         {
-            Description = "Model name to sample from",
-            Required = true
+            Description = "Model name to sample from (prediction log mode)"
         };
 
-        var sizeOption = new Option<int>("--size", "-n")
+        var fromOption = new Option<string?>("--from", "-f")
         {
-            Description = "Number of samples to include",
+            Description = "CSV file to sample from (general-purpose mode)"
+        };
+
+        var sizeOption = new Option<int>("--rows", "-n")
+        {
+            Description = "Number of rows to sample",
             DefaultValueFactory = _ => 1000
         };
+        sizeOption.Aliases.Add("--size");
 
         var strategyOption = new Option<string>("--strategy", "-s")
         {
-            Description = "Sampling strategy: random, recent, feedback-priority",
+            Description = "Sampling strategy: random, head, stratified (CSV) / recent, feedback-priority (logs)",
             DefaultValueFactory = _ => "random"
         };
 
         var outputOption = new Option<string?>("--output", "-o")
         {
-            Description = "Output CSV file path (default: .mloop/samples/<model>_<timestamp>.csv)"
+            Description = "Output CSV file path"
         };
 
-        var command = new Command("create", "Create a retraining dataset from logged predictions");
+        var labelOption = new Option<string?>("--label", "-l")
+        {
+            Description = "Label column for stratified sampling"
+        };
+
+        var command = new Command("create", "Create a sampled dataset from CSV file or prediction logs");
         command.Options.Add(nameOption);
+        command.Options.Add(fromOption);
         command.Options.Add(sizeOption);
         command.Options.Add(strategyOption);
         command.Options.Add(outputOption);
+        command.Options.Add(labelOption);
 
         command.SetAction((parseResult) =>
         {
-            var modelName = parseResult.GetValue(nameOption)!;
+            var modelName = parseResult.GetValue(nameOption);
+            var fromPath = parseResult.GetValue(fromOption);
             var size = parseResult.GetValue(sizeOption);
             var strategy = parseResult.GetValue(strategyOption)!;
             var output = parseResult.GetValue(outputOption);
-            return ExecuteCreateAsync(modelName, size, strategy, output);
+            var label = parseResult.GetValue(labelOption);
+
+            if (!string.IsNullOrEmpty(fromPath))
+                return ExecuteFromCsvAsync(fromPath, size, strategy, output, label);
+
+            if (!string.IsNullOrEmpty(modelName))
+                return ExecuteCreateAsync(modelName, size, strategy, output);
+
+            AnsiConsole.MarkupLine("[red]Error:[/] Either --from <csv-file> or --model <name> is required.");
+            AnsiConsole.MarkupLine("[grey]Examples:[/]");
+            AnsiConsole.MarkupLine("  [blue]mloop sample create --from train.csv --rows 100[/]");
+            AnsiConsole.MarkupLine("  [blue]mloop sample create --model default --rows 500[/]");
+            return Task.FromResult(1);
         });
 
         return command;
@@ -94,6 +120,64 @@ public static class SampleCommand
         });
 
         return command;
+    }
+
+    private static async Task<int> ExecuteFromCsvAsync(
+        string fromPath,
+        int rows,
+        string strategyName,
+        string? outputPath,
+        string? labelColumn)
+    {
+        try
+        {
+            var csvStrategy = ParseCsvStrategy(strategyName);
+            if (csvStrategy == null)
+            {
+                AnsiConsole.MarkupLine($"[red]Error:[/] Unknown strategy '{strategyName}'");
+                AnsiConsole.MarkupLine("[grey]Valid strategies for CSV: random, head, stratified[/]");
+                return 1;
+            }
+
+            // Resolve input path
+            var resolvedInput = Path.GetFullPath(fromPath);
+            if (!File.Exists(resolvedInput))
+            {
+                AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {resolvedInput}");
+                return 1;
+            }
+
+            // Generate default output path if not provided
+            if (string.IsNullOrEmpty(outputPath))
+            {
+                var dir = Path.GetDirectoryName(resolvedInput) ?? ".";
+                var name = Path.GetFileNameWithoutExtension(resolvedInput);
+                var ext = Path.GetExtension(resolvedInput);
+                outputPath = Path.Combine(dir, $"{name}_sampled{ext}");
+            }
+
+            var sampler = new CsvSampler();
+
+            CsvSamplingResult? result = null;
+            await AnsiConsole.Status()
+                .StartAsync($"Sampling {rows} rows from {Path.GetFileName(fromPath)}...", async ctx =>
+                {
+                    result = await sampler.SampleAsync(
+                        resolvedInput,
+                        outputPath,
+                        rows,
+                        csvStrategy.Value,
+                        labelColumn);
+                });
+
+            OutputCsvResult(result!);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            ErrorSuggestions.DisplayError(ex, "sample");
+            return 1;
+        }
     }
 
     private static async Task<int> ExecuteCreateAsync(
@@ -195,6 +279,36 @@ public static class SampleCommand
             "feedback-priority" or "feedbackpriority" => SamplingStrategy.FeedbackPriority,
             _ => null
         };
+    }
+
+    internal static CsvSamplingStrategy? ParseCsvStrategy(string name)
+    {
+        return name.ToLowerInvariant() switch
+        {
+            "random" => CsvSamplingStrategy.Random,
+            "head" => CsvSamplingStrategy.Head,
+            "stratified" => CsvSamplingStrategy.Stratified,
+            _ => null
+        };
+    }
+
+    private static void OutputCsvResult(CsvSamplingResult result)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(new Rule("[cyan]CSV Sampling Complete[/]").LeftJustified());
+        AnsiConsole.WriteLine();
+
+        var grid = new Grid();
+        grid.AddColumn();
+        grid.AddColumn();
+
+        grid.AddRow("[grey]Output File:[/]", $"[white]{result.OutputPath}[/]");
+        grid.AddRow("[grey]Rows Sampled:[/]", $"[green]{result.SampledCount:N0}[/]");
+        grid.AddRow("[grey]Total Rows:[/]", $"[white]{result.TotalRows:N0}[/]");
+        grid.AddRow("[grey]Strategy:[/]", $"[yellow]{result.StrategyUsed}[/]");
+
+        AnsiConsole.Write(grid);
+        AnsiConsole.WriteLine();
     }
 
     private static void OutputCreateResult(SamplingResult result)
