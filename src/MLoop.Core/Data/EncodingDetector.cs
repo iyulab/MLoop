@@ -129,8 +129,9 @@ public static class EncodingDetector
     {
         var detection = DetectEncoding(filePath);
 
-        // If already UTF-8 with BOM, return original
-        if (detection.HasBom && detection.Encoding.CodePage == Encoding.UTF8.CodePage)
+        // If already UTF-8 (with or without BOM), return original — no conversion needed.
+        // Re-encoding a valid UTF-8 file can cause subtle issues with intermediate temp files.
+        if (detection.Encoding.CodePage == Encoding.UTF8.CodePage)
         {
             return (filePath, detection);
         }
@@ -166,7 +167,12 @@ public static class EncodingDetector
             else if ((b & 0xE0) == 0xC0)
             {
                 // 2-byte sequence
-                if (i + 1 >= data.Length || (data[i + 1] & 0xC0) != 0x80)
+                if (i + 1 >= data.Length)
+                {
+                    // Truncated at buffer boundary — not invalid, just incomplete
+                    break;
+                }
+                if ((data[i + 1] & 0xC0) != 0x80)
                 {
                     invalidSequences++;
                     i++;
@@ -180,8 +186,12 @@ public static class EncodingDetector
             else if ((b & 0xF0) == 0xE0)
             {
                 // 3-byte sequence (common for Korean UTF-8)
-                if (i + 2 >= data.Length ||
-                    (data[i + 1] & 0xC0) != 0x80 ||
+                if (i + 2 >= data.Length)
+                {
+                    // Truncated at buffer boundary — not invalid, just incomplete
+                    break;
+                }
+                if ((data[i + 1] & 0xC0) != 0x80 ||
                     (data[i + 2] & 0xC0) != 0x80)
                 {
                     invalidSequences++;
@@ -196,8 +206,12 @@ public static class EncodingDetector
             else if ((b & 0xF8) == 0xF0)
             {
                 // 4-byte sequence
-                if (i + 3 >= data.Length ||
-                    (data[i + 1] & 0xC0) != 0x80 ||
+                if (i + 3 >= data.Length)
+                {
+                    // Truncated at buffer boundary — not invalid, just incomplete
+                    break;
+                }
+                if ((data[i + 1] & 0xC0) != 0x80 ||
                     (data[i + 2] & 0xC0) != 0x80 ||
                     (data[i + 3] & 0xC0) != 0x80)
                 {
@@ -219,9 +233,22 @@ public static class EncodingDetector
         }
 
         bool isValid = invalidSequences == 0;
-        float confidence = invalidSequences == 0
-            ? (validMultibyteSequences > 0 ? 0.95f : 0.8f) // Higher confidence if we saw multibyte
-            : 1.0f - Math.Min(1.0f, invalidSequences / (float)data.Length * 10);
+        float confidence;
+        if (invalidSequences == 0)
+        {
+            confidence = validMultibyteSequences > 0 ? 0.95f : 0.8f;
+        }
+        else
+        {
+            // Use ratio of invalid to non-ASCII sequences, not total data length.
+            // Even a few invalid sequences in mostly-ASCII data (e.g., CP949 with Korean headers
+            // and numeric body) must lower confidence below the 0.9 threshold.
+            int totalNonAscii = validMultibyteSequences + invalidSequences;
+            float invalidRatio = totalNonAscii > 0
+                ? invalidSequences / (float)totalNonAscii
+                : 1.0f;
+            confidence = Math.Max(0.0f, 1.0f - invalidRatio * 2.0f);
+        }
 
         return (isValid, confidence);
     }

@@ -154,22 +154,15 @@ public class EncodingDetectorTests : IDisposable
     }
 
     [Fact]
-    public void ConvertToUtf8WithBom_Utf8NoBom_CreatesNewFileWithBom()
+    public void ConvertToUtf8WithBom_Utf8NoBom_ReturnsOriginalPath()
     {
+        // UTF-8 without BOM is still valid UTF-8 — no conversion needed
         var path = CreateTempFile("test,data\n1,2", Encoding.UTF8);
 
         var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(path);
-        _tempFiles.Add(convertedPath); // Cleanup temp file
 
-        Assert.NotEqual(path, convertedPath);
-        Assert.True(detection.WasConverted);
-
-        // Verify BOM was added
-        var bytes = File.ReadAllBytes(convertedPath);
-        Assert.True(bytes.Length >= 3);
-        Assert.Equal(0xEF, bytes[0]);
-        Assert.Equal(0xBB, bytes[1]);
-        Assert.Equal(0xBF, bytes[2]);
+        Assert.Equal(path, convertedPath);
+        Assert.False(detection.WasConverted);
     }
 
     [Fact]
@@ -192,6 +185,58 @@ public class EncodingDetectorTests : IDisposable
         var content = File.ReadAllText(convertedPath, Encoding.UTF8);
         Assert.Contains("설비명", content);
         Assert.Contains("테스트", content);
+    }
+
+    [Fact]
+    public void DetectEncoding_Cp949Header_AsciiBody_DetectsKorean()
+    {
+        // Simulate real-world case: CP949 Korean headers + mostly numeric/ASCII body
+        // This is common in KAMP datasets (Korean column names, numeric data)
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        var cp949 = Encoding.GetEncoding(949);
+
+        // Build a file with Korean headers and many ASCII data rows
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("uid,order_date,제품코드,제품명,총주문잔량");
+        for (int i = 0; i < 1000; i++)
+        {
+            sb.AppendLine($"{i},2024-01-{(i % 28) + 1:D2},P{i:D4},Product{i},{i * 10}");
+        }
+
+        var bytes = cp949.GetBytes(sb.ToString());
+        var path = CreateTempFile(bytes);
+
+        var result = EncodingDetector.DetectEncoding(path);
+
+        // Must detect as CP949, NOT UTF-8 — even though body is mostly ASCII
+        Assert.Equal("CP949", result.EncodingName);
+        Assert.True(result.Confidence >= 0.5f,
+            $"Expected CP949 confidence >= 0.5, got {result.Confidence}");
+    }
+
+    [Fact]
+    public void ConvertToUtf8WithBom_Cp949Header_AsciiBody_ConvertsCorrectly()
+    {
+        // Real-world case: CP949 headers preserved after conversion
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        var cp949 = Encoding.GetEncoding(949);
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("uid,제품등급,총주문잔량");
+        for (int i = 0; i < 100; i++)
+            sb.AppendLine($"{i},A등급,{i * 100}");
+
+        var bytes = cp949.GetBytes(sb.ToString());
+        var path = CreateTempFile(bytes);
+
+        var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(path);
+        _tempFiles.Add(convertedPath);
+
+        Assert.True(detection.WasConverted);
+
+        var content = File.ReadAllText(convertedPath, Encoding.UTF8);
+        Assert.Contains("제품등급", content);
+        Assert.Contains("총주문잔량", content);
     }
 
     #endregion

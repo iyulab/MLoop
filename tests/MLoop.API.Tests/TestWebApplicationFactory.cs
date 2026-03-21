@@ -64,12 +64,16 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
                 new FilePromotionManager(_testProjectRoot, sp.GetRequiredService<IModelComparer>()));
         });
 
-        // Disable authentication for tests
+        // Override authentication for tests (no real JWT needed)
         builder.ConfigureServices(services =>
         {
             services.AddAuthentication("Test")
                 .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TestAuthHandler>("Test", options => { });
-            services.AddAuthorization();
+            services.AddAuthorization(options =>
+            {
+                options.AddPolicy("Admin", policy => policy.RequireRole("admin"));
+                options.AddPolicy("ReadOnly", policy => policy.RequireAuthenticatedUser());
+            });
         });
     }
 
@@ -120,7 +124,11 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var claims = new[] { new Claim(ClaimTypes.Name, "Test User") };
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.Name, "Test User"),
+            new Claim(ClaimTypes.Role, "admin")  // Grant admin role for testing
+        };
         var identity = new ClaimsIdentity(claims, "Test");
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, "Test");
