@@ -1,5 +1,6 @@
 using System.Text.Json;
-using MLoop.CLI.Commands;
+using MLoop.Ops.Interfaces;
+using MLoop.Ops.Services;
 
 namespace MLoop.Tests.Commands;
 
@@ -19,138 +20,120 @@ public class PromoteCommandTests : IDisposable
             Directory.Delete(_tempDir, recursive: true);
     }
 
-    #region CopyDirectory
+    private FilePromotionManager CreateManager()
+    {
+        var comparer = new FileModelComparer(_tempDir);
+        return new FilePromotionManager(_tempDir, comparer);
+    }
+
+    #region RecordPromotionAsync
 
     [Fact]
-    public void CopyDirectory_CopiesFiles()
+    public async Task RecordPromotion_CreatesNewFile()
     {
-        var src = Path.Combine(_tempDir, "src");
-        var dst = Path.Combine(_tempDir, "dst");
-        Directory.CreateDirectory(src);
-        File.WriteAllText(Path.Combine(src, "model.zip"), "data");
-        File.WriteAllText(Path.Combine(src, "config.json"), "{}");
+        var modelsDir = Path.Combine(_tempDir, "models", "default");
+        Directory.CreateDirectory(modelsDir);
+        var manager = CreateManager();
 
-        PromoteCommand.CopyDirectory(src, dst);
+        await manager.RecordPromotionAsync("default", "exp-001", null, "promote");
 
-        Assert.True(File.Exists(Path.Combine(dst, "model.zip")));
-        Assert.True(File.Exists(Path.Combine(dst, "config.json")));
+        var historyPath = Path.Combine(modelsDir, "promotion-history.json");
+        Assert.True(File.Exists(historyPath));
+
+        var json = await File.ReadAllTextAsync(historyPath);
+        var records = JsonSerializer.Deserialize<List<PromotionRecord>>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        Assert.NotNull(records);
+        Assert.Single(records);
+        Assert.Equal("exp-001", records[0].ExperimentId);
+        Assert.Equal("promote", records[0].Action);
     }
 
     [Fact]
-    public void CopyDirectory_CopiesNestedDirectories()
+    public async Task RecordPromotion_AppendsToExisting()
     {
-        var src = Path.Combine(_tempDir, "src");
-        var nested = Path.Combine(src, "sub", "deep");
-        Directory.CreateDirectory(nested);
-        File.WriteAllText(Path.Combine(nested, "file.txt"), "content");
+        var modelsDir = Path.Combine(_tempDir, "models", "default");
+        Directory.CreateDirectory(modelsDir);
+        var manager = CreateManager();
 
-        var dst = Path.Combine(_tempDir, "dst");
-        PromoteCommand.CopyDirectory(src, dst);
+        await manager.RecordPromotionAsync("default", "exp-001", null, "promote");
+        await manager.RecordPromotionAsync("default", "exp-002", "exp-001", "promote");
 
-        Assert.True(File.Exists(Path.Combine(dst, "sub", "deep", "file.txt")));
-        Assert.Equal("content", File.ReadAllText(Path.Combine(dst, "sub", "deep", "file.txt")));
+        var historyPath = Path.Combine(modelsDir, "promotion-history.json");
+        var json = await File.ReadAllTextAsync(historyPath);
+        var records = JsonSerializer.Deserialize<List<PromotionRecord>>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        Assert.NotNull(records);
+        Assert.Equal(2, records.Count);
+        Assert.Equal("exp-002", records[1].ExperimentId);
+        Assert.Equal("exp-001", records[1].PreviousExperimentId);
     }
 
     [Fact]
-    public void CopyDirectory_OverwritesExisting()
+    public async Task RecordPromotion_RecordsModelName()
     {
-        var src = Path.Combine(_tempDir, "src");
-        var dst = Path.Combine(_tempDir, "dst");
-        Directory.CreateDirectory(src);
-        Directory.CreateDirectory(dst);
+        var modelsDir = Path.Combine(_tempDir, "models", "mymodel");
+        Directory.CreateDirectory(modelsDir);
+        var manager = CreateManager();
 
-        File.WriteAllText(Path.Combine(src, "file.txt"), "new");
-        File.WriteAllText(Path.Combine(dst, "file.txt"), "old");
+        await manager.RecordPromotionAsync("mymodel", "exp-003", "exp-002", "promote");
 
-        PromoteCommand.CopyDirectory(src, dst);
+        var historyPath = Path.Combine(modelsDir, "promotion-history.json");
+        var json = await File.ReadAllTextAsync(historyPath);
+        var records = JsonSerializer.Deserialize<List<PromotionRecord>>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-        Assert.Equal("new", File.ReadAllText(Path.Combine(dst, "file.txt")));
+        Assert.NotNull(records);
+        Assert.Equal("mymodel", records[0].ModelName);
     }
 
     [Fact]
-    public void CopyDirectory_EmptySource_CreatesEmptyDestination()
+    public async Task RecordPromotion_CreatesDirectoryIfNeeded()
     {
-        var src = Path.Combine(_tempDir, "src");
-        var dst = Path.Combine(_tempDir, "dst");
-        Directory.CreateDirectory(src);
+        var manager = CreateManager();
 
-        PromoteCommand.CopyDirectory(src, dst);
+        await manager.RecordPromotionAsync("newmodel", "exp-001", null, "promote");
 
-        Assert.True(Directory.Exists(dst));
-        Assert.Empty(Directory.GetFiles(dst));
+        var historyPath = Path.Combine(_tempDir, "models", "newmodel", "promotion-history.json");
+        Assert.True(File.Exists(historyPath));
     }
 
     #endregion
 
-    #region RecordPromotionHistoryAsync
+    #region BackupProductionAsync
 
     [Fact]
-    public async Task RecordPromotionHistory_CreatesNewFile()
+    public async Task BackupProduction_NoProduction_ReturnsNull()
     {
-        var modelsDir = Path.Combine(_tempDir, "models", "default");
-        Directory.CreateDirectory(modelsDir);
+        var manager = CreateManager();
 
-        await PromoteCommand.RecordPromotionHistoryAsync(
-            _tempDir, "default", "exp-001", null, "promote");
+        var result = await manager.BackupProductionAsync("default");
 
-        var historyPath = Path.Combine(modelsDir, "promotion-history.json");
-        Assert.True(File.Exists(historyPath));
-
-        var json = await File.ReadAllTextAsync(historyPath);
-        var records = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(json);
-        Assert.NotNull(records);
-        Assert.Single(records);
-        Assert.Equal("exp-001", records[0]["experimentId"].GetString());
-        Assert.Equal("promote", records[0]["action"].GetString());
+        Assert.Null(result);
     }
 
     [Fact]
-    public async Task RecordPromotionHistory_AppendsToExisting()
+    public async Task BackupProduction_WithProduction_CreatesBackup()
     {
-        var modelsDir = Path.Combine(_tempDir, "models", "default");
-        Directory.CreateDirectory(modelsDir);
+        var manager = CreateManager();
 
-        await PromoteCommand.RecordPromotionHistoryAsync(
-            _tempDir, "default", "exp-001", null, "promote");
-        await PromoteCommand.RecordPromotionHistoryAsync(
-            _tempDir, "default", "exp-002", "exp-001", "promote");
+        // Set up production with registry
+        var modelDir = Path.Combine(_tempDir, "models", "default");
+        var productionDir = Path.Combine(modelDir, "production");
+        Directory.CreateDirectory(productionDir);
+        File.WriteAllText(Path.Combine(productionDir, "model.zip"), "model-data");
 
-        var historyPath = Path.Combine(modelsDir, "promotion-history.json");
-        var json = await File.ReadAllTextAsync(historyPath);
-        var records = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(json);
+        // Write registry with production experiment ID
+        var registryPath = Path.Combine(modelDir, "model-registry.json");
+        var registry = new { production = new { experimentId = "exp-001", modelPath = productionDir, promotedAt = DateTimeOffset.UtcNow } };
+        await File.WriteAllTextAsync(registryPath, JsonSerializer.Serialize(registry, new JsonSerializerOptions { WriteIndented = true }));
 
-        Assert.NotNull(records);
-        Assert.Equal(2, records.Count);
-        Assert.Equal("exp-002", records[1]["experimentId"].GetString());
-        Assert.Equal("exp-001", records[1]["previousExperimentId"].GetString());
-    }
+        var backupPath = await manager.BackupProductionAsync("default");
 
-    [Fact]
-    public async Task RecordPromotionHistory_RecordsPreviousExperiment()
-    {
-        var modelsDir = Path.Combine(_tempDir, "models", "mymodel");
-        Directory.CreateDirectory(modelsDir);
-
-        await PromoteCommand.RecordPromotionHistoryAsync(
-            _tempDir, "mymodel", "exp-003", "exp-002", "promote");
-
-        var historyPath = Path.Combine(modelsDir, "promotion-history.json");
-        var json = await File.ReadAllTextAsync(historyPath);
-        var records = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(json);
-
-        Assert.NotNull(records);
-        Assert.Equal("mymodel", records[0]["modelName"].GetString());
-    }
-
-    [Fact]
-    public async Task RecordPromotionHistory_CreatesDirectoryIfNeeded()
-    {
-        // Do not pre-create the models directory
-        await PromoteCommand.RecordPromotionHistoryAsync(
-            _tempDir, "newmodel", "exp-001", null, "promote");
-
-        var historyPath = Path.Combine(_tempDir, "models", "newmodel", "promotion-history.json");
-        Assert.True(File.Exists(historyPath));
+        Assert.NotNull(backupPath);
+        Assert.True(Directory.Exists(backupPath));
+        Assert.True(File.Exists(Path.Combine(backupPath, "model.zip")));
     }
 
     #endregion

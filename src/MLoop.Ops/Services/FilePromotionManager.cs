@@ -222,6 +222,41 @@ public sealed class FilePromotionManager : IPromotionManager
             .ToList();
     }
 
+    public async Task RecordPromotionAsync(
+        string modelName,
+        string experimentId,
+        string? previousExpId,
+        string action,
+        string? reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        await RecordHistoryAsync(modelName, experimentId, previousExpId, action,
+            reason ?? $"{action}: {experimentId} (previous: {previousExpId ?? "none"})",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string?> BackupProductionAsync(
+        string modelName,
+        CancellationToken cancellationToken = default)
+    {
+        var modelPath = GetModelPath(modelName);
+        var productionPath = Path.Combine(modelPath, "production");
+
+        if (!Directory.Exists(productionPath))
+            return null;
+
+        var currentExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken).ConfigureAwait(false);
+        if (currentExpId == null)
+            return null;
+
+        var backupPath = Path.Combine(modelPath, "backups",
+            $"{currentExpId}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}");
+        Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
+        CopyDirectory(productionPath, backupPath);
+
+        return backupPath;
+    }
+
     private async Task RecordHistoryAsync(
         string modelName,
         string experimentId,
@@ -313,7 +348,7 @@ public sealed class FilePromotionManager : IPromotionManager
         return null;
     }
 
-    private static void CopyDirectory(string source, string destination)
+    public static void CopyDirectory(string source, string destination)
     {
         Directory.CreateDirectory(destination);
 

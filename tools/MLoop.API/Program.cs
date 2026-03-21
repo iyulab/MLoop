@@ -63,8 +63,19 @@ builder.Services.AddSwaggerGen(c =>
             "Use the 'name' query parameter to target specific models (defaults to 'default')."
     });
 
-    // TD-02: OpenAPI security definition deferred — requires Microsoft.OpenApi package
-    // Swashbuckle v10.1.5 on .NET 10 needs explicit package reference for OpenApi.Models
+    const string bearerSchemeId = "bearer";
+    c.AddSecurityDefinition(bearerSchemeId, new Microsoft.OpenApi.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Enter your JWT token. Admin endpoints (promote, evaluate, train) require 'admin' role claim."
+    });
+
+    c.AddSecurityRequirement(document => new Microsoft.OpenApi.OpenApiSecurityRequirement
+    {
+        [new Microsoft.OpenApi.OpenApiSecuritySchemeReference(bearerSchemeId, document)] = []
+    });
 });
 
 // Add JWT Authentication
@@ -734,7 +745,7 @@ app.MapPost("/promote", async (
     [FromBody] PromoteRequest request,
     IModelRegistry registry,
     IExperimentStore experimentStore,
-    IProjectDiscovery projectDiscovery,
+    IPromotionManager promotionManager,
     ILogger<Program> logger,
     CancellationToken ct) =>
 {
@@ -770,17 +781,11 @@ app.MapPost("/promote", async (
         var previousExpId = currentProduction?.ExperimentId;
 
         // Backup current production if exists
-        var projectRoot = projectDiscovery.FindRoot() ?? Directory.GetCurrentDirectory();
         if (currentProduction != null && request.CreateBackup != false)
         {
-            var productionPath = registry.GetProductionPath(modelName);
-            if (Directory.Exists(productionPath))
+            var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
+            if (backupPath != null)
             {
-                var backupsDir = Path.Combine(projectRoot, "models", modelName, "backups");
-                var backupPath = Path.Combine(backupsDir,
-                    $"{currentProduction.ExperimentId}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}");
-                Directory.CreateDirectory(backupsDir);
-                CopyDirectoryRecursive(productionPath, backupPath);
                 logger.LogInformation("Backed up current production to {BackupPath}", backupPath);
             }
         }
@@ -789,8 +794,8 @@ app.MapPost("/promote", async (
         await registry.PromoteAsync(modelName, experimentId, ct);
 
         // Record promotion history
-        await RecordPromotionHistoryAsync(
-            projectRoot, modelName, experimentId, previousExpId, "api-promote");
+        await promotionManager.RecordPromotionAsync(
+            modelName, experimentId, previousExpId, "api-promote", cancellationToken: ct);
 
         logger.LogInformation("Promoted experiment '{ExperimentId}' to production for model '{ModelName}' in {ElapsedMs}ms",
             experimentId, modelName, stopwatch.ElapsedMilliseconds);
@@ -1337,42 +1342,6 @@ static bool TryParseDateRange(string? from, string? to,
     }
 
     return true;
-}
-
-static void CopyDirectoryRecursive(string source, string destination)
-{
-    Directory.CreateDirectory(destination);
-    foreach (var file in Directory.GetFiles(source))
-        File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
-    foreach (var dir in Directory.GetDirectories(source))
-        CopyDirectoryRecursive(dir, Path.Combine(destination, Path.GetFileName(dir)));
-}
-
-static async Task RecordPromotionHistoryAsync(
-    string projectRoot, string modelName, string experimentId,
-    string? previousExpId, string action)
-{
-    var historyPath = Path.Combine(projectRoot, "models", modelName, "promotion-history.json");
-    Directory.CreateDirectory(Path.GetDirectoryName(historyPath)!);
-
-    var records = new List<Dictionary<string, object?>>();
-    if (File.Exists(historyPath))
-    {
-        var json = await File.ReadAllTextAsync(historyPath);
-        records = JsonSerializer.Deserialize<List<Dictionary<string, object?>>>(json) ?? [];
-    }
-
-    records.Add(new Dictionary<string, object?>
-    {
-        ["modelName"] = modelName,
-        ["experimentId"] = experimentId,
-        ["previousExperimentId"] = previousExpId,
-        ["action"] = action,
-        ["timestamp"] = DateTimeOffset.UtcNow
-    });
-
-    var options = new JsonSerializerOptions { WriteIndented = true };
-    await File.WriteAllTextAsync(historyPath, JsonSerializer.Serialize(records, options));
 }
 
 static Dictionary<string, object>[] ParseJsonInput(JsonElement input)

@@ -36,6 +36,7 @@
     <PackageVersion Include="System.CommandLine" Version="2.0.5" />
     <PackageVersion Include="DotNetEnv" Version="3.1.1" />
     <!-- Documentation / API -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.4.1" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.5" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.6.0" />

@@ -58,6 +58,10 @@ public class CsvDataLoader : IDataProvider
         // Constant columns provide zero predictive signal and waste compute resources.
         mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn);
 
+        // Pre-InferColumns: Warn about mixed-type columns (mostly numeric with some text).
+        // InferColumns may classify these as Text, causing TF-IDF featurization and schema mismatches.
+        WarnMixedTypeColumns(mlnetCompatiblePath, labelColumn);
+
         // Handle single-column CSV (e.g., univariate time series)
         // InferColumns cannot determine delimiter for single-column files
         var csvHeaders = ReadCsvHeaders(mlnetCompatiblePath);
@@ -660,6 +664,86 @@ public class CsvDataLoader : IDataProvider
         {
             return filePath; // Non-critical, continue with original
         }
+    }
+
+    /// <summary>
+    /// Detects columns where the majority of values are numeric but a minority contain text.
+    /// InferColumns may classify these as Text, leading to TF-IDF featurization and schema mismatches.
+    /// Emits warnings suggesting column_overrides for affected columns.
+    /// </summary>
+    public static List<string> WarnMixedTypeColumns(string filePath, string? labelColumn, Action<string>? log = null)
+    {
+        var mixedColumns = new List<string>();
+
+        try
+        {
+            using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var headerLine = reader.ReadLine();
+            if (headerLine == null) return mixedColumns;
+
+            var headers = ParseCsvLine(headerLine);
+            var labelLower = labelColumn?.Trim().ToLowerInvariant();
+
+            var numericCount = new int[headers.Length];
+            var textCount = new int[headers.Length];
+            var totalCount = 0;
+            const int maxScanRows = 2000;
+
+            string? line;
+            while ((line = reader.ReadLine()) != null && totalCount < maxScanRows)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                var fields = ParseCsvLine(line);
+                totalCount++;
+
+                for (int i = 0; i < Math.Min(fields.Length, headers.Length); i++)
+                {
+                    var value = fields[i].Trim();
+                    if (string.IsNullOrEmpty(value)) continue;
+
+                    // Try parse as number (handles "1000", "3.14", "-5", etc.)
+                    if (double.TryParse(value, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out _))
+                    {
+                        numericCount[i]++;
+                    }
+                    else
+                    {
+                        textCount[i]++;
+                    }
+                }
+            }
+
+            if (totalCount < 10) return mixedColumns;
+
+            var write = log ?? Console.WriteLine;
+
+            for (int i = 0; i < headers.Length; i++)
+            {
+                var header = headers[i].Trim();
+                if (string.IsNullOrEmpty(header)) continue;
+                if (labelLower != null && header.ToLowerInvariant() == labelLower) continue;
+
+                var total = numericCount[i] + textCount[i];
+                if (total < 10) continue;
+
+                var numericRatio = (double)numericCount[i] / total;
+
+                // "Mostly numeric" = >80% numeric AND has some text values
+                if (numericRatio > 0.80 && numericRatio < 1.0 && textCount[i] >= 2)
+                {
+                    mixedColumns.Add(header);
+                    write($"[Warning] Column '{header}' is {numericRatio:P0} numeric with {textCount[i]} text values — " +
+                          $"may cause type misdetection. Consider adding column_overrides: {{ {header}: numeric }}");
+                }
+            }
+        }
+        catch
+        {
+            // Non-critical diagnostic, don't fail the pipeline
+        }
+
+        return mixedColumns;
     }
 
     /// <summary>

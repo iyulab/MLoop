@@ -42,6 +42,25 @@ public interface IPromotionManager
         string modelName,
         int limit = 10,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records a promotion event in the model's promotion history.
+    /// </summary>
+    Task RecordPromotionAsync(
+        string modelName,
+        string experimentId,
+        string? previousExpId,
+        string action,
+        string? reason = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a backup of the current production model directory.
+    /// Returns the backup path, or null if no production exists.
+    /// </summary>
+    Task<string?> BackupProductionAsync(
+        string modelName,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

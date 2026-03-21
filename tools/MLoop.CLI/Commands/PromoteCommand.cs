@@ -1,8 +1,9 @@
 using System.CommandLine;
-using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Ops.Interfaces;
+using MLoop.Ops.Services;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -155,18 +156,15 @@ public static class PromoteCommand
                 }
             }
 
+            // Create promotion manager for backup + history
+            var comparer = new FileModelComparer(projectRoot);
+            var promotionManager = new FilePromotionManager(projectRoot, comparer);
+
             // Backup current production before promotion
             string? backupPath = null;
             if (!noBackup && currentProduction != null)
             {
-                var productionPath = modelRegistry.GetProductionPath(resolvedModelName);
-                if (Directory.Exists(productionPath))
-                {
-                    var backupsDir = Path.Combine(projectRoot, "models", resolvedModelName, "backups");
-                    backupPath = Path.Combine(backupsDir, $"{currentProduction.ExperimentId}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}");
-                    Directory.CreateDirectory(backupsDir);
-                    CopyDirectory(productionPath, backupPath);
-                }
+                backupPath = await promotionManager.BackupProductionAsync(resolvedModelName);
             }
 
             // Promote with progress indicator
@@ -179,8 +177,8 @@ public static class PromoteCommand
                 });
 
             // Record promotion history
-            await RecordPromotionHistoryAsync(
-                projectRoot, resolvedModelName, experimentId,
+            await promotionManager.RecordPromotionAsync(
+                resolvedModelName, experimentId,
                 currentProduction?.ExperimentId, "promote");
 
             AnsiConsole.WriteLine();
@@ -210,48 +208,4 @@ public static class PromoteCommand
         }
     }
 
-    internal static async Task RecordPromotionHistoryAsync(
-        string projectRoot,
-        string modelName,
-        string experimentId,
-        string? previousExpId,
-        string action)
-    {
-        var historyPath = Path.Combine(projectRoot, "models", modelName, "promotion-history.json");
-        Directory.CreateDirectory(Path.GetDirectoryName(historyPath)!);
-
-        var records = new List<Dictionary<string, object?>>();
-        if (File.Exists(historyPath))
-        {
-            var json = await File.ReadAllTextAsync(historyPath);
-            records = JsonSerializer.Deserialize<List<Dictionary<string, object?>>>(json) ?? [];
-        }
-
-        records.Add(new Dictionary<string, object?>
-        {
-            ["modelName"] = modelName,
-            ["experimentId"] = experimentId,
-            ["previousExperimentId"] = previousExpId,
-            ["action"] = action,
-            ["timestamp"] = DateTimeOffset.UtcNow
-        });
-
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        await File.WriteAllTextAsync(historyPath, JsonSerializer.Serialize(records, options));
-    }
-
-    internal static void CopyDirectory(string source, string destination)
-    {
-        Directory.CreateDirectory(destination);
-
-        foreach (var file in Directory.GetFiles(source))
-        {
-            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
-        }
-
-        foreach (var dir in Directory.GetDirectories(source))
-        {
-            CopyDirectory(dir, Path.Combine(destination, Path.GetFileName(dir)));
-        }
-    }
 }
