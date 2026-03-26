@@ -27,19 +27,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <!-- Package metadata -->
+    <!-- Package metadata (override Directory.Build.props IsPackable=false) -->
+    <IsPackable>true</IsPackable>
     <AssemblyName>mloop</AssemblyName>
     <RootNamespace>MLoop.CLI</RootNamespace>
     <Description>MLoop - A modern CLI tool for ML.NET with filesystem-based MLOps</Description>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>mloop</ToolCommandName>
 
-    <!-- Publishing settings (RuntimeIdentifier passed via -r on dotnet publish) -->
-    <PublishSingleFile>true</PublishSingleFile>
+    <!-- Publishing settings for standalone binary (only active during dotnet publish) -->
     <SelfContained>false</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebugType>embedded</DebugType>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IncludeSymbols>false</IncludeSymbols>
   </PropertyGroup>
 
   <!-- Clean publish output: exclude PDBs, XMLs from referenced projects -->

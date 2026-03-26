@@ -6,9 +6,6 @@
     <Nullable>enable</Nullable>
     <RootNamespace>MLoop.DataStore</RootNamespace>
 
-    <!-- Not published to NuGet (intentional — CLI tool is the only distribution unit) -->
-    <IsPackable>false</IsPackable>
-
     <!-- NuGet Package Metadata (retained for future use) -->
     <PackageId>MLoop.DataStore</PackageId>
     <Description>MLoop DataStore - Prediction logging, feedback collection, and data sampling for MLOps</Description>
