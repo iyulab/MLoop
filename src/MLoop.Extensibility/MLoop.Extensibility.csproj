@@ -6,7 +6,10 @@
     <Nullable>enable</Nullable>
     <LangVersion>13</LangVersion>
 
-    <!-- NuGet Package Metadata -->
+    <!-- Not published to NuGet (intentional — CLI tool is the only distribution unit) -->
+    <IsPackable>false</IsPackable>
+
+    <!-- NuGet Package Metadata (retained for future use) -->
     <PackageId>MLoop.Extensibility</PackageId>
     <Authors>MLoop Contributors</Authors>
     <Description>Extensibility interfaces for MLoop - preprocessing scripts, hooks, and custom metrics</Description>
