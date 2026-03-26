@@ -166,6 +166,11 @@ jobs:
 
         ## Installation
 
+        ### Via dotnet tool (recommended for .NET developers)
+        ```bash
+        dotnet tool install -g mloop
+        ```
+
         ### Via standalone binary
         Download the appropriate binary for your platform below and place it in your PATH.
         Self-update to latest version anytime:
@@ -202,3 +207,28 @@ jobs:
           ./binaries/mloop-*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-tool:
+    needs: build
+    runs-on: ubuntu-latest
+    if: needs.build.outputs.tag_exists == 'false'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Remove local NuGet source (CI only)
+      run: dotnet nuget remove source local || true
+
+    - name: Pack dotnet tool
+      run: dotnet pack tools/MLoop.CLI/MLoop.CLI.csproj --configuration Release -o ./nupkg
+
+    - name: Push to NuGet.org
+      run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
