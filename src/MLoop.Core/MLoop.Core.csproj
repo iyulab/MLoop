@@ -5,7 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <!-- NuGet Package Metadata -->
+    <!-- Not published to NuGet (intentional — CLI tool is the only distribution unit) -->
+    <IsPackable>false</IsPackable>
+
+    <!-- NuGet Package Metadata (retained for future use) -->
     <PackageId>MLoop.Core</PackageId>
     <Description>MLoop Core - ML.NET AutoML engine for training, prediction, and model management</Description>
     <PackageTags>mlops;automl;mlnet;machine-learning;training;prediction</PackageTags>
