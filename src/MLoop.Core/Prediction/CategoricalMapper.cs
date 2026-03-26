@@ -1,3 +1,4 @@
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 
 namespace MLoop.Core.Prediction;
@@ -58,6 +59,9 @@ public class CategoricalMapper
 
         try
         {
+            // Flatten multiline quoted fields before line-by-line processing
+            predictionDataPath = CsvDataLoader.FlattenMultiLineQuotedFields(predictionDataPath);
+
             // Read prediction data with UTF-8 encoding
             var lines = File.ReadAllLines(predictionDataPath, System.Text.Encoding.UTF8);
             if (lines.Length == 0)

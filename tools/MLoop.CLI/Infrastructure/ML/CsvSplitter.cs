@@ -1,4 +1,5 @@
 using System.Text;
+using MLoop.Core.Data;
 using MLoop.Core.Prediction;
 
 namespace MLoop.CLI.Infrastructure.ML;
@@ -31,6 +32,9 @@ public class CsvSplitter
     /// <returns>Paths to train and test split files</returns>
     public SplitResult StratifiedSplit(string dataFile, string labelColumn, double testFraction, int seed = 42)
     {
+        // Flatten multiline quoted fields before line-by-line processing
+        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile);
+
         var allLines = File.ReadAllLines(dataFile, Encoding.UTF8);
         if (allLines.Length < 2)
         {
