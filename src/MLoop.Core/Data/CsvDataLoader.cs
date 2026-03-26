@@ -31,6 +31,9 @@ public class CsvDataLoader : IDataProvider
         // Ensure UTF-8 BOM for ML.NET compatibility (ML.NET's InferColumns relies on BOM detection)
         string mlnetCompatiblePath = EnsureUtf8Bom(filePath);
 
+        // Flatten multi-line quoted fields in data rows (ML.NET TextLoader doesn't support RFC 4180 multiline)
+        mlnetCompatiblePath = FlattenMultiLineQuotedFields(mlnetCompatiblePath, _log);
+
         // Flatten multi-line quoted headers (ML.NET doesn't support them)
         mlnetCompatiblePath = FlattenMultiLineHeaders(mlnetCompatiblePath);
 
@@ -1073,6 +1076,103 @@ public class CsvDataLoader : IDataProvider
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Flattens multi-line quoted fields in CSV data by replacing newlines with spaces.
+    /// ML.NET's TextLoader treats physical newlines as record boundaries even inside
+    /// RFC 4180 quoted fields. This normalizes such fields to single-line representation.
+    /// Uses a quick-check scan: if no unbalanced quotes found, returns the original path.
+    /// </summary>
+    public static string FlattenMultiLineQuotedFields(string filePath, Action<string>? log = null)
+    {
+        var write = log ?? Console.WriteLine;
+
+        // Quick check: scan for any line with unbalanced quotes.
+        // If every physical line has balanced quotes, there are no multiline quoted fields.
+        bool hasMultiLine = false;
+        using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        {
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                int quoteCount = 0;
+                foreach (char c in line)
+                {
+                    if (c == '"') quoteCount++;
+                }
+                if (quoteCount % 2 != 0)
+                {
+                    hasMultiLine = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasMultiLine) return filePath;
+
+        // Multiline quoted fields detected — rebuild CSV with flattened fields.
+        var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_flatdata_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+        int flattenedCount = 0;
+
+        using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
+        {
+            var lineBuilder = new System.Text.StringBuilder();
+            bool inQuote = false;
+
+            string? physicalLine;
+            while ((physicalLine = reader.ReadLine()) != null)
+            {
+                if (!inQuote)
+                {
+                    lineBuilder.Clear();
+                    lineBuilder.Append(physicalLine);
+                }
+                else
+                {
+                    // Continuation of a multiline quoted field — replace newline with space
+                    lineBuilder.Append(' ');
+                    lineBuilder.Append(physicalLine);
+                }
+
+                // Track quote state across this physical line
+                for (int i = 0; i < physicalLine.Length; i++)
+                {
+                    char c = physicalLine[i];
+                    if (c == '"')
+                    {
+                        // Handle escaped quotes ("") — skip consecutive pair
+                        if (inQuote && i + 1 < physicalLine.Length && physicalLine[i + 1] == '"')
+                        {
+                            i++;
+                        }
+                        else
+                        {
+                            inQuote = !inQuote;
+                        }
+                    }
+                }
+
+                if (!inQuote)
+                {
+                    if (lineBuilder.Length > physicalLine.Length)
+                    {
+                        flattenedCount++;
+                    }
+                    writer.WriteLine(lineBuilder.ToString());
+                }
+            }
+
+            // Handle unterminated quote at EOF — write whatever we have
+            if (inQuote && lineBuilder.Length > 0)
+            {
+                writer.WriteLine(lineBuilder.ToString());
+            }
+        }
+
+        write($"[Info] Flattened {flattenedCount} multi-line quoted field(s) in CSV data: {Path.GetFileName(filePath)}");
+        return tempPath;
     }
 
     /// <summary>

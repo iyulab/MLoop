@@ -174,6 +174,9 @@ public static class InfoCommand
         // Use converted path for ML.NET operations
         dataFile = convertedPath;
 
+        // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
+        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile);
+
         // Flatten multi-line quoted headers (ML.NET doesn't support them)
         dataFile = CsvDataLoader.FlattenMultiLineHeaders(dataFile);
 

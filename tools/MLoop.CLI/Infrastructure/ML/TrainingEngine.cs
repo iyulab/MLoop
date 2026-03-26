@@ -83,6 +83,9 @@ public class TrainingEngine : ITrainingEngine
                 Console.WriteLine($"[Info] Converted {detection.EncodingName} \u2192 UTF-8: {Path.GetFileName(originalDataFile)}");
             }
 
+            // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
+            dataFilePath = CsvDataLoader.FlattenMultiLineQuotedFields(dataFilePath);
+
             // Flatten multi-line quoted headers (ML.NET doesn't support them)
             dataFilePath = CsvDataLoader.FlattenMultiLineHeaders(dataFilePath);
 

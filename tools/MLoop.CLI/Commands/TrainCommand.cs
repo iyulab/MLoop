@@ -451,6 +451,9 @@ public static class TrainCommand
 
             AnsiConsole.MarkupLine($"[green]>[/] Using data: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
 
+            // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
+            resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile);
+
             // Auto-sampling for large datasets (--max-rows)
             if (maxRows.HasValue && maxRows.Value > 0)
             {

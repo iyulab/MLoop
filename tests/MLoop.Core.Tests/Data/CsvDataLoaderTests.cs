@@ -376,6 +376,123 @@ public class CsvDataLoaderTests : IDisposable
         Assert.Equal(csvPath, result);
     }
 
+    #region FlattenMultiLineQuotedFields
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_NoMultiLine_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "no_multiline.csv");
+        File.WriteAllText(csvPath, "Content,Label\n\"normal text\",1\n\"another row\",0\n");
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_EmptyFile_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "empty_flat.csv");
+        File.WriteAllText(csvPath, "");
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_MultiLineData_FlattensToSingleLine()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "multiline_data.csv");
+        // RFC 4180 compliant: newline inside quoted field
+        File.WriteAllText(csvPath, "Content,Label\n\"line1\nline2\",1\n\"normal\",0\n");
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.NotEqual(csvPath, result);
+        Assert.True(File.Exists(result));
+
+        var lines = File.ReadAllLines(result);
+        Assert.Equal(3, lines.Length); // header + 2 data rows
+        Assert.Equal("Content,Label", lines[0]);
+        Assert.Equal("\"line1 line2\",1", lines[1]);
+        Assert.Equal("\"normal\",0", lines[2]);
+
+        File.Delete(result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_MultipleNewlinesInField()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "multi_newlines.csv");
+        File.WriteAllText(csvPath, "Content,Label\n\"line1\nline2\nline3\",1\n\"ok\",0\n");
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.NotEqual(csvPath, result);
+        var lines = File.ReadAllLines(result);
+        Assert.Equal(3, lines.Length);
+        Assert.Equal("\"line1 line2 line3\",1", lines[1]);
+
+        File.Delete(result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_EscapedQuotesPreserved()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "escaped_quotes.csv");
+        // Field with escaped quotes ("") and newline
+        File.WriteAllText(csvPath, "Content,Label\n\"she said \"\"hello\"\"\nand left\",1\n\"ok\",0\n");
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.NotEqual(csvPath, result);
+        var lines = File.ReadAllLines(result);
+        Assert.Equal(3, lines.Length);
+        // Escaped quotes should be preserved, newline replaced with space
+        Assert.Equal("\"she said \"\"hello\"\" and left\",1", lines[1]);
+
+        File.Delete(result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_CommasInsideQuotedField()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "comma_multiline.csv");
+        // Real-world case: log data with commas AND newlines inside quoted field
+        File.WriteAllText(csvPath,
+            "Content,Label\n" +
+            "\"Mar 26 10:15:23 server01 sshd[12345]: Failed password for root\n" +
+            "app-18,Data hash table of /run/log/journal, suggesting rotation.\",1\n" +
+            "\"normal log entry\",0\n");
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.NotEqual(csvPath, result);
+        var lines = File.ReadAllLines(result);
+        Assert.Equal(3, lines.Length);
+        Assert.Equal("Content,Label", lines[0]);
+        // Multiline field flattened, commas preserved inside quotes
+        Assert.Contains("Failed password for root", lines[1]);
+        Assert.Contains("suggesting rotation.", lines[1]);
+        Assert.Equal("\"normal log entry\",0", lines[2]);
+
+        File.Delete(result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_HeaderOnlyFile_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "header_only_flat.csv");
+        File.WriteAllText(csvPath, "Content,Label\n");
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.Equal(csvPath, result);
+    }
+
+    #endregion
+
     #region IsLikelyIndexColumn
 
     [Theory]
