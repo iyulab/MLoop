@@ -6,9 +6,6 @@
     <Nullable>enable</Nullable>
     <RootNamespace>MLoop.Ops</RootNamespace>
 
-    <!-- Not published to NuGet (intentional — CLI tool is the only distribution unit) -->
-    <IsPackable>false</IsPackable>
-
     <!-- NuGet Package Metadata (retained for future use) -->
     <PackageId>MLoop.Ops</PackageId>
     <Description>MLoop Ops - MLOps automation for model comparison, retraining triggers, and promotion</Description>

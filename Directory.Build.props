@@ -18,6 +18,9 @@
 
     <Version>0.12.4</Version>
 
+    <!-- Only MLoop.CLI is packable (dotnet tool). All other projects are not published to NuGet. -->
+    <IsPackable>false</IsPackable>
+
     <!-- Build settings -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
