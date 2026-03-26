@@ -102,6 +102,10 @@ public class SamplingEngineTests
         // Act
         await engine.SampleAsync(data, 0.1, progress: progress);
 
+        // Progress<T> posts callbacks via SynchronizationContext/ThreadPool,
+        // so we need a short delay to let pending callbacks complete.
+        await Task.Delay(200);
+
         // Assert
         Assert.Contains(0.0, progressValues);
         Assert.Contains(1.0, progressValues);
