@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using MLoop.Core.Data;
 using MLoop.Core.Prediction;
 
 namespace MLoop.CLI.Infrastructure.ML;
@@ -42,6 +43,9 @@ public class DataQualityValidator
     /// </summary>
     private DataQualityResult ValidateLabelColumn(string dataFile, string labelColumn, string? taskType = null)
     {
+        // Flatten multiline quoted fields before line-by-line processing
+        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile);
+
         var result = new DataQualityResult { IsValid = true };
 
         try

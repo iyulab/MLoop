@@ -1,4 +1,5 @@
 using System.Text;
+using MLoop.Core.Data;
 using MLoop.Core.Prediction;
 
 namespace MLoop.CLI.Infrastructure.ML;
@@ -50,6 +51,9 @@ public class DataBalancer
             result.Message = "Balancing disabled";
             return result;
         }
+
+        // Flatten multiline quoted fields before line-by-line processing
+        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile);
 
         // Read data file
         var allLines = File.ReadAllLines(dataFile, Encoding.UTF8);

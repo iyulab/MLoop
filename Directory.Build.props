@@ -16,7 +16,7 @@
     <RepositoryUrl>https://github.com/iyulab/MLoop</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
-    <Version>0.12.4</Version>
+    <Version>0.12.5</Version>
 
     <!-- Only MLoop.CLI is packable (dotnet tool). All other projects are not published to NuGet. -->
     <IsPackable>false</IsPackable>
