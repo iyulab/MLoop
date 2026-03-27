@@ -220,9 +220,20 @@ public class AutoMLRunner
             _logger.Warning($"AUC computation failed during {originalMetric} optimization (extreme class imbalance). Falling back to F1Score.");
             metricFallbackNote = $"{originalMetric}→F1Score (AUC imbalance)";
 
-            return await RunBinaryClassificationCoreAsync(
-                trainSet, testSet, config, BinaryClassificationMetric.F1Score, cancellationToken,
-                metricFallbackNote).ConfigureAwait(false);
+            try
+            {
+                return await RunBinaryClassificationCoreAsync(
+                    trainSet, testSet, config, BinaryClassificationMetric.F1Score, cancellationToken,
+                    metricFallbackNote).ConfigureAwait(false);
+            }
+            catch (Exception fallbackEx) when (IsAucUndefinedException(fallbackEx))
+            {
+                // BUG-36: F1Score fallback also failed with AUC error — dataset is genuinely too small
+                throw new InvalidOperationException(
+                    "Training failed: dataset too small or too imbalanced for binary classification. " +
+                    "AUC computation failed even with F1Score metric. " +
+                    "Try increasing dataset size (100+ rows recommended) or using --balance auto.", fallbackEx);
+            }
         }
     }
 
