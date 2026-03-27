@@ -209,11 +209,10 @@ public class AutoMLRunner
             // Fall back to F1Score which is more robust for imbalanced data.
             if (optimizingMetric == BinaryClassificationMetric.F1Score)
             {
-                // Already using F1Score — cannot fall back further
-                throw new InvalidOperationException(
-                    "Training failed: dataset too small or too imbalanced for binary classification. " +
-                    "AUC computation failed even with F1Score metric. " +
-                    "Try increasing dataset size (100+ rows recommended) or using --balance auto.", ex);
+                // Already using F1Score — fall back to manual pipeline directly.
+                _logger.Warning("AutoML failed with F1Score metric. Falling back to direct pipeline training (SDCA).");
+                return await RunManualBinaryClassificationAsync(
+                    trainSet, testSet, config, cancellationToken).ConfigureAwait(false);
             }
 
             var originalMetric = optimizingMetric.ToString();
@@ -229,9 +228,6 @@ public class AutoMLRunner
             catch (Exception fallbackEx) when (IsAucUndefinedException(fallbackEx))
             {
                 // BUG-36: AutoML failed with both metrics — fall back to manual pipeline training.
-                // AutoML internally computes AUC during cross-validation, which fails with small
-                // text datasets (high-dimensional TF-IDF + few rows → degenerate predictions).
-                // A direct pipeline bypasses AutoML's internal AUC computation entirely.
                 _logger.Warning("AutoML failed with both metrics. Falling back to direct pipeline training (SDCA).");
                 return await RunManualBinaryClassificationAsync(
                     trainSet, testSet, config, cancellationToken).ConfigureAwait(false);
