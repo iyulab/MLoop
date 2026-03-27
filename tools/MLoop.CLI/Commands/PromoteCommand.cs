@@ -132,7 +132,7 @@ public static class PromoteCommand
 
             if (experiment.Result != null)
             {
-                table.AddRow("Best Trainer", $"[green]{experiment.Result.BestTrainer}[/]");
+                table.AddRow("Best Trainer", $"[green]{Markup.Escape(experiment.Result.BestTrainer)}[/]");
                 table.AddRow("Training Time", $"{experiment.Result.TrainingTimeSeconds:F2}s");
             }
 
