@@ -116,7 +116,7 @@ internal static class TrainPresenter
 
         AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{modelName}[/]");
         AnsiConsole.MarkupLine($"[green]>[/] Experiment ID: [blue]{result.ExperimentId}[/]");
-        AnsiConsole.MarkupLine($"[green]>[/] Best Trainer: [yellow]{result.BestTrainer}[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Best Trainer: [yellow]{Markup.Escape(result.BestTrainer)}[/]");
         AnsiConsole.MarkupLine($"[green]>[/] Training Time: [cyan]{result.TrainingTimeSeconds:F2}s[/]");
         AnsiConsole.WriteLine();
 

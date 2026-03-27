@@ -228,11 +228,13 @@ public class AutoMLRunner
             }
             catch (Exception fallbackEx) when (IsAucUndefinedException(fallbackEx))
             {
-                // BUG-36: F1Score fallback also failed with AUC error — dataset is genuinely too small
-                throw new InvalidOperationException(
-                    "Training failed: dataset too small or too imbalanced for binary classification. " +
-                    "AUC computation failed even with F1Score metric. " +
-                    "Try increasing dataset size (100+ rows recommended) or using --balance auto.", fallbackEx);
+                // BUG-36: AutoML failed with both metrics — fall back to manual pipeline training.
+                // AutoML internally computes AUC during cross-validation, which fails with small
+                // text datasets (high-dimensional TF-IDF + few rows → degenerate predictions).
+                // A direct pipeline bypasses AutoML's internal AUC computation entirely.
+                _logger.Warning("AutoML failed with both metrics. Falling back to direct pipeline training (SDCA).");
+                return await RunManualBinaryClassificationAsync(
+                    trainSet, testSet, config, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -309,6 +311,128 @@ public class AutoMLRunner
             Metrics = metricsDict,
             RowCount = trainSet.GetRowCount() ?? 0
         };
+    }
+
+    /// <summary>
+    /// BUG-36: Manual pipeline fallback for small datasets where AutoML's internal AUC
+    /// computation fails. Builds an explicit ML.NET pipeline with SDCA trainer, bypassing
+    /// AutoML's cross-validation entirely.
+    /// </summary>
+    private async Task<AutoMLResult> RunManualBinaryClassificationAsync(
+        IDataView trainSet,
+        IDataView testSet,
+        TrainingConfig config,
+        CancellationToken cancellationToken)
+    {
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
+
+        // Build feature pipeline based on column types
+        var featurePipeline = BuildFeaturePipeline(trainSet, config.LabelColumn, columnInfo);
+
+        // Append SDCA trainer (robust general-purpose linear classifier)
+        var trainingPipeline = featurePipeline
+            .Append(_mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
+                labelColumnName: config.LabelColumn,
+                featureColumnName: "Features"));
+
+        var model = await Task.Run(
+            () => trainingPipeline.Fit(trainSet),
+            cancellationToken).ConfigureAwait(false);
+
+        // Evaluate on test set
+        var predictions = model.Transform(testSet);
+        var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
+
+        var metricsDict = new Dictionary<string, double>();
+
+        if (hasProbability)
+        {
+            var metrics = _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn);
+            metricsDict["accuracy"] = metrics.Accuracy;
+            metricsDict["f1_score"] = metrics.F1Score;
+            metricsDict["precision"] = metrics.PositivePrecision;
+            metricsDict["recall"] = metrics.PositiveRecall;
+            if (!double.IsNaN(metrics.AreaUnderRocCurve))
+                metricsDict["auc"] = metrics.AreaUnderRocCurve;
+        }
+        else
+        {
+            var metrics = _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn);
+            metricsDict["accuracy"] = metrics.Accuracy;
+            metricsDict["f1_score"] = metrics.F1Score;
+            metricsDict["precision"] = metrics.PositivePrecision;
+            metricsDict["recall"] = metrics.PositiveRecall;
+            if (!double.IsNaN(metrics.AreaUnderRocCurve))
+                metricsDict["auc"] = metrics.AreaUnderRocCurve;
+        }
+
+        return new AutoMLResult
+        {
+            BestTrainer = "SdcaLogisticRegression [manual fallback: AutoML AUC failure]",
+            Model = model,
+            Metrics = metricsDict,
+            RowCount = trainSet.GetRowCount() ?? 0
+        };
+    }
+
+    /// <summary>
+    /// Builds a feature engineering pipeline based on column types.
+    /// Used by manual training fallback when AutoML is unavailable.
+    /// </summary>
+    private IEstimator<ITransformer> BuildFeaturePipeline(
+        IDataView data, string labelColumn, ColumnInformation? columnInfo)
+    {
+        var featureColumns = new List<string>();
+        IEstimator<ITransformer>? pipeline = null;
+
+        if (columnInfo != null)
+        {
+            // Text columns → FeaturizeText
+            foreach (var textCol in columnInfo.TextColumnNames)
+            {
+                var outputCol = $"_Text_{textCol}";
+                var textEstimator = _mlContext.Transforms.Text.FeaturizeText(outputCol, textCol);
+                pipeline = pipeline == null
+                    ? (IEstimator<ITransformer>)textEstimator
+                    : pipeline.Append(textEstimator);
+                featureColumns.Add(outputCol);
+            }
+
+            // Numeric columns pass through directly
+            foreach (var numCol in columnInfo.NumericColumnNames)
+            {
+                featureColumns.Add(numCol);
+            }
+
+            // Categorical columns → OneHotEncoding
+            foreach (var catCol in columnInfo.CategoricalColumnNames)
+            {
+                var outputCol = $"_Cat_{catCol}";
+                var catEstimator = _mlContext.Transforms.Categorical.OneHotEncoding(outputCol, catCol);
+                pipeline = pipeline == null
+                    ? (IEstimator<ITransformer>)catEstimator
+                    : pipeline.Append(catEstimator);
+                featureColumns.Add(outputCol);
+            }
+        }
+        else
+        {
+            // No column info — use all non-label columns as numeric features
+            foreach (var col in data.Schema)
+            {
+                if (col.IsHidden) continue;
+                if (col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)) continue;
+                featureColumns.Add(col.Name);
+            }
+        }
+
+        // Concatenate all features into a single "Features" column
+        var concatEstimator = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray());
+        pipeline = pipeline == null
+            ? (IEstimator<ITransformer>)concatEstimator
+            : pipeline.Append(concatEstimator);
+
+        return pipeline;
     }
 
     private async Task<AutoMLResult> RunMulticlassClassificationAsync(
