@@ -1,3 +1,4 @@
+using System.Reflection;
 using Spectre.Console;
 
 namespace MLoop.CLI.Infrastructure.Diagnostics;
@@ -32,6 +33,10 @@ public static class ErrorSuggestions
                 AnsiConsole.MarkupLine($"  [blue]>[/] {suggestion}");
             }
         }
+
+        // Always show version for diagnostics
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[grey]mloop v{GetVersion()}[/]");
     }
 
     /// <summary>
@@ -247,6 +252,21 @@ public static class ErrorSuggestions
         }
 
         return suggestions;
+    }
+
+    /// <summary>
+    /// Gets the current mloop CLI version string (semver without commit hash).
+    /// </summary>
+    private static string GetVersion()
+    {
+        var attr = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+
+        if (attr is null) return "unknown";
+
+        var version = attr.InformationalVersion;
+        var plusIndex = version.IndexOf('+');
+        return plusIndex >= 0 ? version[..plusIndex] : version;
     }
 
     /// <summary>
