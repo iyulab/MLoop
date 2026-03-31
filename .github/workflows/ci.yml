@@ -49,9 +49,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-nuget-
 
-    - name: Remove local NuGet source (CI only)
-      run: dotnet nuget remove source local || true
-
     - name: Restore dependencies
       run: dotnet restore MLoop.sln
 
@@ -88,9 +85,6 @@ jobs:
       with:
         dotnet-version: '10.0.x'
 
-    - name: Remove local NuGet source (CI only)
-      run: dotnet nuget remove source local || true
-
     - name: Restore dependencies
       run: dotnet restore MLoop.sln
 
@@ -114,9 +108,6 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-
-    - name: Remove local NuGet source (CI only)
-      run: dotnet nuget remove source local || true
 
     - name: Check vulnerable packages
       run: |

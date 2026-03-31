@@ -63,10 +63,6 @@ jobs:
 
         echo "Version: $VERSION"
 
-    - name: Remove local NuGet source (CI only)
-      if: steps.version.outputs.tag_exists == 'false'
-      run: dotnet nuget remove source local || true
-
     - name: Restore dependencies
       if: steps.version.outputs.tag_exists == 'false'
       run: dotnet restore MLoop.sln
@@ -100,9 +96,6 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-
-    - name: Remove local NuGet source (CI only)
-      run: dotnet nuget remove source local || true
 
     - name: Restore dependencies
       run: dotnet restore MLoop.sln
@@ -223,9 +216,6 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-
-    - name: Remove local NuGet source (CI only)
-      run: dotnet nuget remove source local || true
 
     - name: Pack dotnet tool
       run: dotnet pack tools/MLoop.CLI/MLoop.CLI.csproj --configuration Release -o ./nupkg
