@@ -920,7 +920,7 @@ app.MapPost("/evaluate", async (
         {
             var prod = await registry.GetProductionAsync(modelName, ct);
             if (prod == null)
-                return Results.NotFound(new { error = $"No production model found for '{modelName}'." });
+                return Results.Ok(new { status = "skipped", reason = "no_production_model", model = modelName });
             experimentId = prod.ExperimentId;
         }
 

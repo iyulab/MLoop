@@ -91,9 +91,9 @@ public static class EvaluateCommand
 
                 if (productionModel == null)
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] No production model found for '[cyan]{resolvedModelName}[/]'.");
-                    AnsiConsole.MarkupLine($"[yellow]Tip:[/] Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
-                    return 1;
+                    AnsiConsole.MarkupLine($"[yellow]>[/] No production model found for '[cyan]{resolvedModelName}[/]'. Skipping evaluation.");
+                    AnsiConsole.MarkupLine($"[grey]Tip:[/] Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
+                    return 0;
                 }
 
                 resolvedExperimentId = productionModel.ExperimentId;

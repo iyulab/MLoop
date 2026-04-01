@@ -363,7 +363,7 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task EvaluateEndpoint_WithMissingTestData_ReturnsBadRequest()
+    public async Task EvaluateEndpoint_WithNoProductionModel_ReturnsSkipped()
     {
         // Arrange
         var request = new { testDataPath = "/nonexistent/data.csv", name = "default" };
@@ -371,9 +371,11 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
         // Act
         var response = await _client.PostAsJsonAsync("/evaluate", request);
 
-        // Assert
+        // Assert - no production model returns 200 with skipped status
         var statusCode = (int)response.StatusCode;
-        statusCode.Should().BeOneOf(400, 404);
+        statusCode.Should().Be(200);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("skipped");
     }
 
     [Fact]
