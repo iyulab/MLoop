@@ -183,7 +183,91 @@ public class AutoMLRunner
             }
         }
 
+        // Capture input schema from training data for prediction use
+        if (result.Schema == null)
+        {
+            var schema = CaptureInputSchema(trainSet, config.LabelColumn, config.Task);
+            result = new AutoMLResult
+            {
+                BestTrainer = result.BestTrainer,
+                Model = result.Model,
+                Metrics = result.Metrics,
+                RowCount = result.RowCount,
+                Schema = schema,
+            };
+        }
+
         return result;
+    }
+
+    /// <summary>
+    /// Captures the input schema from the training IDataView for later use in prediction.
+    /// </summary>
+    private InputSchemaInfo CaptureInputSchema(IDataView trainSet, string labelColumn, string taskType)
+    {
+        var columns = new List<ColumnSchema>();
+        var schema = trainSet.Schema;
+
+        foreach (var col in schema)
+        {
+            // Skip internal ML.NET columns
+            if (col.IsHidden) continue;
+
+            var purpose = col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)
+                ? "Label"
+                : "Feature";
+
+            var dataType = col.Type.RawType.Name switch
+            {
+                "Single" => "Single",
+                "Double" => "Double",
+                "Int32" => "Int32",
+                "Int64" => "Int64",
+                "Boolean" => "Boolean",
+                "String" => "String",
+                _ => col.Type.RawType.Name,
+            };
+
+            // Capture categorical values for string columns (important for prediction dimension matching)
+            List<string>? categoricalValues = null;
+            int? uniqueValueCount = null;
+
+            if (dataType == "String" && purpose == "Feature")
+            {
+                try
+                {
+                    var colData = trainSet.GetColumn<string>(col.Name).Where(v => !string.IsNullOrEmpty(v)).Distinct().ToList();
+                    if (colData.Count <= 10000) // reasonable limit
+                    {
+                        categoricalValues = colData;
+                        uniqueValueCount = colData.Count;
+                    }
+                    else
+                    {
+                        uniqueValueCount = colData.Count;
+                    }
+                }
+                catch
+                {
+                    // Column extraction failed — skip categorical capture
+                }
+            }
+
+            columns.Add(new ColumnSchema
+            {
+                Name = col.Name,
+                DataType = dataType,
+                Purpose = purpose,
+                CategoricalValues = categoricalValues,
+                UniqueValueCount = uniqueValueCount,
+            });
+        }
+
+        return new InputSchemaInfo
+        {
+            Columns = columns,
+            CapturedAt = DateTime.UtcNow,
+        };
     }
 
     private async Task<AutoMLResult> RunBinaryClassificationAsync(
@@ -1744,6 +1828,12 @@ public class AutoMLResult
     /// Number of rows in the training dataset (for memory collection)
     /// </summary>
     public long RowCount { get; init; }
+
+    /// <summary>
+    /// Input schema captured during training — required for prediction.
+    /// Contains column names, data types, purposes, and categorical value lists.
+    /// </summary>
+    public InputSchemaInfo? Schema { get; init; }
 }
 
 /// <summary>
