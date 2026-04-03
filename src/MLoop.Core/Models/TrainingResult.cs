@@ -1,7 +1,8 @@
 namespace MLoop.Core.Models;
 
 /// <summary>
-/// Result of a training operation
+/// Result of a training operation (used by CLI layer).
+/// For lower-level AutoML results, see <see cref="MLoop.Core.AutoML.AutoMLResult"/>.
 /// </summary>
 public class TrainingResult
 {
@@ -10,16 +11,8 @@ public class TrainingResult
     public required Dictionary<string, double> Metrics { get; init; }
     public required double TrainingTimeSeconds { get; init; }
     public required string ModelPath { get; init; }
-
-    /// <summary>
-    /// Number of rows in the training dataset (for memory collection)
-    /// </summary>
     public long RowCount { get; init; }
-
-    /// <summary>
-    /// Comma-separated column names from schema (for memory collection)
-    /// </summary>
-    public string? SchemaInfo { get; init; }
+    public InputSchemaInfo? Schema { get; init; }
 }
 
 /// <summary>
