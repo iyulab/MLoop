@@ -123,7 +123,7 @@ jobs:
       with:
         name: binary-${{ matrix.rid }}
         path: ./publish/mloop-*
-        retention-days: 5
+        retention-days: 1
 
   create-release:
     needs: [build, publish-binaries]
@@ -200,6 +200,11 @@ jobs:
           ./binaries/mloop-*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Delete binary artifacts (attached to release)
+      uses: geekyeggo/delete-artifact@v5
+      with:
+        name: binary-*
 
   publish-tool:
     needs: build
