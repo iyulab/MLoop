@@ -45,9 +45,8 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.nuget/packages
-        key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
-        restore-keys: |
-          ${{ runner.os }}-nuget-
+        key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+        # No restore-keys: stale cache accumulation prevention
 
     - name: Restore dependencies
       run: dotnet restore MLoop.sln
