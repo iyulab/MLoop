@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using MLoop.API.Caching;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure;
@@ -188,6 +189,9 @@ builder.Services.AddSingleton<IExperimentStore, ExperimentStore>();
 builder.Services.AddSingleton<IModelRegistry, ModelRegistry>();
 builder.Services.AddSingleton<MLContext>();
 builder.Services.AddSingleton<EvaluationEngine>();
+builder.Services.Configure<ModelCacheOptions>(builder.Configuration.GetSection(ModelCacheOptions.SectionName));
+builder.Services.AddSingleton<IModelCache, ModelCache>();
+builder.Services.AddHostedService<ModelCachePreloader>();
 builder.Services.AddSingleton<TrainingJobStore>();
 builder.Services.AddSingleton<MLoop.CLI.Infrastructure.ML.ITrainingEngine>(sp =>
 {
@@ -352,6 +356,7 @@ app.MapPost("/predict", async (
     IModelRegistry registry,
     IExperimentStore experimentStore,
     MLContext mlContext,
+    IModelCache modelCache,
     ILogger<Program> logger,
     CancellationToken ct) =>
 {
@@ -407,7 +412,8 @@ app.MapPost("/predict", async (
         logger.LogDebug("Running prediction for '{ModelName}' with task '{TaskType}', label '{LabelColumn}'",
             modelName, taskType, labelColumn);
 
-        var result = predictionService.Predict(rows, schema, modelPath, taskType, labelColumn);
+        var transformer = modelCache.GetOrLoad(modelPath);
+        var result = predictionService.Predict(rows, schema, transformer, taskType, labelColumn);
 
         logger.LogInformation("Predictions completed for '{ModelName}': {Count} predictions in {ElapsedMs}ms (avg: {AvgMs}ms/prediction)",
             modelName, result.Rows.Count, stopwatch.ElapsedMilliseconds,
@@ -441,6 +447,29 @@ app.MapPost("/predict", async (
 .Produces<object>(StatusCodes.Status404NotFound)
 .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
 .RequireAuthorization();
+
+// Model cache stats (admin)
+app.MapGet("/cache/stats", (IModelCache modelCache) =>
+{
+    var stats = modelCache.GetStats();
+    return Results.Ok(stats);
+})
+.WithName("GetModelCacheStats")
+.WithTags("Cache")
+.Produces<ModelCacheStats>(StatusCodes.Status200OK)
+.RequireAuthorization("Admin");
+
+// Clear all cached models (admin)
+app.MapPost("/cache/clear", (IModelCache modelCache, ILogger<Program> logger) =>
+{
+    modelCache.Clear();
+    logger.LogInformation("Model cache cleared by admin request");
+    return Results.NoContent();
+})
+.WithName("ClearModelCache")
+.WithTags("Cache")
+.Produces(StatusCodes.Status204NoContent)
+.RequireAuthorization("Admin");
 
 // List all models endpoint (secured)
 app.MapGet("/models", async (
