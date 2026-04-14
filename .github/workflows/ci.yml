@@ -49,16 +49,16 @@ jobs:
         # No restore-keys: stale cache accumulation prevention
 
     - name: Restore dependencies
-      run: dotnet restore MLoop.sln
+      run: dotnet restore MLoop.slnx
 
     - name: Build
-      run: dotnet build MLoop.sln --configuration Release --no-restore
+      run: dotnet build MLoop.slnx --configuration Release --no-restore
 
     - name: Run tests (CI - excludes heavy tests)
       run: |
         # Run only lightweight tests in CI (excludes LLM, Slow, E2E, Database tests)
         # Heavy tests should be run locally with: dotnet test --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
-        dotnet test MLoop.sln --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
+        dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
 
     - name: Upload coverage reports to Codecov
       if: matrix.os == 'ubuntu-latest'
@@ -85,10 +85,10 @@ jobs:
         dotnet-version: '10.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore MLoop.sln
+      run: dotnet restore MLoop.slnx
 
     - name: Check formatting
-      run: dotnet format MLoop.sln --verify-no-changes --verbosity diagnostic
+      run: dotnet format MLoop.slnx --verify-no-changes --verbosity diagnostic
       continue-on-error: true
 
   security-scan:
@@ -110,8 +110,8 @@ jobs:
 
     - name: Check vulnerable packages
       run: |
-        dotnet restore MLoop.sln
-        dotnet list MLoop.sln package --vulnerable --include-transitive 2>&1 | tee vulnerability-report.txt
+        dotnet restore MLoop.slnx
+        dotnet list MLoop.slnx package --vulnerable --include-transitive 2>&1 | tee vulnerability-report.txt
         if grep -q "has the following vulnerable packages" vulnerability-report.txt; then
           echo "::warning::Vulnerable packages detected. Review vulnerability-report.txt"
         fi

@@ -30,23 +30,24 @@
     <!-- Data Processing -->
     <PackageVersion Include="CsvHelper" Version="33.1.0" />
     <PackageVersion Include="Microsoft.Data.Analysis" Version="0.23.0" />
-    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
+    <PackageVersion Include="YamlDotNet" Version="17.0.1" />
     <!-- CLI / Console -->
-    <PackageVersion Include="Spectre.Console" Version="0.54.0" />
+    <PackageVersion Include="Spectre.Console" Version="0.55.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.5" />
     <PackageVersion Include="DotNetEnv" Version="3.1.1" />
     <!-- Documentation / API -->
+    <!-- Pinned to 2.x: Swashbuckle.AspNetCore 10.1.7 incompatible with OpenApi 3.x (500 errors on /swagger/v1/swagger.json) -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.4.1" />
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.5" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.6.0" />
-    <PackageVersion Include="DataLens" Version="0.3.0" />
+    <PackageVersion Include="DataLens" Version="0.4.0" />
     <!-- Resilience / Polly -->
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Security: Override transitive dependency (CVE-2026-26127, GHSA-73j8-2gch-69rq) -->
     <PackageVersion Include="Microsoft.Bcl.Memory" Version="9.0.14" />
     <!-- Testing Packages -->
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="coverlet.collector" Version="8.0.1" />
