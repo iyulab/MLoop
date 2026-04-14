@@ -3,7 +3,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.ML;
+using Microsoft.ML.Data;
 using MLoop.API;
+using MLoop.API.Caching;
 
 namespace MLoop.API.Tests;
 
@@ -16,6 +20,91 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
     {
         _factory = factory;
         _client = factory.CreateClient();
+    }
+
+    [Fact]
+    public async Task CacheStatsEndpoint_InitiallyEmpty()
+    {
+        var response = await _client.GetAsync("/cache/stats");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var stats = JsonSerializer.Deserialize<JsonElement>(content);
+
+        stats.GetProperty("cachedCount").GetInt32().Should().Be(0);
+        stats.GetProperty("totalHits").GetInt64().Should().Be(0);
+        stats.GetProperty("totalMisses").GetInt64().Should().Be(0);
+        stats.GetProperty("maxCachedModels").GetInt32().Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task CacheClearEndpoint_ReturnsNoContent()
+    {
+        var response = await _client.PostAsync("/cache/clear", content: null);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task CacheStatsEndpoint_ReflectsDirectCacheUsage_WarmPath()
+    {
+        // Train + save a tiny model so we can exercise the shared IModelCache singleton
+        // that the /predict endpoint and /cache/stats endpoint both resolve.
+        var ml = new MLContext(seed: 42);
+        var data = ml.Data.LoadFromEnumerable(new[]
+        {
+            new Row { X = 1f, Y = 2f }, new Row { X = 2f, Y = 4f },
+            new Row { X = 3f, Y = 6f }, new Row { X = 4f, Y = 8f },
+            new Row { X = 5f, Y = 10f }
+        });
+        var pipe = ml.Transforms.Concatenate("Features", "X")
+            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        var model = pipe.Fit(data);
+        var tmpPath = Path.Combine(Path.GetTempPath(), $"warm-test-{Guid.NewGuid():N}.zip");
+        try
+        {
+            ml.Model.Save(model, data.Schema, tmpPath);
+
+            await _client.PostAsync("/cache/clear", content: null);
+
+            var cache = _factory.Services.GetRequiredService<IModelCache>();
+            var t1 = cache.GetOrLoad(tmpPath);
+            var t2 = cache.GetOrLoad(tmpPath);
+            t1.Should().BeSameAs(t2, "second GetOrLoad must return the cached ITransformer (warm path)");
+
+            var response = await _client.GetAsync("/cache/stats");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var stats = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+
+            stats.GetProperty("cachedCount").GetInt32().Should().Be(1);
+            stats.GetProperty("totalMisses").GetInt64().Should().Be(1);
+            stats.GetProperty("totalHits").GetInt64().Should().BeGreaterThanOrEqualTo(2);
+        }
+        finally
+        {
+            try { File.Delete(tmpPath); } catch { }
+        }
+    }
+
+    private sealed class Row
+    {
+        public float X { get; set; }
+        public float Y { get; set; }
+    }
+
+    [Fact]
+    public async Task CacheStatsEndpoint_ReflectsClearOperation()
+    {
+        // Clear has no direct side effect when cache is empty, but the endpoint must still
+        // report totalEvictions accurately relative to cached count before/after.
+        await _client.PostAsync("/cache/clear", content: null);
+
+        var response = await _client.GetAsync("/cache/stats");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var stats = JsonSerializer.Deserialize<JsonElement>(content);
+        stats.GetProperty("cachedCount").GetInt32().Should().Be(0);
+        stats.GetProperty("models").GetArrayLength().Should().Be(0);
     }
 
     [Fact]

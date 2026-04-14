@@ -18,7 +18,9 @@ public class PredictionService
     }
 
     /// <summary>
-    /// Runs prediction on in-memory row data using a saved ML.NET model.
+    /// Runs prediction on in-memory row data using a saved ML.NET model file.
+    /// Loads the model from disk on every call — use the <see cref="Predict(Dictionary{string, object}[], InputSchemaInfo, ITransformer, string, string?)"/>
+    /// overload with a pre-loaded model for warm-path scenarios (e.g. API serve with model caching).
     /// </summary>
     public PredictionResult Predict(
         Dictionary<string, object>[] rows,
@@ -37,25 +39,49 @@ public class PredictionService
             };
         }
 
+        var model = _mlContext.Model.Load(modelPath, out _);
+        return Predict(rows, schema, model, taskType, labelColumn);
+    }
+
+    /// <summary>
+    /// Runs prediction using a pre-loaded <see cref="ITransformer"/>. Enables the caller to cache
+    /// model instances across requests (e.g. mloop serve model cache).
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ITransformer.Transform"/> is thread-safe, but <see cref="MLContext"/> is not —
+    /// callers sharing an ITransformer across threads must still use a per-request MLContext.
+    /// </remarks>
+    public PredictionResult Predict(
+        Dictionary<string, object>[] rows,
+        InputSchemaInfo schema,
+        ITransformer model,
+        string taskType,
+        string? labelColumn = null)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        if (rows.Length == 0)
+        {
+            return new PredictionResult
+            {
+                TaskType = taskType,
+                Rows = new List<PredictionRow>(),
+                Warnings = new List<string> { "No input rows provided." }
+            };
+        }
+
         var warnings = new List<string>();
 
-        // Step 1: Map categorical values to match training schema
         MapCategoricalValues(rows, schema, warnings);
 
-        // Step 2: Build CSV stream from rows
         bool needsDummyLabel = IsLabelRequiredForTransform(taskType);
         using var csvStream = CsvStreamBuilder.Build(rows, schema, injectDummyLabel: needsDummyLabel);
-
-        // Step 3: Create StreamDataSource (copies bytes, safe after stream dispose)
         var dataSource = new StreamDataSource(csvStream);
 
-        // Step 4: Build TextLoader and load data
         var loaderOptions = BuildTextLoaderOptions(schema, taskType, labelColumn);
         var textLoader = _mlContext.Data.CreateTextLoader(loaderOptions);
         var dataView = textLoader.Load(dataSource);
 
-        // Step 5: Load model and transform
-        var model = _mlContext.Model.Load(modelPath, out _);
         IDataView predictions;
         try
         {
@@ -72,10 +98,8 @@ public class PredictionService
                 $"Original error: {ex.Message}", ex);
         }
 
-        // Step 6: Restore original labels for classification (MapKeyToValue)
         predictions = RestoreOriginalLabels(predictions);
 
-        // Step 7: Extract results eagerly
         var result = ExtractResults(predictions, taskType);
 
         if (warnings.Count > 0)

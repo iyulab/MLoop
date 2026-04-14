@@ -138,6 +138,116 @@ public class PredictionServiceTests : IDisposable
         Assert.Contains(result.Warnings, w => w.Contains("No input rows"));
     }
 
+    [Fact]
+    public void Predict_WithPreLoadedTransformer_ReturnsSameResultAsPathOverload()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+            new SimpleRegression { X = 3.0f, Y = 6.0f },
+            new SimpleRegression { X = 4.0f, Y = 8.0f },
+            new SimpleRegression { X = 5.0f, Y = 10.0f },
+        });
+
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
+            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        var model = pipeline.Fit(data);
+        var modelPath = SaveModel(model, data.Schema);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["X"] = 6.0f },
+            new Dictionary<string, object> { ["X"] = 7.0f },
+        };
+
+        var service = new PredictionService(_mlContext);
+
+        var pathResult = service.Predict(rows.Select(r => new Dictionary<string, object>(r)).ToArray(),
+            schema, modelPath, "regression", "Y");
+
+        var loadedModel = _mlContext.Model.Load(modelPath, out _);
+        var transformerResult = service.Predict(rows.Select(r => new Dictionary<string, object>(r)).ToArray(),
+            schema, loadedModel, "regression", "Y");
+
+        Assert.Equal(pathResult.Rows.Count, transformerResult.Rows.Count);
+        for (int i = 0; i < pathResult.Rows.Count; i++)
+        {
+            Assert.Equal(pathResult.Rows[i].Score, transformerResult.Rows[i].Score);
+        }
+    }
+
+    [Fact]
+    public void Predict_WithPreLoadedTransformer_ReusableAcrossCalls()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+            new SimpleRegression { X = 3.0f, Y = 6.0f },
+        });
+
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
+            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        var model = pipeline.Fit(data);
+        var modelPath = SaveModel(model, data.Schema);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+
+        var service = new PredictionService(_mlContext);
+        var loaded = _mlContext.Model.Load(modelPath, out _);
+
+        var r1 = service.Predict(new[] { new Dictionary<string, object> { ["X"] = 4.0f } },
+            schema, loaded, "regression", "Y");
+        var r2 = service.Predict(new[] { new Dictionary<string, object> { ["X"] = 4.0f } },
+            schema, loaded, "regression", "Y");
+        var r3 = service.Predict(new[] { new Dictionary<string, object> { ["X"] = 5.0f } },
+            schema, loaded, "regression", "Y");
+
+        Assert.Equal(r1.Rows[0].Score, r2.Rows[0].Score);
+        Assert.NotEqual(r1.Rows[0].Score, r3.Rows[0].Score);
+    }
+
+    [Fact]
+    public void Predict_WithNullTransformer_Throws()
+    {
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+
+        var service = new PredictionService(_mlContext);
+        Assert.Throws<ArgumentNullException>(() =>
+            service.Predict(
+                new[] { new Dictionary<string, object> { ["X"] = 1.0f } },
+                schema,
+                (ITransformer)null!,
+                "regression",
+                "Y"));
+    }
+
     #endregion
 
     #region MapCategoricalValues
