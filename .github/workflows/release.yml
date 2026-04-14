@@ -65,15 +65,15 @@ jobs:
 
     - name: Restore dependencies
       if: steps.version.outputs.tag_exists == 'false'
-      run: dotnet restore MLoop.sln
+      run: dotnet restore MLoop.slnx
 
     - name: Build
       if: steps.version.outputs.tag_exists == 'false'
-      run: dotnet build MLoop.sln --configuration Release --no-restore
+      run: dotnet build MLoop.slnx --configuration Release --no-restore
 
     - name: Run tests
       if: steps.version.outputs.tag_exists == 'false'
-      run: dotnet test MLoop.sln --configuration Release --no-build --verbosity normal --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
+      run: dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
 
   publish-binaries:
     needs: build
@@ -98,7 +98,7 @@ jobs:
         dotnet-version: '10.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore MLoop.sln
+      run: dotnet restore MLoop.slnx
 
     - name: Publish single-file binary
       run: |
