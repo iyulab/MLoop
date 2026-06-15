@@ -76,7 +76,21 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 
 ### Installation
 
-**Standalone Binary** (Recommended):
+**.NET Tool** (Recommended for .NET developers):
+
+```bash
+dotnet tool install --global mloop
+```
+
+The package ID on [NuGet.org](https://www.nuget.org/packages/mloop) is `mloop`. This is a
+framework-dependent tool, so it reuses your installed .NET runtime — ideal for slim Docker images:
+
+```dockerfile
+RUN dotnet tool install --global mloop --version 0.13.0
+ENV PATH="$PATH:/root/.dotnet/tools"
+```
+
+**Standalone Binary**:
 
 Download from [GitHub Releases](https://github.com/iyulab/MLoop/releases) and place in your PATH.
 
