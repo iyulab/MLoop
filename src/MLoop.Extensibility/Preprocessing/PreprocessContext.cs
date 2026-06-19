@@ -62,7 +62,29 @@ public class PreprocessContext
 
     /// <summary>
     /// Optional metadata from previous scripts or training configuration.
+    /// Common keys: "ScriptSequence" (int), "TotalScripts" (int), "LabelColumn" (string).
     /// Scripts can store intermediate state here for coordination.
     /// </summary>
     public Dictionary<string, object>? Metadata { get; init; }
+
+    /// <summary>
+    /// Retrieves a typed metadata value, or <paramref name="defaultValue"/> when the key is
+    /// absent or the stored value is not of type <typeparamref name="T"/>.
+    /// </summary>
+    /// <typeparam name="T">Expected type of the metadata value.</typeparam>
+    /// <param name="key">Metadata key.</param>
+    /// <param name="defaultValue">Value returned when the key is missing or type mismatches.</param>
+    public T GetMetadata<T>(string key, T defaultValue = default!)
+    {
+        if (Metadata is not null && Metadata.TryGetValue(key, out var value) && value is T typedValue)
+        {
+            return typedValue;
+        }
+        return defaultValue;
+    }
+
+    /// <summary>
+    /// Checks whether a metadata key is present.
+    /// </summary>
+    public bool HasMetadata(string key) => Metadata is not null && Metadata.ContainsKey(key);
 }

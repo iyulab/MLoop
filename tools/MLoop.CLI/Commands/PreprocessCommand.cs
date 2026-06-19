@@ -45,7 +45,9 @@ public static class PreprocessCommand
 
         var incrementalOption = new Option<bool>("--incremental")
         {
-            Description = "Use incremental workflow with HITL validation"
+            Description = "Use the incremental rule-discovery workflow (pattern detectors → rule "
+                + "application, with HITL validation). NOTE: custom IPreprocessingScript files in "
+                + ".mloop/scripts/preprocess/ run only in the DEFAULT (non-incremental) path, not here."
         };
 
         var skipHitlOption = new Option<bool>("--skip-hitl")
@@ -58,7 +60,11 @@ public static class PreprocessCommand
             Description = "Automatically approve rules at confidence checkpoint (incremental mode only)"
         };
 
-        var command = new Command("preprocess", "Execute preprocessing scripts on data");
+        var command = new Command(
+            "preprocess",
+            "Run preprocessing on data. Default path executes IPreprocessingScript files in "
+            + ".mloop/scripts/preprocess/ (alphabetical, chained); --incremental runs the "
+            + "detector-based rule-discovery workflow instead.");
         command.Arguments.Add(inputFileArg);
         command.Options.Add(outputOption);
         command.Options.Add(labelOption);

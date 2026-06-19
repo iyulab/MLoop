@@ -323,12 +323,16 @@ Add preprocessing script (`.mloop/scripts/preprocess/01_feature_engineering.cs`)
 
 ```csharp
 using MLoop.Extensibility.Preprocessing;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 public class FeatureEngineeringScript : IPreprocessingScript
 {
-    public async Task<PreprocessingResult> ExecuteAsync(PreprocessingContext context)
+    public async Task<string> ExecuteAsync(PreprocessContext ctx)
     {
-        var lines = await File.ReadAllLinesAsync(context.InputPath);
+        var lines = await File.ReadAllLinesAsync(ctx.InputPath);
         var header = lines[0] + ",Age,PricePerSqFt";
 
         var enhanced = new List<string> { header };
@@ -346,15 +350,10 @@ public class FeatureEngineeringScript : IPreprocessingScript
             enhanced.Add($"{line},{age},{pricePerSqFt:F2}");
         }
 
-        var outputPath = context.GetTempPath("engineered.csv");
+        var outputPath = Path.Combine(ctx.OutputDirectory, "01_engineered.csv");
         await File.WriteAllLinesAsync(outputPath, enhanced);
 
-        return new PreprocessingResult
-        {
-            OutputPath = outputPath,
-            Success = true,
-            Message = "Added Age and PricePerSqFt features"
-        };
+        return outputPath;
     }
 }
 ```

@@ -1,113 +1,66 @@
 using MLoop.Extensibility.Preprocessing;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 /// <summary>
 /// Common data cleaning operations:
 /// - Remove duplicate rows
-/// - Handle missing values with mean/median imputation
-/// - Trim whitespace from string columns
+/// - Trim whitespace from every cell
+/// - (Optional) impute missing values — see the note inside for where to plug your schema in
 ///
 /// Usage: Place in .mloop/scripts/preprocess/04_data_cleaning.cs
 /// Executes automatically before training when present.
+///
+/// Contract: IPreprocessingScript.ExecuteAsync returns the path to the produced CSV.
+/// Use the injected <see cref="ICsvHelper"/> (ctx.Csv) for encoding-aware read/write — no external
+/// CSV library or temp-path helpers are needed.
 /// </summary>
 public class DataCleaningScript : IPreprocessingScript
 {
-    public async Task<PreprocessingResult> ExecuteAsync(PreprocessingContext context)
+    public async Task<string> ExecuteAsync(PreprocessContext ctx)
     {
-        context.Logger.Info("🧹 Data Cleaning: Removing duplicates, handling missing values");
+        ctx.Logger.Info("🧹 Data Cleaning: Removing duplicates, trimming whitespace");
 
-        // Read input CSV
-        var inputPath = context.InputPath;
-        var outputPath = context.GetTempPath("cleaned.csv");
+        // Read input CSV as a list of column→value rows.
+        var rows = await ctx.Csv.ReadAsync(ctx.InputPath);
+        ctx.Logger.Info($"Loaded: {rows.Count:N0} rows");
 
-        try
+        // 1. Trim whitespace from every cell (prevents "Yes " != "Yes" mismatches).
+        foreach (var row in rows)
         {
-            // Use FilePrepper for efficient data cleaning
-            var pipeline = FilePrepper.Pipeline.DataPipeline.LoadCsv(inputPath);
-
-            // 1. Remove duplicate rows
-            pipeline = pipeline.DropDuplicates();
-            context.Logger.Info("  ✓ Removed duplicate rows");
-
-            // 2. Fill missing numeric values with median
-            // Note: This requires knowing column types. For production, you would:
-            // - Detect numeric columns
-            // - Apply appropriate imputation strategy per column
-            // Example:
-            // pipeline = pipeline.FillMissingValues(new FillMissingValuesOption
-            // {
-            //     Columns = new[] { "Price", "Quantity", "Amount" },
-            //     Strategy = ImputationStrategy.Median
-            // });
-
-            context.Logger.Info("  ℹ️  Missing value imputation: Implement based on your data schema");
-
-            // 3. Trim whitespace from all string columns
-            // This helps with text matching and prevents issues like "Yes " != "Yes"
-            var columns = await GetStringColumnsAsync(inputPath);
-            if (columns.Any())
+            foreach (var key in row.Keys.ToList())
             {
-                foreach (var col in columns)
-                {
-                    pipeline = pipeline.StringOps(col, s => s.Trim());
-                }
-                context.Logger.Info($"  ✓ Trimmed whitespace from {columns.Count} string column(s)");
-            }
-
-            // Save cleaned data
-            pipeline.SaveCsv(outputPath);
-
-            context.Logger.Info($"  💾 Saved cleaned data: {outputPath}");
-
-            return new PreprocessingResult
-            {
-                OutputPath = outputPath,
-                Success = true,
-                Message = "Data cleaning completed: duplicates removed, whitespace trimmed"
-            };
-        }
-        catch (Exception ex)
-        {
-            context.Logger.Error($"❌ Data cleaning failed: {ex.Message}");
-            return new PreprocessingResult
-            {
-                OutputPath = inputPath,  // Return original on failure
-                Success = false,
-                Message = $"Cleaning failed: {ex.Message}"
-            };
-        }
-    }
-
-    private async Task<List<string>> GetStringColumnsAsync(string csvPath)
-    {
-        // Simple heuristic: Read first row and detect text columns
-        // In production, you would use proper type inference
-        var stringColumns = new List<string>();
-
-        using var reader = new StreamReader(csvPath);
-        using var csv = new CsvHelper.CsvReader(reader, new CsvHelper.Configuration.CsvConfiguration(
-            System.Globalization.CultureInfo.InvariantCulture)
-        {
-            HasHeaderRecord = true
-        });
-
-        await csv.ReadAsync();
-        csv.ReadHeader();
-
-        if (csv.HeaderRecord != null)
-        {
-            await csv.ReadAsync();
-
-            for (int i = 0; i < csv.HeaderRecord.Length; i++)
-            {
-                var value = csv.GetField(i);
-                // If value is not numeric, consider it a string column
-                if (!double.TryParse(value, out _))
-                {
-                    stringColumns.Add(csv.HeaderRecord[i]);
-                }
+                row[key] = row[key]?.Trim() ?? "";
             }
         }
+        ctx.Logger.Info("  ✓ Trimmed whitespace from all columns");
 
-        return stringColumns;
+        // 2. Remove duplicate rows (compare by the full ordered set of cell values).
+        var seen = new HashSet<string>();
+        var deduped = new List<Dictionary<string, string>>(rows.Count);
+        foreach (var row in rows)
+        {
+            var signature = string.Join("", row.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}={kv.Value}"));
+            if (seen.Add(signature))
+            {
+                deduped.Add(row);
+            }
+        }
+        ctx.Logger.Info($"  ✓ Removed {rows.Count - deduped.Count:N0} duplicate rows");
+
+        // 3. Missing value imputation (optional):
+        // Implement based on your data schema. For numeric columns, median imputation is a safe
+        // default; for categorical columns, use the mode. See 06_missing_value_imputation.cs for a
+        // complete example.
+
+        // Save cleaned data into the intermediate output directory.
+        var outputPath = Path.Combine(ctx.OutputDirectory, "04_cleaned.csv");
+        await ctx.Csv.WriteAsync(outputPath, deduped);
+
+        ctx.Logger.Info($"✅ Saved: {outputPath}");
+        return outputPath;
     }
 }

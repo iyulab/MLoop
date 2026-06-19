@@ -311,12 +311,15 @@ Add text preprocessing script (`.mloop/scripts/preprocess/01_text_cleaning.cs`):
 
 ```csharp
 using MLoop.Extensibility.Preprocessing;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 public class TextCleaningScript : IPreprocessingScript
 {
-    public async Task<PreprocessingResult> ExecuteAsync(PreprocessingContext context)
+    public async Task<string> ExecuteAsync(PreprocessContext ctx)
     {
-        var lines = await File.ReadAllLinesAsync(context.InputPath);
+        var lines = await File.ReadAllLinesAsync(ctx.InputPath);
         var cleaned = lines.Select(line =>
         {
             var parts = line.Split(',');
@@ -332,14 +335,10 @@ public class TextCleaningScript : IPreprocessingScript
             return $"{review},{parts[1]}";
         });
 
-        var outputPath = context.GetTempPath("cleaned.csv");
+        var outputPath = Path.Combine(ctx.OutputDirectory, "01_cleaned.csv");
         await File.WriteAllLinesAsync(outputPath, cleaned);
 
-        return new PreprocessingResult
-        {
-            OutputPath = outputPath,
-            Success = true
-        };
+        return outputPath;
     }
 }
 ```
