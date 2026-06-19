@@ -90,6 +90,16 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
             _logger.LogInformation("Rules applied: {Successful}/{Total} successful",
                 applicationResult.SuccessfulRules, applicationResult.TotalRules);
 
+            // Silent-success guard: if nothing was actually transformed, the "cleaned" deliverable
+            // is byte-for-byte the input. Surface this loudly instead of implying it was cleaned.
+            if (applicationResult.TotalRowsAffected == 0)
+            {
+                _logger.LogWarning(
+                    "No rules effectively modified the data ({Successful}/{Total} applied, 0 rows affected); " +
+                    "the generated cleaned dataset is identical to the input.",
+                    applicationResult.SuccessfulRules, applicationResult.TotalRules);
+            }
+
             // Generate all deliverables (cleaned data, script, report, metadata)
             var manifest = await _deliverableGenerator.GenerateAllAsync(
                 state,

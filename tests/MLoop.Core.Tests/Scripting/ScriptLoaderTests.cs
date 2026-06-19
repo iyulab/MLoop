@@ -216,6 +216,32 @@ public class ModifiableHook : IMLoopHook
     }
 
     [Fact]
+    public async Task LoadScriptAsync_WithRegex_CompilesAndLoads()
+    {
+        // System.Text.RegularExpressions lives in a separate assembly (not System.Private.CoreLib),
+        // so the compilation reference set must include it explicitly. Hooks/metrics/detectors
+        // commonly use Regex, so a script referencing it must compile.
+        var scriptPath = Path.Combine(_testDirectory, "RegexHook.cs");
+        var scriptContent = @"
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Hooks;
+
+public class RegexHook : IMLoopHook
+{
+    private static readonly Regex Digits = new Regex(@""\d+"");
+    public string Name => Digits.Replace(""abc123"", ""<*>"");
+    public Task<HookResult> ExecuteAsync(HookContext context) => Task.FromResult(HookResult.Continue());
+}";
+        await File.WriteAllTextAsync(scriptPath, scriptContent);
+
+        var hooks = await _scriptLoader.LoadScriptAsync<IMLoopHook>(scriptPath);
+
+        Assert.Single(hooks);
+        Assert.Equal("abc<*>", hooks[0].Name);
+    }
+
+    [Fact]
     public async Task LoadScriptAsync_WithAbstractClass_IgnoresAbstractClass()
     {
         var scriptPath = Path.Combine(_testDirectory, "AbstractHook.cs");

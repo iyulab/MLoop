@@ -3,6 +3,23 @@ using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models;
 namespace MLoop.Core.Preprocessing.Incremental.RuleApplication.Models;
 
 /// <summary>
+/// Outcome category of a rule application attempt.
+/// Distinguishes a genuine transform from a no-op so callers cannot mistake an
+/// unimplemented strategy for success (silent-success guard).
+/// </summary>
+public enum RuleApplicationStatus
+{
+    /// <summary>The rule's strategy ran and (potentially) transformed the data.</summary>
+    Applied,
+
+    /// <summary>No strategy is implemented for this rule type yet — data was left untouched.</summary>
+    NotImplemented,
+
+    /// <summary>The rule could not be applied (validation failure or runtime error).</summary>
+    Failed
+}
+
+/// <summary>
 /// Result of applying a single preprocessing rule to a DataFrame.
 /// </summary>
 public sealed class RuleApplicationResult
@@ -11,6 +28,12 @@ public sealed class RuleApplicationResult
     /// The rule that was applied.
     /// </summary>
     public required PreprocessingRule Rule { get; init; }
+
+    /// <summary>
+    /// Outcome category of this application attempt.
+    /// <see cref="Success"/> is true only when this is <see cref="RuleApplicationStatus.Applied"/>.
+    /// </summary>
+    public required RuleApplicationStatus Status { get; init; }
 
     /// <summary>
     /// Number of rows affected by this rule.

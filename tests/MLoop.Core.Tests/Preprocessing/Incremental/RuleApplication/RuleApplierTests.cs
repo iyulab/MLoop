@@ -84,16 +84,19 @@ public class RuleApplierTests
     #region ApplyRuleAsync Tests
 
     [Fact]
-    public async Task ApplyRuleAsync_ValidRule_ReturnsSuccess()
+    public async Task ApplyRuleAsync_UnimplementedStrategy_ReportsNotImplemented_NotSilentSuccess()
     {
+        // Regression guard: placeholder strategies must NOT report Success=true with 0 rows
+        // affected — that produced cleaned data identical to input while claiming success.
         var df = CreateTestDataFrame();
-        var rule = CreateRule();
+        var rule = CreateRule(); // MissingValueStrategy (not yet implemented)
 
         var result = await _applier.ApplyRuleAsync(df, rule);
 
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        Assert.True(result.Duration > TimeSpan.Zero);
+        Assert.False(result.Success);
+        Assert.Equal(RuleApplicationStatus.NotImplemented, result.Status);
+        Assert.NotNull(result.ErrorMessage);
+        Assert.Equal(0, result.RowsAffected);
     }
 
     [Fact]
@@ -105,6 +108,7 @@ public class RuleApplierTests
         var result = await _applier.ApplyRuleAsync(df, rule);
 
         Assert.False(result.Success);
+        Assert.Equal(RuleApplicationStatus.Failed, result.Status);
         Assert.NotNull(result.ErrorMessage);
         Assert.Equal(3, result.RowsSkipped);
         Assert.Equal(0, result.RowsAffected);
@@ -120,14 +124,17 @@ public class RuleApplierTests
     [InlineData(PreprocessingRuleType.EncodingNormalization)]
     [InlineData(PreprocessingRuleType.NumericFormatStandardization)]
     [InlineData(PreprocessingRuleType.BusinessLogicDecision)]
-    public async Task ApplyRuleAsync_AllRuleTypes_ReturnsSuccess(PreprocessingRuleType ruleType)
+    public async Task ApplyRuleAsync_AllRuleTypes_NotImplemented_DoNotReportSilentSuccess(PreprocessingRuleType ruleType)
     {
+        // No application strategy is implemented yet; every type must surface NotImplemented
+        // rather than silently succeeding. See ISSUE-mloop-20260619-ruleapplier-noop-apply.
         var df = CreateTestDataFrame();
         var rule = CreateRule(type: ruleType);
 
         var result = await _applier.ApplyRuleAsync(df, rule);
 
-        Assert.True(result.Success);
+        Assert.False(result.Success);
+        Assert.Equal(RuleApplicationStatus.NotImplemented, result.Status);
     }
 
     [Fact]
@@ -159,27 +166,31 @@ public class RuleApplierTests
         var result = await _applier.ApplyRulesAsync(df, rules);
 
         Assert.Equal(3, result.TotalRules);
-        Assert.Equal(3, result.SuccessfulRules);
-        Assert.Equal(0, result.FailedRules);
+        // No strategy is implemented yet: all surface as NotImplemented (not silent success).
+        Assert.Equal(0, result.SuccessfulRules);
+        Assert.Equal(3, result.FailedRules);
         Assert.Equal(3, result.Results.Count);
+        Assert.All(result.Results, r => Assert.Equal(RuleApplicationStatus.NotImplemented, r.Status));
     }
 
     [Fact]
-    public async Task ApplyRulesAsync_MixedSuccess_CountsCorrectly()
+    public async Task ApplyRulesAsync_ValidationFailureVsNotImplemented_DistinguishedByStatus()
     {
         var df = CreateTestDataFrame();
         var rules = new[]
         {
-            CreateRule("good", columnNames: new[] { "Feature1" }),
-            CreateRule("bad", columnNames: new[] { "Missing" }),
-            CreateRule("good2", columnNames: new[] { "Category" })
+            CreateRule("valid-cols", columnNames: new[] { "Feature1" }),   // validates, but not implemented
+            CreateRule("bad-col", columnNames: new[] { "Missing" }),        // validation failure
+            CreateRule("valid-cols2", columnNames: new[] { "Category" })    // validates, but not implemented
         };
 
         var result = await _applier.ApplyRulesAsync(df, rules);
 
         Assert.Equal(3, result.TotalRules);
-        Assert.Equal(2, result.SuccessfulRules);
-        Assert.Equal(1, result.FailedRules);
+        Assert.Equal(0, result.SuccessfulRules);
+        Assert.Equal(3, result.FailedRules);
+        Assert.Equal(2, result.Results.Count(r => r.Status == RuleApplicationStatus.NotImplemented));
+        Assert.Equal(1, result.Results.Count(r => r.Status == RuleApplicationStatus.Failed));
     }
 
     [Fact]

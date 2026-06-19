@@ -4,8 +4,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Scripting;
-using Microsoft.CodeAnalysis.Scripting;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Preprocessing;
@@ -20,8 +18,6 @@ public class ScriptLoader
 {
     private readonly string _cacheDirectory;
     private readonly Action<string> _log;
-    private ScriptOptions? _scriptOptions;
-    private readonly object _scriptOptionsLock = new();
 
     /// <summary>
     /// Initializes a new instance of ScriptLoader.
@@ -32,53 +28,6 @@ public class ScriptLoader
     {
         _cacheDirectory = cacheDirectory ?? Path.Combine(".mloop", ".cache", "scripts");
         _log = log ?? Console.WriteLine;
-        // Note: _scriptOptions is lazily initialized to avoid Assembly.Location issues in single-file publish
-    }
-
-    /// <summary>
-    /// Gets or creates the ScriptOptions instance (lazy initialization).
-    /// This avoids Assembly.Location issues in single-file publish scenarios.
-    /// </summary>
-    private ScriptOptions GetScriptOptions()
-    {
-        if (_scriptOptions == null)
-        {
-            lock (_scriptOptionsLock)
-            {
-                if (_scriptOptions == null)
-                {
-                    // Ensure cache directory exists
-                    Directory.CreateDirectory(_cacheDirectory);
-
-                    // Configure script compilation options with necessary references
-                    _scriptOptions = ScriptOptions.Default
-                        .AddReferences(
-                            typeof(object).Assembly,                    // System
-                            typeof(IPreprocessingScript).Assembly,      // MLoop.Extensibility
-                            typeof(IPatternDetector).Assembly,          // MLoop.Core (pattern detectors)
-                            typeof(Microsoft.Data.Analysis.DataFrame).Assembly, // Microsoft.Data.Analysis
-                            typeof(Microsoft.ML.MLContext).Assembly,    // Microsoft.ML
-                            typeof(FilePrepper.Pipeline.DataPipeline).Assembly  // FilePrepper
-                        )
-                        .AddImports(
-                            "System",
-                            "System.IO",
-                            "System.Linq",
-                            "System.Threading.Tasks",
-                            "Microsoft.ML",
-                            "Microsoft.Data.Analysis",
-                            "MLoop.Extensibility",
-                            "MLoop.Extensibility.Hooks",
-                            "MLoop.Extensibility.Metrics",
-                            "MLoop.Extensibility.Preprocessing",
-                            "MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts",
-                            "MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models",
-                            "FilePrepper.Pipeline"
-                        );
-                }
-            }
-        }
-        return _scriptOptions;
     }
 
     /// <summary>
@@ -151,7 +100,12 @@ public class ScriptLoader
             typeof(System.Threading.Tasks.Task).Assembly,
             typeof(System.Linq.Enumerable).Assembly,
             typeof(System.IO.Path).Assembly,
-            typeof(Console).Assembly
+            typeof(Console).Assembly,
+            // BCL assemblies that live outside System.Private.CoreLib and are commonly used by
+            // user scripts (hooks/metrics/detectors). Without these, scripts referencing Regex or
+            // JsonSerializer fail to compile with "type could not be found ... add a reference".
+            typeof(System.Text.RegularExpressions.Regex).Assembly,   // System.Text.RegularExpressions
+            typeof(System.Text.Json.JsonSerializer).Assembly         // System.Text.Json
         ));
 
         // Add ML.NET DataView assembly if available
@@ -174,6 +128,8 @@ public class ScriptLoader
             "System.Runtime.dll",
             "System.Collections.dll",
             "System.Collections.Immutable.dll",
+            "System.Text.RegularExpressions.dll",
+            "System.Text.Json.dll",
             "netstandard.dll"
         }
         .Select(name => Path.Combine(runtimePath, name))
