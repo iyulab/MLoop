@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-06-19
+
+### Fixed
+- **IPreprocessingScript contract drift**: public preprocessing examples (`examples/preprocessing-scripts/01–07`), the tutorial/docs code blocks, and MLoop's own `PreprocessingScriptGenerator` referenced types that do not exist in the source — `PreprocessingResult`, `PreprocessingContext`, `context.GetTempPath()` — and the dead bare `MLoop.Extensibility` namespace. The authoritative contract is `Task<string> ExecuteAsync(PreprocessContext)` returning the produced CSV path. Root cause: none of these artifacts live in a csproj, so the build never compiled them and they drifted from the contract that `ScriptLoader` compiles standalone at runtime (no implicit/global usings). Generator-produced scripts therefore failed to compile/load, and copy-pasting the examples broke for consumers.
+  - `PreprocessingScriptGenerator` now emits the real contract and accumulates `currentPath` so the returned path always exists (also fixes a latent missing-file return on the encoding-only path).
+  - `PreprocessContext` gains null-safe `GetMetadata<T>`/`HasMetadata`, matching `HookContext`/`MetricContext`.
+  - Examples 01–07 unified to the real contract; `04_data_cleaning` drops the external CsvHelper dependency in favor of the injected `ctx.Csv` (`ICsvHelper`).
+- **`mloop preprocess --help`** now documents the two paths: the default path runs `IPreprocessingScript` files in `.mloop/scripts/preprocess/`, while `--incremental` runs the detector-based rule-discovery workflow.
+
+### Added
+- Regression guards that compile artifacts through the real `ScriptLoader`: generated scripts (`PreprocessingScriptGeneratorTests`) and the shipped example files (`ExampleScriptsCompilationTests`), making the examples first-class compile targets.
+
 ## [0.14.1] - 2026-06-19
 
 ### Fixed
