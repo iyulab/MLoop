@@ -13,6 +13,7 @@ using MLoop.Core.Preprocessing.Incremental.Models;
 using MLoop.Core.Preprocessing.Incremental.RuleApplication;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery;
 using MLoop.Core.Preprocessing.Incremental.ScriptGeneration;
+using MLoop.Core.Scripting;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
@@ -284,7 +285,15 @@ public static class PreprocessCommand
         // Initialize workflow components
         var samplingEngine = new SamplingEngine();
         var sampleAnalyzer = new SampleAnalyzer();
-        var ruleDiscoveryEngine = new RuleDiscoveryEngine(new SpectreGenericLogger<RuleDiscoveryEngine>());
+
+        // Discover custom pattern detectors from .mloop/scripts/detectors/ (zero-overhead if absent).
+        // Consumer apps can contribute domain-specific IPatternDetector implementations without
+        // modifying the core engine.
+        var scriptDiscovery = new ScriptDiscovery(projectRoot);
+        var customDetectors = await scriptDiscovery.DiscoverDetectorsAsync().ConfigureAwait(false);
+        var ruleDiscoveryEngine = new RuleDiscoveryEngine(
+            new SpectreGenericLogger<RuleDiscoveryEngine>(),
+            customDetectors);
         var hitlWorkflowService = new HITLWorkflowService(
             new HITLQuestionGenerator(new SpectreGenericLogger<HITLQuestionGenerator>()),
             new HITLPromptBuilder(new SpectreGenericLogger<HITLPromptBuilder>()),

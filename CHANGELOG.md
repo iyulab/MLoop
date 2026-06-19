@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-19
+
+### Added
+- **Pluggable pattern detectors**: `IPatternDetector` implementations can now be contributed by consumer apps via `.mloop/scripts/detectors/*.cs` (auto-discovery), mirroring the existing hooks/metrics extension mechanism. Detectors run alongside the built-in 7 in the incremental preprocessing rule-discovery engine — no core modification required.
+  - `ScriptDiscovery.DiscoverDetectorsAsync()` + `GetDetectorsDirectory()`; `InitializeDirectories()` now also creates `detectors/`.
+  - `RuleDiscoveryEngine` accepts optional injected custom detectors (DI), combined with the built-ins (backward compatible).
+  - `ScriptLoader` exposes MLoop.Core + Microsoft.Data.Analysis to compiled scripts so detectors can reference `DataFrameColumn`, `DetectedPattern`, `PatternType`.
+  - `mloop preprocess --incremental` wires discovered detectors into the engine (zero-overhead when the directory is absent).
+
 ## [0.11.0] - 2026-03-20
 
 ### Added

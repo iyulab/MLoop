@@ -18,10 +18,21 @@ public sealed class RuleDiscoveryEngine : IRuleDiscoveryEngine
     private readonly ConfidenceCalculator _confidenceCalculator;
     private readonly ConvergenceDetector _convergenceDetector;
 
-    public RuleDiscoveryEngine(ILogger<RuleDiscoveryEngine> logger)
+    /// <summary>
+    /// Creates a rule discovery engine.
+    /// </summary>
+    /// <param name="logger">Logger.</param>
+    /// <param name="customDetectors">
+    /// Optional custom pattern detectors (e.g. discovered from <c>.mloop/scripts/detectors/</c>).
+    /// These run alongside the built-in detectors, letting consumer apps contribute
+    /// domain-specific detection without modifying the core engine.
+    /// </param>
+    public RuleDiscoveryEngine(
+        ILogger<RuleDiscoveryEngine> logger,
+        IEnumerable<IPatternDetector>? customDetectors = null)
     {
         _logger = logger;
-        _detectors = InitializeDetectors();
+        _detectors = BuildDetectors(customDetectors);
         _confidenceCalculator = new ConfidenceCalculator();
         _convergenceDetector = new ConvergenceDetector();
     }
@@ -310,9 +321,34 @@ public sealed class RuleDiscoveryEngine : IRuleDiscoveryEngine
     }
 
     /// <summary>
-    /// Initialize all pattern detectors.
+    /// Combine the built-in detectors with any injected custom detectors.
+    /// Built-ins always run first; custom detectors are appended.
     /// </summary>
-    private static List<IPatternDetector> InitializeDetectors()
+    private List<IPatternDetector> BuildDetectors(
+        IEnumerable<IPatternDetector>? customDetectors)
+    {
+        var detectors = InitializeBuiltInDetectors();
+
+        if (customDetectors is not null)
+        {
+            var custom = customDetectors.Where(d => d is not null).ToList();
+            if (custom.Count > 0)
+            {
+                detectors.AddRange(custom);
+                _logger.LogInformation(
+                    "Registered {Count} custom pattern detector(s): {Detectors}",
+                    custom.Count,
+                    string.Join(", ", custom.Select(d => d.GetType().Name)));
+            }
+        }
+
+        return detectors;
+    }
+
+    /// <summary>
+    /// Initialize the built-in pattern detectors.
+    /// </summary>
+    private static List<IPatternDetector> InitializeBuiltInDetectors()
     {
         return new List<IPatternDetector>
         {
