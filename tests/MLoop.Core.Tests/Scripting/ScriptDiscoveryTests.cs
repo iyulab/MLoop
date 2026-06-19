@@ -1,3 +1,4 @@
+using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models;
 using MLoop.Core.Scripting;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Hooks;
@@ -267,6 +268,61 @@ public class ValidHook : IMLoopHook
 
         // Assert
         Assert.Equal(Path.Combine(_testProjectRoot, ".mloop", "scripts", "metrics"), path);
+    }
+
+    [Fact]
+    public void GetDetectorsDirectory_ReturnsCorrectPath()
+    {
+        var path = _discovery.GetDetectorsDirectory();
+
+        Assert.Equal(Path.Combine(_testProjectRoot, ".mloop", "scripts", "detectors"), path);
+    }
+
+    [Fact]
+    public void InitializeDirectories_CreatesDetectorsDirectory()
+    {
+        _discovery.InitializeDirectories();
+
+        Assert.True(Directory.Exists(_discovery.GetDetectorsDirectory()));
+    }
+
+    [Fact]
+    public async Task DiscoverDetectorsAsync_WithNoDetectorsDirectory_ReturnsEmptyList()
+    {
+        var detectors = await _discovery.DiscoverDetectorsAsync();
+        Assert.Empty(detectors);
+    }
+
+    [Fact]
+    public async Task DiscoverDetectorsAsync_WithValidDetectorScript_ReturnsDetector()
+    {
+        _discovery.InitializeDirectories();
+        var detectorScript = Path.Combine(_discovery.GetDetectorsDirectory(), "TestDetector.cs");
+        var scriptContent = @"
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Data.Analysis;
+using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
+using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models;
+
+public class TestDiscoveryDetector : IPatternDetector
+{
+    public PatternType PatternType => PatternType.BusinessRule;
+    public bool IsApplicable(DataFrameColumn column) => true;
+    public Task<IReadOnlyList<DetectedPattern>> DetectAsync(
+        DataFrameColumn column, string columnName, CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<DetectedPattern> patterns = new List<DetectedPattern>();
+        return Task.FromResult(patterns);
+    }
+}";
+        await File.WriteAllTextAsync(detectorScript, scriptContent);
+
+        var detectors = await _discovery.DiscoverDetectorsAsync();
+
+        Assert.Single(detectors);
+        Assert.Equal(PatternType.BusinessRule, detectors[0].PatternType);
     }
 
     [Fact]

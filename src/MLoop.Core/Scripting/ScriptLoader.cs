@@ -6,6 +6,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
+using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Preprocessing;
 
@@ -54,6 +55,8 @@ public class ScriptLoader
                         .AddReferences(
                             typeof(object).Assembly,                    // System
                             typeof(IPreprocessingScript).Assembly,      // MLoop.Extensibility
+                            typeof(IPatternDetector).Assembly,          // MLoop.Core (pattern detectors)
+                            typeof(Microsoft.Data.Analysis.DataFrame).Assembly, // Microsoft.Data.Analysis
                             typeof(Microsoft.ML.MLContext).Assembly,    // Microsoft.ML
                             typeof(FilePrepper.Pipeline.DataPipeline).Assembly  // FilePrepper
                         )
@@ -63,10 +66,13 @@ public class ScriptLoader
                             "System.Linq",
                             "System.Threading.Tasks",
                             "Microsoft.ML",
+                            "Microsoft.Data.Analysis",
                             "MLoop.Extensibility",
                             "MLoop.Extensibility.Hooks",
                             "MLoop.Extensibility.Metrics",
                             "MLoop.Extensibility.Preprocessing",
+                            "MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts",
+                            "MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models",
                             "FilePrepper.Pipeline"
                         );
                 }
@@ -138,6 +144,8 @@ public class ScriptLoader
         additionalReferences.AddRange(GetMetadataReferences(
             typeof(object).Assembly,
             typeof(IPreprocessingScript).Assembly,
+            typeof(IPatternDetector).Assembly,                   // MLoop.Core (pattern detectors)
+            typeof(Microsoft.Data.Analysis.DataFrame).Assembly, // Microsoft.Data.Analysis (DataFrameColumn)
             mlAssembly,
             filePrepperAssembly,
             typeof(System.Threading.Tasks.Task).Assembly,

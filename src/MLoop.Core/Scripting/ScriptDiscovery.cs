@@ -1,3 +1,4 @@
+using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Metrics;
@@ -5,8 +6,8 @@ using MLoop.Extensibility.Metrics;
 namespace MLoop.Core.Scripting;
 
 /// <summary>
-/// Discovers hooks and metrics from filesystem using convention-based patterns.
-/// Searches .mloop/scripts/hooks/*.cs and .mloop/scripts/metrics/*.cs
+/// Discovers hooks, metrics, and pattern detectors from filesystem using convention-based patterns.
+/// Searches .mloop/scripts/hooks/*.cs, .mloop/scripts/metrics/*.cs, and .mloop/scripts/detectors/*.cs
 /// </summary>
 public class ScriptDiscovery
 {
@@ -45,6 +46,18 @@ public class ScriptDiscovery
     {
         var metricsPath = Path.Combine(_projectRoot, ".mloop", "scripts", "metrics");
         return await DiscoverScriptsAsync<IMLoopMetric>(metricsPath, "metrics").ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Discovers all pattern detectors from .mloop/scripts/detectors/*.cs
+    /// Lets consumer apps contribute domain-specific <see cref="IPatternDetector"/>
+    /// implementations to the preprocessing rule-discovery engine without modifying core.
+    /// </summary>
+    /// <returns>List of discovered detector instances</returns>
+    public async Task<List<IPatternDetector>> DiscoverDetectorsAsync()
+    {
+        var detectorsPath = Path.Combine(_projectRoot, ".mloop", "scripts", "detectors");
+        return await DiscoverScriptsAsync<IPatternDetector>(detectorsPath, "detectors").ConfigureAwait(false);
     }
 
     /// <summary>
@@ -117,6 +130,7 @@ public class ScriptDiscovery
         {
             IMLoopHook hook => hook.Name,
             IMLoopMetric metric => metric.Name,
+            IPatternDetector detector => $"{detector.GetType().Name} ({detector.PatternType})",
             _ => instance.GetType().Name
         };
     }
@@ -157,14 +171,24 @@ public class ScriptDiscovery
     }
 
     /// <summary>
+    /// Gets the full path to the detectors directory.
+    /// </summary>
+    public string GetDetectorsDirectory()
+    {
+        return Path.Combine(_projectRoot, ".mloop", "scripts", "detectors");
+    }
+
+    /// <summary>
     /// Creates the standard directory structure for extensibility.
     /// </summary>
     public void InitializeDirectories()
     {
         Directory.CreateDirectory(GetHooksDirectory());
         Directory.CreateDirectory(GetMetricsDirectory());
+        Directory.CreateDirectory(GetDetectorsDirectory());
         _log($"✅ Created extensibility directories:");
         _log($"  📁 {GetHooksDirectory()}");
         _log($"  📁 {GetMetricsDirectory()}");
+        _log($"  📁 {GetDetectorsDirectory()}");
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.Data.Analysis;
 using Microsoft.Extensions.Logging.Abstractions;
 using MLoop.Core.Preprocessing.Incremental.Models;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery;
+using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models;
 
 namespace MLoop.Core.Tests.Preprocessing.Incremental.RuleDiscovery;
@@ -144,6 +145,72 @@ public sealed class RuleDiscoveryEngineTests
         var hasConverged = _engine.HasConverged(previousRules, currentRules, threshold: 1.50); // 150% threshold
 
         Assert.False(hasConverged); // Should not converge with 200% change
+    }
+
+    [Fact]
+    public async Task DiscoverRulesAsync_WithInjectedCustomDetector_DiscoversCustomRule()
+    {
+        // Arrange: engine with a custom detector injected alongside the built-ins
+        var engine = new RuleDiscoveryEngine(
+            NullLogger<RuleDiscoveryEngine>.Instance,
+            customDetectors: new[] { new StubCustomDetector() });
+        var sample = CreateSampleWithWhitespace();
+        var analysis = CreateSampleAnalysis(1);
+
+        // Act
+        var rules = await engine.DiscoverRulesAsync(sample, analysis);
+
+        // Assert: both a built-in rule and the custom detector's rule are present
+        Assert.Contains(rules, r => r.PatternType == PatternType.WhitespaceIssue);
+        Assert.Contains(rules, r => r.Description == StubCustomDetector.Marker);
+    }
+
+    [Fact]
+    public async Task DiscoverRulesAsync_WithoutCustomDetectors_StillRunsBuiltIns()
+    {
+        // Built-ins must keep working when no custom detectors are supplied.
+        var engine = new RuleDiscoveryEngine(
+            NullLogger<RuleDiscoveryEngine>.Instance,
+            customDetectors: null);
+        var sample = CreateSampleWithMissingValues();
+        var analysis = CreateSampleAnalysis(1);
+
+        var rules = await engine.DiscoverRulesAsync(sample, analysis);
+
+        Assert.Contains(rules, r => r.PatternType == PatternType.MissingValue);
+    }
+
+    /// <summary>
+    /// Minimal custom detector that flags every column, used to verify plugin injection.
+    /// </summary>
+    private sealed class StubCustomDetector : IPatternDetector
+    {
+        public const string Marker = "custom-detector-pattern";
+
+        public PatternType PatternType => PatternType.BusinessRule;
+
+        public bool IsApplicable(DataFrameColumn column) => true;
+
+        public Task<IReadOnlyList<DetectedPattern>> DetectAsync(
+            DataFrameColumn column,
+            string columnName,
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<DetectedPattern> result = new[]
+            {
+                new DetectedPattern
+                {
+                    Type = PatternType.BusinessRule,
+                    ColumnName = columnName,
+                    Description = Marker,
+                    Severity = Severity.Medium,
+                    Occurrences = 1,
+                    TotalRows = (int)column.Length,
+                    Confidence = 1.0
+                }
+            };
+            return Task.FromResult(result);
+        }
     }
 
     // Helper methods
