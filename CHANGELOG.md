@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-06-19
+
+### Fixed
+- **ScriptLoader missing BCL references**: user scripts (detectors/hooks/metrics) referencing `Regex` failed to compile (`The type name 'Regex' could not be found ... add a reference`) because `System.Text.RegularExpressions` — a separate assembly, not `System.Private.CoreLib` — was absent from the compilation reference set. Added `System.Text.RegularExpressions` and `System.Text.Json` (with single-file-publish DLL fallbacks). Removed the dead `GetScriptOptions()` code path (the live path is `CompileAndCacheAsync`).
+- **RuleApplier silent-success**: all 9 rule-application strategies were no-ops yet reported `Success=true`, so `mloop prep` emitted a "cleaned" dataset byte-for-byte identical to the input while claiming the rules were applied. Introduced `RuleApplicationStatus` (`Applied`/`NotImplemented`/`Failed`); unimplemented strategies now surface `NotImplemented` (`Success=false`) with a clear reason, and the incremental workflow warns when no rows were actually modified. (Built-in application strategies and any custom-apply extension remain backlog — see `claudedocs/plans/2026-06-19-rule-application-engine.md`.)
+
 ## [0.14.0] - 2026-06-19
 
 ### Added

@@ -684,6 +684,7 @@ public class IncrementalWorkflowOrchestratorTests : IDisposable
                 Results = rules.Select(r => new RuleApplicationResult
                 {
                     Rule = r,
+                    Status = RuleApplicationStatus.Applied,
                     RowsAffected = 1,
                     RowsSkipped = 0,
                     Duration = TimeSpan.FromMilliseconds(10),

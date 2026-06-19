@@ -42,6 +42,7 @@ public sealed class RuleApplier : IRuleApplier
                 return new RuleApplicationResult
                 {
                     Rule = rule,
+                    Status = RuleApplicationStatus.Failed,
                     RowsAffected = 0,
                     RowsSkipped = (int)data.Rows.Count,
                     Duration = stopwatch.Elapsed,
@@ -51,7 +52,7 @@ public sealed class RuleApplier : IRuleApplier
             }
 
             // Apply rule based on type
-            var rowsAffected = rule.Type switch
+            var outcome = rule.Type switch
             {
                 PreprocessingRuleType.MissingValueStrategy => ApplyMissingValueStrategy(data, rule),
                 PreprocessingRuleType.OutlierHandling => ApplyOutlierHandling(data, rule),
@@ -67,15 +68,36 @@ public sealed class RuleApplier : IRuleApplier
 
             stopwatch.Stop();
 
+            if (outcome.Status == RuleApplicationStatus.NotImplemented)
+            {
+                // Do NOT report success: the data was left untouched. Surfacing this prevents
+                // callers from presenting unmodified data as "cleaned".
+                _logger.LogWarning(
+                    "Rule {RuleId} ({RuleType}) has no application strategy implemented yet; data left unchanged.",
+                    rule.Id, rule.Type);
+
+                return new RuleApplicationResult
+                {
+                    Rule = rule,
+                    Status = RuleApplicationStatus.NotImplemented,
+                    RowsAffected = 0,
+                    RowsSkipped = (int)data.Rows.Count,
+                    Duration = stopwatch.Elapsed,
+                    Success = false,
+                    ErrorMessage = $"Rule type '{rule.Type}' application is not yet implemented"
+                };
+            }
+
             _logger.LogInformation(
                 "Rule {RuleId} applied successfully. Rows affected: {RowsAffected}, Duration: {Duration}ms",
-                rule.Id, rowsAffected, stopwatch.ElapsedMilliseconds);
+                rule.Id, outcome.RowsAffected, stopwatch.ElapsedMilliseconds);
 
             return new RuleApplicationResult
             {
                 Rule = rule,
-                RowsAffected = rowsAffected,
-                RowsSkipped = (int)data.Rows.Count - rowsAffected,
+                Status = RuleApplicationStatus.Applied,
+                RowsAffected = outcome.RowsAffected,
+                RowsSkipped = (int)data.Rows.Count - outcome.RowsAffected,
                 Duration = stopwatch.Elapsed,
                 Success = true
             };
@@ -89,6 +111,7 @@ public sealed class RuleApplier : IRuleApplier
             return new RuleApplicationResult
             {
                 Rule = rule,
+                Status = RuleApplicationStatus.Failed,
                 RowsAffected = 0,
                 RowsSkipped = (int)data.Rows.Count,
                 Duration = stopwatch.Elapsed,
@@ -177,121 +200,57 @@ public sealed class RuleApplier : IRuleApplier
     }
 
     // ===== Rule Application Strategies =====
+    //
+    // Each strategy returns a StrategyOutcome. Until the Rule Application Engine is built
+    // (see claudedocs/plans/2026-06-19-rule-application-engine.md and
+    // ISSUE-mloop-20260619-ruleapplier-noop-apply), every strategy returns NotImplemented so
+    // the caller cannot mistake an untouched DataFrame for a successful transform. As each
+    // strategy is implemented, return StrategyOutcome.Applied(rowsAffected) instead.
 
-    private int ApplyMissingValueStrategy(DataFrame data, PreprocessingRule rule)
+    /// <summary>
+    /// Outcome of a single rule-application strategy: how many rows it changed and whether
+    /// a real strategy ran at all.
+    /// </summary>
+    private readonly record struct StrategyOutcome(int RowsAffected, RuleApplicationStatus Status)
     {
-        // Placeholder: Will be implemented with actual strategy logic
-        _logger.LogInformation("Applying missing value strategy for rule {RuleId}", rule.Id);
-
-        // Note: Actual implementation will:
-        // 1. Identify missing values in target columns
-        // 2. Apply strategy (delete, impute with mean/median/mode, default value)
-        // 3. Return count of affected values
-
-        return 0; // Placeholder
+        public static StrategyOutcome NotImplemented { get; } = new(0, RuleApplicationStatus.NotImplemented);
+        public static StrategyOutcome Applied(int rowsAffected) => new(rowsAffected, RuleApplicationStatus.Applied);
     }
 
-    private int ApplyOutlierHandling(DataFrame data, PreprocessingRule rule)
-    {
-        // Placeholder: Will be implemented with actual outlier handling logic
-        _logger.LogInformation("Applying outlier handling for rule {RuleId}", rule.Id);
+    // MissingValue: identify missing values, apply strategy (delete / impute mean·median·mode / default).
+    private StrategyOutcome ApplyMissingValueStrategy(DataFrame data, PreprocessingRule rule)
+        => StrategyOutcome.NotImplemented;
 
-        // Note: Actual implementation will:
-        // 1. Detect outliers using statistical methods (IQR, Z-score)
-        // 2. Apply handling strategy (remove, cap, flag)
-        // 3. Return count of handled outliers
+    // Outlier: detect via IQR / Z-score, then remove / cap / flag.
+    private StrategyOutcome ApplyOutlierHandling(DataFrame data, PreprocessingRule rule)
+        => StrategyOutcome.NotImplemented;
 
-        return 0; // Placeholder
-    }
+    // Whitespace: trim and normalize internal whitespace.
+    private StrategyOutcome ApplyWhitespaceNormalization(DataFrame data, PreprocessingRule rule)
+        => StrategyOutcome.NotImplemented;
 
-    private int ApplyWhitespaceNormalization(DataFrame data, PreprocessingRule rule)
-    {
-        // Placeholder: Will be implemented with actual normalization logic
-        _logger.LogInformation("Applying whitespace normalization for rule {RuleId}", rule.Id);
+    // DateFormat: parse various formats, convert to ISO-8601.
+    private StrategyOutcome ApplyDateFormatStandardization(DataFrame data, PreprocessingRule rule)
+        => StrategyOutcome.NotImplemented;
 
-        // Note: Actual implementation will:
-        // 1. Trim leading/trailing whitespace
-        // 2. Normalize internal whitespace
-        // 3. Return count of normalized values
+    // CategoryMapping: map variations to canonical values, merge similar categories.
+    private StrategyOutcome ApplyCategoryMapping(DataFrame data, PreprocessingRule rule)
+        => StrategyOutcome.NotImplemented;
 
-        return 0; // Placeholder
-    }
+    // TypeConversion: parse and convert to target type, handling errors gracefully.
+    private StrategyOutcome ApplyTypeConversion(DataFrame data, PreprocessingRule rule)
+        => StrategyOutcome.NotImplemented;
 
-    private int ApplyDateFormatStandardization(DataFrame data, PreprocessingRule rule)
-    {
-        // Placeholder: Will be implemented with actual date conversion logic
-        _logger.LogInformation("Applying date format standardization for rule {RuleId}", rule.Id);
+    // Encoding: detect mojibake / corruption, normalize to UTF-8.
+    private StrategyOutcome ApplyEncodingNormalization(DataFrame data, PreprocessingRule rule)
+        => StrategyOutcome.NotImplemented;
 
-        // Note: Actual implementation will:
-        // 1. Parse various date formats
-        // 2. Convert to ISO-8601 format
-        // 3. Return count of converted dates
+    // NumericFormat: remove thousand separators, standardize decimal separators.
+    private StrategyOutcome ApplyNumericFormatStandardization(DataFrame data, PreprocessingRule rule)
+        => StrategyOutcome.NotImplemented;
 
-        return 0; // Placeholder
-    }
-
-    private int ApplyCategoryMapping(DataFrame data, PreprocessingRule rule)
-    {
-        // Placeholder: Will be implemented with actual category mapping logic
-        _logger.LogInformation("Applying category mapping for rule {RuleId}", rule.Id);
-
-        // Note: Actual implementation will:
-        // 1. Map category variations to canonical values
-        // 2. Merge similar categories
-        // 3. Return count of mapped values
-
-        return 0; // Placeholder
-    }
-
-    private int ApplyTypeConversion(DataFrame data, PreprocessingRule rule)
-    {
-        // Placeholder: Will be implemented with actual type conversion logic
-        _logger.LogInformation("Applying type conversion for rule {RuleId}", rule.Id);
-
-        // Note: Actual implementation will:
-        // 1. Parse and convert values to target type
-        // 2. Handle conversion errors gracefully
-        // 3. Return count of converted values
-
-        return 0; // Placeholder
-    }
-
-    private int ApplyEncodingNormalization(DataFrame data, PreprocessingRule rule)
-    {
-        // Placeholder: Will be implemented with actual encoding normalization logic
-        _logger.LogInformation("Applying encoding normalization for rule {RuleId}", rule.Id);
-
-        // Note: Actual implementation will:
-        // 1. Detect encoding issues (mojibake, corruption)
-        // 2. Normalize to UTF-8
-        // 3. Return count of normalized values
-
-        return 0; // Placeholder
-    }
-
-    private int ApplyNumericFormatStandardization(DataFrame data, PreprocessingRule rule)
-    {
-        // Placeholder: Will be implemented with actual numeric format standardization logic
-        _logger.LogInformation("Applying numeric format standardization for rule {RuleId}", rule.Id);
-
-        // Note: Actual implementation will:
-        // 1. Remove thousand separators (commas)
-        // 2. Standardize decimal separators
-        // 3. Return count of standardized values
-
-        return 0; // Placeholder
-    }
-
-    private int ApplyBusinessLogicDecision(DataFrame data, PreprocessingRule rule)
-    {
-        // Placeholder: Will be implemented with actual business logic application
-        _logger.LogInformation("Applying business logic decision for rule {RuleId}", rule.Id);
-
-        // Note: Actual implementation will:
-        // 1. Apply domain-specific business rules
-        // 2. Validate against business constraints
-        // 3. Return count of affected values
-
-        return 0; // Placeholder
-    }
+    // BusinessLogic: domain-specific rules. For custom-detector rules this will dispatch to the
+    // detector's paired applier (IPatternApplier) rather than embedding domain logic in core.
+    private StrategyOutcome ApplyBusinessLogicDecision(DataFrame data, PreprocessingRule rule)
+        => StrategyOutcome.NotImplemented;
 }
