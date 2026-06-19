@@ -1,96 +1,79 @@
 using MLoop.Extensibility.Preprocessing;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 /// <summary>
 /// Missing value imputation with multiple strategies:
-/// - Mean/Median for numeric columns
+/// - Median for numeric columns
 /// - Mode for categorical columns
-/// - Forward/Backward fill for time series
 ///
 /// Usage: Place in .mloop/scripts/preprocess/06_missing_value_imputation.cs
 /// Useful for datasets with incomplete data.
+///
+/// Contract: IPreprocessingScript.ExecuteAsync returns the path to the produced CSV.
 /// </summary>
 public class MissingValueImputationScript : IPreprocessingScript
 {
-    public async Task<PreprocessingResult> ExecuteAsync(PreprocessingContext context)
+    public async Task<string> ExecuteAsync(PreprocessContext ctx)
     {
-        context.Logger.Info("🔢 Missing Value Imputation: Filling gaps with statistical methods");
+        ctx.Logger.Info("🔢 Missing Value Imputation: Filling gaps with statistical methods");
 
-        var inputPath = context.InputPath;
-        var outputPath = context.GetTempPath("imputed.csv");
+        var inputPath = ctx.InputPath;
 
-        try
+        // Read CSV with simple parsing.
+        var lines = await File.ReadAllLinesAsync(inputPath);
+        if (lines.Length == 0)
         {
-            // Read CSV with simple parsing
-            var lines = await File.ReadAllLinesAsync(inputPath);
-            if (lines.Length == 0)
+            ctx.Logger.Warning("  ⚠️ Empty CSV file, passing through unchanged");
+            return inputPath;
+        }
+
+        var header = lines[0].Split(',');
+        var rows = lines.Skip(1).Select(line => line.Split(',')).ToArray();
+
+        // Detect column types and missing values.
+        var columnStats = AnalyzeColumns(header, rows);
+        var imputedRows = new List<string[]>();
+
+        foreach (var row in rows)
+        {
+            var imputedRow = new string[row.Length];
+            for (int i = 0; i < row.Length; i++)
             {
-                return new PreprocessingResult
+                if (string.IsNullOrWhiteSpace(row[i]) || row[i] == "NA" || row[i] == "null")
                 {
-                    OutputPath = inputPath,
-                    Success = false,
-                    Message = "Empty CSV file"
-                };
-            }
-
-            var header = lines[0].Split(',');
-            var rows = lines.Skip(1).Select(line => line.Split(',')).ToArray();
-
-            // Detect column types and missing values
-            var columnStats = AnalyzeColumns(header, rows);
-            var imputedRows = new List<string[]>();
-
-            foreach (var row in rows)
-            {
-                var imputedRow = new string[row.Length];
-                for (int i = 0; i < row.Length; i++)
-                {
-                    if (string.IsNullOrWhiteSpace(row[i]) || row[i] == "NA" || row[i] == "null")
-                    {
-                        // Missing value detected
-                        var stats = columnStats[i];
-                        imputedRow[i] = stats.IsNumeric
-                            ? stats.Median.ToString()  // Use median for numeric
-                            : stats.Mode ?? "";        // Use mode for categorical
-                    }
-                    else
-                    {
-                        imputedRow[i] = row[i];
-                    }
+                    // Missing value detected.
+                    var stats = columnStats[i];
+                    imputedRow[i] = stats.IsNumeric
+                        ? stats.Median.ToString()  // Use median for numeric
+                        : stats.Mode ?? "";        // Use mode for categorical
                 }
-                imputedRows.Add(imputedRow);
-            }
-
-            // Write imputed CSV
-            using (var writer = new StreamWriter(outputPath))
-            {
-                await writer.WriteLineAsync(string.Join(",", header));
-                foreach (var row in imputedRows)
+                else
                 {
-                    await writer.WriteLineAsync(string.Join(",", row));
+                    imputedRow[i] = row[i];
                 }
             }
-
-            var totalMissing = columnStats.Sum(s => s.MissingCount);
-            context.Logger.Info($"  ✓ Imputed {totalMissing} missing values");
-            context.Logger.Info($"  💾 Saved: {outputPath}");
-
-            return new PreprocessingResult
-            {
-                OutputPath = outputPath,
-                Success = true,
-                Message = $"Imputed {totalMissing} missing values using median/mode strategies"
-            };
+            imputedRows.Add(imputedRow);
         }
-        catch (Exception ex)
+
+        // Write imputed CSV.
+        var outputPath = Path.Combine(ctx.OutputDirectory, "06_imputed.csv");
+        using (var writer = new StreamWriter(outputPath))
         {
-            context.Logger.Error($"❌ Missing value imputation failed: {ex.Message}");
-            return new PreprocessingResult
+            await writer.WriteLineAsync(string.Join(",", header));
+            foreach (var row in imputedRows)
             {
-                OutputPath = inputPath,
-                Success = false,
-                Message = $"Imputation failed: {ex.Message}"
-            };
+                await writer.WriteLineAsync(string.Join(",", row));
+            }
         }
+
+        var totalMissing = columnStats.Sum(s => s.MissingCount);
+        ctx.Logger.Info($"  ✓ Imputed {totalMissing} missing values");
+        ctx.Logger.Info($"✅ Saved: {outputPath}");
+        return outputPath;
     }
 
     private ColumnStats[] AnalyzeColumns(string[] header, string[][] rows)
@@ -103,7 +86,7 @@ public class MissingValueImputationScript : IPreprocessingScript
             var nonMissing = values.Where(v => !string.IsNullOrWhiteSpace(v) && v != "NA" && v != "null").ToList();
             var missing = values.Count - nonMissing.Count;
 
-            // Try to parse as numeric
+            // Try to parse as numeric.
             var numericValues = nonMissing
                 .Select(v => double.TryParse(v, out var n) ? (double?)n : null)
                 .Where(v => v.HasValue)
@@ -126,7 +109,7 @@ public class MissingValueImputationScript : IPreprocessingScript
             }
             else
             {
-                // Categorical - find mode
+                // Categorical - find mode.
                 var mode = nonMissing
                     .GroupBy(v => v)
                     .OrderByDescending(g => g.Count())

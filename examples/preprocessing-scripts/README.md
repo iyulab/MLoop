@@ -37,7 +37,7 @@ var labelColumn = ctx.GetMetadata<string>("LabelColumn");     // If specified
 Every preprocessing script follows this pattern:
 
 ```csharp
-using MLoop.Extensibility;
+using MLoop.Extensibility.Preprocessing;
 using System;
 using System.Collections.Generic;
 using System.IO;

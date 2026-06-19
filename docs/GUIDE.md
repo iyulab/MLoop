@@ -512,7 +512,9 @@ Each script receives the output of the previous script as input.
 
 **Example Script** (`01_datetime.cs`):
 ```csharp
-using MLoop.Extensibility;
+using MLoop.Extensibility.Preprocessing;
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;

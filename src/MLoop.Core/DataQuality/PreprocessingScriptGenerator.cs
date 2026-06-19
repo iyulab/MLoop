@@ -26,8 +26,15 @@ public class PreprocessingScriptGenerator
     {
         var sb = new StringBuilder();
 
-        // File header and usings
+        // File header and usings.
+        // ScriptLoader compiles each script standalone with NO implicit/global usings, so every
+        // namespace the generated code touches must be imported explicitly here.
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Collections.Generic;");
+        sb.AppendLine("using System.IO;");
+        sb.AppendLine("using System.Linq;");
         sb.AppendLine("using System.Text;");
+        sb.AppendLine("using System.Threading.Tasks;");
         sb.AppendLine("using MLoop.Extensibility.Preprocessing;");
         sb.AppendLine();
 
@@ -42,16 +49,17 @@ public class PreprocessingScriptGenerator
         sb.AppendLine($"public class {scriptName} : IPreprocessingScript");
         sb.AppendLine("{");
 
-        // ExecuteAsync method
-        sb.AppendLine("    public async Task<PreprocessingResult> ExecuteAsync(PreprocessingContext context)");
+        // ExecuteAsync method — must match the authoritative IPreprocessingScript contract:
+        //   Task<string> ExecuteAsync(PreprocessContext context)
+        // returning the path to the produced CSV (validated with File.Exists by PreprocessingEngine).
+        sb.AppendLine("    public async Task<string> ExecuteAsync(PreprocessContext context)");
         sb.AppendLine("    {");
         sb.AppendLine("        context.Logger.Info(\"🔧 Auto-Generated Preprocessing: Fixing data quality issues\");");
         sb.AppendLine();
-        sb.AppendLine("        var inputPath = context.InputPath;");
-        sb.AppendLine("        var outputPath = context.GetTempPath(\"processed.csv\");");
+        // currentPath only ever advances to files that have been written, so the returned path
+        // always exists — even when a stage is a no-op (e.g. file already UTF-8).
+        sb.AppendLine("        var currentPath = context.InputPath;");
         sb.AppendLine();
-        sb.AppendLine("        try");
-        sb.AppendLine("        {");
 
         // Group issues by type and generate appropriate transformations
         var hasEncodingIssue = issues.Any(i => i.Type == DataQualityIssueType.EncodingIssue);
@@ -60,24 +68,26 @@ public class PreprocessingScriptGenerator
 
         if (hasEncodingIssue)
         {
-            sb.AppendLine("            // Fix encoding issues");
-            sb.AppendLine("            var encoding = await DetectEncodingAsync(inputPath);");
-            sb.AppendLine("            if (encoding != Encoding.UTF8)");
-            sb.AppendLine("            {");
-            sb.AppendLine("                var content = await File.ReadAllTextAsync(inputPath, encoding);");
-            sb.AppendLine("                await File.WriteAllTextAsync(outputPath, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));");
-            sb.AppendLine("                context.Logger.Info($\"  ✓ Converted {encoding.EncodingName} → UTF-8\");");
-            sb.AppendLine("                inputPath = outputPath;  // Chain transformations");
-            sb.AppendLine("                outputPath = context.GetTempPath(\"processed2.csv\");");
-            sb.AppendLine("            }");
+            sb.AppendLine("        // Fix encoding issues");
+            sb.AppendLine("        var encoding = await DetectEncodingAsync(currentPath);");
+            sb.AppendLine("        if (encoding != Encoding.UTF8)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            var utf8Path = Path.Combine(context.OutputDirectory, \"01_utf8.csv\");");
+            sb.AppendLine("            var content = await File.ReadAllTextAsync(currentPath, encoding);");
+            sb.AppendLine("            await File.WriteAllTextAsync(utf8Path, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));");
+            sb.AppendLine("            context.Logger.Info($\"  ✓ Converted {encoding.EncodingName} → UTF-8\");");
+            sb.AppendLine("            currentPath = utf8Path;");
+            sb.AppendLine("        }");
             sb.AppendLine();
         }
 
         // For other issues, we'll use simple CSV processing
         if (hasDuplicates || hasWhitespace)
         {
-            sb.AppendLine("            // Read CSV");
-            sb.AppendLine("            var lines = await File.ReadAllLinesAsync(inputPath);");
+            sb.AppendLine("        // Read CSV");
+            sb.AppendLine("        var lines = await File.ReadAllLinesAsync(currentPath);");
+            sb.AppendLine("        if (lines.Length > 0)");
+            sb.AppendLine("        {");
             sb.AppendLine("            var header = lines[0];");
             sb.AppendLine("            var rows = lines.Skip(1).ToList();");
             sb.AppendLine();
@@ -101,37 +111,22 @@ public class PreprocessingScriptGenerator
             }
 
             sb.AppendLine("            // Write cleaned CSV");
-            sb.AppendLine("            await File.WriteAllLinesAsync(outputPath, new[] { header }.Concat(rows));");
+            sb.AppendLine("            var cleanedPath = Path.Combine(context.OutputDirectory, \"02_cleaned.csv\");");
+            sb.AppendLine("            await File.WriteAllLinesAsync(cleanedPath, new[] { header }.Concat(rows));");
+            sb.AppendLine("            currentPath = cleanedPath;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
         }
         else if (!hasEncodingIssue)
         {
             // No transformations needed
-            sb.AppendLine("            // No critical issues detected, pass through");
-            sb.AppendLine("            outputPath = inputPath;");
+            sb.AppendLine("        // No critical issues detected, pass through");
+            sb.AppendLine();
         }
 
-        sb.AppendLine();
-        sb.AppendLine("            context.Logger.Info($\"  💾 Saved: {outputPath}\");");
-        sb.AppendLine();
-        sb.AppendLine("            return new PreprocessingResult");
-        sb.AppendLine("            {");
-        sb.AppendLine("                OutputPath = outputPath,");
-        sb.AppendLine("                Success = true,");
-        sb.AppendLine($"                Message = \"Fixed {issues.Count} data quality issue(s)\"");
-        sb.AppendLine("            };");
-
-        // Catch block
-        sb.AppendLine("        }");
-        sb.AppendLine("        catch (Exception ex)");
-        sb.AppendLine("        {");
-        sb.AppendLine("            context.Logger.Error($\"❌ Preprocessing failed: {ex.Message}\");");
-        sb.AppendLine("            return new PreprocessingResult");
-        sb.AppendLine("            {");
-        sb.AppendLine("                OutputPath = inputPath,");
-        sb.AppendLine("                Success = false,");
-        sb.AppendLine("                Message = $\"Preprocessing failed: {ex.Message}\"");
-        sb.AppendLine("            };");
-        sb.AppendLine("        }");
+        sb.AppendLine($"        context.Logger.Info(\"✅ Fixed {issues.Count} data quality issue(s)\");");
+        sb.AppendLine("        context.Logger.Info($\"  💾 Output: {currentPath}\");");
+        sb.AppendLine("        return currentPath;");
         sb.AppendLine("    }");
 
         // Helper methods if needed
