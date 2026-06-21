@@ -115,15 +115,17 @@ public class ErrorSuggestionsTests
     }
 
     [Fact]
-    public void GetSuggestions_FeatureVectorMismatch_SuggestsCategoricalIssue()
+    public void GetSuggestions_FeatureVectorMismatch_SuggestsSchemaMismatch()
     {
         var ex = new InvalidOperationException(
             "Feature vector dimension mismatch during evaluation. " +
-            "This typically occurs when categorical columns in the test data contain values " +
-            "not seen during training (OneHotEncoding creates different dimensions).");
+            "The test data's columns don't match the schema the model was trained on " +
+            "(a feature column may be missing, renamed, or have a different type).");
         var suggestions = ErrorSuggestions.GetSuggestions(ex, "evaluate");
 
-        Assert.Contains(suggestions, s => s.Contains("Categorical") || s.Contains("categorical"));
-        Assert.Contains(suggestions, s => s.Contains("OneHotEncoding") || s.Contains("dimension"));
+        // The accurate root cause is a column-structure mismatch, not value-distribution drift:
+        // the saved model embeds its fitted featurizers, so dimensions are fixed at training time.
+        Assert.Contains(suggestions, s => s.Contains("columns") || s.Contains("schema"));
+        Assert.Contains(suggestions, s => s.Contains("type"));
     }
 }

@@ -77,10 +77,10 @@ public static class ErrorSuggestions
         // ML.NET specific errors
         if (message.Contains("feature vector dimension mismatch") || message.Contains("onehotencoding"))
         {
-            suggestions.Add("Categorical columns in test data contain values not seen during training");
-            suggestions.Add("OneHotEncoding creates different vector dimensions for different category sets");
+            suggestions.Add("Prediction/test data columns don't match the model's training schema");
+            suggestions.Add("Check for missing, renamed, or extra feature columns versus the training data");
+            suggestions.Add("Ensure each column's type matches training (e.g. numeric vs. text)");
             suggestions.Add("Try evaluating with a test split from the same dataset used for training");
-            suggestions.Add("Consider using [cyan]mloop prep[/] to preprocess categorical columns before training");
         }
         else if (message.Contains("schema") || message.Contains("column"))
         {
