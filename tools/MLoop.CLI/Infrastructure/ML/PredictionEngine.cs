@@ -232,6 +232,7 @@ public class PredictionEngine : IPredictionEngine
                             "Numeric" => Microsoft.ML.Data.DataKind.Single,
                             "Categorical" => Microsoft.ML.Data.DataKind.String,
                             "Text" => Microsoft.ML.Data.DataKind.String,
+                            "String" => Microsoft.ML.Data.DataKind.String, // BUG-42: tolerate raw type name
                             "Boolean" => Microsoft.ML.Data.DataKind.Boolean,
                             _ => col.DataKind // keep inferred type for unknown schema types
                         };

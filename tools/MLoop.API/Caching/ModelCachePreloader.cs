@@ -26,11 +26,11 @@ internal sealed class ModelCachePreloader : IHostedService
         _logger = logger;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (_options.MaxCachedModels <= 0 || _options.PreloadModels.Count == 0)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         foreach (var modelName in _options.PreloadModels)
@@ -50,6 +50,11 @@ internal sealed class ModelCachePreloader : IHostedService
 
             try
             {
+                // DL tasks need their native runtime loaded before deserializing the model (BUG-40).
+                var production = await _registry.GetProductionAsync(trimmed, cancellationToken);
+                if (production?.Task is { } task)
+                    MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(task);
+
                 _cache.GetOrLoad(modelPath);
                 _logger.LogInformation("Preload: loaded '{ModelName}' into cache", trimmed);
             }
@@ -59,8 +64,6 @@ internal sealed class ModelCachePreloader : IHostedService
                     trimmed, modelPath);
             }
         }
-
-        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

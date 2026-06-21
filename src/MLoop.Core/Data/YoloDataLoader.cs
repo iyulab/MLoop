@@ -49,7 +49,7 @@ public sealed class YoloDataLoader : IDataProvider
     }
 
     /// <summary>
-    /// Detects a YOLO layout under <paramref name="filePath"/> (an <c>images/</c> + <c>labels/</c>
+    /// Detects a YOLO layout under <paramref name="path"/> (an <c>images/</c> + <c>labels/</c>
     /// pair, or images and .txt labels in a single directory).
     /// </summary>
     public static bool IsYoloDirectory(string path)

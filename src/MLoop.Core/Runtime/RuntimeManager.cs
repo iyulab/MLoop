@@ -207,6 +207,38 @@ public class RuntimeManager
     }
 
     /// <summary>
+    /// Ensures the native runtime required by the given task (if any) is installed and loaded.
+    /// </summary>
+    /// <remarks>
+    /// No-op for tasks that need no on-demand native runtime (e.g. tabular tasks). For DL tasks
+    /// (image-classification, object-detection, NLP) this must be called <b>before any</b>
+    /// <c>MLContext.Model.Load</c> that deserializes native model parameters — both the training
+    /// path and every inference/evaluation/serving path. Skipping it on the load side surfaces as a
+    /// <see cref="DllNotFoundException"/> ("Unable to load DLL 'tensorflow'/...") at deserialization
+    /// time, since ML.NET resolves the native library while reconstructing the model. (BUG-40)
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The task requires a runtime that is not yet installed (includes an install hint).
+    /// </exception>
+    public static void EnsureRuntimeForTask(string taskType)
+    {
+        if (string.IsNullOrWhiteSpace(taskType))
+            return;
+
+        var runtime = RuntimeRegistry.GetRequiredByTask(taskType);
+        if (runtime == null)
+            return;
+
+        var manager = new RuntimeManager();
+        if (!manager.IsInstalled(runtime))
+            throw new InvalidOperationException(
+                $"Task '{taskType}' requires {runtime.DisplayName} runtime (~{runtime.ApproximateSizeMB}MB). " +
+                $"Install it with: mloop runtime install {runtime.Id}");
+
+        manager.EnsureLoaded(runtime);
+    }
+
+    /// <summary>
     /// Ensures runtime is loaded for use. Call before using DL features.
     /// </summary>
     public void EnsureLoaded(RuntimeDefinition runtime)

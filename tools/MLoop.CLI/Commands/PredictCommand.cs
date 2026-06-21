@@ -216,6 +216,23 @@ public static class PredictCommand
                 return 0;
             }
 
+            // DL tasks (image-classification, object-detection, NLP) need their native runtime
+            // loaded before any Model.Load deserializes native parameters. Guard at the CLI boundary
+            // so every downstream load (schema validation, PredictionEngine, PredictionService) is
+            // covered with one call where the task type is known. No-op for tabular tasks. (BUG-40)
+            if (taskType != null)
+            {
+                try
+                {
+                    MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+                    return 1;
+                }
+            }
+
             // Resolve data file path (Convention: datasets/predict.csv)
             string resolvedDataFile;
 

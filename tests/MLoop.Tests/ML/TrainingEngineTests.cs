@@ -326,6 +326,40 @@ public class TrainingEngineTests : IDisposable
         Assert.Contains("directory", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void BuildDirectoryInputSchema_ImageClassification_UsesCanonicalVocabulary()
+    {
+        // BUG-42: the directory schema must use MLoop's canonical dataType vocabulary
+        // (Categorical/Text/Numeric/Boolean), NOT the raw .NET "String". A classification label
+        // typed "String" falls through PredictionEngine's type-override default and is read as
+        // Single, which then breaks the model's MapValueToKey at predict time. The label must be
+        // categorical (→ DataKind.String) and the image path a text feature.
+        var schema = TrainingEngine.BuildDirectoryInputSchema("Label", "image-classification");
+
+        var imagePath = schema.Columns.Single(c => c.Name == "ImagePath");
+        var label = schema.Columns.Single(c => c.Name == "Label");
+
+        Assert.Equal("Text", imagePath.DataType);
+        Assert.Equal("Feature", imagePath.Purpose);
+        Assert.Equal("Categorical", label.DataType);
+        Assert.Equal("Label", label.Purpose);
+        Assert.DoesNotContain(schema.Columns, c => c.DataType == "String");
+    }
+
+    [Fact]
+    public void BuildDirectoryInputSchema_ObjectDetection_AddsBoundingBoxVector()
+    {
+        // Object detection carries a categorical label vector plus a float bounding-box vector.
+        var schema = TrainingEngine.BuildDirectoryInputSchema("Label", "object-detection");
+
+        var label = schema.Columns.Single(c => c.Name == "Label");
+        var bbox = schema.Columns.Single(c => c.Name == "BoundingBoxes");
+
+        Assert.Equal("Categorical", label.DataType);
+        Assert.Equal("Single", bbox.DataType);
+        Assert.Equal("Label", bbox.Purpose);
+    }
+
     #endregion
 
     #region Object detection (COCO directory bypass)

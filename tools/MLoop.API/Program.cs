@@ -412,6 +412,9 @@ app.MapPost("/predict", async (
         logger.LogDebug("Running prediction for '{ModelName}' with task '{TaskType}', label '{LabelColumn}'",
             modelName, taskType, labelColumn);
 
+        // DL tasks need their native runtime loaded before the cache deserializes the model (BUG-40).
+        MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
+
         var transformer = modelCache.GetOrLoad(modelPath);
         var result = predictionService.Predict(rows, schema, transformer, taskType, labelColumn);
 

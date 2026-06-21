@@ -35,6 +35,9 @@ public class EvaluationEngine
             string? tempFile = null;
             try
             {
+                // DL tasks need their native runtime loaded before deserializing the model (BUG-40).
+                MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
+
                 // Load the trained model
                 var trainedModel = _mlContext.Model.Load(modelPath, out var modelSchema);
 
