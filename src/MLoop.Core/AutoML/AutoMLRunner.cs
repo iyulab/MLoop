@@ -3,6 +3,7 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using Microsoft.ML.TorchSharp;
 using MLoop.Core.Contracts;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Scripting;
 using MLoop.Extensibility;
@@ -48,24 +49,30 @@ public class AutoMLRunner
         if (!string.IsNullOrEmpty(config.ItemColumn)) preserveColumns.Add(config.ItemColumn);
         var preserve = preserveColumns.Count > 0 ? preserveColumns : null;
 
+        // Directory-based tasks (image classification) need a different loader than the
+        // injected CSV loader. The factory keeps the tabular path byte-for-byte unchanged.
+        var loader = DataLoaderFactory.IsDirectoryBased(config.Task)
+            ? DataLoaderFactory.Create(config.Task, _mlContext)
+            : _dataLoader;
+
         if (!string.IsNullOrEmpty(config.TestDataFile))
         {
             // Pre-split data (e.g. balanced training with separate test set)
-            trainSet = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
-            testSet = _dataLoader.LoadData(config.TestDataFile, config.LabelColumn, config.Task, preserve);
+            trainSet = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
+            testSet = loader.LoadData(config.TestDataFile, config.LabelColumn, config.Task, preserve);
         }
         else if (isTimeSeriesTask)
         {
             // Time series: use full dataset (no random split — temporal order matters)
             // Forecasting/TS-Anomaly handle holdout internally
-            var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
+            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
             trainSet = dataView;
             testSet = dataView; // same data — internal holdout handles evaluation
         }
         else
         {
-            var dataView = _dataLoader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
-            (trainSet, testSet) = _dataLoader.SplitData(dataView, config.TestSplit);
+            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
+            (trainSet, testSet) = loader.SplitData(dataView, config.TestSplit);
         }
 
         // Discover hooks (zero-overhead if .mloop/scripts/hooks/ doesn't exist)
@@ -1356,9 +1363,14 @@ public class AutoMLRunner
         {
             _logger.Info($"Image classification: label='{config.LabelColumn}', TensorFlow transfer learning");
 
+            // The ImageClassification trainer requires raw image bytes as its feature
+            // column. ImageDirectoryLoader produces an "ImagePath" string column, so
+            // LoadRawImageBytes reads each file into a VarVector<byte> before fitting.
             var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
+                .Append(_mlContext.Transforms.LoadRawImageBytes(
+                    outputColumnName: "ImageBytes", imageFolder: null, inputColumnName: "ImagePath"))
                 .Append(_mlContext.MulticlassClassification.Trainers.ImageClassification(
-                    featureColumnName: "ImagePath", labelColumnName: "Label"))
+                    featureColumnName: "ImageBytes", labelColumnName: "Label"))
                 .Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "ImageClassification (TF)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });

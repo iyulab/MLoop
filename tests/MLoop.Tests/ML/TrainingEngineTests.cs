@@ -1,5 +1,7 @@
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Models;
+using MLoop.Core.Runtime;
 
 namespace MLoop.Tests.ML;
 
@@ -272,6 +274,75 @@ public class TrainingEngineTests : IDisposable
     }
 
     #endregion
+
+    #region Image classification (directory bypass)
+
+    [Fact]
+    public async Task TrainAsync_ImageClassification_BypassesCsvAndReachesRuntimeGate()
+    {
+        // With the TF runtime installed, training would actually run (slow) — skip then.
+        var runtime = RuntimeRegistry.GetRequiredByTask("image-classification");
+        if (runtime != null && new RuntimeManager().IsInstalled(runtime))
+            return;
+
+        var imageDir = Path.Combine(_tempDir, "images");
+        CreateImageClass(imageDir, "OK", 4);
+        CreateImageClass(imageDir, "NG", 4);
+
+        var engine = NewEngine();
+        var config = new TrainingConfig
+        {
+            ModelName = "img",
+            DataFile = imageDir,
+            LabelColumn = "Label",
+            Task = "image-classification",
+            TimeLimitSeconds = 5
+        };
+
+        // Reaching the runtime gate proves the CSV preprocessing pipeline was bypassed
+        // and the image directory loaded successfully, rather than failing on CSV parsing.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.TrainAsync(config));
+
+        Assert.Contains("runtime", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("install", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CSV", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task TrainAsync_ImageClassification_MissingDirectory_FailsWithDirectoryMessage()
+    {
+        var engine = NewEngine();
+        var config = new TrainingConfig
+        {
+            ModelName = "img",
+            DataFile = Path.Combine(_tempDir, "no-such-image-dir"),
+            LabelColumn = "Label",
+            Task = "image-classification",
+            TimeLimitSeconds = 5
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.TrainAsync(config));
+
+        Assert.Contains("directory", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    #endregion
+
+    private TrainingEngine NewEngine()
+    {
+        var fs = new FileSystemManager();
+        var discovery = new ProjectDiscovery(fs);
+        var store = new ExperimentStore(fs, discovery, _tempDir);
+        return new TrainingEngine(fs, store);
+    }
+
+    private static void CreateImageClass(string root, string label, int count)
+    {
+        var dir = Path.Combine(root, label);
+        Directory.CreateDirectory(dir);
+        for (var i = 0; i < count; i++)
+            File.WriteAllBytes(Path.Combine(dir, $"{label}_{i}.jpg"), new byte[] { 0xFF, 0xD8, 0xFF });
+    }
 
     private string CreateCsv(string fileName, string content)
     {

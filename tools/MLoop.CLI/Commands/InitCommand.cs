@@ -3,6 +3,7 @@ using System.Reflection;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -171,7 +172,7 @@ public static class InitCommand
 
                     // Step 1: Create directory structure
                     progressTask.Description = "[green]Creating directory structure...[/]";
-                    await CreateDirectoryStructure(fileSystem, projectPath, modelName);
+                    await CreateDirectoryStructure(fileSystem, projectPath, modelName, task);
                     progressTask.Increment(30);
 
                     // Step 2: Create configuration files
@@ -225,17 +226,31 @@ public static class InitCommand
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();
 
+            var isDirectoryBased = DataLoaderFactory.IsDirectoryBased(task);
+
             AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
             if (projectName != ".")
             {
                 AnsiConsole.MarkupLine($"  1. cd {projectName}");
             }
-            AnsiConsole.MarkupLine("  2. Place your training data in datasets/train.csv");
-            AnsiConsole.MarkupLine("  3. Edit mloop.yaml to set your label column");
-            AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/train.csv[/]");
+            if (isDirectoryBased)
+            {
+                AnsiConsole.MarkupLine("  2. Place images under datasets/images/<class>/  [cyan]# folder name = label[/]");
+                AnsiConsole.MarkupLine("  3. mloop runtime install tf  [cyan]# one-time TensorFlow CPU runtime (~182MB)[/]");
+                AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/images/[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("  2. Place your training data in datasets/train.csv");
+                AnsiConsole.MarkupLine("  3. Edit mloop.yaml to set your label column");
+                AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/train.csv[/]");
+            }
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[grey]Folder structure:[/]");
-            AnsiConsole.MarkupLine("  datasets/                   [cyan]# Training data (train.csv)[/]");
+            if (isDirectoryBased)
+                AnsiConsole.MarkupLine("  datasets/images/<class>/    [cyan]# Training images (folder = label)[/]");
+            else
+                AnsiConsole.MarkupLine("  datasets/                   [cyan]# Training data (train.csv)[/]");
             AnsiConsole.MarkupLine($"  models/{modelName}/staging/    [cyan]# Experimental models[/]");
             AnsiConsole.MarkupLine($"  models/{modelName}/production/ [cyan]# Promoted production model[/]");
             AnsiConsole.WriteLine();
@@ -257,7 +272,8 @@ public static class InitCommand
     private static async Task CreateDirectoryStructure(
         IFileSystemManager fileSystem,
         string projectPath,
-        string modelName)
+        string modelName,
+        string task)
     {
         // Create main project directory
         await fileSystem.CreateDirectoryAsync(projectPath);
@@ -267,7 +283,26 @@ public static class InitCommand
         await fileSystem.CreateDirectoryAsync(mloopPath);
 
         // MLOps convention: datasets/ folder for training data
-        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(projectPath, "datasets"));
+        var datasetsPath = fileSystem.CombinePath(projectPath, "datasets");
+        await fileSystem.CreateDirectoryAsync(datasetsPath);
+
+        // Directory-based tasks (image classification) read datasets/images/<class>/.
+        // Scaffold the folder plus a README that documents the folder = label convention.
+        if (DataLoaderFactory.IsDirectoryBased(task))
+        {
+            var imagesPath = fileSystem.CombinePath(datasetsPath, "images");
+            await fileSystem.CreateDirectoryAsync(imagesPath);
+            await fileSystem.WriteTextAsync(
+                fileSystem.CombinePath(imagesPath, "README.txt"),
+                "Image classification dataset layout (folder name = class label):\n\n" +
+                "  datasets/images/\n" +
+                "  ├── OK/   img001.jpg img002.jpg ...\n" +
+                "  └── NG/   img101.jpg img102.jpg ...\n\n" +
+                "Place each class's images in its own subfolder, then run:\n" +
+                "  mloop runtime install tf      # one-time TensorFlow CPU runtime (~182MB)\n" +
+                "  mloop train --task image-classification\n\n" +
+                "Supported extensions: .jpg .jpeg .png .bmp .gif\n");
+        }
 
         // MLOps convention: models/{modelName}/ folder structure
         var modelPath = fileSystem.CombinePath(projectPath, "models", modelName);
