@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-21
+
+### Added
+- **Image classification — end-to-end working**: `ImageDirectoryLoader` consumes a `datasets/images/<class>/` layout (folder name = label) with TensorFlow transfer learning (ResNet v2 50). `train` → `promote` → `predict` now complete on real data. `mloop init --task image-classification` scaffolds the directory layout. Verified e2e on a KAMP folder=label dataset (5/5 correct on the held-out test images).
+- **Object detection — input path**: `CocoDataLoader` (COCO JSON, `bbox` → `x0 y0 x1 y1`) and `YoloDataLoader` (YOLO `images/` + `labels/*.txt`, normalized → absolute via image dimensions), dispatched by `ObjectDetectionDataLoader` with COCO/YOLO auto-detection. Wired through `RunObjectDetectionAsync` (LoadImages + MapValueToKey + bounding-box column) and the `train`/`init` CLI (`datasets/coco/`, `datasets/yolo/`). Evaluation honestly reports object-detection metrics as not-yet-supported (mAP pending) rather than mis-scoring.
+- **On-demand DL runtime management**: `mloop runtime install/list/remove` for the TensorFlow (image) and libtorch (object detection / NLP) native runtimes, downloaded on demand and loaded transparently when a DL task runs.
+
+### Fixed
+- **DL runtime install/load chain (BUG-37/38/39)**: `mloop runtime install` crashed on every path — a thread-affine `Mutex` released across `await` threw `ApplicationException` (and masked the real error), the torch version coordinate 404'd / mismatched the TorchSharp ABI, and TorchSharp's native wrapper (`LibTorchSharp.dll`) was not on the search path. Replaced the mutex with a cross-process file lock, pinned libtorch to the binding's `2.2.1.1`, and exposed both the runtime cache and the app's `runtimes/<rid>/native` directory to the native loader.
+- **Native DL runtime not loaded on inference paths (BUG-40)**: image/object-detection `predict`, `evaluate`, and `serve /predict` crashed with `DllNotFoundException` because the native runtime was registered only on the training path. ML.NET resolves the native library while deserializing the model, so a new shared `RuntimeManager.EnsureRuntimeForTask(taskType)` (no-op for tabular tasks) is now invoked before every model load — training, CLI predict, evaluate, serve, and model-cache preload.
+- **Directory-schema label type (BUG-42)**: the image/OD schema stored its label `dataType` as the raw `"String"`, which fell through `PredictionEngine`'s type-override default and was read as `Single`, breaking the model's `MapValueToKey` at predict time. The directory schema now uses MLoop's canonical vocabulary (`Text` for the image path, `Categorical` for the label), and `PredictionEngine` tolerates `"String"` defensively.
+- **Misleading prediction/evaluation diagnostics (BUG-31)**: "feature vector dimension mismatch" messages wrongly attributed the cause to text/value distribution drift. Saved transformers embed their fitted featurizers, so the real cause is a prediction-data column-structure/type mismatch; the four affected messages were corrected.
+
 ## [0.14.2] - 2026-06-19
 
 ### Fixed
