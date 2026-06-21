@@ -571,24 +571,28 @@ public class TrainingEngine : ITrainingEngine
     /// column plus the task's target columns: image classification has a single label column;
     /// object detection has a label vector (class names) plus a bounding-box vector.
     /// </summary>
-    private static InputSchemaInfo BuildDirectoryInputSchema(string labelColumn, string? task)
+    internal static InputSchemaInfo BuildDirectoryInputSchema(string labelColumn, string? task)
     {
         var label = string.IsNullOrWhiteSpace(labelColumn)
             ? ImageDirectoryLoader.DefaultLabelColumn
             : labelColumn;
 
+        // Use MLoop's canonical dataType vocabulary (Numeric/Categorical/Text/Boolean), not the raw
+        // .NET type name "String" — predict-time consumers map these to ML.NET DataKinds and a
+        // classification label MUST resolve to String so the model's MapValueToKey accepts it.
+        // ImagePath is a text feature; the class label is categorical. (BUG-42)
         var columns = new List<ColumnSchema>
         {
             new ColumnSchema
             {
                 Name = ImageDirectoryLoader.ImagePathColumn,
-                DataType = "String",
+                DataType = "Text",
                 Purpose = "Feature"
             },
             new ColumnSchema
             {
                 Name = label,
-                DataType = "String",
+                DataType = "Categorical",
                 Purpose = "Label"
             }
         };

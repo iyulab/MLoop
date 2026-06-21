@@ -1,6 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.Models;
+using MLoop.Core.Runtime;
 
 namespace MLoop.Core.Prediction;
 
@@ -38,6 +39,9 @@ public class PredictionService
                 Warnings = new List<string> { "No input rows provided." }
             };
         }
+
+        // DL tasks need their native runtime loaded before deserializing the model (BUG-40).
+        RuntimeManager.EnsureRuntimeForTask(taskType);
 
         var model = _mlContext.Model.Load(modelPath, out _);
         return Predict(rows, schema, model, taskType, labelColumn);

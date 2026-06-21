@@ -108,17 +108,8 @@ public class AutoMLRunner
             }
         }
 
-        // Check if task requires an on-demand native runtime
-        var requiredRuntime = Runtime.RuntimeRegistry.GetRequiredByTask(config.Task);
-        if (requiredRuntime != null)
-        {
-            var runtimeManager = new Runtime.RuntimeManager();
-            if (!runtimeManager.IsInstalled(requiredRuntime))
-                throw new InvalidOperationException(
-                    $"Task '{config.Task}' requires {requiredRuntime.DisplayName} runtime (~{requiredRuntime.ApproximateSizeMB}MB). " +
-                    $"Install it with: mloop runtime install {requiredRuntime.Id}");
-            runtimeManager.EnsureLoaded(requiredRuntime);
-        }
+        // Ensure the task's on-demand native runtime is installed and loaded (no-op for tabular tasks).
+        Runtime.RuntimeManager.EnsureRuntimeForTask(config.Task);
 
         // Run AutoML based on task type
         var result = config.Task.ToLowerInvariant() switch
