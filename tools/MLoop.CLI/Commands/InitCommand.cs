@@ -233,7 +233,14 @@ public static class InitCommand
             {
                 AnsiConsole.MarkupLine($"  1. cd {projectName}");
             }
-            if (isDirectoryBased)
+            var isObjectDetection = task.Equals("object-detection", StringComparison.OrdinalIgnoreCase);
+            if (isObjectDetection)
+            {
+                AnsiConsole.MarkupLine("  2. Edit datasets/coco/annotations.json  [cyan]# COCO format; add images + bounding boxes[/]");
+                AnsiConsole.MarkupLine("  3. mloop runtime install torch  [cyan]# one-time TorchSharp runtime[/]");
+                AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/coco/[/]");
+            }
+            else if (isDirectoryBased)
             {
                 AnsiConsole.MarkupLine("  2. Place images under datasets/images/<class>/  [cyan]# folder name = label[/]");
                 AnsiConsole.MarkupLine("  3. mloop runtime install tf  [cyan]# one-time TensorFlow CPU runtime (~182MB)[/]");
@@ -247,7 +254,9 @@ public static class InitCommand
             }
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[grey]Folder structure:[/]");
-            if (isDirectoryBased)
+            if (isObjectDetection)
+                AnsiConsole.MarkupLine("  datasets/coco/              [cyan]# COCO annotations.json + images[/]");
+            else if (isDirectoryBased)
                 AnsiConsole.MarkupLine("  datasets/images/<class>/    [cyan]# Training images (folder = label)[/]");
             else
                 AnsiConsole.MarkupLine("  datasets/                   [cyan]# Training data (train.csv)[/]");
@@ -286,9 +295,41 @@ public static class InitCommand
         var datasetsPath = fileSystem.CombinePath(projectPath, "datasets");
         await fileSystem.CreateDirectoryAsync(datasetsPath);
 
-        // Directory-based tasks (image classification) read datasets/images/<class>/.
-        // Scaffold the folder plus a README that documents the folder = label convention.
-        if (DataLoaderFactory.IsDirectoryBased(task))
+        // Directory-based tasks read a directory rather than a CSV. Image classification
+        // uses datasets/images/<class>/; object detection uses a COCO annotations file under
+        // datasets/coco/. Scaffold the appropriate layout plus a README documenting it.
+        if (task.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
+        {
+            var cocoPath = fileSystem.CombinePath(datasetsPath, "coco");
+            await fileSystem.CreateDirectoryAsync(cocoPath);
+            await fileSystem.WriteTextAsync(
+                fileSystem.CombinePath(cocoPath, "annotations.json"),
+                "{\n" +
+                "  \"images\": [\n" +
+                "    { \"id\": 1, \"file_name\": \"img001.jpg\", \"width\": 640, \"height\": 480 }\n" +
+                "  ],\n" +
+                "  \"annotations\": [\n" +
+                "    { \"image_id\": 1, \"category_id\": 1, \"bbox\": [100, 120, 80, 60] }\n" +
+                "  ],\n" +
+                "  \"categories\": [\n" +
+                "    { \"id\": 1, \"name\": \"defect\" }\n" +
+                "  ]\n" +
+                "}\n");
+            await fileSystem.WriteTextAsync(
+                fileSystem.CombinePath(cocoPath, "README.txt"),
+                "Object detection dataset layout (COCO format):\n\n" +
+                "  datasets/coco/\n" +
+                "  ├── annotations.json   # COCO: images[], annotations[] (bbox=[x,y,w,h]), categories[]\n" +
+                "  ├── img001.jpg\n" +
+                "  └── img002.jpg ...\n\n" +
+                "Each annotation's bbox is [x, y, width, height] in absolute pixels; MLoop converts it\n" +
+                "to the x0 y0 x1 y1 order the trainer expects. file_name is resolved relative to this folder.\n" +
+                "Edit annotations.json (the scaffold is a template), then run:\n" +
+                "  mloop runtime install torch    # one-time TorchSharp runtime\n" +
+                "  mloop train --task object-detection\n\n" +
+                "Supported conventional file names: annotations.json, _annotations.coco.json (Roboflow).\n");
+        }
+        else if (DataLoaderFactory.IsDirectoryBased(task))
         {
             var imagesPath = fileSystem.CombinePath(datasetsPath, "images");
             await fileSystem.CreateDirectoryAsync(imagesPath);

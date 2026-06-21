@@ -328,6 +328,71 @@ public class TrainingEngineTests : IDisposable
 
     #endregion
 
+    #region Object detection (COCO directory bypass)
+
+    [Fact]
+    public async Task TrainAsync_ObjectDetection_BypassesCsvAndReachesRuntimeGate()
+    {
+        // With the TorchSharp runtime installed, training would actually run (slow) — skip then.
+        var runtime = RuntimeRegistry.GetRequiredByTask("object-detection");
+        if (runtime != null && new RuntimeManager().IsInstalled(runtime))
+            return;
+
+        var cocoDir = Path.Combine(_tempDir, "coco");
+        CreateCocoDataset(cocoDir);
+
+        var engine = NewEngine();
+        var config = new TrainingConfig
+        {
+            ModelName = "od",
+            DataFile = cocoDir,
+            LabelColumn = "Label",
+            Task = "object-detection",
+            TimeLimitSeconds = 5
+        };
+
+        // Reaching the runtime gate proves the CSV preprocessing pipeline was bypassed and the
+        // COCO annotations loaded successfully, rather than failing on CSV parsing.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.TrainAsync(config));
+
+        Assert.Contains("runtime", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("install", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CSV", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task TrainAsync_ObjectDetection_MissingDirectory_FailsWithDirectoryMessage()
+    {
+        var engine = NewEngine();
+        var config = new TrainingConfig
+        {
+            ModelName = "od",
+            DataFile = Path.Combine(_tempDir, "no-such-coco-dir"),
+            LabelColumn = "Label",
+            Task = "object-detection",
+            TimeLimitSeconds = 5
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.TrainAsync(config));
+
+        Assert.Contains("directory", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    #endregion
+
+    private static void CreateCocoDataset(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        for (var i = 1; i <= 4; i++)
+            File.WriteAllBytes(Path.Combine(dir, $"img{i}.jpg"), new byte[] { 0xFF, 0xD8, 0xFF });
+
+        var images = string.Join(",", Enumerable.Range(1, 4).Select(i => $"{{\"id\":{i},\"file_name\":\"img{i}.jpg\"}}"));
+        var annotations = string.Join(",", Enumerable.Range(1, 4).Select(i => $"{{\"image_id\":{i},\"category_id\":{(i % 2) + 1},\"bbox\":[0,0,10,10]}}"));
+        var json = $"{{\"images\":[{images}],\"annotations\":[{annotations}]," +
+                   "\"categories\":[{\"id\":1,\"name\":\"car\"},{\"id\":2,\"name\":\"person\"}]}";
+        File.WriteAllText(Path.Combine(dir, "annotations.json"), json);
+    }
+
     private TrainingEngine NewEngine()
     {
         var fs = new FileSystemManager();

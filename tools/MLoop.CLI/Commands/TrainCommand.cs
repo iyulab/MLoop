@@ -315,13 +315,22 @@ public static class TrainCommand
 
             if (isDirectoryBased)
             {
-                // Image classification consumes a directory of class subfolders
-                // (folder name = label), not a CSV file.
-                resolvedDataFile = ResolveImageDataset(dataFile, dataPaths, projectRoot);
+                // Directory-based tasks consume a directory, not a CSV file: image
+                // classification reads class subfolders (folder name = label); object
+                // detection reads a COCO annotations file plus the referenced images.
+                resolvedDataFile = ResolveDirectoryDataset(effectiveDefinition.Task, dataFile, dataPaths, projectRoot);
                 if (resolvedDataFile == null)
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] Image dataset directory not found.");
-                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
+                    if (effectiveDefinition.Task.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
+                    {
+                        AnsiConsole.MarkupLine("[red]Error:[/] Object-detection dataset not found.");
+                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Put a COCO annotations.json plus images under datasets/coco/, or pass a directory: mloop train --task object-detection <dir>");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine("[red]Error:[/] Image dataset directory not found.");
+                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
+                    }
                     return 1;
                 }
             }
@@ -1038,11 +1047,12 @@ public static class TrainCommand
     }
 
     /// <summary>
-    /// Resolves the image dataset directory for directory-based tasks. Prefers an explicit
-    /// positional argument or <c>--data</c> path, then falls back to the convention
-    /// <c>datasets/images</c> and <c>datasets</c>. Returns null if no directory exists.
+    /// Resolves the dataset directory for directory-based tasks. Prefers an explicit positional
+    /// argument or <c>--data</c> path, then falls back to a task-specific convention:
+    /// object detection uses <c>datasets/coco</c>, image classification uses <c>datasets/images</c>,
+    /// both finally falling back to <c>datasets</c>. Returns null if no directory exists.
     /// </summary>
-    private static string? ResolveImageDataset(string? dataFile, string[]? dataPaths, string projectRoot)
+    private static string? ResolveDirectoryDataset(string task, string? dataFile, string[]? dataPaths, string projectRoot)
     {
         static string Full(string root, string p) =>
             Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(root, p));
@@ -1059,9 +1069,13 @@ public static class TrainCommand
             return Directory.Exists(p) ? p : null;
         }
 
+        var conventionDir = task.Equals("object-detection", StringComparison.OrdinalIgnoreCase)
+            ? "coco"
+            : "images";
+
         foreach (var candidate in new[]
         {
-            Path.Combine(projectRoot, "datasets", "images"),
+            Path.Combine(projectRoot, "datasets", conventionDir),
             Path.Combine(projectRoot, "datasets")
         })
         {
