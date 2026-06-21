@@ -92,10 +92,11 @@ public class PredictionService
         {
             throw new InvalidOperationException(
                 $"Feature vector dimension mismatch during prediction. " +
-                $"This typically occurs when text columns (FeaturizeText/TF-IDF) in the prediction data " +
-                $"have different value distributions than the training data. " +
-                $"Workaround: Force text columns to use categorical encoding via column_overrides in mloop.yaml. " +
-                $"Original error: {ex.Message}", ex);
+                $"The prediction data's columns don't match the schema the model was trained on " +
+                $"(a feature column may be missing, renamed, or have a different type). The saved model " +
+                $"embeds its fitted featurizers, so this is a column-structure mismatch, not a text/value " +
+                $"distribution issue. Ensure the prediction data has the same columns (names and types) as " +
+                $"the training data. Original error: {ex.Message}", ex);
         }
 
         predictions = RestoreOriginalLabels(predictions);

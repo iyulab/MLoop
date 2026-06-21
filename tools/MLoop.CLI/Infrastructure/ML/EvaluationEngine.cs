@@ -53,8 +53,10 @@ public class EvaluationEngine
                 {
                     throw new InvalidOperationException(
                         $"Feature vector dimension mismatch during evaluation. " +
-                        $"This typically occurs when categorical columns in the test data contain values " +
-                        $"not seen during training (OneHotEncoding creates different dimensions). " +
+                        $"The test data's columns don't match the schema the model was trained on " +
+                        $"(a feature column may be missing, renamed, or have a different type). The saved model " +
+                        $"embeds its fitted featurizers, so this is a column-structure mismatch, not an unseen-value issue. " +
+                        $"Ensure the test data has the same columns (names and types) as the training data. " +
                         $"Original error: {ex.Message}", ex);
                 }
 
