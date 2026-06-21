@@ -50,7 +50,9 @@ public static class RuntimeRegistry
             ["osx-x64"] = "libtorch-cpu-osx-x64",
             ["osx-arm64"] = "libtorch-cpu-osx-arm64"
         },
-        Version = "2.5.1.0",
+        // Must match the libtorch version Microsoft.ML.TorchSharp 0.23.0 (TorchSharp) binds to —
+        // TorchSharp refuses to load a different libtorch ABI. 0.23.0 → libtorch 2.2.1.1.
+        Version = "2.2.1.1",
         NativeLibraries = new Dictionary<string, string[]>
         {
             ["win-x64"] = ["torch_cpu.dll", "c10.dll", "torch.dll"],
