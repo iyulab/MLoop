@@ -246,11 +246,24 @@ public class CocoDataLoaderTests : IDisposable
     }
 
     [Fact]
-    public void DataLoaderFactory_ReturnsCocoLoaderForObjectDetection()
+    public void DataLoaderFactory_ReturnsObjectDetectionLoaderForObjectDetection()
     {
+        // object-detection routes to the format-detecting dispatcher (COCO or YOLO).
         var loader = DataLoaderFactory.Create("object-detection", _mlContext);
-        Assert.IsType<CocoDataLoader>(loader);
+        Assert.IsType<ObjectDetectionDataLoader>(loader);
         Assert.True(DataLoaderFactory.IsDirectoryBased("object-detection"));
+    }
+
+    [Fact]
+    public void ObjectDetectionLoader_DispatchesToCocoForJsonAnnotations()
+    {
+        CreateValidDataset();
+        var loader = new ObjectDetectionDataLoader(_mlContext, _ => { });
+
+        var data = loader.LoadData(_tempDirectory, taskType: "object-detection");
+
+        Assert.Contains(data.Schema, c => c.Name == CocoDataLoader.BoundingBoxColumn);
+        Assert.Equal(2, data.GetRowCount());
     }
 
     // --- helpers ---

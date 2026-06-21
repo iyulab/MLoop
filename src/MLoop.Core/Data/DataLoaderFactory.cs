@@ -22,7 +22,7 @@ public static class DataLoaderFactory
         return taskType?.ToLowerInvariant() switch
         {
             "image-classification" => new ImageDirectoryLoader(mlContext, log),
-            "object-detection" => new CocoDataLoader(mlContext, log),
+            "object-detection" => new ObjectDetectionDataLoader(mlContext, log),
             _ => new CsvDataLoader(mlContext, log)
         };
     }
