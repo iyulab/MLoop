@@ -70,7 +70,10 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 | **Ranking** | Learning to Rank (LightGBM, FastTree) | Built-in |
 | **Time Series** | Forecasting (SSA), Time Series Anomaly (SR-CNN) | Built-in |
 | **Recommendation** | Matrix Factorization (collaborative filtering) | Built-in |
-| **Deep Learning** | Image Classification, Object Detection, Text Classification, NER, Sentence Similarity, QA | On-demand (`mloop runtime install`) |
+| **Deep Learning** | Image Classification, Text Classification, NER, Sentence Similarity, QA | On-demand (`mloop runtime install`) |
+
+> Image Classification is wired end-to-end (directory loader → TensorFlow transfer learning); install the
+> `tf` runtime to train. Object Detection input loading (COCO bounding boxes) is not yet implemented.
 
 ## Quick Start
 
@@ -159,6 +162,25 @@ mloop train korean_data.csv label --task regression
 # Drop missing label values (default for classification)
 mloop train data.csv label --task binary-classification --drop-missing-labels
 ```
+
+### Image Classification
+
+Image classification reads a directory whose subfolders are class labels (folder name = label):
+
+```bash
+mloop init vision --task image-classification
+cd vision
+
+# Lay out images: datasets/images/<class>/<files>
+#   datasets/images/OK/  img001.jpg ...
+#   datasets/images/NG/  img101.jpg ...
+
+mloop runtime install tf        # one-time TensorFlow CPU runtime (~182MB)
+mloop train --task image-classification   # auto-detects datasets/images/
+```
+
+Supported extensions: `.jpg .jpeg .png .bmp .gif`. The trainer uses TensorFlow transfer learning,
+so the `tf` runtime must be installed first.
 
 **Full documentation**: [docs/GUIDE.md](docs/GUIDE.md)
 

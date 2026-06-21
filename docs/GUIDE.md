@@ -148,6 +148,41 @@ mloop train data.csv defect --task binary-classification --balance 5  # Target 5
 - Metadata saved to `models/staging/exp-XXX/metadata.json`
 - First successful model auto-promoted to production
 
+### Image Classification
+
+Image classification reads a **directory of images** instead of a CSV file. Subfolder names are the
+class labels (the `folder name = label` convention):
+
+```
+datasets/images/
+├── OK/    img001.jpg  img002.jpg  ...
+└── NG/    img101.jpg  img102.jpg  ...
+```
+
+Workflow:
+
+```bash
+# 1. Scaffold an image project (creates datasets/images/ + a README)
+mloop init vision --task image-classification
+cd vision
+
+# 2. Drop images into datasets/images/<class>/
+
+# 3. Install the TensorFlow CPU runtime once (~182MB, on-demand)
+mloop runtime install tf
+
+# 4. Train — the directory is auto-detected (or pass it explicitly)
+mloop train --task image-classification
+mloop train --task image-classification datasets/images
+```
+
+Notes:
+- Supported extensions: `.jpg .jpeg .png .bmp .gif`. Other files (e.g. `meta.json`) are ignored.
+- The trainer uses TensorFlow transfer learning, so the `tf` runtime is required. Without it, training
+  stops with a clear message pointing to `mloop runtime install tf`.
+- CSV-only steps (encoding conversion, sampling, balancing, multi-line flattening) are skipped for image
+  directories. The loader warns about empty class folders, single-class datasets, and severe class imbalance.
+
 ### `mloop predict`
 
 Run predictions with trained models.

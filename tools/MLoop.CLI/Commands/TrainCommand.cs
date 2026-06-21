@@ -311,9 +311,22 @@ public static class TrainCommand
             // Resolve data file path
             string? resolvedDataFile;
             var datasetDiscovery = new DatasetDiscovery(fileSystem);
+            var isDirectoryBased = DataLoaderFactory.IsDirectoryBased(effectiveDefinition.Task);
 
+            if (isDirectoryBased)
+            {
+                // Image classification consumes a directory of class subfolders
+                // (folder name = label), not a CSV file.
+                resolvedDataFile = ResolveImageDataset(dataFile, dataPaths, projectRoot);
+                if (resolvedDataFile == null)
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] Image dataset directory not found.");
+                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
+                    return 1;
+                }
+            }
             // T4.3: Handle --data option for external data paths
-            if (dataPaths is { Length: > 0 })
+            else if (dataPaths is { Length: > 0 })
             {
                 var csvHelper = new CsvHelperImpl();
 
@@ -451,6 +464,18 @@ public static class TrainCommand
 
             AnsiConsole.MarkupLine($"[green]>[/] Using data: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
 
+            // testDataFile may be produced by stratified split below (CSV path only),
+            // and is read later when building the training config — declare it here so it
+            // survives the directory-based bypass. allDataFilesUsed is consumed by the
+            // unused-data scan after training and is likewise declared outside the bypass.
+            string? testDataFile = null;
+            var allDataFilesUsed = new List<string> { resolvedDataFile };
+
+            // CSV preprocessing (flatten, sampling, cleaning, class analysis, preprocessing,
+            // balancing, splitting) applies only to tabular tasks. Image classification loads
+            // a directory and skips this entire block.
+            if (!isDirectoryBased)
+            {
             // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
             resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile);
 
@@ -467,8 +492,7 @@ public static class TrainCommand
                     projectRoot);
             }
 
-            // Track all data files used during pipeline (for unused file scanner)
-            var allDataFilesUsed = new List<string> { resolvedDataFile };
+            // (allDataFilesUsed is declared above so it survives the directory-based bypass.)
 
             // Handle missing label values (T4.2)
             // Default behavior: drop missing labels for classification tasks
@@ -651,7 +675,6 @@ public static class TrainCommand
             // Apply class balancing if requested (only for classification tasks)
             // HD-02 fix: split BEFORE balancing to prevent data leakage
             string? balancedFilePath = null;
-            string? testDataFile = null;
             if (!string.IsNullOrEmpty(balance) && isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
             {
                 var effectiveTestSplit = effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit;
@@ -735,15 +758,17 @@ public static class TrainCommand
             {
                 AnsiConsole.MarkupLine("[yellow]Warning:[/] --balance option is only applicable to classification tasks");
             }
+            } // end if (!isDirectoryBased) — CSV preprocessing block
 
-            // Display data summary
-            TrainPresenter.DisplayDataSummary(resolvedDataFile, effectiveDefinition.Label);
+            // Display data summary (CSV row/column counts — not applicable to an image directory)
+            if (!isDirectoryBased)
+                TrainPresenter.DisplayDataSummary(resolvedDataFile, effectiveDefinition.Label);
 
             // Display training configuration
             TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition, testDataFile);
 
-            // Validate label column exists (skip for unsupervised tasks)
-            if (requiresLabel)
+            // Validate label column exists (skip for unsupervised and directory-based tasks)
+            if (requiresLabel && !isDirectoryBased)
                 await TrainDataValidator.ValidateLabelColumnAsync(resolvedDataFile, effectiveDefinition.Label, resolvedModelName);
 
             // Initialize training components
@@ -763,7 +788,8 @@ public static class TrainCommand
             // - If --no-auto-time was specified, use default 300s (no auto-time)
             // - If neither --time nor yaml time_limit_seconds is set, enable auto-time
             var yamlHasTimeLimit = effectiveDefinition.Training?.TimeLimitSeconds != null;
-            var useAutoTime = !time.HasValue && !yamlHasTimeLimit && !noAutoTime;
+            // Auto-time probing samples CSV rows, which does not apply to image directories.
+            var useAutoTime = !time.HasValue && !yamlHasTimeLimit && !noAutoTime && !isDirectoryBased;
 
             var trainingConfig = new TrainingConfig
             {
@@ -991,9 +1017,10 @@ public static class TrainCommand
                 TrainPresenter.DisplayPromotionResult(promoted, primaryMetric, result, production, minThreshold);
             }
 
-            // T4.6: Unused data warning - only scan project's datasets/ directory
+            // T4.6: Unused data warning - only scan project's datasets/ directory.
+            // The scan targets CSV datasets, so skip it for image directory training.
             var datasetsDir = datasetDiscovery.GetDatasetsPath(projectRoot);
-            if (Directory.Exists(datasetsDir))
+            if (!isDirectoryBased && Directory.Exists(datasetsDir))
             {
                 var unusedDataScanner = new UnusedDataScanner();
                 var scanResult = unusedDataScanner.Scan(datasetsDir, allDataFilesUsed);
@@ -1008,6 +1035,41 @@ public static class TrainCommand
             ErrorSuggestions.DisplayError(ex, "training");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// Resolves the image dataset directory for directory-based tasks. Prefers an explicit
+    /// positional argument or <c>--data</c> path, then falls back to the convention
+    /// <c>datasets/images</c> and <c>datasets</c>. Returns null if no directory exists.
+    /// </summary>
+    private static string? ResolveImageDataset(string? dataFile, string[]? dataPaths, string projectRoot)
+    {
+        static string Full(string root, string p) =>
+            Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(root, p));
+
+        if (!string.IsNullOrWhiteSpace(dataFile))
+        {
+            var p = Full(projectRoot, dataFile);
+            return Directory.Exists(p) ? p : null;
+        }
+
+        if (dataPaths is { Length: > 0 } && !string.IsNullOrWhiteSpace(dataPaths[0]))
+        {
+            var p = Full(projectRoot, dataPaths[0]);
+            return Directory.Exists(p) ? p : null;
+        }
+
+        foreach (var candidate in new[]
+        {
+            Path.Combine(projectRoot, "datasets", "images"),
+            Path.Combine(projectRoot, "datasets")
+        })
+        {
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 
     /// <summary>

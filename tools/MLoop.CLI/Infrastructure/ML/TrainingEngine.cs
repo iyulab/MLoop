@@ -70,91 +70,122 @@ public class TrainingEngine : ITrainingEngine
             // Create experiment directory
             await _fileSystem.CreateDirectoryAsync(experimentPath, cancellationToken);
 
-            // Handle encoding detection/conversion for non-UTF8 files (e.g., CP949/EUC-KR)
-            // This ensures Korean and other non-ASCII text is read correctly throughout training
-            var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(config.DataFile);
-
-            // Use converted path for all training operations, original path for metadata
             string dataFilePath = config.DataFile;
-            if (detection.WasConverted)
+            InputSchemaInfo? inputSchema;
+
+            if (DataLoaderFactory.IsDirectoryBased(config.Task))
             {
-                tempEncodingFile = convertedPath;
-                dataFilePath = convertedPath;
-                Console.WriteLine($"[Info] Converted {detection.EncodingName} \u2192 UTF-8: {Path.GetFileName(originalDataFile)}");
-            }
-
-            // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
-            dataFilePath = CsvDataLoader.FlattenMultiLineQuotedFields(dataFilePath);
-
-            // Flatten multi-line quoted headers (ML.NET doesn't support them)
-            dataFilePath = CsvDataLoader.FlattenMultiLineHeaders(dataFilePath);
-
-            // Update config DataFile so AutoMLRunner uses the processed file
-            if (dataFilePath != config.DataFile)
-            {
-                config = new TrainingConfig
+                // Image classification: config.DataFile is a directory whose subfolders are
+                // class labels (folder name = label). CSV preprocessing \u2014 encoding detection,
+                // multi-line flattening, CSV quality validation, and column inference \u2014 does
+                // not apply to an image directory, so it is bypassed entirely here.
+                if (!Directory.Exists(dataFilePath))
                 {
-                    ModelName = config.ModelName,
-                    DataFile = dataFilePath,
-                    LabelColumn = config.LabelColumn,
-                    Task = config.Task,
-                    TimeLimitSeconds = config.TimeLimitSeconds,
-                    Metric = config.Metric,
-                    TestSplit = config.TestSplit,
-                    UseAutoTime = config.UseAutoTime,
-                    ColumnOverrides = config.ColumnOverrides,
-                    NumClusters = config.NumClusters,
-                    GroupColumn = config.GroupColumn,
-                    Horizon = config.Horizon,
-                    WindowSize = config.WindowSize,
-                    SeriesLength = config.SeriesLength,
-                    UserColumn = config.UserColumn,
-                    ItemColumn = config.ItemColumn
-                };
-            }
-
-            // Validate data quality before training (label column + dataset size)
-            var dataQualityValidator = new DataQualityValidator(_mlContext);
-            var qualityResult = dataQualityValidator.ValidateTrainingData(dataFilePath, config.LabelColumn, config.Task);
-
-            if (!qualityResult.IsValid)
-            {
-                // Data quality issue detected - fail fast with clear error
-                throw new InvalidOperationException(
-                    $"{qualityResult.ErrorMessage}\n" +
-                    $"{qualityResult.ErrorMessageEn ?? ""}\n" +
-                    $"{string.Join("\n", qualityResult.Suggestions)}");
-            }
-
-            // Show warnings if any
-            foreach (var warning in qualityResult.Warnings)
-            {
-                Console.WriteLine($"[Warning] {warning}");
-            }
-
-            // Show suggestions if any
-            if (qualityResult.Suggestions.Any())
-            {
-                Console.WriteLine("[Suggestions]");
-                foreach (var suggestion in qualityResult.Suggestions)
-                {
-                    Console.WriteLine($"  {suggestion}");
+                    throw new DirectoryNotFoundException(
+                        $"Image classification expects a dataset directory, but it was not found: {dataFilePath}\n" +
+                        "Lay images out as one subfolder per class (e.g. datasets/images/OK, datasets/images/NG).");
                 }
-                Console.WriteLine();
-            }
 
-            // Capture input schema before training (using enhanced detection)
-            var inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides);
+                inputSchema = BuildDirectoryInputSchema(config.LabelColumn);
+            }
+            else
+            {
+                // Handle encoding detection/conversion for non-UTF8 files (e.g., CP949/EUC-KR)
+                // This ensures Korean and other non-ASCII text is read correctly throughout training
+                var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(config.DataFile);
+
+                // Use converted path for all training operations, original path for metadata
+                if (detection.WasConverted)
+                {
+                    tempEncodingFile = convertedPath;
+                    dataFilePath = convertedPath;
+                    Console.WriteLine($"[Info] Converted {detection.EncodingName} \u2192 UTF-8: {Path.GetFileName(originalDataFile)}");
+                }
+
+                // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
+                dataFilePath = CsvDataLoader.FlattenMultiLineQuotedFields(dataFilePath);
+
+                // Flatten multi-line quoted headers (ML.NET doesn't support them)
+                dataFilePath = CsvDataLoader.FlattenMultiLineHeaders(dataFilePath);
+
+                // Update config DataFile so AutoMLRunner uses the processed file
+                if (dataFilePath != config.DataFile)
+                {
+                    config = new TrainingConfig
+                    {
+                        ModelName = config.ModelName,
+                        DataFile = dataFilePath,
+                        LabelColumn = config.LabelColumn,
+                        Task = config.Task,
+                        TimeLimitSeconds = config.TimeLimitSeconds,
+                        Metric = config.Metric,
+                        TestSplit = config.TestSplit,
+                        UseAutoTime = config.UseAutoTime,
+                        ColumnOverrides = config.ColumnOverrides,
+                        NumClusters = config.NumClusters,
+                        GroupColumn = config.GroupColumn,
+                        Horizon = config.Horizon,
+                        WindowSize = config.WindowSize,
+                        SeriesLength = config.SeriesLength,
+                        UserColumn = config.UserColumn,
+                        ItemColumn = config.ItemColumn
+                    };
+                }
+
+                // Validate data quality before training (label column + dataset size)
+                var dataQualityValidator = new DataQualityValidator(_mlContext);
+                var qualityResult = dataQualityValidator.ValidateTrainingData(dataFilePath, config.LabelColumn, config.Task);
+
+                if (!qualityResult.IsValid)
+                {
+                    // Data quality issue detected - fail fast with clear error
+                    throw new InvalidOperationException(
+                        $"{qualityResult.ErrorMessage}\n" +
+                        $"{qualityResult.ErrorMessageEn ?? ""}\n" +
+                        $"{string.Join("\n", qualityResult.Suggestions)}");
+                }
+
+                // Show warnings if any
+                foreach (var warning in qualityResult.Warnings)
+                {
+                    Console.WriteLine($"[Warning] {warning}");
+                }
+
+                // Show suggestions if any
+                if (qualityResult.Suggestions.Any())
+                {
+                    Console.WriteLine("[Suggestions]");
+                    foreach (var suggestion in qualityResult.Suggestions)
+                    {
+                        Console.WriteLine($"  {suggestion}");
+                    }
+                    Console.WriteLine();
+                }
+
+                // Capture input schema before training (using enhanced detection)
+                inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides);
+            }
 
             // Execute PreTrain hooks
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PreTrain))
             {
-                // Load training data for hook context
-                var loader = _mlContext.Data.CreateTextLoader(
-                    new[] { new TextLoader.Column("Features", DataKind.Single, 0, int.MaxValue) },
-                    separatorChar: ',',
-                    hasHeader: true);
-                var trainData = loader.Load(dataFilePath);
+                // Load training data for hook context. Image classification reads a
+                // directory of class subfolders; tabular tasks read the CSV file.
+                IDataView trainData;
+                if (DataLoaderFactory.IsDirectoryBased(config.Task))
+                {
+                    trainData = DataLoaderFactory
+                        .Create(config.Task, _mlContext)
+                        .LoadData(dataFilePath, config.LabelColumn, config.Task);
+                }
+                else
+                {
+                    var loader = _mlContext.Data.CreateTextLoader(
+                        new[] { new TextLoader.Column("Features", DataKind.Single, 0, int.MaxValue) },
+                        separatorChar: ',',
+                        hasHeader: true);
+                    trainData = loader.Load(dataFilePath);
+                }
 
                 var hookContext = new HookContext
                 {
@@ -184,10 +215,12 @@ public class TrainingEngine : ITrainingEngine
                 }
             }
 
-            // Run AutoML (with optional auto-time two-phase training)
+            // Run AutoML (with optional auto-time two-phase training).
+            // Auto-time probing samples CSV rows, which does not apply to image
+            // directories — image classification always uses the single-pass path.
             AutoMLResult autoMLResult;
 
-            if (config.UseAutoTime)
+            if (config.UseAutoTime && !DataLoaderFactory.IsDirectoryBased(config.Task))
             {
                 autoMLResult = await RunAutoTimeTrainingAsync(config, dataFilePath, progress, cancellationToken);
             }
@@ -532,6 +565,36 @@ public class TrainingEngine : ITrainingEngine
     /// <summary>
     /// Captures input schema with enhanced type detection using actual data values
     /// </summary>
+    /// <summary>
+    /// Builds the input schema for a directory-based image-classification model.
+    /// At predict time the model consumes an image file path (string), so the schema
+    /// advertises an ImagePath feature column plus the label column.
+    /// </summary>
+    private static InputSchemaInfo BuildDirectoryInputSchema(string labelColumn)
+    {
+        return new InputSchemaInfo
+        {
+            CapturedAt = DateTime.UtcNow,
+            Columns = new List<ColumnSchema>
+            {
+                new ColumnSchema
+                {
+                    Name = ImageDirectoryLoader.ImagePathColumn,
+                    DataType = "String",
+                    Purpose = "Feature"
+                },
+                new ColumnSchema
+                {
+                    Name = string.IsNullOrWhiteSpace(labelColumn)
+                        ? ImageDirectoryLoader.DefaultLabelColumn
+                        : labelColumn,
+                    DataType = "String",
+                    Purpose = "Label"
+                }
+            }
+        };
+    }
+
     private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn, string? taskType = null, Dictionary<string, string>? columnOverrides = null)
     {
         try
