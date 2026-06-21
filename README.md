@@ -70,10 +70,12 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 | **Ranking** | Learning to Rank (LightGBM, FastTree) | Built-in |
 | **Time Series** | Forecasting (SSA), Time Series Anomaly (SR-CNN) | Built-in |
 | **Recommendation** | Matrix Factorization (collaborative filtering) | Built-in |
-| **Deep Learning** | Image Classification, Text Classification, NER, Sentence Similarity, QA | On-demand (`mloop runtime install`) |
+| **Deep Learning** | Image Classification, Object Detection, Text Classification, NER, Sentence Similarity, QA | On-demand (`mloop runtime install`) |
 
-> Image Classification is wired end-to-end (directory loader → TensorFlow transfer learning); install the
-> `tf` runtime to train. Object Detection input loading (COCO bounding boxes) is not yet implemented.
+> Image Classification (directory loader → TensorFlow transfer learning, `tf` runtime) and Object
+> Detection (COCO loader → AutoFormerV2, `torch` runtime) are wired end-to-end through the runtime gate.
+> Install the matching runtime to train. Object-detection `predict`/`evaluate` (mAP/IoU over predicted
+> boxes) are not yet implemented — they follow once a trained model is available to validate them.
 
 ## Quick Start
 
@@ -181,6 +183,29 @@ mloop train --task image-classification   # auto-detects datasets/images/
 
 Supported extensions: `.jpg .jpeg .png .bmp .gif`. The trainer uses TensorFlow transfer learning,
 so the `tf` runtime must be installed first.
+
+### Object Detection
+
+Object detection reads a directory holding a COCO-format annotations file plus the referenced images:
+
+```bash
+mloop init detector --task object-detection
+cd detector
+
+# Edit datasets/coco/annotations.json (COCO format), with images alongside it:
+#   datasets/coco/
+#   ├── annotations.json   # images[], annotations[] (bbox=[x,y,w,h]), categories[]
+#   ├── img001.jpg
+#   └── img002.jpg ...
+
+mloop runtime install torch     # one-time TorchSharp (libtorch CPU) runtime
+mloop train --task object-detection   # auto-detects datasets/coco/
+```
+
+The COCO `bbox` (`[x, y, width, height]`, absolute pixels) is converted to the `x0 y0 x1 y1` order
+the AutoFormerV2 trainer expects. Conventional annotation file names — `annotations.json` and
+`_annotations.coco.json` (Roboflow) — are auto-detected; `file_name` is resolved relative to the
+annotations file. The trainer uses the `torch` runtime, which must be installed first.
 
 **Full documentation**: [docs/GUIDE.md](docs/GUIDE.md)
 

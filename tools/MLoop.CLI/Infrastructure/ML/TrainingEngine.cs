@@ -86,7 +86,7 @@ public class TrainingEngine : ITrainingEngine
                         "Lay images out as one subfolder per class (e.g. datasets/images/OK, datasets/images/NG).");
                 }
 
-                inputSchema = BuildDirectoryInputSchema(config.LabelColumn);
+                inputSchema = BuildDirectoryInputSchema(config.LabelColumn, config.Task);
             }
             else
             {
@@ -566,32 +566,49 @@ public class TrainingEngine : ITrainingEngine
     /// Captures input schema with enhanced type detection using actual data values
     /// </summary>
     /// <summary>
-    /// Builds the input schema for a directory-based image-classification model.
-    /// At predict time the model consumes an image file path (string), so the schema
-    /// advertises an ImagePath feature column plus the label column.
+    /// Builds the input schema for a directory-based model. At predict time the model
+    /// consumes an image file path (string), so the schema advertises an ImagePath feature
+    /// column plus the task's target columns: image classification has a single label column;
+    /// object detection has a label vector (class names) plus a bounding-box vector.
     /// </summary>
-    private static InputSchemaInfo BuildDirectoryInputSchema(string labelColumn)
+    private static InputSchemaInfo BuildDirectoryInputSchema(string labelColumn, string? task)
     {
+        var label = string.IsNullOrWhiteSpace(labelColumn)
+            ? ImageDirectoryLoader.DefaultLabelColumn
+            : labelColumn;
+
+        var columns = new List<ColumnSchema>
+        {
+            new ColumnSchema
+            {
+                Name = ImageDirectoryLoader.ImagePathColumn,
+                DataType = "String",
+                Purpose = "Feature"
+            },
+            new ColumnSchema
+            {
+                Name = label,
+                DataType = "String",
+                Purpose = "Label"
+            }
+        };
+
+        // Object detection additionally carries one bounding box (x0 y0 x1 y1) per labeled
+        // object, so the label is a vector of class names alongside a float-vector of boxes.
+        if (string.Equals(task, "object-detection", StringComparison.OrdinalIgnoreCase))
+        {
+            columns.Add(new ColumnSchema
+            {
+                Name = CocoDataLoader.BoundingBoxColumn,
+                DataType = "Single",
+                Purpose = "Label"
+            });
+        }
+
         return new InputSchemaInfo
         {
             CapturedAt = DateTime.UtcNow,
-            Columns = new List<ColumnSchema>
-            {
-                new ColumnSchema
-                {
-                    Name = ImageDirectoryLoader.ImagePathColumn,
-                    DataType = "String",
-                    Purpose = "Feature"
-                },
-                new ColumnSchema
-                {
-                    Name = string.IsNullOrWhiteSpace(labelColumn)
-                        ? ImageDirectoryLoader.DefaultLabelColumn
-                        : labelColumn,
-                    DataType = "String",
-                    Purpose = "Label"
-                }
-            }
+            Columns = columns
         };
     }
 

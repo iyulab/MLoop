@@ -1511,10 +1511,28 @@ public class AutoMLRunner
     {
         return await Task.Run(() =>
         {
-            _logger.Info($"Object detection: label='{config.LabelColumn}'");
+            var labelColumn = string.IsNullOrWhiteSpace(config.LabelColumn)
+                ? CocoDataLoader.DefaultLabelColumn
+                : config.LabelColumn;
 
-            var pipeline = _mlContext.MulticlassClassification.Trainers.ObjectDetection(
-                labelColumnName: config.LabelColumn, imageColumnName: "ImagePath");
+            _logger.Info($"Object detection: label='{labelColumn}', AutoFormerV2 transfer learning");
+
+            // CocoDataLoader produces three columns: ImagePath (string), the label vector
+            // (VBuffer<string>, one class name per object), and BoundingBoxes (VBuffer<float>,
+            // four values per object in x0 y0 x1 y1 order). The AutoFormerV2 ObjectDetection
+            // trainer requires the image as an MLImage, the label as a vector of keys, and the
+            // bounding-box float vector as-is — so LoadImages converts the path and
+            // MapValueToKey converts the label vector before fitting.
+            var pipeline = _mlContext.Transforms.LoadImages(
+                    outputColumnName: "Image", imageFolder: string.Empty, inputColumnName: CocoDataLoader.ImagePathColumn)
+                .Append(_mlContext.Transforms.Conversion.MapValueToKey(
+                    outputColumnName: "LabelKey", inputColumnName: labelColumn))
+                .Append(_mlContext.MulticlassClassification.Trainers.ObjectDetection(
+                    labelColumnName: "LabelKey",
+                    boundingBoxColumnName: CocoDataLoader.BoundingBoxColumn,
+                    imageColumnName: "Image"))
+                .Append(_mlContext.Transforms.Conversion.MapKeyToValue(
+                    outputColumnName: "PredictedLabel", inputColumnName: "PredictedLabel"));
 
             progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "ObjectDetection (AutoFormerV2)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
 

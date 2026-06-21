@@ -99,10 +99,22 @@ public class EvaluationEngine
                 {
                     metrics = EvaluateRecommendation(predictions, labelColumn);
                 }
+                else if (taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Object detection is scored by mAP/IoU over predicted boxes, not by
+                    // multiclass accuracy on a scalar label, and its test data is a COCO
+                    // directory rather than a CSV. Routing it through the multiclass evaluator
+                    // would produce meaningless metrics, so surface it honestly as unsupported
+                    // until a box-aware evaluator (and a trained model to validate it) exists.
+                    throw new NotSupportedException(
+                        "Object-detection evaluation is not yet implemented. It requires mAP/IoU " +
+                        "scoring over predicted bounding boxes against a COCO annotations file, " +
+                        "which differs from the CSV-based multiclass evaluator. Training and predict " +
+                        "are wired; evaluation will follow once a trained model is available to validate it.");
+                }
                 else if (taskType.Equals("image-classification", StringComparison.OrdinalIgnoreCase) ||
                          taskType.Equals("text-classification", StringComparison.OrdinalIgnoreCase) ||
                          taskType.Equals("ner", StringComparison.OrdinalIgnoreCase) ||
-                         taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase) ||
                          taskType.Equals("question-answering", StringComparison.OrdinalIgnoreCase))
                 {
                     metrics = EvaluateMulticlassClassification(predictions, "Label");
