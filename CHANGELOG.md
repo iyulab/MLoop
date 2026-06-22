@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-22
+
 ### Added
 - **Object detection — `predict` (detections output)**: `mloop predict` on an object-detection model reads an image directory (COCO/YOLO, auto-detected) and emits per-image detections — class label, confidence score, and bounding box (`x0 y0 x1 y1`) — as JSON (`predictions/<model>-detections-<ts>.json`), with a per-class count and per-image preview. The new `ObjectDetectionPredictor` (Core) extracts detections from the scored data view, the structural twin of `ObjectDetectionEvaluator`.
 - **Object detection — `evaluate` (mAP)**: `mloop evaluate` scores an object-detection model with mean Average Precision via ML.NET's built-in `EvaluateObjectDetection` (`ObjectDetectionEvaluator` → `map_50` / `map_50_95`), rather than a hand-rolled IoU/AP implementation. `EvaluationEngine` loads the image directory, transforms, and scores; `EvaluateCommand` accepts an image directory and skips CSV schema validation.
