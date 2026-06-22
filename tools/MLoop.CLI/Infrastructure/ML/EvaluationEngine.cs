@@ -41,14 +41,21 @@ public class EvaluationEngine
                 // Load the trained model
                 var trainedModel = _mlContext.Model.Load(modelPath, out var modelSchema);
 
-                // Object detection consumes an image directory (COCO/YOLO), not a CSV, and is scored
-                // by mAP over predicted boxes — handle it before the CSV-oriented LoadTestData path.
-                if (taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
+                // Directory-based tasks (image classification, object detection) consume an image
+                // directory, not a CSV — load via the matching directory loader and score before the
+                // CSV-oriented LoadTestData path. Object detection is scored by mAP over predicted
+                // boxes; image classification is multiclass over the loader's "Label" column (which
+                // the training pipeline maps to a key, same as the CSV image-classification branch).
+                if (MLoop.Core.Data.DataLoaderFactory.IsDirectoryBased(taskType))
                 {
-                    var odData = new MLoop.Core.Data.ObjectDetectionDataLoader(_mlContext)
+                    var dirData = MLoop.Core.Data.DataLoaderFactory.Create(taskType, _mlContext)
                         .LoadData(testDataPath, labelColumn, taskType);
-                    var odScored = trainedModel.Transform(odData);
-                    return MLoop.Core.Evaluation.ObjectDetectionEvaluator.Evaluate(_mlContext, odScored);
+                    var dirScored = trainedModel.Transform(dirData);
+
+                    if (taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
+                        return MLoop.Core.Evaluation.ObjectDetectionEvaluator.Evaluate(_mlContext, dirScored);
+
+                    return EvaluateMulticlassClassification(dirScored, "Label");
                 }
 
                 // Load test data (no label renaming - model pipeline transforms label column)

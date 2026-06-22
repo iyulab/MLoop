@@ -73,9 +73,11 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 | **Deep Learning** | Image Classification, Object Detection, Text Classification, NER, Sentence Similarity, QA | On-demand (`mloop runtime install`) |
 
 > Image Classification (directory loader → TensorFlow transfer learning, `tf` runtime) and Object
-> Detection (COCO loader → AutoFormerV2, `torch` runtime) are wired end-to-end through the runtime gate.
-> Install the matching runtime to train. Object-detection `predict`/`evaluate` (mAP/IoU over predicted
-> boxes) are not yet implemented — they follow once a trained model is available to validate them.
+> Detection (COCO/YOLO loader → AutoFormerV2, `torch` runtime) are wired end-to-end through the runtime
+> gate. Install the matching runtime to train. Both support the full `train → predict → evaluate` loop
+> over image directories: image classification `evaluate` reports multiclass accuracy, object detection
+> `predict` emits per-image detections (label + score + box) as JSON and `evaluate` reports mAP
+> (`map_50` / `map_50_95`) via ML.NET's built-in object-detection evaluator.
 
 ## Quick Start
 
@@ -182,7 +184,8 @@ mloop train --task image-classification   # auto-detects datasets/images/
 ```
 
 Supported extensions: `.jpg .jpeg .png .bmp .gif`. The trainer uses TensorFlow transfer learning,
-so the `tf` runtime must be installed first.
+so the `tf` runtime must be installed first. After training, `mloop predict` classifies new images
+and `mloop evaluate exp-001 datasets/images` reports multiclass accuracy over a labelled directory.
 
 ### Object Detection
 
@@ -205,7 +208,15 @@ mloop train --task object-detection   # auto-detects datasets/coco/
 The COCO `bbox` (`[x, y, width, height]`, absolute pixels) is converted to the `x0 y0 x1 y1` order
 the AutoFormerV2 trainer expects. Conventional annotation file names — `annotations.json` and
 `_annotations.coco.json` (Roboflow) — are auto-detected; `file_name` is resolved relative to the
-annotations file. The trainer uses the `torch` runtime, which must be installed first.
+annotations file. YOLO datasets (`images/` + `labels/*.txt`) are also auto-detected. The trainer
+uses the `torch` runtime, which must be installed first.
+
+After training, predict and evaluate run over the same directory layout:
+
+```bash
+mloop predict datasets/yolo      # → predictions/<model>-detections-<ts>.json (label + score + box per image)
+mloop evaluate exp-001 datasets/yolo   # → mAP (map_50 / map_50_95)
+```
 
 **Full documentation**: [docs/GUIDE.md](docs/GUIDE.md)
 

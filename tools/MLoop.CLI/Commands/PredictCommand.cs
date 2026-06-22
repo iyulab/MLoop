@@ -233,6 +233,15 @@ public static class PredictCommand
                 }
             }
 
+            // Object detection predicts over an image directory (COCO/YOLO) and emits detections
+            // (boxes + labels + scores) as JSON, so it bypasses the CSV-oriented resolution,
+            // schema validation, preprocessing, and categorical mapping below.
+            if (taskType != null && taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
+            {
+                return await PredictObjectDetectionAsync(
+                    projectRoot, resolvedModelPath, dataFile, output, resolvedModelName, fileSystem);
+            }
+
             // Resolve data file path (Convention: datasets/predict.csv)
             string resolvedDataFile;
 
@@ -807,6 +816,154 @@ public static class PredictCommand
                     // No temp file cleanup needed — using original training data
                 }
             });
+    }
+
+    /// <summary>
+    /// Predicts object detections over an image directory (COCO/YOLO) and writes them as JSON.
+    /// Mirrors the evaluate OD path (directory load + Transform) but surfaces the raw detections
+    /// — labels, scores, and boxes — instead of mAP. The native runtime is already loaded by the
+    /// EnsureRuntimeForTask guard before this method is reached.
+    /// </summary>
+    private static async Task<int> PredictObjectDetectionAsync(
+        string projectRoot,
+        string modelPath,
+        string? dataFile,
+        string? output,
+        string modelName,
+        FileSystemManager fileSystem)
+    {
+        // Resolve the input dataset directory (or a direct COCO .json).
+        string resolvedDataDir;
+        if (string.IsNullOrEmpty(dataFile))
+        {
+            var odDir = DatasetDiscovery.FindDirectoryDataset(projectRoot, "object-detection");
+            if (odDir == null)
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] No data specified and no object-detection dataset found (datasets/coco, datasets/yolo, or datasets/).");
+                AnsiConsole.MarkupLine("[yellow]Tip:[/] Pass a directory: mloop predict <dir>");
+                return 1;
+            }
+            resolvedDataDir = odDir;
+            AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataDir)}[/]");
+        }
+        else
+        {
+            resolvedDataDir = Path.IsPathRooted(dataFile) ? dataFile : Path.Combine(projectRoot, dataFile);
+            if (!Directory.Exists(resolvedDataDir) && !File.Exists(resolvedDataDir))
+            {
+                AnsiConsole.MarkupLine($"[red]Error:[/] Data not found: {resolvedDataDir}");
+                return 1;
+            }
+        }
+
+        // Resolve output path (Convention: predictions/{model}-detections-{timestamp}.json).
+        string resolvedOutputPath;
+        if (string.IsNullOrEmpty(output))
+        {
+            var predictionsDir = fileSystem.CombinePath(projectRoot, "predictions");
+            await fileSystem.CreateDirectoryAsync(predictionsDir, CancellationToken.None);
+            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            resolvedOutputPath = fileSystem.CombinePath(predictionsDir, $"{modelName}-detections-{timestamp}.json");
+        }
+        else
+        {
+            resolvedOutputPath = Path.IsPathRooted(output) ? output : Path.Combine(projectRoot, output);
+            var outputDir = Path.GetDirectoryName(resolvedOutputPath);
+            if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
+                await fileSystem.CreateDirectoryAsync(outputDir, CancellationToken.None);
+        }
+
+        AnsiConsole.WriteLine();
+
+        IReadOnlyList<ImageDetectionResult> detections = Array.Empty<ImageDetectionResult>();
+
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .StartAsync("[yellow]Detecting objects...[/]", async ctx =>
+            {
+                await Task.Run(() =>
+                {
+                    var mlContext = new MLContext(seed: 42);
+                    var model = mlContext.Model.Load(modelPath, out _);
+
+                    var data = new ObjectDetectionDataLoader(mlContext)
+                        .LoadData(resolvedDataDir, labelColumn: null, taskType: "object-detection");
+                    var scored = model.Transform(data);
+
+                    detections = ObjectDetectionPredictor.Predict(mlContext, scored);
+                });
+
+                ctx.Status("[green]Detection complete![/]");
+            });
+
+        var json = System.Text.Json.JsonSerializer.Serialize(detections, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+        await File.WriteAllTextAsync(resolvedOutputPath, json, new System.Text.UTF8Encoding(false));
+
+        var totalDetections = detections.Sum(d => d.Detections.Count);
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(new Rule("[green]Detections Complete![/]").LeftJustified());
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{modelName}[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Images: [yellow]{detections.Count}[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Detections: [yellow]{totalDetections}[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Output saved to: [cyan]{Path.GetRelativePath(projectRoot, resolvedOutputPath)}[/]");
+        AnsiConsole.WriteLine();
+
+        DisplayDetectionSummary(detections);
+
+        return 0;
+    }
+
+    /// <summary>Shows a per-class detection count and a small per-image preview.</summary>
+    private static void DisplayDetectionSummary(IReadOnlyList<ImageDetectionResult> detections)
+    {
+        if (detections.Count == 0) return;
+
+        var byClass = detections
+            .SelectMany(d => d.Detections)
+            .GroupBy(b => b.Label)
+            .OrderByDescending(g => g.Count())
+            .ToList();
+
+        if (byClass.Count > 0)
+        {
+            AnsiConsole.Write(new Rule("[blue]Detections by class[/]").LeftJustified());
+            AnsiConsole.WriteLine();
+            var total = byClass.Sum(g => g.Count());
+            foreach (var g in byClass)
+            {
+                var pct = total > 0 ? (double)g.Count() / total * 100 : 0;
+                var barWidth = (int)(pct / 100 * 30);
+                var bar = new string('#', Math.Max(barWidth, 1));
+                AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape(g.Key),-20}[/] [yellow]{bar}[/] {g.Count()} ({pct:F1}%)");
+            }
+            AnsiConsole.WriteLine();
+        }
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Color.Grey)
+            .Title("[bold]Detection Preview (first 5 images)[/]");
+        table.AddColumn("[bold]Image[/]");
+        table.AddColumn("[bold]Detections[/]");
+        table.AddColumn("[bold]Top label (score)[/]");
+
+        foreach (var image in detections.Take(5))
+        {
+            var top = image.Detections.OrderByDescending(b => b.Score).FirstOrDefault();
+            var topText = top != null ? $"{Markup.Escape(top.Label)} ({top.Score:F2})" : "[grey]none[/]";
+            table.AddRow(
+                Markup.Escape(Path.GetFileName(image.ImagePath)),
+                image.Detections.Count.ToString(),
+                topText);
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
     }
 
     private class PredictPrepLogger : ILogger

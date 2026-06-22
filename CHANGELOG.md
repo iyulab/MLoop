@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Object detection — `predict` (detections output)**: `mloop predict` on an object-detection model reads an image directory (COCO/YOLO, auto-detected) and emits per-image detections — class label, confidence score, and bounding box (`x0 y0 x1 y1`) — as JSON (`predictions/<model>-detections-<ts>.json`), with a per-class count and per-image preview. The new `ObjectDetectionPredictor` (Core) extracts detections from the scored data view, the structural twin of `ObjectDetectionEvaluator`.
+- **Object detection — `evaluate` (mAP)**: `mloop evaluate` scores an object-detection model with mean Average Precision via ML.NET's built-in `EvaluateObjectDetection` (`ObjectDetectionEvaluator` → `map_50` / `map_50_95`), rather than a hand-rolled IoU/AP implementation. `EvaluationEngine` loads the image directory, transforms, and scores; `EvaluateCommand` accepts an image directory and skips CSV schema validation.
+- **Image classification — `evaluate` over a directory**: `mloop evaluate` now evaluates an image-classification model over a labelled image directory (folder = label), reporting multiclass accuracy — previously evaluation only accepted a CSV. The directory-based evaluate path is generalized across image classification and object detection via `DataLoaderFactory`.
+
+### Changed
+- **`DataProviderBase` extraction (TD-05)**: the `SplitData` / `ValidateLabelColumn` / `GetSchema` / `GetRowCount` duplication across the five data loaders (`Csv`, `Image`, `Coco`, `Yolo`, `ObjectDetection`, ~220 lines) is unified into a `DataProviderBase` abstract class; each loader implements only `LoadData`. Directory-loader label matching is now `OrdinalIgnoreCase` (matching `CsvDataLoader`), and row counting falls back to a cursor when `GetRowCount` is null.
+- Directory-dataset resolution for evaluate/predict is centralized in `DatasetDiscovery.FindDirectoryDataset` (object detection → `datasets/coco` → `datasets/yolo` → `datasets`; image classification → `datasets/images` → `datasets`), mirroring `train`'s convention.
+
 ## [0.15.0] - 2026-06-21
 
 ### Added

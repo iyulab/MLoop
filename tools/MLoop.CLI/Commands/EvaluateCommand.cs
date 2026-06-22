@@ -3,6 +3,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Data;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -129,25 +130,26 @@ public static class EvaluateCommand
                 return 1;
             }
 
-            // Object detection evaluates over an image directory (COCO/YOLO) scored by mAP, so it
-            // bypasses the CSV-file test-data resolution and CSV schema validation below.
-            bool isObjectDetection = string.Equals(experimentData?.Task, "object-detection", StringComparison.OrdinalIgnoreCase);
+            // Directory-based tasks (image classification, object detection) evaluate over an image
+            // directory — object detection scored by mAP, image classification by multiclass accuracy
+            // — so they bypass the CSV-file test-data resolution and CSV schema validation below.
+            bool isDirectoryBased = DataLoaderFactory.IsDirectoryBased(experimentData?.Task);
 
-            // Resolve test data path (a CSV file, or an image directory for object detection)
+            // Resolve test data path (a CSV file, or an image directory for directory-based tasks)
             string resolvedTestDataFile;
 
             if (string.IsNullOrEmpty(testDataFile))
             {
-                if (isObjectDetection)
+                if (isDirectoryBased)
                 {
-                    var odDir = ResolveObjectDetectionDataset(projectRoot);
-                    if (odDir == null)
+                    var dir = DatasetDiscovery.FindDirectoryDataset(projectRoot, experimentData?.Task);
+                    if (dir == null)
                     {
-                        AnsiConsole.MarkupLine("[red]Error:[/] No test data specified and no object-detection dataset found (datasets/coco, datasets/yolo, or datasets/).");
+                        AnsiConsole.MarkupLine("[red]Error:[/] No test data specified and no image dataset found (datasets/images, datasets/coco, datasets/yolo, or datasets/).");
                         AnsiConsole.MarkupLine("[yellow]Tip:[/] Pass a directory: mloop evaluate <experiment-id> <dir>");
                         return 1;
                     }
-                    resolvedTestDataFile = odDir;
+                    resolvedTestDataFile = dir;
                     AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
                 }
                 else
@@ -173,8 +175,8 @@ public static class EvaluateCommand
                     ? testDataFile
                     : Path.Combine(projectRoot, testDataFile);
 
-                // Object detection accepts a directory (or a direct COCO .json); CSV tasks need a file.
-                bool exists = isObjectDetection
+                // Directory-based tasks accept a directory (or a direct COCO .json); CSV tasks need a file.
+                bool exists = isDirectoryBased
                     ? (Directory.Exists(resolvedTestDataFile) || File.Exists(resolvedTestDataFile))
                     : File.Exists(resolvedTestDataFile);
                 if (!exists)
@@ -188,8 +190,8 @@ public static class EvaluateCommand
 
             AnsiConsole.WriteLine();
 
-            // Validate schema before evaluation (CSV-column validation; not applicable to OD directories)
-            if (!isObjectDetection)
+            // Validate schema before evaluation (CSV-column validation; not applicable to image directories)
+            if (!isDirectoryBased)
             {
                 var validator = new SchemaValidator(fileSystem, projectDiscovery);
                 var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedTestDataFile, resolvedModelName, resolvedExperimentId);
@@ -294,27 +296,6 @@ public static class EvaluateCommand
             ErrorSuggestions.DisplayError(ex, "evaluate");
             return 1;
         }
-    }
-
-    /// <summary>
-    /// Finds the object-detection dataset directory by convention: <c>datasets/coco</c>,
-    /// <c>datasets/yolo</c>, then <c>datasets</c>. Mirrors TrainCommand's directory resolution so
-    /// evaluate auto-discovers the same dataset training used. Returns null if none exists.
-    /// </summary>
-    private static string? ResolveObjectDetectionDataset(string projectRoot)
-    {
-        foreach (var candidate in new[]
-        {
-            Path.Combine(projectRoot, "datasets", "coco"),
-            Path.Combine(projectRoot, "datasets", "yolo"),
-            Path.Combine(projectRoot, "datasets")
-        })
-        {
-            if (Directory.Exists(candidate))
-                return candidate;
-        }
-
-        return null;
     }
 
     internal static bool IsLowerBetterMetric(string metricName)
