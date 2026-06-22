@@ -124,6 +124,24 @@ public class CsvDataLoaderTests : IDisposable
     }
 
     [Fact]
+    public void ValidateLabelColumn_IsCaseInsensitive()
+    {
+        // Arrange — the shared DataProviderBase matches column names case-insensitively
+        // so a user-supplied label need not match the CSV header casing exactly.
+        var csvPath = CreateTestCsv(new[]
+        {
+            "feature,Label",
+            "1.0,0.0",
+            "2.0,1.0"
+        });
+        var dataView = _loader.LoadData(csvPath, "Label");
+
+        // Act & Assert
+        Assert.True(_loader.ValidateLabelColumn(dataView, "label"));
+        Assert.True(_loader.ValidateLabelColumn(dataView, "LABEL"));
+    }
+
+    [Fact]
     public void GetSchema_ReturnsCorrectSchema()
     {
         // Arrange

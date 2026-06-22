@@ -1,6 +1,4 @@
 using Microsoft.ML;
-using MLoop.Core.Contracts;
-using MLoop.Core.Models;
 
 namespace MLoop.Core.Data;
 
@@ -17,7 +15,7 @@ namespace MLoop.Core.Data;
 /// pipeline turns <c>ImagePath</c> into raw image bytes via
 /// <c>LoadRawImageBytes</c> before fitting the ML.NET ImageClassification trainer.
 /// </summary>
-public sealed class ImageDirectoryLoader : IDataProvider
+public sealed class ImageDirectoryLoader : DataProviderBase
 {
     /// <summary>Name of the column holding the absolute image file path.</summary>
     public const string ImagePathColumn = "ImagePath";
@@ -33,20 +31,16 @@ public sealed class ImageDirectoryLoader : IDataProvider
         ".jpg", ".jpeg", ".png", ".bmp", ".gif"
     };
 
-    private readonly MLContext _mlContext;
-    private readonly Action<string> _log;
-
     public ImageDirectoryLoader(MLContext mlContext, Action<string>? log = null)
+        : base(mlContext, log)
     {
-        _mlContext = mlContext ?? throw new ArgumentNullException(nameof(mlContext));
-        _log = log ?? Console.WriteLine;
     }
 
     /// <summary>
     /// Scans <paramref name="filePath"/> (a directory) for class subfolders and
     /// builds an <see cref="IDataView"/> of <c>(ImagePath, Label)</c> rows.
     /// </summary>
-    public IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
+    public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
         IEnumerable<string>? preserveColumns = null)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -167,42 +161,6 @@ public sealed class ImageDirectoryLoader : IDataProvider
 
         _log($"[Info] Loaded {totalImages} images across {classCounts.Count} class(es): " +
              $"{string.Join(", ", classCounts.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}"))}.");
-    }
-
-    public bool ValidateLabelColumn(IDataView data, string labelColumn)
-    {
-        return data.Schema.Any(c => c.Name == labelColumn);
-    }
-
-    public DataSchema GetSchema(IDataView data)
-    {
-        var columns = data.Schema
-            .Select(column => new ColumnInfo
-            {
-                Name = column.Name,
-                Type = DataTypeHelper.GetFriendlyTypeName(column.Type),
-                IsLabel = false
-            })
-            .ToList();
-
-        return new DataSchema
-        {
-            Columns = columns,
-            RowCount = (int)(data.GetRowCount() ?? 0)
-        };
-    }
-
-    public (IDataView trainSet, IDataView testSet) SplitData(IDataView data, double testFraction = 0.2)
-    {
-        if (testFraction <= 0)
-            return (data, data);
-
-        if (testFraction >= 1)
-            throw new ArgumentException(
-                "testFraction must be between 0 and 1 (exclusive).", nameof(testFraction));
-
-        var split = _mlContext.Data.TrainTestSplit(data, testFraction: testFraction, seed: 42);
-        return (split.TrainSet, split.TestSet);
     }
 
     /// <summary>Row shape produced by the loader and consumed by the trainer pipeline.</summary>
