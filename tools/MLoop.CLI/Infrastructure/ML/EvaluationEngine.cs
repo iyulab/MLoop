@@ -41,6 +41,16 @@ public class EvaluationEngine
                 // Load the trained model
                 var trainedModel = _mlContext.Model.Load(modelPath, out var modelSchema);
 
+                // Object detection consumes an image directory (COCO/YOLO), not a CSV, and is scored
+                // by mAP over predicted boxes — handle it before the CSV-oriented LoadTestData path.
+                if (taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
+                {
+                    var odData = new MLoop.Core.Data.ObjectDetectionDataLoader(_mlContext)
+                        .LoadData(testDataPath, labelColumn, taskType);
+                    var odScored = trainedModel.Transform(odData);
+                    return MLoop.Core.Evaluation.ObjectDetectionEvaluator.Evaluate(_mlContext, odScored);
+                }
+
                 // Load test data (no label renaming - model pipeline transforms label column)
                 var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, out tempFile);
 
@@ -103,19 +113,6 @@ public class EvaluationEngine
                 else if (taskType.Equals("recommendation", StringComparison.OrdinalIgnoreCase))
                 {
                     metrics = EvaluateRecommendation(predictions, labelColumn);
-                }
-                else if (taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Object detection is scored by mAP/IoU over predicted boxes, not by
-                    // multiclass accuracy on a scalar label, and its test data is a COCO
-                    // directory rather than a CSV. Routing it through the multiclass evaluator
-                    // would produce meaningless metrics, so surface it honestly as unsupported
-                    // until a box-aware evaluator (and a trained model to validate it) exists.
-                    throw new NotSupportedException(
-                        "Object-detection evaluation is not yet implemented. It requires mAP/IoU " +
-                        "scoring over predicted bounding boxes against a COCO annotations file, " +
-                        "which differs from the CSV-based multiclass evaluator. Training and predict " +
-                        "are wired; evaluation will follow once a trained model is available to validate it.");
                 }
                 else if (taskType.Equals("image-classification", StringComparison.OrdinalIgnoreCase) ||
                          taskType.Equals("text-classification", StringComparison.OrdinalIgnoreCase) ||
