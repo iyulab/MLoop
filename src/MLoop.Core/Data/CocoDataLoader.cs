@@ -1,8 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.ML;
-using MLoop.Core.Contracts;
-using MLoop.Core.Models;
 
 namespace MLoop.Core.Data;
 
@@ -27,7 +25,7 @@ namespace MLoop.Core.Data;
 /// pipeline turns <c>ImagePath</c> into an <c>MLImage</c> via <c>LoadImages</c> and maps the
 /// <c>Label</c> vector to keys before fitting.
 /// </summary>
-public sealed class CocoDataLoader : IDataProvider
+public sealed class CocoDataLoader : DataProviderBase
 {
     /// <summary>Name of the column holding the absolute image file path.</summary>
     public const string ImagePathColumn = "ImagePath";
@@ -51,13 +49,9 @@ public sealed class CocoDataLoader : IDataProvider
         AllowTrailingCommas = true
     };
 
-    private readonly MLContext _mlContext;
-    private readonly Action<string> _log;
-
     public CocoDataLoader(MLContext mlContext, Action<string>? log = null)
+        : base(mlContext, log)
     {
-        _mlContext = mlContext ?? throw new ArgumentNullException(nameof(mlContext));
-        _log = log ?? Console.WriteLine;
     }
 
     /// <summary>
@@ -65,7 +59,7 @@ public sealed class CocoDataLoader : IDataProvider
     /// direct path to the JSON file), parses it, and builds an <see cref="IDataView"/> of
     /// <c>(ImagePath, Label, BoundingBoxes)</c> rows — one row per image that has annotations.
     /// </summary>
-    public IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
+    public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
         IEnumerable<string>? preserveColumns = null)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -266,42 +260,6 @@ public sealed class CocoDataLoader : IDataProvider
 
         if (classCounts.Count < 1)
             _log("[Warning] No object classes were found. Object detection needs at least one labeled class.");
-    }
-
-    public bool ValidateLabelColumn(IDataView data, string labelColumn)
-    {
-        return data.Schema.Any(c => c.Name == labelColumn);
-    }
-
-    public DataSchema GetSchema(IDataView data)
-    {
-        var columns = data.Schema
-            .Select(column => new ColumnInfo
-            {
-                Name = column.Name,
-                Type = DataTypeHelper.GetFriendlyTypeName(column.Type),
-                IsLabel = false
-            })
-            .ToList();
-
-        return new DataSchema
-        {
-            Columns = columns,
-            RowCount = (int)(data.GetRowCount() ?? 0)
-        };
-    }
-
-    public (IDataView trainSet, IDataView testSet) SplitData(IDataView data, double testFraction = 0.2)
-    {
-        if (testFraction <= 0)
-            return (data, data);
-
-        if (testFraction >= 1)
-            throw new ArgumentException(
-                "testFraction must be between 0 and 1 (exclusive).", nameof(testFraction));
-
-        var split = _mlContext.Data.TrainTestSplit(data, testFraction: testFraction, seed: 42);
-        return (split.TrainSet, split.TestSet);
     }
 
     /// <summary>Row shape produced by the loader and consumed by the trainer pipeline.</summary>
