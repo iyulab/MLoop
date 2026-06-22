@@ -46,6 +46,9 @@
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Security: Override transitive dependency (CVE-2026-26127, GHSA-73j8-2gch-69rq) -->
     <PackageVersion Include="Microsoft.Bcl.Memory" Version="9.0.14" />
+    <!-- Security: Pin transitive System.Security.Cryptography.Xml (high severity GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf).
+         Pulled in via FilePrepper 0.6.0 → EPPlus 8.5.0 → Cryptography.Xml 10.0.0 (vulnerable). 10.0.9 matches the .NET 10.0.9 runtime servicing. -->
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.9" />
     <!-- Testing Packages -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />

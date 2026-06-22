@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **`evaluate` encoding gap (BUG-43)**: `mloop evaluate` read the test CSV as forced UTF-8 instead of running it through `EncodingDetector` like `train`/`predict`, so CP949/EUC-KR files (most KAMP data) with Korean column names were garbled — schema validation reported spurious "missing columns / not UTF-8", and `EvaluationEngine` could not find the label column even though training accepted the same file. Both `SchemaValidator` and `EvaluationEngine.LoadTestData` now delegate to `EncodingDetector.ConvertToUtf8WithBom`, matching the loaders.
+- **`evaluate` feature-dimension mismatch (BUG-44)**: `EvaluationEngine.LoadTestData` reimplemented test-data preprocessing and diverged from `train`/`predict` — it did not strip unnamed/index columns or the DateTime/constant/sparse columns the trained schema marks as `Exclude`, so the rebuilt feature vector was wider than the model (e.g. `expected Vector<Single,114> got 123`) and `Transform` threw. It now mirrors prediction: `CsvDataLoader.RemoveIndexColumns` + the new shared `CsvDataLoader.RemoveExcludedColumns`.
+
+### Changed
+- **`RemoveExcludedColumns` shared (DRY)**: the schema-driven excluded-column removal that `PredictionEngine` kept private is promoted to `CsvDataLoader.RemoveExcludedColumns(path, excludedNames)`, joining its sibling `Remove*` helpers; both the prediction and evaluation paths now call it.
+- **Security: pinned transitive `System.Security.Cryptography.Xml`** to `10.0.9` via central-package transitive pinning, resolving the high-severity NU1903 advisories (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf) pulled in through `FilePrepper → EPPlus 8.5.0`.
+- Doc-comment cref fix (`ObjectDetectionEvaluator`, CS1574) and de-flaked `PerformanceTests.ReproducibilityOverhead` (ratio-based threshold instead of an absolute ms-difference that was fragile under CPU contention).
+
 ## [0.16.0] - 2026-06-22
 
 ### Added

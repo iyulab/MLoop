@@ -2,6 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 
 namespace MLoop.CLI.Infrastructure.ML;
@@ -152,23 +153,45 @@ public class EvaluationEngine
 
     private IDataView LoadTestData(string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema, out string? tempFilePath)
     {
-        // Ensure UTF-8 BOM for ML.NET compatibility
-        string loadPath = testDataPath;
-        tempFilePath = null;
+        // Mirror CsvDataLoader's encoding handling (CP949/EUC-KR → UTF-8 with BOM). The previous
+        // hand-rolled "read as UTF-8, rewrite with BOM" garbled non-UTF-8 test files, so the label
+        // column (e.g. Korean 'Low핀(출력)') could not be found even though training accepted the
+        // same file. Delegate to the shared detector so evaluate matches train/predict. (BUG-43)
+        var (utf8Path, detection) = EncodingDetector.ConvertToUtf8WithBom(testDataPath);
+        string? encodingTemp = detection.WasConverted ? utf8Path : null;
 
-        byte[] bom = new byte[3];
-        using (var fs = File.OpenRead(testDataPath))
+        // Mirror CsvDataLoader/PredictionEngine index-column removal. Training drops unnamed/index
+        // columns before fitting, so the model's __Features__ width excludes them; if evaluate keeps
+        // them the feature vector is +1 wide and Transform fails with a dimension mismatch (e.g.
+        // expected Vector<Single,593> got 594). Strip them here too so evaluate matches train/predict. (BUG-44)
+        string loadPath = CsvDataLoader.RemoveIndexColumns(utf8Path);
+
+        // Mirror PredictionEngine's schema-based exclusion: training marks DateTime/constant/sparse
+        // columns as "Exclude" and drops them before fitting, so the model's __Features__ excludes
+        // them. Without this, evaluate keeps those columns and the feature vector is too wide
+        // (e.g. expected Vector<Single,114> got 123). Deterministic by trained schema, not eval
+        // data, so it can't drift. (BUG-44 — same divergence class as the index/encoding gaps above.)
+        string deExcludedPath = loadPath;
+        if (trainedSchema != null)
         {
-            fs.ReadExactly(bom, 0, 3);
+            deExcludedPath = CsvDataLoader.RemoveExcludedColumns(
+                loadPath,
+                trainedSchema.Columns.Where(c => c.Purpose == "Exclude").Select(c => c.Name));
         }
 
-        bool hasBom = bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF;
-        if (!hasBom)
+        // Track temp file(s) for cleanup. Each Remove* step either returns its input unchanged or a
+        // fresh temp; intermediate temps are superseded and deleted, keeping a single tempFilePath.
+        var temps = new List<string?> { encodingTemp,
+            loadPath != utf8Path ? loadPath : null,
+            deExcludedPath != loadPath ? deExcludedPath : null };
+        loadPath = deExcludedPath;
+        tempFilePath = temps.LastOrDefault(t => t != null);
+        foreach (var t in temps)
         {
-            tempFilePath = Path.GetTempFileName();
-            var allLines = File.ReadAllLines(testDataPath, System.Text.Encoding.UTF8);
-            File.WriteAllLines(tempFilePath, allLines, new System.Text.UTF8Encoding(true));
-            loadPath = tempFilePath;
+            if (t != null && t != tempFilePath && File.Exists(t))
+            {
+                try { File.Delete(t); } catch (IOException) { }
+            }
         }
 
         // Infer column types from the data
