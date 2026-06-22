@@ -129,35 +129,57 @@ public static class EvaluateCommand
                 return 1;
             }
 
-            // Resolve test data file path
+            // Object detection evaluates over an image directory (COCO/YOLO) scored by mAP, so it
+            // bypasses the CSV-file test-data resolution and CSV schema validation below.
+            bool isObjectDetection = string.Equals(experimentData?.Task, "object-detection", StringComparison.OrdinalIgnoreCase);
+
+            // Resolve test data path (a CSV file, or an image directory for object detection)
             string resolvedTestDataFile;
 
             if (string.IsNullOrEmpty(testDataFile))
             {
-                // Auto-discover datasets/test.csv
-                var datasetDiscovery = new DatasetDiscovery(fileSystem);
-                var datasets = datasetDiscovery.FindDatasets(projectRoot);
-
-                if (datasets?.TestPath == null)
+                if (isObjectDetection)
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] No test data specified and datasets/test.csv not found.");
-                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/test.csv or specify a file: mloop evaluate <experiment-id> <test-file>");
-                    return 1;
+                    var odDir = ResolveObjectDetectionDataset(projectRoot);
+                    if (odDir == null)
+                    {
+                        AnsiConsole.MarkupLine("[red]Error:[/] No test data specified and no object-detection dataset found (datasets/coco, datasets/yolo, or datasets/).");
+                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Pass a directory: mloop evaluate <experiment-id> <dir>");
+                        return 1;
+                    }
+                    resolvedTestDataFile = odDir;
+                    AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
                 }
+                else
+                {
+                    // Auto-discover datasets/test.csv
+                    var datasetDiscovery = new DatasetDiscovery(fileSystem);
+                    var datasets = datasetDiscovery.FindDatasets(projectRoot);
 
-                resolvedTestDataFile = datasets.TestPath;
-                AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
+                    if (datasets?.TestPath == null)
+                    {
+                        AnsiConsole.MarkupLine("[red]Error:[/] No test data specified and datasets/test.csv not found.");
+                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/test.csv or specify a file: mloop evaluate <experiment-id> <test-file>");
+                        return 1;
+                    }
+
+                    resolvedTestDataFile = datasets.TestPath;
+                    AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
+                }
             }
             else
             {
-                // Validate explicit test data file
                 resolvedTestDataFile = Path.IsPathRooted(testDataFile)
                     ? testDataFile
                     : Path.Combine(projectRoot, testDataFile);
 
-                if (!File.Exists(resolvedTestDataFile))
+                // Object detection accepts a directory (or a direct COCO .json); CSV tasks need a file.
+                bool exists = isObjectDetection
+                    ? (Directory.Exists(resolvedTestDataFile) || File.Exists(resolvedTestDataFile))
+                    : File.Exists(resolvedTestDataFile);
+                if (!exists)
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Test data file not found: {resolvedTestDataFile}");
+                    AnsiConsole.MarkupLine($"[red]Error:[/] Test data not found: {resolvedTestDataFile}");
                     return 1;
                 }
 
@@ -166,36 +188,39 @@ public static class EvaluateCommand
 
             AnsiConsole.WriteLine();
 
-            // Validate schema before evaluation
-            var validator = new SchemaValidator(fileSystem, projectDiscovery);
-            var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedTestDataFile, resolvedModelName, resolvedExperimentId);
-
-            if (!validationResult.IsValid)
+            // Validate schema before evaluation (CSV-column validation; not applicable to OD directories)
+            if (!isObjectDetection)
             {
-                AnsiConsole.MarkupLine("[red]Schema Validation Failed:[/]");
-                AnsiConsole.WriteLine();
+                var validator = new SchemaValidator(fileSystem, projectDiscovery);
+                var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedTestDataFile, resolvedModelName, resolvedExperimentId);
 
-                if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
+                if (!validationResult.IsValid)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Warning: {validationResult.ErrorMessage}[/]");
+                    AnsiConsole.MarkupLine("[red]Schema Validation Failed:[/]");
                     AnsiConsole.WriteLine();
-                }
 
-                if (validationResult.MissingColumns.Any())
-                {
-                    AnsiConsole.MarkupLine("[red]Missing columns in test data:[/]");
-                    foreach (var col in validationResult.MissingColumns)
+                    if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
                     {
-                        AnsiConsole.MarkupLine($"  [grey]-[/] {col}");
+                        AnsiConsole.MarkupLine($"[yellow]Warning: {validationResult.ErrorMessage}[/]");
+                        AnsiConsole.WriteLine();
                     }
-                    AnsiConsole.WriteLine();
+
+                    if (validationResult.MissingColumns.Any())
+                    {
+                        AnsiConsole.MarkupLine("[red]Missing columns in test data:[/]");
+                        foreach (var col in validationResult.MissingColumns)
+                        {
+                            AnsiConsole.MarkupLine($"  [grey]-[/] {col}");
+                        }
+                        AnsiConsole.WriteLine();
+                    }
+
+                    return 1;
                 }
 
-                return 1;
+                AnsiConsole.MarkupLine("[green]>[/] Schema validation passed");
+                AnsiConsole.WriteLine();
             }
-
-            AnsiConsole.MarkupLine("[green]>[/] Schema validation passed");
-            AnsiConsole.WriteLine();
 
             // Perform evaluation with progress indicator
             Dictionary<string, double>? testMetrics = null;
@@ -269,6 +294,27 @@ public static class EvaluateCommand
             ErrorSuggestions.DisplayError(ex, "evaluate");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// Finds the object-detection dataset directory by convention: <c>datasets/coco</c>,
+    /// <c>datasets/yolo</c>, then <c>datasets</c>. Mirrors TrainCommand's directory resolution so
+    /// evaluate auto-discovers the same dataset training used. Returns null if none exists.
+    /// </summary>
+    private static string? ResolveObjectDetectionDataset(string projectRoot)
+    {
+        foreach (var candidate in new[]
+        {
+            Path.Combine(projectRoot, "datasets", "coco"),
+            Path.Combine(projectRoot, "datasets", "yolo"),
+            Path.Combine(projectRoot, "datasets")
+        })
+        {
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 
     internal static bool IsLowerBetterMetric(string metricName)
