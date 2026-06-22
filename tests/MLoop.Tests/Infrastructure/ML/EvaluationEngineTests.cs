@@ -190,6 +190,50 @@ public class EvaluationEngineTests : IDisposable
         Assert.Equal(3, metrics.Count);
     }
 
+    [Fact]
+    public async Task EvaluateAsync_Regression_Cp949TestData_KoreanLabel_FindsLabelAndReturnsMetrics()
+    {
+        // BUG-43: evaluate must run the test CSV through EncodingDetector (like train/predict),
+        // not force UTF-8. A CP949-encoded file with a Korean label column (e.g. '출력값') was
+        // garbled into mojibake, so the label column "could not be found" even though training
+        // accepted the same data. Guards both LoadTestData and the schema read against regression.
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        const string korFeature = "입력값";
+        const string korLabel = "출력값";
+
+        // Train a tiny regression model whose schema uses Korean column names (UTF-8 training file).
+        var trainCsv = Path.Combine(_testDir, "train_kor.csv");
+        var rng = new Random(42);
+        File.WriteAllText(trainCsv, BuildCsv(
+            $"{korFeature},{korLabel}",
+            Enumerable.Range(0, 50).Select(_ => { var f = (float)rng.NextDouble() * 10; return $"{f},{f * 2 + 1}"; })),
+            new System.Text.UTF8Encoding(true));
+
+        var loaderColumns = new[]
+        {
+            new TextLoader.Column(korFeature, DataKind.Single, 0),
+            new TextLoader.Column(korLabel, DataKind.Single, 1),
+        };
+        var trainData = _mlContext.Data.CreateTextLoader(loaderColumns, hasHeader: true, separatorChar: ',').Load(trainCsv);
+        var pipeline = _mlContext.Transforms.Concatenate("Features", korFeature)
+            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: korLabel, featureColumnName: "Features"));
+        var model = pipeline.Fit(trainData);
+        var modelPath = Path.Combine(_testDir, "regression_kor.zip");
+        _mlContext.Model.Save(model, trainData.Schema, modelPath);
+
+        // Test data written in CP949 (the pre-fix code read it as UTF-8 → garbled Korean header).
+        var testCsv = Path.Combine(_testDir, "test_kor_cp949.csv");
+        File.WriteAllText(testCsv, BuildCsv(
+            $"{korFeature},{korLabel}",
+            Enumerable.Range(0, 10).Select(_ => { var f = (float)rng.NextDouble() * 10; return $"{f},{f * 2 + 1}"; })),
+            System.Text.Encoding.GetEncoding(949));
+
+        // Act + Assert: label is found, metrics returned (pre-fix this threw "label not found").
+        var metrics = await _engine.EvaluateAsync(modelPath, testCsv, korLabel, "regression");
+        Assert.Contains("r_squared", metrics.Keys);
+        Assert.Equal(4, metrics.Count);
+    }
+
     #endregion
 
     #region Helpers

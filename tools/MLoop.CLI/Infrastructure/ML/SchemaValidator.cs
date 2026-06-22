@@ -3,6 +3,7 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
 
@@ -41,6 +42,12 @@ public class SchemaValidator
 
         try
         {
+            // Read the input through the same encoding detection every other CSV reader uses
+            // (CsvDataLoader/CsvHelper/Predict/Train). Forcing UTF-8 here garbles CP949/EUC-KR
+            // headers, producing false "missing column" / "not UTF-8" errors on files that
+            // train & predict accept. (BUG-43)
+            var (readPath, _) = EncodingDetector.ConvertToUtf8WithBom(inputDataPath);
+
             // Try to load saved schema from experiment metadata
             InputSchemaInfo? savedSchema = null;
             if (!string.IsNullOrEmpty(experimentId))
@@ -60,7 +67,7 @@ public class SchemaValidator
             // If we have saved schema, use it for validation
             if (savedSchema != null)
             {
-                return ValidateWithSavedSchema(savedSchema, inputDataPath);
+                return ValidateWithSavedSchema(savedSchema, readPath);
             }
 
             // Otherwise, fall back to model-based validation (which is limited)
@@ -89,9 +96,9 @@ public class SchemaValidator
                 return result;
             }
 
-            // Load input data to infer schema with UTF-8 encoding
+            // Load input data to infer schema (readPath is already UTF-8 via EncodingDetector)
             string? firstLine;
-            using (var reader = new StreamReader(inputDataPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            using (var reader = new StreamReader(readPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {
                 firstLine = reader.ReadLine();
             }
@@ -108,7 +115,7 @@ public class SchemaValidator
             var dummyLabel = columns.Length > 0 ? columns[0] : "dummy";
 
             var columnInference = _mlContext.Auto().InferColumns(
-                inputDataPath,
+                readPath,
                 labelColumnName: dummyLabel,
                 separatorChar: ',');
 
@@ -121,7 +128,7 @@ public class SchemaValidator
             }
 
             var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
-            var inputData = textLoader.Load(inputDataPath);
+            var inputData = textLoader.Load(readPath);
             var inputSchema = inputData.Schema;
 
             // Get model input columns (exclude Label and Features special columns)
@@ -237,7 +244,7 @@ public class SchemaValidator
 
         try
         {
-            // Load input data columns with UTF-8 encoding
+            // inputDataPath is already UTF-8 (caller ran EncodingDetector.ConvertToUtf8WithBom) — BUG-43
             string? firstLine;
             using (var reader = new StreamReader(inputDataPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {

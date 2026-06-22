@@ -14,7 +14,7 @@ namespace MLoop.Core.Evaluation;
 /// column (<c>Label</c>, a vector of class names) and box column (<c>BoundingBoxes</c>) pass
 /// through, and the trainer emits <c>PredictedBoundingBoxes</c> plus <c>Score</c> and a key-typed
 /// <c>PredictedLabel</c> that a trailing <c>MapKeyToValue</c> turns back into a visible string
-/// column. <see cref="EvaluateObjectDetection.EvaluateObjectDetection"/> reads both label columns
+/// column. <see cref="TorchSharpCatalog.EvaluateObjectDetection"/> reads both label columns
 /// as <em>class-name strings</em> (not keys), so column resolution here takes the visible string
 /// columns — the original <c>Label</c> and the mapped-back <c>PredictedLabel</c>.
 /// </remarks>

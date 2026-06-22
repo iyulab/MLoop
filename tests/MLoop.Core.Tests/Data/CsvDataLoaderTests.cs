@@ -589,6 +589,66 @@ public class CsvDataLoaderTests : IDisposable
 
     #endregion
 
+    #region RemoveExcludedColumns (BUG-44)
+
+    [Fact]
+    public void RemoveExcludedColumns_NoExclusions_ReturnsOriginalPath()
+    {
+        var csv = "F1,F2,Label\n1,2,A\n3,4,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "noexcl.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        // Empty exclusion set → no-op, original path.
+        var result = CsvDataLoader.RemoveExcludedColumns(csvPath, System.Array.Empty<string>());
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveExcludedColumns_RemovesNamedColumns_KeepsRest()
+    {
+        // Mirrors training marking DateTime/constant columns as "Exclude": evaluate must drop the
+        // same columns so the feature vector width matches the model. (BUG-44)
+        var csv = "F1,SPC_DATETIME,Const,Label\n1,2024-01-01,9,A\n3,2024-01-02,9,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "excl.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveExcludedColumns(csvPath, new[] { "SPC_DATETIME", "Const" });
+
+        Assert.NotEqual(csvPath, result);
+        var lines = File.ReadAllLines(result);
+        Assert.Equal("F1,Label", lines[0]);
+        Assert.Equal("1,A", lines[1]);
+        Assert.Equal("3,B", lines[2]);
+    }
+
+    [Fact]
+    public void RemoveExcludedColumns_MatchIsCaseInsensitive()
+    {
+        var csv = "F1,DateCol,Label\n1,x,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "excl_ci.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveExcludedColumns(csvPath, new[] { "datecol" });
+
+        Assert.NotEqual(csvPath, result);
+        Assert.Equal("F1,Label", File.ReadAllLines(result)[0]);
+    }
+
+    [Fact]
+    public void RemoveExcludedColumns_NamesNotPresent_ReturnsOriginalPath()
+    {
+        var csv = "F1,F2,Label\n1,2,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "excl_absent.csv");
+        File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveExcludedColumns(csvPath, new[] { "NotThere" });
+
+        Assert.Equal(csvPath, result);
+    }
+
+    #endregion
+
     #region IsLikelyHeaderless
 
     [Fact]

@@ -910,6 +910,64 @@ public class CsvDataLoader : DataProviderBase
     }
 
     /// <summary>
+    /// Removes columns the trained schema marked as "Exclude" (DateTime / constant / sparse) from a
+    /// prediction or evaluation CSV. Deterministic — driven by the training-time analysis passed in
+    /// <paramref name="excludedColumnNames"/>, not by the current file's data — so predict and evaluate
+    /// reproduce the same feature set the model was fitted on (avoids the BUG-21 dimension-mismatch class).
+    /// Returns the original path when nothing is excluded, otherwise a UTF-8 BOM temp file.
+    /// </summary>
+    public static string RemoveExcludedColumns(string filePath, IEnumerable<string> excludedColumnNames, Action<string>? log = null)
+    {
+        var excluded = new HashSet<string>(excludedColumnNames, StringComparer.OrdinalIgnoreCase);
+        if (excluded.Count == 0) return filePath;
+
+        var write = log ?? Console.WriteLine;
+        try
+        {
+            string? firstLine;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                firstLine = reader.ReadLine();
+            }
+            if (string.IsNullOrEmpty(firstLine)) return filePath;
+
+            var headers = ParseCsvLine(firstLine);
+            var excludeIndices = new List<int>();
+            for (int i = 0; i < headers.Length; i++)
+            {
+                if (excluded.Contains(headers[i].Trim()))
+                    excludeIndices.Add(i);
+            }
+            if (excludeIndices.Count == 0) return filePath;
+
+            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_noexcl_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var keepIndices = Enumerable.Range(0, headers.Length).Except(excludeIndices).ToArray();
+
+            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
+            {
+                foreach (var line in allLines)
+                {
+                    var fields = ParseCsvLine(line);
+                    var kept = keepIndices
+                        .Where(idx => idx < fields.Length)
+                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
+                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
+                            : fields[idx]);
+                    writer.WriteLine(string.Join(",", kept));
+                }
+            }
+
+            write($"[Info] Removed excluded column(s): {string.Join(", ", excludeIndices.Select(i => headers[i]))}");
+            return tempPath;
+        }
+        catch
+        {
+            return filePath; // Non-critical, continue with original
+        }
+    }
+
+    /// <summary>
     /// Determines if a column name is likely an auto-generated index column.
     /// Matches: empty/whitespace names, "Unnamed: N" (pandas), "Unnamed".
     /// Does NOT match common feature names like "id", "index" as they may be intentional.
