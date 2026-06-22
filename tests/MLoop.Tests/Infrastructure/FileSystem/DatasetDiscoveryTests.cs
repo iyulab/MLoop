@@ -28,6 +28,58 @@ public class DatasetDiscoveryTests : IDisposable
     }
 
     [Fact]
+    public void FindDirectoryDataset_ObjectDetection_PrefersCocoThenYolo()
+    {
+        // datasets/coco wins over datasets/yolo and datasets/ for object detection.
+        Directory.CreateDirectory(Path.Combine(_testProjectRoot, "datasets", "yolo"));
+        Directory.CreateDirectory(Path.Combine(_testProjectRoot, "datasets", "coco"));
+
+        var result = DatasetDiscovery.FindDirectoryDataset(_testProjectRoot, "object-detection");
+
+        Assert.Equal(Path.Combine(_testProjectRoot, "datasets", "coco"), result);
+    }
+
+    [Fact]
+    public void FindDirectoryDataset_ObjectDetection_FallsBackToYolo()
+    {
+        Directory.CreateDirectory(Path.Combine(_testProjectRoot, "datasets", "yolo"));
+
+        var result = DatasetDiscovery.FindDirectoryDataset(_testProjectRoot, "object-detection");
+
+        Assert.Equal(Path.Combine(_testProjectRoot, "datasets", "yolo"), result);
+    }
+
+    [Fact]
+    public void FindDirectoryDataset_ImageClassification_PrefersImagesDir()
+    {
+        // The image-classification convention is datasets/images, not coco/yolo.
+        Directory.CreateDirectory(Path.Combine(_testProjectRoot, "datasets", "images"));
+        Directory.CreateDirectory(Path.Combine(_testProjectRoot, "datasets", "coco"));
+
+        var result = DatasetDiscovery.FindDirectoryDataset(_testProjectRoot, "image-classification");
+
+        Assert.Equal(Path.Combine(_testProjectRoot, "datasets", "images"), result);
+    }
+
+    [Fact]
+    public void FindDirectoryDataset_FallsBackToDatasets()
+    {
+        Directory.CreateDirectory(Path.Combine(_testProjectRoot, "datasets"));
+
+        var result = DatasetDiscovery.FindDirectoryDataset(_testProjectRoot, "image-classification");
+
+        Assert.Equal(Path.Combine(_testProjectRoot, "datasets"), result);
+    }
+
+    [Fact]
+    public void FindDirectoryDataset_NoDirectory_ReturnsNull()
+    {
+        var result = DatasetDiscovery.FindDirectoryDataset(_testProjectRoot, "object-detection");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void FindDatasets_WithTrainCsv_ReturnsDatasetPaths()
     {
         // Arrange

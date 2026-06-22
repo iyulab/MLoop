@@ -53,6 +53,40 @@ public class DatasetDiscovery : IDatasetDiscovery
         return _fileSystem.CombinePath(projectRoot, DatasetsDirectoryName);
     }
 
+    /// <summary>
+    /// Finds the dataset directory for a directory-based task (image classification, object
+    /// detection) by convention: object detection looks under <c>datasets/coco</c> then
+    /// <c>datasets/yolo</c>, image classification under <c>datasets/images</c>, both finally falling
+    /// back to <c>datasets</c>. These tasks consume image directories, not CSV files, so this is
+    /// separate from <see cref="FindDatasets"/> and mirrors TrainCommand's directory resolution so
+    /// evaluate and predict auto-discover the same dataset training used. Returns null if none exists.
+    /// </summary>
+    public static string? FindDirectoryDataset(string projectRoot, string? taskType)
+    {
+        var isObjectDetection = string.Equals(taskType, "object-detection", StringComparison.OrdinalIgnoreCase);
+
+        var candidates = isObjectDetection
+            ? new[]
+            {
+                Path.Combine(projectRoot, DatasetsDirectoryName, "coco"),
+                Path.Combine(projectRoot, DatasetsDirectoryName, "yolo"),
+                Path.Combine(projectRoot, DatasetsDirectoryName)
+            }
+            : new[]
+            {
+                Path.Combine(projectRoot, DatasetsDirectoryName, "images"),
+                Path.Combine(projectRoot, DatasetsDirectoryName)
+            };
+
+        foreach (var candidate in candidates)
+        {
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
+    }
+
     private string? TryFindFile(string directory, string fileName)
     {
         var filePath = _fileSystem.CombinePath(directory, fileName);
