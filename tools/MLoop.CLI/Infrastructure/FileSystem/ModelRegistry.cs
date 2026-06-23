@@ -184,12 +184,16 @@ public class ModelRegistry : IModelRegistry
         // Load new experiment metrics
         var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
 
-        if (experiment.Metrics == null || !experiment.Metrics.ContainsKey(primaryMetric))
+        if (experiment.Metrics == null)
         {
             return false; // Cannot promote without metrics
         }
 
-        var newMetricValue = experiment.Metrics[primaryMetric];
+        // User-facing metric aliases (e.g. "f1") differ from the canonical keys the
+        // EvaluationEngine stores (e.g. "f1_score"). Resolve to the stored key so the
+        // quality gate and production comparison operate on the right value instead of
+        // silently failing the lookup (which blocked first-model auto-promotion).
+        var metricKey = ResolveMetricKey(primaryMetric, experiment.Metrics);
 
         // Extract class count from schema for dynamic thresholds
         int? classCount = null;
@@ -203,16 +207,11 @@ public class ModelRegistry : IModelRegistry
             }
         }
 
-        // Check minimum metric threshold (quality gate)
-        var minThreshold = GetMinimumMetricThreshold(primaryMetric, classCount);
-        if (minThreshold.HasValue)
+        // Check minimum metric threshold (quality gate) — only when the metric is present.
+        if (metricKey != null && !IsErrorMetric(primaryMetric))
         {
-            var isError = IsErrorMetric(primaryMetric);
-            var belowThreshold = isError
-                ? false // No universal minimum for error metrics (scale-dependent)
-                : newMetricValue < minThreshold.Value;
-
-            if (belowThreshold)
+            var minThreshold = GetMinimumMetricThreshold(primaryMetric, classCount);
+            if (minThreshold.HasValue && experiment.Metrics[metricKey] < minThreshold.Value)
             {
                 return false; // Below minimum viable threshold
             }
@@ -220,7 +219,7 @@ public class ModelRegistry : IModelRegistry
 
         // Degenerate model detection: high accuracy but zero F1
         // This indicates the model only predicts the majority class
-        if (experiment.Metrics != null && IsClassificationDegenerateModel(experiment.Metrics))
+        if (IsClassificationDegenerateModel(experiment.Metrics))
         {
             return false; // Block promotion for degenerate models
         }
@@ -228,27 +227,78 @@ public class ModelRegistry : IModelRegistry
         // Get current production model
         var currentProduction = await GetProductionAsync(resolvedName, cancellationToken);
 
-        if (currentProduction == null)
+        if (currentProduction?.Metrics == null)
         {
-            return true; // No production model yet, promote first model
+            return true; // No production model yet (or it has no metrics), promote first model
         }
 
-        if (currentProduction.Metrics == null || !currentProduction.Metrics.ContainsKey(primaryMetric))
+        // Compare against production using the resolved metric key. If either side is
+        // missing the metric, fall back to promoting the new (quality-gated) model.
+        if (metricKey == null ||
+            !experiment.Metrics.TryGetValue(metricKey, out var newMetricValue) ||
+            !currentProduction.Metrics.TryGetValue(metricKey, out var currentMetricValue))
         {
-            return true; // Current production has no metrics, promote new model
+            return true;
         }
-
-        var currentMetricValue = currentProduction.Metrics[primaryMetric];
 
         // Promote if new model is better
         // For most metrics (accuracy, r_squared, auc, f1), higher is better
         // For error metrics (mae, rmse, mse), lower is better
-        var isErrorMetric = IsErrorMetric(primaryMetric);
-
-        return isErrorMetric
+        return IsErrorMetric(primaryMetric)
             ? newMetricValue < currentMetricValue  // Lower error is better
             : newMetricValue > currentMetricValue; // Higher score is better
     }
+
+    /// <summary>
+    /// Resolves a user-facing metric name/alias (e.g. "f1", "r2", "log-loss") to the
+    /// canonical key actually present among <paramref name="availableKeys"/> (e.g.
+    /// "f1_score", "r_squared", "log_loss"). The EvaluationEngine stores canonical keys,
+    /// while the CLI accepts aliases — without this mapping a raw lookup silently misses
+    /// (the root cause of BUG-45's blocked auto-promotion and Compare's ignored --sort).
+    /// Returns the matching canonical key, or null if no known variant is present.
+    /// </summary>
+    public static string? ResolveMetricKey(string metricName, IEnumerable<string> availableKeys)
+    {
+        if (string.IsNullOrWhiteSpace(metricName))
+        {
+            return null;
+        }
+
+        var keys = availableKeys as ICollection<string> ?? availableKeys.ToList();
+
+        // Exact match wins.
+        if (keys.Contains(metricName))
+        {
+            return metricName;
+        }
+
+        var normalized = metricName.Trim().ToLowerInvariant().Replace("-", "_");
+
+        // Map common aliases to their canonical stored keys (most-specific first).
+        var candidates = normalized switch
+        {
+            "f1" or "f1score" => new[] { "f1_score", "macro_f1" },
+            "r2" or "rsquared" => new[] { "r_squared" },
+            "logloss" => new[] { "log_loss" },
+            "accuracy" => new[] { "accuracy", "micro_accuracy", "macro_accuracy" },
+            "area_under_roc_curve" => new[] { "auc" },
+            _ => new[] { normalized }
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (keys.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Convenience overload resolving against a metrics dictionary's keys.</summary>
+    private static string? ResolveMetricKey(string metricName, Dictionary<string, double> metrics)
+        => ResolveMetricKey(metricName, metrics.Keys);
 
     /// <inheritdoc />
     public async Task<bool> AutoPromoteAsync(

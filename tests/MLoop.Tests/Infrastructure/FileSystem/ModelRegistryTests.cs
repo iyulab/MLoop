@@ -437,6 +437,83 @@ public class ModelRegistryTests : IDisposable
         Assert.True(result); // Above minimum threshold, no production model
     }
 
+    [Fact]
+    public async Task ShouldPromoteAsync_NoProduction_F1Alias_ReturnsTrue()
+    {
+        // Arrange — user passes "--metric f1" but EvaluationEngine stores the key as "f1_score".
+        // A non-degenerate first model must still auto-promote despite the alias mismatch.
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.87,
+            ["f1_score"] = 0.73,
+            ["auc"] = 0.88
+        });
+
+        // Act — primary metric is the user-facing alias "f1"
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
+            experimentId,
+            "f1",
+            CancellationToken.None);
+
+        // Assert
+        Assert.True(result); // Passes quality gate, no production → promote
+    }
+
+    [Fact]
+    public async Task ShouldPromoteAsync_F1Alias_ComparesAgainstProduction()
+    {
+        // Arrange — production has f1_score=0.70, new model f1_score=0.80, primary metric alias "f1".
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.80,
+            ["f1_score"] = 0.70
+        });
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
+
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.85,
+            ["f1_score"] = 0.80
+        });
+
+        // Act
+        var betterResult = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName, exp2, "f1", CancellationToken.None);
+
+        // Assert — alias must resolve to f1_score and compare correctly
+        Assert.True(betterResult);
+    }
+
+    [Theory]
+    [InlineData("f1", "f1_score")]            // alias → canonical
+    [InlineData("F1", "f1_score")]            // case-insensitive
+    [InlineData("f1_score", "f1_score")]      // exact match
+    [InlineData("r2", "r_squared")]
+    [InlineData("log-loss", "log_loss")]      // hyphen normalized
+    [InlineData("accuracy", "accuracy")]      // binary keeps accuracy
+    [InlineData("auc", "auc")]
+    public void ResolveMetricKey_MapsAliasToStoredKey(string input, string expected)
+    {
+        var available = new[] { "accuracy", "auc", "f1_score", "precision", "recall", "r_squared", "log_loss" };
+        Assert.Equal(expected, ModelRegistry.ResolveMetricKey(input, available));
+    }
+
+    [Fact]
+    public void ResolveMetricKey_MulticlassAccuracy_FallsBackToMicroMacro()
+    {
+        // Multiclass stores macro/micro_accuracy, not plain "accuracy".
+        var available = new[] { "macro_accuracy", "micro_accuracy", "log_loss" };
+        Assert.Equal("micro_accuracy", ModelRegistry.ResolveMetricKey("accuracy", available));
+    }
+
+    [Fact]
+    public void ResolveMetricKey_UnknownMetric_ReturnsNull()
+    {
+        var available = new[] { "accuracy", "f1_score" };
+        Assert.Null(ModelRegistry.ResolveMetricKey("nonsense", available));
+    }
+
     [Theory]
     [InlineData("r_squared", 0.0)]
     [InlineData("auc", 0.5)]
