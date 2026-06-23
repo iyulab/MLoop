@@ -33,7 +33,7 @@ public class EvaluationEngine
     {
         return await Task.Run(() =>
         {
-            string? tempFile = null;
+            List<string> tempFiles = new();
             try
             {
                 // DL tasks need their native runtime loaded before deserializing the model (BUG-40).
@@ -60,7 +60,7 @@ public class EvaluationEngine
                 }
 
                 // Load test data (no label renaming - model pipeline transforms label column)
-                var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, out tempFile);
+                var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, out tempFiles);
 
                 // Make predictions on test data
                 // Model pipeline transforms the label column (e.g. MapValueToKey for classification)
@@ -142,57 +142,26 @@ public class EvaluationEngine
             }
             finally
             {
-                // BUG-13: Clean up temp file AFTER all lazy data consumption is complete
-                if (tempFile != null && File.Exists(tempFile))
+                // BUG-13: Clean up temp files AFTER all lazy data consumption is complete
+                foreach (var tempFile in tempFiles)
                 {
-                    try { File.Delete(tempFile); } catch (IOException) { }
+                    if (File.Exists(tempFile))
+                    {
+                        try { File.Delete(tempFile); } catch (IOException) { }
+                    }
                 }
             }
         }, cancellationToken);
     }
 
-    private IDataView LoadTestData(string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema, out string? tempFilePath)
+    private IDataView LoadTestData(string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema, out List<string> tempFiles)
     {
-        // Mirror CsvDataLoader's encoding handling (CP949/EUC-KR → UTF-8 with BOM). The previous
-        // hand-rolled "read as UTF-8, rewrite with BOM" garbled non-UTF-8 test files, so the label
-        // column (e.g. Korean 'Low핀(출력)') could not be found even though training accepted the
-        // same file. Delegate to the shared detector so evaluate matches train/predict. (BUG-43)
-        var (utf8Path, detection) = EncodingDetector.ConvertToUtf8WithBom(testDataPath);
-        string? encodingTemp = detection.WasConverted ? utf8Path : null;
-
-        // Mirror CsvDataLoader/PredictionEngine index-column removal. Training drops unnamed/index
-        // columns before fitting, so the model's __Features__ width excludes them; if evaluate keeps
-        // them the feature vector is +1 wide and Transform fails with a dimension mismatch (e.g.
-        // expected Vector<Single,593> got 594). Strip them here too so evaluate matches train/predict. (BUG-44)
-        string loadPath = CsvDataLoader.RemoveIndexColumns(utf8Path);
-
-        // Mirror PredictionEngine's schema-based exclusion: training marks DateTime/constant/sparse
-        // columns as "Exclude" and drops them before fitting, so the model's __Features__ excludes
-        // them. Without this, evaluate keeps those columns and the feature vector is too wide
-        // (e.g. expected Vector<Single,114> got 123). Deterministic by trained schema, not eval
-        // data, so it can't drift. (BUG-44 — same divergence class as the index/encoding gaps above.)
-        string deExcludedPath = loadPath;
-        if (trainedSchema != null)
-        {
-            deExcludedPath = CsvDataLoader.RemoveExcludedColumns(
-                loadPath,
-                trainedSchema.Columns.Where(c => c.Purpose == "Exclude").Select(c => c.Name));
-        }
-
-        // Track temp file(s) for cleanup. Each Remove* step either returns its input unchanged or a
-        // fresh temp; intermediate temps are superseded and deleted, keeping a single tempFilePath.
-        var temps = new List<string?> { encodingTemp,
-            loadPath != utf8Path ? loadPath : null,
-            deExcludedPath != loadPath ? deExcludedPath : null };
-        loadPath = deExcludedPath;
-        tempFilePath = temps.LastOrDefault(t => t != null);
-        foreach (var t in temps)
-        {
-            if (t != null && t != tempFilePath && File.Exists(t))
-            {
-                try { File.Delete(t); } catch (IOException) { }
-            }
-        }
+        // Apply the single shared inference preprocessing sequence (encoding → flatten → index →
+        // schema-based exclude / data-dependent fallback). This is the same path predict uses, which
+        // is what makes the test feature vector reproduce the model's training-time width. Converging
+        // here fixed BUG-43 (CP949 encoding) and BUG-44 (index/exclude columns left in) and closed the
+        // flatten/constant gaps that the previous per-engine reimplementation hid.
+        string loadPath = InferenceDataPreprocessor.Prepare(testDataPath, labelColumn, trainedSchema, out tempFiles);
 
         // Infer column types from the data
         var columnInference = _mlContext.Auto().InferColumns(
