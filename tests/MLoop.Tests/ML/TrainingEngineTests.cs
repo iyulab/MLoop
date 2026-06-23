@@ -347,6 +347,28 @@ public class TrainingEngineTests : IDisposable
     }
 
     [Fact]
+    public void BuildDirectoryInputSchema_WithClassCount_PopulatesLabelUniqueValueCount()
+    {
+        // BUG-46: the promotion quality gate derives its 1/N threshold from the label's
+        // UniqueValueCount. Directory-based tasks must populate it (folder count) so the gate
+        // can reject non-converged image models (micro_accuracy < 1/N) instead of silently
+        // promoting them.
+        var schema = TrainingEngine.BuildDirectoryInputSchema("Label", "image-classification", classCount: 6);
+
+        var label = schema.Columns.Single(c => c.Name == "Label");
+        Assert.Equal(6, label.UniqueValueCount);
+    }
+
+    [Fact]
+    public void BuildDirectoryInputSchema_WithoutClassCount_LeavesUniqueValueCountNull()
+    {
+        var schema = TrainingEngine.BuildDirectoryInputSchema("Label", "image-classification");
+
+        var label = schema.Columns.Single(c => c.Name == "Label");
+        Assert.Null(label.UniqueValueCount);
+    }
+
+    [Fact]
     public void BuildDirectoryInputSchema_ObjectDetection_AddsBoundingBoxVector()
     {
         // Object detection carries a categorical label vector plus a float bounding-box vector.

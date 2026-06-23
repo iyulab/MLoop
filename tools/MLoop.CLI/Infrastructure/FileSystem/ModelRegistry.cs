@@ -192,8 +192,11 @@ public class ModelRegistry : IModelRegistry
         // User-facing metric aliases (e.g. "f1") differ from the canonical keys the
         // EvaluationEngine stores (e.g. "f1_score"). Resolve to the stored key so the
         // quality gate and production comparison operate on the right value instead of
-        // silently failing the lookup (which blocked first-model auto-promotion).
-        var metricKey = ResolveMetricKey(primaryMetric, experiment.Metrics);
+        // silently failing the lookup (which blocked first-model auto-promotion — BUG-45).
+        // When the project metric is the deferred "auto" (init leaves image/OD tasks as auto),
+        // fall back to the task's canonical metric so the gate still engages instead of being
+        // silently skipped (BUG-46).
+        var metricKey = ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
 
         // Extract class count from schema for dynamic thresholds
         int? classCount = null;
@@ -208,9 +211,12 @@ public class ModelRegistry : IModelRegistry
         }
 
         // Check minimum metric threshold (quality gate) — only when the metric is present.
-        if (metricKey != null && !IsErrorMetric(primaryMetric))
+        // Threshold and error-direction are computed from the RESOLVED canonical key, not the
+        // raw user/project metric: "auto" and aliases ("f1", "r2") have no entry in the
+        // threshold table, so using the raw value silently skipped the gate (BUG-45/46 root).
+        if (metricKey != null && !IsErrorMetric(metricKey))
         {
-            var minThreshold = GetMinimumMetricThreshold(primaryMetric, classCount);
+            var minThreshold = GetMinimumMetricThreshold(metricKey, classCount);
             if (minThreshold.HasValue && experiment.Metrics[metricKey] < minThreshold.Value)
             {
                 return false; // Below minimum viable threshold
@@ -243,8 +249,9 @@ public class ModelRegistry : IModelRegistry
 
         // Promote if new model is better
         // For most metrics (accuracy, r_squared, auc, f1), higher is better
-        // For error metrics (mae, rmse, mse), lower is better
-        return IsErrorMetric(primaryMetric)
+        // For error metrics (mae, rmse, mse), lower is better. Use the resolved canonical key
+        // so the direction matches the value actually compared (metricKey is non-null here).
+        return IsErrorMetric(metricKey)
             ? newMetricValue < currentMetricValue  // Lower error is better
             : newMetricValue > currentMetricValue; // Higher score is better
     }
@@ -295,6 +302,46 @@ public class ModelRegistry : IModelRegistry
 
         return null;
     }
+
+    /// <summary>
+    /// Resolves the canonical metric key for the quality gate, falling back to the task's
+    /// default metric when <paramref name="metricName"/> is the deferred "auto" (or otherwise
+    /// unresolvable). <see cref="ResolveMetricKey"/> handles explicit metrics and aliases;
+    /// this adds task-awareness so directory-based tasks — which init leaves as "auto" — still
+    /// engage the gate instead of silently skipping it (BUG-46). Returns null when neither the
+    /// requested metric nor the task default is present (e.g. object detection's mAP has no
+    /// universal threshold).
+    /// </summary>
+    public static string? ResolveCanonicalMetricKey(string metricName, string? task, IEnumerable<string> availableKeys)
+    {
+        var keys = availableKeys as ICollection<string> ?? availableKeys.ToList();
+
+        var resolved = ResolveMetricKey(metricName, keys);
+        if (resolved != null)
+        {
+            return resolved;
+        }
+
+        var taskDefault = DefaultMetricForTask(task);
+        return taskDefault != null ? ResolveMetricKey(taskDefault, keys) : null;
+    }
+
+    /// <summary>
+    /// The canonical metric a task optimizes when none is explicitly chosen. Mirrors the
+    /// per-task defaults the init template and AutoML use, so the promotion gate evaluates the
+    /// same metric training does. Returns null for tasks without a thresholded primary metric
+    /// (object detection's mAP, and unknown tasks).
+    /// </summary>
+    private static string? DefaultMetricForTask(string? task) => task?.Trim().ToLowerInvariant() switch
+    {
+        "image-classification" => "micro_accuracy",
+        "text-classification" => "micro_accuracy",
+        "multiclass-classification" => "macro_accuracy",
+        "binary-classification" => "accuracy",
+        "regression" => "r_squared",
+        "anomaly-detection" => "auc",
+        _ => null
+    };
 
     /// <summary>Convenience overload resolving against a metrics dictionary's keys.</summary>
     private static string? ResolveMetricKey(string metricName, Dictionary<string, double> metrics)

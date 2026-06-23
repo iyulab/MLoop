@@ -1022,7 +1022,15 @@ public static class TrainCommand
                     catch (Exception) { /* schema unavailable, use default threshold */ }
                 }
 
-                var minThreshold = ModelRegistry.GetMinimumMetricThreshold(primaryMetric, classCount);
+                // Display the threshold the gate actually applied: resolve "auto"/aliases to the
+                // canonical key first (matches ShouldPromoteAsync), so image tasks show their 1/N
+                // floor instead of a blank (BUG-46).
+                var displayMetricKey = result.Metrics != null
+                    ? ModelRegistry.ResolveCanonicalMetricKey(primaryMetric, trainingConfig.Task, result.Metrics.Keys)
+                    : null;
+                var minThreshold = displayMetricKey != null
+                    ? ModelRegistry.GetMinimumMetricThreshold(displayMetricKey, classCount)
+                    : null;
                 TrainPresenter.DisplayPromotionResult(promoted, primaryMetric, result, production, minThreshold);
             }
 

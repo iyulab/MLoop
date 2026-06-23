@@ -86,7 +86,13 @@ public class TrainingEngine : ITrainingEngine
                         "Lay images out as one subfolder per class (e.g. datasets/images/OK, datasets/images/NG).");
                 }
 
-                inputSchema = BuildDirectoryInputSchema(config.LabelColumn, config.Task);
+                // For image classification the class count is the number of class subfolders;
+                // it feeds the promotion quality gate's 1/N threshold (BUG-46). Object detection's
+                // classes live in annotations, not folders, so leave it unknown there.
+                int? classCount = string.Equals(config.Task, "image-classification", StringComparison.OrdinalIgnoreCase)
+                    ? ImageDirectoryLoader.CountClasses(dataFilePath)
+                    : null;
+                inputSchema = BuildDirectoryInputSchema(config.LabelColumn, config.Task, classCount);
             }
             else
             {
@@ -571,7 +577,7 @@ public class TrainingEngine : ITrainingEngine
     /// column plus the task's target columns: image classification has a single label column;
     /// object detection has a label vector (class names) plus a bounding-box vector.
     /// </summary>
-    internal static InputSchemaInfo BuildDirectoryInputSchema(string labelColumn, string? task)
+    internal static InputSchemaInfo BuildDirectoryInputSchema(string labelColumn, string? task, int? classCount = null)
     {
         var label = string.IsNullOrWhiteSpace(labelColumn)
             ? ImageDirectoryLoader.DefaultLabelColumn
@@ -593,7 +599,11 @@ public class TrainingEngine : ITrainingEngine
             {
                 Name = label,
                 DataType = "Categorical",
-                Purpose = "Label"
+                Purpose = "Label",
+                // Class count (folder count) feeds the promotion quality gate's 1/N threshold
+                // for image classification. Null when unknown (e.g. object detection, whose
+                // classes come from annotations rather than subfolders). (BUG-46)
+                UniqueValueCount = classCount
             }
         };
 

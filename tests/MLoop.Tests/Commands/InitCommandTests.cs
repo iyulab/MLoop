@@ -56,6 +56,7 @@ public class InitCommandTests
     [Theory]
     [InlineData("binary-classification", "accuracy")]
     [InlineData("multiclass-classification", "macro_accuracy")]
+    [InlineData("image-classification", "micro_accuracy")]   // BUG-46: was "auto" → gate skipped
     [InlineData("regression", "r_squared")]
     public void GetYamlTemplate_ContainsCorrectMetric(string task, string expectedMetric)
     {

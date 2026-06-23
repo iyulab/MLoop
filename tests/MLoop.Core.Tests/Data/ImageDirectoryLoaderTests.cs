@@ -209,6 +209,35 @@ public class ImageDirectoryLoaderTests : IDisposable
         Assert.False(DataLoaderFactory.IsDirectoryBased("regression"));
     }
 
+    [Fact]
+    public void CountClasses_CountsFoldersWithSupportedImages()
+    {
+        CreateClass("OK", 3);
+        CreateClass("NG", 2);
+
+        Assert.Equal(2, ImageDirectoryLoader.CountClasses(_tempDirectory));
+    }
+
+    [Fact]
+    public void CountClasses_IgnoresEmptyAndUnsupportedOnlyFolders()
+    {
+        CreateClass("OK", 1);
+        Directory.CreateDirectory(Path.Combine(_tempDirectory, "EMPTY"));            // no files
+        var txtOnly = Path.Combine(_tempDirectory, "TXT");
+        Directory.CreateDirectory(txtOnly);
+        File.WriteAllText(Path.Combine(txtOnly, "notes.txt"), "no images here");      // unsupported only
+        CreateClass("NG", 1);
+
+        // OK and NG count; EMPTY and TXT do not.
+        Assert.Equal(2, ImageDirectoryLoader.CountClasses(_tempDirectory));
+    }
+
+    [Fact]
+    public void CountClasses_MissingDirectory_ReturnsZero()
+    {
+        Assert.Equal(0, ImageDirectoryLoader.CountClasses(Path.Combine(_tempDirectory, "nope")));
+    }
+
     /// <summary>Creates a class subfolder with <paramref name="count"/> placeholder image files.</summary>
     private void CreateClass(string label, int count)
     {
