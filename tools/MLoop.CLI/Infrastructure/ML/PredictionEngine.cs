@@ -93,32 +93,14 @@ public class PredictionEngine : IPredictionEngine
             }
         }
 
-        // Create UTF-8 BOM version of the file for ML.NET
-        // ML.NET's InferColumns doesn't have encoding parameter and relies on BOM detection
+        // mlnetCompatiblePath holds the file fed to ML.NET after preprocessing; tempFiles collects
+        // every temp the shared preprocessor (and the dummy-label step below) creates, cleaned up in
+        // finally once the lazy IDataView consumption is complete.
         string mlnetCompatiblePath = processedDataPath;
-        bool createdTempFile = false;
+        List<string> tempFiles = new();
 
         try
         {
-            // Check if file has UTF-8 BOM
-            byte[] bom = new byte[3];
-            using (var fs = File.OpenRead(processedDataPath))
-            {
-                fs.ReadExactly(bom, 0, 3);
-            }
-
-            bool hasBom = bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF;
-
-            if (!hasBom)
-            {
-                // Create temp file with UTF-8 BOM for ML.NET compatibility
-                var tempFile = Path.GetTempFileName();
-                var allLines = File.ReadAllLines(processedDataPath, System.Text.Encoding.UTF8);
-                File.WriteAllLines(tempFile, allLines, new System.Text.UTF8Encoding(true)); // true = add BOM
-                mlnetCompatiblePath = tempFile;
-                createdTempFile = true;
-            }
-
             // Load the trained model
             DataViewSchema modelSchema;
             var trainedModel = _mlContext.Model.Load(modelPath, out modelSchema);
@@ -135,26 +117,12 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
 
-            // Apply data-independent preprocessing: index columns use sequential detection
-            // which is safe regardless of dataset size.
-            mlnetCompatiblePath = CsvDataLoader.RemoveIndexColumns(mlnetCompatiblePath);
-
-            // Schema-based column exclusion: DateTime, constant, and sparse columns are
-            // marked as "Exclude" in the trained schema during CaptureInputSchemaEnhanced.
-            // RemoveExcludedColumns deterministically removes them based on training-time
-            // analysis, not prediction data characteristics (avoids BUG-21 class of issues).
-            if (trainedSchema != null)
-            {
-                mlnetCompatiblePath = CsvDataLoader.RemoveExcludedColumns(
-                    mlnetCompatiblePath,
-                    trainedSchema.Columns.Where(c => c.Purpose == "Exclude").Select(c => c.Name));
-            }
-            else
-            {
-                // Fallback when no trained schema: use data-dependent removal
-                mlnetCompatiblePath = CsvDataLoader.RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn);
-                mlnetCompatiblePath = CsvDataLoader.RemoveSparseColumns(mlnetCompatiblePath, labelColumn);
-            }
+            // Apply the single shared inference preprocessing sequence (encoding → flatten → index →
+            // schema-based exclude / data-dependent fallback) — identical to evaluate. This replaces
+            // predict's hand-rolled UTF-8 BOM check (which read CP949 as UTF-8, BUG-43) and the
+            // per-engine index/exclude reimplementation, and adds the previously-missing flatten and
+            // constant-column steps that the divergence had silently dropped.
+            mlnetCompatiblePath = InferenceDataPreprocessor.Prepare(processedDataPath, labelColumn, trainedSchema, out tempFiles);
 
             // Read the header to get column names (after preprocessing)
             string firstLine;
@@ -189,13 +157,10 @@ public class PredictionEngine : IPredictionEngine
                     }
                 }
 
-                // Update paths
-                if (createdTempFile)
-                {
-                    File.Delete(mlnetCompatiblePath);
-                }
+                // The previous path (if a preprocessor temp) is already tracked in tempFiles and gets
+                // cleaned up in finally; the original input is never tracked, so it stays untouched.
                 mlnetCompatiblePath = tempWithLabel;
-                createdTempFile = true;
+                tempFiles.Add(tempWithLabel);
 
                 // Update state: label now exists in the modified data
                 firstLine = labelColumn + "," + firstLine;
@@ -364,7 +329,7 @@ public class PredictionEngine : IPredictionEngine
         }
         finally
         {
-            // Clean up temporary files if created
+            // Categorical preprocessing temp (created before the shared preprocessor ran).
             if (useTempFile && File.Exists(processedDataPath))
             {
                 try
@@ -377,15 +342,12 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
 
-            if (createdTempFile && File.Exists(mlnetCompatiblePath))
+            // Every temp the shared preprocessor and the dummy-label step created.
+            foreach (var tempFile in tempFiles)
             {
-                try
+                if (File.Exists(tempFile))
                 {
-                    File.Delete(mlnetCompatiblePath);
-                }
-                catch
-                {
-                    // Ignore cleanup errors
+                    try { File.Delete(tempFile); } catch { }
                 }
             }
         }
