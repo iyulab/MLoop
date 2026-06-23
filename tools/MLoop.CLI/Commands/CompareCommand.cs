@@ -155,18 +155,23 @@ public static class CompareCommand
                     .FirstOrDefault();
             }
 
-            if (!string.IsNullOrEmpty(effectiveSortMetric) && allMetricNames.Contains(effectiveSortMetric))
+            // Resolve user-facing alias (e.g. "f1") to the canonical stored key ("f1_score")
+            // so --sort / config metric isn't silently ignored when the alias differs.
+            var sortKey = string.IsNullOrEmpty(effectiveSortMetric)
+                ? null
+                : ModelRegistry.ResolveMetricKey(effectiveSortMetric, allMetricNames);
+            if (sortKey != null)
             {
-                var sortLowerBetter = effectiveSortMetric.Contains("Loss", StringComparison.OrdinalIgnoreCase) ||
-                                      effectiveSortMetric.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
-                                      effectiveSortMetric.Contains("MAE", StringComparison.OrdinalIgnoreCase) ||
-                                      effectiveSortMetric.Contains("MSE", StringComparison.OrdinalIgnoreCase) ||
-                                      effectiveSortMetric.Contains("RMSE", StringComparison.OrdinalIgnoreCase);
+                var sortLowerBetter = sortKey.Contains("loss", StringComparison.OrdinalIgnoreCase) ||
+                                      sortKey.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+                                      sortKey.Contains("mae", StringComparison.OrdinalIgnoreCase) ||
+                                      sortKey.Contains("mse", StringComparison.OrdinalIgnoreCase) ||
+                                      sortKey.Contains("rmse", StringComparison.OrdinalIgnoreCase);
 
                 experimentsToCompare = experimentsToCompare
                     .OrderBy(e => sortLowerBetter
-                        ? (e.Metrics?.GetValueOrDefault(effectiveSortMetric, 0) ?? 0)
-                        : -(e.Metrics?.GetValueOrDefault(effectiveSortMetric, 0) ?? 0))
+                        ? (e.Metrics?.GetValueOrDefault(sortKey, 0) ?? 0)
+                        : -(e.Metrics?.GetValueOrDefault(sortKey, 0) ?? 0))
                     .ToList();
             }
 
@@ -269,34 +274,25 @@ public static class CompareCommand
             // Recommendation: find the experiment with the best primary metric
             if (allMetricNames.Count > 0)
             {
-                // Use --metric flag if specified, otherwise read from experiment metadata
-                string primaryMetric;
-                if (!string.IsNullOrEmpty(sortMetric))
-                {
-                    primaryMetric = sortMetric;
-                }
-                else
-                {
-                    // Try to get optimizing metric from experiment config
-                    var configMetric = experimentsToCompare
+                // Use --metric flag if specified, otherwise read from experiment metadata.
+                // Resolve aliases ("f1" → "f1_score") to the actual stored key; fall back to
+                // the first available metric when the requested one isn't present.
+                var requestedMetric = !string.IsNullOrEmpty(sortMetric)
+                    ? sortMetric
+                    : experimentsToCompare
                         .Select(e => e.Config.Metric)
-                        .Where(m => !string.IsNullOrEmpty(m))
-                        .FirstOrDefault();
+                        .FirstOrDefault(m => !string.IsNullOrEmpty(m));
 
-                    if (!string.IsNullOrEmpty(configMetric) && allMetricNames.Contains(configMetric))
-                    {
-                        primaryMetric = configMetric;
-                    }
-                    else
-                    {
-                        primaryMetric = allMetricNames.First();
-                    }
-                }
-                var isLowerBetter = primaryMetric.Contains("Loss", StringComparison.OrdinalIgnoreCase) ||
-                                    primaryMetric.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
-                                    primaryMetric.Contains("MAE", StringComparison.OrdinalIgnoreCase) ||
-                                    primaryMetric.Contains("MSE", StringComparison.OrdinalIgnoreCase) ||
-                                    primaryMetric.Contains("RMSE", StringComparison.OrdinalIgnoreCase);
+                var primaryMetric = (requestedMetric != null
+                        ? ModelRegistry.ResolveMetricKey(requestedMetric, allMetricNames)
+                        : null)
+                    ?? allMetricNames.First();
+
+                var isLowerBetter = primaryMetric.Contains("loss", StringComparison.OrdinalIgnoreCase) ||
+                                    primaryMetric.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+                                    primaryMetric.Contains("mae", StringComparison.OrdinalIgnoreCase) ||
+                                    primaryMetric.Contains("mse", StringComparison.OrdinalIgnoreCase) ||
+                                    primaryMetric.Contains("rmse", StringComparison.OrdinalIgnoreCase);
 
                 var rankedExperiments = experimentsToCompare
                     .Where(e => e.Metrics?.ContainsKey(primaryMetric) == true)

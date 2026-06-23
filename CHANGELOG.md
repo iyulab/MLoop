@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Metric-alias mismatch broke auto-promotion and `compare` sorting (BUG-45)**: a non-default optimization metric alias — `--metric f1`, `r2`, `log-loss`, or multiclass `accuracy` — silently failed lookups against the stored metrics dictionary, which uses canonical keys (`f1_score`, `r_squared`, `log_loss`, `micro_accuracy`). Two symptoms shared one root cause:
+  - **Auto-promotion**: `ModelRegistry.ShouldPromoteAsync` looked up `experiment.Metrics["f1"]`/`ContainsKey("f1")` and returned `false` at its first branch, so a quality-gate-passing model was left unpromoted with no error (only `mloop list` showing `Production: 0` revealed it).
+  - **`mloop compare --sort f1`**: the alias wasn't in the metric-name set, so the sort and the "best experiment" recommendation silently fell back to the first metric (e.g. accuracy) instead of f1.
+
+  A shared `ModelRegistry.ResolveMetricKey(metric, availableKeys)` normalizer now maps aliases to the stored key actually present (exact-match first, then `f1`→`f1_score`, `r2`→`r_squared`, `log-loss`→`log_loss`, `accuracy`→`micro_accuracy`/`macro_accuracy`), returning null when none match. `ShouldPromoteAsync` uses it for the quality gate and production comparison (falling back to promoting a quality-gated model when the key is absent on either side); `CompareCommand` uses it for `--sort`/config-metric resolution. Found via KAMP dogfooding (P051 rubber-molding defect, `--metric f1`).
+
 ## [0.16.1] - 2026-06-23
 
 ### Fixed
