@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-06-23
+
 ### Fixed
 - **`evaluate` encoding gap (BUG-43)**: `mloop evaluate` read the test CSV as forced UTF-8 instead of running it through `EncodingDetector` like `train`/`predict`, so CP949/EUC-KR files (most KAMP data) with Korean column names were garbled — schema validation reported spurious "missing columns / not UTF-8", and `EvaluationEngine` could not find the label column even though training accepted the same file. Both `SchemaValidator` and `EvaluationEngine.LoadTestData` now delegate to `EncodingDetector.ConvertToUtf8WithBom`, matching the loaders.
 - **`evaluate` feature-dimension mismatch (BUG-44)**: `EvaluationEngine.LoadTestData` reimplemented test-data preprocessing and diverged from `train`/`predict` — it did not strip unnamed/index columns or the DateTime/constant/sparse columns the trained schema marks as `Exclude`, so the rebuilt feature vector was wider than the model (e.g. `expected Vector<Single,114> got 123`) and `Transform` threw. It now mirrors prediction: `CsvDataLoader.RemoveIndexColumns` + the new shared `CsvDataLoader.RemoveExcludedColumns`.
