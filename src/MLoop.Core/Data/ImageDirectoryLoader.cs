@@ -72,6 +72,23 @@ public sealed class ImageDirectoryLoader : DataProviderBase
     }
 
     /// <summary>
+    /// Counts the class labels in an image-classification dataset directory: the number of
+    /// immediate subfolders that contain at least one supported image. Mirrors the loader's
+    /// own scan semantics (so the quality gate's 1/N threshold matches what training sees) and
+    /// is the single source of truth for "what counts as a class". Returns 0 for a missing
+    /// directory or one with no qualifying class folders.
+    /// </summary>
+    public static int CountClasses(string directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            return 0;
+
+        return Directory.EnumerateDirectories(directory)
+            .Count(classDir => Directory.EnumerateFiles(classDir)
+                .Any(f => SupportedExtensions.Contains(Path.GetExtension(f))));
+    }
+
+    /// <summary>
     /// Enumerates class subfolders and their images, validating the layout and
     /// emitting warnings for degenerate cases (single class, sparse classes,
     /// class imbalance).

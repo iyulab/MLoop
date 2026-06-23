@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Models;
 
 namespace MLoop.Tests.Infrastructure.FileSystem;
 
@@ -577,7 +578,87 @@ public class ModelRegistryTests : IDisposable
         Assert.Contains("production", path);
     }
 
-    private async Task<string> CreateDummyExperimentAsync(string modelName, string experimentId, Dictionary<string, double> metrics)
+    [Fact]
+    public async Task ShouldPromoteAsync_ImageAutoMetric_NonConverged_ReturnsFalse()
+    {
+        // BUG-46: a non-converged image-classification model (micro_accuracy below the 1/N
+        // random baseline) must be blocked even though the project metric is the deferred
+        // "auto" (init leaves image tasks as auto). Binary image task → classCount=2 → 1/2=0.5.
+        var experimentId = await CreateDummyExperimentAsync(
+            DefaultModelName, "exp-001",
+            new Dictionary<string, double>
+            {
+                ["accuracy"] = 0.5,           // MacroAccuracy
+                ["micro_accuracy"] = 0.4286,  // below 1/2 random baseline
+                ["log_loss"] = 34.54
+            },
+            task: "image-classification",
+            metricConfig: "auto",
+            classCount: 2);
+
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName, experimentId, "auto", CancellationToken.None);
+
+        Assert.False(result); // micro_accuracy 0.4286 < 0.5 → quality gate blocks
+    }
+
+    [Fact]
+    public async Task ShouldPromoteAsync_ImageAutoMetric_Converged_ReturnsTrue()
+    {
+        // A converged 6-class image model (micro_accuracy 0.90 > 1/6≈0.167) auto-promotes
+        // despite the "auto" metric.
+        var experimentId = await CreateDummyExperimentAsync(
+            DefaultModelName, "exp-001",
+            new Dictionary<string, double>
+            {
+                ["accuracy"] = 0.88,
+                ["micro_accuracy"] = 0.90,
+                ["log_loss"] = 0.35
+            },
+            task: "image-classification",
+            metricConfig: "auto",
+            classCount: 6);
+
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName, experimentId, "auto", CancellationToken.None);
+
+        Assert.True(result); // passes 1/N gate, no production → promote
+    }
+
+    [Theory]
+    [InlineData("auto", "image-classification", "micro_accuracy")]
+    [InlineData("auto", "regression", "r_squared")]
+    [InlineData("auto", "binary-classification", "accuracy")]
+    [InlineData("auto", "multiclass-classification", "macro_accuracy")]
+    [InlineData("auto", "anomaly-detection", "auc")]
+    [InlineData("f1", "binary-classification", "f1_score")]   // explicit metric still wins
+    [InlineData("auto", "object-detection", null)]            // no canonical floor → null
+    [InlineData("auto", null, null)]
+    public void ResolveCanonicalMetricKey_FallsBackToTaskDefault(string metric, string? task, string? expected)
+    {
+        var available = new[]
+        {
+            "accuracy", "micro_accuracy", "macro_accuracy", "log_loss",
+            "auc", "f1_score", "r_squared", "map_50"
+        };
+        Assert.Equal(expected, ModelRegistry.ResolveCanonicalMetricKey(metric, task, available));
+    }
+
+    [Fact]
+    public void ResolveCanonicalMetricKey_TaskDefaultAbsentFromMetrics_ReturnsNull()
+    {
+        // regression default r_squared, but the metrics dict lacks it → null (no false threshold).
+        var available = new[] { "mae", "rmse" };
+        Assert.Null(ModelRegistry.ResolveCanonicalMetricKey("auto", "regression", available));
+    }
+
+    private async Task<string> CreateDummyExperimentAsync(
+        string modelName,
+        string experimentId,
+        Dictionary<string, double> metrics,
+        string task = "regression",
+        string metricConfig = "",
+        int? classCount = null)
     {
         // Create experiment directory
         var experimentPath = _experimentStore.GetExperimentPath(modelName, experimentId);
@@ -587,6 +668,19 @@ public class ModelRegistryTests : IDisposable
         var modelPath = Path.Combine(experimentPath, "model.zip");
         await File.WriteAllTextAsync(modelPath, "dummy model content");
 
+        // Populate a label schema carrying the class count when requested (mirrors how
+        // directory-based tasks feed the quality gate's 1/N threshold).
+        InputSchemaInfo? inputSchema = classCount.HasValue
+            ? new InputSchemaInfo
+            {
+                CapturedAt = DateTime.UtcNow,
+                Columns = new List<ColumnSchema>
+                {
+                    new ColumnSchema { Name = "label", DataType = "Categorical", Purpose = "Label", UniqueValueCount = classCount }
+                }
+            }
+            : null;
+
         // Create experiment data
         var experimentData = new ExperimentData
         {
@@ -594,14 +688,15 @@ public class ModelRegistryTests : IDisposable
             ExperimentId = experimentId,
             Timestamp = DateTime.UtcNow,
             Status = "Completed",
-            Task = "regression",
+            Task = task,
             Config = new ExperimentConfig
             {
                 DataFile = "test.csv",
                 LabelColumn = "label",
                 TimeLimitSeconds = 60,
-                Metric = metrics.Keys.First(),
-                TestSplit = 0.2
+                Metric = string.IsNullOrEmpty(metricConfig) ? metrics.Keys.First() : metricConfig,
+                TestSplit = 0.2,
+                InputSchema = inputSchema
             },
             Metrics = metrics
         };

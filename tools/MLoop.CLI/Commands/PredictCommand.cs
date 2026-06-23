@@ -270,7 +270,7 @@ public static class PredictCommand
 
                 if (!File.Exists(resolvedDataFile))
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Data file not found: {resolvedDataFile}");
+                    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(BuildMissingDataFileMessage(resolvedDataFile, taskType))}");
                     return 1;
                 }
             }
@@ -522,6 +522,30 @@ public static class PredictCommand
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
             return "\"" + value.Replace("\"", "\"\"") + "\"";
         return value;
+    }
+
+    /// <summary>
+    /// Builds an honest diagnosis when the resolved predict data path is not a readable CSV file.
+    /// A bare "Data file not found" is misleading when the path actually exists as a directory —
+    /// the common case of pointing image-classification predict at a folder of images. Image
+    /// predict consumes a CSV with an <c>ImagePath</c> column; a labelled image directory belongs
+    /// to <c>evaluate</c> (object detection has its own directory path and never reaches here).
+    /// </summary>
+    internal static string BuildMissingDataFileMessage(string resolvedDataFile, string? taskType)
+    {
+        if (Directory.Exists(resolvedDataFile))
+        {
+            if (string.Equals(taskType, "image-classification", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"Expected a CSV file but got a directory: {resolvedDataFile}\n" +
+                       "Image-classification predict reads a CSV with an 'ImagePath' column (one row per image). " +
+                       "To evaluate a labelled image directory (folder = class), use: mloop evaluate <dir>";
+            }
+
+            return $"Expected a data file but got a directory: {resolvedDataFile}";
+        }
+
+        return $"Data file not found: {resolvedDataFile}";
     }
 
     private static async Task LogPredictionsAsync(

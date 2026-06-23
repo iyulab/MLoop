@@ -620,6 +620,7 @@ See: docs/EXTENSIBILITY.md for more information
         {
             "binary-classification" => "accuracy",
             "multiclass-classification" => "macro_accuracy",
+            "image-classification" => "micro_accuracy",
             "regression" => "r_squared",
             "anomaly-detection" => "auc",
             "clustering" => "average_distance",
