@@ -79,6 +79,34 @@ public class ProjectDiscoveryTests : IDisposable
         }
     }
 
+    [Fact]
+    public void IsProjectRoot_RuntimeCacheRoot_ReturnsFalse()
+    {
+        // Regression: the global runtime cache (`mloop runtime install`) lives at <userProfile>/.mloop,
+        // so the user-profile dir contains a .mloop directory. It must NOT be seen as a project — otherwise
+        // every command run under $HOME outside a real project resolves paths against $HOME.
+        Directory.CreateDirectory(Path.Combine(_tempDir, ".mloop"));
+        var discovery = new ProjectDiscovery(_fs, runtimeCacheRoot: _tempDir); // pretend _tempDir is ~
+
+        Assert.False(discovery.IsProjectRoot(_tempDir));
+    }
+
+    [Fact]
+    public void FindRoot_SkipsRuntimeCacheRoot_AndFindsRealProjectBelow()
+    {
+        // The runtime-cache root has a .mloop but is not a project; a real project sits beneath it.
+        // FindRoot must walk past the cache root to the real project, not stop at the cache.
+        Directory.CreateDirectory(Path.Combine(_tempDir, ".mloop")); // runtime-cache-like root
+        var project = Path.Combine(_tempDir, "myproject");
+        Directory.CreateDirectory(Path.Combine(project, ".mloop"));
+        var workDir = Path.Combine(project, "datasets");
+        Directory.CreateDirectory(workDir);
+
+        var discovery = new ProjectDiscovery(_fs, runtimeCacheRoot: _tempDir);
+
+        Assert.Equal(project, discovery.FindRoot(workDir));
+    }
+
     private static bool HasMLoopAncestor(string path)
     {
         var dir = new DirectoryInfo(path).Parent;

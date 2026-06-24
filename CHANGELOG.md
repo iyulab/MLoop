@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Global runtime cache mistaken for a project root, breaking relative paths under `$HOME` (BUG-47)**: after `mloop runtime install` creates the global DL-runtime cache at `~/.mloop/runtimes`, the user-profile directory contains a `.mloop` directory. `ProjectDiscovery.FindRoot` identified a project root solely by the presence of a `.mloop` directory, so walking up from *any* directory under `$HOME` matched that cache and treated `$HOME` itself as the project root. Relative data paths were then resolved against `$HOME` — e.g. `mloop info data.csv` run in a folder that actually contains `data.csv` failed with `File not found: C:\Users\<user>\data.csv` (the file the command was pointed at). `ProjectDiscovery` now excludes the runtime-cache root (the user-profile directory) from project detection — a directory impossible to use as a project anyway, since its `.mloop` would collide with the cache. The established "`.mloop` directory marks a project" contract is otherwise preserved. Found via mloop-agent dogfooding: the agent's `mloop_info data.csv` calls failed-and-retried because the agent's project sat under `$HOME`.
+
 ## [0.16.2] - 2026-06-24
 
 ### Fixed
