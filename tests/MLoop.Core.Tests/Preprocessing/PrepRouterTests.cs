@@ -1,10 +1,50 @@
 using Microsoft.ML;
+using MLoop.Core.AutoML;
 using MLoop.Core.Preprocessing;
 
 namespace MLoop.Core.Tests.Preprocessing;
 
 public class PrepRouterTests
 {
+    [Fact]
+    public void Route_keeps_statistical_in_csv_with_warning_when_prefeaturizer_unsupported()
+    {
+        // clustering/anomaly Execute sites ignore config.PreFeaturizer; routing a normalize
+        // there must NOT silently drop it — it stays a CSV step (applied) + leakage warning.
+        Assert.False(AutoMLRunner.SupportsPreFeaturizer("clustering"));
+
+        var ctx = new MLContext(seed: 42);
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "normalize", Method = "min-max", Columns = new() { "age" } },
+        };
+
+        var result = new PrepRouter().Route(ctx, steps, supportsPreFeaturizer: false);
+
+        Assert.Null(result.PreFeaturizer);                                   // not routed to preFeaturizer
+        Assert.Empty(result.PreFeaturizerColumns);
+        Assert.Contains(result.CsvSteps, s => s.Type == "normalize");        // applied in CSV stage instead
+        Assert.Single(result.Warnings);                                      // leakage warning emitted
+    }
+
+    [Fact]
+    public void Route_sends_statistical_to_prefeaturizer_when_supported()
+    {
+        Assert.True(AutoMLRunner.SupportsPreFeaturizer("binary-classification"));
+
+        var ctx = new MLContext(seed: 42);
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "normalize", Method = "min-max", Columns = new() { "age" } },
+        };
+
+        var result = new PrepRouter().Route(ctx, steps, supportsPreFeaturizer: true);
+
+        Assert.NotNull(result.PreFeaturizer);                                // unchanged behavior
+        Assert.DoesNotContain(result.CsvSteps, s => s.Type == "normalize");
+        Assert.Empty(result.Warnings);
+    }
+
     [Fact]
     public void Route_splits_statistical_into_prefeaturizer_and_keeps_rest_in_csv()
     {

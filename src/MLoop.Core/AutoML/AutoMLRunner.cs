@@ -32,6 +32,26 @@ public class AutoMLRunner
         _logger = new ConsoleLogger();
     }
 
+    /// <summary>
+    /// Single source of truth for which task types consume <c>config.PreFeaturizer</c>.
+    /// Only binary/multiclass/regression pass <c>preFeaturizer:</c> to their <c>experiment.Execute</c>
+    /// call (see the three Execute sites in this file). All other tasks build their own pipelines
+    /// and ignore the preFeaturizer, so routing statistical prep there would silently drop it.
+    /// Used by prep routing (<see cref="Preprocessing.PrepRouter"/>) to decide whether statistical
+    /// transforms become a leakage-safe preFeaturizer or stay CSV-baked (applied, but leaky → warn).
+    /// </summary>
+    public static bool SupportsPreFeaturizer(string task)
+    {
+        var normalized = (task ?? string.Empty).ToLowerInvariant().Replace('_', '-');
+        return normalized switch
+        {
+            "binary-classification" => true,
+            "multiclass-classification" => true,
+            "regression" => true,
+            _ => false
+        };
+    }
+
     public async Task<AutoMLResult> RunAsync(
         TrainingConfig config,
         IProgress<TrainingProgress>? progress = null,

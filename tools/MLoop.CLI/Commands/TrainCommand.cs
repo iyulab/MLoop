@@ -640,7 +640,7 @@ public static class TrainCommand
                     var mlCtxForPrep = new MLContext(seed: 42);
                     List<string> prepWarnings;
                     (resolvedDataFile, preFeaturizer, prepWarnings, preFeaturizerColumns) =
-                        await ApplyPrepAsync(resolvedDataFile, effectiveDefinition.Prep, mlCtxForPrep);
+                        await ApplyPrepAsync(resolvedDataFile, effectiveDefinition.Prep, mlCtxForPrep, effectiveDefinition.Task);
 
                     allDataFilesUsed.Add(resolvedDataFile);
                     foreach (var w in prepWarnings)
@@ -1154,13 +1154,16 @@ public static class TrainCommand
     }
 
     /// <summary>
-    /// prep 스텝을 누수 안전하게 라우팅한다. 통계 변환은 preFeaturizer로(fold-내 fit),
-    /// 행 독립 변환만 CSV로 굽는다. 반환: (굽힌 데이터 경로, preFeaturizer, 경고 목록).
+    /// prep 스텝을 누수 안전하게 라우팅한다. preFeaturizer를 소비하는 태스크
+    /// (binary/multiclass/regression)에서만 통계 변환을 preFeaturizer로(fold-내 fit) 보낸다.
+    /// 그 외 태스크(clustering/anomaly 등)는 preFeaturizer를 무시하므로 통계 변환을 CSV로 굽고
+    /// (적용은 되나 누수) 경고를 남긴다 — 무성 누락 회귀 방지.
+    /// 반환: (굽힌 데이터 경로, preFeaturizer, 경고 목록, preFeaturizer 컬럼).
     /// </summary>
     internal static async Task<(string dataFile, IEstimator<ITransformer>? preFeaturizer, List<string> warnings, List<string> preFeaturizerColumns)>
-        ApplyPrepAsync(string dataFile, List<PrepStep> prep, MLContext ctx)
+        ApplyPrepAsync(string dataFile, List<PrepStep> prep, MLContext ctx, string task)
     {
-        var route = new PrepRouter().Route(ctx, prep);
+        var route = new PrepRouter().Route(ctx, prep, AutoMLRunner.SupportsPreFeaturizer(task));
 
         var prepOutputPath = Path.Combine(
             Path.GetDirectoryName(dataFile)!,
