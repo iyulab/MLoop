@@ -34,6 +34,15 @@ public enum PrepCategory
 public static class PrepStepClassifier
 {
     /// <summary>
+    /// Returns a user-facing leakage warning message for a step classified as UnsupportedLeakageWarn.
+    /// Both PrepRouter and ValidateCommand use this to ensure consistent wording (DRY).
+    /// </summary>
+    public static string LeakageWarning(PrepStep step) =>
+        $"prep '{step.Type}'({step.Method}) 는 train/test 분할 전 전역 통계로 적용되어 " +
+        "평가에 데이터 누수가 남습니다. 가능하면 normalize(min-max/z-score) 또는 " +
+        "fill-missing(mean)으로 대체하세요.";
+
+    /// <summary>
     /// Classifies a preparation step into PreFeaturizer, CsvStage, or UnsupportedLeakageWarn category.
     /// </summary>
     public static PrepCategory Classify(PrepStep step)
