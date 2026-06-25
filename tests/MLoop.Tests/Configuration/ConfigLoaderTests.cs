@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Preprocessing;
 
 namespace MLoop.Tests.Configuration;
 
@@ -287,6 +288,52 @@ models:
         Assert.Contains("task: regression", yaml);
         Assert.Contains("label: y", yaml);            // non-null Label survives (load→edit→save 의존)
         Assert.Contains("project: p", yaml);          // non-null Project survives
+    }
+
+    #endregion
+
+    #region Multi-Model Round-Trip Tests
+
+    [Fact]
+    public async Task SaveAndLoad_MultiModel_OtherModelAndDataSettingsSurviveIntact()
+    {
+        // Build a config with two models and a Data setting.
+        var config = new MLoopConfig
+        {
+            Project = "round-trip-test",
+            Data = new DataSettings { Train = "datasets/custom-train.csv" },
+            Models = new Dictionary<string, ModelDefinition>
+            {
+                ["default"] = new() { Task = "regression", Label = "Price" },
+                ["other"]   = new() { Task = "binary-classification", Label = "IsChurn" }
+            }
+        };
+
+        // Mutate "default" model's Prep directly (simulating what PrepPlanCommand does).
+        config.Models["default"].Prep = new List<PrepStep>
+        {
+            new() { Type = "normalize", Method = "z-score" }
+        };
+
+        // Save via ConfigLoader.
+        await _loader.SaveUserConfigAsync(config);
+
+        // Reload from the fake file system.
+        var reloaded = await _loader.LoadUserConfigAsync();
+
+        // "other" model must survive unchanged.
+        Assert.True(reloaded.Models.ContainsKey("other"), "'other' model should survive save/reload");
+        Assert.Equal("binary-classification", reloaded.Models["other"].Task);
+        Assert.Equal("IsChurn", reloaded.Models["other"].Label);
+
+        // Data setting must survive.
+        Assert.Equal("datasets/custom-train.csv", reloaded.Data?.Train);
+
+        // "default" model must carry the new prep step.
+        Assert.NotNull(reloaded.Models["default"].Prep);
+        Assert.Single(reloaded.Models["default"].Prep!);
+        Assert.Equal("normalize", reloaded.Models["default"].Prep![0].Type);
+        Assert.Equal("z-score", reloaded.Models["default"].Prep![0].Method);
     }
 
     #endregion

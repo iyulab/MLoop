@@ -52,9 +52,20 @@ public sealed class FeaturesCommand : Command
             if (!config.Models.TryGetValue(modelName, out var model))
             {
                 AnsiConsole.MarkupLine($"[red]Model '{modelName}' not found in mloop.yaml.[/]");
+                AnsiConsole.MarkupLine($"[grey]Available models: {string.Join(", ", config.Models.Keys)}[/]");
                 return 1;
             }
             model.Columns ??= new Dictionary<string, ColumnOverride>();
+
+            // Mutual exclusion: at most one of --reset, --drop, --keep may be set.
+            var modeCount = (reset ? 1 : 0)
+                + (!string.IsNullOrWhiteSpace(dropCsv) ? 1 : 0)
+                + (!string.IsNullOrWhiteSpace(keepCsv) ? 1 : 0);
+            if (modeCount > 1)
+            {
+                AnsiConsole.MarkupLine("[red]Specify only one of --drop, --keep, or --reset.[/]");
+                return 1;
+            }
 
             if (reset)
             {

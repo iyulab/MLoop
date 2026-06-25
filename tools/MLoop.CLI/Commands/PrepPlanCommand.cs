@@ -51,6 +51,7 @@ public static class PrepPlanCommand
             if (!config.Models.TryGetValue(modelName, out var model))
             {
                 AnsiConsole.MarkupLine($"[red]Model '{modelName}' not found in mloop.yaml.[/]");
+                AnsiConsole.MarkupLine($"[grey]Available models: {string.Join(", ", config.Models.Keys)}[/]");
                 return 1;
             }
 
@@ -62,19 +63,24 @@ public static class PrepPlanCommand
                 var (type, method) = PrepPlanEditor.ParseSet(set);
                 var step = new PrepStep { Type = type, Method = method, Columns = columns };
                 PrepPlanEditor.SetStep(model.Prep, step);
+                if (model.Prep.Count == 0) model.Prep = null;
                 await ctx.ConfigLoader.SaveUserConfigAsync(config);
+                model.Prep ??= new List<PrepStep>();
                 AnsiConsole.MarkupLine($"[green]Set prep step:[/] {Markup.Escape(type)}{(method != null ? ":" + Markup.Escape(method) : "")}");
                 WarnIfLeaky(step, model.Task);
             }
             else if (!string.IsNullOrEmpty(remove))
             {
                 var n = PrepPlanEditor.RemoveStep(model.Prep, remove, columns);
+                var prepForDisplay = model.Prep; // capture before nulling
+                if (model.Prep.Count == 0) model.Prep = null;
                 await ctx.ConfigLoader.SaveUserConfigAsync(config);
+                model.Prep = prepForDisplay; // restore for PrintPlan
                 AnsiConsole.MarkupLine($"[green]Removed {n} prep step(s)[/] of type '{Markup.Escape(remove)}'.");
             }
 
             // Always print the resulting plan (also the --list path).
-            PrintPlan(model.Prep, model.Task);
+            PrintPlan(model.Prep ?? new List<PrepStep>(), model.Task);
             return 0;
         }
         catch (Exception ex)
