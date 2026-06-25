@@ -479,6 +479,7 @@ public static class TrainCommand
             // unused-data scan after training and is likewise declared outside the bypass.
             string? testDataFile = null;
             var allDataFilesUsed = new List<string> { resolvedDataFile };
+            IEstimator<ITransformer>? preFeaturizer = null;
 
             // CSV preprocessing (flatten, sampling, cleaning, class analysis, preprocessing,
             // balancing, splitting) applies only to tabular tasks. Image classification loads
@@ -627,27 +628,25 @@ public static class TrainCommand
                 }
             }
 
-            // Execute YAML-defined preprocessing pipeline (FilePrepper DataPipeline API)
+            // Execute YAML-defined preprocessing pipeline (누수 안전: 통계 변환은 preFeaturizer로 이전)
             if (effectiveDefinition.Prep is { Count: > 0 })
             {
                 AnsiConsole.WriteLine();
                 AnsiConsole.Write(new Rule("[blue]Preprocessing Pipeline[/]").LeftJustified());
                 AnsiConsole.WriteLine();
-
                 try
                 {
-                    var pipelineExecutor = new DataPipelineExecutor(new TrainCommandLogger());
-                    var prepOutputPath = Path.Combine(
-                        Path.GetDirectoryName(resolvedDataFile)!,
-                        $"{Path.GetFileNameWithoutExtension(resolvedDataFile)}_prep{Path.GetExtension(resolvedDataFile)}");
-
-                    resolvedDataFile = await pipelineExecutor.ExecuteAsync(
-                        resolvedDataFile,
-                        effectiveDefinition.Prep,
-                        prepOutputPath);
+                    var mlCtxForPrep = new MLContext(seed: 42);
+                    List<string> prepWarnings;
+                    (resolvedDataFile, preFeaturizer, prepWarnings) =
+                        await ApplyPrepAsync(resolvedDataFile, effectiveDefinition.Prep, mlCtxForPrep);
 
                     allDataFilesUsed.Add(resolvedDataFile);
+                    foreach (var w in prepWarnings)
+                        AnsiConsole.MarkupLine($"[yellow]![/] {w}");
                     AnsiConsole.MarkupLine($"[green]>[/] Preprocessed data: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+                    if (preFeaturizer != null)
+                        AnsiConsole.MarkupLine("[green]>[/] 통계 변환은 학습 중 fold-내 fit으로 적용됩니다(누수 안전).");
                     AnsiConsole.WriteLine();
                 }
                 catch (Exception ex)
@@ -820,7 +819,8 @@ public static class TrainCommand
                 WindowSize = effectiveDefinition.WindowSize ?? 0,
                 SeriesLength = effectiveDefinition.SeriesLength ?? 0,
                 UserColumn = effectiveDefinition.UserColumn,
-                ItemColumn = effectiveDefinition.ItemColumn
+                ItemColumn = effectiveDefinition.ItemColumn,
+                PreFeaturizer = preFeaturizer
             };
 
             // Initialize hook engine
@@ -1149,6 +1149,30 @@ public static class TrainCommand
         {
             AnsiConsole.MarkupLine($"[yellow]Warning:[/] Could not update mloop.yaml: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// prep 스텝을 누수 안전하게 라우팅한다. 통계 변환은 preFeaturizer로(fold-내 fit),
+    /// 행 독립 변환만 CSV로 굽는다. 반환: (굽힌 데이터 경로, preFeaturizer, 경고 목록).
+    /// </summary>
+    internal static async Task<(string dataFile, IEstimator<ITransformer>? preFeaturizer, List<string> warnings)>
+        ApplyPrepAsync(string dataFile, List<PrepStep> prep, MLContext ctx)
+    {
+        var route = new PrepRouter().Route(ctx, prep);
+
+        var prepOutputPath = Path.Combine(
+            Path.GetDirectoryName(dataFile)!,
+            $"{Path.GetFileNameWithoutExtension(dataFile)}_prep{Path.GetExtension(dataFile)}");
+
+        // 통계 변환을 제외한 CSV 스텝만 적용(없으면 원본 경로 유지)
+        var outFile = dataFile;
+        if (route.CsvSteps.Count > 0)
+        {
+            var executor = new DataPipelineExecutor(new TrainCommandLogger());
+            outFile = await executor.ExecuteAsync(dataFile, route.CsvSteps, prepOutputPath);
+        }
+
+        return (outFile, route.PreFeaturizer, route.Warnings);
     }
 
     private class TrainCommandLogger : ILogger
