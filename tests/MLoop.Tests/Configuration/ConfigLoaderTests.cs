@@ -270,6 +270,25 @@ models:
         Assert.Contains("yaml-save", _fs.LastWrittenTextContent);
     }
 
+    [Fact]
+    public async Task SaveUserConfig_OmitsNullFields()
+    {
+        var config = new MLoopConfig
+        {
+            Project = "p",
+            Models = { ["default"] = new ModelDefinition { Task = "regression", Label = "y" } }
+        };
+
+        await _loader.SaveUserConfigAsync(config);
+
+        var yaml = _fs.LastWrittenTextContent!;
+        Assert.DoesNotContain("description:", yaml); // null Description 생략
+        Assert.DoesNotContain("prep:", yaml);         // null Prep 생략
+        Assert.Contains("task: regression", yaml);
+        Assert.Contains("label: y", yaml);            // non-null Label survives (load→edit→save 의존)
+        Assert.Contains("project: p", yaml);          // non-null Project survives
+    }
+
     #endregion
 
     #region ColumnOverride Tests

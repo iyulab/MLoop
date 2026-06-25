@@ -172,6 +172,7 @@ public class ConfigLoader
 
         var serializer = new SerializerBuilder()
             .WithNamingConvention(UnderscoredNamingConvention.Instance)
+            .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
             .Build();
 
         var yamlContent = serializer.Serialize(config);
