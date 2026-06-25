@@ -412,3 +412,32 @@ public class ValidateCommandTests
 
     #endregion
 }
+
+public class ValidateCommandPolicyTests
+{
+    [Fact]
+    public void PrepPolicyNotes_NormalizeOnSupportedTask_AddsInformationalNote()
+    {
+        var prep = new List<PrepStep> { new() { Type = "normalize", Method = "z-score", Columns = ["a"] } };
+        var notes = ValidateCommand.PrepPolicyNotes(prep, "regression");
+        Assert.Single(notes);
+        Assert.Contains("normalize", notes[0]);
+        Assert.Contains("AutoML", notes[0]); // 자동선택 맥락 명시
+    }
+
+    [Fact]
+    public void PrepPolicyNotes_CsvStageStep_NoNote()
+    {
+        var prep = new List<PrepStep> { new() { Type = "remove-columns", Columns = ["a"] } };
+        var notes = ValidateCommand.PrepPolicyNotes(prep, "regression");
+        Assert.Empty(notes); // csv-stage 변환엔 모델클래스 권고 불필요
+    }
+
+    [Fact]
+    public void PrepPolicyNotes_NormalizeOnUnsupportedTask_NoNote()
+    {
+        var prep = new List<PrepStep> { new() { Type = "normalize", Method = "z-score", Columns = ["a"] } };
+        var notes = ValidateCommand.PrepPolicyNotes(prep, "clustering");
+        Assert.Empty(notes); // leakage already flagged by InspectPrepLeakage; no trainer-context note for CSV-baked tasks
+    }
+}

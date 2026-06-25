@@ -386,6 +386,33 @@ public static class ValidateCommand
         return warnings;
     }
 
+    /// <summary>
+    /// Informational model-class notes for PreFeaturizer-category steps (normalize/scale/fill-mean).
+    /// D-P2c: MLoop's AutoML auto-selects the trainer, so "trees don't need scaling" cannot be a
+    /// hard gate — the trainer class is unknown until train. This surfaces context, not a block.
+    /// Leakage is reported separately by InspectPrepLeakage (no duplication here).
+    /// </summary>
+    internal static List<string> PrepPolicyNotes(List<PrepStep> prep, string task)
+    {
+        // Notes describe AutoML trainer-selection context, which only applies when the step
+        // is fold-internal. On tasks that don't support the preFeaturizer the step is CSV-baked
+        // and already flagged by InspectPrepLeakage — a trainer-context note there would contradict it.
+        if (!AutoMLRunner.SupportsPreFeaturizer(task))
+            return [];
+
+        var notes = new List<string>();
+        foreach (var step in prep)
+        {
+            if (PrepStepClassifier.Classify(step) == PrepCategory.PreFeaturizer)
+            {
+                notes.Add($"prep '{step.Type}'({step.Method}): AutoML이 트레이너를 자동선택합니다 — " +
+                          "선형/거리 기반(예: SDCA, Lbfgs) 선택 시 유효하고, 트리 기반 선택 시 영향이 적습니다. " +
+                          "금지가 아니라 맥락 정보입니다.");
+            }
+        }
+        return notes;
+    }
+
     internal static void ValidatePrepSteps(
         string prefix,
         List<PrepStep> steps,
@@ -490,6 +517,13 @@ public static class ValidateCommand
         // that ignore the preFeaturizer, mirroring train-time PrepRouter routing).
         foreach (var w in InspectPrepLeakage(steps, task))
             warnings.Add(new ValidationWarning(prefix, w));
+
+        // D-P2c: informational model-class context (not a gate).
+        // No dedicated info channel exists (only ValidationError / ValidationWarning); using [info]
+        // prefix in the warnings list so the output displays alongside leakage warnings without
+        // polluting error counts. A future refactor could extract a ValidationInfo type.
+        foreach (var note in PrepPolicyNotes(steps, task))
+            warnings.Add(new ValidationWarning(prefix, "[info] " + note));
     }
 
     private static void ValidateLabelColumnsInCsv(
