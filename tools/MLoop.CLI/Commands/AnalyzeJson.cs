@@ -1,7 +1,31 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using DataLens.Models;
 
 namespace MLoop.CLI.Commands;
+
+/// <summary>
+/// Serializes non-finite doubles (NaN, ±Infinity) as JSON null instead of crashing or
+/// emitting the invalid <c>NaN</c>/<c>Infinity</c> tokens. Statistical aspects such as
+/// <c>importance</c> can produce an infinite condition number on multicollinear data — the
+/// very case the aspect is meant to diagnose — and named-literal output would break strict
+/// JSON parsers (e.g. the MCP bridge's <c>JSON.parse</c>). System.Text.Json routes
+/// <see cref="Nullable{Double}"/> through this converter too, so both <c>double</c> and
+/// <c>double?</c> stay valid, parseable JSON.
+/// </summary>
+internal sealed class FiniteDoubleConverter : JsonConverter<double>
+{
+    public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => reader.GetDouble();
+
+    public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options)
+    {
+        if (double.IsFinite(value))
+            writer.WriteNumberValue(value);
+        else
+            writer.WriteNullValue();
+    }
+}
 
 /// <summary>Structured JSON envelope for `mloop analyze` aspects (LLM-consumable).</summary>
 public sealed record AnalyzeEnvelope(
@@ -17,7 +41,8 @@ public static class AnalyzeJson
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new FiniteDoubleConverter() }
     };
 
     public static string Serialize(AnalyzeEnvelope env) => JsonSerializer.Serialize(env, Options);

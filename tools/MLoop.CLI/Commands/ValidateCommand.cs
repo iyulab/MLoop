@@ -4,6 +4,7 @@ using CsvHelper.Configuration;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.AutoML;
 using MLoop.Core.Preprocessing;
 using Spectre.Console;
 
@@ -236,7 +237,7 @@ public static class ValidateCommand
         // Validate prep steps
         if (model.Prep is { Count: > 0 })
         {
-            ValidatePrepSteps($"{prefix}.prep", model.Prep, errors, warnings);
+            ValidatePrepSteps($"{prefix}.prep", model.Prep, model.Task, errors, warnings);
         }
 
         // Validate column overrides
@@ -358,16 +359,29 @@ public static class ValidateCommand
     }
 
     /// <summary>
-    /// prep 선언에서 누수 잔존 변환(median fill, rolling, resample)을 찾아 경고 문구를 반환한다.
-    /// 경고 문구는 PrepRouter와 동일(DRY) — PrepStepClassifier.LeakageWarning 공유.
+    /// prep 선언에서 평가 누수가 남는 변환을 찾아 경고 문구를 반환한다. train-time
+    /// <see cref="Core.Preprocessing.PrepRouter.Route"/>와 동일한 task 인지 분기를 미러링한다(DRY):
+    /// (1) median/rolling/resample(<see cref="PrepCategory.UnsupportedLeakageWarn"/>)는 task 무관 항상 누수,
+    /// (2) normalize/scale/fill-mean(<see cref="PrepCategory.PreFeaturizer"/>)는 task가 preFeaturizer를
+    /// 지원할 때만(binary/multiclass/regression) fold-내 fit으로 안전하고, 그 외 task(clustering/anomaly/
+    /// ranking/recommendation)에선 CSV 단계 전역 적용돼 누수한다. 후자가 task-agnostic 검사가 놓치던 갭(T-B).
+    /// 경고 문구는 <see cref="PrepStepClassifier"/> 공유(PrepRouter와 동일).
     /// </summary>
-    internal static List<string> InspectPrepLeakage(List<PrepStep> prep)
+    internal static List<string> InspectPrepLeakage(List<PrepStep> prep, string task)
     {
+        var supportsPreFeaturizer = AutoMLRunner.SupportsPreFeaturizer(task);
         var warnings = new List<string>();
         foreach (var step in prep)
         {
-            if (PrepStepClassifier.Classify(step) == PrepCategory.UnsupportedLeakageWarn)
-                warnings.Add(PrepStepClassifier.LeakageWarning(step));
+            switch (PrepStepClassifier.Classify(step))
+            {
+                case PrepCategory.UnsupportedLeakageWarn:
+                    warnings.Add(PrepStepClassifier.LeakageWarning(step));
+                    break;
+                case PrepCategory.PreFeaturizer when !supportsPreFeaturizer:
+                    warnings.Add(PrepStepClassifier.UnsupportedTaskLeakageWarning(step));
+                    break;
+            }
         }
         return warnings;
     }
@@ -375,6 +389,7 @@ public static class ValidateCommand
     internal static void ValidatePrepSteps(
         string prefix,
         List<PrepStep> steps,
+        string task,
         List<ValidationError> errors,
         List<ValidationWarning> warnings)
     {
@@ -471,8 +486,9 @@ public static class ValidateCommand
             }
         }
 
-        // Emit leakage warnings (median fill, rolling, resample)
-        foreach (var w in InspectPrepLeakage(steps))
+        // Emit task-aware leakage warnings (always-leaky steps + PreFeaturizer steps on tasks
+        // that ignore the preFeaturizer, mirroring train-time PrepRouter routing).
+        foreach (var w in InspectPrepLeakage(steps, task))
             warnings.Add(new ValidationWarning(prefix, w));
     }
 

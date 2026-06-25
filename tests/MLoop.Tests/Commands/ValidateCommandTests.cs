@@ -404,7 +404,9 @@ public class ValidateCommandTests
     {
         var errors = new List<ValidateCommand.ValidationError>();
         var warnings = new List<ValidateCommand.ValidationWarning>();
-        ValidateCommand.ValidatePrepSteps("test.prep", steps, errors, warnings);
+        // These tests assert step-type validation (task-independent); use a preFeaturizer-supporting
+        // task so leakage warnings don't perturb the error/warning counts under test.
+        ValidateCommand.ValidatePrepSteps("test.prep", steps, "regression", errors, warnings);
         return (errors, warnings);
     }
 
