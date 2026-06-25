@@ -24,7 +24,8 @@ public static class AnalyzeCommand
         command.Subcommands.Add(CreateProfileCommand());
         command.Subcommands.Add(CreateCorrelationCommand());
         command.Subcommands.Add(CreateImportanceCommand());
-        // Tasks 4-5 add: outliers, distribution
+        command.Subcommands.Add(CreateOutliersCommand());
+        // Task 5 adds: distribution
         return command;
     }
 
@@ -320,6 +321,63 @@ public static class AnalyzeCommand
         catch (Exception ex)
         {
             ErrorSuggestions.DisplayError(ex, "analyze importance");
+            return 1;
+        }
+    }
+
+    private static Command CreateOutliersCommand()
+    {
+        var dataFileArg = DataFileArg();
+        var labelOption = LabelOption();
+        var nameOption = NameOption();
+        var jsonOption = JsonOption();
+
+        var cmd = new Command("outliers", "Outlier count, rate, and isolation-forest threshold");
+        cmd.Arguments.Add(dataFileArg);
+        cmd.Options.Add(labelOption);
+        cmd.Options.Add(nameOption);
+        cmd.Options.Add(jsonOption);
+
+        cmd.SetAction((parseResult) =>
+        {
+            var dataFile = parseResult.GetValue(dataFileArg)!;
+            var label = parseResult.GetValue(labelOption);
+            var modelName = parseResult.GetValue(nameOption)!;
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteOutliersAsync(dataFile, label, modelName, json);
+        });
+        return cmd;
+    }
+
+    private static async Task<int> ExecuteOutliersAsync(
+        string dataFile, string? labelOption, string modelName, bool json)
+    {
+        try
+        {
+            var ctx = await ResolveAsync(dataFile, labelOption, modelName);
+            if (ctx == null) return 1;
+
+            var dataLens = new Infrastructure.ML.DataLensAnalyzer();
+            if (!dataLens.IsAvailable) { Emit(AnalyzeJson.Unavailable("outliers"), json, _ => { }); return 0; }
+
+            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
+            {
+                IncludeProfiling = false, IncludeDescriptive = false, IncludeCorrelation = false,
+                IncludeDistribution = false, IncludeOutliers = true, IncludeFeatures = false,
+                IncludeRegression = false, IncludeClustering = false, IncludePca = false
+            });
+
+            var env = AnalyzeJson.MapOutliers(result?.Outliers);
+            Emit(env, json, _ =>
+            {
+                if (result?.Outliers != null) InfoPresenter.DisplayOutlierSummary(result.Outliers);
+                else AnsiConsole.MarkupLine("[grey]No outlier analysis available.[/]");
+            });
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            ErrorSuggestions.DisplayError(ex, "analyze outliers");
             return 1;
         }
     }

@@ -132,4 +132,27 @@ public static class AnalyzeJson
             conditionNumber = Math.Round(importance.ConditionNumber, 2)
         }, flags);
     }
+
+    public static AnalyzeEnvelope MapOutliers(OutlierReport? report)
+    {
+        if (report == null)
+            return new AnalyzeEnvelope("outliers", true, "No outlier analysis available (requires numeric columns).",
+                new { outlierCount = 0, totalRows = 0, outlierPercentage = 0.0, isolationForestThreshold = (double?)null },
+                Array.Empty<string>());
+
+        var flags = new List<string>();
+        if (report.OutlierPercentage > 10)
+            flags.Add($"high-outlier-rate ({report.OutlierPercentage:F1}%)");
+
+        var summary = $"{report.OutlierCount} / {report.TotalRows} rows are outliers ({report.OutlierPercentage:F2}%).";
+
+        return new AnalyzeEnvelope("outliers", true, summary, new
+        {
+            outlierCount = report.OutlierCount,
+            totalRows = report.TotalRows,
+            outlierPercentage = Math.Round(report.OutlierPercentage, 2),
+            isolationForestThreshold = report.IsolationForest != null
+                ? Math.Round(report.IsolationForest.Threshold, 4) : (double?)null
+        }, flags);
+    }
 }
