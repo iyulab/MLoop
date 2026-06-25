@@ -47,6 +47,11 @@ public class AutoMLRunner
         if (!string.IsNullOrEmpty(config.GroupColumn)) preserveColumns.Add(config.GroupColumn);
         if (!string.IsNullOrEmpty(config.UserColumn)) preserveColumns.Add(config.UserColumn);
         if (!string.IsNullOrEmpty(config.ItemColumn)) preserveColumns.Add(config.ItemColumn);
+        // preFeaturizer columns (normalize/scale/fill-mean) must stay individually addressable;
+        // otherwise InferColumns merges them into the Features vector and the preFeaturizer
+        // (e.g. NormalizeMinMax("age","age")) throws "Could not find input column 'age'".
+        if (config.PreFeaturizerColumns is { Count: > 0 })
+            preserveColumns.AddRange(config.PreFeaturizerColumns);
         var preserve = preserveColumns.Count > 0 ? preserveColumns : null;
 
         // Directory-based tasks (image classification) need a different loader than the

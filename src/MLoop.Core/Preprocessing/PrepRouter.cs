@@ -6,7 +6,8 @@ namespace MLoop.Core.Preprocessing;
 public record PrepRouteResult(
     IEstimator<ITransformer>? PreFeaturizer,
     List<PrepStep> CsvSteps,
-    List<string> Warnings);
+    List<string> Warnings,
+    List<string> PreFeaturizerColumns);
 
 /// <summary>
 /// mloop.yaml prep 스텝을 누수 안전 경로로 라우팅한다.
@@ -18,6 +19,7 @@ public class PrepRouter
     public PrepRouteResult Route(MLContext ctx, IReadOnlyList<PrepStep> steps)
     {
         var preFeaturizer = new PrepFeaturizerBuilder().Build(ctx, steps);
+        var preFeaturizerColumns = PrepFeaturizerBuilder.ResolvePreFeaturizerColumns(steps).ToList();
         var csvSteps = new List<PrepStep>();
         var warnings = new List<string>();
 
@@ -32,6 +34,6 @@ public class PrepRouter
                 warnings.Add(PrepStepClassifier.LeakageWarning(step));
         }
 
-        return new PrepRouteResult(preFeaturizer, csvSteps, warnings);
+        return new PrepRouteResult(preFeaturizer, csvSteps, warnings, preFeaturizerColumns);
     }
 }

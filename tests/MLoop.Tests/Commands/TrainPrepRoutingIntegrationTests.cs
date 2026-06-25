@@ -22,13 +22,15 @@ public class TrainPrepRoutingIntegrationTests
         };
 
         var ctx = new MLContext(seed: 42);
-        var (dataFile, preFeaturizer, warnings) = await TrainCommand.ApplyPrepAsync(input, prep, ctx);
+        var (dataFile, preFeaturizer, warnings, preFeaturizerColumns) =
+            await TrainCommand.ApplyPrepAsync(input, prep, ctx);
 
         var outText = await File.ReadAllTextAsync(dataFile);
         Assert.DoesNotContain("city", outText);  // remove-columns 적용
         Assert.Contains("10", outText);           // normalize 미적용(원값 유지 → 누수 차단)
         Assert.NotNull(preFeaturizer);            // normalize → preFeaturizer
         Assert.Empty(warnings);                   // 미지원 변환 없음
+        Assert.Equal(new[] { "age" }, preFeaturizerColumns); // preFeaturizer가 참조하는 컬럼 → preserve 대상
         Directory.Delete(tmp, true);
     }
 }

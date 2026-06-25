@@ -31,6 +31,32 @@ public class PrepFeaturizerBuilder
         return chain;
     }
 
+    /// <summary>
+    /// Resolves the distinct column names that the preFeaturizer will reference —
+    /// i.e. the columns of steps classified <see cref="PrepCategory.PreFeaturizer"/>.
+    /// Shares the same column resolution as <see cref="Build"/> (DRY), so the set kept
+    /// addressable through InferColumns matches exactly what the estimators reference.
+    /// </summary>
+    public static IReadOnlyList<string> ResolvePreFeaturizerColumns(IReadOnlyList<PrepStep> steps)
+    {
+        var cols = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var step in steps)
+        {
+            if (PrepStepClassifier.Classify(step) != PrepCategory.PreFeaturizer)
+                continue;
+
+            foreach (var col in ResolveColumns(step))
+            {
+                if (seen.Add(col))
+                    cols.Add(col);
+            }
+        }
+
+        return cols;
+    }
+
     private static IEstimator<ITransformer> BuildOne(MLContext ctx, PrepStep step, string col)
     {
         var type = step.Type.ToLowerInvariant().Replace('_', '-');

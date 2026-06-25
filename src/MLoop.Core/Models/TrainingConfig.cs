@@ -65,6 +65,14 @@ public class TrainingConfig
     public IEstimator<ITransformer>? PreFeaturizer { get; init; }
 
     /// <summary>
+    /// preFeaturizer가 참조하는 개별 컬럼 이름들. 이 컬럼들은 CsvDataLoader의
+    /// InferColumns 병합(Features 벡터로 합쳐짐)에서 제외되어 개별 컬럼으로 유지되어야
+    /// preFeaturizer(NormalizeMinMax("age","age") 등)가 입력 컬럼을 찾을 수 있다.
+    /// null/빈 목록이면 보존 동작 없음(prep/통계 변환이 없는 경우).
+    /// </summary>
+    public List<string>? PreFeaturizerColumns { get; init; }
+
+    /// <summary>
     /// Number of clusters for clustering task (0 = auto-select via silhouette search)
     /// </summary>
     public int NumClusters { get; init; } = 0;
