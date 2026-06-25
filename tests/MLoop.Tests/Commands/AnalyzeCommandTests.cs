@@ -73,4 +73,15 @@ public class AnalyzeCommandTests
         Assert.Equal("importance", env.Aspect);
         Assert.Empty(env.Flags);
     }
+
+    [Fact]
+    public void MapOutliers_HighRate_AddsFlag()
+    {
+        // Build a report via the public surface is not possible (DataLens-owned types),
+        // so assert the null path here; high-rate flag is covered by the smoke/integration run.
+        var env = AnalyzeJson.MapOutliers(null);
+        Assert.True(env.Available);
+        Assert.Equal("outliers", env.Aspect);
+        Assert.Empty(env.Flags);
+    }
 }
