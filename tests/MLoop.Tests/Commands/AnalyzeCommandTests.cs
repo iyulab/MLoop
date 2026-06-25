@@ -64,4 +64,13 @@ public class AnalyzeCommandTests
         Assert.Equal("correlation", env.Aspect);
         Assert.Empty(env.Flags);
     }
+
+    [Fact]
+    public void MapImportance_NullSummary_AvailableEmpty()
+    {
+        var env = AnalyzeJson.MapImportance(null);
+        Assert.True(env.Available);
+        Assert.Equal("importance", env.Aspect);
+        Assert.Empty(env.Flags);
+    }
 }

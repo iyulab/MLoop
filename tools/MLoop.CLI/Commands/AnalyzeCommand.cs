@@ -23,7 +23,8 @@ public static class AnalyzeCommand
             "Granular, read-only EDA aspects (profile, correlation, importance, outliers, distribution)");
         command.Subcommands.Add(CreateProfileCommand());
         command.Subcommands.Add(CreateCorrelationCommand());
-        // Tasks 3-5 add: importance, outliers, distribution
+        command.Subcommands.Add(CreateImportanceCommand());
+        // Tasks 4-5 add: outliers, distribution
         return command;
     }
 
@@ -255,6 +256,70 @@ public static class AnalyzeCommand
         catch (Exception ex)
         {
             ErrorSuggestions.DisplayError(ex, "analyze correlation");
+            return 1;
+        }
+    }
+
+    private static Command CreateImportanceCommand()
+    {
+        var dataFileArg = DataFileArg();
+        var labelOption = LabelOption();
+        var nameOption = NameOption();
+        var jsonOption = JsonOption();
+
+        var cmd = new Command("importance", "Feature importance ranking (requires a label)");
+        cmd.Arguments.Add(dataFileArg);
+        cmd.Options.Add(labelOption);
+        cmd.Options.Add(nameOption);
+        cmd.Options.Add(jsonOption);
+
+        cmd.SetAction((parseResult) =>
+        {
+            var dataFile = parseResult.GetValue(dataFileArg)!;
+            var label = parseResult.GetValue(labelOption);
+            var modelName = parseResult.GetValue(nameOption)!;
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteImportanceAsync(dataFile, label, modelName, json);
+        });
+        return cmd;
+    }
+
+    private static async Task<int> ExecuteImportanceAsync(
+        string dataFile, string? labelOption, string modelName, bool json)
+    {
+        try
+        {
+            var ctx = await ResolveAsync(dataFile, labelOption, modelName);
+            if (ctx == null) return 1;
+
+            if (string.IsNullOrEmpty(ctx.Value.Label))
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] analyze importance requires a label. Pass [blue]--label <col>[/] or set it in mloop.yaml.");
+                return 1;
+            }
+
+            var dataLens = new Infrastructure.ML.DataLensAnalyzer();
+            if (!dataLens.IsAvailable) { Emit(AnalyzeJson.Unavailable("importance"), json, _ => { }); return 0; }
+
+            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
+            {
+                IncludeProfiling = false, IncludeDescriptive = false, IncludeCorrelation = false,
+                IncludeDistribution = false, IncludeOutliers = false, IncludeFeatures = true,
+                IncludeRegression = false, IncludeClustering = false, IncludePca = false,
+                TargetColumn = ctx.Value.Label
+            });
+
+            var env = AnalyzeJson.MapImportance(result?.Features?.Importance);
+            Emit(env, json, _ =>
+            {
+                if (result?.Features?.Importance != null) InfoPresenter.DisplayFeatureImportance(result.Features.Importance);
+                else AnsiConsole.MarkupLine("[grey]No feature importance scores available.[/]");
+            });
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            ErrorSuggestions.DisplayError(ex, "analyze importance");
             return 1;
         }
     }

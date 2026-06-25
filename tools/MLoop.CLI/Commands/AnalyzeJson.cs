@@ -99,4 +99,37 @@ public static class AnalyzeJson
         return new AnalyzeEnvelope("correlation", true, summary,
             new { highPairs = pairs, multicollinearity }, flags);
     }
+
+    public static AnalyzeEnvelope MapImportance(FeatureImportanceSummary? importance)
+    {
+        if (importance == null || importance.Scores.Count == 0)
+            return new AnalyzeEnvelope("importance", true,
+                "No feature importance scores available (requires a label and numeric/categorical features).",
+                new { ranking = Array.Empty<object>(), lowVarianceCount = 0, highCorrPairsCount = 0, conditionNumber = 0.0 },
+                Array.Empty<string>());
+
+        var ranking = importance.Scores
+            .OrderByDescending(s => s.Score)
+            .Select(s => new { feature = s.Name, score = Math.Round(s.Score, 4) })
+            .ToList();
+
+        var flags = new List<string>();
+        if (importance.ConditionNumber > 1000)
+            flags.Add($"multicollinearity-suspected (condition number {importance.ConditionNumber:F0})");
+        if (importance.LowVarianceCount > 0)
+            flags.Add($"low-variance-features: {importance.LowVarianceCount}");
+        if (importance.HighCorrPairsCount > 0)
+            flags.Add($"high-correlation-pairs: {importance.HighCorrPairsCount}");
+
+        var top = ranking[0].feature;
+        var summary = $"{ranking.Count} feature(s) ranked; top = {top}.";
+
+        return new AnalyzeEnvelope("importance", true, summary, new
+        {
+            ranking,
+            lowVarianceCount = importance.LowVarianceCount,
+            highCorrPairsCount = importance.HighCorrPairsCount,
+            conditionNumber = Math.Round(importance.ConditionNumber, 2)
+        }, flags);
+    }
 }
