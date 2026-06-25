@@ -53,6 +53,7 @@ internal class Program
             new ServeCommand(),
             new PipelineCommand(),
             new PrepCommand(),  // Data preprocessing pipeline
+            new FeaturesCommand(),  // Feature selection policy (mloop.yaml)
 
             // Phase 4: Production Deployment
             DockerCommand.Create(),
