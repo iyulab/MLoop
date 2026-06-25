@@ -15,5 +15,6 @@ public class PrepCommand : Command
     {
         // YAML pipeline execution (uses MLoop.Core + FilePrepper library)
         this.Add(PrepRunCommand.Create());
+        this.Add(PrepPlanCommand.Create());
     }
 }
