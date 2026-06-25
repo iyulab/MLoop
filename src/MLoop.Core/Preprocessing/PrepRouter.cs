@@ -16,23 +16,45 @@ public record PrepRouteResult(
 /// </summary>
 public class PrepRouter
 {
-    public PrepRouteResult Route(MLContext ctx, IReadOnlyList<PrepStep> steps)
+    /// <param name="ctx">ML.NET context used to build the preFeaturizer estimator.</param>
+    /// <param name="steps">prep steps declared in mloop.yaml.</param>
+    /// <param name="supportsPreFeaturizer">
+    /// True only for task types whose AutoML Execute site consumes <c>config.PreFeaturizer</c>
+    /// (binary/multiclass/regression — see <see cref="AutoML.AutoMLRunner.SupportsPreFeaturizer"/>).
+    /// When false, statistical transforms cannot be applied via the (ignored) preFeaturizer, so they
+    /// are kept in the CSV stage instead (still applied, but leaky → leakage warning emitted).
+    /// This avoids a silent behavioral regression for scale-sensitive tasks like clustering/anomaly.
+    /// </param>
+    public PrepRouteResult Route(MLContext ctx, IReadOnlyList<PrepStep> steps, bool supportsPreFeaturizer = true)
     {
-        var preFeaturizer = new PrepFeaturizerBuilder().Build(ctx, steps);
-        var preFeaturizerColumns = PrepFeaturizerBuilder.ResolvePreFeaturizerColumns(steps).ToList();
         var csvSteps = new List<PrepStep>();
         var warnings = new List<string>();
 
         foreach (var step in steps)
         {
             var category = PrepStepClassifier.Classify(step);
+
             if (category == PrepCategory.PreFeaturizer)
-                continue; // preFeaturizer가 흡수 — CSV에서 제외
+            {
+                if (supportsPreFeaturizer)
+                    continue; // preFeaturizer가 흡수 — CSV에서 제외
+
+                // Task ignores preFeaturizer: keep in CSV (applied, but leaky) + warn instead of dropping.
+                csvSteps.Add(step);
+                warnings.Add(PrepStepClassifier.LeakageWarning(step));
+                continue;
+            }
 
             csvSteps.Add(step);
             if (category == PrepCategory.UnsupportedLeakageWarn)
                 warnings.Add(PrepStepClassifier.LeakageWarning(step));
         }
+
+        // Only build/expose the preFeaturizer for tasks that actually consume it.
+        var preFeaturizer = supportsPreFeaturizer ? new PrepFeaturizerBuilder().Build(ctx, steps) : null;
+        var preFeaturizerColumns = supportsPreFeaturizer
+            ? PrepFeaturizerBuilder.ResolvePreFeaturizerColumns(steps).ToList()
+            : new List<string>();
 
         return new PrepRouteResult(preFeaturizer, csvSteps, warnings, preFeaturizerColumns);
     }
