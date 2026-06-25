@@ -25,6 +25,32 @@ public class PrepRouterTests
         Assert.Empty(result.PreFeaturizerColumns);
         Assert.Contains(result.CsvSteps, s => s.Type == "normalize");        // applied in CSV stage instead
         Assert.Single(result.Warnings);                                      // leakage warning emitted
+
+        // Task-aware message: must NOT tell user to "replace normalize with normalize"
+        var warning = result.Warnings[0];
+        Assert.DoesNotContain("대체하세요", warning);                         // no self-contradictory advice
+        Assert.Contains("preFeaturizer", warning);                           // explains WHY (task limitation)
+        Assert.Contains("누수", warning);                                    // still warns about leakage
+    }
+
+    [Fact]
+    public void Route_unsupported_task_median_step_still_uses_original_leakage_warning()
+    {
+        // median/rolling/resample steps on non-supporting tasks should still use
+        // the original LeakageWarning message (advice to switch to normalize/fill-mean is still valid).
+        var ctx = new MLContext(seed: 42);
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "fill-missing", Method = "median", Columns = new() { "age" } },
+        };
+
+        var result = new PrepRouter().Route(ctx, steps, supportsPreFeaturizer: false);
+
+        Assert.Single(result.Warnings);
+        var warning = result.Warnings[0];
+        // Original LeakageWarning contains the "대체하세요" advice — still correct for median
+        Assert.Contains("대체하세요", warning);
+        Assert.Contains("누수", warning);
     }
 
     [Fact]

@@ -39,9 +39,11 @@ public class PrepRouter
                 if (supportsPreFeaturizer)
                     continue; // preFeaturizer가 흡수 — CSV에서 제외
 
-                // Task ignores preFeaturizer: keep in CSV (applied, but leaky) + warn instead of dropping.
+                // Task ignores preFeaturizer: keep in CSV (applied, but leaky) + task-aware warn.
+                // Use UnsupportedTaskLeakageWarning (not LeakageWarning) to avoid telling the user
+                // to "replace normalize with normalize" — self-contradictory for PreFeaturizer steps.
                 csvSteps.Add(step);
-                warnings.Add(PrepStepClassifier.LeakageWarning(step));
+                warnings.Add(PrepStepClassifier.UnsupportedTaskLeakageWarning(step));
                 continue;
             }
 
