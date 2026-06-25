@@ -133,6 +133,46 @@ public static class AnalyzeJson
         }, flags);
     }
 
+    public static AnalyzeEnvelope MapDistribution(DescriptiveReport? desc, DistributionReport? dist)
+    {
+        var skew = new Dictionary<string, (double? Skewness, double? Kurtosis)>();
+        if (desc?.Columns != null)
+            foreach (var c in desc.Columns) skew[c.Name] = (c.Skewness, c.Kurtosis);
+
+        var names = new List<string>();
+        var byName = new Dictionary<string, ColumnDistribution>();
+        if (dist?.Columns != null)
+            foreach (var c in dist.Columns) { byName[c.Name] = c; names.Add(c.Name); }
+        foreach (var n in skew.Keys) if (!byName.ContainsKey(n)) names.Add(n);
+
+        var columns = new List<object>();
+        var flags = new List<string>();
+        foreach (var name in names)
+        {
+            skew.TryGetValue(name, out var s);
+            byName.TryGetValue(name, out var d);
+            columns.Add(new
+            {
+                name,
+                skewness = s.Skewness,
+                kurtosis = s.Kurtosis,
+                isNormal = d?.IsNormal,
+                sampleSize = d?.SampleSize,
+                shapiroWilkP = d?.SwPValue,
+                jarqueBeraP = d?.JbPValue,
+                andersonDarlingP = d?.AdPValue
+            });
+            if (s.Skewness.HasValue && Math.Abs(s.Skewness.Value) > 1)
+                flags.Add($"highly-skewed: {name} (skew={s.Skewness.Value:F2})");
+        }
+
+        var summary = columns.Count == 0
+            ? "No numeric columns to analyze for distribution."
+            : $"{columns.Count} numeric column(s); {flags.Count} highly skewed.";
+
+        return new AnalyzeEnvelope("distribution", true, summary, new { columns }, flags);
+    }
+
     public static AnalyzeEnvelope MapOutliers(OutlierReport? report)
     {
         if (report == null)

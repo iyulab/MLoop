@@ -25,7 +25,7 @@ public static class AnalyzeCommand
         command.Subcommands.Add(CreateCorrelationCommand());
         command.Subcommands.Add(CreateImportanceCommand());
         command.Subcommands.Add(CreateOutliersCommand());
-        // Task 5 adds: distribution
+        command.Subcommands.Add(CreateDistributionCommand());
         return command;
     }
 
@@ -378,6 +378,63 @@ public static class AnalyzeCommand
         catch (Exception ex)
         {
             ErrorSuggestions.DisplayError(ex, "analyze outliers");
+            return 1;
+        }
+    }
+
+    private static Command CreateDistributionCommand()
+    {
+        var dataFileArg = DataFileArg();
+        var labelOption = LabelOption();
+        var nameOption = NameOption();
+        var jsonOption = JsonOption();
+
+        var cmd = new Command("distribution", "Skewness, kurtosis, and normality tests per numeric column");
+        cmd.Arguments.Add(dataFileArg);
+        cmd.Options.Add(labelOption);
+        cmd.Options.Add(nameOption);
+        cmd.Options.Add(jsonOption);
+
+        cmd.SetAction((parseResult) =>
+        {
+            var dataFile = parseResult.GetValue(dataFileArg)!;
+            var label = parseResult.GetValue(labelOption);
+            var modelName = parseResult.GetValue(nameOption)!;
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteDistributionAsync(dataFile, label, modelName, json);
+        });
+        return cmd;
+    }
+
+    private static async Task<int> ExecuteDistributionAsync(
+        string dataFile, string? labelOption, string modelName, bool json)
+    {
+        try
+        {
+            var ctx = await ResolveAsync(dataFile, labelOption, modelName);
+            if (ctx == null) return 1;
+
+            var dataLens = new Infrastructure.ML.DataLensAnalyzer();
+            if (!dataLens.IsAvailable) { Emit(AnalyzeJson.Unavailable("distribution"), json, _ => { }); return 0; }
+
+            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
+            {
+                IncludeProfiling = false, IncludeDescriptive = true, IncludeCorrelation = false,
+                IncludeDistribution = true, IncludeOutliers = false, IncludeFeatures = false,
+                IncludeRegression = false, IncludeClustering = false, IncludePca = false
+            });
+
+            var env = AnalyzeJson.MapDistribution(result?.Descriptive, result?.Distribution);
+            Emit(env, json, _ =>
+            {
+                if (result?.Descriptive?.Columns is { Count: > 0 }) InfoPresenter.DisplayDescriptiveStatistics(result.Descriptive);
+                if (result?.Distribution?.Columns is { Count: > 0 }) InfoPresenter.DisplayDistributions(result.Distribution);
+            });
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            ErrorSuggestions.DisplayError(ex, "analyze distribution");
             return 1;
         }
     }

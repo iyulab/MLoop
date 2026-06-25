@@ -84,4 +84,33 @@ public class AnalyzeCommandTests
         Assert.Equal("outliers", env.Aspect);
         Assert.Empty(env.Flags);
     }
+
+    [Fact]
+    public void MapDistribution_BothNull_AvailableEmpty()
+    {
+        var env = AnalyzeJson.MapDistribution(null, null);
+        Assert.True(env.Available);
+        Assert.Equal("distribution", env.Aspect);
+        Assert.Empty(env.Flags);
+    }
+
+    [Fact]
+    public async Task Resolve_DoesNotMutateInputFile()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mloop-analyze-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var csv = Path.Combine(dir, "d.csv");
+            await File.WriteAllTextAsync(csv, "a,b\n1,2\n3,4\n");
+            var before = File.GetLastWriteTimeUtc(csv);
+
+            var ctx = await AnalyzeCommand.ResolveAsync(csv, labelOption: null, modelName: "default");
+
+            Assert.NotNull(ctx);
+            Assert.Equal(csv, ctx!.Value.DataFile);
+            Assert.Equal(before, File.GetLastWriteTimeUtc(csv));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }
