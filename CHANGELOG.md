@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- **Upgraded FilePrepper 0.6.0 → 0.7.0 and DataLens 0.4.0 → 0.13.0** (umbrella version-governance alignment). DataLens's `AnalysisOptions`/`AnalysisResult` surface is backward-compatible (additive); FilePrepper 0.7 adds auto encoding detection, skip-rows, and constant-column removal. Security transitive pins re-verified (0 vulnerable packages).
+
 ## [0.16.3] - 2026-06-25
 
 ### Fixed
