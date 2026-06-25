@@ -4,6 +4,7 @@ using CsvHelper.Configuration;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Preprocessing;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -356,9 +357,24 @@ public static class ValidateCommand
         }
     }
 
+    /// <summary>
+    /// prep 선언에서 누수 잔존 변환(median fill, rolling, resample)을 찾아 경고 문구를 반환한다.
+    /// 경고 문구는 PrepRouter와 동일(DRY) — PrepStepClassifier.LeakageWarning 공유.
+    /// </summary>
+    internal static List<string> InspectPrepLeakage(List<PrepStep> prep)
+    {
+        var warnings = new List<string>();
+        foreach (var step in prep)
+        {
+            if (PrepStepClassifier.Classify(step) == PrepCategory.UnsupportedLeakageWarn)
+                warnings.Add(PrepStepClassifier.LeakageWarning(step));
+        }
+        return warnings;
+    }
+
     internal static void ValidatePrepSteps(
         string prefix,
-        List<MLoop.Core.Preprocessing.PrepStep> steps,
+        List<PrepStep> steps,
         List<ValidationError> errors,
         List<ValidationWarning> warnings)
     {
@@ -454,6 +470,10 @@ public static class ValidateCommand
                     break;
             }
         }
+
+        // Emit leakage warnings (median fill, rolling, resample)
+        foreach (var w in InspectPrepLeakage(steps))
+            warnings.Add(new ValidationWarning(prefix, w));
     }
 
     private static void ValidateLabelColumnsInCsv(

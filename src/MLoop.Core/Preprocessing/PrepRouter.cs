@@ -29,12 +29,7 @@ public class PrepRouter
 
             csvSteps.Add(step);
             if (category == PrepCategory.UnsupportedLeakageWarn)
-            {
-                warnings.Add(
-                    $"prep '{step.Type}'({step.Method}) 는 train/test 분할 전 전역 통계로 적용되어 " +
-                    "평가에 데이터 누수가 남습니다. 가능하면 normalize(min-max/z-score) 또는 " +
-                    "fill-missing(mean)으로 대체하세요.");
-            }
+                warnings.Add(PrepStepClassifier.LeakageWarning(step));
         }
 
         return new PrepRouteResult(preFeaturizer, csvSteps, warnings);
