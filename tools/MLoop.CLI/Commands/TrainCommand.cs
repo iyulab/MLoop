@@ -480,6 +480,7 @@ public static class TrainCommand
             string? testDataFile = null;
             var allDataFilesUsed = new List<string> { resolvedDataFile };
             IEstimator<ITransformer>? preFeaturizer = null;
+            List<string> preFeaturizerColumns = new();
 
             // CSV preprocessing (flatten, sampling, cleaning, class analysis, preprocessing,
             // balancing, splitting) applies only to tabular tasks. Image classification loads
@@ -638,7 +639,7 @@ public static class TrainCommand
                 {
                     var mlCtxForPrep = new MLContext(seed: 42);
                     List<string> prepWarnings;
-                    (resolvedDataFile, preFeaturizer, prepWarnings) =
+                    (resolvedDataFile, preFeaturizer, prepWarnings, preFeaturizerColumns) =
                         await ApplyPrepAsync(resolvedDataFile, effectiveDefinition.Prep, mlCtxForPrep);
 
                     allDataFilesUsed.Add(resolvedDataFile);
@@ -820,7 +821,8 @@ public static class TrainCommand
                 SeriesLength = effectiveDefinition.SeriesLength ?? 0,
                 UserColumn = effectiveDefinition.UserColumn,
                 ItemColumn = effectiveDefinition.ItemColumn,
-                PreFeaturizer = preFeaturizer
+                PreFeaturizer = preFeaturizer,
+                PreFeaturizerColumns = preFeaturizerColumns
             };
 
             // Initialize hook engine
@@ -1155,7 +1157,7 @@ public static class TrainCommand
     /// prep 스텝을 누수 안전하게 라우팅한다. 통계 변환은 preFeaturizer로(fold-내 fit),
     /// 행 독립 변환만 CSV로 굽는다. 반환: (굽힌 데이터 경로, preFeaturizer, 경고 목록).
     /// </summary>
-    internal static async Task<(string dataFile, IEstimator<ITransformer>? preFeaturizer, List<string> warnings)>
+    internal static async Task<(string dataFile, IEstimator<ITransformer>? preFeaturizer, List<string> warnings, List<string> preFeaturizerColumns)>
         ApplyPrepAsync(string dataFile, List<PrepStep> prep, MLContext ctx)
     {
         var route = new PrepRouter().Route(ctx, prep);
@@ -1172,7 +1174,7 @@ public static class TrainCommand
             outFile = await executor.ExecuteAsync(dataFile, route.CsvSteps, prepOutputPath);
         }
 
-        return (outFile, route.PreFeaturizer, route.Warnings);
+        return (outFile, route.PreFeaturizer, route.Warnings, route.PreFeaturizerColumns);
     }
 
     private class TrainCommandLogger : ILogger

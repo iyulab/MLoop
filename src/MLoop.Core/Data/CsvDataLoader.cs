@@ -169,9 +169,16 @@ public class CsvDataLoader : DataProviderBase
 
 
 
-        // Ensure preserved columns (group_column, user_column, item_column) are not
-        // merged into a Features vector by InferColumns. If InferColumns merged them
-        // into a multi-column range, split them back out as individual Text columns.
+        // Ensure preserved columns (group_column, user_column, item_column, and the
+        // statistical-prep columns referenced by a preFeaturizer) are not merged into a
+        // Features vector by InferColumns. If InferColumns merged them into a multi-column
+        // range, split them back out as individual columns.
+        //
+        // The split-out column inherits the DataKind of the range it was extracted from
+        // (e.g. Single for a merged numeric Features vector). This is essential for prep
+        // columns: a preFeaturizer like NormalizeMinMax requires a numeric input, so forcing
+        // String here would break it. Columns already defined individually keep their own
+        // inferred kind untouched.
         if (preserveColumns != null)
         {
             var preserveSet = new HashSet<string>(preserveColumns, StringComparer.OrdinalIgnoreCase);
@@ -197,7 +204,10 @@ public class CsvDataLoader : DataProviderBase
                         c.Source.Length == 1 && c.Source[0].Min == headerIdx && c.Source[0].Max == headerIdx);
                     if (existsIndividually) continue;
 
-                    // Remove this index from any existing column ranges that include it
+                    // Remove this index from any existing column ranges that include it,
+                    // capturing the DataKind of the merged range so the split-out column
+                    // keeps its original (typically numeric) type rather than defaulting to String.
+                    var splitKind = Microsoft.ML.Data.DataKind.String;
                     var newColumns = new List<Microsoft.ML.Data.TextLoader.Column>();
                     foreach (var existingCol in options.Columns)
                     {
@@ -206,6 +216,7 @@ public class CsvDataLoader : DataProviderBase
                         {
                             if (src.Min <= headerIdx && (src.Max ?? src.Min) >= headerIdx)
                             {
+                                splitKind = existingCol.DataKind;
                                 // Split this range, excluding headerIdx
                                 if (src.Min < headerIdx)
                                     newSources.Add(new(src.Min, headerIdx - 1));
@@ -224,8 +235,8 @@ public class CsvDataLoader : DataProviderBase
                         }
                     }
 
-                    // Add as individual Text column
-                    newColumns.Add(new Microsoft.ML.Data.TextLoader.Column(colName, Microsoft.ML.Data.DataKind.String, headerIdx));
+                    // Add as individual column, inheriting the merged range's DataKind.
+                    newColumns.Add(new Microsoft.ML.Data.TextLoader.Column(colName, splitKind, headerIdx));
                     options.Columns = newColumns.ToArray();
                 }
             }

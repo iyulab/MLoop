@@ -2,6 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.AutoML;
 using MLoop.Core.Contracts;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
 using MLoop.Tests.Common;
@@ -148,6 +149,77 @@ public class PrepLeakageRegressionTests : IDisposable
         // Assert ───────────────────────────────────────────────────────────────────
         // Training must complete (no exception propagated) and return valid metrics,
         // proving the preFeaturizer was accepted by experiment.Execute without error.
+        Assert.NotNull(result);
+        Assert.NotNull(result.Model);
+        Assert.NotEmpty(result.Metrics);
+        Assert.True(result.Metrics.ContainsKey("accuracy"),
+            $"Expected 'accuracy' key in metrics. Actual keys: [{string.Join(", ", result.Metrics.Keys)}]");
+        Assert.InRange(result.Metrics["accuracy"], 0.0, 1.0);
+    }
+
+    /// <summary>
+    /// Production-path guard: exercises the REAL CsvDataLoader (not the in-memory stub).
+    ///
+    /// CsvDataLoader.LoadData calls Auto().InferColumns, which merges adjacent numeric
+    /// feature columns into a single ranged Features vector — so the individual columns
+    /// "age"/"score" referenced by the preFeaturizer (NormalizeMinMax("age","age"), ...)
+    /// no longer exist in the schema by the time experiment.Execute runs. ML.NET then
+    /// throws "Could not find input column 'age'" during AutoML cross-validation, crashing
+    /// any real `mloop train` with a normalize/scale/fill-mean prep step.
+    ///
+    /// The fix threads the preFeaturizer's columns through TrainingConfig.PreFeaturizerColumns
+    /// into the preserveColumns set, so CsvDataLoader keeps them individually addressable.
+    /// This test must pass WITHOUT throwing "Could not find input column".
+    /// </summary>
+    [Fact]
+    public async Task RealLoader_training_with_prefeaturizer_normalize_preserves_columns()
+    {
+        // Arrange ─────────────────────────────────────────────────────────────────
+        // Write a real CSV with two numeric feature columns (age, score) + label, the
+        // exact shape that triggers InferColumns merging.
+        var ctx = new MLContext(seed: 42);
+
+        var csvPath = Path.Combine(_tmpDir, "train.csv");
+        var lines = new List<string> { "age,score,label" };
+        for (int i = 0; i < 200; i++)
+        {
+            // age has large scale to make normalization meaningful; label separable by parity
+            var age = i * 1000;
+            var score = i % 50;
+            var label = (i % 2 == 0) ? "yes" : "no";
+            lines.Add($"{age},{score},{label}");
+        }
+        await File.WriteAllLinesAsync(csvPath, lines);
+
+        // Build the preFeaturizer from a normalize step on the two numeric columns,
+        // and derive the columns to preserve via the same routing the production path uses.
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "normalize", Method = "min-max", Columns = new List<string> { "age", "score" } }
+        };
+        var route = new PrepRouter().Route(ctx, steps);
+        Assert.NotNull(route.PreFeaturizer);
+        Assert.Contains("age", route.PreFeaturizerColumns);
+        Assert.Contains("score", route.PreFeaturizerColumns);
+
+        var config = new TrainingConfig
+        {
+            ModelName = "test",
+            DataFile = csvPath,
+            LabelColumn = "label",
+            Task = "binary-classification",
+            TimeLimitSeconds = 10,
+            PreFeaturizer = route.PreFeaturizer,
+            PreFeaturizerColumns = route.PreFeaturizerColumns
+        };
+
+        // Act ──────────────────────────────────────────────────────────────────────
+        // Real CsvDataLoader + real AutoMLRunner: the full production loader path.
+        var loader = new CsvDataLoader(ctx);
+        var runner = new AutoMLRunner(ctx, loader, _tmpDir);
+        var result = await runner.RunAsync(config, cancellationToken: CancellationToken.None);
+
+        // Assert ───────────────────────────────────────────────────────────────────
         Assert.NotNull(result);
         Assert.NotNull(result.Model);
         Assert.NotEmpty(result.Metrics);
