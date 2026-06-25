@@ -42,6 +42,7 @@ internal class Program
             CompareCommand.Create(),
             PromoteCommand.Create(),
             InfoCommand.Create(),
+            AnalyzeCommand.Create(),
             EvaluateCommand.Create(),
             ValidateCommand.Create(),
             ExtensionsCommand.Create(),
