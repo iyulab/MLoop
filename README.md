@@ -142,6 +142,12 @@ mloop list                             # View experiments
 mloop promote <exp-id>                # Promote to production
 mloop evaluate <model> <test> <label> # Evaluate performance
 mloop info <data>                      # Dataset profiling with encoding detection
+mloop analyze profile <data>           # Column types, null %, cardinality, constant columns
+mloop analyze correlation <data>       # High-correlation pairs and multicollinearity
+mloop analyze importance <data> -l <col>  # Feature importance ranking (requires label)
+mloop analyze outliers <data>          # Outlier count, rate, isolation-forest threshold
+mloop analyze distribution <data>      # Skewness, kurtosis, normality tests
+                                       # add --json to any for structured, LLM-consumable output
 mloop validate                         # Validate mloop.yaml configuration
 mloop prep run [options]               # Run preprocessing pipeline
 mloop compare <exp1> <exp2>            # Compare experiment metrics

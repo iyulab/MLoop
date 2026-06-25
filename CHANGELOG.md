@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`mloop analyze <aspect>` — granular, read-only EDA command group**: decomposes `mloop info --analyze`'s one-shot deep analysis into per-aspect subcommands — `profile` (types/null%/cardinality/constant columns), `correlation` (high-correlation pairs + multicollinearity), `importance` (feature ranking, requires a label), `outliers` (count/rate/isolation-forest threshold), and `distribution` (skewness/kurtosis/normality tests). Each aspect computes only its slice via DataLens `AnalysisOptions`, and `--json` emits a structured `{aspect, available, summary, data, flags}` envelope for agent/LLM consumption. Read-only: never mutates the data file or `mloop.yaml`. (Agent-driven data-enhancement roadmap, Phase 1.)
+
 ### Changed
 - **Upgraded FilePrepper 0.6.0 → 0.7.0 and DataLens 0.4.0 → 0.13.0** (umbrella version-governance alignment). DataLens's `AnalysisOptions`/`AnalysisResult` surface is backward-compatible (additive); FilePrepper 0.7 adds auto encoding detection, skip-rows, and constant-column removal. Security transitive pins re-verified (0 vulnerable packages).
 
