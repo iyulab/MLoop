@@ -340,8 +340,8 @@ public class AutoMLRunner
 
         var experimentResult = await Task.Run(
             () => columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo)
-                : experiment.Execute(trainSet, config.LabelColumn),
+                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer)
+                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, preFeaturizer: config.PreFeaturizer),
             cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
@@ -534,8 +534,8 @@ public class AutoMLRunner
 
         var experimentResult = await Task.Run(
             () => columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo)
-                : experiment.Execute(trainSet, config.LabelColumn),
+                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer)
+                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, preFeaturizer: config.PreFeaturizer),
             cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
@@ -601,8 +601,8 @@ public class AutoMLRunner
 
         var experimentResult = await Task.Run(
             () => columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo)
-                : experiment.Execute(trainSet, config.LabelColumn),
+                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer)
+                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, preFeaturizer: config.PreFeaturizer),
             cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set

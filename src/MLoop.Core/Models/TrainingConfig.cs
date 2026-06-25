@@ -1,3 +1,5 @@
+using Microsoft.ML;
+
 namespace MLoop.Core.Models;
 
 /// <summary>
@@ -55,6 +57,12 @@ public class TrainingConfig
     /// Key: column name, Value: type string (text, categorical, numeric, ignore)
     /// </summary>
     public Dictionary<string, string>? ColumnOverrides { get; init; }
+
+    /// <summary>
+    /// prep 통계 변환을 ML.NET AutoML에 fold-내 fit으로 위임하기 위한 pre-featurizer.
+    /// null이면 미적용. PrepFeaturizerBuilder가 생성한다.
+    /// </summary>
+    public IEstimator<ITransformer>? PreFeaturizer { get; init; }
 
     /// <summary>
     /// Number of clusters for clustering task (0 = auto-select via silhouette search)
