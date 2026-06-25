@@ -55,4 +55,13 @@ public class AnalyzeCommandTests
         Assert.Contains(env.Flags, f => f == "constant-column: const_col");
         Assert.Contains(env.Flags, f => f == "high-null: sparse (40.0%)");
     }
+
+    [Fact]
+    public void MapCorrelation_NullReport_AvailableWithEmptyData()
+    {
+        var env = AnalyzeJson.MapCorrelation(null);
+        Assert.True(env.Available);
+        Assert.Equal("correlation", env.Aspect);
+        Assert.Empty(env.Flags);
+    }
 }
