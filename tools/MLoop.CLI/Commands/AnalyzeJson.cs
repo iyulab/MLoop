@@ -72,4 +72,31 @@ public static class AnalyzeJson
 
         return new AnalyzeEnvelope("profile", true, summary, new { columns }, flags);
     }
+
+    public static AnalyzeEnvelope MapCorrelation(CorrelationReport? report)
+    {
+        if (report == null)
+            return new AnalyzeEnvelope("correlation", true, "No numeric columns to correlate.",
+                new { highPairs = Array.Empty<object>(), multicollinearity = false }, Array.Empty<string>());
+
+        var pairs = report.HighCorrelationPairs
+            .OrderByDescending(p => p.AbsValue)
+            .Select(p => new { column1 = p.Column1, column2 = p.Column2, pearson = Math.Round(p.Value, 4) })
+            .ToList();
+
+        bool multicollinearity = report.HighCorrelationPairs.Any(p => p.AbsValue >= 0.8);
+
+        var flags = report.HighCorrelationPairs
+            .Where(p => p.AbsValue >= 0.9)
+            .OrderByDescending(p => p.AbsValue)
+            .Select(p => $"duplicate-feature-candidate: {p.Column1}~{p.Column2} (r={p.Value:F2})")
+            .ToList();
+
+        var summary = pairs.Count == 0
+            ? "No high-correlation pairs found among numeric columns."
+            : $"{pairs.Count} high-correlation pair(s); multicollinearity {(multicollinearity ? "likely" : "unlikely")}.";
+
+        return new AnalyzeEnvelope("correlation", true, summary,
+            new { highPairs = pairs, multicollinearity }, flags);
+    }
 }

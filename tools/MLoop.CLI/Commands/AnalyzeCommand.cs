@@ -1,4 +1,5 @@
 using System.CommandLine;
+using DataLens;
 using DataLens.Models;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
@@ -21,7 +22,8 @@ public static class AnalyzeCommand
         var command = new Command("analyze",
             "Granular, read-only EDA aspects (profile, correlation, importance, outliers, distribution)");
         command.Subcommands.Add(CreateProfileCommand());
-        // Tasks 2-5 add: correlation, importance, outliers, distribution
+        command.Subcommands.Add(CreateCorrelationCommand());
+        // Tasks 3-5 add: importance, outliers, distribution
         return command;
     }
 
@@ -198,5 +200,62 @@ public static class AnalyzeCommand
         InfoPresenter.DisplayDataStatistics(stats.Keys.ToArray(), stats, rowCount, profile);
         foreach (var flag in env.Flags)
             AnsiConsole.MarkupLine($"[yellow]Flag:[/] {Spectre.Console.Markup.Escape(flag)}");
+    }
+
+    private static Command CreateCorrelationCommand()
+    {
+        var dataFileArg = DataFileArg();
+        var labelOption = LabelOption();
+        var nameOption = NameOption();
+        var jsonOption = JsonOption();
+
+        var cmd = new Command("correlation", "High-correlation pairs and multicollinearity");
+        cmd.Arguments.Add(dataFileArg);
+        cmd.Options.Add(labelOption);
+        cmd.Options.Add(nameOption);
+        cmd.Options.Add(jsonOption);
+
+        cmd.SetAction((parseResult) =>
+        {
+            var dataFile = parseResult.GetValue(dataFileArg)!;
+            var label = parseResult.GetValue(labelOption);
+            var modelName = parseResult.GetValue(nameOption)!;
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteCorrelationAsync(dataFile, label, modelName, json);
+        });
+        return cmd;
+    }
+
+    private static async Task<int> ExecuteCorrelationAsync(
+        string dataFile, string? labelOption, string modelName, bool json)
+    {
+        try
+        {
+            var ctx = await ResolveAsync(dataFile, labelOption, modelName);
+            if (ctx == null) return 1;
+
+            var dataLens = new Infrastructure.ML.DataLensAnalyzer();
+            if (!dataLens.IsAvailable) { Emit(AnalyzeJson.Unavailable("correlation"), json, _ => { }); return 0; }
+
+            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
+            {
+                IncludeProfiling = false, IncludeDescriptive = false, IncludeCorrelation = true,
+                IncludeDistribution = false, IncludeOutliers = false, IncludeFeatures = false,
+                IncludeRegression = false, IncludeClustering = false, IncludePca = false
+            });
+
+            var env = AnalyzeJson.MapCorrelation(result?.Correlation);
+            Emit(env, json, _ =>
+            {
+                if (result?.Correlation != null) InfoPresenter.DisplayCorrelation(result.Correlation);
+                else AnsiConsole.MarkupLine("[grey]No numeric columns to correlate.[/]");
+            });
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            ErrorSuggestions.DisplayError(ex, "analyze correlation");
+            return 1;
+        }
     }
 }
