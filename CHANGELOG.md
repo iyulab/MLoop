@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`mloop prep plan` / `mloop features select` — declarative policy commands (Phase 2)**: record feature-engineering decisions in `mloop.yaml` without touching data. `prep plan --set type[:method] [--columns c1,c2] [--remove type] [--list] [--name model]` upserts prep steps (keyed by type+columns, idempotent) and shows each step's leakage category (✓ fold-safe / ⚠ leak / ℹ csv-stage); `features select --drop <cols> | --keep <cols> | --reset [--name model]` edits column include/exclude via `ColumnOverride{Type:"ignore"}` (`--keep` computes the complement against the train-data header, label always kept). Statistical fit still happens fold-internally at train time; these commands only edit the config. `validate` now surfaces informational model-class context for scaling steps on tasks where AutoML uses the preFeaturizer (informational, not a hard gate). `mloop.yaml` saving now omits null fields for clean round-trips.
+
 ## [0.17.0] - 2026-06-25
 
 ### Fixed
