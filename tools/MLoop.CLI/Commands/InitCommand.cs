@@ -3,6 +3,7 @@ using System.Reflection;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using Spectre.Console;
 
@@ -616,20 +617,10 @@ See: docs/EXTENSIBILITY.md for more information
 
     internal static string GetYamlTemplate(string projectName, string task, string modelName, string labelColumn)
     {
-        var metricExample = task switch
-        {
-            "binary-classification" => "accuracy",
-            "multiclass-classification" => "macro_accuracy",
-            "image-classification" => "micro_accuracy",
-            "regression" => "r_squared",
-            "anomaly-detection" => "auc",
-            "clustering" => "average_distance",
-            "ranking" => "ndcg",
-            "forecasting" => "mae",
-            "time-series-anomaly" => "detection_rate",
-            "recommendation" => "rmse",
-            _ => "auto"
-        };
+        // Task→primary-metric mapping lives in the shared TaskMetadata source of truth so the
+        // yaml example, the promotion gate, and AutoML all agree (TD-06). Tasks without a
+        // canonical metric (object detection, unknown) defer to "auto".
+        var metricExample = TaskMetadata.PrimaryMetricOrAuto(task);
 
         var taskSpecificFields = task switch
         {

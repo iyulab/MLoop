@@ -558,14 +558,13 @@ public class TrainingEngine : ITrainingEngine
         if (metrics.TryGetValue(metricName, out var value))
             return value;
 
-        // Fall back to known defaults per task
-        return task.ToLowerInvariant() switch
-        {
-            "binary-classification" => metrics.GetValueOrDefault("accuracy", 0),
-            "multiclass-classification" => metrics.GetValueOrDefault("macro_accuracy", 0),
-            "regression" => metrics.GetValueOrDefault("r_squared", 0),
-            _ => metrics.Values.FirstOrDefault()
-        };
+        // Fall back to the task's canonical primary metric (shared TaskMetadata source of
+        // truth — TD-06), defaulting to 0 when that metric is absent. Tasks without a defined
+        // primary metric fall back to the first available metric value.
+        var primary = TaskMetadata.PrimaryMetric(task);
+        return primary != null
+            ? metrics.GetValueOrDefault(primary, 0)
+            : metrics.Values.FirstOrDefault();
     }
 
     /// <summary>
