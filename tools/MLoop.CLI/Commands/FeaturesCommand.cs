@@ -25,23 +25,26 @@ public sealed class FeaturesCommand : Command
         var keepOption = new Option<string?>("--keep") { Description = "Comma-separated columns to keep (all others excluded)" };
         var resetOption = new Option<bool>("--reset") { Description = "Remove all 'ignore' overrides" };
         var nameOption = new Option<string>("--name", "-n") { Description = "Model name", DefaultValueFactory = _ => ConfigDefaults.DefaultModelName };
+        var jsonOption = new Option<bool>("--json") { Description = "Output the resulting selection as structured JSON instead of console text" };
 
         var cmd = new Command("select", "Include/exclude features in mloop.yaml (policy only, no data change)");
         cmd.Options.Add(dropOption);
         cmd.Options.Add(keepOption);
         cmd.Options.Add(resetOption);
         cmd.Options.Add(nameOption);
+        cmd.Options.Add(jsonOption);
 
         cmd.SetAction(parseResult => ExecuteAsync(
             parseResult.GetValue(dropOption),
             parseResult.GetValue(keepOption),
             parseResult.GetValue(resetOption),
-            parseResult.GetValue(nameOption)!));
+            parseResult.GetValue(nameOption)!,
+            parseResult.GetValue(jsonOption)));
 
         return cmd;
     }
 
-    private static async Task<int> ExecuteAsync(string? dropCsv, string? keepCsv, bool reset, string modelName)
+    private static async Task<int> ExecuteAsync(string? dropCsv, string? keepCsv, bool reset, string modelName, bool json)
     {
         try
         {
@@ -67,15 +70,20 @@ public sealed class FeaturesCommand : Command
                 return 1;
             }
 
+            FeaturesApplied? applied;
+
             if (reset)
             {
                 var n = FeatureSelector.Reset(model.Columns);
-                AnsiConsole.MarkupLine($"[green]Reset {n} ignore override(s).[/]");
+                applied = new FeaturesApplied("reset", Columns: null, ResetCount: n);
+                if (!json) AnsiConsole.MarkupLine($"[green]Reset {n} ignore override(s).[/]");
             }
             else if (!string.IsNullOrWhiteSpace(dropCsv))
             {
-                FeatureSelector.Drop(model.Columns, SplitCsv(dropCsv));
-                AnsiConsole.MarkupLine($"[green]Excluded:[/] {dropCsv}");
+                var dropped = SplitCsv(dropCsv);
+                FeatureSelector.Drop(model.Columns, dropped);
+                applied = new FeaturesApplied("drop", dropped, ResetCount: null);
+                if (!json) AnsiConsole.MarkupLine($"[green]Excluded:[/] {dropCsv}");
             }
             else if (!string.IsNullOrWhiteSpace(keepCsv))
             {
@@ -86,9 +94,11 @@ public sealed class FeaturesCommand : Command
                     AnsiConsole.MarkupLine("[grey]Expected datasets/train.csv or data.train in mloop.yaml.[/]");
                     return 1;
                 }
+                var kept = SplitCsv(keepCsv);
                 var allColumns = ReadHeaderColumns(trainPath);
-                FeatureSelector.ApplyKeep(model.Columns, allColumns, SplitCsv(keepCsv), model.Label);
-                AnsiConsole.MarkupLine($"[green]Kept:[/] {keepCsv} [grey](+ label {model.Label}); others excluded[/]");
+                FeatureSelector.ApplyKeep(model.Columns, allColumns, kept, model.Label);
+                applied = new FeaturesApplied("keep", kept, ResetCount: null);
+                if (!json) AnsiConsole.MarkupLine($"[green]Kept:[/] {keepCsv} [grey](+ label {model.Label}); others excluded[/]");
             }
             else
             {
@@ -96,10 +106,24 @@ public sealed class FeaturesCommand : Command
                 return 1;
             }
 
-            PrintIgnored(model.Columns);
+            var ignored = model.Columns
+                .Where(kv => string.Equals(kv.Value.Type, "ignore", StringComparison.OrdinalIgnoreCase))
+                .Select(kv => kv.Key)
+                .ToList();
+
             // Drop an empty overrides map so OmitNull keeps `columns:` out of mloop.yaml.
             if (model.Columns is { Count: 0 }) model.Columns = null;
             await ctx.ConfigLoader.SaveUserConfigAsync(config);
+
+            if (json)
+            {
+                var env = new FeaturesSelectEnvelope("features select", modelName, applied, ignored, Warnings: []);
+                Console.WriteLine(PolicyJson.Serialize(env));
+            }
+            else
+            {
+                PrintIgnored(ignored);
+            }
             return 0;
         }
         catch (Exception ex)
@@ -146,9 +170,8 @@ public sealed class FeaturesCommand : Command
     private static List<string> SplitCsv(string csv) =>
         csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
-    private static void PrintIgnored(Dictionary<string, ColumnOverride> columns)
+    private static void PrintIgnored(IReadOnlyList<string> ignored)
     {
-        var ignored = columns.Where(kv => kv.Value.Type == "ignore").Select(kv => kv.Key).ToList();
         AnsiConsole.MarkupLine(ignored.Count == 0
             ? "[grey]No columns excluded.[/]"
             : $"[grey]Excluded columns ({ignored.Count}): {string.Join(", ", ignored)}[/]");
