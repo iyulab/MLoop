@@ -33,6 +33,29 @@ public class FeatureSelectorTests
     }
 
     [Fact]
+    public void PartitionByHeader_SeparatesKnownFromUnknownColumns()
+    {
+        var header = new[] { "검사호기", "검사모드", "Barcode", "검사결과" };
+        // An agent hallucinated "검사항기"/"검사항목" (≠ real "검사호기"/"검사모드") — must be flagged unknown.
+        var (known, unknown) = FeatureSelector.PartitionByHeader(
+            ["Barcode", "검사항기", "검사항목"], header);
+
+        Assert.Equal(new[] { "Barcode" }, known);
+        Assert.Equal(new[] { "검사항기", "검사항목" }, unknown);
+    }
+
+    [Fact]
+    public void PartitionByHeader_IsCaseSensitive_MatchingTrainTimeKeyLookup()
+    {
+        var header = new[] { "id", "ts" };
+        var (known, unknown) = FeatureSelector.PartitionByHeader(["ID", "ts"], header);
+
+        // "ID" ≠ "id" — a case typo would silently no-op at train time, so it's flagged.
+        Assert.Equal(new[] { "ts" }, known);
+        Assert.Equal(new[] { "ID" }, unknown);
+    }
+
+    [Fact]
     public void Reset_RemovesOnlyIgnoreOverrides()
     {
         var cols = new Dictionary<string, ColumnOverride>

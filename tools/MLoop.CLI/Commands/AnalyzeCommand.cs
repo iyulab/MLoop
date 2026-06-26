@@ -32,8 +32,12 @@ public static class AnalyzeCommand
     internal readonly record struct AnalyzeContext(string DataFile, string? Label);
 
     // Shared option/argument factories (one instance per subcommand call).
-    internal static Argument<string> DataFileArg() =>
-        new("data-file") { Description = "Path to the CSV dataset to analyze" };
+    internal static Argument<string?> DataFileArg() =>
+        new("data-file")
+        {
+            Description = "Path to the CSV dataset to analyze (defaults to the project's data.train if omitted)",
+            Arity = ArgumentArity.ZeroOrOne
+        };
 
     internal static Option<string?> LabelOption() =>
         new("--label", "-l") { Description = "Label/target column name (overrides mloop.yaml)" };
@@ -49,11 +53,19 @@ public static class AnalyzeCommand
         new("--json") { Description = "Output structured JSON instead of a console table" };
 
     /// <summary>
-    /// Resolves the data file path (project-relative ok) and the label column
-    /// (--label → mloop.yaml model → null). Prints an error and returns null if the file is missing.
+    /// Resolves the data file path and the label column for an analyze invocation.
+    /// <para>
+    /// Data file: an explicit <paramref name="dataFile"/> (project-relative ok) is used as-is;
+    /// when omitted, it defaults to the project's configured train data via the same resolver
+    /// as <c>mloop train</c> (<see cref="TrainDataValidator.ResolveDataFileAsync"/>:
+    /// <c>data.train</c> → <c>datasets/train.csv</c> discovery). This keeps CLI and the MCP
+    /// bridge consistent so an agent need not guess the data path (F-03/F-13).
+    /// </para>
+    /// Label: <c>--label</c> → mloop.yaml model → null. Prints an error and returns null if no
+    /// data file can be resolved. Read-only: never mutates the data file or mloop.yaml.
     /// </summary>
     internal static async Task<AnalyzeContext?> ResolveAsync(
-        string dataFile, string? labelOption, string modelName)
+        string? dataFile, string? labelOption, string modelName)
     {
         var fileSystem = new FileSystemManager();
         var projectDiscovery = new ProjectDiscovery(fileSystem);
@@ -61,26 +73,39 @@ public static class AnalyzeCommand
         string? projectRoot = null;
         try { projectRoot = projectDiscovery.FindRoot(); } catch { /* not in a project: ok */ }
 
-        var resolved = (projectRoot != null && !Path.IsPathRooted(dataFile))
-            ? Path.Combine(projectRoot, dataFile)
-            : dataFile;
+        var config = projectRoot != null
+            ? await new ConfigLoader(fileSystem, projectDiscovery).LoadUserConfigAsync()
+            : null;
 
-        if (!File.Exists(resolved))
+        string? resolved;
+        if (projectRoot != null)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {resolved}");
+            // Reuse train's resolver: explicit path → data.train → datasets/train.csv discovery.
+            resolved = await TrainDataValidator.ResolveDataFileAsync(
+                dataFile, config!, projectRoot, new DatasetDiscovery(fileSystem), fileSystem);
+        }
+        else
+        {
+            // Outside a project only an explicit, existing path works (no config/discovery).
+            resolved = !string.IsNullOrEmpty(dataFile) && File.Exists(dataFile) ? dataFile : null;
+        }
+
+        if (resolved == null || !File.Exists(resolved))
+        {
+            if (string.IsNullOrEmpty(dataFile))
+                AnsiConsole.MarkupLine(
+                    "[red]Error:[/] No data file specified and none found. Pass [blue]<data-file>[/] or set [blue]data.train[/] in mloop.yaml.");
+            else
+                AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {resolved ?? dataFile}");
             return null;
         }
 
         string? label = labelOption;
-        if (label == null && projectRoot != null)
+        if (label == null && config?.Models != null
+            && config.Models.TryGetValue(modelName, out var def)
+            && !string.IsNullOrEmpty(def.Label))
         {
-            var configLoader = new ConfigLoader(fileSystem, projectDiscovery);
-            var config = await configLoader.LoadUserConfigAsync();
-            if (config?.Models != null && config.Models.TryGetValue(modelName, out var def)
-                && !string.IsNullOrEmpty(def.Label))
-            {
-                label = def.Label;
-            }
+            label = def.Label;
         }
 
         return new AnalyzeContext(resolved, label);
@@ -110,7 +135,7 @@ public static class AnalyzeCommand
 
         cmd.SetAction((parseResult) =>
         {
-            var dataFile = parseResult.GetValue(dataFileArg)!;
+            var dataFile = parseResult.GetValue(dataFileArg);
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
@@ -121,7 +146,7 @@ public static class AnalyzeCommand
     }
 
     private static async Task<int> ExecuteProfileAsync(
-        string dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json)
     {
         try
         {
@@ -219,7 +244,7 @@ public static class AnalyzeCommand
 
         cmd.SetAction((parseResult) =>
         {
-            var dataFile = parseResult.GetValue(dataFileArg)!;
+            var dataFile = parseResult.GetValue(dataFileArg);
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
@@ -229,7 +254,7 @@ public static class AnalyzeCommand
     }
 
     private static async Task<int> ExecuteCorrelationAsync(
-        string dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json)
     {
         try
         {
@@ -276,7 +301,7 @@ public static class AnalyzeCommand
 
         cmd.SetAction((parseResult) =>
         {
-            var dataFile = parseResult.GetValue(dataFileArg)!;
+            var dataFile = parseResult.GetValue(dataFileArg);
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
@@ -286,7 +311,7 @@ public static class AnalyzeCommand
     }
 
     private static async Task<int> ExecuteImportanceAsync(
-        string dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json)
     {
         try
         {
@@ -350,7 +375,7 @@ public static class AnalyzeCommand
 
         cmd.SetAction((parseResult) =>
         {
-            var dataFile = parseResult.GetValue(dataFileArg)!;
+            var dataFile = parseResult.GetValue(dataFileArg);
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
@@ -360,7 +385,7 @@ public static class AnalyzeCommand
     }
 
     private static async Task<int> ExecuteOutliersAsync(
-        string dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json)
     {
         try
         {
@@ -407,7 +432,7 @@ public static class AnalyzeCommand
 
         cmd.SetAction((parseResult) =>
         {
-            var dataFile = parseResult.GetValue(dataFileArg)!;
+            var dataFile = parseResult.GetValue(dataFileArg);
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
@@ -417,7 +442,7 @@ public static class AnalyzeCommand
     }
 
     private static async Task<int> ExecuteDistributionAsync(
-        string dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json)
     {
         try
         {

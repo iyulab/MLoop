@@ -107,7 +107,9 @@ public class ExperimentStore : IExperimentStore
             Versions = new
             {
                 MlNet = "5.0.0",
-                MLoop = "0.2.0"
+                // Record the actual tool version (assembly informational version, +hash stripped)
+                // for reproducibility — was hardcoded "0.2.0", which every experiment falsely claimed.
+                MLoop = Update.UpdateChecker.GetCurrentVersion()
             }
         }, cancellationToken);
 

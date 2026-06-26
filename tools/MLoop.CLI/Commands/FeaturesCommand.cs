@@ -71,6 +71,7 @@ public sealed class FeaturesCommand : Command
             }
 
             FeaturesApplied? applied;
+            var warnings = new List<string>();
 
             if (reset)
             {
@@ -80,10 +81,36 @@ public sealed class FeaturesCommand : Command
             }
             else if (!string.IsNullOrWhiteSpace(dropCsv))
             {
-                var dropped = SplitCsv(dropCsv);
+                var requested = SplitCsv(dropCsv);
+                // Validate against the data header so a hallucinated/typo'd column name (an agent
+                // dropping "검사항기" when the real column is "검사호기") is flagged and skipped rather
+                // than silently recorded as a phantom ignore while the real column stays a feature.
+                // Best-effort: when no train data is resolvable, keep the prior unconditional behaviour.
+                var dropTrainPath = ResolveTrainPath(ctx, config);
+                List<string> dropped;
+                if (dropTrainPath != null && File.Exists(dropTrainPath))
+                {
+                    var (known, unknown) = FeatureSelector.PartitionByHeader(
+                        requested, ReadHeaderColumns(dropTrainPath));
+                    if (unknown.Count > 0)
+                        warnings.Add($"Not found in train data header, skipped: {string.Join(", ", unknown)}");
+                    dropped = known.ToList();
+                }
+                else
+                {
+                    dropped = requested;
+                }
+
                 FeatureSelector.Drop(model.Columns, dropped);
                 applied = new FeaturesApplied("drop", dropped, ResetCount: null);
-                if (!json) AnsiConsole.MarkupLine($"[green]Excluded:[/] {dropCsv}");
+                if (!json)
+                {
+                    foreach (var w in warnings)
+                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Spectre.Console.Markup.Escape(w)}");
+                    AnsiConsole.MarkupLine(dropped.Count > 0
+                        ? $"[green]Excluded:[/] {Spectre.Console.Markup.Escape(string.Join(", ", dropped))}"
+                        : "[grey]No matching columns to exclude.[/]");
+                }
             }
             else if (!string.IsNullOrWhiteSpace(keepCsv))
             {
@@ -117,7 +144,7 @@ public sealed class FeaturesCommand : Command
 
             if (json)
             {
-                var env = new FeaturesSelectEnvelope("features select", modelName, applied, ignored, Warnings: []);
+                var env = new FeaturesSelectEnvelope("features select", modelName, applied, ignored, Warnings: warnings);
                 Console.WriteLine(PolicyJson.Serialize(env));
             }
             else
