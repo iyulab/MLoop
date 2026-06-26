@@ -95,6 +95,39 @@ public class AnalyzeCommandTests
     }
 
     [Fact]
+    public void MapProfile_FlagsMonotonicIndexColumn()
+    {
+        // F-16: train warns about strictly-increasing ID/index columns (CsvDataLoader.DetectMonotonicColumns)
+        // but analyze profile was silent — the agent could not surface index leakage. profile must flag it.
+        var stats = new Dictionary<string, (long MissingCount, int UniqueCount)>
+        {
+            ["ncWorkCount"] = (0, 1000),
+            ["value"] = (0, 50)
+        };
+        var env = AnalyzeJson.MapProfile(report: null, stats, rowCount: 1000,
+            monotonicColumns: new[] { "ncWorkCount" });
+
+        Assert.True(env.Available);
+        Assert.Contains(env.Flags, f => f.StartsWith("likely-index: ncWorkCount"));
+        Assert.DoesNotContain(env.Flags, f => f.StartsWith("likely-index: value"));
+        Assert.Contains("1 likely-index", env.Summary);
+    }
+
+    [Fact]
+    public void MapProfile_NoMonotonicColumns_NoIndexFlag()
+    {
+        // Regression guard: omitting monotonicColumns (default) must not add index flags.
+        var stats = new Dictionary<string, (long MissingCount, int UniqueCount)>
+        {
+            ["a"] = (0, 10)
+        };
+        var env = AnalyzeJson.MapProfile(report: null, stats, rowCount: 10);
+
+        Assert.DoesNotContain(env.Flags, f => f.StartsWith("likely-index"));
+        Assert.Contains("0 likely-index", env.Summary);
+    }
+
+    [Fact]
     public void MapCorrelation_NullReport_AvailableWithEmptyData()
     {
         var env = AnalyzeJson.MapCorrelation(null);
