@@ -22,6 +22,7 @@ public static class PrepPlanCommand
         var columnsOption = new Option<string?>("--columns", "-c") { Description = "Comma-separated target columns" };
         var listOption = new Option<bool>("--list") { Description = "List current prep steps" };
         var nameOption = new Option<string>("--name", "-n") { Description = "Model name", DefaultValueFactory = _ => ConfigDefaults.DefaultModelName };
+        var jsonOption = new Option<bool>("--json") { Description = "Output the resulting plan as structured JSON instead of a console table" };
 
         var cmd = new Command("plan", "Edit prep step declarations in mloop.yaml (policy only, no data change)");
         cmd.Options.Add(setOption);
@@ -29,18 +30,20 @@ public static class PrepPlanCommand
         cmd.Options.Add(columnsOption);
         cmd.Options.Add(listOption);
         cmd.Options.Add(nameOption);
+        cmd.Options.Add(jsonOption);
 
         cmd.SetAction(parseResult => ExecuteAsync(
             parseResult.GetValue(setOption),
             parseResult.GetValue(removeOption),
             parseResult.GetValue(columnsOption),
             parseResult.GetValue(listOption),
-            parseResult.GetValue(nameOption)!));
+            parseResult.GetValue(nameOption)!,
+            parseResult.GetValue(jsonOption)));
 
         return cmd;
     }
 
-    private static async Task<int> ExecuteAsync(string? set, string? remove, string? columnsCsv, bool list, string modelName)
+    private static async Task<int> ExecuteAsync(string? set, string? remove, string? columnsCsv, bool list, string modelName, bool json)
     {
         try
         {
@@ -57,6 +60,8 @@ public static class PrepPlanCommand
 
             model.Prep ??= new List<PrepStep>();
             var columns = ParseColumns(columnsCsv);
+            PrepPlanApplied? applied = null;
+            PrepStep? appliedStep = null;
 
             if (!string.IsNullOrEmpty(set))
             {
@@ -66,8 +71,8 @@ public static class PrepPlanCommand
                 if (model.Prep.Count == 0) model.Prep = null;
                 await ctx.ConfigLoader.SaveUserConfigAsync(config);
                 model.Prep ??= new List<PrepStep>();
-                AnsiConsole.MarkupLine($"[green]Set prep step:[/] {Markup.Escape(type)}{(method != null ? ":" + Markup.Escape(method) : "")}");
-                WarnIfLeaky(step, model.Task);
+                applied = new PrepPlanApplied("set", type, method, columns, RemovedCount: null);
+                appliedStep = step;
             }
             else if (!string.IsNullOrEmpty(remove))
             {
@@ -75,12 +80,33 @@ public static class PrepPlanCommand
                 var prepForDisplay = model.Prep; // capture before nulling
                 if (model.Prep.Count == 0) model.Prep = null;
                 await ctx.ConfigLoader.SaveUserConfigAsync(config);
-                model.Prep = prepForDisplay; // restore for PrintPlan
-                AnsiConsole.MarkupLine($"[green]Removed {n} prep step(s)[/] of type '{Markup.Escape(remove)}'.");
+                model.Prep = prepForDisplay; // restore for display
+                applied = new PrepPlanApplied("remove", remove, Method: null, columns, RemovedCount: n);
+            }
+
+            var prep = model.Prep ?? new List<PrepStep>();
+
+            if (json)
+            {
+                var views = PolicyJson.BuildStepViews(prep, model.Task);
+                var env = new PrepPlanEnvelope(
+                    "prep plan", modelName, model.Task, applied, views, PolicyJson.CollectWarnings(views));
+                Console.WriteLine(PolicyJson.Serialize(env));
+                return 0;
+            }
+
+            if (applied is { Action: "set" })
+            {
+                AnsiConsole.MarkupLine($"[green]Set prep step:[/] {Markup.Escape(applied.Type!)}{(applied.Method != null ? ":" + Markup.Escape(applied.Method) : "")}");
+                if (appliedStep != null) WarnIfLeaky(appliedStep, model.Task);
+            }
+            else if (applied is { Action: "remove" })
+            {
+                AnsiConsole.MarkupLine($"[green]Removed {applied.RemovedCount} prep step(s)[/] of type '{Markup.Escape(applied.Type!)}'.");
             }
 
             // Always print the resulting plan (also the --list path).
-            PrintPlan(model.Prep ?? new List<PrepStep>(), model.Task);
+            PrintPlan(prep, model.Task);
             return 0;
         }
         catch (Exception ex)

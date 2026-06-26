@@ -149,9 +149,9 @@ mloop analyze outliers <data>          # Outlier count, rate, isolation-forest t
 mloop analyze distribution <data>      # Skewness, kurtosis, normality tests
                                        # add --json to any for structured, LLM-consumable output
 mloop validate                         # Validate mloop.yaml configuration
-mloop prep plan --set <type[:method]> [--columns ...]  # Declare prep step (policy only, no data change)
+mloop prep plan --set <type[:method]> [--columns ...] [--json]  # Declare prep step (policy only, no data change)
 mloop prep run [options]               # Run preprocessing pipeline
-mloop features select --drop/--keep <cols> [--reset]   # Declare feature include/exclude (policy only)
+mloop features select --drop/--keep <cols> [--reset] [--json]   # Declare feature include/exclude (policy only)
 mloop compare <exp1> <exp2>            # Compare experiment metrics
 mloop serve                            # Start REST API server
 mloop docker                           # Generate Docker deployment files
