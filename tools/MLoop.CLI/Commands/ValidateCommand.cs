@@ -42,8 +42,13 @@ public static class ValidateCommand
     private static readonly HashSet<string> ValidMetrics = new(StringComparer.OrdinalIgnoreCase)
     {
         "auto",
+        // user-facing aliases
         "accuracy", "auc", "f1", "recall", "precision", "log-loss",
-        "r2", "rmse", "mae", "mse", "rSquared"
+        "r2", "rmse", "mae", "mse", "rSquared",
+        // F-17: canonical metrics that `mloop init` writes and AutoML/promotion gate use
+        // (ModelRegistry.DefaultMetricForTask: multiclass→macro_accuracy, image/text→micro_accuracy,
+        // regression→r_squared). These were flagged "Unknown", so validate contradicted init.
+        "macro_accuracy", "micro_accuracy", "r_squared", "log_loss", "f1_score"
     };
 
     private static readonly HashSet<string> ValidColumnTypes = new(StringComparer.OrdinalIgnoreCase)

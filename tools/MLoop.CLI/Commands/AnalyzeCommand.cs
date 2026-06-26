@@ -166,7 +166,12 @@ public static class AnalyzeCommand
             // Column stats (missing/unique) come from MLoop's own scan, matching `info`.
             var (rowCount, stats) = ComputeColumnStats(ctx.Value.DataFile);
 
-            var env = AnalyzeJson.MapProfile(profile, stats, rowCount);
+            // F-16: surface strictly-increasing ID/index columns (same detector train uses) as a profile
+            // flag, so the agent's FE loop can drop them. analyze was silent while train warned (inconsistency).
+            var (convertedForScan, _) = EncodingDetector.ConvertToUtf8WithBom(ctx.Value.DataFile);
+            var monotonic = CsvDataLoader.DetectMonotonicColumns(convertedForScan, ctx.Value.Label);
+
+            var env = AnalyzeJson.MapProfile(profile, stats, rowCount, monotonic);
             Emit(env, json, e => RenderProfileConsole(e, profile, stats, rowCount));
             return 0;
         }

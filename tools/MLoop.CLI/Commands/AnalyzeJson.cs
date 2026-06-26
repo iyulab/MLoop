@@ -55,11 +55,16 @@ public static class AnalyzeJson
     public static AnalyzeEnvelope MapProfile(
         ProfileReport? report,
         Dictionary<string, (long MissingCount, int UniqueCount)> stats,
-        int rowCount)
+        int rowCount,
+        IReadOnlyCollection<string>? monotonicColumns = null)
     {
         var profileLookup = new Dictionary<string, ColumnProfile>();
         if (report?.Columns != null)
             foreach (var c in report.Columns) profileLookup[c.Name] = c;
+
+        var monotonicSet = monotonicColumns is { Count: > 0 }
+            ? new HashSet<string>(monotonicColumns, StringComparer.OrdinalIgnoreCase)
+            : null;
 
         var columns = new List<object>();
         var flags = new List<string>();
@@ -89,11 +94,18 @@ public static class AnalyzeJson
 
             if (isConstant) flags.Add($"constant-column: {name}");
             else if (missingPct > 30) flags.Add($"high-null: {name} ({missingPct:F1}%)");
+
+            // F-16: strictly-increasing integer columns are likely ID/index — using them as
+            // features causes leakage/overfitting. train already warns (CsvDataLoader.DetectMonotonicColumns);
+            // surface the same signal here so the agent's FE loop can drop them (decision rule "ID/index").
+            if (monotonicSet?.Contains(name) == true)
+                flags.Add($"likely-index: {name} (strictly increasing integers; exclude to avoid leakage)");
         }
 
         var summary = $"{columns.Count} column(s); "
             + $"{flags.Count(f => f.StartsWith("constant-column"))} constant, "
-            + $"{flags.Count(f => f.StartsWith("high-null"))} high-null.";
+            + $"{flags.Count(f => f.StartsWith("high-null"))} high-null, "
+            + $"{flags.Count(f => f.StartsWith("likely-index"))} likely-index.";
 
         return new AnalyzeEnvelope("profile", true, summary, new { columns }, flags);
     }

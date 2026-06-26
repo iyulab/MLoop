@@ -241,6 +241,13 @@ public class ValidateCommandTests
     [InlineData("auc")]
     [InlineData("r2")]
     [InlineData("rmse")]
+    // F-17: canonical task-specific metrics that `mloop init` writes and AutoML/promotion use
+    // (ModelRegistry.DefaultMetricForTask) must validate cleanly — they were flagged "Unknown".
+    [InlineData("macro_accuracy")]   // multiclass-classification default
+    [InlineData("micro_accuracy")]   // image/text-classification default
+    [InlineData("r_squared")]        // regression default (canonical)
+    [InlineData("log_loss")]
+    [InlineData("f1_score")]
     public void ValidateTrainingSettings_AcceptsKnownMetrics(string metric)
     {
         var (_, warnings) = RunValidateTraining(new TrainingSettings { Metric = metric });
