@@ -41,7 +41,7 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.7.0" />
-    <PackageVersion Include="DataLens" Version="0.13.0" />
+    <PackageVersion Include="DataLens" Version="0.13.1" />
     <!-- Resilience / Polly -->
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Security: Override transitive dependency (CVE-2026-26127, GHSA-73j8-2gch-69rq) -->
