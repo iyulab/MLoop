@@ -125,40 +125,144 @@ public static class AnalyzeJson
             new { highPairs = pairs, multicollinearity }, flags);
     }
 
-    public static AnalyzeEnvelope MapImportance(FeatureImportanceSummary? importance)
-    {
-        if (importance == null || importance.Scores.Count == 0)
-            return new AnalyzeEnvelope("importance", true,
-                "No feature importance scores available (requires a label and numeric/categorical features).",
-                new { ranking = Array.Empty<object>(), lowVarianceCount = 0, highCorrPairsCount = 0, conditionNumber = 0.0 },
-                Array.Empty<string>());
+    /// <summary>
+    /// Maps DataLens feature analysis into the importance envelope.
+    /// <para>
+    /// The <c>analyze importance</c> command always carries a label, so it must surface
+    /// <em>target-aware</em> predictive importance (permutation for numeric targets,
+    /// mutual-info/ANOVA for categorical) rather than the target-agnostic structural
+    /// (variance/condition-number) ranking — structural importance over-ranks features that
+    /// the model never uses (SEQ026: KWh ranked high structurally yet predictively inert).
+    /// </para>
+    /// <para>
+    /// In every case the label column itself is excluded: DataLens computes importance over
+    /// the full numeric matrix (target included), so the target self-references at rank #1
+    /// unless filtered here. Structural diagnostics (condition number, low-variance /
+    /// high-correlation counts) are still surfaced as supplementary signal.
+    /// </para>
+    /// </summary>
+    /// <summary>One ranked feature: its name and the score under the chosen importance method.</summary>
+    public readonly record struct RankedFeature(string Feature, double Score);
 
-        var ranking = importance.Scores
-            .OrderByDescending(s => s.Score)
-            .Select(s => new { feature = s.Name, score = Math.Round(s.Score, 4) })
+    /// <summary>
+    /// True when a candidate importance source has at least one finite, non-zero score among the
+    /// non-label features — i.e. it actually discriminates. Guards against degenerate all-zero
+    /// rankings (see RankImportance) before that source is preferred over structural.
+    /// </summary>
+    private static bool HasSignal(IEnumerable<(string Name, double Score)>? scores, string? label)
+    {
+        if (scores == null) return false;
+        return scores
+            .Where(s => string.IsNullOrEmpty(label) || !string.Equals(s.Name, label, StringComparison.Ordinal))
+            .Any(s => double.IsFinite(s.Score) && Math.Abs(s.Score) > 1e-9);
+    }
+
+    /// <summary>
+    /// Selects the importance ranking from a DataLens feature report: target-aware source first
+    /// (permutation → mutual-info → ANOVA), structural variance last; the label column is always
+    /// excluded. Shared by the JSON envelope and the console renderer so both stay consistent.
+    /// Returns method = null with an empty list when no scores are available.
+    /// </summary>
+    public static (string? Method, IReadOnlyList<RankedFeature> Ranking) RankImportance(
+        FeatureReport? features, string? label)
+    {
+        var structural = features?.Importance;
+
+        // Choose the ranking source: target-aware first, structural as last resort.
+        // A target-aware source is only used when it carries signal among the non-label
+        // features — DataLens currently leaves the target column in the feature matrix, so a
+        // model can predict the target from itself and leave every real feature at importance 0
+        // (degenerate). When that happens we fall back to structural rather than surface a
+        // useless all-zero ranking. (See DataLens issue: target not excluded from matrix.)
+        List<(string Name, double Score)>? raw = null;
+        string? method = null;
+
+        if (HasSignal(features?.Permutation?.Features.Select(f => (f.Name, f.Importance)), label))
+        {
+            raw = features!.Permutation!.Features.Select(f => (f.Name, f.Importance)).ToList();
+            method = "permutation";
+        }
+        else if (HasSignal(features?.MutualInfo?.Features.Select(f => (f.Name, f.Mi)), label))
+        {
+            raw = features!.MutualInfo!.Features.Select(f => (f.Name, f.Mi)).ToList();
+            method = "mutual-info";
+        }
+        else if (HasSignal(features?.Anova?.Features.Select(f => (f.Name, f.FStatistic)), label))
+        {
+            raw = features!.Anova!.Features.Select(f => (f.Name, f.FStatistic)).ToList();
+            method = "anova-f";
+        }
+        else if (structural is { Scores.Count: > 0 })
+        {
+            raw = structural.Scores.Select(s => (s.Name, s.Score)).ToList();
+            method = "structural";
+        }
+
+        if (raw == null || raw.Count == 0)
+            return (null, Array.Empty<RankedFeature>());
+
+        var ranking = raw
+            .Where(r => string.IsNullOrEmpty(label) || !string.Equals(r.Name, label, StringComparison.Ordinal))
+            .OrderByDescending(r => r.Score)
+            .Select(r => new RankedFeature(r.Name, Math.Round(r.Score, 4)))
             .ToList();
 
-        var flags = new List<string>();
-        if (importance.ConditionNumber > 1000)
-            flags.Add($"multicollinearity-suspected (condition number {importance.ConditionNumber:F0})");
-        if (importance.LowVarianceCount > 0)
-            flags.Add($"low-variance-features: {importance.LowVarianceCount}");
-        if (importance.HighCorrPairsCount > 0)
-            flags.Add($"high-correlation-pairs: {importance.HighCorrPairsCount}");
+        return (method, ranking);
+    }
 
-        var top = ranking[0].feature;
-        var summary = $"{ranking.Count} feature(s) ranked; top = {top}.";
+    public static AnalyzeEnvelope MapImportance(FeatureReport? features, string? label)
+    {
+        var structural = features?.Importance;
+        var (method, rankedFeatures) = RankImportance(features, label);
+
+        if (method == null)
+            return new AnalyzeEnvelope("importance", true,
+                "No feature importance scores available (requires a label and numeric/categorical features).",
+                new { method = (string?)null, ranking = Array.Empty<object>(), lowVarianceCount = 0, highCorrPairsCount = 0, conditionNumber = 0.0 },
+                Array.Empty<string>());
+
+        var ranking = rankedFeatures
+            .Select(r => new { feature = r.Feature, score = r.Score })
+            .ToList();
+
+        var conditionNumber = structural?.ConditionNumber ?? 0.0;
+        var lowVariance = structural?.LowVarianceCount ?? 0;
+        var highCorrPairs = structural?.HighCorrPairsCount ?? 0;
+
+        var flags = new List<string>();
+        if (conditionNumber > 1000)
+            flags.Add($"multicollinearity-suspected (condition number {conditionNumber:F0})");
+        if (lowVariance > 0)
+            flags.Add($"low-variance-features: {lowVariance}");
+        if (highCorrPairs > 0)
+            flags.Add($"high-correlation-pairs: {highCorrPairs}");
+
+        var top = ranking.Count > 0 ? ranking[0].feature : "(none)";
+        var summary = $"{ranking.Count} feature(s) ranked by {method}; top = {top}.";
 
         return new AnalyzeEnvelope("importance", true, summary, new
         {
+            method,
             ranking,
-            lowVarianceCount = importance.LowVarianceCount,
-            highCorrPairsCount = importance.HighCorrPairsCount,
-            conditionNumber = Math.Round(importance.ConditionNumber, 2)
+            lowVarianceCount = lowVariance,
+            highCorrPairsCount = highCorrPairs,
+            conditionNumber = Math.Round(conditionNumber, 2)
         }, flags);
     }
 
-    public static AnalyzeEnvelope MapDistribution(DescriptiveReport? desc, DistributionReport? dist)
+    /// <summary>
+    /// A "highly-skewed" flag is only actionable for continuous columns. A low-cardinality column
+    /// (e.g. a binary 1/2 rectifier id) has a mathematically-defined skewness that is really just its
+    /// class balance — flagging it as skewed misleads a downstream agent into proposing a meaningless
+    /// transform (F-02, observed in a live agent run). When per-column cardinality is supplied, the
+    /// skew flag is suppressed at/below this distinct-value count.
+    /// </summary>
+    private const int SkewFlagMinCardinality = 3;
+
+    public static AnalyzeEnvelope MapDistribution(
+        DescriptiveReport? desc,
+        DistributionReport? dist,
+        IReadOnlyDictionary<string, (long MissingCount, int UniqueCount)>? stats)
     {
         var skew = new Dictionary<string, (double? Skewness, double? Kurtosis)>();
         if (desc?.Columns != null)
@@ -187,7 +291,10 @@ public static class AnalyzeJson
                 jarqueBeraP = d?.JbPValue,
                 andersonDarlingP = d?.AdPValue
             });
-            if (s.Skewness.HasValue && Math.Abs(s.Skewness.Value) > 1)
+            var lowCardinality = stats != null
+                && stats.TryGetValue(name, out var st)
+                && st.UniqueCount < SkewFlagMinCardinality;
+            if (s.Skewness.HasValue && Math.Abs(s.Skewness.Value) > 1 && !lowCardinality)
                 flags.Add($"highly-skewed: {name} (skew={s.Skewness.Value:F2})");
         }
 
