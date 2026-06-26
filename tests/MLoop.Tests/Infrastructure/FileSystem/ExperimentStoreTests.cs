@@ -121,6 +121,24 @@ public class ExperimentStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_RecordsActualMLoopVersion_NotHardcoded()
+    {
+        // metadata.json must record the real mloop version for reproducibility — it previously
+        // hardcoded "0.2.0", so every experiment claimed a stale version (F-11).
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        var experimentData = CreateExperimentData(experimentId);
+        await _experimentStore.SaveAsync(DefaultModelName, experimentData, CancellationToken.None);
+
+        var metadataPath = Path.Combine(
+            _experimentStore.GetExperimentPath(DefaultModelName, experimentId), "metadata.json");
+        var metadataText = await File.ReadAllTextAsync(metadataPath);
+
+        var expected = MLoop.CLI.Infrastructure.Update.UpdateChecker.GetCurrentVersion();
+        Assert.Contains($"\"{expected}\"", metadataText);
+        Assert.DoesNotContain("\"0.2.0\"", metadataText);
+    }
+
+    [Fact]
     public async Task LoadAsync_ExistingExperiment_ReturnsExperimentData()
     {
         // Arrange

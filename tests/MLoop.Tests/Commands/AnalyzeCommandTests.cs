@@ -295,3 +295,65 @@ public class AnalyzeCommandTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 }
+
+/// <summary>
+/// cwd-dependent resolution tests for `mloop analyze` data-file defaulting (F-03/F-13):
+/// when the data-file argument is omitted, resolve from the project's configured train data.
+/// Mirrors CompareCommandTests' FileSystem collection + cwd setup/restore.
+/// </summary>
+[Collection("FileSystem")]
+public class AnalyzeCommandResolveTests : IDisposable
+{
+    private readonly string _originalDir;
+    private readonly string _projectRoot;
+
+    public AnalyzeCommandResolveTests()
+    {
+        _originalDir = Directory.GetCurrentDirectory();
+        _projectRoot = Path.Combine(Path.GetTempPath(), "mloop-analyze-resolve-" + Guid.NewGuid());
+        Directory.CreateDirectory(Path.Combine(_projectRoot, ".mloop"));
+        Directory.CreateDirectory(Path.Combine(_projectRoot, "datasets"));
+        Directory.SetCurrentDirectory(_projectRoot);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.SetCurrentDirectory(_originalDir); }
+        catch { try { Directory.SetCurrentDirectory(Path.GetTempPath()); } catch { } }
+        try { Directory.Delete(_projectRoot, recursive: true); } catch { }
+    }
+
+    [Fact]
+    public async Task Resolve_OmittedDataFile_ResolvesConfiguredTrainData_AndLabel()
+    {
+        await File.WriteAllTextAsync(
+            Path.Combine(_projectRoot, "mloop.yaml"),
+            "project: t\nmodels:\n  default:\n    task: regression\n    label: y\ndata:\n  train: datasets/train.csv\n  test: datasets/test.csv\n");
+        var trainCsv = Path.Combine(_projectRoot, "datasets", "train.csv");
+        await File.WriteAllTextAsync(trainCsv, "x,y\n1,2\n3,4\n");
+
+        // data-file omitted → defaults to project's data.train; label from mloop.yaml.
+        var ctx = await AnalyzeCommand.ResolveAsync(dataFile: null, labelOption: null, modelName: "default");
+
+        Assert.NotNull(ctx);
+        // Verify defaulting resolved to the project's train data (root form may be canonicalized
+        // by FindRoot — assert the tail + existence rather than an exact-string root match).
+        Assert.True(File.Exists(ctx!.Value.DataFile));
+        Assert.EndsWith("train.csv", ctx.Value.DataFile);
+        Assert.Contains("datasets", ctx.Value.DataFile);
+        Assert.Equal("y", ctx.Value.Label);
+    }
+
+    [Fact]
+    public async Task Resolve_OmittedDataFile_NoTrainData_ReturnsNull()
+    {
+        await File.WriteAllTextAsync(
+            Path.Combine(_projectRoot, "mloop.yaml"),
+            "project: t\nmodels:\n  default:\n    task: regression\n    label: y\n");
+
+        // No configured/discoverable train data → graceful null (caller prints guidance).
+        var ctx = await AnalyzeCommand.ResolveAsync(dataFile: null, labelOption: null, modelName: "default");
+
+        Assert.Null(ctx);
+    }
+}

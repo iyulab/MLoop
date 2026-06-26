@@ -31,6 +31,24 @@ public static class FeatureSelector
         IEnumerable<string> keep, string? label)
         => Drop(columns, KeepComplement(allColumns, keep, label));
 
+    /// <summary>
+    /// Splits requested column names into those present in the data header and those absent
+    /// (case-sensitive, matching train-time ColumnOverride key lookup). Lets
+    /// <c>features select --drop</c> warn on — and skip — columns that don't exist
+    /// (e.g. an agent's hallucinated or typo'd name) instead of silently recording a phantom
+    /// ignore override that never takes effect while the real column stays a feature.
+    /// </summary>
+    public static (IReadOnlyList<string> Known, IReadOnlyList<string> Unknown) PartitionByHeader(
+        IEnumerable<string> requested, IReadOnlyCollection<string> header)
+    {
+        var headerSet = new HashSet<string>(header, StringComparer.Ordinal);
+        var known = new List<string>();
+        var unknown = new List<string>();
+        foreach (var c in requested)
+            (headerSet.Contains(c) ? known : unknown).Add(c);
+        return (known, unknown);
+    }
+
     public static int Reset(Dictionary<string, ColumnOverride> columns)
     {
         var ignored = columns
