@@ -310,11 +310,21 @@ public static class AnalyzeCommand
                 TargetColumn = ctx.Value.Label
             });
 
-            var env = AnalyzeJson.MapImportance(result?.Features?.Importance);
+            var env = AnalyzeJson.MapImportance(result?.Features, ctx.Value.Label);
             Emit(env, json, _ =>
             {
-                if (result?.Features?.Importance != null) InfoPresenter.DisplayFeatureImportance(result.Features.Importance);
-                else AnsiConsole.MarkupLine("[grey]No feature importance scores available.[/]");
+                var (method, ranking) = AnalyzeJson.RankImportance(result?.Features, ctx.Value.Label);
+                if (method == null || ranking.Count == 0)
+                {
+                    AnsiConsole.MarkupLine("[grey]No feature importance scores available.[/]");
+                    return;
+                }
+                var table = new Table().Border(TableBorder.Rounded);
+                table.AddColumn("Feature");
+                table.AddColumn(new TableColumn($"Importance ({method})").RightAligned());
+                foreach (var r in ranking)
+                    table.AddRow(Markup.Escape(r.Feature), r.Score.ToString("F4"));
+                AnsiConsole.Write(table);
             });
             return 0;
         }
@@ -424,7 +434,11 @@ public static class AnalyzeCommand
                 IncludeRegression = false, IncludeClustering = false, IncludePca = false
             });
 
-            var env = AnalyzeJson.MapDistribution(result?.Descriptive, result?.Distribution);
+            // Per-column cardinality (MLoop's own scan, same as `profile`) lets MapDistribution
+            // suppress non-actionable skew flags on low-cardinality/categorical columns (F-02).
+            var (_, stats) = ComputeColumnStats(ctx.Value.DataFile);
+
+            var env = AnalyzeJson.MapDistribution(result?.Descriptive, result?.Distribution, stats);
             Emit(env, json, _ =>
             {
                 if (result?.Descriptive?.Columns is { Count: > 0 }) InfoPresenter.DisplayDescriptiveStatistics(result.Descriptive);
