@@ -93,7 +93,7 @@ The package ID on [NuGet.org](https://www.nuget.org/packages/mloop) is `mloop`. 
 framework-dependent tool, so it reuses your installed .NET runtime — ideal for slim Docker images:
 
 ```dockerfile
-RUN dotnet tool install --global mloop --version 0.16.2
+RUN dotnet tool install --global mloop --version 0.18.0
 ENV PATH="$PATH:/root/.dotnet/tools"
 ```
 
