@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.ML;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
 
@@ -322,26 +323,11 @@ public class ModelRegistry : IModelRegistry
             return resolved;
         }
 
-        var taskDefault = DefaultMetricForTask(task);
+        // Task→primary-metric mapping lives in the shared TaskMetadata source of truth so the
+        // promotion gate evaluates the same metric init writes and AutoML optimizes (TD-06).
+        var taskDefault = TaskMetadata.PrimaryMetric(task);
         return taskDefault != null ? ResolveMetricKey(taskDefault, keys) : null;
     }
-
-    /// <summary>
-    /// The canonical metric a task optimizes when none is explicitly chosen. Mirrors the
-    /// per-task defaults the init template and AutoML use, so the promotion gate evaluates the
-    /// same metric training does. Returns null for tasks without a thresholded primary metric
-    /// (object detection's mAP, and unknown tasks).
-    /// </summary>
-    private static string? DefaultMetricForTask(string? task) => task?.Trim().ToLowerInvariant() switch
-    {
-        "image-classification" => "micro_accuracy",
-        "text-classification" => "micro_accuracy",
-        "multiclass-classification" => "macro_accuracy",
-        "binary-classification" => "accuracy",
-        "regression" => "r_squared",
-        "anomaly-detection" => "auc",
-        _ => null
-    };
 
     /// <summary>Convenience overload resolving against a metrics dictionary's keys.</summary>
     private static string? ResolveMetricKey(string metricName, Dictionary<string, double> metrics)

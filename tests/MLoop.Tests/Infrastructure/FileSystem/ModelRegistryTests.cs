@@ -203,6 +203,27 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task ShouldPromoteAsync_ForecastingAutoMetric_WorseModelRejected()
+    {
+        // TD-06 convergence: before centralizing on TaskMetadata, ModelRegistry.DefaultMetricForTask
+        // returned null for forecasting, so the gate resolved no metricKey and *always* promoted the
+        // new model. Now forecasting resolves its canonical "mae" (an error metric), so a worse model
+        // (higher mae) is correctly rejected — while the metric is threshold-less, so the gate never
+        // falsely blocks (the BUG-46-inverse for the newly-covered tasks).
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001",
+            new Dictionary<string, double> { ["mae"] = 10.0 }, task: "forecasting", metricConfig: "auto");
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
+
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002",
+            new Dictionary<string, double> { ["mae"] = 15.0 }, task: "forecasting", metricConfig: "auto");
+
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName, exp2, "auto", CancellationToken.None);
+
+        Assert.False(result); // worse forecasting model (higher mae) no longer auto-promotes
+    }
+
+    [Fact]
     public async Task AutoPromoteAsync_WhenShouldPromote_PromotesAndReturnsTrue()
     {
         // Arrange
@@ -650,6 +671,23 @@ public class ModelRegistryTests : IDisposable
         // regression default r_squared, but the metrics dict lacks it → null (no false threshold).
         var available = new[] { "mae", "rmse" };
         Assert.Null(ModelRegistry.ResolveCanonicalMetricKey("auto", "regression", available));
+    }
+
+    [Theory]
+    // TD-06: after converging on the shared TaskMetadata source of truth, the gate resolves a
+    // canonical metric for tasks the old DefaultMetricForTask switch left as null (clustering,
+    // forecasting, ranking, recommendation, time-series-anomaly). Blocking is unaffected (these
+    // are error/threshold-less metrics) but production comparison now uses the right metric.
+    [InlineData("forecasting", "mae", "mae")]
+    [InlineData("clustering", "average_distance", "average_distance")]
+    [InlineData("ranking", "ndcg", "ndcg")]
+    [InlineData("recommendation", "rmse", "rmse")]
+    [InlineData("time-series-anomaly", "detection_rate", "detection_rate")]
+    [InlineData("text-classification", "micro_accuracy", "micro_accuracy")]
+    public void ResolveCanonicalMetricKey_ResolvesConvergedTaskMetrics(string task, string availableMetric, string expected)
+    {
+        var available = new[] { availableMetric, "log_loss" };
+        Assert.Equal(expected, ModelRegistry.ResolveCanonicalMetricKey("auto", task, available));
     }
 
     private async Task<string> CreateDummyExperimentAsync(

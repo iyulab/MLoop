@@ -4,6 +4,7 @@ using CsvHelper.Configuration;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.AutoML;
 using MLoop.Core.Preprocessing;
 using Spectre.Console;
@@ -39,17 +40,26 @@ public static class ValidateCommand
         "recommendation"
     };
 
-    private static readonly HashSet<string> ValidMetrics = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> ValidMetrics = BuildValidMetrics();
+
+    private static HashSet<string> BuildValidMetrics()
     {
-        "auto",
-        // user-facing aliases
-        "accuracy", "auc", "f1", "recall", "precision", "log-loss",
-        "r2", "rmse", "mae", "mse", "rSquared",
-        // F-17: canonical metrics that `mloop init` writes and AutoML/promotion gate use
-        // (ModelRegistry.DefaultMetricForTask: multiclass→macro_accuracy, image/text→micro_accuracy,
-        // regression→r_squared). These were flagged "Unknown", so validate contradicted init.
-        "macro_accuracy", "micro_accuracy", "r_squared", "log_loss", "f1_score"
-    };
+        var metrics = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "auto",
+            // user-facing aliases
+            "accuracy", "auc", "f1", "recall", "precision", "log-loss",
+            "r2", "rmse", "mae", "mse", "rSquared",
+            // secondary metrics AutoML emits that users may target (not a task's primary metric)
+            "log_loss", "f1_score"
+        };
+
+        // F-17 root fix: union the canonical per-task primary metrics from the shared
+        // TaskMetadata source of truth, so a newly added task's metric can never again drift
+        // out of this allowlist and be falsely flagged "Unknown" (TD-06).
+        metrics.UnionWith(TaskMetadata.AllPrimaryMetrics);
+        return metrics;
+    }
 
     private static readonly HashSet<string> ValidColumnTypes = new(StringComparer.OrdinalIgnoreCase)
     {
