@@ -291,7 +291,9 @@ public class TrainingEngine : ITrainingEngine
                     Metric = config.Metric,
                     TestSplit = config.TestSplit,
                     InputSchema = inputSchema,
-                    GroupColumn = config.GroupColumn
+                    GroupColumn = config.GroupColumn,
+                    UserColumn = config.UserColumn,
+                    ItemColumn = config.ItemColumn
                 },
                 Result = new ExperimentResult
                 {
@@ -334,7 +336,9 @@ public class TrainingEngine : ITrainingEngine
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.Metric,
                     TestSplit = config.TestSplit,
-                    GroupColumn = config.GroupColumn
+                    GroupColumn = config.GroupColumn,
+                    UserColumn = config.UserColumn,
+                    ItemColumn = config.ItemColumn
                 },
                 Result = new ExperimentResult
                 {

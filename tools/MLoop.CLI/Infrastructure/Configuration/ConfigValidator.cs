@@ -3,32 +3,20 @@ using MLoop.Core.Preprocessing;
 namespace MLoop.CLI.Infrastructure.Configuration;
 
 /// <summary>
-/// Validates MLoop configuration for correctness.
-/// Extracted from ValidateCommand for testability.
+/// Prep-step structural validation, shared by <c>PrepRunCommand</c>.
 /// </summary>
+/// <remarks>
+/// This class once also held a full <c>Validate(MLoopConfig)</c> / <c>ValidateLabelInCsv</c> config
+/// validator "extracted for testability", but the production path (<c>mloop validate</c>) never called
+/// it — <see cref="MLoop.CLI.Commands.ValidateCommand"/> is the live, filesystem-aware validator. The
+/// orphaned copy had drifted (its task list lost the three NLP tasks; its unsupervised set lost
+/// time-series-anomaly) and carried the same F-17/F-19 bugs since fixed in the live path. Its only
+/// unique coverage — required-field checks for forecasting/ranking/recommendation — was ported into
+/// <c>ValidateCommand</c> (F-20), and the dead methods + their tests were removed (Cycle 51). Only the
+/// genuinely live <see cref="ValidatePrepSteps"/> remains here.
+/// </remarks>
 public static class ConfigValidator
 {
-    private static readonly HashSet<string> ValidTaskTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Supervised (AutoML)
-        "regression",
-        "binary-classification",
-        "multiclass-classification",
-        // Unsupervised / Semi-supervised (direct trainer)
-        "anomaly-detection",
-        "clustering",
-        "ranking",
-        // Time Series (Microsoft.ML.TimeSeries)
-        "forecasting",
-        "time-series-anomaly",
-        // Deep Learning (Microsoft.ML.Vision / TorchSharp)
-        "image-classification",
-        "object-detection",
-        "text-classification",
-        // Collaborative Filtering (Microsoft.ML.Recommender)
-        "recommendation"
-    };
-
     private static readonly HashSet<string> ValidPrepStepTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "fill-missing", "fill_missing",
@@ -46,33 +34,6 @@ public static class ConfigValidator
         "resample",
         "sample", "data-sampling", "data_sampling"
     };
-
-    public record ValidationResult(List<string> Errors, List<string> Warnings);
-
-    /// <summary>
-    /// Validates an MLoopConfig and returns all errors and warnings.
-    /// </summary>
-    public static ValidationResult Validate(MLoopConfig config)
-    {
-        var errors = new List<string>();
-        var warnings = new List<string>();
-
-        if (string.IsNullOrWhiteSpace(config.Project))
-            warnings.Add("Project name is not specified");
-
-        if (config.Models == null || config.Models.Count == 0)
-        {
-            errors.Add("No models defined. At least one model is required.");
-            return new ValidationResult(errors, warnings);
-        }
-
-        foreach (var (modelName, modelDef) in config.Models)
-        {
-            ValidateModel(modelName, modelDef, errors, warnings);
-        }
-
-        return new ValidationResult(errors, warnings);
-    }
 
     /// <summary>
     /// Validates a list of prep steps and returns errors.
@@ -175,84 +136,5 @@ public static class ConfigValidator
         }
 
         return errors;
-    }
-
-    /// <summary>
-    /// Validates label columns exist in CSV headers.
-    /// </summary>
-    public static List<string> ValidateLabelInCsv(
-        string[] csvHeaders,
-        Dictionary<string, ModelDefinition> models)
-    {
-        var errors = new List<string>();
-        var headerSet = new HashSet<string>(csvHeaders, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (modelName, modelDef) in models)
-        {
-            if (!string.IsNullOrWhiteSpace(modelDef.Label) && !headerSet.Contains(modelDef.Label))
-            {
-                errors.Add(
-                    $"models.{modelName}.label: Column '{modelDef.Label}' not found in CSV. " +
-                    $"Available: {string.Join(", ", csvHeaders.Take(10))}{(csvHeaders.Length > 10 ? "..." : "")}");
-            }
-        }
-
-        return errors;
-    }
-
-    private static void ValidateModel(
-        string modelName,
-        ModelDefinition model,
-        List<string> errors,
-        List<string> warnings)
-    {
-        if (string.IsNullOrWhiteSpace(model.Task))
-            errors.Add($"models.{modelName}.task: Task type is required");
-        else if (!ValidTaskTypes.Contains(model.Task))
-            errors.Add($"models.{modelName}.task: Invalid task type '{model.Task}'");
-
-        // Label is optional for unsupervised tasks (anomaly-detection, clustering)
-        var unsupervisedTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { "anomaly-detection", "clustering" };
-
-        if (string.IsNullOrWhiteSpace(model.Label))
-        {
-            if (!unsupervisedTasks.Contains(model.Task ?? ""))
-                errors.Add($"models.{modelName}.label: Label column is required");
-            else
-                warnings.Add($"models.{modelName}.label: No label column — evaluation metrics will be limited");
-        }
-
-        // Ranking requires group_column
-        if (model.Task?.Equals("ranking", StringComparison.OrdinalIgnoreCase) == true &&
-            string.IsNullOrWhiteSpace(model.GroupColumn))
-        {
-            errors.Add($"models.{modelName}.group_column: Group column is required for ranking task");
-        }
-
-        // Recommendation requires user_column and item_column
-        if (model.Task?.Equals("recommendation", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            if (string.IsNullOrWhiteSpace(model.UserColumn))
-                errors.Add($"models.{modelName}.user_column: User column is required for recommendation task");
-            if (string.IsNullOrWhiteSpace(model.ItemColumn))
-                errors.Add($"models.{modelName}.item_column: Item column is required for recommendation task");
-        }
-
-        // Forecasting requires horizon
-        if (model.Task?.Equals("forecasting", StringComparison.OrdinalIgnoreCase) == true &&
-            (model.Horizon ?? 0) <= 0)
-        {
-            errors.Add($"models.{modelName}.horizon: Horizon (number of future steps) is required for forecasting task");
-        }
-
-        if (model.Prep is { Count: > 0 })
-        {
-            var prepErrors = ValidatePrepSteps(model.Prep);
-            foreach (var err in prepErrors)
-            {
-                errors.Add($"models.{modelName}.{err}");
-            }
-        }
     }
 }

@@ -386,12 +386,58 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
+    #region HasKeyValues (F-21 — clustering predict crash)
+
+    [Fact]
+    public void HasKeyValues_KeyColumnWithoutAnnotation_ReturnsFalse()
+    {
+        // Clustering's KMeans emits PredictedLabel as a bare key (the cluster id) with no KeyValues
+        // mapping. Applying MapKeyToValue to it throws "Metadata KeyValues does not exist" — the F-21
+        // crash. A key created straight from a [KeyType] field carries no KeyValues annotation.
+        var dv = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new KeyOnlyRow { PredictedLabel = 1 },
+            new KeyOnlyRow { PredictedLabel = 2 }
+        });
+
+        Assert.False(PredictionService.HasKeyValues(dv.Schema["PredictedLabel"]));
+    }
+
+    [Fact]
+    public void HasKeyValues_KeyColumnWithMapping_ReturnsTrue()
+    {
+        // A classification PredictedLabel comes from MapValueToKey, which DOES attach KeyValues so the
+        // ids can be mapped back to the original label strings — MapKeyToValue is valid there.
+        var dv = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new LabelRow { Label = "cat" },
+            new LabelRow { Label = "dog" }
+        });
+        var keyed = _mlContext.Transforms.Conversion
+            .MapValueToKey("PredictedLabel", "Label").Fit(dv).Transform(dv);
+
+        Assert.True(PredictionService.HasKeyValues(keyed.Schema["PredictedLabel"]));
+    }
+
+    #endregion
+
     #region Helper Classes
 
     private class SimpleRegression
     {
         public float X { get; set; }
         public float Y { get; set; }
+    }
+
+    private class KeyOnlyRow
+    {
+        [KeyType(1000)]
+        public uint PredictedLabel { get; set; }
+    }
+
+    private class LabelRow
+    {
+        public string Label { get; set; } = "";
     }
 
     #endregion

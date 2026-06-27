@@ -237,22 +237,49 @@ public static class ValidateCommand
                 $"Invalid task type '{model.Task}'. Valid values: {string.Join(", ", ValidTaskTypes)}"));
         }
 
-        // Validate label
-        if (string.IsNullOrWhiteSpace(model.Label))
+        // Validate label — only for supervised tasks. The unsupervised tasks (anomaly-detection /
+        // clustering / time-series-anomaly) are label-optional: merge/train/init/CsvDataLoader all
+        // accept a missing label (a dummy is loaded), so requiring one here contradicted train (F-19).
+        if (AutoMLRunner.RequiresLabel(model.Task) && string.IsNullOrWhiteSpace(model.Label))
         {
             errors.Add(new ValidationError($"{prefix}.label", "Label column is required"));
+        }
+
+        // Validate task-specific required fields. These are mandatory at train time (AutoMLRunner
+        // throws without them), so validate must catch their absence rather than let `mloop train`
+        // fail later — the same validate↔train parity F-17/F-19 restored. `init` writes defaults for
+        // each (horizon: 10, group_column, user_column/item_column), so a fresh project still passes.
+        var taskName = model.Task?.Trim() ?? "";
+        if (taskName.Equals("forecasting", StringComparison.OrdinalIgnoreCase) && (model.Horizon ?? 0) <= 0)
+        {
+            errors.Add(new ValidationError($"{prefix}.horizon",
+                "Horizon (number of future steps) is required for the forecasting task and must be > 0"));
+        }
+        if (taskName.Equals("ranking", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(model.GroupColumn))
+        {
+            errors.Add(new ValidationError($"{prefix}.group_column",
+                "Group column is required for the ranking task"));
+        }
+        if (taskName.Equals("recommendation", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(model.UserColumn))
+                errors.Add(new ValidationError($"{prefix}.user_column",
+                    "User column is required for the recommendation task"));
+            if (string.IsNullOrWhiteSpace(model.ItemColumn))
+                errors.Add(new ValidationError($"{prefix}.item_column",
+                    "Item column is required for the recommendation task"));
         }
 
         // Validate training settings
         if (model.Training != null)
         {
-            ValidateTrainingSettings($"{prefix}.training", model.Training, errors, warnings);
+            ValidateTrainingSettings($"{prefix}.training", model.Training, model.Task, errors, warnings);
         }
 
         // Validate prep steps
         if (model.Prep is { Count: > 0 })
         {
-            ValidatePrepSteps($"{prefix}.prep", model.Prep, model.Task, errors, warnings);
+            ValidatePrepSteps($"{prefix}.prep", model.Prep, model.Task ?? "", errors, warnings);
         }
 
         // Validate column overrides
@@ -284,6 +311,7 @@ public static class ValidateCommand
     internal static void ValidateTrainingSettings(
         string prefix,
         TrainingSettings training,
+        string? task,
         List<ValidationError> errors,
         List<ValidationWarning> warnings)
     {
@@ -321,6 +349,16 @@ public static class ValidateCommand
             {
                 errors.Add(new ValidationError($"{prefix}.test_split",
                     "Test split must be between 0 and 1 (exclusive)"));
+            }
+            else if (AutoMLRunner.IsTimeSeriesTask(task))
+            {
+                // Time-series tasks (forecasting / time-series-anomaly) ignore test_split: a random
+                // split would break temporal order, so training feeds the full series and holds out
+                // the last `horizon` rows internally. Surface the silent no-op rather than let the
+                // value look effective (the heuristic <0.1 / >0.5 warnings below don't apply).
+                warnings.Add(new ValidationWarning($"{prefix}.test_split",
+                    "test_split is ignored for forecasting / time-series-anomaly tasks — they hold out "
+                    + "the last 'horizon' rows (temporal split) instead, so this value has no effect"));
             }
             else if (training.TestSplit.Value < 0.1)
             {

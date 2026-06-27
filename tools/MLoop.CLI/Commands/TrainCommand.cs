@@ -270,10 +270,10 @@ public static class TrainCommand
             if (!string.IsNullOrEmpty(groupColumn))
                 effectiveDefinition.GroupColumn = groupColumn;
 
-            // Validate required fields (defensive guard for nullable flow analysis)
-            var unsupervisedTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { "anomaly-detection", "clustering" };
-            var requiresLabel = !unsupervisedTasks.Contains(effectiveDefinition.Task ?? "");
+            // Validate required fields (defensive guard for nullable flow analysis).
+            // AutoMLRunner.RequiresLabel is the single source — previously this inline set omitted
+            // time-series-anomaly, so a label-less ts-anomaly project that merge/init accept failed here.
+            var requiresLabel = AutoMLRunner.RequiresLabel(effectiveDefinition.Task);
 
             if (string.IsNullOrEmpty(effectiveDefinition.Task) ||
                 (requiresLabel && string.IsNullOrEmpty(effectiveDefinition.Label)))

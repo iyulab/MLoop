@@ -100,4 +100,46 @@ public class PrepRouterTests
         Assert.Single(result.CsvSteps);
         Assert.Empty(result.Warnings);
     }
+
+    [Theory]
+    [InlineData("forecasting", true)]
+    [InlineData("time-series-anomaly", true)]
+    [InlineData("time_series_anomaly", true)]   // underscore form (init/yaml variants) normalizes too
+    [InlineData("FORECASTING", true)]           // case-insensitive
+    [InlineData("regression", false)]
+    [InlineData("anomaly-detection", false)]    // tabular anomaly is NOT time-series (random split applies)
+    [InlineData("binary-classification", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsTimeSeriesTask_classifies_only_temporal_tasks(string? task, bool expected)
+    {
+        // These tasks ignore config.TestSplit (full-series feed + internal horizon holdout); the
+        // classification must match the isTimeSeriesTask branch in AutoMLRunner.RunAsync exactly.
+        Assert.Equal(expected, AutoMLRunner.IsTimeSeriesTask(task));
+    }
+
+    [Theory]
+    // Unsupervised tasks are label-optional (CsvDataLoader loads a dummy label when absent).
+    [InlineData("anomaly-detection", false)]
+    [InlineData("clustering", false)]
+    [InlineData("time-series-anomaly", false)]
+    [InlineData("time_series_anomaly", false)]   // underscore variant normalizes (was the TrainCommand drift)
+    [InlineData("CLUSTERING", false)]            // case-insensitive
+    // Supervised tasks require a label.
+    [InlineData("regression", true)]
+    [InlineData("binary-classification", true)]
+    [InlineData("multiclass-classification", true)]
+    [InlineData("forecasting", true)]            // forecasting's label IS the series value — required
+    [InlineData("ranking", true)]
+    [InlineData("recommendation", true)]
+    [InlineData("unknown-task", true)]           // conservative default
+    [InlineData("", true)]
+    [InlineData(null, true)]
+    public void RequiresLabel_only_unsupervised_tasks_are_label_optional(string? task, bool expected)
+    {
+        // Single source consumed by ConfigMerger / InitCommand / TrainCommand / ValidateCommand —
+        // previously three inline HashSets that drifted (TrainCommand omitted time-series-anomaly,
+        // validate had no concept and errored "Label required" on a valid unsupervised project).
+        Assert.Equal(expected, AutoMLRunner.RequiresLabel(task));
+    }
 }

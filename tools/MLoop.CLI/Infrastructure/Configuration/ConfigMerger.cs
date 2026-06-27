@@ -1,3 +1,5 @@
+using MLoop.Core.AutoML;
+
 namespace MLoop.CLI.Infrastructure.Configuration;
 
 /// <summary>
@@ -60,13 +62,13 @@ public class ConfigMerger
             ?? baseDefinition?.Task
             ?? throw new InvalidOperationException($"Task not specified for model '{modelName}'. Use --task or define in mloop.yaml");
 
-        // Label is optional for unsupervised tasks
-        var unsupervisedTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { "anomaly-detection", "clustering", "time-series-anomaly" };
+        // Label is optional for unsupervised tasks (AutoMLRunner.RequiresLabel — single source).
         var label = cliLabel
             ?? baseDefinition?.Label
-            ?? (unsupervisedTasks.Contains(task) ? "" : throw new InvalidOperationException(
-                $"Label not specified for model '{modelName}'. Use <label> argument or define in mloop.yaml"));
+            ?? (AutoMLRunner.RequiresLabel(task)
+                ? throw new InvalidOperationException(
+                    $"Label not specified for model '{modelName}'. Use <label> argument or define in mloop.yaml")
+                : "");
 
         var training = MergeTrainingSettings(
             ConfigDefaults.CreateDefaultTrainingSettings(),

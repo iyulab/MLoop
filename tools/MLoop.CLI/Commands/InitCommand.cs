@@ -4,6 +4,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using Spectre.Console;
 
@@ -114,9 +115,8 @@ public static class InitCommand
             }
 
             // For unsupervised tasks, clear default label if user didn't explicitly set one
-            var unsupervisedTasks = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { "anomaly-detection", "clustering", "time-series-anomaly" };
-            if (unsupervisedTasks.Contains(task) && labelColumn == "Label")
+            // (AutoMLRunner.RequiresLabel — single source shared with merge/train/validate).
+            if (!AutoMLRunner.RequiresLabel(task) && labelColumn == "Label")
                 labelColumn = "";
 
             // Resolve project path (allow "." for current directory)

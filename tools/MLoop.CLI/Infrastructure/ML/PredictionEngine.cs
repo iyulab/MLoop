@@ -51,7 +51,8 @@ public class PredictionEngine : IPredictionEngine
         InputSchemaInfo? trainedSchema,
         CategoricalMapper.UnknownValueStrategy strategy,
         CancellationToken cancellationToken = default,
-        string? labelColumnOverride = null)
+        string? labelColumnOverride = null,
+        IEnumerable<string>? preserveColumns = null)
     {
         if (!File.Exists(modelPath))
         {
@@ -231,6 +232,13 @@ public class PredictionEngine : IPredictionEngine
             // CsvDataLoader already sets this but PredictionEngine was missing it.
             columnInference.TextLoaderOptions.AllowQuoting = true;
 
+            // F-23: keep group/user/item columns individually addressable. InferColumns merges
+            // adjacent numeric columns into one Features range, so a ranking model's
+            // MapValueToKey("GroupId", query_id) — or a recommendation model's user/item key maps —
+            // could not find its source column and `mloop predict` threw "Could not find input
+            // column". The training loader already does this via the same shared helper.
+            CsvDataLoader.ApplyColumnPreservation(columnInference, mlnetCompatiblePath, preserveColumns);
+
             var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
             var inputData = textLoader.Load(mlnetCompatiblePath);
 
@@ -262,8 +270,13 @@ public class PredictionEngine : IPredictionEngine
             // ML.NET classification models use MapValueToKey on the label column during training,
             // which outputs numeric Key values (0, 1, 2, ...) in PredictedLabel.
             // MapKeyToValue reverses this mapping to show original class names.
+            // Only classification keys carry a KeyValues mapping back to the original label strings.
+            // Clustering's PredictedLabel is also a key (the cluster id) but has no KeyValues, so
+            // MapKeyToValue would throw "Metadata KeyValues does not exist" — which broke
+            // `mloop predict` for clustering. Guard via the shared PredictionService.HasKeyValues.
             var predictedLabelCol = predictions.Schema.GetColumnOrNull("PredictedLabel");
-            if (predictedLabelCol.HasValue && predictedLabelCol.Value.Type is KeyDataViewType)
+            if (predictedLabelCol.HasValue && predictedLabelCol.Value.Type is KeyDataViewType
+                && MLoop.Core.Prediction.PredictionService.HasKeyValues(predictedLabelCol.Value))
             {
                 var keyToValue = _mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel");
                 predictions = keyToValue.Fit(predictions).Transform(predictions);
