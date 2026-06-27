@@ -234,13 +234,28 @@ public class PredictionService
     internal IDataView RestoreOriginalLabels(IDataView predictions)
     {
         var predictedLabelCol = predictions.Schema.GetColumnOrNull("PredictedLabel");
-        if (predictedLabelCol.HasValue && predictedLabelCol.Value.Type is KeyDataViewType)
+        // Only classification keys carry a KeyValues mapping back to the original label strings.
+        // Clustering's PredictedLabel is also a key (the cluster id 1..k) but has NO KeyValues
+        // annotation — applying MapKeyToValue to it throws "Metadata KeyValues does not exist", which
+        // broke `mloop predict` for clustering. Guard on the annotation actually being present.
+        if (predictedLabelCol.HasValue && predictedLabelCol.Value.Type is KeyDataViewType
+            && HasKeyValues(predictedLabelCol.Value))
         {
             var keyToValue = _mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel");
             predictions = keyToValue.Fit(predictions).Transform(predictions);
         }
         return predictions;
     }
+
+    /// <summary>
+    /// Whether a key-typed column carries a <c>KeyValues</c> annotation (the map from key id back to
+    /// the original value). Classification's PredictedLabel has it; clustering's cluster-id key does
+    /// not, so a MapKeyToValue caller must skip it for the latter (else ML.NET throws
+    /// "Metadata KeyValues does not exist"). Shared by <see cref="RestoreOriginalLabels"/> and the
+    /// CLI's PredictionEngine so the guard cannot drift between the two predict paths.
+    /// </summary>
+    public static bool HasKeyValues(DataViewSchema.Column column)
+        => column.Annotations.Schema.GetColumnOrNull("KeyValues") is not null;
 
     /// <summary>
     /// Eagerly materializes all prediction rows from the IDataView using cursor iteration.

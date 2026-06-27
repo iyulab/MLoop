@@ -179,68 +179,7 @@ public class CsvDataLoader : DataProviderBase
         // columns: a preFeaturizer like NormalizeMinMax requires a numeric input, so forcing
         // String here would break it. Columns already defined individually keep their own
         // inferred kind untouched.
-        if (preserveColumns != null)
-        {
-            var preserveSet = new HashSet<string>(preserveColumns, StringComparer.OrdinalIgnoreCase);
-            preserveSet.RemoveWhere(string.IsNullOrEmpty);
-
-            if (preserveSet.Count > 0)
-            {
-                // Read CSV headers to find column indices
-                var headers = ReadCsvHeaders(mlnetCompatiblePath);
-                var options = columnInference.TextLoaderOptions;
-
-                foreach (var colName in preserveSet)
-                {
-                    var headerIdx = Array.FindIndex(headers, h =>
-                        h.Equals(colName, StringComparison.OrdinalIgnoreCase));
-                    if (headerIdx < 0) continue;
-
-                    if (options.Columns is null) continue;
-
-                    // Check if this column is already defined individually
-                    var existsIndividually = options.Columns.Any(c =>
-                        c.Name.Equals(colName, StringComparison.OrdinalIgnoreCase) &&
-                        c.Source.Length == 1 && c.Source[0].Min == headerIdx && c.Source[0].Max == headerIdx);
-                    if (existsIndividually) continue;
-
-                    // Remove this index from any existing column ranges that include it,
-                    // capturing the DataKind of the merged range so the split-out column
-                    // keeps its original (typically numeric) type rather than defaulting to String.
-                    var splitKind = Microsoft.ML.Data.DataKind.String;
-                    var newColumns = new List<Microsoft.ML.Data.TextLoader.Column>();
-                    foreach (var existingCol in options.Columns)
-                    {
-                        var newSources = new List<Microsoft.ML.Data.TextLoader.Range>();
-                        foreach (var src in existingCol.Source)
-                        {
-                            if (src.Min <= headerIdx && (src.Max ?? src.Min) >= headerIdx)
-                            {
-                                splitKind = existingCol.DataKind;
-                                // Split this range, excluding headerIdx
-                                if (src.Min < headerIdx)
-                                    newSources.Add(new(src.Min, headerIdx - 1));
-                                if ((src.Max ?? src.Min) > headerIdx)
-                                    newSources.Add(new(headerIdx + 1, src.Max ?? headerIdx + 1));
-                            }
-                            else
-                            {
-                                newSources.Add(src);
-                            }
-                        }
-                        if (newSources.Count > 0)
-                        {
-                            existingCol.Source = newSources.ToArray();
-                            newColumns.Add(existingCol);
-                        }
-                    }
-
-                    // Add as individual column, inheriting the merged range's DataKind.
-                    newColumns.Add(new Microsoft.ML.Data.TextLoader.Column(colName, splitKind, headerIdx));
-                    options.Columns = newColumns.ToArray();
-                }
-            }
-        }
+        ApplyColumnPreservation(columnInference, mlnetCompatiblePath, preserveColumns);
 
         // Create text loader with inferred schema
         // Ensure RFC 4180 compliance: handle commas inside quoted fields
@@ -288,6 +227,79 @@ public class CsvDataLoader : DataProviderBase
         var headerLine = reader.ReadLine();
         if (string.IsNullOrEmpty(headerLine)) return [];
         return headerLine.Split(',').Select(h => h.Trim().Trim('"')).ToArray();
+    }
+
+    /// <summary>
+    /// Splits preserved columns (group_column, user_column, item_column, and the statistical-prep
+    /// columns a preFeaturizer references) back out of any merged Features range that
+    /// <c>InferColumns</c> produced, so per-column model transforms can still find them by name —
+    /// e.g. ranking's <c>MapValueToKey("GroupId", group_column)</c> and recommendation's user/item
+    /// key maps. Shared by the training loader (<see cref="LoadData"/>) and the prediction path
+    /// (PredictionEngine) so both keep these columns individually addressable; without it
+    /// <c>mloop predict</c> on a ranking/recommendation model threw "Could not find input column"
+    /// because InferColumns had merged the group/user/item column into the feature vector.
+    /// </summary>
+    public static void ApplyColumnPreservation(
+        ColumnInferenceResults columnInference, string csvPath, IEnumerable<string>? preserveColumns)
+    {
+        if (preserveColumns == null) return;
+        var preserveSet = new HashSet<string>(preserveColumns, StringComparer.OrdinalIgnoreCase);
+        preserveSet.RemoveWhere(string.IsNullOrEmpty);
+        if (preserveSet.Count == 0) return;
+
+        // Read CSV headers to find column indices
+        var headers = ReadCsvHeaders(csvPath);
+        var options = columnInference.TextLoaderOptions;
+
+        foreach (var colName in preserveSet)
+        {
+            var headerIdx = Array.FindIndex(headers, h =>
+                h.Equals(colName, StringComparison.OrdinalIgnoreCase));
+            if (headerIdx < 0) continue;
+
+            if (options.Columns is null) continue;
+
+            // Check if this column is already defined individually
+            var existsIndividually = options.Columns.Any(c =>
+                c.Name.Equals(colName, StringComparison.OrdinalIgnoreCase) &&
+                c.Source.Length == 1 && c.Source[0].Min == headerIdx && c.Source[0].Max == headerIdx);
+            if (existsIndividually) continue;
+
+            // Remove this index from any existing column ranges that include it,
+            // capturing the DataKind of the merged range so the split-out column
+            // keeps its original (typically numeric) type rather than defaulting to String.
+            var splitKind = Microsoft.ML.Data.DataKind.String;
+            var newColumns = new List<Microsoft.ML.Data.TextLoader.Column>();
+            foreach (var existingCol in options.Columns)
+            {
+                var newSources = new List<Microsoft.ML.Data.TextLoader.Range>();
+                foreach (var src in existingCol.Source)
+                {
+                    if (src.Min <= headerIdx && (src.Max ?? src.Min) >= headerIdx)
+                    {
+                        splitKind = existingCol.DataKind;
+                        // Split this range, excluding headerIdx
+                        if (src.Min < headerIdx)
+                            newSources.Add(new(src.Min, headerIdx - 1));
+                        if ((src.Max ?? src.Min) > headerIdx)
+                            newSources.Add(new(headerIdx + 1, src.Max ?? headerIdx + 1));
+                    }
+                    else
+                    {
+                        newSources.Add(src);
+                    }
+                }
+                if (newSources.Count > 0)
+                {
+                    existingCol.Source = newSources.ToArray();
+                    newColumns.Add(existingCol);
+                }
+            }
+
+            // Add as individual column, inheriting the merged range's DataKind.
+            newColumns.Add(new Microsoft.ML.Data.TextLoader.Column(colName, splitKind, headerIdx));
+            options.Columns = newColumns.ToArray();
+        }
     }
 
     /// <summary>

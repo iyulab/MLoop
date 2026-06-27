@@ -52,6 +52,36 @@ public class AutoMLRunner
         };
     }
 
+    /// <summary>
+    /// Single source of truth for whether a task requires a label column. The unsupervised tasks
+    /// (anomaly-detection, clustering, time-series-anomaly) are label-optional: when no label is
+    /// configured, <see cref="Data.CsvDataLoader"/> loads a dummy label and treats every column as
+    /// a feature. This set was duplicated as inline HashSets in <c>ConfigMerger</c>, <c>InitCommand</c>
+    /// and <c>TrainCommand</c> — and had already drifted (TrainCommand omitted time-series-anomaly,
+    /// and ValidateCommand was missing the concept entirely, so it errored "Label required" on a valid
+    /// unsupervised project that <c>train</c> accepts). All four now read this (TD-06-shaped fix).
+    /// Unknown tasks return <c>true</c> (require a label) — the conservative default.
+    /// </summary>
+    public static bool RequiresLabel(string? task)
+    {
+        var normalized = (task ?? string.Empty).ToLowerInvariant().Replace('_', '-');
+        return normalized is not ("anomaly-detection" or "clustering" or "time-series-anomaly");
+    }
+
+    /// <summary>
+    /// Single source of truth for which task types are time-series. These tasks ignore
+    /// <c>config.TestSplit</c> entirely: a random train/test split would break temporal order,
+    /// so <see cref="RunAsync"/> feeds the full dataset and the trainer holds out the last
+    /// <c>horizon</c> rows internally (see the <c>isTimeSeriesTask</c> branch in this file).
+    /// Because the split value is silently inert for these tasks, <c>ValidateCommand</c> reuses
+    /// this to warn the user rather than let test_split look effective.
+    /// </summary>
+    public static bool IsTimeSeriesTask(string? task)
+    {
+        var normalized = (task ?? string.Empty).ToLowerInvariant().Replace('_', '-');
+        return normalized is "forecasting" or "time-series-anomaly";
+    }
+
     public async Task<AutoMLResult> RunAsync(
         TrainingConfig config,
         IProgress<TrainingProgress>? progress = null,
@@ -59,8 +89,7 @@ public class AutoMLRunner
     {
         // Load and split data
         IDataView trainSet, testSet;
-        var isTimeSeriesTask = config.Task.Equals("forecasting", StringComparison.OrdinalIgnoreCase) ||
-                               config.Task.Equals("time-series-anomaly", StringComparison.OrdinalIgnoreCase);
+        var isTimeSeriesTask = IsTimeSeriesTask(config.Task);
 
         // Collect columns that must be preserved as individual columns (not merged into Features vector)
         var preserveColumns = new List<string>();
@@ -813,8 +842,12 @@ public class AutoMLRunner
                 var model = pipeline.Fit(trainSet);
                 var predictions = model.Transform(testSet);
 
-                // Evaluate
-                var clusterMetrics = _mlContext.Clustering.Evaluate(predictions, scoreColumnName: "Score");
+                // Evaluate. featureColumnName is REQUIRED for ML.NET to compute the Davies-Bouldin
+                // Index — without it DBI comes back 0, which made `useDbi` below always false so the
+                // K-search silently fell back to average_distance (monotonically decreasing with K)
+                // and always picked the largest K. Passing "Features" restores real DBI-based K-search.
+                var clusterMetrics = _mlContext.Clustering.Evaluate(
+                    predictions, scoreColumnName: "Score", featureColumnName: "Features");
                 var avgDistance = double.IsNaN(clusterMetrics.AverageDistance) ? double.MaxValue : clusterMetrics.AverageDistance;
                 var dbi = double.IsNaN(clusterMetrics.DaviesBouldinIndex) ? double.MaxValue : clusterMetrics.DaviesBouldinIndex;
                 var nmi = double.IsNaN(clusterMetrics.NormalizedMutualInformation) ? 0 : clusterMetrics.NormalizedMutualInformation;

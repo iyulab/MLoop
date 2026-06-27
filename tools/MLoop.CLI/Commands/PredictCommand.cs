@@ -134,6 +134,9 @@ public static class PredictCommand
             InputSchemaInfo? trainedSchema = null;
             string? configLabelColumn = null;
             string? taskType = null;
+            // F-23: group/user/item columns must stay individually addressable at predict time so the
+            // ranking/recommendation model's key transforms can find them (see ApplyColumnPreservation).
+            List<string>? preserveColumns = null;
 
             if (string.IsNullOrEmpty(modelPath))
             {
@@ -160,6 +163,7 @@ public static class PredictCommand
                     trainedSchema = experimentData?.Config?.InputSchema;
                     configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
                     taskType = experimentData?.Task;
+                    preserveColumns = BuildPreserveColumns(experimentData?.Config);
                 }
                 catch
                 {
@@ -196,6 +200,7 @@ public static class PredictCommand
                             trainedSchema = experimentData?.Config?.InputSchema;
                             configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
                             taskType = experimentData?.Task;
+                            preserveColumns = BuildPreserveColumns(experimentData?.Config);
                             experimentId = possibleExpId;
                         }
                         catch
@@ -429,7 +434,8 @@ public static class PredictCommand
                         trainedSchema,
                         strategy,
                         CancellationToken.None,
-                        configLabelColumn);
+                        configLabelColumn,
+                        preserveColumns);
 
                     ctx.Status("[green]Predictions complete![/]");
                 });
@@ -479,6 +485,22 @@ public static class PredictCommand
             ErrorSuggestions.DisplayError(ex, "prediction");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// Columns the predict-time loader must keep individually addressable (not merged into the
+    /// Features vector) because the trained model's per-column transforms reference them by name —
+    /// the ranking group column and the recommendation user/item columns. Returns null when none
+    /// apply. (F-23.)
+    /// </summary>
+    private static List<string>? BuildPreserveColumns(ExperimentConfig? config)
+    {
+        if (config == null) return null;
+        var cols = new List<string>();
+        if (!string.IsNullOrWhiteSpace(config.GroupColumn)) cols.Add(config.GroupColumn);
+        if (!string.IsNullOrWhiteSpace(config.UserColumn)) cols.Add(config.UserColumn);
+        if (!string.IsNullOrWhiteSpace(config.ItemColumn)) cols.Add(config.ItemColumn);
+        return cols.Count > 0 ? cols : null;
     }
 
     private static void MergeInputWithPredictions(string inputPath, string outputPath, InputSchemaInfo? schema)
