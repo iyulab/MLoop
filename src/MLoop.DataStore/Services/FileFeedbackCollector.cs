@@ -121,7 +121,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         int correctCount = 0;
         foreach (var entry in feedback)
         {
-            if (ValuesMatch(entry.PredictedValue, entry.ActualValue))
+            if (FeedbackValueComparer.ValuesMatch(entry.PredictedValue, entry.ActualValue))
             {
                 correctCount++;
             }
@@ -300,40 +300,6 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         {
             Directory.CreateDirectory(path);
         }
-    }
-
-    private static bool ValuesMatch(object predicted, object actual)
-    {
-        if (predicted == null && actual == null)
-            return true;
-        if (predicted == null || actual == null)
-            return false;
-
-        // Handle JsonElement comparisons
-        if (predicted is JsonElement predictedJson)
-            predicted = GetObjectFromJsonElement(predictedJson);
-        if (actual is JsonElement actualJson)
-            actual = GetObjectFromJsonElement(actualJson);
-
-        // String comparison (case-insensitive for labels)
-        if (predicted is string predictedStr && actual is string actualStr)
-            return string.Equals(predictedStr, actualStr, StringComparison.OrdinalIgnoreCase);
-
-        // Numeric comparison with tolerance
-        if (IsNumeric(predicted) && IsNumeric(actual))
-        {
-            var predictedNum = Convert.ToDouble(predicted);
-            var actualNum = Convert.ToDouble(actual);
-            return Math.Abs(predictedNum - actualNum) < 0.0001;
-        }
-
-        return predicted.Equals(actual);
-    }
-
-    private static bool IsNumeric(object? value)
-    {
-        return value is byte or sbyte or short or ushort or int or uint
-            or long or ulong or float or double or decimal;
     }
 
     private static object GetObjectFromJsonElement(JsonElement element)

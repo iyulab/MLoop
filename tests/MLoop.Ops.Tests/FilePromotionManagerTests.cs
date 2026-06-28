@@ -442,7 +442,8 @@ public class FilePromotionManagerTests : IDisposable
         string experimentId,
         Dictionary<string, double> metrics)
     {
-        var expPath = Path.Combine(_testDir, "models", modelName.ToLowerInvariant(), "experiments", experimentId);
+        // Mirror the real ExperimentStore layout: models/{name}/staging/{expId}/metrics.json.
+        var expPath = Path.Combine(_testDir, "models", modelName.ToLowerInvariant(), "staging", experimentId);
         Directory.CreateDirectory(expPath);
 
         var metricsJson = JsonSerializer.Serialize(metrics);

@@ -130,7 +130,7 @@ COPY mloop.yaml ./
 COPY .mloop/ ./.mloop/
 
 # Install MLoop CLI globally
-RUN dotnet tool install --global mloop --version *
+RUN dotnet tool install --global mloop
 
 # Set PATH to include .NET tools
 ENV PATH=""$PATH:/root/.dotnet/tools""
@@ -151,7 +151,7 @@ RUN apt-get update && \
     rm packages-microsoft-prod.deb && \
     apt-get update && \
     apt-get install -y dotnet-sdk-10.0 && \
-    dotnet tool install --global mloop --version * && \
+    dotnet tool install --global mloop && \
     apt-get clean
 
 ENV PATH=""$PATH:/root/.dotnet/tools""

@@ -190,7 +190,7 @@ public class FileModelComparerTests : IDisposable
     {
         // Arrange
         var modelName = "test-model";
-        var expPath = Path.Combine(_testDir, "models", modelName, "experiments", "exp-001");
+        var expPath = Path.Combine(_testDir, "models", modelName, "staging", "exp-001");
         Directory.CreateDirectory(expPath);
         // No metrics.json file created
 
@@ -204,7 +204,8 @@ public class FileModelComparerTests : IDisposable
         string experimentId,
         Dictionary<string, double> metrics)
     {
-        var expPath = Path.Combine(_testDir, "models", modelName.ToLowerInvariant(), "experiments", experimentId);
+        // Mirror the real ExperimentStore layout: models/{name}/staging/{expId}/metrics.json.
+        var expPath = Path.Combine(_testDir, "models", modelName.ToLowerInvariant(), "staging", experimentId);
         Directory.CreateDirectory(expPath);
 
         var metricsJson = JsonSerializer.Serialize(metrics);

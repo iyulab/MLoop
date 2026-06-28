@@ -367,10 +367,11 @@ public sealed class FilePromotionManager : IPromotionManager
         => Path.Combine(_projectRoot, "models", modelName.ToLowerInvariant());
 
     private string GetExperimentPath(string modelName, string experimentId)
-        => Path.Combine(GetModelPath(modelName), "experiments", experimentId);
+        // Experiments live under "staging" (ExperimentStore's layout), not "experiments" (F-33).
+        => Path.Combine(GetModelPath(modelName), OpsStorage.StagingDirectory, experimentId);
 
     private string GetMetricsPath(string modelName, string experimentId)
-        => Path.Combine(GetExperimentPath(modelName, experimentId), "metrics.json");
+        => Path.Combine(GetExperimentPath(modelName, experimentId), OpsStorage.MetricsFileName);
 
     private string GetHistoryPath(string modelName)
         => Path.Combine(GetModelPath(modelName), "promotion-history.json");

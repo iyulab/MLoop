@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.ML;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
 
@@ -275,7 +276,10 @@ public class ExperimentStore : IExperimentStore
             ExperimentId = experiment.ExperimentId,
             Timestamp = experiment.Timestamp,
             Status = experiment.Status,
-            BestMetric = experiment.Metrics?.Values.FirstOrDefault(),
+            // Canonical primary-metric value (matches MetricName), not the insertion-order-dependent
+            // first dictionary entry — so ranking sorts by the metric the experiment optimized (F-28).
+            BestMetric = TaskMetadata.ResolvePrimaryMetricValue(
+                experiment.Metrics, experiment.Config.Metric, experiment.Task),
             LabelColumn = experiment.Config.LabelColumn,
             BestTrainer = experiment.Result?.BestTrainer,
             MetricName = experiment.Config.Metric,

@@ -165,6 +165,25 @@ public class FileDataSamplerTests : IDisposable
     }
 
     [Fact]
+    public async Task SampleAsync_DuplicateFeedbackForSamePrediction_DoesNotCrash_UsesLatest()
+    {
+        // Feedback can be recorded more than once for the same prediction (RecordFeedbackAsync just
+        // appends — a user correcting a label). Sampling must not crash, and should use the most
+        // recently recorded value (F-34).
+        var id = await CreatePredictionAndGetId("test-model", "predicted");
+        await _feedbackCollector.RecordFeedbackAsync(id, "first");
+        await _feedbackCollector.RecordFeedbackAsync(id, "corrected");
+
+        var outputPath = Path.Combine(_testDir, "output.csv");
+        var result = await _sampler.SampleAsync("test-model", 10, SamplingStrategy.FeedbackPriority, outputPath);
+
+        result.SampledCount.Should().Be(1);
+        var content = await File.ReadAllTextAsync(outputPath);
+        content.Should().Contain("corrected");
+        content.Should().NotContain("first");
+    }
+
+    [Fact]
     public async Task SampleAsync_IncludesActualValueColumn_WhenFeedbackExists()
     {
         // Arrange
