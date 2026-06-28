@@ -103,9 +103,10 @@ public static class CompareCommand
 
                 var resolvedModelName = CommandContext.ResolveModelName(modelName);
                 var summaries = await ctx.ExperimentStore.ListAsync(resolvedModelName, CancellationToken.None);
-                var completedSummaries = summaries
-                    .Where(s => s.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(s => s.BestMetric ?? 0)
+                // F-28: rank best-first by metric direction (not unconditionally descending), so
+                // lower-is-better tasks aren't ordered worst-first.
+                var completedSummaries = ExperimentRanking.OrderByQuality(
+                        summaries.Where(s => s.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)))
                     .ToList();
 
                 if (bestCount.HasValue && bestCount.Value > 0)
@@ -162,11 +163,7 @@ public static class CompareCommand
                 : ModelRegistry.ResolveMetricKey(effectiveSortMetric, allMetricNames);
             if (sortKey != null)
             {
-                var sortLowerBetter = sortKey.Contains("loss", StringComparison.OrdinalIgnoreCase) ||
-                                      sortKey.Contains("error", StringComparison.OrdinalIgnoreCase) ||
-                                      sortKey.Contains("mae", StringComparison.OrdinalIgnoreCase) ||
-                                      sortKey.Contains("mse", StringComparison.OrdinalIgnoreCase) ||
-                                      sortKey.Contains("rmse", StringComparison.OrdinalIgnoreCase);
+                var sortLowerBetter = MLoop.Core.Evaluation.MetricDirection.IsLowerBetter(sortKey);
 
                 experimentsToCompare = experimentsToCompare
                     .OrderBy(e => sortLowerBetter
@@ -229,11 +226,7 @@ public static class CompareCommand
                         .ToList();
 
                     // Find best value (handle both higher-is-better and lower-is-better)
-                    var isLowerBetter = metricName.Contains("Loss", StringComparison.OrdinalIgnoreCase) ||
-                                        metricName.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
-                                        metricName.Contains("MAE", StringComparison.OrdinalIgnoreCase) ||
-                                        metricName.Contains("MSE", StringComparison.OrdinalIgnoreCase) ||
-                                        metricName.Contains("RMSE", StringComparison.OrdinalIgnoreCase);
+                    var isLowerBetter = MLoop.Core.Evaluation.MetricDirection.IsLowerBetter(metricName);
 
                     double? bestValue = null;
                     if (values.Any(v => v.HasValue))
@@ -288,11 +281,7 @@ public static class CompareCommand
                         : null)
                     ?? allMetricNames.First();
 
-                var isLowerBetter = primaryMetric.Contains("loss", StringComparison.OrdinalIgnoreCase) ||
-                                    primaryMetric.Contains("error", StringComparison.OrdinalIgnoreCase) ||
-                                    primaryMetric.Contains("mae", StringComparison.OrdinalIgnoreCase) ||
-                                    primaryMetric.Contains("mse", StringComparison.OrdinalIgnoreCase) ||
-                                    primaryMetric.Contains("rmse", StringComparison.OrdinalIgnoreCase);
+                var isLowerBetter = MLoop.Core.Evaluation.MetricDirection.IsLowerBetter(primaryMetric);
 
                 var rankedExperiments = experimentsToCompare
                     .Where(e => e.Metrics?.ContainsKey(primaryMetric) == true)

@@ -29,7 +29,9 @@ public class EvaluationEngine
         string taskType,
         CancellationToken cancellationToken = default,
         InputSchemaInfo? trainedSchema = null,
-        string? groupColumn = null)
+        string? groupColumn = null,
+        string? userColumn = null,
+        string? itemColumn = null)
     {
         return await Task.Run(() =>
         {
@@ -59,8 +61,17 @@ public class EvaluationEngine
                     return EvaluateMulticlassClassification(dirScored, "Label");
                 }
 
+                // F-26: ranking/recommendation models reference the group/user/item columns
+                // individually (MapValueToKey), so they must stay addressable at evaluate time — the
+                // same preservation the train and predict paths apply (F-23). Without it InferColumns
+                // merges them into the Features range and model.Transform crashes outright.
+                var preserveColumns = new[] { groupColumn, userColumn, itemColumn }
+                    .Where(c => !string.IsNullOrWhiteSpace(c))
+                    .Select(c => c!)
+                    .ToList();
+
                 // Load test data (no label renaming - model pipeline transforms label column)
-                var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, out tempFiles);
+                var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, preserveColumns, out tempFiles);
 
                 // Make predictions on test data
                 // Model pipeline transforms the label column (e.g. MapValueToKey for classification)
@@ -154,7 +165,7 @@ public class EvaluationEngine
         }, cancellationToken);
     }
 
-    private IDataView LoadTestData(string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema, out List<string> tempFiles)
+    private IDataView LoadTestData(string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema, IReadOnlyList<string>? preserveColumns, out List<string> tempFiles)
     {
         // Apply the single shared inference preprocessing sequence (encoding → flatten → index →
         // schema-based exclude / data-dependent fallback). This is the same path predict uses, which
@@ -215,6 +226,11 @@ public class EvaluationEngine
                 }
             }
         }
+
+        // F-26: split the preserved group/user/item columns back out of any merged numeric range so
+        // the model's key transforms can find them individually (mirrors CsvDataLoader at train time
+        // and PredictionEngine at predict time — the shared ApplyColumnPreservation helper from F-23).
+        CsvDataLoader.ApplyColumnPreservation(columnInference, loadPath, preserveColumns);
 
         // Create text loader with inferred schema
         var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
@@ -488,10 +504,13 @@ public class EvaluationEngine
     {
         var metricsDict = new Dictionary<string, double>();
 
-        // ML.NET built-in clustering evaluation
+        // ML.NET built-in clustering evaluation.
+        // F-24: featureColumnName is REQUIRED for ML.NET to compute the Davies-Bouldin Index — without
+        // it DBI comes back 0 (the evaluate-path twin of F-22, fixed identically in AutoMLRunner's
+        // K-search). The clustering pipeline concatenates features into "Features", same as training.
         try
         {
-            var metrics = _mlContext.Clustering.Evaluate(predictions, scoreColumnName: "Score");
+            var metrics = _mlContext.Clustering.Evaluate(predictions, scoreColumnName: "Score", featureColumnName: "Features");
             metricsDict["average_distance"] = double.IsNaN(metrics.AverageDistance) ? 0 : metrics.AverageDistance;
             metricsDict["davies_bouldin_index"] = double.IsNaN(metrics.DaviesBouldinIndex) ? 0 : metrics.DaviesBouldinIndex;
             metricsDict["normalized_mutual_information"] = double.IsNaN(metrics.NormalizedMutualInformation) ? 0 : metrics.NormalizedMutualInformation;

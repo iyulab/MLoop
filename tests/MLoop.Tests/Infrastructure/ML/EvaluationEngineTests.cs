@@ -1,6 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Data;
 
 namespace MLoop.Tests.Infrastructure.ML;
 
@@ -234,6 +235,75 @@ public class EvaluationEngineTests : IDisposable
         Assert.Equal(4, metrics.Count);
     }
 
+    [Fact]
+    public async Task EvaluateAsync_Clustering_ComputesNonZeroDaviesBouldinIndex()
+    {
+        // F-24: EvaluateClustering must pass featureColumnName to Clustering.Evaluate, else ML.NET
+        // cannot compute the Davies-Bouldin Index and reports it as 0 — the exact evaluate-path twin
+        // of F-22 (which fixed the same omission in AutoMLRunner's K-search). Three well-separated
+        // clusters must yield a finite, positive DBI plus the cluster-distribution metrics.
+        var (modelPath, testDataPath) = TrainSimpleClusteringModel();
+
+        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Feature1", "clustering");
+
+        Assert.Contains("davies_bouldin_index", metrics.Keys);
+        Assert.True(metrics["davies_bouldin_index"] > 0,
+            $"DBI must be positive when featureColumnName is supplied; got {metrics["davies_bouldin_index"]}");
+        Assert.Contains("average_distance", metrics.Keys);
+        Assert.Contains("cluster_count", metrics.Keys);
+        Assert.Equal(3, metrics["cluster_count"]);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_Ranking_PreservesGroupColumn_ReturnsNdcg()
+    {
+        // F-26: the evaluate path (LoadTestData) did not apply ApplyColumnPreservation — the F-23 fix
+        // that keeps a ranking model's group column individually addressable so the GroupId key
+        // transform can find it. InferColumns merged the numeric group column into the Features range,
+        // so model.Transform threw "Could not find input column", which EvaluateRanking's catch{}
+        // silently swallowed into an empty metric dict — the silent evaluate twin of F-23.
+        var (modelPath, testDataPath) = TrainSimpleRankingModel();
+
+        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "ranking",
+            groupColumn: "QueryId");
+
+        Assert.NotEmpty(metrics);
+        Assert.Contains("ndcg", metrics.Keys);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_Recommendation_PreservesUserItemColumns_ReturnsMetrics()
+    {
+        // F-26 (user/item half): a recommendation model maps the user and item columns to keys
+        // individually (MapValueToKey), so evaluate must keep them addressable — the same root cause
+        // and fix as the ranking group column. This pins that EvaluateAsync threads user/item through
+        // to ApplyColumnPreservation so MatrixFactorization evaluation works end-to-end.
+        var (modelPath, testDataPath) = TrainSimpleRecommendationModel();
+
+        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Rating", "recommendation",
+            userColumn: "UserId", itemColumn: "ItemId");
+
+        Assert.NotEmpty(metrics);
+        Assert.Contains("rmse", metrics.Keys);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AnomalyDetection_ReturnsCountMetrics()
+    {
+        // Anomaly detection (RandomizedPca, unsupervised) has no group/user/item columns, so it is
+        // immune to the F-26 column-merge crash — this pins that the evaluate path returns its
+        // manual-count metrics (the AnomalyDetection.Evaluate AUC path falls back to counting when the
+        // label isn't a bool, which is the common unsupervised case). Guards the evaluate slice's
+        // last tabular task family against regression.
+        var (modelPath, testDataPath) = TrainSimpleAnomalyModel();
+
+        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "anomaly-detection");
+
+        Assert.NotEmpty(metrics);
+        Assert.Contains("total_count", metrics.Keys);
+        Assert.True(metrics["total_count"] > 0);
+    }
+
     #endregion
 
     #region Helpers
@@ -330,6 +400,156 @@ public class EvaluationEngineTests : IDisposable
         return (modelPath, testPath);
     }
 
+    private (string modelPath, string testDataPath) TrainSimpleClusteringModel()
+    {
+        // Three well-separated 2D clusters so the Davies-Bouldin Index is small but clearly positive.
+        var data = new List<ClusterRow>();
+        var rng = new Random(42);
+        (float X, float Y)[] centers = { (0f, 0f), (10f, 10f), (20f, 0f) };
+        for (int i = 0; i < 60; i++)
+        {
+            var c = centers[i % 3];
+            data.Add(new ClusterRow
+            {
+                Feature1 = c.X + (float)rng.NextDouble(),
+                Feature2 = c.Y + (float)rng.NextDouble(),
+            });
+        }
+
+        var trainData = _mlContext.Data.LoadFromEnumerable(data);
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "Feature1", "Feature2")
+            .Append(_mlContext.Clustering.Trainers.KMeans(featureColumnName: "Features", numberOfClusters: 3));
+
+        var model = pipeline.Fit(trainData);
+
+        var modelPath = Path.Combine(_testDir, "clustering.zip");
+        _mlContext.Model.Save(model, trainData.Schema, modelPath);
+
+        // Test rows span all three clusters (5 per cluster) so PredictedLabel yields cluster_count == 3.
+        var testRows = new List<ClusterRow>();
+        for (int cluster = 0; cluster < 3; cluster++)
+            testRows.AddRange(data.Where((_, idx) => idx % 3 == cluster).Take(5));
+
+        var testPath = CreateBomCsv("clustering_test.csv", BuildCsv(
+            "Feature1,Feature2",
+            testRows.Select(r => $"{r.Feature1},{r.Feature2}")));
+
+        return (modelPath, testPath);
+    }
+
+    private (string modelPath, string testDataPath) TrainSimpleRankingModel()
+    {
+        // Ranking: a numeric query_id (group) + 2 features + a 0-4 relevance label. The group column
+        // is numeric and adjacent to the features, so InferColumns merges it into the Features range
+        // unless preserved — the exact F-23 shape, now on the evaluate path (F-26). We build the model
+        // on data loaded through CsvDataLoader (same InferColumns + group-preservation as evaluate),
+        // so the model's feature columns line up with what EvaluationEngine.LoadTestData produces.
+        var rng = new Random(42);
+        var dataRows = new List<string>();
+        for (int q = 0; q < 12; q++)
+            for (int d = 0; d < 5; d++)
+                dataRows.Add($"{q},{rng.NextDouble():F4},{rng.NextDouble():F4},{rng.Next(0, 5)}");
+
+        var trainCsv = CreateBomCsv("ranking_train.csv", BuildCsv("QueryId,Feature1,Feature2,Label", dataRows));
+
+        var loader = new CsvDataLoader(_mlContext);
+        var trainData = loader.LoadData(trainCsv, "Label", "ranking", new[] { "QueryId" });
+
+        var featureColumns = trainData.Schema
+            .Where(c => !c.IsHidden && c.Name != "QueryId" && c.Name != "Label")
+            .Select(c => c.Name)
+            .ToArray();
+
+        var pipeline = _mlContext.Transforms.Conversion.ConvertType("Label", outputKind: DataKind.Single)
+            .Append(_mlContext.Transforms.Conversion.MapValueToKey("GroupId", "QueryId"))
+            .Append(_mlContext.Transforms.Concatenate("Features", featureColumns))
+            .Append(_mlContext.Ranking.Trainers.FastTree(
+                labelColumnName: "Label", featureColumnName: "Features", rowGroupColumnName: "GroupId"));
+
+        var model = pipeline.Fit(trainData);
+
+        var modelPath = Path.Combine(_testDir, "ranking.zip");
+        _mlContext.Model.Save(model, trainData.Schema, modelPath);
+
+        var testPath = CreateBomCsv("ranking_test.csv", BuildCsv(
+            "QueryId,Feature1,Feature2,Label", dataRows.Take(20)));
+
+        return (modelPath, testPath);
+    }
+
+    private (string modelPath, string testDataPath) TrainSimpleRecommendationModel()
+    {
+        // UserId, ItemId (mapped to keys) + a 1-5 rating. user/item are numeric and adjacent, so
+        // InferColumns merges them into the Features range unless preserved — the user/item half of
+        // F-26. Built on CsvDataLoader-loaded data so the column structure matches evaluate's.
+        var rng = new Random(42);
+        var dataRows = new List<string>();
+        for (int u = 0; u < 15; u++)
+            for (int it = 0; it < 8; it++)
+                dataRows.Add($"{u},{it},{rng.Next(1, 6)}");
+
+        var trainCsv = CreateBomCsv("rec_train.csv", BuildCsv("UserId,ItemId,Rating", dataRows));
+
+        var loader = new CsvDataLoader(_mlContext);
+        var trainData = loader.LoadData(trainCsv, "Rating", "recommendation", new[] { "UserId", "ItemId" });
+
+        var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("UserKey", "UserId")
+            .Append(_mlContext.Transforms.Conversion.MapValueToKey("ItemKey", "ItemId"))
+            .Append(_mlContext.Recommendation().Trainers.MatrixFactorization(
+                labelColumnName: "Rating",
+                matrixColumnIndexColumnName: "UserKey",
+                matrixRowIndexColumnName: "ItemKey",
+                numberOfIterations: 20,
+                approximationRank: 8));
+
+        var model = pipeline.Fit(trainData);
+
+        var modelPath = Path.Combine(_testDir, "recommendation.zip");
+        _mlContext.Model.Save(model, trainData.Schema, modelPath);
+
+        var testPath = CreateBomCsv("rec_test.csv", BuildCsv("UserId,ItemId,Rating", dataRows.Take(30)));
+
+        return (modelPath, testPath);
+    }
+
+    private (string modelPath, string testDataPath) TrainSimpleAnomalyModel()
+    {
+        // Two features with a few obvious outliers + a 0/1 anomaly label. RandomizedPca is
+        // unsupervised (ignores the label at train); evaluate uses PredictedLabel for the count metrics.
+        var rng = new Random(42);
+        var dataRows = new List<string>();
+        for (int i = 0; i < 80; i++)
+        {
+            bool anomaly = i % 10 == 0;
+            var f1 = anomaly ? 50 + rng.NextDouble() * 5 : rng.NextDouble() * 5;
+            var f2 = anomaly ? 50 + rng.NextDouble() * 5 : rng.NextDouble() * 5;
+            dataRows.Add($"{f1:F3},{f2:F3},{(anomaly ? 1 : 0)}");
+        }
+
+        var trainCsv = CreateBomCsv("anomaly_train.csv", BuildCsv("F1,F2,Label", dataRows));
+
+        var loader = new CsvDataLoader(_mlContext);
+        var trainData = loader.LoadData(trainCsv, "Label", "anomaly-detection", null);
+
+        var featureColumns = trainData.Schema
+            .Where(c => !c.IsHidden && c.Name != "Label")
+            .Select(c => c.Name)
+            .ToArray();
+
+        var pipeline = _mlContext.Transforms.Concatenate("Features", featureColumns)
+            .Append(_mlContext.AnomalyDetection.Trainers.RandomizedPca(
+                featureColumnName: "Features", rank: 1, oversampling: 20));
+
+        var model = pipeline.Fit(trainData);
+
+        var modelPath = Path.Combine(_testDir, "anomaly.zip");
+        _mlContext.Model.Save(model, trainData.Schema, modelPath);
+
+        var testPath = CreateBomCsv("anomaly_test.csv", BuildCsv("F1,F2,Label", dataRows.Take(30)));
+
+        return (modelPath, testPath);
+    }
+
     private static string BuildCsv(string header, IEnumerable<string> rows)
     {
         return header + "\n" + string.Join("\n", rows) + "\n";
@@ -373,6 +593,13 @@ public class EvaluationEngineTests : IDisposable
         public float Feature1 { get; set; }
         public string Label { get; set; } = "";
     }
+
+    private sealed class ClusterRow
+    {
+        public float Feature1 { get; set; }
+        public float Feature2 { get; set; }
+    }
+
 
     #endregion
 }

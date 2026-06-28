@@ -689,10 +689,9 @@ app.MapGet("/status", async (
 
             productionDict.TryGetValue(modelName, out var prodModel);
 
-            var bestMetric = modelExps
-                .Where(e => e.BestMetric.HasValue)
-                .OrderByDescending(e => e.BestMetric!.Value)
-                .FirstOrDefault()?.BestMetric;
+            // F-28: honor metric direction so lower-is-better metrics aren't ranked worst-first.
+            var bestMetric = MLoop.CLI.Infrastructure.FileSystem.ExperimentRanking
+                .SelectBest(modelExps)?.BestMetric;
 
             return new
             {
@@ -991,7 +990,8 @@ app.MapPost("/evaluate", async (
 
         var metrics = await evaluationEngine.EvaluateAsync(
             modelPath, testDataPath, labelColumn, taskType, ct,
-            experiment.Config.InputSchema, experiment.Config.GroupColumn);
+            experiment.Config.InputSchema, experiment.Config.GroupColumn,
+            experiment.Config.UserColumn, experiment.Config.ItemColumn);
 
         logger.LogInformation("Evaluation completed in {ElapsedMs}ms with {MetricCount} metrics",
             stopwatch.ElapsedMilliseconds, metrics.Count);

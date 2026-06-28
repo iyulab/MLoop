@@ -249,14 +249,7 @@ public sealed class FileModelComparer : IModelComparer
     }
 
     private static bool IsLowerBetterMetric(string metricName)
-    {
-        var lowerName = metricName.ToLowerInvariant();
-        return lowerName.Contains("error")
-            || lowerName.Contains("loss")
-            || lowerName.Contains("mae")
-            || lowerName.Contains("mse")
-            || lowerName.Contains("rmse");
-    }
+        => MLoop.Core.Evaluation.MetricDirection.IsLowerBetter(metricName);
 
     private string GetModelPath(string modelName)
     {
