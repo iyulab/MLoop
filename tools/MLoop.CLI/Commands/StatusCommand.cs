@@ -1,6 +1,7 @@
 using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -109,10 +110,9 @@ public static class StatusCommand
                     ? $"[green]✓[/] {prodExpId}"
                     : "[grey]-[/]";
 
-                var bestMetric = modelExperiments
-                    .Where(e => e.BestMetric.HasValue)
-                    .OrderByDescending(e => e.BestMetric!.Value)
-                    .FirstOrDefault()?.BestMetric;
+                // F-28: honor metric direction so lower-is-better metrics (clustering/forecasting/
+                // recommendation) don't report the worst experiment as best.
+                var bestMetric = ExperimentRanking.SelectBest(modelExperiments)?.BestMetric;
 
                 var bestMetricStr = bestMetric.HasValue
                     ? $"[yellow]{bestMetric.Value:F4}[/]"

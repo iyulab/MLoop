@@ -240,7 +240,9 @@ public static class EvaluateCommand
                         experimentData.Task,
                         CancellationToken.None,
                         experimentData.Config.InputSchema,
-                        experimentData.Config.GroupColumn);
+                        experimentData.Config.GroupColumn,
+                        experimentData.Config.UserColumn,
+                        experimentData.Config.ItemColumn);
 
                     ctx.Status("[green]Evaluation complete![/]");
                 });
@@ -299,11 +301,7 @@ public static class EvaluateCommand
     }
 
     internal static bool IsLowerBetterMetric(string metricName)
-    {
-        var lower = metricName.ToLower();
-        return lower.Contains("rmse") || lower.Contains("mae") ||
-               lower.Contains("mse") || lower.Contains("loss");
-    }
+        => MLoop.Core.Evaluation.MetricDirection.IsLowerBetter(metricName);
 
     internal static string FormatMetricDifference(string metricName, double difference)
     {
@@ -326,16 +324,25 @@ public static class EvaluateCommand
         Dictionary<string, double> trainingMetrics,
         Dictionary<string, double> testMetrics)
     {
-        if (task == "regression" &&
-            trainingMetrics.ContainsKey("r_squared") && testMetrics.ContainsKey("r_squared"))
+        // F-25: the task is stored as the CLI-canonical string ("binary-classification",
+        // "multiclass-classification", "regression"), and each task's primary metric key differs
+        // (regression=r_squared, binary=accuracy, multiclass=macro_accuracy). The previous code
+        // matched only the literal "classification" with the "accuracy" key, so overfitting
+        // detection was silently dead for every real classification model — doubly so for multiclass
+        // (wrong task string AND wrong metric key). "classification" is kept as a legacy binary alias.
+        var metricKey = task.ToLowerInvariant() switch
         {
-            return Math.Abs(trainingMetrics["r_squared"] - testMetrics["r_squared"]) > OverfittingThreshold;
-        }
+            "regression" => "r_squared",
+            "binary-classification" or "classification" => "accuracy",
+            "multiclass-classification" => "macro_accuracy",
+            _ => null
+        };
 
-        if (task == "classification" &&
-            trainingMetrics.ContainsKey("accuracy") && testMetrics.ContainsKey("accuracy"))
+        if (metricKey != null
+            && trainingMetrics.TryGetValue(metricKey, out var trainValue)
+            && testMetrics.TryGetValue(metricKey, out var testValue))
         {
-            return Math.Abs(trainingMetrics["accuracy"] - testMetrics["accuracy"]) > OverfittingThreshold;
+            return Math.Abs(trainValue - testValue) > OverfittingThreshold;
         }
 
         return false;

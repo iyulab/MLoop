@@ -518,17 +518,7 @@ public class ModelRegistry : IModelRegistry
     }
 
     private static bool IsErrorMetric(string metricName)
-    {
-        var lower = metricName.ToLowerInvariant();
-        return lower.Contains("error") ||
-               lower.Contains("mae") ||
-               lower.Contains("mse") ||
-               lower.Contains("rmse") ||
-               lower.Contains("loss") ||
-               lower == "average_distance" ||
-               lower == "davies_bouldin_index" ||
-               lower == "mape";
-    }
+        => MLoop.Core.Evaluation.MetricDirection.IsLowerBetter(metricName);
 
     /// <summary>
     /// Detects degenerate classification models that achieve high accuracy by only
