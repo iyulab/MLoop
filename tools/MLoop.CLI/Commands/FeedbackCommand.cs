@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text.Json;
+using MLoop.CLI.Infrastructure;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -205,12 +206,7 @@ public static class FeedbackCommand
 
             var collector = new FileFeedbackCollector(projectRoot);
 
-            DateTimeOffset? fromOffset = from.HasValue
-                ? new DateTimeOffset(from.Value, TimeSpan.Zero)
-                : null;
-            DateTimeOffset? toOffset = to.HasValue
-                ? new DateTimeOffset(to.Value.AddDays(1).AddTicks(-1), TimeSpan.Zero)
-                : null;
+            var (fromOffset, toOffset) = DateRangeFilter.ToFilterRange(from, to);
 
             var feedback = await collector.GetFeedbackAsync(
                 modelName.ToLowerInvariant(),
@@ -256,12 +252,7 @@ public static class FeedbackCommand
 
             var collector = new FileFeedbackCollector(projectRoot);
 
-            DateTimeOffset? fromOffset = from.HasValue
-                ? new DateTimeOffset(from.Value, TimeSpan.Zero)
-                : null;
-            DateTimeOffset? toOffset = to.HasValue
-                ? new DateTimeOffset(to.Value.AddDays(1).AddTicks(-1), TimeSpan.Zero)
-                : null;
+            var (fromOffset, toOffset) = DateRangeFilter.ToFilterRange(from, to);
 
             var metrics = await collector.CalculateMetricsAsync(
                 modelName.ToLowerInvariant(),
@@ -349,7 +340,7 @@ public static class FeedbackCommand
         {
             var predictedStr = entry.PredictedValue?.ToString() ?? "-";
             var actualStr = entry.ActualValue?.ToString() ?? "-";
-            var isMatch = ValuesMatch(entry.PredictedValue, entry.ActualValue);
+            var isMatch = FeedbackValueComparer.ValuesMatch(entry.PredictedValue, entry.ActualValue);
             var matchStr = isMatch ? "[green]✓[/]" : "[red]✗[/]";
 
             table.AddRow(
@@ -424,19 +415,5 @@ public static class FeedbackCommand
 
         AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();
-    }
-
-    internal static bool ValuesMatch(object? predicted, object? actual)
-    {
-        if (predicted == null && actual == null)
-            return true;
-        if (predicted == null || actual == null)
-            return false;
-
-        // String comparison (case-insensitive)
-        if (predicted is string predictedStr && actual is string actualStr)
-            return string.Equals(predictedStr, actualStr, StringComparison.OrdinalIgnoreCase);
-
-        return predicted.Equals(actual);
     }
 }

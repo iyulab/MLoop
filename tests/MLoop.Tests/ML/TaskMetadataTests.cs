@@ -65,4 +65,52 @@ public class TaskMetadataTests
         Assert.Contains("ndcg", all);
         Assert.Contains("average_distance", all);
     }
+
+    [Fact]
+    public void ResolvePrimaryMetricValue_PrefersExplicitMetricName()
+    {
+        var metrics = new Dictionary<string, double> { ["rmse"] = 1.2, ["mae"] = 0.8 };
+        Assert.Equal(0.8, TaskMetadata.ResolvePrimaryMetricValue(metrics, "mae", "forecasting"));
+    }
+
+    [Fact]
+    public void ResolvePrimaryMetricValue_FallsBackToTaskCanonical_IgnoringInsertionOrder()
+    {
+        // davies_bouldin_index is first, but clustering's canonical primary is average_distance —
+        // resolution must return the canonical value, not the insertion-order-first one (F-28).
+        var metrics = new Dictionary<string, double>
+        {
+            ["davies_bouldin_index"] = 0.9,
+            ["average_distance"] = 0.3
+        };
+        Assert.Equal(0.3, TaskMetadata.ResolvePrimaryMetricValue(metrics, "auto", "clustering"));
+    }
+
+    [Fact]
+    public void ResolvePrimaryMetricValue_PrimaryDefinedButAbsent_ReturnsZero()
+    {
+        var metrics = new Dictionary<string, double> { ["rmse"] = 0.5 };
+        Assert.Equal(0.0, TaskMetadata.ResolvePrimaryMetricValue(metrics, "nonexistent", "binary-classification"));
+    }
+
+    [Fact]
+    public void ResolvePrimaryMetricValue_NoCanonicalPrimary_ReturnsFirstAvailable()
+    {
+        var metrics = new Dictionary<string, double> { ["mAP"] = 0.42 };
+        Assert.Equal(0.42, TaskMetadata.ResolvePrimaryMetricValue(metrics, "auto", "object-detection"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    public void ResolvePrimaryMetricValue_NullMetrics_ReturnsNull(IReadOnlyDictionary<string, double>? metrics)
+    {
+        Assert.Null(TaskMetadata.ResolvePrimaryMetricValue(metrics, "accuracy", "binary-classification"));
+    }
+
+    [Fact]
+    public void ResolvePrimaryMetricValue_EmptyMetrics_ReturnsNull()
+    {
+        Assert.Null(TaskMetadata.ResolvePrimaryMetricValue(
+            new Dictionary<string, double>(), "accuracy", "binary-classification"));
+    }
 }

@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Text.Json;
+using MLoop.CLI.Infrastructure;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -96,12 +97,7 @@ public static class LogsCommand
             // Create logger and fetch logs
             var logger = new FilePredictionLogger(projectRoot);
 
-            DateTimeOffset? fromOffset = from.HasValue
-                ? new DateTimeOffset(from.Value, TimeSpan.Zero)
-                : null;
-            DateTimeOffset? toOffset = to.HasValue
-                ? new DateTimeOffset(to.Value.AddDays(1).AddTicks(-1), TimeSpan.Zero)
-                : null;
+            var (fromOffset, toOffset) = DateRangeFilter.ToFilterRange(from, to);
 
             var logs = await logger.GetLogsAsync(
                 resolvedModelName,

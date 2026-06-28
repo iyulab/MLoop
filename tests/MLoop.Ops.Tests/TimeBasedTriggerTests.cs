@@ -198,7 +198,8 @@ public class TimeBasedTriggerTests : IDisposable
         DateTime timestamp,
         string status = "Completed")
     {
-        var expPath = Path.Combine(_testDir, "models", modelName.ToLowerInvariant(), "experiments", experimentId);
+        // Mirror the real ExperimentStore layout: models/{name}/staging/{expId}/metadata.json.
+        var expPath = Path.Combine(_testDir, "models", modelName.ToLowerInvariant(), "staging", experimentId);
         Directory.CreateDirectory(expPath);
 
         var metadata = new
@@ -210,6 +211,6 @@ public class TimeBasedTriggerTests : IDisposable
         };
 
         var json = JsonSerializer.Serialize(metadata);
-        await File.WriteAllTextAsync(Path.Combine(expPath, "experiment.json"), json);
+        await File.WriteAllTextAsync(Path.Combine(expPath, "metadata.json"), json);
     }
 }

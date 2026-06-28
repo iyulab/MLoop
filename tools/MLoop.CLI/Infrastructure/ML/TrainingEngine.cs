@@ -554,22 +554,13 @@ public class TrainingEngine : ITrainingEngine
     }
 
     /// <summary>
-    /// Gets the primary metric value from metrics dictionary based on task type
+    /// Gets the primary metric value from a metrics dictionary based on task type. Delegates to
+    /// <see cref="TaskMetadata.ResolvePrimaryMetricValue"/> (the shared metric-value resolver) so
+    /// the probe/main comparison here and the experiment index's BestMetric never diverge; an empty
+    /// dictionary yields 0 to preserve this method's non-nullable contract.
     /// </summary>
     internal static double GetPrimaryMetricValue(Dictionary<string, double> metrics, string metricName, string task)
-    {
-        // Try exact match first
-        if (metrics.TryGetValue(metricName, out var value))
-            return value;
-
-        // Fall back to the task's canonical primary metric (shared TaskMetadata source of
-        // truth — TD-06), defaulting to 0 when that metric is absent. Tasks without a defined
-        // primary metric fall back to the first available metric value.
-        var primary = TaskMetadata.PrimaryMetric(task);
-        return primary != null
-            ? metrics.GetValueOrDefault(primary, 0)
-            : metrics.Values.FirstOrDefault();
-    }
+        => TaskMetadata.ResolvePrimaryMetricValue(metrics, metricName, task) ?? 0;
 
     /// <summary>
     /// Captures input schema with enhanced type detection using actual data values

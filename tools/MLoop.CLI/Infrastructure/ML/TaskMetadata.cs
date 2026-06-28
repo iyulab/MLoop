@@ -52,4 +52,33 @@ public static class TaskMetadata
     /// union this so adding a task can never again leave them out of sync — the F-17 drift.
     /// </summary>
     public static IEnumerable<string> AllPrimaryMetrics => PrimaryMetrics.Values.Distinct();
+
+    /// <summary>
+    /// Resolves "which number is this experiment's score" from a metrics dictionary — the single
+    /// source of truth co-located with the primary-metric <i>names</i> above. Resolution order:
+    /// the explicitly-configured <paramref name="metricName"/> if present, then the task's canonical
+    /// primary metric (0 when that metric is defined for the task but absent from the dictionary —
+    /// a degenerate result), then the first available value for tasks with no defined primary.
+    /// Returns <c>null</c> only when the dictionary is null or empty.
+    /// <para>
+    /// Bypassing this (e.g. <c>Metrics.Values.FirstOrDefault()</c>) makes the reported score depend
+    /// on dictionary insertion order rather than the metric the experiment actually optimized — the
+    /// F-28 residual that left <see cref="MLoop.CLI.Infrastructure.FileSystem.ExperimentSummary.BestMetric"/>
+    /// disagreeing with its own <c>MetricName</c>, so ranking compared apples to oranges.
+    /// </para>
+    /// </summary>
+    public static double? ResolvePrimaryMetricValue(
+        IReadOnlyDictionary<string, double>? metrics, string? metricName, string? task)
+    {
+        if (metrics is null || metrics.Count == 0)
+            return null;
+
+        if (metricName != null && metrics.TryGetValue(metricName, out var configured))
+            return configured;
+
+        var primary = PrimaryMetric(task);
+        return primary != null
+            ? metrics.GetValueOrDefault(primary, 0)
+            : metrics.Values.First();
+    }
 }

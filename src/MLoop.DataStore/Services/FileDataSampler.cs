@@ -42,8 +42,13 @@ public sealed class FileDataSampler : IDataSampler
                 "Log predictions using 'mloop predict --log' first.");
         }
 
-        // Join predictions with feedback
-        var feedbackDict = feedback.ToDictionary(f => f.PredictionId, f => f.ActualValue);
+        // Join predictions with feedback. Feedback can be recorded more than once for the same
+        // prediction (RecordFeedbackAsync appends — e.g. a user correcting a label), so group by
+        // prediction id and keep the most recent value rather than ToDictionary-ing (which threw
+        // "same key already added" and crashed sampling on any duplicate — F-34).
+        var feedbackDict = feedback
+            .GroupBy(f => f.PredictionId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(f => f.Timestamp).Last().ActualValue);
         var joinedData = predictions
             .Select(p => new JoinedSample(
                 p.PredictionId,
@@ -307,9 +312,15 @@ public sealed class FileDataSampler : IDataSampler
                             ? GetObjectFromJson(avEl)
                             : null;
 
+                        var timestamp = root.TryGetProperty("timestamp", out var tsEl)
+                            && tsEl.ValueKind == JsonValueKind.String
+                            && tsEl.TryGetDateTimeOffset(out var ts)
+                            ? ts
+                            : DateTimeOffset.MinValue;
+
                         if (predictionId != null && actualValue != null)
                         {
-                            feedback.Add(new FeedbackRecord(predictionId, actualValue));
+                            feedback.Add(new FeedbackRecord(predictionId, actualValue, timestamp));
                         }
                     }
                     catch (JsonException)
@@ -437,7 +448,7 @@ public sealed class FileDataSampler : IDataSampler
         double? Confidence,
         DateTimeOffset Timestamp);
 
-    private record FeedbackRecord(string PredictionId, object ActualValue);
+    private record FeedbackRecord(string PredictionId, object ActualValue, DateTimeOffset Timestamp);
 
     private record JoinedSample(
         string PredictionId,

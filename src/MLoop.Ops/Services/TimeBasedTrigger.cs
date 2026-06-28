@@ -168,7 +168,9 @@ public sealed class TimeBasedTrigger : IRetrainingTrigger
 
         foreach (var expDir in Directory.GetDirectories(experimentsPath))
         {
-            var metadataPath = Path.Combine(expDir, "experiment.json");
+            // ExperimentStore writes each experiment's metadata to "metadata.json" (not
+            // "experiment.json") — see MLoop.CLI ExperimentStore.MetadataFileName.
+            var metadataPath = Path.Combine(expDir, OpsStorage.MetadataFileName);
 
             if (!File.Exists(metadataPath))
                 continue;
@@ -201,7 +203,10 @@ public sealed class TimeBasedTrigger : IRetrainingTrigger
 
     private string GetExperimentsPath(string modelName)
     {
-        return Path.Combine(_projectRoot, "models", SanitizeModelName(modelName), "experiments");
+        // Experiments live under "staging" (MLOps convention — ExperimentStore.StagingDirectory),
+        // not "experiments". The previous path never existed on a real project, so the time-based
+        // trigger always reported "no training history → retrain" regardless of actual history (F-32).
+        return Path.Combine(_projectRoot, OpsStorage.ModelsDirectory, SanitizeModelName(modelName), OpsStorage.StagingDirectory);
     }
 
     private static string SanitizeModelName(string modelName)

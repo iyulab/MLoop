@@ -141,7 +141,7 @@ public sealed class FileModelComparer : IModelComparer
         string experimentId,
         CancellationToken cancellationToken)
     {
-        var metricsPath = Path.Combine(GetExperimentPath(modelName, experimentId), "metrics.json");
+        var metricsPath = Path.Combine(GetExperimentPath(modelName, experimentId), OpsStorage.MetricsFileName);
 
         if (!File.Exists(metricsPath))
         {
@@ -258,7 +258,10 @@ public sealed class FileModelComparer : IModelComparer
 
     private string GetExperimentsPath(string modelName)
     {
-        return Path.Combine(GetModelPath(modelName), "experiments");
+        // Experiments live under "staging" (the layout ExperimentStore writes), not "experiments" —
+        // the old path never existed on a real project, so model comparison (and the REST /compare
+        // endpoint) failed to find any metrics (F-33).
+        return Path.Combine(GetModelPath(modelName), OpsStorage.StagingDirectory);
     }
 
     private string GetExperimentPath(string modelName, string experimentId)

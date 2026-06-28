@@ -136,6 +136,23 @@ public class FileFeedbackCollectorTests : IDisposable
     }
 
     [Fact]
+    public async Task CalculateMetricsAsync_NumericPrediction_StringActual_CountsAsMatch()
+    {
+        // F-30: numeric prediction output (regression / numeric class label) is logged as a JSON
+        // number, but the CLI actual value is always a string. Accuracy must register the obvious
+        // match (predicted 1 vs actual "1") — it previously reported 0% for all such models.
+        var id1 = await CreatePredictionLog("model", 1);
+        var id2 = await CreatePredictionLog("model", 2);
+        var id3 = await CreatePredictionLog("model", 3);
+        await _collector.RecordFeedbackAsync(id1, "1");  // correct
+        await _collector.RecordFeedbackAsync(id2, "2");  // correct
+        await _collector.RecordFeedbackAsync(id3, "9");  // wrong
+
+        var metrics = await _collector.CalculateMetricsAsync("model");
+        metrics.Accuracy.Should().BeApproximately(2.0 / 3.0, 0.01);
+    }
+
+    [Fact]
     public async Task CalculateMetricsAsync_ReturnsNullAccuracy_WhenNoFeedback()
     {
         // Act
