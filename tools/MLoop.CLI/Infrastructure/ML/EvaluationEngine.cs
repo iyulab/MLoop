@@ -180,33 +180,13 @@ public class EvaluationEngine
             labelColumnName: labelColumn,
             separatorChar: ',');
 
-        // BUG-12: Override column types with trained schema to fix InferColumns misdetection
-        // BUG-18: Skip override for label column — let InferColumns determine its type naturally.
-        if (trainedSchema != null && columnInference.TextLoaderOptions.Columns != null)
-        {
-            var schemaLookup = trainedSchema.Columns.ToDictionary(c => c.Name, c => c.DataType);
-            foreach (var col in columnInference.TextLoaderOptions.Columns)
-            {
-                if (col.Name == labelColumn)
-                    continue;
-
-                if (col.Name != null && schemaLookup.TryGetValue(col.Name, out var expectedType))
-                {
-                    var expectedKind = expectedType switch
-                    {
-                        "Numeric" => DataKind.Single,
-                        "Categorical" => DataKind.String,
-                        "Text" => DataKind.String,
-                        "Boolean" => DataKind.Boolean,
-                        _ => col.DataKind
-                    };
-                    if (col.DataKind != expectedKind)
-                    {
-                        col.DataKind = expectedKind;
-                    }
-                }
-            }
-        }
+        // EVAL-1: shared non-label reconciliation — overrides feature types from the trained schema
+        // (BUG-12, including the "String" raw-type-name case BUG-42 that predict had but evaluate
+        // lacked), enables RFC 4180 quoting (BUG-16, likewise predict-only before), and splits
+        // preserved group/user/item columns out of any merged Features range (F-26, the evaluate twin
+        // of F-23). BUG-18: the label is deliberately left to InferColumns + the task-specific handling
+        // below, so the helper does not touch it.
+        CsvDataLoader.ReconcileInferredSchemaForInference(columnInference, trainedSchema, labelColumn, loadPath, preserveColumns);
 
         // BUG-15/BUG-25b: Multiclass classification — InferColumns may detect label as Boolean
         // when values are 0/1/2 etc. CsvDataLoader converts Boolean→String for multiclass
@@ -226,11 +206,6 @@ public class EvaluationEngine
                 }
             }
         }
-
-        // F-26: split the preserved group/user/item columns back out of any merged numeric range so
-        // the model's key transforms can find them individually (mirrors CsvDataLoader at train time
-        // and PredictionEngine at predict time — the shared ApplyColumnPreservation helper from F-23).
-        CsvDataLoader.ApplyColumnPreservation(columnInference, loadPath, preserveColumns);
 
         // Create text loader with inferred schema
         var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);

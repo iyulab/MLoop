@@ -185,35 +185,33 @@ public class PredictionEngine : IPredictionEngine
                 columnInference.ColumnInformation.TextColumnNames.Remove(labelColumn);
             }
 
-            // BUG-11: Fix column type mismatches between InferColumns and trained model.
-            // InferColumns may misdetect types (e.g. "0" as Boolean instead of Single)
-            // when prediction data has limited/dummy values. Override with trained schema types.
-            if (trainedSchema != null && columnInference.TextLoaderOptions.Columns != null)
+            // EVAL-1: shared non-label reconciliation — overrides feature types from the trained
+            // schema (BUG-11, incl. the "String" raw type name BUG-42), enables RFC 4180 quoting
+            // (BUG-16), and splits preserved group/user/item columns out of any merged Features range
+            // (F-23). The label is reconciled separately below because predict and evaluate handle it
+            // differently — a legitimate divergence the helper deliberately leaves alone.
+            CsvDataLoader.ReconcileInferredSchemaForInference(columnInference, trainedSchema, labelColumn, mlnetCompatiblePath, preserveColumns);
+
+            // BUG-11 (label): predict aligns the label column's type to the trained schema too. The
+            // label value is ignored at predict time, but its type must satisfy the model's input
+            // schema (e.g. MapValueToKey). evaluate deliberately skips this (BUG-18), so the shared
+            // helper leaves the label untouched; predict applies it here via the same type table.
+            if (trainedSchema != null && labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
             {
-                var schemaLookup = trainedSchema.Columns.ToDictionary(c => c.Name, c => c.DataType);
-                foreach (var col in columnInference.TextLoaderOptions.Columns)
+                var labelType = trainedSchema.Columns
+                    .FirstOrDefault(c => c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))?.DataType;
+                if (labelType != null)
                 {
-                    if (col.Name != null && schemaLookup.TryGetValue(col.Name, out var expectedType))
+                    foreach (var col in columnInference.TextLoaderOptions.Columns)
                     {
-                        var expectedKind = expectedType switch
-                        {
-                            "Numeric" => Microsoft.ML.Data.DataKind.Single,
-                            "Categorical" => Microsoft.ML.Data.DataKind.String,
-                            "Text" => Microsoft.ML.Data.DataKind.String,
-                            "String" => Microsoft.ML.Data.DataKind.String, // BUG-42: tolerate raw type name
-                            "Boolean" => Microsoft.ML.Data.DataKind.Boolean,
-                            _ => col.DataKind // keep inferred type for unknown schema types
-                        };
-                        if (col.DataKind != expectedKind)
-                        {
-                            col.DataKind = expectedKind;
-                        }
+                        if (col.Name != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                            col.DataKind = CsvDataLoader.MapTrainedTypeToDataKind(labelType, col.DataKind);
                     }
                 }
             }
 
-            // BUG-15: If label column was inferred as Boolean, convert to String
-            // (same as CsvDataLoader BUG-15 fix) for MapValueToKey compatibility
+            // BUG-15: If the label column is (still) Boolean, convert to String for MapValueToKey
+            // compatibility — same as CsvDataLoader's BUG-15 training fix.
             if (labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
             {
                 foreach (var col in columnInference.TextLoaderOptions.Columns)
@@ -226,18 +224,6 @@ public class PredictionEngine : IPredictionEngine
                     }
                 }
             }
-
-            // BUG-16: Enable RFC 4180 quoting for CSV fields containing commas
-            // (e.g. bbox: "[935.49, 26.14, 123.27, 138.12]", attributes: "{'key': val, ...}")
-            // CsvDataLoader already sets this but PredictionEngine was missing it.
-            columnInference.TextLoaderOptions.AllowQuoting = true;
-
-            // F-23: keep group/user/item columns individually addressable. InferColumns merges
-            // adjacent numeric columns into one Features range, so a ranking model's
-            // MapValueToKey("GroupId", query_id) — or a recommendation model's user/item key maps —
-            // could not find its source column and `mloop predict` threw "Could not find input
-            // column". The training loader already does this via the same shared helper.
-            CsvDataLoader.ApplyColumnPreservation(columnInference, mlnetCompatiblePath, preserveColumns);
 
             var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
             var inputData = textLoader.Load(mlnetCompatiblePath);
