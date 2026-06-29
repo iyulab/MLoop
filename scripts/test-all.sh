@@ -81,10 +81,10 @@ fi
 echo ""
 
 # Run tests
-echo -e "Executing: dotnet test MLoop.sln --configuration Release --verbosity normal $FILTER $COVERAGE_OPT"
+echo -e "Executing: dotnet test MLoop.slnx --configuration Release --verbosity normal $FILTER $COVERAGE_OPT"
 echo ""
 
-eval "dotnet test MLoop.sln --configuration Release --verbosity normal $FILTER $COVERAGE_OPT"
+eval "dotnet test MLoop.slnx --configuration Release --verbosity normal $FILTER $COVERAGE_OPT"
 
 EXIT_CODE=$?
 

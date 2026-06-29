@@ -22,8 +22,7 @@ public class PromoteCommandTests : IDisposable
 
     private FilePromotionManager CreateManager()
     {
-        var comparer = new FileModelComparer(_tempDir);
-        return new FilePromotionManager(_tempDir, comparer);
+        return new FilePromotionManager(_tempDir);
     }
 
     #region RecordPromotionAsync
@@ -118,22 +117,28 @@ public class PromoteCommandTests : IDisposable
     {
         var manager = CreateManager();
 
-        // Set up production with registry
+        // Set up production the way ModelRegistry.PromoteAsync does: a production/ directory
+        // carrying model.zip and its own metadata.json (the authoritative experiment-id source).
+        // The backup must trigger off the directory's presence — driving it from a separate
+        // registry file used to silently skip the backup, risking loss of the previous
+        // production model on the next promote (BUG-48).
         var modelDir = Path.Combine(_tempDir, "models", "default");
         var productionDir = Path.Combine(modelDir, "production");
         Directory.CreateDirectory(productionDir);
         File.WriteAllText(Path.Combine(productionDir, "model.zip"), "model-data");
 
-        // Write registry with production experiment ID
-        var registryPath = Path.Combine(modelDir, "model-registry.json");
-        var registry = new { production = new { experimentId = "exp-001", modelPath = productionDir, promotedAt = DateTimeOffset.UtcNow } };
-        await File.WriteAllTextAsync(registryPath, JsonSerializer.Serialize(registry, new JsonSerializerOptions { WriteIndented = true }));
+        var metadata = new { experimentId = "exp-001", promotedAt = DateTimeOffset.UtcNow };
+        await File.WriteAllTextAsync(
+            Path.Combine(productionDir, "metadata.json"),
+            JsonSerializer.Serialize(metadata, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
 
         var backupPath = await manager.BackupProductionAsync("default");
 
         Assert.NotNull(backupPath);
         Assert.True(Directory.Exists(backupPath));
         Assert.True(File.Exists(Path.Combine(backupPath, "model.zip")));
+        // Labelled with the production experiment id read from metadata.json.
+        Assert.StartsWith("exp-001-", Path.GetFileName(backupPath));
     }
 
     #endregion

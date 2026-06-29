@@ -9,14 +9,15 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// </summary>
 public partial class ModelNameResolver : IModelNameResolver
 {
-    // Shared layout names delegate to the ExperimentLayout authority (F-33 drift guard);
-    // models.json (the model index) and registry.json stay local pending the registry-name
-    // reconciliation (see cycle-90 proposal).
+    // Shared layout names — including the production registry filename — delegate to the
+    // ExperimentLayout authority so this reader cannot drift from ModelRegistry's writer
+    // (the registry-name drift class; cycle-93/95). models.json (the model *index*, distinct from
+    // the per-model registry.json) stays local — it is owned solely by this resolver.
     private const string ModelsDirectory = ExperimentLayout.ModelsDirectory;
     private const string ModelsIndexFileName = "models.json";
     private const string StagingDirectory = ExperimentLayout.StagingDirectory;
     private const string ProductionDirectory = ExperimentLayout.ProductionDirectory;
-    private const string RegistryFileName = "registry.json";
+    private const string RegistryFileName = ExperimentLayout.RegistryFileName;
 
     // Reserved names that cannot be used as model names
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)

@@ -215,8 +215,7 @@ builder.Services.AddSingleton<IPromotionManager>(sp =>
 {
     var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot()
         ?? Directory.GetCurrentDirectory();
-    var comparer = sp.GetRequiredService<IModelComparer>();
-    return new FilePromotionManager(projectRoot, comparer);
+    return new FilePromotionManager(projectRoot);
 });
 builder.Services.AddSingleton<IRetrainingTrigger>(sp =>
 {

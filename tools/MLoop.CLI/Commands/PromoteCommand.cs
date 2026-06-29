@@ -157,8 +157,7 @@ public static class PromoteCommand
             }
 
             // Create promotion manager for backup + history
-            var comparer = new FileModelComparer(projectRoot);
-            var promotionManager = new FilePromotionManager(projectRoot, comparer);
+            var promotionManager = new FilePromotionManager(projectRoot);
 
             // Backup current production before promotion
             string? backupPath = null;

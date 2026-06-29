@@ -21,5 +21,6 @@ public class ExperimentLayoutTests
         Assert.Equal("metrics.json", ExperimentLayout.MetricsFileName);
         Assert.Equal("config.json", ExperimentLayout.ConfigFileName);
         Assert.Equal("experiment-index.json", ExperimentLayout.IndexFileName);
+        Assert.Equal("registry.json", ExperimentLayout.RegistryFileName);
     }
 }

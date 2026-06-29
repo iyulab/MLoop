@@ -11,11 +11,12 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// </summary>
 public class ModelRegistry : IModelRegistry
 {
-    // Layout names delegate to the single ExperimentLayout authority (F-33 drift guard);
-    // registry.json stays local pending the registry-name reconciliation (cycle-90 proposal).
+    // Layout names — including the production registry filename — delegate to the single
+    // ExperimentLayout authority so the writer here cannot drift from ModelNameResolver's reader
+    // (the registry-name drift class; cycle-93/95).
     private const string ModelsDirectory = ExperimentLayout.ModelsDirectory;
     private const string ProductionDirectory = ExperimentLayout.ProductionDirectory;
-    private const string RegistryFileName = "registry.json";
+    private const string RegistryFileName = ExperimentLayout.RegistryFileName;
     private const string ModelFileName = ExperimentLayout.ModelFileName;
     private const string MetadataFileName = ExperimentLayout.MetadataFileName;
 

@@ -76,7 +76,7 @@ if ($Coverage) {
 Write-Host ""
 
 # Run tests
-$testCommand = "dotnet test MLoop.sln --configuration Release --verbosity normal $filter $coverageOption"
+$testCommand = "dotnet test MLoop.slnx --configuration Release --verbosity normal $filter $coverageOption"
 Write-Host "Executing: $testCommand" -ForegroundColor DarkGray
 Write-Host ""
 
