@@ -12,6 +12,7 @@ using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.AutoML;
 using MLoop.Core.Models;
 using MLoop.Core.Data;
+using MLoop.Core.Storage;
 using MLoop.Core.Prediction;
 using MLoop.Core.Preprocessing;
 using MLoop.DataStore.Interfaces;
@@ -733,7 +734,7 @@ public static class PredictCommand
                 // Config is in staging/{experimentId}/config.json
                 var modelBaseDir = Path.GetDirectoryName(Path.GetDirectoryName(modelPath))!; // models/default/
                 var configPath = experimentId != null
-                    ? Path.Combine(modelBaseDir, "staging", experimentId, "config.json")
+                    ? Path.Combine(modelBaseDir, ExperimentLayout.StagingDirectory, experimentId, ExperimentLayout.ConfigFileName)
                     : Path.Combine(Path.GetDirectoryName(modelPath)!, "config.json");
                 string? trainDataPath = null;
                 string? valueColName = null;

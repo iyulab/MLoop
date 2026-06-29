@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MLoop.Core.Storage;
 using MLoop.Ops.Interfaces;
 
 namespace MLoop.Ops.Services;
@@ -108,7 +109,7 @@ public sealed class FilePromotionManager : IPromotionManager
         CancellationToken cancellationToken = default)
     {
         var modelPath = GetModelPath(modelName);
-        var productionPath = Path.Combine(modelPath, "production");
+        var productionPath = Path.Combine(modelPath, ExperimentLayout.ProductionDirectory);
         string? previousExpId = null;
         string? backupPath = null;
 
@@ -178,7 +179,7 @@ public sealed class FilePromotionManager : IPromotionManager
 
         // Promote the target experiment (rollback is essentially re-promoting an older experiment)
         var modelPath = GetModelPath(modelName);
-        var productionPath = Path.Combine(modelPath, "production");
+        var productionPath = Path.Combine(modelPath, ExperimentLayout.ProductionDirectory);
         var targetPath = GetExperimentPath(modelName, targetExpId);
 
         if (!Directory.Exists(targetPath))
@@ -240,7 +241,7 @@ public sealed class FilePromotionManager : IPromotionManager
         CancellationToken cancellationToken = default)
     {
         var modelPath = GetModelPath(modelName);
-        var productionPath = Path.Combine(modelPath, "production");
+        var productionPath = Path.Combine(modelPath, ExperimentLayout.ProductionDirectory);
 
         if (!Directory.Exists(productionPath))
             return null;
@@ -368,10 +369,10 @@ public sealed class FilePromotionManager : IPromotionManager
 
     private string GetExperimentPath(string modelName, string experimentId)
         // Experiments live under "staging" (ExperimentStore's layout), not "experiments" (F-33).
-        => Path.Combine(GetModelPath(modelName), OpsStorage.StagingDirectory, experimentId);
+        => Path.Combine(GetModelPath(modelName), ExperimentLayout.StagingDirectory, experimentId);
 
     private string GetMetricsPath(string modelName, string experimentId)
-        => Path.Combine(GetExperimentPath(modelName, experimentId), OpsStorage.MetricsFileName);
+        => Path.Combine(GetExperimentPath(modelName, experimentId), ExperimentLayout.MetricsFileName);
 
     private string GetHistoryPath(string modelName)
         => Path.Combine(GetModelPath(modelName), "promotion-history.json");

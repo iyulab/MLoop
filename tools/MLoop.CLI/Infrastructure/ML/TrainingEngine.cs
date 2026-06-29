@@ -6,9 +6,11 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.AutoML;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Hooks;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
+using MLoop.Core.Storage;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 
@@ -238,7 +240,7 @@ public class TrainingEngine : ITrainingEngine
             stopwatch.Stop();
 
             // Save model
-            var modelPath = _fileSystem.CombinePath(experimentPath, "model.zip");
+            var modelPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.ModelFileName);
             _mlContext.Model.Save(autoMLResult.Model, null, modelPath);
 
             // Execute PostTrain hooks

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
 
@@ -8,10 +9,13 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// </summary>
 public partial class ModelNameResolver : IModelNameResolver
 {
-    private const string ModelsDirectory = "models";
+    // Shared layout names delegate to the ExperimentLayout authority (F-33 drift guard);
+    // models.json (the model index) and registry.json stay local pending the registry-name
+    // reconciliation (see cycle-90 proposal).
+    private const string ModelsDirectory = ExperimentLayout.ModelsDirectory;
     private const string ModelsIndexFileName = "models.json";
-    private const string StagingDirectory = "staging";
-    private const string ProductionDirectory = "production";
+    private const string StagingDirectory = ExperimentLayout.StagingDirectory;
+    private const string ProductionDirectory = ExperimentLayout.ProductionDirectory;
     private const string RegistryFileName = "registry.json";
 
     // Reserved names that cannot be used as model names

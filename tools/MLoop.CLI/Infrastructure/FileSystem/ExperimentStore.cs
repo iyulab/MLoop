@@ -1,5 +1,6 @@
 using MLoop.CLI.Infrastructure.Configuration;
-using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Evaluation;
+using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
 
@@ -9,12 +10,15 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// </summary>
 public class ExperimentStore : IExperimentStore
 {
-    private const string ModelsDirectory = "models";
-    private const string StagingDirectory = "staging";
-    private const string IndexFileName = "experiment-index.json";
-    private const string MetadataFileName = "metadata.json";
-    private const string MetricsFileName = "metrics.json";
-    private const string ConfigFileName = "config.json";
+    // Layout names delegate to the single ExperimentLayout authority in MLoop.Core so this
+    // writer and the MLoop.Ops readers cannot drift apart (F-33). Local aliases keep call sites
+    // readable; the values have exactly one definition.
+    private const string ModelsDirectory = ExperimentLayout.ModelsDirectory;
+    private const string StagingDirectory = ExperimentLayout.StagingDirectory;
+    private const string IndexFileName = ExperimentLayout.IndexFileName;
+    private const string MetadataFileName = ExperimentLayout.MetadataFileName;
+    private const string MetricsFileName = ExperimentLayout.MetricsFileName;
+    private const string ConfigFileName = ExperimentLayout.ConfigFileName;
 
     private readonly IFileSystemManager _fileSystem;
     private readonly IProjectDiscovery _projectDiscovery;

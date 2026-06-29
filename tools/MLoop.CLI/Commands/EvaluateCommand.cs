@@ -4,6 +4,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
+using MLoop.Core.Storage;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -98,7 +99,7 @@ public static class EvaluateCommand
                 }
 
                 resolvedExperimentId = productionModel.ExperimentId;
-                resolvedModelPath = fileSystem.CombinePath(productionModel.ModelPath, "model.zip");
+                resolvedModelPath = fileSystem.CombinePath(productionModel.ModelPath, ExperimentLayout.ModelFileName);
                 experimentData = await experimentStore.LoadAsync(resolvedModelName, resolvedExperimentId, CancellationToken.None);
 
                 AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
@@ -118,7 +119,7 @@ public static class EvaluateCommand
 
                 experimentData = await experimentStore.LoadAsync(resolvedModelName, resolvedExperimentId, CancellationToken.None);
                 var experimentPath = experimentStore.GetExperimentPath(resolvedModelName, resolvedExperimentId);
-                resolvedModelPath = fileSystem.CombinePath(experimentPath, "model.zip");
+                resolvedModelPath = fileSystem.CombinePath(experimentPath, ExperimentLayout.ModelFileName);
 
                 AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
                 AnsiConsole.MarkupLine($"[green]>[/] Using experiment: [cyan]{resolvedExperimentId}[/]");

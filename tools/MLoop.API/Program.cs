@@ -6,6 +6,7 @@ using MLoop.CLI.Infrastructure;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
+using MLoop.Core.Storage;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using MLoop.Ops.Interfaces;
@@ -307,8 +308,8 @@ app.MapGet("/info", async (
         }
 
         var modelPath = registry.GetProductionPath(modelName);
-        var modelFile = Path.Combine(modelPath, "model.zip");
-        var metadataFile = Path.Combine(modelPath, "metadata.json");
+        var modelFile = Path.Combine(modelPath, ExperimentLayout.ModelFileName);
+        var metadataFile = Path.Combine(modelPath, ExperimentLayout.MetadataFileName);
 
         object? metadata = null;
         if (File.Exists(metadataFile))
@@ -376,7 +377,7 @@ app.MapPost("/predict", async (
             return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first." });
         }
 
-        var modelPath = Path.Combine(registry.GetProductionPath(modelName), "model.zip");
+        var modelPath = Path.Combine(registry.GetProductionPath(modelName), ExperimentLayout.ModelFileName);
 
         if (!File.Exists(modelPath))
         {
@@ -962,12 +963,12 @@ app.MapPost("/evaluate", async (
 
         // Find model file
         var expPath = experimentStore.GetExperimentPath(modelName, experimentId);
-        var modelPath = Path.Combine(expPath, "model.zip");
+        var modelPath = Path.Combine(expPath, ExperimentLayout.ModelFileName);
 
         if (!File.Exists(modelPath))
         {
             // Check production path
-            modelPath = Path.Combine(registry.GetProductionPath(modelName), "model.zip");
+            modelPath = Path.Combine(registry.GetProductionPath(modelName), ExperimentLayout.ModelFileName);
             if (!File.Exists(modelPath))
                 return Results.NotFound(new { error = $"Model file not found for experiment '{experimentId}'." });
         }

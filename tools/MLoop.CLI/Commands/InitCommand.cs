@@ -3,8 +3,9 @@ using System.Reflection;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
-using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.AutoML;
+using MLoop.Core.Evaluation;
+using MLoop.Core.Storage;
 using MLoop.Core.Data;
 using Spectre.Console;
 
@@ -347,9 +348,9 @@ public static class InitCommand
         }
 
         // MLOps convention: models/{modelName}/ folder structure
-        var modelPath = fileSystem.CombinePath(projectPath, "models", modelName);
-        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(modelPath, "staging"));
-        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(modelPath, "production"));
+        var modelPath = fileSystem.CombinePath(projectPath, ExperimentLayout.ModelsDirectory, modelName);
+        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(modelPath, ExperimentLayout.StagingDirectory));
+        await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(modelPath, ExperimentLayout.ProductionDirectory));
 
         // Extensibility: scripts/ folder structure for hooks and metrics
         // Initialize hook directories (pre-train, post-train, pre-predict, post-evaluate)

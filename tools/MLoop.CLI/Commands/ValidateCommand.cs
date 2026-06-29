@@ -4,8 +4,8 @@ using CsvHelper.Configuration;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
-using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.AutoML;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Preprocessing;
 using Spectre.Console;
 

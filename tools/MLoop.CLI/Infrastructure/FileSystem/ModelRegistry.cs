@@ -1,5 +1,6 @@
 using MLoop.CLI.Infrastructure.Configuration;
-using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Evaluation;
+using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
 
@@ -10,11 +11,13 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// </summary>
 public class ModelRegistry : IModelRegistry
 {
-    private const string ModelsDirectory = "models";
-    private const string ProductionDirectory = "production";
+    // Layout names delegate to the single ExperimentLayout authority (F-33 drift guard);
+    // registry.json stays local pending the registry-name reconciliation (cycle-90 proposal).
+    private const string ModelsDirectory = ExperimentLayout.ModelsDirectory;
+    private const string ProductionDirectory = ExperimentLayout.ProductionDirectory;
     private const string RegistryFileName = "registry.json";
-    private const string ModelFileName = "model.zip";
-    private const string MetadataFileName = "metadata.json";
+    private const string ModelFileName = ExperimentLayout.ModelFileName;
+    private const string MetadataFileName = ExperimentLayout.MetadataFileName;
 
     private readonly IFileSystemManager _fileSystem;
     private readonly IProjectDiscovery _projectDiscovery;
@@ -518,7 +521,7 @@ public class ModelRegistry : IModelRegistry
     }
 
     private static bool IsErrorMetric(string metricName)
-        => MLoop.Core.Evaluation.MetricDirection.IsLowerBetter(metricName);
+        => MetricDirection.IsLowerBetter(metricName);
 
     /// <summary>
     /// Detects degenerate classification models that achieve high accuracy by only
