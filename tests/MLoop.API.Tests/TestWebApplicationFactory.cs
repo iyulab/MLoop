@@ -60,8 +60,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
             ReplaceService<IRetrainingTrigger>(services, new TimeBasedTrigger(_testProjectRoot));
             ReplaceService<IPredictionLogger>(services, new FilePredictionLogger(_testProjectRoot));
             ReplaceService<IFeedbackCollector>(services, new FileFeedbackCollector(_testProjectRoot));
-            ReplaceService<IPromotionManager>(services, sp =>
-                new FilePromotionManager(_testProjectRoot, sp.GetRequiredService<IModelComparer>()));
+            ReplaceService<IPromotionManager>(services, new FilePromotionManager(_testProjectRoot));
         });
 
         // Override authentication for tests (no real JWT needed)

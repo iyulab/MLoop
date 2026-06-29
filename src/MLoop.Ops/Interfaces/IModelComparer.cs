@@ -17,22 +17,6 @@ public interface IModelComparer
         string candidateExpId,
         string baselineExpId,
         CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Compares a candidate against the current production model.
-    /// </summary>
-    Task<ComparisonResult> CompareWithProductionAsync(
-        string modelName,
-        string candidateExpId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Finds the best experiment based on specified criteria.
-    /// </summary>
-    Task<string?> FindBestExperimentAsync(
-        string modelName,
-        ComparisonCriteria criteria,
-        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -57,11 +41,3 @@ public record MetricComparison(
     double BaselineValue,
     double Difference,
     bool IsBetter);
-
-/// <summary>
-/// Criteria for model comparison.
-/// </summary>
-public record ComparisonCriteria(
-    string PrimaryMetric,
-    double MinimumImprovement = 0.0,
-    IReadOnlyList<string>? SecondaryMetrics = null);

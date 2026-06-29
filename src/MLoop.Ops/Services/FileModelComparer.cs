@@ -39,104 +39,6 @@ public sealed class FileModelComparer : IModelComparer
         return CompareMetrics(candidateExpId, baselineExpId, candidateMetrics, baselineMetrics);
     }
 
-    /// <inheritdoc/>
-    public async Task<ComparisonResult> CompareWithProductionAsync(
-        string modelName,
-        string candidateExpId,
-        CancellationToken cancellationToken = default)
-    {
-        var productionExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken).ConfigureAwait(false);
-
-        if (string.IsNullOrEmpty(productionExpId))
-        {
-            // No production model - candidate wins by default
-            var candidateMetrics = await LoadMetricsAsync(modelName, candidateExpId, cancellationToken).ConfigureAwait(false);
-            var primaryMetric = candidateMetrics.Keys.FirstOrDefault() ?? "unknown";
-            var candidateScore = candidateMetrics.Values.FirstOrDefault();
-
-            return new ComparisonResult(
-                CandidateExpId: candidateExpId,
-                BaselineExpId: "(none)",
-                CandidateIsBetter: true,
-                CandidateScore: candidateScore,
-                BaselineScore: 0.0,
-                Improvement: double.PositiveInfinity,
-                MetricDetails: candidateMetrics.ToDictionary(
-                    kv => kv.Key,
-                    kv => new MetricComparison(kv.Key, kv.Value, 0.0, kv.Value, true)
-                ),
-                Recommendation: $"Promote {candidateExpId} - no existing production model"
-            );
-        }
-
-        return await CompareAsync(modelName, candidateExpId, productionExpId, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
-    public async Task<string?> FindBestExperimentAsync(
-        string modelName,
-        ComparisonCriteria criteria,
-        CancellationToken cancellationToken = default)
-    {
-        var experimentsPath = GetExperimentsPath(modelName);
-
-        if (!Directory.Exists(experimentsPath))
-        {
-            return null;
-        }
-
-        var experimentDirs = Directory.GetDirectories(experimentsPath);
-        string? bestExpId = null;
-        double bestScore = double.NegativeInfinity;
-
-        foreach (var expDir in experimentDirs)
-        {
-            var expId = Path.GetFileName(expDir);
-
-            try
-            {
-                var metrics = await LoadMetricsAsync(modelName, expId, cancellationToken).ConfigureAwait(false);
-
-                if (metrics.TryGetValue(criteria.PrimaryMetric, out var score))
-                {
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestExpId = expId;
-                    }
-                }
-            }
-            catch
-            {
-                // Skip experiments with missing or invalid metrics
-                continue;
-            }
-        }
-
-        // Apply minimum improvement threshold if we have a current best
-        if (bestExpId != null && criteria.MinimumImprovement > 0)
-        {
-            var productionExpId = await GetProductionExperimentIdAsync(modelName, cancellationToken).ConfigureAwait(false);
-
-            if (!string.IsNullOrEmpty(productionExpId))
-            {
-                var productionMetrics = await LoadMetricsAsync(modelName, productionExpId, cancellationToken).ConfigureAwait(false);
-
-                if (productionMetrics.TryGetValue(criteria.PrimaryMetric, out var productionScore))
-                {
-                    var improvement = (bestScore - productionScore) / Math.Abs(productionScore);
-
-                    if (improvement < criteria.MinimumImprovement)
-                    {
-                        return null; // Best candidate doesn't meet minimum improvement threshold
-                    }
-                }
-            }
-        }
-
-        return bestExpId;
-    }
-
     private async Task<Dictionary<string, double>> LoadMetricsAsync(
         string modelName,
         string experimentId,
@@ -153,34 +55,6 @@ public sealed class FileModelComparer : IModelComparer
         var metrics = JsonSerializer.Deserialize<Dictionary<string, double>>(json, JsonOptions);
 
         return metrics ?? new Dictionary<string, double>();
-    }
-
-    private async Task<string?> GetProductionExperimentIdAsync(
-        string modelName,
-        CancellationToken cancellationToken)
-    {
-        var registryPath = Path.Combine(GetModelPath(modelName), "model-registry.json");
-
-        if (!File.Exists(registryPath))
-        {
-            return null;
-        }
-
-        var json = await File.ReadAllTextAsync(registryPath, cancellationToken).ConfigureAwait(false);
-        var registry = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOptions);
-
-        if (registry == null || !registry.TryGetValue("production", out var productionEntry))
-        {
-            return null;
-        }
-
-        if (productionEntry.ValueKind == JsonValueKind.Object &&
-            productionEntry.TryGetProperty("experimentId", out var expIdElement))
-        {
-            return expIdElement.GetString();
-        }
-
-        return null;
     }
 
     private ComparisonResult CompareMetrics(

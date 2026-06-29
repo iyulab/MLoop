@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **`mloop promote` silently skipped backing up the current production model, risking irrecoverable loss of the previous model (BUG-48)**: the CLI `promote` command (and the REST `/promote` endpoint), when not given `--no-backup`, called `FilePromotionManager.BackupProductionAsync` to preserve the outgoing production model before overwriting it. But that method read the production experiment id from `model-registry.json` — a file written only by `FilePromotionManager.UpdateRegistryAsync`, which was unwired dead code (CLI/REST promote actually persist production state through `ModelRegistry` → `registry.json`). So `model-registry.json` never existed on a real project, the id lookup returned null, and the backup was silently skipped; `ModelRegistry.PromoteAsync` then overwrote `production/` with no backup, permanently losing the prior model. The backup now triggers off the production *directory's* presence (not a registry file) and reads the experiment id from the production model's own `production/metadata.json` (the artifact `ModelRegistry` actually writes on promote), falling back to a timestamp-labelled backup when metadata is absent — so an existing production model is always preserved. The dead promotion/comparison methods that hardcoded `model-registry.json` (`IModelComparer.CompareWithProductionAsync`/`FindBestExperimentAsync`, `IPromotionManager.EvaluatePromotionAsync`/`PromoteAsync`/`RollbackAsync`/`GetHistoryAsync`) are removed; `model-registry.json` no longer appears anywhere in code. Regression tests pin that backup triggers off the production directory and is labelled with the metadata experiment id. Found via the registry-name reconciliation (cycle-93).
+
+### Changed
+- **Single-sourced the production registry filename so the writer and reader cannot drift (cycle-95; no behavior change)**: `ModelRegistry` (writes `registry.json` on promote) and `ModelNameResolver` (reads it back when listing models) each hardcoded `RegistryFileName = "registry.json"` independently — the same writer↔reader filename-drift shape that produced the BUG-48 dead path. Both now delegate to a new `ExperimentLayout.RegistryFileName`, and the stray `model.zip`/`config.json` literals in `PredictCommand` are likewise pointed at the `ExperimentLayout` authority. Closes the registry-name divergence noted in the 0.18.2 layout-consolidation entry.
+
 ## [0.18.2] - 2026-06-29
 
 ### Changed

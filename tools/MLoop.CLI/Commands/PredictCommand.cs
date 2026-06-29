@@ -151,7 +151,7 @@ public static class PredictCommand
                     return 1;
                 }
 
-                resolvedModelPath = fileSystem.CombinePath(productionModel.ModelPath, "model.zip");
+                resolvedModelPath = fileSystem.CombinePath(productionModel.ModelPath, ExperimentLayout.ModelFileName);
                 experimentId = productionModel.ExperimentId;
 
                 AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
@@ -735,7 +735,7 @@ public static class PredictCommand
                 var modelBaseDir = Path.GetDirectoryName(Path.GetDirectoryName(modelPath))!; // models/default/
                 var configPath = experimentId != null
                     ? Path.Combine(modelBaseDir, ExperimentLayout.StagingDirectory, experimentId, ExperimentLayout.ConfigFileName)
-                    : Path.Combine(Path.GetDirectoryName(modelPath)!, "config.json");
+                    : Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.ConfigFileName);
                 string? trainDataPath = null;
                 string? valueColName = null;
 

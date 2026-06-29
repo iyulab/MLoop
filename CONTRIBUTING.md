@@ -108,9 +108,16 @@ dotnet restore
 # Build solution
 dotnet build
 
-# Run tests
-dotnet test
+# Run tests (lightweight — same set CI runs; excludes Slow/LLM/E2E/Database)
+./scripts/test-all.sh --exclude-heavy     # or: ./scripts/test-all.ps1 -ExcludeHeavy
+
+# Run the full suite including heavy/perf tests (timing-based, run locally)
+./scripts/test-all.sh
 ```
+
+> CI runs only the lightweight set (`--filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"`).
+> A plain `dotnet test` runs *everything*, including timing-sensitive `Slow` perf tests that can flake on
+> a busy machine — prefer the `-ExcludeHeavy` fast pass for the CI-equivalent signal.
 
 #### 2. Create Feature Branch
 ```bash

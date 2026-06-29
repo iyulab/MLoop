@@ -41,4 +41,11 @@ public static class ExperimentLayout
 
     /// <summary>Per-model atomic experiment-id counter, sibling of <c>staging/</c>.</summary>
     public const string IndexFileName = "experiment-index.json";
+
+    /// <summary>Per-model production registry (<c>production.experimentId</c> + metrics), sibling of
+    /// <c>staging/</c>. Written by <c>ModelRegistry</c> on promote and read back by
+    /// <c>ModelNameResolver</c> when listing — both must agree on this name, so it lives here rather
+    /// than being hardcoded independently in each (the registry-name drift class that produced the
+    /// obsolete <c>model-registry.json</c> read path; cycle-93/95).</summary>
+    public const string RegistryFileName = "registry.json";
 }

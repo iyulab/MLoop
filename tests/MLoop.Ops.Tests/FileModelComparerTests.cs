@@ -104,88 +104,6 @@ public class FileModelComparerTests : IDisposable
     }
 
     [Fact]
-    public async Task CompareWithProductionAsync_ReturnsWin_WhenNoProductionModel()
-    {
-        // Arrange
-        var modelName = "new-model";
-        await CreateExperimentWithMetrics(modelName, "exp-001", new Dictionary<string, double>
-        {
-            ["Accuracy"] = 0.88
-        });
-
-        // Act
-        var result = await _comparer.CompareWithProductionAsync(modelName, "exp-001");
-
-        // Assert
-        result.CandidateIsBetter.Should().BeTrue();
-        result.BaselineExpId.Should().Be("(none)");
-        result.Recommendation.Should().Contain("no existing production");
-    }
-
-    [Fact]
-    public async Task CompareWithProductionAsync_ComparesAgainstProduction()
-    {
-        // Arrange
-        var modelName = "prod-model";
-        await CreateExperimentWithMetrics(modelName, "exp-001", new Dictionary<string, double>
-        {
-            ["Accuracy"] = 0.85
-        });
-        await CreateExperimentWithMetrics(modelName, "exp-002", new Dictionary<string, double>
-        {
-            ["Accuracy"] = 0.92
-        });
-        await SetProductionExperiment(modelName, "exp-001");
-
-        // Act
-        var result = await _comparer.CompareWithProductionAsync(modelName, "exp-002");
-
-        // Assert
-        result.CandidateIsBetter.Should().BeTrue();
-        result.BaselineExpId.Should().Be("exp-001");
-    }
-
-    [Fact]
-    public async Task FindBestExperimentAsync_ReturnsHighestScoring()
-    {
-        // Arrange
-        var modelName = "test-model";
-        await CreateExperimentWithMetrics(modelName, "exp-001", new Dictionary<string, double>
-        {
-            ["Accuracy"] = 0.85
-        });
-        await CreateExperimentWithMetrics(modelName, "exp-002", new Dictionary<string, double>
-        {
-            ["Accuracy"] = 0.92
-        });
-        await CreateExperimentWithMetrics(modelName, "exp-003", new Dictionary<string, double>
-        {
-            ["Accuracy"] = 0.88
-        });
-
-        var criteria = new Interfaces.ComparisonCriteria("Accuracy");
-
-        // Act
-        var bestExp = await _comparer.FindBestExperimentAsync(modelName, criteria);
-
-        // Assert
-        bestExp.Should().Be("exp-002");
-    }
-
-    [Fact]
-    public async Task FindBestExperimentAsync_ReturnsNull_WhenNoExperiments()
-    {
-        // Arrange
-        var criteria = new Interfaces.ComparisonCriteria("Accuracy");
-
-        // Act
-        var bestExp = await _comparer.FindBestExperimentAsync("nonexistent-model", criteria);
-
-        // Assert
-        bestExp.Should().BeNull();
-    }
-
-    [Fact]
     public async Task CompareAsync_ThrowsFileNotFoundException_WhenMetricsMissing()
     {
         // Arrange
@@ -210,22 +128,5 @@ public class FileModelComparerTests : IDisposable
 
         var metricsJson = JsonSerializer.Serialize(metrics);
         await File.WriteAllTextAsync(Path.Combine(expPath, "metrics.json"), metricsJson);
-    }
-
-    private async Task SetProductionExperiment(string modelName, string experimentId)
-    {
-        var modelPath = Path.Combine(_testDir, "models", modelName.ToLowerInvariant());
-        Directory.CreateDirectory(modelPath);
-
-        var registry = new Dictionary<string, object>
-        {
-            ["production"] = new Dictionary<string, object>
-            {
-                ["experimentId"] = experimentId
-            }
-        };
-
-        var registryJson = JsonSerializer.Serialize(registry);
-        await File.WriteAllTextAsync(Path.Combine(modelPath, "model-registry.json"), registryJson);
     }
 }
