@@ -2,6 +2,7 @@ using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.CLI.Infrastructure.ML;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -160,7 +161,7 @@ public static class CompareCommand
             // so --sort / config metric isn't silently ignored when the alias differs.
             var sortKey = string.IsNullOrEmpty(effectiveSortMetric)
                 ? null
-                : ModelRegistry.ResolveMetricKey(effectiveSortMetric, allMetricNames);
+                : MetricPolicy.ResolveMetricKey(effectiveSortMetric, allMetricNames);
             if (sortKey != null)
             {
                 var sortLowerBetter = MLoop.Core.Evaluation.MetricDirection.IsLowerBetter(sortKey);
@@ -277,7 +278,7 @@ public static class CompareCommand
                         .FirstOrDefault(m => !string.IsNullOrEmpty(m));
 
                 var primaryMetric = (requestedMetric != null
-                        ? ModelRegistry.ResolveMetricKey(requestedMetric, allMetricNames)
+                        ? MetricPolicy.ResolveMetricKey(requestedMetric, allMetricNames)
                         : null)
                     ?? allMetricNames.First();
 
