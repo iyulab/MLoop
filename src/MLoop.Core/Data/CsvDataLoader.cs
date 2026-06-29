@@ -1,6 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
+using MLoop.Core.Models;
 
 namespace MLoop.Core.Data;
 
@@ -228,6 +229,76 @@ public class CsvDataLoader : DataProviderBase
         if (string.IsNullOrEmpty(headerLine)) return [];
         return headerLine.Split(',').Select(h => h.Trim().Trim('"')).ToArray();
     }
+
+    /// <summary>
+    /// EVAL-1: the single inference schema-reconciliation step that predict and evaluate both run
+    /// after <c>InferColumns</c>. It (1) overrides each non-label column's inferred <c>DataKind</c> to
+    /// the type training fitted on — <c>InferColumns</c> can misdetect types when the inference data is
+    /// sparse — including the raw "String" type name (BUG-42); (2) enables RFC 4180 quoting so fields
+    /// containing commas load as one column (BUG-16); and (3) splits preserved group/user/item columns
+    /// out of any merged Features range via <see cref="ApplyColumnPreservation"/> (F-23/F-26).
+    ///
+    /// The label column is intentionally left untouched: predict (dummy-label injection, Boolean→String)
+    /// and evaluate (task-specific multiclass→String / regression→Single / binary string→bool) each
+    /// apply their own label handling afterward. That divergence is legitimate; the non-label
+    /// reconciliation above is what must stay identical, which is why it lives here rather than being
+    /// reimplemented per engine (the root of the BUG-42/BUG-16 drift).
+    /// </summary>
+    public static void ReconcileInferredSchemaForInference(
+        ColumnInferenceResults columnInference,
+        InputSchemaInfo? trainedSchema,
+        string? labelColumn,
+        string csvPath,
+        IEnumerable<string>? preserveColumns)
+    {
+        var options = columnInference.TextLoaderOptions;
+
+        // 1. Override each non-label column's inferred kind with the type training fitted on.
+        //    InferColumns can misdetect types (e.g. "0"/"1" as Boolean) when the inference data is
+        //    sparse. The label is left to the caller's task-specific handling.
+        if (trainedSchema != null && options.Columns != null)
+        {
+            var schemaLookup = trainedSchema.Columns.ToDictionary(c => c.Name, c => c.DataType);
+            foreach (var col in options.Columns)
+            {
+                if (col.Name == null)
+                    continue;
+                if (labelColumn != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (schemaLookup.TryGetValue(col.Name, out var expectedType))
+                {
+                    var expectedKind = MapTrainedTypeToDataKind(expectedType, col.DataKind);
+                    if (col.DataKind != expectedKind)
+                        col.DataKind = expectedKind;
+                }
+            }
+        }
+
+        // 2. BUG-16: enable RFC 4180 quoting so fields containing commas (bbox "[1, 2, 3]", attribute
+        //    dicts) load as a single column rather than splitting the row.
+        options.AllowQuoting = true;
+
+        // 3. F-23/F-26: split preserved group/user/item columns back out of any merged Features range.
+        ApplyColumnPreservation(columnInference, csvPath, preserveColumns);
+    }
+
+    /// <summary>
+    /// Maps a trained-schema <c>DataType</c> name to the <c>TextLoader</c> <see cref="DataKind"/>
+    /// inference must load it as. Shared by the non-label reconciliation in
+    /// <see cref="ReconcileInferredSchemaForInference"/> and predict's label-type alignment so the two
+    /// type tables cannot drift (the predict-only "String" case BUG-42 was exactly such a drift).
+    /// Returns <paramref name="fallback"/> for unknown type names so the inferred kind is kept.
+    /// </summary>
+    public static DataKind MapTrainedTypeToDataKind(string dataType, DataKind fallback) => dataType switch
+    {
+        "Numeric" => DataKind.Single,
+        "Categorical" => DataKind.String,
+        "Text" => DataKind.String,
+        "String" => DataKind.String, // BUG-42: tolerate raw type name
+        "Boolean" => DataKind.Boolean,
+        _ => fallback
+    };
 
     /// <summary>
     /// Splits preserved columns (group_column, user_column, item_column, and the statistical-prep
