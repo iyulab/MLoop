@@ -1028,10 +1028,10 @@ public static class TrainCommand
                 // canonical key first (matches ShouldPromoteAsync), so image tasks show their 1/N
                 // floor instead of a blank (BUG-46).
                 var displayMetricKey = result.Metrics != null
-                    ? ModelRegistry.ResolveCanonicalMetricKey(primaryMetric, trainingConfig.Task, result.Metrics.Keys)
+                    ? MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, trainingConfig.Task, result.Metrics.Keys)
                     : null;
                 var minThreshold = displayMetricKey != null
-                    ? ModelRegistry.GetMinimumMetricThreshold(displayMetricKey, classCount)
+                    ? MetricPolicy.GetMinimumMetricThreshold(displayMetricKey, classCount)
                     : null;
                 TrainPresenter.DisplayPromotionResult(promoted, primaryMetric, result, production, minThreshold);
             }

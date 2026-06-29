@@ -1,5 +1,5 @@
 using MLoop.CLI.Infrastructure.Configuration;
-using MLoop.Core.Evaluation;
+using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
@@ -201,7 +201,7 @@ public class ModelRegistry : IModelRegistry
         // When the project metric is the deferred "auto" (init leaves image/OD tasks as auto),
         // fall back to the task's canonical metric so the gate still engages instead of being
         // silently skipped (BUG-46).
-        var metricKey = ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
+        var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
 
         // Extract class count from schema for dynamic thresholds
         int? classCount = null;
@@ -219,9 +219,9 @@ public class ModelRegistry : IModelRegistry
         // Threshold and error-direction are computed from the RESOLVED canonical key, not the
         // raw user/project metric: "auto" and aliases ("f1", "r2") have no entry in the
         // threshold table, so using the raw value silently skipped the gate (BUG-45/46 root).
-        if (metricKey != null && !IsErrorMetric(metricKey))
+        if (metricKey != null && !MetricPolicy.IsErrorMetric(metricKey))
         {
-            var minThreshold = GetMinimumMetricThreshold(metricKey, classCount);
+            var minThreshold = MetricPolicy.GetMinimumMetricThreshold(metricKey, classCount);
             if (minThreshold.HasValue && experiment.Metrics[metricKey] < minThreshold.Value)
             {
                 return false; // Below minimum viable threshold
@@ -230,7 +230,7 @@ public class ModelRegistry : IModelRegistry
 
         // Degenerate model detection: high accuracy but zero F1
         // This indicates the model only predicts the majority class
-        if (IsClassificationDegenerateModel(experiment.Metrics))
+        if (MetricPolicy.IsClassificationDegenerateModel(experiment.Metrics))
         {
             return false; // Block promotion for degenerate models
         }
@@ -256,86 +256,10 @@ public class ModelRegistry : IModelRegistry
         // For most metrics (accuracy, r_squared, auc, f1), higher is better
         // For error metrics (mae, rmse, mse), lower is better. Use the resolved canonical key
         // so the direction matches the value actually compared (metricKey is non-null here).
-        return IsErrorMetric(metricKey)
+        return MetricPolicy.IsErrorMetric(metricKey)
             ? newMetricValue < currentMetricValue  // Lower error is better
             : newMetricValue > currentMetricValue; // Higher score is better
     }
-
-    /// <summary>
-    /// Resolves a user-facing metric name/alias (e.g. "f1", "r2", "log-loss") to the
-    /// canonical key actually present among <paramref name="availableKeys"/> (e.g.
-    /// "f1_score", "r_squared", "log_loss"). The EvaluationEngine stores canonical keys,
-    /// while the CLI accepts aliases — without this mapping a raw lookup silently misses
-    /// (the root cause of BUG-45's blocked auto-promotion and Compare's ignored --sort).
-    /// Returns the matching canonical key, or null if no known variant is present.
-    /// </summary>
-    public static string? ResolveMetricKey(string metricName, IEnumerable<string> availableKeys)
-    {
-        if (string.IsNullOrWhiteSpace(metricName))
-        {
-            return null;
-        }
-
-        var keys = availableKeys as ICollection<string> ?? availableKeys.ToList();
-
-        // Exact match wins.
-        if (keys.Contains(metricName))
-        {
-            return metricName;
-        }
-
-        var normalized = metricName.Trim().ToLowerInvariant().Replace("-", "_");
-
-        // Map common aliases to their canonical stored keys (most-specific first).
-        var candidates = normalized switch
-        {
-            "f1" or "f1score" => new[] { "f1_score", "macro_f1" },
-            "r2" or "rsquared" => new[] { "r_squared" },
-            "logloss" => new[] { "log_loss" },
-            "accuracy" => new[] { "accuracy", "micro_accuracy", "macro_accuracy" },
-            "area_under_roc_curve" => new[] { "auc" },
-            _ => new[] { normalized }
-        };
-
-        foreach (var candidate in candidates)
-        {
-            if (keys.Contains(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Resolves the canonical metric key for the quality gate, falling back to the task's
-    /// default metric when <paramref name="metricName"/> is the deferred "auto" (or otherwise
-    /// unresolvable). <see cref="ResolveMetricKey"/> handles explicit metrics and aliases;
-    /// this adds task-awareness so directory-based tasks — which init leaves as "auto" — still
-    /// engage the gate instead of silently skipping it (BUG-46). Returns null when neither the
-    /// requested metric nor the task default is present (e.g. object detection's mAP has no
-    /// universal threshold).
-    /// </summary>
-    public static string? ResolveCanonicalMetricKey(string metricName, string? task, IEnumerable<string> availableKeys)
-    {
-        var keys = availableKeys as ICollection<string> ?? availableKeys.ToList();
-
-        var resolved = ResolveMetricKey(metricName, keys);
-        if (resolved != null)
-        {
-            return resolved;
-        }
-
-        // Task→primary-metric mapping lives in the shared TaskMetadata source of truth so the
-        // promotion gate evaluates the same metric init writes and AutoML optimizes (TD-06).
-        var taskDefault = TaskMetadata.PrimaryMetric(task);
-        return taskDefault != null ? ResolveMetricKey(taskDefault, keys) : null;
-    }
-
-    /// <summary>Convenience overload resolving against a metrics dictionary's keys.</summary>
-    private static string? ResolveMetricKey(string metricName, Dictionary<string, double> metrics)
-        => ResolveMetricKey(metricName, metrics.Keys);
 
     /// <inheritdoc />
     public async Task<bool> AutoPromoteAsync(
@@ -492,61 +416,6 @@ public class ModelRegistry : IModelRegistry
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Returns the minimum viable metric threshold for quality gate.
-    /// Models scoring below this threshold are not promoted to production.
-    /// Returns null for metrics without a universal minimum (e.g., error metrics).
-    /// </summary>
-    public static double? GetMinimumMetricThreshold(string metricName, int? classCount = null)
-    {
-        return metricName.ToLowerInvariant() switch
-        {
-            "r_squared" or "r2" => 0.0,                // Must be better than mean prediction
-            "auc" or "area_under_roc_curve" => 0.5,     // Must be better than random
-            "accuracy" or "micro_accuracy" => classCount.HasValue && classCount.Value > 1
-                ? 1.0 / classCount.Value                 // Must be better than random (1/N)
-                : 0.0,
-            "macro_accuracy" => classCount.HasValue && classCount.Value > 1
-                ? 1.0 / classCount.Value                 // Must be better than random (1/N)
-                : 0.0,
-            "f1" or "f1_score" => classCount.HasValue && classCount.Value > 1
-                ? 1.0 / classCount.Value                 // Must be better than random (1/N)
-                : 0.0,
-            "macro_f1" => classCount.HasValue && classCount.Value > 1
-                ? 1.0 / classCount.Value                 // Must be better than random (1/N)
-                : 0.0,
-            _ => null                                    // No threshold for unknown/error metrics
-        };
-    }
-
-    private static bool IsErrorMetric(string metricName)
-        => MetricDirection.IsLowerBetter(metricName);
-
-    /// <summary>
-    /// Detects degenerate classification models that achieve high accuracy by only
-    /// predicting the majority class. Returns true if accuracy > 0.5 but F1 ≈ 0.
-    /// </summary>
-    public static bool IsClassificationDegenerateModel(Dictionary<string, double> metrics)
-    {
-        // Check binary: accuracy > 0.5 but f1_score == 0
-        if (metrics.TryGetValue("f1_score", out var f1) &&
-            metrics.TryGetValue("accuracy", out var acc))
-        {
-            if (acc > 0.5 && f1 < 0.001)
-                return true;
-        }
-
-        // Check multiclass: macro_accuracy > random but macro_f1 == 0
-        if (metrics.TryGetValue("macro_f1", out var macroF1) &&
-            metrics.TryGetValue("macro_accuracy", out var macroAcc))
-        {
-            if (macroAcc > 0.3 && macroF1 < 0.001)
-                return true;
-        }
-
-        return false;
     }
 
     private static string ResolveModelName(string? name)
