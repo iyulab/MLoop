@@ -1,11 +1,13 @@
-using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Evaluation;
 
-namespace MLoop.Tests.ML;
+namespace MLoop.Core.Tests.Evaluation;
 
 /// <summary>
 /// Locks the converged task→primary-metric source of truth (TD-06). Previously this mapping was
 /// duplicated across InitCommand, ModelRegistry, and TrainingEngine and drifted, producing
-/// BUG-46 and F-17. These tests assert the single canonical answer per task.
+/// BUG-46 and F-17. These tests assert the single canonical answer per task. Co-located with
+/// <see cref="MetricDirectionTests"/> in Core now that the metric-name half of metric knowledge
+/// moved to <c>MLoop.Core.Evaluation</c> beside its direction half.
 /// </summary>
 public class TaskMetadataTests
 {

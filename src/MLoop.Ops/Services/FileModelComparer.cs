@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MLoop.Core.Storage;
 using MLoop.Ops.Interfaces;
 
 namespace MLoop.Ops.Services;
@@ -141,7 +142,7 @@ public sealed class FileModelComparer : IModelComparer
         string experimentId,
         CancellationToken cancellationToken)
     {
-        var metricsPath = Path.Combine(GetExperimentPath(modelName, experimentId), OpsStorage.MetricsFileName);
+        var metricsPath = Path.Combine(GetExperimentPath(modelName, experimentId), ExperimentLayout.MetricsFileName);
 
         if (!File.Exists(metricsPath))
         {
@@ -261,7 +262,7 @@ public sealed class FileModelComparer : IModelComparer
         // Experiments live under "staging" (the layout ExperimentStore writes), not "experiments" —
         // the old path never existed on a real project, so model comparison (and the REST /compare
         // endpoint) failed to find any metrics (F-33).
-        return Path.Combine(GetModelPath(modelName), OpsStorage.StagingDirectory);
+        return Path.Combine(GetModelPath(modelName), ExperimentLayout.StagingDirectory);
     }
 
     private string GetExperimentPath(string modelName, string experimentId)

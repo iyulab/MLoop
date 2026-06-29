@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Storage;
 
 namespace MLoop.API.Caching;
 
@@ -40,7 +41,7 @@ internal sealed class ModelCachePreloader : IHostedService
             var trimmed = modelName?.Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(trimmed)) continue;
 
-            var modelPath = Path.Combine(_registry.GetProductionPath(trimmed), "model.zip");
+            var modelPath = Path.Combine(_registry.GetProductionPath(trimmed), ExperimentLayout.ModelFileName);
             if (!File.Exists(modelPath))
             {
                 _logger.LogWarning("Preload: skipping '{ModelName}' — no production model at {Path}",

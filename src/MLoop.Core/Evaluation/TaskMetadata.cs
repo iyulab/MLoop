@@ -1,4 +1,4 @@
-namespace MLoop.CLI.Infrastructure.ML;
+namespace MLoop.Core.Evaluation;
 
 /// <summary>
 /// Single source of truth for per-ML.NET-task metadata. Converges the task→primary-metric
@@ -9,6 +9,12 @@ namespace MLoop.CLI.Infrastructure.ML;
 /// canonical metric, so the promotion gate silently skipped) and F-17 (validate's allowlist
 /// fell out of sync and flagged init's own metrics as "Unknown"). Add a task here once and
 /// every consumer stays consistent (TD-06 / D4).
+/// <para>
+/// Lives in <c>MLoop.Core.Evaluation</c> alongside <see cref="MetricDirection"/> so the two
+/// halves of ML-metric knowledge — a task's canonical metric <i>name</i> here, that metric's
+/// optimization <i>direction</i> there — share one home and both <c>MLoop.CLI</c> and
+/// <c>MLoop.Ops</c> converge on it, rather than the name half being marooned in CLI.
+/// </para>
 /// </summary>
 public static class TaskMetadata
 {
@@ -63,8 +69,8 @@ public static class TaskMetadata
     /// <para>
     /// Bypassing this (e.g. <c>Metrics.Values.FirstOrDefault()</c>) makes the reported score depend
     /// on dictionary insertion order rather than the metric the experiment actually optimized — the
-    /// F-28 residual that left <see cref="MLoop.CLI.Infrastructure.FileSystem.ExperimentSummary.BestMetric"/>
-    /// disagreeing with its own <c>MetricName</c>, so ranking compared apples to oranges.
+    /// F-28 residual that left <c>ExperimentSummary.BestMetric</c> disagreeing with its own
+    /// <c>MetricName</c>, so ranking compared apples to oranges.
     /// </para>
     /// </summary>
     public static double? ResolvePrimaryMetricValue(
