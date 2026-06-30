@@ -13,6 +13,7 @@
     <PackageReference Include="Microsoft.ML.AutoML" />
     <PackageReference Include="Spectre.Console" />
     <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="DataLens" />
     <PackageReference Include="YamlDotNet" />
   </ItemGroup>

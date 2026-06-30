@@ -51,6 +51,7 @@ internal class Program
 
             // Phase 2 Commands
             new ServeCommand(),
+            new TokenCommand(),  // Issue JWT bearer tokens for the serve API
             new PipelineCommand(),
             new PrepCommand(),  // Data preprocessing pipeline
             new FeaturesCommand(),  // Feature selection policy (mloop.yaml)
