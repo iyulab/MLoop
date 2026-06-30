@@ -86,10 +86,18 @@ public class PredictionService
         var textLoader = _mlContext.Data.CreateTextLoader(loaderOptions);
         var dataView = textLoader.Load(dataSource);
 
+        // The manual-pipeline tasks (anomaly/clustering/time-series-anomaly) train on data loaded as a
+        // single "Features" vector, so their saved model expects a "Features" input column (D8). The CLI
+        // predict path gets this for free from InferColumns, but here we load the schema's individual
+        // named columns — so concatenate them into "Features" before Transform, or the model throws
+        // "Could not find input column 'Features'". Tasks whose model featurizes named columns internally
+        // (AutoML binary/multiclass/regression) are left untouched.
+        var transformInput = EnsureFeaturesColumn(dataView, schema, taskType, labelColumn);
+
         IDataView predictions;
         try
         {
-            predictions = model.Transform(dataView);
+            predictions = model.Transform(transformInput);
         }
         catch (Exception ex) when (ex.Message.Contains("Schema mismatch") ||
                                    ex.Message.Contains("Vector<Single"))
@@ -474,4 +482,37 @@ public class PredictionService
 
     private static bool IsLabelRequiredForTransform(string taskType) =>
         IsClassificationTask(taskType) || taskType == "ranking";
+
+    /// <summary>
+    /// Tasks trained via a manual <c>Concatenate("Features", …) → trainer(featureColumnName:"Features")</c>
+    /// pipeline, whose saved model therefore expects a single <c>Features</c> input column.
+    /// (AutoML tasks featurize named columns inside the model and are excluded.)
+    /// </summary>
+    private static bool RequiresFeaturesVectorInput(string taskType) =>
+        taskType is "anomaly-detection" or "clustering" or "time-series-anomaly";
+
+    /// <summary>
+    /// For models that expect a single <c>Features</c> vector input (see <see cref="RequiresFeaturesVectorInput"/>),
+    /// concatenates the schema's numeric feature columns into <c>Features</c> when the loaded view doesn't
+    /// already have one — matching the single-vector shape the model was trained on (D8). No-op for other tasks.
+    /// </summary>
+    private IDataView EnsureFeaturesColumn(IDataView data, InputSchemaInfo schema, string taskType, string? labelColumn)
+    {
+        if (!RequiresFeaturesVectorInput(taskType)) return data;
+        if (data.Schema.GetColumnOrNull("Features") is not null) return data;
+
+        // Select numeric, non-label columns — mirroring how RunAnomalyDetection/RunClustering pick
+        // feature columns at train time. Driven by DataType (not Purpose), since Purpose may be absent
+        // when the schema was deserialized from config.json, whereas DataType is always populated.
+        var featureColumns = schema.Columns
+            .Where(c => c.DataType.Equals("Numeric", StringComparison.OrdinalIgnoreCase)
+                     && !c.Purpose.Equals("Exclude", StringComparison.OrdinalIgnoreCase)
+                     && (labelColumn is null || !c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)))
+            .Select(c => c.Name)
+            .ToArray();
+
+        if (featureColumns.Length == 0) return data;
+
+        return _mlContext.Transforms.Concatenate("Features", featureColumns).Fit(data).Transform(data);
+    }
 }

@@ -86,6 +86,16 @@ public class ServeCommand : Command
             // Set environment variable for project root
             Environment.SetEnvironmentVariable("MLOOP_PROJECT_ROOT", projectRoot);
 
+            // `mloop serve` is a local serving convenience (binds localhost by default), so default the
+            // child API to the Development environment unless the user explicitly set one. Otherwise the
+            // API starts in Production, rejects the default JWT key, and exits immediately — making
+            // `mloop serve` unusable out of the box. Production deployments set ASPNETCORE_ENVIRONMENT
+            // (and a real Jwt:Key) themselves; this only fills the unset case.
+            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")))
+            {
+                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+            }
+
             // Start the API server
             var startInfo = new ProcessStartInfo
             {

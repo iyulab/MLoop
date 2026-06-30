@@ -80,10 +80,10 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Add JWT Authentication
-const string DefaultJwtKey = "MLoop-Default-Secret-Key-Change-In-Production-Min-32-Chars";
+// Add JWT Authentication. The default key/issuer/audience live in MLoop.Core.Security.DevJwtDefaults
+// so the validator here and the issuer (`mloop token`) share one authority and cannot drift.
 var jwtKey = builder.Configuration["Jwt:Key"];
-var isDefaultKey = string.IsNullOrEmpty(jwtKey) || jwtKey == DefaultJwtKey;
+var isDefaultKey = string.IsNullOrEmpty(jwtKey) || jwtKey == MLoop.Core.Security.DevJwtDefaults.Key;
 
 if (isDefaultKey)
 {
@@ -95,7 +95,7 @@ if (isDefaultKey)
             "Cannot start in Production with default JWT key. Set Jwt:Key in configuration.");
     }
 
-    jwtKey = DefaultJwtKey;
+    jwtKey = MLoop.Core.Security.DevJwtDefaults.Key;
     Log.Warning("Using default JWT key — NOT SAFE for production. Set Jwt:Key in configuration.");
 }
 
@@ -105,12 +105,15 @@ if (jwtKey!.Length < 32)
     throw new InvalidOperationException("JWT key must be at least 32 characters.");
 }
 
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "MLoop.API";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "MLoop.Client";
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? MLoop.Core.Security.DevJwtDefaults.Issuer;
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? MLoop.Core.Security.DevJwtDefaults.Audience;
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        // Read claims verbatim (no legacy URI remapping) so tokens issued by `mloop token` —
+        // which carry short 'sub'/'role' claims — validate and authorize without drift.
+        options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -119,7 +122,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidIssuer = jwtIssuer,
             ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            NameClaimType = "sub",
+            RoleClaimType = "role"
         };
     });
 

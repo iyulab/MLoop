@@ -421,12 +421,67 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
+    #region Anomaly Detection (D8: Features-vector input)
+
+    [Fact]
+    public void Predict_AnomalyDetection_ConcatenatesIndividualColumnsIntoFeatures()
+    {
+        // Reproduces the real anomaly training shape: data loaded as a single "Features" vector, so the
+        // saved RandomizedPca model expects a "Features" input column. The serve path (PredictionService)
+        // loads the schema's individual named columns instead — before the D8 fix, model.Transform threw
+        // "Could not find input column 'Features'" and serve /predict returned 500 for every anomaly model.
+        var trainData = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new AnomalyFeaturesRow { Features = new[] { 10f, 40f, 7f } },
+            new AnomalyFeaturesRow { Features = new[] { 11f, 41f, 8f } },
+            new AnomalyFeaturesRow { Features = new[] { 9f, 39f, 6f } },
+            new AnomalyFeaturesRow { Features = new[] { 12f, 42f, 9f } },
+            new AnomalyFeaturesRow { Features = new[] { 8f, 38f, 5f } },
+            new AnomalyFeaturesRow { Features = new[] { 10.5f, 40.5f, 7.5f } },
+        });
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "Features")
+            .Append(_mlContext.AnomalyDetection.Trainers.RandomizedPca(
+                featureColumnName: "Features", rank: 1, oversampling: 2));
+        var model = pipeline.Fit(trainData);
+
+        // Schema as captured in config.InputSchema: individual named numeric feature columns.
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "pH", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Temp", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Current", DataType = "Numeric", Purpose = "Feature" },
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["pH"] = 10.0f, ["Temp"] = 40.0f, ["Current"] = 7.0f },
+        };
+
+        var service = new PredictionService(_mlContext);
+        var result = service.Predict(rows, schema, model, "anomaly-detection");
+
+        Assert.Equal("anomaly-detection", result.TaskType);
+        Assert.Single(result.Rows);
+        Assert.NotNull(result.Rows[0].AnomalyScore);
+    }
+
+    #endregion
+
     #region Helper Classes
 
     private class SimpleRegression
     {
         public float X { get; set; }
         public float Y { get; set; }
+    }
+
+    private class AnomalyFeaturesRow
+    {
+        [VectorType(3)]
+        public float[] Features { get; set; } = new float[3];
     }
 
     private class KeyOnlyRow
