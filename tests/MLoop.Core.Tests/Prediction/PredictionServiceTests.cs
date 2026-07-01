@@ -470,12 +470,84 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
+    #region Binary classification (D12/D13 — serve /predict Features vector + Boolean PredictedLabel)
+
+    [Fact]
+    public void Predict_Binary_BuildsFeaturesAndReadsBooleanLabel()
+    {
+        // Reproduces the serve /predict binary failures (honeai-sim campaign): AutoML-style binary
+        // models expect a single "Features" vector input (D12) and output PredictedLabel as a raw
+        // Boolean (D13). PredictionService loads named scalar columns, so it must (a) build "Features"
+        // for classification, and (b) read the Boolean PredictedLabel — otherwise ExtractClassificationRows
+        // throws "Invalid TValue: ReadOnlyMemory<Char>, expected Boolean" on every binary model.
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleBinary { X1 = 1f, X2 = 1f, Label = true },
+            new SimpleBinary { X1 = 1.1f, X2 = 0.9f, Label = true },
+            new SimpleBinary { X1 = 0.9f, X2 = 1.1f, Label = true },
+            new SimpleBinary { X1 = 5f, X2 = 5f, Label = false },
+            new SimpleBinary { X1 = 5.1f, X2 = 4.9f, Label = false },
+            new SimpleBinary { X1 = 4.9f, X2 = 5.1f, Label = false },
+        });
+
+        // Pre-featurize into "Features" and Fit ONLY the trainer, so the saved model expects a "Features"
+        // vector input WITHOUT an embedded Concatenate — matching how AutoML's InferColumns loads features
+        // (the exact shape that made serve, which loads named columns, fail).
+        var featurized = _mlContext.Transforms.Concatenate("Features", "X1", "X2").Fit(data).Transform(data);
+        var trainer = _mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
+            labelColumnName: "Label", featureColumnName: "Features");
+        var model = trainer.Fit(featurized);
+        var modelPath = SaveModel(model, featurized.Schema);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X1", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "X2", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Label", DataType = "Categorical", Purpose = "Label" },
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["X1"] = 1.0, ["X2"] = 1.0 },
+            new Dictionary<string, object> { ["X1"] = 5.0, ["X2"] = 5.0 },
+        };
+
+        var service = new PredictionService(_mlContext);
+        var result = service.Predict(rows, schema, modelPath, "binary-classification", "Label");
+
+        Assert.Equal("binary-classification", result.TaskType);
+        Assert.Equal(2, result.Rows.Count);
+        // PredictedLabel is the raw Boolean rendered as a string (no crash).
+        Assert.All(result.Rows, r => Assert.Contains(r.PredictedLabel, new[] { "True", "False" }));
+        // Both class probabilities are exposed so max-probability confidence is correct for either class.
+        foreach (var r in result.Rows)
+        {
+            Assert.NotNull(r.Probabilities);
+            Assert.True(r.Probabilities!.ContainsKey("True"), "expected 'True' probability");
+            Assert.True(r.Probabilities!.ContainsKey("False"), "expected 'False' probability");
+            Assert.InRange(r.Probabilities["True"] + r.Probabilities["False"], 0.99, 1.01);
+        }
+    }
+
+    #endregion
+
     #region Helper Classes
 
     private class SimpleRegression
     {
         public float X { get; set; }
         public float Y { get; set; }
+    }
+
+    private class SimpleBinary
+    {
+        public float X1 { get; set; }
+        public float X2 { get; set; }
+        public bool Label { get; set; }
     }
 
     private class AnomalyFeaturesRow
