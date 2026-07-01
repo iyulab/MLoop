@@ -317,11 +317,23 @@ public class PredictionService
         var rows = new List<PredictionRow>();
 
         ValueGetter<ReadOnlyMemory<char>>? labelGetter = null;
+        ValueGetter<bool>? boolLabelGetter = null;
         ValueGetter<VBuffer<float>>? scoreGetter = null;
         ValueGetter<float>? probGetter = null;
 
+        // PredictedLabel type varies by classification family: multiclass/text/image map their Key back
+        // to the original String (RestoreOriginalLabels), but binary-classification outputs a raw Boolean
+        // (True=positive). Reading a Boolean column with a String getter throws
+        // "Invalid TValue: ReadOnlyMemory<Char>, expected Boolean" — the crash that made serve
+        // /predict fail for every binary model (the CLI predict path renders the bool itself and so never
+        // hit this). Pick the getter by the actual column type.
         if (predictedLabelCol.HasValue)
-            labelGetter = cursor.GetGetter<ReadOnlyMemory<char>>(predictedLabelCol.Value);
+        {
+            if (predictedLabelCol.Value.Type is BooleanDataViewType)
+                boolLabelGetter = cursor.GetGetter<bool>(predictedLabelCol.Value);
+            else
+                labelGetter = cursor.GetGetter<ReadOnlyMemory<char>>(predictedLabelCol.Value);
+        }
         if (scoreCol.HasValue && scoreCol.Value.Type is VectorDataViewType)
             scoreGetter = cursor.GetGetter<VBuffer<float>>(scoreCol.Value);
         if (probabilityCol.HasValue)
@@ -338,6 +350,12 @@ public class PredictionService
                 ReadOnlyMemory<char> labelValue = default;
                 labelGetter(ref labelValue);
                 label = labelValue.ToString();
+            }
+            else if (boolLabelGetter != null)
+            {
+                bool boolValue = false;
+                boolLabelGetter(ref boolValue);
+                label = boolValue ? "True" : "False";
             }
 
             if (scoreGetter != null)
@@ -357,6 +375,20 @@ public class PredictionService
                 float prob = 0;
                 probGetter(ref prob);
                 probability = prob;
+            }
+
+            // binary-classification returns a single scalar Probability = P(positive/True), not a
+            // per-class Score vector (that path only fires for multiclass, where Score is a vector).
+            // Expose both class probabilities so consumers reading a probability distribution
+            // (e.g. confidence = max class probability) compute it correctly for the negative class too —
+            // otherwise a confident "False" (P(True)≈0.02) would read as low confidence.
+            if (boolLabelGetter != null && probabilities is null && probability.HasValue)
+            {
+                probabilities = new Dictionary<string, double>
+                {
+                    ["True"] = probability.Value,
+                    ["False"] = 1.0 - probability.Value,
+                };
             }
 
             rows.Add(new PredictionRow
@@ -484,12 +516,22 @@ public class PredictionService
         IsClassificationTask(taskType) || taskType == "ranking";
 
     /// <summary>
-    /// Tasks trained via a manual <c>Concatenate("Features", …) → trainer(featureColumnName:"Features")</c>
-    /// pipeline, whose saved model therefore expects a single <c>Features</c> input column.
-    /// (AutoML tasks featurize named columns inside the model and are excluded.)
+    /// Tasks whose saved model expects a single <c>Features</c> vector input rather than the raw named
+    /// feature columns. This covers two groups: (1) the manually-built pipelines
+    /// (<c>Concatenate("Features", …) → trainer(featureColumnName:"Features")</c>) for
+    /// anomaly/clustering/time-series-anomaly (D8); and (2) AutoML tabular tasks
+    /// (binary/multiclass/regression), whose <c>InferColumns</c> loads all numeric features into one
+    /// <c>Features</c> vector at train time — so the fitted model's first transform reads <c>Features</c>,
+    /// not the individual columns. The CLI predict path gets <c>Features</c> for free from
+    /// <c>InferColumns</c>; serve loads named scalar columns and so must build it (D12 — otherwise binary
+    /// serve <c>/predict</c> throws "Could not find input column 'Features'"). The
+    /// <see cref="EnsureFeaturesColumn"/> guard no-ops when a <c>Features</c> column already exists, so
+    /// models that instead featurize named columns internally are unaffected.
     /// </summary>
     private static bool RequiresFeaturesVectorInput(string taskType) =>
-        taskType is "anomaly-detection" or "clustering" or "time-series-anomaly";
+        taskType is "anomaly-detection" or "clustering" or "time-series-anomaly"
+                 or "regression" or "forecasting"
+        || IsClassificationTask(taskType);
 
     /// <summary>
     /// For models that expect a single <c>Features</c> vector input (see <see cref="RequiresFeaturesVectorInput"/>),

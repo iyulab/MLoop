@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **serve `/predict` for binary-classification (and multiclass/regression)**: two cascading defects made `mloop serve` `/predict` fail for every AutoML tabular classification/regression model (the CLI `predict` path was unaffected). (1) The saved model expects a single `Features` vector input (how AutoML's `InferColumns` loads features), but `PredictionService` only built one for anomaly/clustering/time-series-anomaly → `500 "Could not find input column 'Features'"`. `RequiresFeaturesVectorInput` now also covers classification/regression/forecasting (guarded: no-op when a `Features` column already exists or no numeric features). (2) Binary models output `PredictedLabel` as a raw `Boolean`, but `ExtractClassificationRows` always read it with a String getter → `500 "Invalid TValue: ReadOnlyMemory<Char>, expected Boolean"`. The getter is now chosen by column type, and binary predictions expose both class probabilities (`{True, False}`) so max-probability confidence is correct for either class. Regression test added.
+
 ## [0.18.3] - 2026-07-01
 
 ### Added
