@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Storage;
@@ -159,6 +160,14 @@ public class ExperimentStore : IExperimentStore
         var configPath = _fileSystem.CombinePath(experimentPath, ConfigFileName);
         var config = await _fileSystem.ReadJsonAsync<ExperimentConfig>(configPath, cancellationToken);
 
+        // Reconstruct the training result (D5). SaveAsync persists a "result" block
+        // (bestTrainer + trainingTimeSeconds), but LoadAsync previously dropped it, leaving
+        // experiment.Result null — so promote re-wrote production/metadata.json and registry.json
+        // with bestTrainer=null (observed for anomaly RandomizedPca). A completed experiment's
+        // trainer identity must survive the round-trip; an experiment with no result block (in
+        // progress/failed, or "result": null) keeps Result null.
+        var result = ParseResult(metadata);
+
         return new ExperimentData
         {
             ModelName = resolvedName,
@@ -167,7 +176,42 @@ public class ExperimentStore : IExperimentStore
             Status = metadata["status"].ToString()!,
             Task = metadata["task"].ToString()!,
             Config = config,
+            Result = result,
             Metrics = metrics
+        };
+    }
+
+    /// <summary>
+    /// Reconstructs <see cref="ExperimentResult"/> from the persisted metadata "result" block
+    /// (D5). Returns null when there is no completed result — missing key, JSON null, or a block
+    /// lacking bestTrainer — so callers keep Result null rather than fabricating a trainer.
+    /// </summary>
+    private static ExperimentResult? ParseResult(Dictionary<string, object> metadata)
+    {
+        if (!metadata.TryGetValue("result", out var resultObj) ||
+            resultObj is not JsonElement resultElement ||
+            resultElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var bestTrainer = resultElement.TryGetProperty("bestTrainer", out var bt) &&
+                          bt.ValueKind == JsonValueKind.String
+            ? bt.GetString()
+            : null;
+
+        if (string.IsNullOrEmpty(bestTrainer))
+            return null;
+
+        var trainingTime = resultElement.TryGetProperty("trainingTimeSeconds", out var tt) &&
+                           tt.ValueKind == JsonValueKind.Number
+            ? tt.GetDouble()
+            : 0.0;
+
+        return new ExperimentResult
+        {
+            BestTrainer = bestTrainer,
+            TrainingTimeSeconds = trainingTime
         };
     }
 

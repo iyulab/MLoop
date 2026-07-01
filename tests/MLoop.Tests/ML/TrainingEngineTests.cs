@@ -79,6 +79,25 @@ public class TrainingEngineTests : IDisposable
     }
 
     [Fact]
+    public void CollectDataStats_MinorityClassBeyondFirst1000Rows_CountsAllClasses()
+    {
+        // D2: sorted data whose minority class appears only after row 1000. Class counting
+        // must scan the full file, not just the first 1000 rows — otherwise a binary label is
+        // misdetected as single-class (Label=["OK"]), corrupting time estimation and the
+        // promotion quality gate's 1/N threshold.
+        var sb = new System.Text.StringBuilder();
+        sb.Append("Feature1,Label\n");
+        for (int i = 0; i < 1200; i++) sb.Append($"{i},OK\n");
+        for (int i = 0; i < 30; i++) sb.Append($"{i},NG\n");
+        var path = CreateCsv("sorted-tail-minority.csv", sb.ToString());
+
+        var (rowCount, _, _, classCount) = TrainingEngine.CollectDataStats(path, "Label", "binary-classification");
+
+        Assert.Equal(1230, rowCount);
+        Assert.Equal(2, classCount); // OK + NG — NG must not be missed despite being past row 1000
+    }
+
+    [Fact]
     public void CollectDataStats_Regression_ClassCountIsZero()
     {
         var csv = "Feature1,Label\n1,0.5\n2,1.5\n3,2.5\n";
@@ -124,6 +143,64 @@ public class TrainingEngineTests : IDisposable
 
         Assert.Equal(0, rowCount);
         Assert.Equal(3, colCount);
+    }
+
+    #endregion
+
+    #region CollectCompleteCategoricalValues
+
+    [Fact]
+    public void CollectCompleteCategoricalValues_LabelColumn_ScansFullFileNotHeadSample()
+    {
+        // D2: the label's categorical values/count must reflect the full file. The 1000-row
+        // head sample sees only "OK", so the label schema is seeded single-class; the complete
+        // scan must correct it to {OK, NG} once "NG" appears later in sorted data — otherwise
+        // the promotion quality gate derives a wrong 1/N threshold from UniqueValueCount.
+        var sb = new System.Text.StringBuilder();
+        sb.Append("Feature1,Label\n");
+        for (int i = 0; i < 1200; i++) sb.Append($"{i},OK\n");
+        for (int i = 0; i < 30; i++) sb.Append($"{i},NG\n");
+        var path = CreateCsv("label-complete.csv", sb.ToString());
+
+        var columns = new List<ColumnSchema>
+        {
+            new() { Name = "Feature1", DataType = "Numeric", Purpose = "Feature" },
+            // Simulates the head-sample result: label seen as single-class "OK".
+            new() { Name = "Label", DataType = "Categorical", Purpose = "Label",
+                    CategoricalValues = new List<string> { "OK" }, UniqueValueCount = 1 },
+        };
+
+        TrainingEngine.CollectCompleteCategoricalValues(path, columns, new[] { "Feature1", "Label" });
+
+        var label = columns.Single(c => c.Name == "Label");
+        Assert.Equal(2, label.UniqueValueCount);
+        Assert.Equal(new[] { "NG", "OK" }, label.CategoricalValues);
+    }
+
+    [Fact]
+    public void CollectCompleteCategoricalValues_FeatureColumn_StillScannedFully()
+    {
+        // Regression guard: extending the scan to the label must not stop it covering
+        // categorical feature columns (the original BUG-R2-06 behavior).
+        var sb = new System.Text.StringBuilder();
+        sb.Append("Zone,Label\n");
+        for (int i = 0; i < 1200; i++) sb.Append($"A,OK\n");
+        sb.Append("B,NG\n");
+        var path = CreateCsv("feature-complete.csv", sb.ToString());
+
+        var columns = new List<ColumnSchema>
+        {
+            new() { Name = "Zone", DataType = "Categorical", Purpose = "Feature",
+                    CategoricalValues = new List<string> { "A" }, UniqueValueCount = 1 },
+            new() { Name = "Label", DataType = "Categorical", Purpose = "Label",
+                    CategoricalValues = new List<string> { "OK" }, UniqueValueCount = 1 },
+        };
+
+        TrainingEngine.CollectCompleteCategoricalValues(path, columns, new[] { "Zone", "Label" });
+
+        var zone = columns.Single(c => c.Name == "Zone");
+        Assert.Equal(2, zone.UniqueValueCount);
+        Assert.Equal(new[] { "A", "B" }, zone.CategoricalValues);
     }
 
     #endregion
