@@ -191,42 +191,7 @@ public class ServeCommand : Command
             Path.Combine(AppContext.BaseDirectory, "..", "..", "MLoop.API", "MLoop.API.dll"),
         };
 
-        // 3. Search development build output with dynamic TFM detection
-        var devRoots = new[]
-        {
-            // From CLI bin directory: navigate up to solution root
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."),
-            // From current working directory
-            Directory.GetCurrentDirectory(),
-        };
-
-        foreach (var root in devRoots)
-        {
-            var apiProjectDir = Path.Combine(root, "tools", "MLoop.API", "bin");
-            if (Directory.Exists(apiProjectDir))
-            {
-                // Search across all configurations and target frameworks
-                foreach (var config in new[] { "Debug", "Release" })
-                {
-                    var configDir = Path.Combine(apiProjectDir, config);
-                    if (!Directory.Exists(configDir)) continue;
-
-                    // Find net* directories dynamically (net9.0, net10.0, etc.)
-                    try
-                    {
-                        foreach (var tfmDir in Directory.GetDirectories(configDir, "net*"))
-                        {
-                            searchPaths.Add(Path.Combine(tfmDir, "MLoop.API.dll"));
-                        }
-                    }
-                    catch (IOException)
-                    {
-                        // Directory access error, skip
-                    }
-                }
-            }
-        }
-
+        // 2b. Fixed deployment locations are deterministic — first existing wins.
         foreach (var path in searchPaths)
         {
             var fullPath = Path.GetFullPath(path);
@@ -236,6 +201,71 @@ public class ServeCommand : Command
             }
         }
 
-        return null;
+        // 3. Search development build output with dynamic TFM detection.
+        var devRoots = new[]
+        {
+            // From CLI bin directory: navigate up to solution root
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."),
+            // From current working directory
+            Directory.GetCurrentDirectory(),
+        };
+
+        var devCandidates = new List<string>();
+        foreach (var root in devRoots)
+        {
+            var apiProjectDir = Path.Combine(root, "tools", "MLoop.API", "bin");
+            if (!Directory.Exists(apiProjectDir)) continue;
+
+            // Collect every built MLoop.API.dll across all configurations and target frameworks.
+            foreach (var config in new[] { "Debug", "Release" })
+            {
+                var configDir = Path.Combine(apiProjectDir, config);
+                if (!Directory.Exists(configDir)) continue;
+
+                // Find net* directories dynamically (net9.0, net10.0, etc.)
+                try
+                {
+                    foreach (var tfmDir in Directory.GetDirectories(configDir, "net*"))
+                    {
+                        devCandidates.Add(Path.GetFullPath(Path.Combine(tfmDir, "MLoop.API.dll")));
+                    }
+                }
+                catch (IOException)
+                {
+                    // Directory access error, skip
+                }
+            }
+        }
+
+        // D9: among dev builds, prefer the most recently built — a fresh Release build must win
+        // over a stale Debug one. The old "first existing, Debug before Release" order loaded the
+        // stale Debug assembly, hiding fixes built into Release (cycle-104 forced MLOOP_API_PATH).
+        return NewestExisting(devCandidates, File.Exists, File.GetLastWriteTimeUtc);
+    }
+
+    /// <summary>
+    /// Returns the existing candidate with the most recent last-write time, or <see langword="null"/>
+    /// when none exist. Pure selection policy (filesystem access injected) so the
+    /// newest-build-wins rule is unit-testable. <paramref name="exists"/>/<paramref name="lastWriteUtc"/>
+    /// default to the real filesystem.
+    /// </summary>
+    internal static string? NewestExisting(
+        IEnumerable<string> candidates,
+        Func<string, bool> exists,
+        Func<string, DateTime> lastWriteUtc)
+    {
+        string? best = null;
+        var bestTime = DateTime.MinValue;
+        foreach (var candidate in candidates)
+        {
+            if (!exists(candidate)) continue;
+            var time = lastWriteUtc(candidate);
+            if (best is null || time > bestTime)
+            {
+                best = candidate;
+                bestTime = time;
+            }
+        }
+        return best;
     }
 }
