@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-07-01
+
 ### Added
 - **`mloop token` — issue a JWT bearer token for the local serve API (D7)**: `mloop serve` requires authentication on every endpoint except `/health`, but there was no way anywhere (API, CLI, docs, tests) to *obtain* a token — so a freshly served model was unreachable and any legitimate client (e.g. an in-house consumer calling `/predict`) was blocked. The new `mloop token` command issues an HS256 JWT (`--role` for admin/write endpoints, `--subject`, `--expires-hours`, `--key` override, `--quiet` for scripting). It signs with a new single-authority `MLoop.Core.Security.DevJwtDefaults` (key/issuer/audience) that the API now also validates against, so issued tokens validate out of the box and the issuer↔validator can't drift. The API reads claims verbatim (`MapInboundClaims=false`, `NameClaimType="sub"`, `RoleClaimType="role"`) so the short `sub`/`role` claims authorize correctly (admin role included). Not for production auth — a local-serving convenience; production sets its own `Jwt:Key`. Found via the honeai-sim live reliability-loop dogfooding (the consumer could not call the served model at all).
 
