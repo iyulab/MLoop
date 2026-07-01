@@ -158,6 +158,57 @@ public class ExperimentStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_RoundTripsResult_BestTrainerNotDropped()
+    {
+        // D5: SaveAsync persists a "result" block (bestTrainer + trainingTimeSeconds) but
+        // LoadAsync previously dropped it, leaving experiment.Result null. promote then re-wrote
+        // production/metadata.json and registry.json with bestTrainer=null (observed for anomaly
+        // RandomizedPca). The result must round-trip so promote preserves the trainer identity.
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        var originalData = new ExperimentData
+        {
+            ModelName = DefaultModelName,
+            ExperimentId = experimentId,
+            Timestamp = DateTime.UtcNow,
+            Status = "Completed",
+            Task = "anomaly-detection",
+            Config = new ExperimentConfig
+            {
+                DataFile = "test.csv",
+                LabelColumn = "",
+                TimeLimitSeconds = 60,
+                Metric = "auc",
+                TestSplit = 0.2
+            },
+            Result = new ExperimentResult
+            {
+                BestTrainer = "RandomizedPca (rank=2)",
+                TrainingTimeSeconds = 1.34
+            }
+        };
+        await _experimentStore.SaveAsync(DefaultModelName, originalData, CancellationToken.None);
+
+        var loadedData = await _experimentStore.LoadAsync(DefaultModelName, experimentId, CancellationToken.None);
+
+        Assert.NotNull(loadedData.Result);
+        Assert.Equal("RandomizedPca (rank=2)", loadedData.Result!.BestTrainer);
+        Assert.Equal(1.34, loadedData.Result.TrainingTimeSeconds, precision: 2);
+    }
+
+    [Fact]
+    public async Task LoadAsync_NoResultBlock_LeavesResultNull()
+    {
+        // An in-progress/failed experiment persists no result — LoadAsync must leave Result null
+        // rather than fabricating one.
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        await _experimentStore.SaveAsync(DefaultModelName, CreateExperimentData(experimentId), CancellationToken.None);
+
+        var loadedData = await _experimentStore.LoadAsync(DefaultModelName, experimentId, CancellationToken.None);
+
+        Assert.Null(loadedData.Result);
+    }
+
+    [Fact]
     public async Task LoadAsync_NonExistingExperiment_ThrowsFileNotFoundException()
     {
         // Act & Assert

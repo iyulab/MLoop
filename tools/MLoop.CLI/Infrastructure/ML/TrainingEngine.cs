@@ -508,36 +508,37 @@ public class TrainingEngine : ITrainingEngine
         var labelIndex = Array.FindIndex(columnNames, c =>
             c.Equals(labelColumn, StringComparison.OrdinalIgnoreCase));
 
-        // Read all lines, but only analyze first 1000 for text/class detection
+        // D2: class counting scans the FULL file — a sorted minority class appearing only past
+        // row 1000 must not be missed, or a binary/multiclass label is misdetected as single-class
+        // (Label=["OK"]), which corrupts time estimation and the promotion quality gate's 1/N
+        // threshold. Text-feature detection stays sampled to the first 1000 rows: it is a heuristic
+        // and the per-field scan is expensive.
         string? line;
         while ((line = reader.ReadLine()) != null)
         {
             rowCount++;
 
-            if (rowCount <= 1000)
+            var fields = CsvFieldParser.ParseFields(line);
+
+            // Collect label values for class counting (full-file scan)
+            if (labelIndex >= 0 && labelIndex < fields.Length)
             {
-                var fields = CsvFieldParser.ParseFields(line);
+                var value = fields[labelIndex].Trim();
+                if (!string.IsNullOrEmpty(value))
+                    labelValues.Add(value);
+            }
 
-                // Collect label values for class counting
-                if (labelIndex >= 0 && labelIndex < fields.Length)
+            // Check for text features (any field with spaces likely text) — sampled heuristic
+            if (!hasTextFeatures && rowCount <= 1000)
+            {
+                for (int i = 0; i < fields.Length; i++)
                 {
-                    var value = fields[labelIndex].Trim();
-                    if (!string.IsNullOrEmpty(value))
-                        labelValues.Add(value);
-                }
-
-                // Check for text features (any field with spaces likely text)
-                if (!hasTextFeatures)
-                {
-                    for (int i = 0; i < fields.Length; i++)
+                    if (i == labelIndex) continue;
+                    var val = fields[i].Trim();
+                    if (val.Contains(' ') && val.Length > 20 && !double.TryParse(val, out _))
                     {
-                        if (i == labelIndex) continue;
-                        var val = fields[i].Trim();
-                        if (val.Contains(' ') && val.Length > 20 && !double.TryParse(val, out _))
-                        {
-                            hasTextFeatures = true;
-                            break;
-                        }
+                        hasTextFeatures = true;
+                        break;
                     }
                 }
             }
@@ -1144,14 +1145,18 @@ public class TrainingEngine : ITrainingEngine
     /// must be complete to prevent predict-time failures when unseen categories appear.
     /// Memory-efficient: only stores unique values per column, not all rows.
     /// </summary>
-    private static void CollectCompleteCategoricalValues(
+    internal static void CollectCompleteCategoricalValues(
         string dataFile, List<ColumnSchema> columns, string[] columnNames)
     {
-        // Find categorical Feature columns that need complete value collection
+        // Find categorical columns that need complete value collection — both Features and the
+        // Label. D2: the label is structurally critical (the promotion quality gate derives its
+        // 1/N threshold from the label's UniqueValueCount), so a head-sampled single-class label
+        // (Label=["OK"]) would corrupt the gate. Regression labels are Numeric, not Categorical,
+        // so they are naturally excluded by the DataType check.
         var catColumns = new Dictionary<int, ColumnSchema>();
         foreach (var col in columns)
         {
-            if (col.DataType == "Categorical" && col.Purpose == "Feature")
+            if (col.DataType == "Categorical" && (col.Purpose == "Feature" || col.Purpose == "Label"))
             {
                 var idx = Array.IndexOf(columnNames, col.Name);
                 if (idx >= 0) catColumns[idx] = col;
