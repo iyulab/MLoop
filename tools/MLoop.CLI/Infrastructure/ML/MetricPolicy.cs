@@ -128,15 +128,33 @@ public static class MetricPolicy
 
     /// <summary>
     /// Detects degenerate classification models that achieve high accuracy by only
-    /// predicting the majority class. Returns true if accuracy > 0.5 but F1 ≈ 0.
+    /// predicting one class. Returns true if accuracy > 0.5 but F1 ≈ 0 (always-negative
+    /// degenerate), or, symmetrically, if the model never predicts the negative class at
+    /// all (always-positive degenerate — D16). The F1 check alone only catches the first
+    /// case: F1 is computed against the *positive* class, so it is ≈0 when the model
+    /// always predicts negative, but stays high (F1 ≈ 2·prevalence/(1+prevalence)) when
+    /// the model always predicts positive — which is the common real-world convention for
+    /// binary QC/pass-fail data (majority "OK"/pass mapped to the positive label). That
+    /// combination (recall ≈ 1, negative_recall ≈ 0) is undetectable from accuracy/F1/AUC
+    /// alone and slipped past this gate in a live KAMP SEQ006 run (accuracy 0.747, F1
+    /// 0.855, AUC 0.772 — all "healthy" — while negative_recall was exactly 0, i.e. the
+    /// promoted model never once predicted the minority "NG" class).
     /// </summary>
     public static bool IsClassificationDegenerateModel(Dictionary<string, double> metrics)
     {
-        // Check binary: accuracy > 0.5 but f1_score == 0
+        // Check binary: accuracy > 0.5 but f1_score == 0 (always predicts negative)
         if (metrics.TryGetValue("f1_score", out var f1) &&
             metrics.TryGetValue("accuracy", out var acc))
         {
             if (acc > 0.5 && f1 < 0.001)
+                return true;
+        }
+
+        // Check binary: accuracy > 0.5 but negative_recall == 0 (always predicts positive — D16)
+        if (metrics.TryGetValue("negative_recall", out var negRecall) &&
+            metrics.TryGetValue("accuracy", out var accForNegRecall))
+        {
+            if (accForNegRecall > 0.5 && negRecall < 0.001)
                 return true;
         }
 

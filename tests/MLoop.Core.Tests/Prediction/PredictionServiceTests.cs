@@ -345,14 +345,14 @@ public class PredictionServiceTests : IDisposable
     }
 
     [Fact]
-    public void BuildTextLoaderOptions_MulticlassLabel_AlwaysString()
+    public void BuildTextLoaderOptions_MulticlassCategoricalLabel_IsString()
     {
         var schema = new InputSchemaInfo
         {
             Columns = new List<ColumnSchema>
             {
                 new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
-                new() { Name = "Label", DataType = "Boolean", Purpose = "Label" }
+                new() { Name = "Label", DataType = "Categorical", Purpose = "Label" }
             },
             CapturedAt = DateTime.UtcNow
         };
@@ -362,6 +362,31 @@ public class PredictionServiceTests : IDisposable
 
         var labelCol = options.Columns.First(c => c.Name == "Label");
         Assert.Equal(DataKind.String, labelCol.DataKind);
+    }
+
+    [Fact]
+    public void BuildTextLoaderOptions_MulticlassNumericLabel_IsSingle()
+    {
+        // D14: when a multiclass label happens to be numeric-looking (e.g. KAMP SEQ001 class ids
+        // "0"/"1"/"2"), train-time schema inference records DataType=Numeric and AutoML's fitted
+        // pipeline embeds a MapValueToKey over a Single-typed column, not String. Forcing String
+        // here (pre-D14 behavior) mismatches the model's own trained schema — serve /predict throws
+        // "Could not apply a map over type 'Single' to column '...' since it has type 'String'".
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Label", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+
+        var service = new PredictionService(_mlContext);
+        var options = service.BuildTextLoaderOptions(schema, "multiclass-classification", "Label");
+
+        var labelCol = options.Columns.First(c => c.Name == "Label");
+        Assert.Equal(DataKind.Single, labelCol.DataKind);
     }
 
     [Fact]
@@ -535,6 +560,60 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
+    #region Multiclass classification (D14 — serve /predict numeric-looking class label)
+
+    [Fact]
+    public void Predict_Multiclass_NumericLabel_MatchesTrainedSingleSchema()
+    {
+        // Reproduces the live serve /predict crash found dogfooding KAMP SEQ001 (honeai-sim Wave 3,
+        // multiclass label values "0"/"1"/"2"): train-time schema inference records DataType=Numeric
+        // for the label, so AutoML's fitted pipeline maps a Single-typed column into a key internally.
+        // The pre-D14 serve path always loaded the label as String, so model.Transform threw
+        // "Could not apply a map over type 'Single' to column 'Label' since it has type 'String'".
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleMulticlassNumericLabel { X1 = 1f, X2 = 1f, Label = 0f },
+            new SimpleMulticlassNumericLabel { X1 = 1.1f, X2 = 0.9f, Label = 0f },
+            new SimpleMulticlassNumericLabel { X1 = 5f, X2 = 5f, Label = 1f },
+            new SimpleMulticlassNumericLabel { X1 = 5.1f, X2 = 4.9f, Label = 1f },
+            new SimpleMulticlassNumericLabel { X1 = 9f, X2 = 9f, Label = 2f },
+            new SimpleMulticlassNumericLabel { X1 = 9.1f, X2 = 8.9f, Label = 2f },
+        });
+
+        var keyed = _mlContext.Transforms.Conversion.MapValueToKey("Label", "Label").Fit(data).Transform(data);
+        var featurized = _mlContext.Transforms.Concatenate("Features", "X1", "X2").Fit(keyed).Transform(keyed);
+        var trainer = _mlContext.MulticlassClassification.Trainers.LightGbm(
+            labelColumnName: "Label", featureColumnName: "Features");
+        var model = trainer.Fit(featurized);
+        var modelPath = SaveModel(model, featurized.Schema);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X1", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "X2", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Label", DataType = "Numeric", Purpose = "Label" },
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["X1"] = 1.0, ["X2"] = 1.0 },
+            new Dictionary<string, object> { ["X1"] = 9.0, ["X2"] = 9.0 },
+        };
+
+        var service = new PredictionService(_mlContext);
+        var result = service.Predict(rows, schema, modelPath, "multiclass-classification", "Label");
+
+        Assert.Equal("multiclass-classification", result.TaskType);
+        Assert.Equal(2, result.Rows.Count);
+        Assert.All(result.Rows, r => Assert.Contains(r.PredictedLabel, new[] { "0", "1", "2" }));
+    }
+
+    #endregion
+
     #region Helper Classes
 
     private class SimpleRegression
@@ -548,6 +627,13 @@ public class PredictionServiceTests : IDisposable
         public float X1 { get; set; }
         public float X2 { get; set; }
         public bool Label { get; set; }
+    }
+
+    private class SimpleMulticlassNumericLabel
+    {
+        public float X1 { get; set; }
+        public float X2 { get; set; }
+        public float Label { get; set; }
     }
 
     private class AnomalyFeaturesRow

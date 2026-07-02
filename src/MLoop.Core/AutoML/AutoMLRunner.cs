@@ -414,6 +414,7 @@ public class AutoMLRunner
             metricsDict["f1_score"] = metrics.F1Score;
             metricsDict["precision"] = metrics.PositivePrecision;
             metricsDict["recall"] = metrics.PositiveRecall;
+            metricsDict["negative_recall"] = metrics.NegativeRecall;
 
             if (!double.IsNaN(metrics.AreaUnderRocCurve))
                 metricsDict["auc"] = metrics.AreaUnderRocCurve;
@@ -425,6 +426,7 @@ public class AutoMLRunner
             metricsDict["f1_score"] = metrics.F1Score;
             metricsDict["precision"] = metrics.PositivePrecision;
             metricsDict["recall"] = metrics.PositiveRecall;
+            metricsDict["negative_recall"] = metrics.NegativeRecall;
 
             if (!double.IsNaN(metrics.AreaUnderRocCurve))
                 metricsDict["auc"] = metrics.AreaUnderRocCurve;
@@ -439,10 +441,31 @@ public class AutoMLRunner
         return new AutoMLResult
         {
             BestTrainer = trainerName,
-            Model = experimentResult.BestRun.Model,
+            Model = EnsureCalibratedModel(_mlContext, experimentResult.BestRun.Model, predictions, config.LabelColumn, hasProbability),
             Metrics = metricsDict,
             RowCount = trainSet.GetRowCount() ?? 0
         };
+    }
+
+    /// <summary>
+    /// D15 (BUG-24 follow-through): AutoML can select a binary trainer (e.g. FastForest/FastTree)
+    /// whose output has no "Probability" column. Training already falls back to
+    /// <see cref="BinaryClassificationCatalog.EvaluateNonCalibrated"/> so metrics still compute, but
+    /// the *saved* model stayed uncalibrated — every downstream consumer (mloop predict, mloop serve
+    /// /predict, HoneAI's confidence-gated dual-check) then reads a permanently-null Probability, and
+    /// confidence collapses to 0 for every prediction (observed: 100% escalation in the honeai-sim
+    /// live loop on KAMP SEQ089, `FastForestBinary`). Appending a Platt calibrator — fit on the
+    /// already-computed test predictions, which carry the raw Score the calibrator needs — restores a
+    /// real Probability column on the exact model that gets persisted and served.
+    /// </summary>
+    public static ITransformer EnsureCalibratedModel(
+        MLContext mlContext, ITransformer model, IDataView predictions, string labelColumn, bool hasProbability)
+    {
+        if (hasProbability) return model;
+
+        var calibrator = mlContext.BinaryClassification.Calibrators.Platt(labelColumnName: labelColumn, scoreColumnName: "Score");
+        var calibratorTransformer = calibrator.Fit(predictions);
+        return model.Append(calibratorTransformer);
     }
 
     /// <summary>
@@ -484,6 +507,7 @@ public class AutoMLRunner
             metricsDict["f1_score"] = metrics.F1Score;
             metricsDict["precision"] = metrics.PositivePrecision;
             metricsDict["recall"] = metrics.PositiveRecall;
+            metricsDict["negative_recall"] = metrics.NegativeRecall;
             if (!double.IsNaN(metrics.AreaUnderRocCurve))
                 metricsDict["auc"] = metrics.AreaUnderRocCurve;
         }
@@ -494,6 +518,7 @@ public class AutoMLRunner
             metricsDict["f1_score"] = metrics.F1Score;
             metricsDict["precision"] = metrics.PositivePrecision;
             metricsDict["recall"] = metrics.PositiveRecall;
+            metricsDict["negative_recall"] = metrics.NegativeRecall;
             if (!double.IsNaN(metrics.AreaUnderRocCurve))
                 metricsDict["auc"] = metrics.AreaUnderRocCurve;
         }
@@ -501,7 +526,7 @@ public class AutoMLRunner
         return new AutoMLResult
         {
             BestTrainer = "SdcaLogisticRegression [manual fallback: AutoML AUC failure]",
-            Model = model,
+            Model = EnsureCalibratedModel(_mlContext, model, predictions, config.LabelColumn, hasProbability),
             Metrics = metricsDict,
             RowCount = trainSet.GetRowCount() ?? 0
         };
