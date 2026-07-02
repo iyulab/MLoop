@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
@@ -245,6 +246,69 @@ public class AutoMLRunnerTests
 
         // Assert: same as no overrides — returns null for numeric-only
         Assert.Null(result);
+    }
+
+    #endregion
+
+    #region EnsureCalibratedModel Tests (D15 — BUG-24 follow-through)
+
+    [Fact]
+    public void EnsureCalibratedModel_AlreadyCalibrated_ReturnsSameModel()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new NumericData { Feature1 = 1f, Feature2 = 1f, Label = true },
+            new NumericData { Feature1 = 5f, Feature2 = 5f, Label = false },
+        });
+        var featurized = _mlContext.Transforms.Concatenate("Features", "Feature1", "Feature2").Fit(data).Transform(data);
+        var model = _mlContext.BinaryClassification.Trainers
+            .SdcaLogisticRegression(labelColumnName: "Label", featureColumnName: "Features").Fit(featurized);
+        var predictions = model.Transform(featurized);
+
+        var result = AutoMLRunner.EnsureCalibratedModel(_mlContext, model, predictions, "Label", hasProbability: true);
+
+        Assert.Same(model, result);
+    }
+
+    [Fact]
+    public void EnsureCalibratedModel_UncalibratedTrainer_AppendsPlattCalibratorRestoringProbability()
+    {
+        // D15: reproduces the KAMP SEQ089 live finding — FastForestBinary (AutoML's chosen "best
+        // trainer") emits Score but no Probability. Uncalibrated, HoneAI's ConfidenceOf reads no
+        // probabilities/score signal and falls back to 0 for every row (100% escalation, observed
+        // live via honeai-sim). The saved model must carry a calibrated Probability so downstream
+        // predict/serve consumers get a real confidence signal.
+        var data = _mlContext.Data.LoadFromEnumerable(Enumerable.Range(0, 40).Select(i => new NumericData
+        {
+            Feature1 = i < 20 ? 1f + i * 0.05f : 5f + i * 0.05f,
+            Feature2 = i < 20 ? 1f + i * 0.05f : 5f + i * 0.05f,
+            Label = i < 20,
+        }));
+        var featurized = _mlContext.Transforms.Concatenate("Features", "Feature1", "Feature2").Fit(data).Transform(data);
+        var model = _mlContext.BinaryClassification.Trainers
+            .FastForest(labelColumnName: "Label", featureColumnName: "Features").Fit(featurized);
+        var predictions = model.Transform(featurized);
+
+        // Precondition: FastForestBinary alone genuinely produces no Probability column.
+        Assert.Null(predictions.Schema.GetColumnOrNull("Probability"));
+
+        var calibrated = AutoMLRunner.EnsureCalibratedModel(_mlContext, model, predictions, "Label", hasProbability: false);
+        var calibratedPredictions = calibrated.Transform(featurized);
+
+        var probCol = calibratedPredictions.Schema.GetColumnOrNull("Probability");
+        Assert.NotNull(probCol);
+
+        using var cursor = calibratedPredictions.GetRowCursor(calibratedPredictions.Schema);
+        var getter = cursor.GetGetter<float>(probCol.Value);
+        var sawAny = false;
+        while (cursor.MoveNext())
+        {
+            float p = default;
+            getter(ref p);
+            Assert.InRange(p, 0f, 1f);
+            sawAny = true;
+        }
+        Assert.True(sawAny);
     }
 
     #endregion

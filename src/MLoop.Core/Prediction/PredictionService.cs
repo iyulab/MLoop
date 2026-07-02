@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.Models;
@@ -213,8 +214,13 @@ public class PredictionService
                     "Boolean" => DataKind.Boolean,
                     _ => DataKind.String
                 },
+                // D14: a multiclass label can be numeric-looking (e.g. KAMP class ids "0"/"1"/"2"), in
+                // which case train-time schema inference records DataType=Numeric and AutoML's fitted
+                // pipeline embeds MapValueToKey over a Single-typed column, not String. Forcing String
+                // unconditionally mismatched that trained schema and made model.Transform throw
+                // "Could not apply a map over type 'Single' to column '...' since it has type 'String'".
                 "multiclass-classification" or "text-classification" or "image-classification"
-                    => DataKind.String, // MapValueToKey needs String
+                    => MapDataTypeToDataKind(col.DataType),
                 "regression" or "forecasting" => col.DataType switch
                 {
                     "Boolean" => DataKind.Single, // BUG-23
@@ -318,19 +324,23 @@ public class PredictionService
 
         ValueGetter<ReadOnlyMemory<char>>? labelGetter = null;
         ValueGetter<bool>? boolLabelGetter = null;
+        ValueGetter<float>? singleLabelGetter = null;
         ValueGetter<VBuffer<float>>? scoreGetter = null;
         ValueGetter<float>? probGetter = null;
 
         // PredictedLabel type varies by classification family: multiclass/text/image map their Key back
-        // to the original String (RestoreOriginalLabels), but binary-classification outputs a raw Boolean
-        // (True=positive). Reading a Boolean column with a String getter throws
-        // "Invalid TValue: ReadOnlyMemory<Char>, expected Boolean" — the crash that made serve
-        // /predict fail for every binary model (the CLI predict path renders the bool itself and so never
-        // hit this). Pick the getter by the actual column type.
+        // to the type MapValueToKey was originally fit on (String for categorical labels, but Single for
+        // a numeric-looking label like KAMP class ids "0"/"1"/"2" — D14), while binary-classification
+        // outputs a raw Boolean (True=positive). Reading a column with the wrong getter throws
+        // "Invalid TValue: <actual>, expected <requested>" — the crash that made serve /predict fail for
+        // every binary model (D13) and every numeric-labeled multiclass model (D14); the CLI predict path
+        // renders the label itself and so never hit this. Pick the getter by the actual column type.
         if (predictedLabelCol.HasValue)
         {
             if (predictedLabelCol.Value.Type is BooleanDataViewType)
                 boolLabelGetter = cursor.GetGetter<bool>(predictedLabelCol.Value);
+            else if (predictedLabelCol.Value.Type == NumberDataViewType.Single)
+                singleLabelGetter = cursor.GetGetter<float>(predictedLabelCol.Value);
             else
                 labelGetter = cursor.GetGetter<ReadOnlyMemory<char>>(predictedLabelCol.Value);
         }
@@ -356,6 +366,12 @@ public class PredictionService
                 bool boolValue = false;
                 boolLabelGetter(ref boolValue);
                 label = boolValue ? "True" : "False";
+            }
+            else if (singleLabelGetter != null)
+            {
+                float singleValue = 0f;
+                singleLabelGetter(ref singleValue);
+                label = singleValue.ToString(CultureInfo.InvariantCulture);
             }
 
             if (scoreGetter != null)

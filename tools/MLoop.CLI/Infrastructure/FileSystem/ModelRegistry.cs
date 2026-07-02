@@ -228,8 +228,8 @@ public class ModelRegistry : IModelRegistry
             }
         }
 
-        // Degenerate model detection: high accuracy but zero F1
-        // This indicates the model only predicts the majority class
+        // Degenerate model detection: high accuracy but the model only ever predicts one
+        // class (zero F1 on the positive class, or zero recall on the negative class — D16)
         if (MetricPolicy.IsClassificationDegenerateModel(experiment.Metrics))
         {
             return false; // Block promotion for degenerate models

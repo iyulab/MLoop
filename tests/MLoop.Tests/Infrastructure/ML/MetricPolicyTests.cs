@@ -222,6 +222,53 @@ public class MetricPolicyTests
         Assert.False(MetricPolicy.IsClassificationDegenerateModel(metrics));
     }
 
+    [Fact]
+    public void IsClassificationDegenerateModel_BinaryAlwaysPositiveZeroNegativeRecall_ReturnsTrue()
+    {
+        // D16: model always predicts the (majority) positive class — recall=1, F1 stays
+        // high (2*prevalence/(1+prevalence)) since F1 is computed on the positive class,
+        // so accuracy/f1_score/auc alone look healthy. negative_recall=0 is the only
+        // signal that the model never once predicted the negative class. Reproduces the
+        // live KAMP SEQ006 case: accuracy=0.747, f1_score=0.855, negative_recall=0.
+        var metrics = new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.7468,
+            ["f1_score"] = 0.8550,
+            ["recall"] = 1.0,
+            ["negative_recall"] = 0.0
+        };
+
+        Assert.True(MetricPolicy.IsClassificationDegenerateModel(metrics));
+    }
+
+    [Fact]
+    public void IsClassificationDegenerateModel_BinaryHealthyNegativeRecall_ReturnsFalse()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.85,
+            ["f1_score"] = 0.78,
+            ["recall"] = 0.80,
+            ["negative_recall"] = 0.88
+        };
+
+        Assert.False(MetricPolicy.IsClassificationDegenerateModel(metrics));
+    }
+
+    [Fact]
+    public void IsClassificationDegenerateModel_LowAccZeroNegativeRecall_ReturnsFalse()
+    {
+        // Low accuracy + zero negative_recall = just a bad model, not the degenerate pattern
+        var metrics = new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.4,
+            ["f1_score"] = 0.3,
+            ["negative_recall"] = 0.0
+        };
+
+        Assert.False(MetricPolicy.IsClassificationDegenerateModel(metrics));
+    }
+
     #endregion
 
     #region GetMinimumMetricThreshold
