@@ -22,7 +22,7 @@ public class PredictionService
 
     /// <summary>
     /// Runs prediction on in-memory row data using a saved ML.NET model file.
-    /// Loads the model from disk on every call — use the <see cref="Predict(Dictionary{string, object}[], InputSchemaInfo, ITransformer, string, string?, RegressionInterval?)"/>
+    /// Loads the model from disk on every call — use the <see cref="Predict(Dictionary{string, object}[], InputSchemaInfo, ITransformer, string, string?, RegressionInterval?, ITransformer?)"/>
     /// overload with a pre-loaded model for warm-path scenarios (e.g. API serve with model caching).
     /// </summary>
     public PredictionResult Predict(
@@ -332,6 +332,12 @@ public class PredictionService
             // ranking, recommendation, etc. — just score (no conformal band; interval is regression-only)
             rows = ExtractRegressionRows(cursor, scoreCol);
         }
+
+        // Single authority for the normalized per-row confidence — computed once here so every consumer
+        // of PredictionService (serve, CLI) gets the same value and none re-derives it (ConfidencePolicy).
+        double? residualStd = interval?.ResidualStd;
+        for (int r = 0; r < rows.Count; r++)
+            rows[r] = rows[r] with { Confidence = ConfidencePolicy.Compute(rows[r], taskType, residualStd) };
 
         return new PredictionResult
         {

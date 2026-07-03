@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
+using System.Text.Json;
 using CsvHelper;
 using CsvHelper.Configuration;
 using Microsoft.ML;
@@ -68,6 +69,11 @@ public static class PredictCommand
             DefaultValueFactory = _ => true
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit structured predictions as JSON to stdout (same schema as the /predict API, incl. normalized confidence) instead of writing a CSV. Progress goes to stderr."
+        };
+
         var command = new Command("predict", "Make predictions with a trained model");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
@@ -76,6 +82,7 @@ public static class PredictCommand
         command.Options.Add(unknownStrategyOption);
         command.Options.Add(logOption);
         command.Options.Add(includeFeaturesOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
@@ -86,11 +93,21 @@ public static class PredictCommand
             var unknownStrategy = parseResult.GetValue(unknownStrategyOption)!;
             var logPredictions = parseResult.GetValue(logOption);
             var includeFeatures = parseResult.GetValue(includeFeaturesOption);
-            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures);
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures, json);
         });
 
         return command;
     }
+
+    // camelCase, null fields omitted — matches the /predict API's field names so the two structured
+    // outputs share one schema (the single-source goal); consumers key by name and tolerate absent fields.
+    private static readonly JsonSerializerOptions PredictJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = false,
+    };
 
     private static async Task<int> ExecuteAsync(
         string? dataFile,
@@ -99,8 +116,17 @@ public static class PredictCommand
         string? output,
         string unknownStrategy,
         bool logPredictions,
-        bool includeFeatures)
+        bool includeFeatures,
+        bool json = false)
     {
+        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to stderr.
+        // Reassigning the global console keeps the ~40 existing AnsiConsole call sites unchanged.
+        if (json)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             // Initialize components
@@ -422,6 +448,33 @@ public static class PredictCommand
             {
                 AnsiConsole.MarkupLine("[yellow]Note:[/] Time-series anomaly predictions output specialized format.");
                 AnsiConsole.WriteLine();
+            }
+
+            // --json: route structured predictions through the shared PredictionService (the same path as
+            // the /predict API) and emit them to stdout, so mloop-mcp and other consumers get the conformal
+            // band and normalized confidence instead of parsing CSV/Spectre text. Bypasses the CSV output.
+            if (json)
+            {
+                if (trainedSchema is null || string.IsNullOrEmpty(taskType))
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] --json requires a trained schema/task (train and promote a model first).");
+                    return 1;
+                }
+
+                var jsonRows = PredictionEngine.LoadCsvAsRows(resolvedDataFile, trainedSchema, configLabelColumn);
+                var jsonResult = new PredictionEngine().PredictWithService(
+                    jsonRows, trainedSchema, resolvedModelPath, taskType, configLabelColumn, interval);
+
+                var payload = new
+                {
+                    model = resolvedModelName,
+                    task = jsonResult.TaskType,
+                    count = jsonResult.Rows.Count,
+                    predictions = jsonResult.Rows,
+                    warnings = jsonResult.Warnings,
+                };
+                Console.Out.WriteLine(JsonSerializer.Serialize(payload, PredictJsonOptions));
+                return 0;
             }
 
             // Make predictions with progress
