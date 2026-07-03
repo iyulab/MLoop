@@ -243,6 +243,15 @@ public class TrainingEngine : ITrainingEngine
             var modelPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.ModelFileName);
             _mlContext.Model.Save(autoMLResult.Model, null, modelPath);
 
+            // ② regression wave (heteroscedastic): persist the optional σ(x) model beside the main one
+            // so predict/serve can widen the conformal band per row. Absent for non-regression tasks
+            // and homoscedastic fallbacks — predict then uses the constant-width band.
+            if (autoMLResult.ResidualModel != null)
+            {
+                var residualPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.ResidualModelFileName);
+                _mlContext.Model.Save(autoMLResult.ResidualModel, null, residualPath);
+            }
+
             // Execute PostTrain hooks
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PostTrain))
             {

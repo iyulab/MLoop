@@ -422,11 +422,20 @@ app.MapPost("/predict", async (
 
         var transformer = modelCache.GetOrLoad(modelPath);
 
-        // ② regression wave: surface the split-conformal prediction interval around each Score when
-        // the model stored a conformal band at train time (regression only, primary 90% level).
+        // ② regression wave: surface the conformal prediction interval around each Score when the
+        // model stored a band at train time (regression only, primary 90% level). Heteroscedastic
+        // models also carry a sibling σ-model (residual-model.zip) for per-row widths — load it through
+        // the same cache so the band narrows/widens per prediction.
         var interval = RegressionInterval.FromMetrics(taskType, expData?.Metrics);
+        ITransformer? residualModel = null;
+        if (interval?.IsHeteroscedastic == true)
+        {
+            var residualPath = Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.ResidualModelFileName);
+            if (File.Exists(residualPath))
+                residualModel = modelCache.GetOrLoad(residualPath);
+        }
 
-        var result = predictionService.Predict(rows, schema, transformer, taskType, labelColumn, interval);
+        var result = predictionService.Predict(rows, schema, transformer, taskType, labelColumn, interval, residualModel);
 
         logger.LogInformation("Predictions completed for '{ModelName}': {Count} predictions in {ElapsedMs}ms (avg: {AvgMs}ms/prediction)",
             modelName, result.Rows.Count, stopwatch.ElapsedMilliseconds,

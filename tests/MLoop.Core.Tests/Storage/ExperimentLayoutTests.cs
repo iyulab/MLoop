@@ -17,6 +17,7 @@ public class ExperimentLayoutTests
         Assert.Equal("staging", ExperimentLayout.StagingDirectory);
         Assert.Equal("production", ExperimentLayout.ProductionDirectory);
         Assert.Equal("model.zip", ExperimentLayout.ModelFileName);
+        Assert.Equal("residual-model.zip", ExperimentLayout.ResidualModelFileName);
         Assert.Equal("metadata.json", ExperimentLayout.MetadataFileName);
         Assert.Equal("metrics.json", ExperimentLayout.MetricsFileName);
         Assert.Equal("config.json", ExperimentLayout.ConfigFileName);
