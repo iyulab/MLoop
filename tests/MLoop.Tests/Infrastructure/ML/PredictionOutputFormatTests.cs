@@ -217,4 +217,62 @@ public class PredictionOutputFormatTests : IDisposable
         var headerColumns = header.Split(',');
         Assert.Single(headerColumns);
     }
+
+    [Fact]
+    public void RegressionOutput_WithConformalBand_ContainsScoreLowerAndUpperBounds()
+    {
+        // ② regression wave: mirrors the CustomMapping + column-selection PredictionEngine applies when
+        // the model carries a conformal band — the CSV must expose [Score, ScoreLowerBound, ScoreUpperBound].
+        var regressionOutput = new[]
+        {
+            new ScoreRow { Score = 42.5f },
+            new ScoreRow { Score = 38.2f },
+        };
+        var dataView = _mlContext.Data.LoadFromEnumerable(regressionOutput);
+
+        const float halfWidth = 1.5f;
+        var banded = _mlContext.Transforms.CustomMapping<ScoreRow, ScoreBandRow>(
+            (input, output) =>
+            {
+                output.ScoreLowerBound = input.Score - halfWidth;
+                output.ScoreUpperBound = input.Score + halfWidth;
+            },
+            contractName: null)
+            .Fit(dataView).Transform(dataView);
+        var selected = _mlContext.Transforms.SelectColumns("Score", "ScoreLowerBound", "ScoreUpperBound")
+            .Fit(banded).Transform(banded);
+
+        var outputPath = Path.Combine(_testDir, "regression_band_predictions.csv");
+        using (var fileStream = File.Create(outputPath))
+        {
+            _mlContext.Data.SaveAsText(selected, fileStream, separatorChar: ',', headerRow: true, schema: false);
+        }
+
+        var lines = File.ReadAllLines(outputPath);
+        var header = lines[0];
+        Assert.Contains("Score", header);
+        Assert.Contains("ScoreLowerBound", header);
+        Assert.Contains("ScoreUpperBound", header);
+
+        // First data row: 42.5 ± 1.5 => [41.0, 44.0].
+        var cols = header.Split(',');
+        int iScore = Array.IndexOf(cols, "Score");
+        int iLower = Array.IndexOf(cols, "ScoreLowerBound");
+        int iUpper = Array.IndexOf(cols, "ScoreUpperBound");
+        var firstRow = lines[1].Split(',');
+        Assert.Equal(41.0f, float.Parse(firstRow[iLower], System.Globalization.CultureInfo.InvariantCulture), 3);
+        Assert.Equal(44.0f, float.Parse(firstRow[iUpper], System.Globalization.CultureInfo.InvariantCulture), 3);
+        Assert.Equal(42.5f, float.Parse(firstRow[iScore], System.Globalization.CultureInfo.InvariantCulture), 3);
+    }
+
+    private sealed class ScoreRow
+    {
+        public float Score { get; set; }
+    }
+
+    private sealed class ScoreBandRow
+    {
+        public float ScoreLowerBound { get; set; }
+        public float ScoreUpperBound { get; set; }
+    }
 }

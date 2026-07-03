@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Regression prediction intervals (split-conformal)**: regression models now carry a distribution-free uncertainty band, giving the regression trust-loop the signal that classification gets from its confidence probability. At train time, `AutoMLRunner.ComputeConformalIntervals` derives split-conformal half-widths from the absolute residuals of the held-out test predictions (the same holdout used for metrics) — the finite-sample empirical quantile of `|Label - Score|` for the 80/90/95% levels, giving a marginal-coverage guarantee `P(|y - ŷ| ≤ q) ≥ level`. It is **model-agnostic** (works with whatever trainer AutoML selects, unlike ML.NET's trainer-locked quantile-regression forests, which would break the free trainer sweep the quality gate depends on) and persists as flat scalars in `metrics.json` (`interval_half_width_{80,90,95}`, plus `residual_std`) with no schema change. At predict time both paths surface the primary 90% band as `[Score - q, Score + q]`: `POST /predict` adds `scoreLowerBound`/`scoreUpperBound`/`intervalConfidence` to each regression row, and `mloop predict` adds `ScoreLowerBound`/`ScoreUpperBound` columns to the CSV. A single source (`RegressionInterval.FromMetrics`) decides which band both paths expose, so serve and CLI never drift. Homoscedastic (constant-width) by design; heteroscedastic (normalized/Mondrian conformal) is deferred until demand is shown. Backward-compatible: models without a stored band emit point estimates only.
+
 ## [0.18.4] - 2026-07-03
 
 ### Fixed

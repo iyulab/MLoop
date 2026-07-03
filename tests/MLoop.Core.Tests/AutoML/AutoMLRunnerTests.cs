@@ -313,7 +313,70 @@ public class AutoMLRunnerTests
 
     #endregion
 
+    #region ComputeConformalIntervals Tests (② regression wave — prediction interval)
+
+    [Fact]
+    public void ComputeConformalIntervals_KnownResiduals_ProducesFiniteSampleQuantiles()
+    {
+        // Residuals |Label - Score| = {1,2,...,10} (n=10): Label=0, Score={1..10}.
+        // Split-conformal rank = ceil((n+1)*level): level .80 -> ceil(8.8)=9 -> 9th smallest = 9;
+        // level .90 -> ceil(9.9)=10 -> 10; level .95 -> ceil(10.45)=11 > n -> clamp to max = 10.
+        var data = _mlContext.Data.LoadFromEnumerable(
+            Enumerable.Range(1, 10).Select(i => new RegressionScored { Label = 0f, Score = i }));
+
+        var intervals = AutoMLRunner.ComputeConformalIntervals(data, "Label");
+
+        Assert.Equal(9.0, intervals["interval_half_width_80"], 6);
+        Assert.Equal(10.0, intervals["interval_half_width_90"], 6);
+        Assert.Equal(10.0, intervals["interval_half_width_95"], 6); // clamped (level too high for n=10)
+        // residual_std = sqrt((1+4+...+100)/10) = sqrt(38.5)
+        Assert.Equal(Math.Sqrt(38.5), intervals["residual_std"], 6);
+    }
+
+    [Fact]
+    public void ComputeConformalIntervals_EmpiricalCoverage_MeetsTargetLevel()
+    {
+        // The conformal guarantee: the fraction of holdout residuals within ±q must be ≥ the level.
+        var data = _mlContext.Data.LoadFromEnumerable(
+            Enumerable.Range(0, 200).Select(i => new RegressionScored { Label = 0f, Score = (i % 100) * 0.1f }));
+
+        var intervals = AutoMLRunner.ComputeConformalIntervals(data, "Label");
+        var residuals = Enumerable.Range(0, 200).Select(i => Math.Abs((i % 100) * 0.1)).ToList();
+
+        foreach (var (pct, level) in new[] { (80, 0.80), (90, 0.90) })
+        {
+            double q = intervals[$"interval_half_width_{pct}"];
+            double coverage = residuals.Count(r => r <= q + 1e-9) / (double)residuals.Count;
+            Assert.True(coverage >= level, $"coverage {coverage} < level {level} for {pct}%");
+        }
+        // Higher confidence => wider (never narrower) band.
+        Assert.True(intervals["interval_half_width_95"] >= intervals["interval_half_width_90"]);
+        Assert.True(intervals["interval_half_width_90"] >= intervals["interval_half_width_80"]);
+    }
+
+    [Fact]
+    public void ComputeConformalIntervals_MissingScoreColumn_ReturnsEmpty()
+    {
+        // Graceful: a data view with no Score column yields no band (never throws).
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new NumericData { Feature1 = 1f, Feature2 = 1f, Label = true },
+        });
+
+        var intervals = AutoMLRunner.ComputeConformalIntervals(data, "Label");
+
+        Assert.Empty(intervals);
+    }
+
+    #endregion
+
     #region Test Data Classes
+
+    private class RegressionScored
+    {
+        public float Label { get; set; }
+        public float Score { get; set; }
+    }
 
     private class TextBinaryData
     {
