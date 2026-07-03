@@ -6,6 +6,21 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 
 ---
 
+> ⚠️ **This document is a historical phase archive (Phases 0–19), not the live roadmap.** Its
+> per-phase records below are preserved for history, but its status/version figures are stale and
+> its internal version numbering (Phase-era `v1.x`) predates the current `v0.x` scheme. For the
+> **authoritative current state**, use:
+> - **Current version & released changes** → [`CHANGELOG.md`](CHANGELOG.md) (single source of truth for versions)
+> - **Active roadmap & remaining work** → `claudedocs/ROADMAP.md` (ecosystem) + `claudedocs/roadmap/13-honeai-middleware-roadmap.md` (HoneAI middleware)
+> - **Current session state / next tasks** → `claudedocs/HANDOFF.md`
+> - **Per-cycle execution history** → `claudedocs/cycle-logs/`
+>
+> As of 2026-07-03 the actual shipped version is **v0.18.4** (staged) with **1995+ tests** — the
+> "Current Status (v0.10.0)" section below is a stale snapshot. Disposition of this archive
+> (retain vs. rewrite vs. delete) is a pending maintainer decision (HANDOFF §C).
+
+---
+
 ## Versioning Policy
 
 MLoop follows [Semantic Versioning](https://semver.org/) with a community-first approach:
@@ -1152,11 +1167,6 @@ Submit proposals via GitHub Issues with `roadmap` label.
 
 ---
 
-**Last Updated**: March 20, 2026
-**Current Version**: v0.10.0
-**Last Updated**: March 20, 2026
-**Recent Changes**:
-- v0.10.0: ML.NET 전체 태스크 커버리지 (15/15), DL on-demand runtime, 1,311 tests
-- v0.8.0~0.9.0: Tier 1~3 완료 + on-demand runtime infra
-- v0.7.0: Clustering, Ranking, Forecasting
-- v0.5.1-alpha: Latest GitHub Release
+**Archive Last Updated**: March 20, 2026 (Phase archive frozen — see banner at top)
+**Current Version**: see [`CHANGELOG.md`](CHANGELOG.md) (v0.18.4 as of 2026-07-03; this archive's "v0.10.0" figures are historical)
+**Recent Changes**: see [`CHANGELOG.md`](CHANGELOG.md) for the accurate, ongoing version history.
