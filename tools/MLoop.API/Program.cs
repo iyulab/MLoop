@@ -421,7 +421,12 @@ app.MapPost("/predict", async (
         MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
 
         var transformer = modelCache.GetOrLoad(modelPath);
-        var result = predictionService.Predict(rows, schema, transformer, taskType, labelColumn);
+
+        // ② regression wave: surface the split-conformal prediction interval around each Score when
+        // the model stored a conformal band at train time (regression only, primary 90% level).
+        var interval = RegressionInterval.FromMetrics(taskType, expData?.Metrics);
+
+        var result = predictionService.Predict(rows, schema, transformer, taskType, labelColumn, interval);
 
         logger.LogInformation("Predictions completed for '{ModelName}': {Count} predictions in {ElapsedMs}ms (avg: {AvgMs}ms/prediction)",
             modelName, result.Rows.Count, stopwatch.ElapsedMilliseconds,

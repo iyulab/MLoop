@@ -469,6 +469,76 @@ public class AutoMLRunner
     }
 
     /// <summary>
+    /// ② regression wave (prediction-interval): computes split-conformal prediction-interval
+    /// half-widths from the held-out test-set predictions. For each confidence level the half-width
+    /// <c>q</c> is the finite-sample-corrected empirical quantile of the absolute residuals
+    /// <c>|Label - Score|</c> over the holdout, so the interval <c>[Score - q, Score + q]</c> carries
+    /// a distribution-free marginal-coverage guarantee (P(|y - ŷ| ≤ q) ≥ level) that is
+    /// <b>model-agnostic</b> — it works with whatever trainer AutoML selects, unlike ML.NET's
+    /// trainer-locked quantile-regression forests which would break the free trainer sweep D15/D16
+    /// depend on. Returns one scalar per level (<c>interval_half_width_{pct}</c>) plus
+    /// <c>residual_std</c> (RMS of residuals, diagnostic), ready to merge into the regression metrics
+    /// dict — they persist flat in metrics.json with no schema change. Homoscedastic (constant-width)
+    /// by design; heteroscedastic (normalized/Mondrian conformal) is deferred demand-driven.
+    /// Returns an empty dictionary (graceful) when the score/label columns are absent or the holdout
+    /// is empty. Note: the marginal-coverage guarantee holds only when <paramref name="predictions"/>
+    /// is a genuine holdout not seen during training (MLoop's test-set split satisfies this).
+    /// </summary>
+    public static Dictionary<string, double> ComputeConformalIntervals(
+        IDataView predictions,
+        string labelColumn,
+        IReadOnlyList<double>? confidenceLevels = null,
+        string scoreColumn = "Score")
+    {
+        var levels = confidenceLevels ?? new[] { 0.80, 0.90, 0.95 };
+        var result = new Dictionary<string, double>();
+
+        var labelCol = predictions.Schema.GetColumnOrNull(labelColumn);
+        var scoreCol = predictions.Schema.GetColumnOrNull(scoreColumn);
+        if (labelCol is null || scoreCol is null)
+            return result;
+
+        var absResiduals = new List<double>();
+        double sumSquares = 0;
+        using (var cursor = predictions.GetRowCursor(new[] { labelCol.Value, scoreCol.Value }))
+        {
+            var labelGetter = cursor.GetGetter<float>(labelCol.Value);
+            var scoreGetter = cursor.GetGetter<float>(scoreCol.Value);
+            float label = 0, score = 0;
+            while (cursor.MoveNext())
+            {
+                labelGetter(ref label);
+                scoreGetter(ref score);
+                double residual = Math.Abs((double)label - score);
+                absResiduals.Add(residual);
+                sumSquares += residual * residual;
+            }
+        }
+
+        int n = absResiduals.Count;
+        if (n == 0)
+            return result;
+
+        absResiduals.Sort();
+        result["residual_std"] = Math.Sqrt(sumSquares / n);
+
+        foreach (var level in levels)
+        {
+            // Split-conformal quantile: the smallest half-width q such that at least
+            // ceil((n+1)*level) of the n calibration residuals are ≤ q (1-based rank). When that
+            // rank exceeds n — the level is too high for this sample size to certify — the exact
+            // guarantee needs q = ∞; we clamp to the largest observed residual and the advertised
+            // coverage may be optimistic (verified live per the design doc).
+            int rank = (int)Math.Ceiling((n + 1) * level);
+            double q = rank > n ? absResiduals[n - 1] : absResiduals[rank - 1];
+            int pct = (int)Math.Round(level * 100);
+            result[$"interval_half_width_{pct}"] = q;
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// BUG-36: Manual pipeline fallback for small datasets where AutoML's internal AUC
     /// computation fails. Builds an explicit ML.NET pipeline with SDCA trainer, bypassing
     /// AutoML's cross-validation entirely.
@@ -695,6 +765,12 @@ public class AutoMLRunner
             ["mae"] = metrics.MeanAbsoluteError,
             ["mse"] = metrics.MeanSquaredError
         };
+
+        // ② regression wave: derive split-conformal prediction-interval half-widths from the same
+        // held-out test predictions used for metrics, so predict/serve can surface an uncertainty
+        // band [Score ± q] (the regression analogue of the confidence signal binary/multiclass expose).
+        foreach (var interval in ComputeConformalIntervals(predictions, config.LabelColumn))
+            metricsDict[interval.Key] = interval.Value;
 
         return new AutoMLResult
         {

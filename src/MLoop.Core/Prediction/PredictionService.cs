@@ -21,7 +21,7 @@ public class PredictionService
 
     /// <summary>
     /// Runs prediction on in-memory row data using a saved ML.NET model file.
-    /// Loads the model from disk on every call — use the <see cref="Predict(Dictionary{string, object}[], InputSchemaInfo, ITransformer, string, string?)"/>
+    /// Loads the model from disk on every call — use the <see cref="Predict(Dictionary{string, object}[], InputSchemaInfo, ITransformer, string, string?, RegressionInterval?)"/>
     /// overload with a pre-loaded model for warm-path scenarios (e.g. API serve with model caching).
     /// </summary>
     public PredictionResult Predict(
@@ -29,7 +29,8 @@ public class PredictionService
         InputSchemaInfo schema,
         string modelPath,
         string taskType,
-        string? labelColumn = null)
+        string? labelColumn = null,
+        RegressionInterval? interval = null)
     {
         if (rows.Length == 0)
         {
@@ -45,7 +46,7 @@ public class PredictionService
         RuntimeManager.EnsureRuntimeForTask(taskType);
 
         var model = _mlContext.Model.Load(modelPath, out _);
-        return Predict(rows, schema, model, taskType, labelColumn);
+        return Predict(rows, schema, model, taskType, labelColumn, interval);
     }
 
     /// <summary>
@@ -61,7 +62,8 @@ public class PredictionService
         InputSchemaInfo schema,
         ITransformer model,
         string taskType,
-        string? labelColumn = null)
+        string? labelColumn = null,
+        RegressionInterval? interval = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -114,7 +116,7 @@ public class PredictionService
 
         predictions = RestoreOriginalLabels(predictions);
 
-        var result = ExtractResults(predictions, taskType);
+        var result = ExtractResults(predictions, taskType, interval);
 
         if (warnings.Count > 0)
         {
@@ -274,7 +276,7 @@ public class PredictionService
     /// <summary>
     /// Eagerly materializes all prediction rows from the IDataView using cursor iteration.
     /// </summary>
-    internal static PredictionResult ExtractResults(IDataView predictions, string taskType)
+    internal static PredictionResult ExtractResults(IDataView predictions, string taskType, RegressionInterval? interval = null)
     {
         var rows = new List<PredictionRow>();
         var schema = predictions.Schema;
@@ -291,7 +293,7 @@ public class PredictionService
         }
         else if (taskType is "regression" or "forecasting")
         {
-            rows = ExtractRegressionRows(cursor, scoreCol);
+            rows = ExtractRegressionRows(cursor, scoreCol, interval);
         }
         else if (taskType == "clustering")
         {
@@ -303,7 +305,7 @@ public class PredictionService
         }
         else
         {
-            // ranking, recommendation, etc. — just score
+            // ranking, recommendation, etc. — just score (no conformal band; interval is regression-only)
             rows = ExtractRegressionRows(cursor, scoreCol);
         }
 
@@ -420,7 +422,8 @@ public class PredictionService
 
     private static List<PredictionRow> ExtractRegressionRows(
         DataViewRowCursor cursor,
-        DataViewSchema.Column? scoreCol)
+        DataViewSchema.Column? scoreCol,
+        RegressionInterval? interval = null)
     {
         var rows = new List<PredictionRow>();
 
@@ -438,7 +441,22 @@ public class PredictionService
                 score = scoreValue;
             }
 
-            rows.Add(new PredictionRow { Score = score });
+            // ② regression wave: wrap Score in the split-conformal band when the model carries one.
+            double? lower = null, upper = null, confidence = null;
+            if (score.HasValue && interval != null)
+            {
+                lower = score.Value - interval.HalfWidth;
+                upper = score.Value + interval.HalfWidth;
+                confidence = interval.Confidence;
+            }
+
+            rows.Add(new PredictionRow
+            {
+                Score = score,
+                ScoreLowerBound = lower,
+                ScoreUpperBound = upper,
+                IntervalConfidence = confidence
+            });
         }
 
         return rows;

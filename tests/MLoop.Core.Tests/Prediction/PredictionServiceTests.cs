@@ -111,6 +111,114 @@ public class PredictionServiceTests : IDisposable
         Assert.NotNull(result.Rows[0].Score);
     }
 
+    [Fact]
+    public void Predict_Regression_WithInterval_WrapsScoreInConformalBand()
+    {
+        // ② regression wave: when a RegressionInterval is passed (the caller reads it from the
+        // stored conformal band), each regression row exposes [Score - q, Score + q] + confidence.
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+            new SimpleRegression { X = 3.0f, Y = 6.0f },
+            new SimpleRegression { X = 4.0f, Y = 8.0f },
+            new SimpleRegression { X = 5.0f, Y = 10.0f },
+        });
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
+            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        var model = pipeline.Fit(data);
+        var modelPath = SaveModel(model, data.Schema);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[] { new Dictionary<string, object> { ["X"] = 6.0f } };
+
+        var service = new PredictionService(_mlContext);
+        var interval = new RegressionInterval(HalfWidth: 1.5, Confidence: 0.90);
+        var result = service.Predict(rows, schema, modelPath, "regression", "Y", interval);
+
+        var row = Assert.Single(result.Rows);
+        Assert.NotNull(row.Score);
+        Assert.NotNull(row.ScoreLowerBound);
+        Assert.NotNull(row.ScoreUpperBound);
+        Assert.Equal(row.Score!.Value - 1.5, row.ScoreLowerBound!.Value, 6);
+        Assert.Equal(row.Score!.Value + 1.5, row.ScoreUpperBound!.Value, 6);
+        Assert.Equal(0.90, row.IntervalConfidence);
+    }
+
+    [Fact]
+    public void Predict_Regression_WithoutInterval_LeavesBoundsNull()
+    {
+        // Backward-compatible: no interval passed => point estimate only, bounds stay null.
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+            new SimpleRegression { X = 3.0f, Y = 6.0f },
+        });
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
+            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        var model = pipeline.Fit(data);
+        var modelPath = SaveModel(model, data.Schema);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[] { new Dictionary<string, object> { ["X"] = 6.0f } };
+
+        var service = new PredictionService(_mlContext);
+        var result = service.Predict(rows, schema, modelPath, "regression", "Y");
+
+        var row = Assert.Single(result.Rows);
+        Assert.NotNull(row.Score);
+        Assert.Null(row.ScoreLowerBound);
+        Assert.Null(row.ScoreUpperBound);
+        Assert.Null(row.IntervalConfidence);
+    }
+
+    [Fact]
+    public void RegressionInterval_FromMetrics_RegressionWithBand_ReturnsPrimaryInterval()
+    {
+        // Single source both serve and CLI predict use — surfaces the 90% band from stored metrics.
+        var metrics = new Dictionary<string, double>
+        {
+            ["r_squared"] = 0.9,
+            ["interval_half_width_80"] = 1.0,
+            ["interval_half_width_90"] = 1.5,
+            ["interval_half_width_95"] = 2.0,
+        };
+
+        var interval = RegressionInterval.FromMetrics("regression", metrics);
+
+        Assert.NotNull(interval);
+        Assert.Equal(1.5, interval!.HalfWidth, 6);   // the 90% band, not 80/95
+        Assert.Equal(0.90, interval.Confidence, 6);
+    }
+
+    [Fact]
+    public void RegressionInterval_FromMetrics_NonRegressionOrNoBand_ReturnsNull()
+    {
+        var bandMetrics = new Dictionary<string, double> { ["interval_half_width_90"] = 1.5 };
+        var noBandMetrics = new Dictionary<string, double> { ["r_squared"] = 0.9 };
+
+        Assert.Null(RegressionInterval.FromMetrics("binary-classification", bandMetrics)); // wrong task
+        Assert.Null(RegressionInterval.FromMetrics("regression", noBandMetrics));          // no band key
+        Assert.Null(RegressionInterval.FromMetrics("regression", null));                   // no metrics
+    }
+
     #endregion
 
     #region Empty Input

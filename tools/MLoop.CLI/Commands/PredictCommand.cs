@@ -138,6 +138,9 @@ public static class PredictCommand
             // F-23: group/user/item columns must stay individually addressable at predict time so the
             // ranking/recommendation model's key transforms can find them (see ApplyColumnPreservation).
             List<string>? preserveColumns = null;
+            // ② regression wave: the stored conformal band, surfaced as [ScoreLowerBound, ScoreUpperBound]
+            // in the CSV for regression models (same single source the serve /predict path uses).
+            RegressionInterval? interval = null;
 
             if (string.IsNullOrEmpty(modelPath))
             {
@@ -165,6 +168,7 @@ public static class PredictCommand
                     configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
                     taskType = experimentData?.Task;
                     preserveColumns = BuildPreserveColumns(experimentData?.Config);
+                    interval = RegressionInterval.FromMetrics(experimentData?.Task, experimentData?.Metrics);
                 }
                 catch
                 {
@@ -202,6 +206,7 @@ public static class PredictCommand
                             configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
                             taskType = experimentData?.Task;
                             preserveColumns = BuildPreserveColumns(experimentData?.Config);
+                            interval = RegressionInterval.FromMetrics(experimentData?.Task, experimentData?.Metrics);
                             experimentId = possibleExpId;
                         }
                         catch
@@ -436,7 +441,8 @@ public static class PredictCommand
                         strategy,
                         CancellationToken.None,
                         configLabelColumn,
-                        preserveColumns);
+                        preserveColumns,
+                        interval);
 
                     ctx.Status("[green]Predictions complete![/]");
                 });

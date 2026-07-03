@@ -52,7 +52,8 @@ public class PredictionEngine : IPredictionEngine
         CategoricalMapper.UnknownValueStrategy strategy,
         CancellationToken cancellationToken = default,
         string? labelColumnOverride = null,
-        IEnumerable<string>? preserveColumns = null)
+        IEnumerable<string>? preserveColumns = null,
+        RegressionInterval? interval = null)
     {
         if (!File.Exists(modelPath))
         {
@@ -268,6 +269,22 @@ public class PredictionEngine : IPredictionEngine
                 predictions = keyToValue.Fit(predictions).Transform(predictions);
             }
 
+            // ② regression wave: mirror serve /predict — when the model carries a split-conformal band,
+            // wrap the regression Score into [ScoreLowerBound, ScoreUpperBound] so the CSV output matches
+            // the serve JSON (the two predict paths must not drift — the D-series lesson).
+            if (interval != null && predictions.Schema.GetColumnOrNull("Score") != null)
+            {
+                float halfWidth = (float)interval.HalfWidth;
+                var bandTransform = _mlContext.Transforms.CustomMapping<ScoreOnly, ScoreBand>(
+                    (input, output) =>
+                    {
+                        output.ScoreLowerBound = input.Score - halfWidth;
+                        output.ScoreUpperBound = input.Score + halfWidth;
+                    },
+                    contractName: null);
+                predictions = bandTransform.Fit(predictions).Transform(predictions);
+            }
+
             // Select only prediction output columns (exclude duplicated input features)
             // ML.NET prediction output columns: PredictedLabel, Score, Probability (for classification)
             // For regression: Score only
@@ -279,7 +296,8 @@ public class PredictionEngine : IPredictionEngine
             {
                 if (col.IsHidden) continue; // Skip hidden columns (e.g., key-type PredictedLabel after MapKeyToValue)
                 // Include standard prediction output columns
-                if (col.Name == "PredictedLabel" || col.Name == "Score" || col.Name == "Probability")
+                if (col.Name == "PredictedLabel" || col.Name == "Score" || col.Name == "Probability"
+                    || col.Name == "ScoreLowerBound" || col.Name == "ScoreUpperBound")
                 {
                     predictionColumns.Add(col.Name);
                 }
@@ -513,5 +531,17 @@ public class PredictionEngine : IPredictionEngine
         }
 
         return rows.ToArray();
+    }
+
+    // ② regression wave: CustomMapping shapes for wrapping a regression Score in its conformal band.
+    private sealed class ScoreOnly
+    {
+        public float Score { get; set; }
+    }
+
+    private sealed class ScoreBand
+    {
+        public float ScoreLowerBound { get; set; }
+        public float ScoreUpperBound { get; set; }
     }
 }
