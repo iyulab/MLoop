@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\tools\MLoop.API\MLoop.API.csproj" />
     <ProjectReference Include="..\MLoop.Tests.Common\MLoop.Tests.Common.csproj" />
   </ItemGroup>
