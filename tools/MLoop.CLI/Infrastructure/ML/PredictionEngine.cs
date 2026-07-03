@@ -405,18 +405,21 @@ public class PredictionEngine : IPredictionEngine
     }
 
     /// <summary>
-    /// Prediction using the shared PredictionService (Dict[] → PredictionResult path).
-    /// Used by the API. CLI can switch to this path after validation.
+    /// Prediction using the shared PredictionService (Dict[] → PredictionResult path). The single source
+    /// for structured predictions — the API and the CLI <c>--json</c> path both go through here so their
+    /// output (rows, conformal band, normalized <c>confidence</c>) never drifts. When <paramref name="interval"/>
+    /// carries a heteroscedastic band, the service loads the sibling <c>residual-model.zip</c> itself.
     /// </summary>
     public PredictionResult PredictWithService(
         Dictionary<string, object>[] rows,
         InputSchemaInfo schema,
         string modelPath,
         string taskType,
-        string? labelColumn = null)
+        string? labelColumn = null,
+        RegressionInterval? interval = null)
     {
         var service = new PredictionService(_mlContext);
-        return service.Predict(rows, schema, modelPath, taskType, labelColumn);
+        return service.Predict(rows, schema, modelPath, taskType, labelColumn, interval);
     }
 
     /// <summary>

@@ -158,6 +158,9 @@ public class PredictionServiceTests : IDisposable
         Assert.Equal(row.Score!.Value - 1.5, row.ScoreLowerBound!.Value, 6);
         Assert.Equal(row.Score!.Value + 1.5, row.ScoreUpperBound!.Value, 6);
         Assert.Equal(0.90, row.IntervalConfidence);
+        // ConfidencePolicy post-pass populates the normalized per-row confidence from the band.
+        Assert.NotNull(row.Confidence);
+        Assert.InRange(row.Confidence!.Value, 0.0, 1.0);
     }
 
     [Fact]

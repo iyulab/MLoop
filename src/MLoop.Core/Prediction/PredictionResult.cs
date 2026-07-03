@@ -8,7 +8,7 @@ public class PredictionResult
     public List<string>? Warnings { get; init; }
 }
 
-public class PredictionRow
+public record PredictionRow
 {
     public string? PredictedLabel { get; init; }
     public Dictionary<string, double>? Probabilities { get; init; }
@@ -23,7 +23,17 @@ public class PredictionRow
     // Gives the regression trust-loop signal the confidence probability gives classification.
     public double? ScoreLowerBound { get; init; }
     public double? ScoreUpperBound { get; init; }
+    // Coverage LEVEL of the band (e.g. 0.90), NOT a per-row confidence — see Confidence below for that.
     public double? IntervalConfidence { get; init; }
+
+    /// <summary>
+    /// Normalized per-row confidence ∈ [0,1], derived by <see cref="ConfidencePolicy"/> from this row's
+    /// task-family uncertainty signal (classification → max class probability, anomaly → decision-boundary
+    /// distance, regression → conformal band width vs residual scale). MLoop owns this rule so consumers
+    /// stop re-deriving it — do not confuse with <see cref="IntervalConfidence"/> (the band's coverage
+    /// level). Null when the model exposes no usable confidence signal.
+    /// </summary>
+    public double? Confidence { get; init; }
 }
 
 /// <summary>
@@ -40,7 +50,7 @@ public class PredictionRow
 /// residual model is available for a row.</item>
 /// </list>
 /// </summary>
-public record RegressionInterval(double HalfWidth, double Confidence, double? NormalizedQ = null, double? Beta = null)
+public record RegressionInterval(double HalfWidth, double Confidence, double? NormalizedQ = null, double? Beta = null, double? ResidualStd = null)
 {
     /// <summary>
     /// The primary coverage level exposed at predict time. Training stores the 80/90/95 bands
@@ -71,15 +81,19 @@ public record RegressionInterval(double HalfWidth, double Confidence, double? No
 
         int pct = (int)Math.Round(PrimaryConfidence * 100);
 
+        // residual_std (typical error scale) normalizes the regression band into a [0,1] confidence in
+        // ConfidencePolicy — MLoop owns it, consumers don't easily have it. Absent on old models → null.
+        double? residualStd = metrics.TryGetValue("residual_std", out var rs) ? rs : null;
+
         // Heteroscedastic band takes precedence: it needs the constant-width half-width as its fallback
         // (rows the σ-model can't score) plus the normalized quantile and β.
         if (metrics.TryGetValue($"interval_half_width_{pct}", out var halfWidth))
         {
             if (metrics.TryGetValue($"norm_interval_q_{pct}", out var q) &&
                 metrics.TryGetValue("interval_beta", out var beta))
-                return new RegressionInterval(halfWidth, PrimaryConfidence, q, beta);
+                return new RegressionInterval(halfWidth, PrimaryConfidence, q, beta, residualStd);
 
-            return new RegressionInterval(halfWidth, PrimaryConfidence);
+            return new RegressionInterval(halfWidth, PrimaryConfidence, ResidualStd: residualStd);
         }
 
         return null;
