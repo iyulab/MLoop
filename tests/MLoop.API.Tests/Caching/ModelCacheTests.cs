@@ -11,6 +11,27 @@ public sealed class ModelCacheTests : IDisposable
     private readonly MLContext _ml = new(seed: 42);
     private readonly List<string> _tempFiles = new();
 
+    // Fitting an SDCA trainer spins up ML.NET's internal Utils.ImmediateBackgroundThreadPool
+    // background threads that are never torn down; xUnit creates a fresh ModelCacheTests
+    // instance per [Fact], so calling Fit() from every SaveTinyModel() call accumulates
+    // dozens of idle threads across this class's ~9 call sites and causes severe, randomly
+    // located slowdowns under load (observed as false test-host "hangs"). The trained model
+    // itself is incidental to what these tests exercise (ModelCache's path/mtime/LRU logic,
+    // not SDCA correctness), so it is trained once per process and only re-saved per test.
+    private static readonly Lazy<(ITransformer Model, DataViewSchema Schema)> s_tinyModel = new(() =>
+    {
+        var ml = new MLContext(seed: 42);
+        var data = ml.Data.LoadFromEnumerable(new[]
+        {
+            new Sample { X = 1f, Y = 2f }, new Sample { X = 2f, Y = 4f },
+            new Sample { X = 3f, Y = 6f }, new Sample { X = 4f, Y = 8f },
+            new Sample { X = 5f, Y = 10f },
+        });
+        var pipeline = ml.Transforms.Concatenate("Features", "X")
+            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        return (pipeline.Fit(data), data.Schema);
+    });
+
     public void Dispose()
     {
         foreach (var f in _tempFiles)
@@ -21,19 +42,9 @@ public sealed class ModelCacheTests : IDisposable
 
     private string SaveTinyModel()
     {
-        var data = _ml.Data.LoadFromEnumerable(new[]
-        {
-            new Sample { X = 1f, Y = 2f }, new Sample { X = 2f, Y = 4f },
-            new Sample { X = 3f, Y = 6f }, new Sample { X = 4f, Y = 8f },
-            new Sample { X = 5f, Y = 10f },
-        });
-        var pipeline = _ml.Transforms.Concatenate("Features", "X")
-            .Append(_ml.Regression.Trainers.Sdca(labelColumnName: "Y"));
-        var model = pipeline.Fit(data);
-
         var path = Path.Combine(Path.GetTempPath(), $"mloop-cache-test-{Guid.NewGuid():N}.zip");
         _tempFiles.Add(path);
-        _ml.Model.Save(model, data.Schema, path);
+        _ml.Model.Save(s_tinyModel.Value.Model, s_tinyModel.Value.Schema, path);
         return path;
     }
 
@@ -66,18 +77,10 @@ public sealed class ModelCacheTests : IDisposable
 
         var first = cache.GetOrLoad(path);
 
-        // Resave (same content is fine — what matters is mtime advancing)
+        // Resave (same content is fine — what matters is mtime advancing; ModelCache reloads
+        // on mtime change regardless of whether the underlying model bytes differ).
         Thread.Sleep(1100); // ensure mtime tick difference (filesystem resolution varies)
-        var data = _ml.Data.LoadFromEnumerable(new[]
-        {
-            new Sample { X = 10f, Y = 20f }, new Sample { X = 20f, Y = 40f },
-            new Sample { X = 30f, Y = 60f }, new Sample { X = 40f, Y = 80f },
-            new Sample { X = 50f, Y = 100f },
-        });
-        var pipeline = _ml.Transforms.Concatenate("Features", "X")
-            .Append(_ml.Regression.Trainers.Sdca(labelColumnName: "Y"));
-        var newModel = pipeline.Fit(data);
-        _ml.Model.Save(newModel, data.Schema, path);
+        _ml.Model.Save(s_tinyModel.Value.Model, s_tinyModel.Value.Schema, path);
 
         var second = cache.GetOrLoad(path);
 
