@@ -30,6 +30,12 @@ public static class ExperimentLayout
     /// promoted <c>production/</c> slot. The single most-duplicated layout literal before this.</summary>
     public const string ModelFileName = "model.zip";
 
+    /// <summary>② regression wave (heteroscedastic): the optional auxiliary σ(x) model that gives the
+    /// conformal band its per-row width. Sits beside <see cref="ModelFileName"/> in <c>staging/{expId}/</c>
+    /// and the promoted <c>production/</c> slot, and is copied on promote when present. Absent for
+    /// non-regression tasks and homoscedastic fallbacks — predict then uses the constant-width band.</summary>
+    public const string ResidualModelFileName = "residual-model.zip";
+
     /// <summary>Per-experiment metadata (task, trainer, timestamps) inside <c>staging/{expId}/</c>.</summary>
     public const string MetadataFileName = "metadata.json";
 

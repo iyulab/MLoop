@@ -1,5 +1,7 @@
+using System.Linq;
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.AutoML;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
 
@@ -9,12 +11,17 @@ public class PredictionServiceTests : IDisposable
 {
     private readonly MLContext _mlContext = new(seed: 42);
     private readonly List<string> _tempFiles = new();
+    private readonly List<string> _tempDirs = new();
 
     public void Dispose()
     {
         foreach (var file in _tempFiles)
         {
             try { File.Delete(file); } catch { }
+        }
+        foreach (var dir in _tempDirs)
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { }
         }
     }
 
@@ -154,6 +161,64 @@ public class PredictionServiceTests : IDisposable
     }
 
     [Fact]
+    public void Predict_Regression_Heteroscedastic_ProducesPerRowBandWidths()
+    {
+        // ② regression wave (heteroscedastic, serve path): the σ-model widens the band per row. Build
+        // data whose residual magnitude grows with X, fit the real normalized-conformal aux, save both
+        // models side by side, and assert two inputs with very different X get different band widths.
+        // Dedicated context: SDCA is RNG-sensitive and the shared _mlContext is advanced by other tests,
+        // which would make this model-quality-dependent assertion order-flaky. A fresh seeded context
+        // makes the σ-model fit deterministic regardless of suite order.
+        var ml = new MLContext(seed: 42);
+        var rows = Enumerable.Range(0, 60).Select(i =>
+        {
+            float x = (i % 20) + 1;
+            return new SimpleRegression { X = x, Y = 2f * x + 0.5f * x * ((i % 2 == 0) ? 1 : -1) }; // |resid from 2X| = 0.5X
+        }).ToList();
+        var data = ml.Data.LoadFromEnumerable(rows);
+        var mainModel = ml.Transforms.Concatenate("Features", "X")
+            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Y")).Fit(data);
+        var scored = mainModel.Transform(data);
+
+        var norm = AutoMLRunner.ComputeNormalizedConformal(ml, scored, "Y", new[] { "Features" });
+        Assert.NotNull(norm);
+        var metrics = new Dictionary<string, double>(AutoMLRunner.ComputeConformalIntervals(scored, "Y"));
+        foreach (var kv in norm!.Metrics) metrics[kv.Key] = kv.Value;
+        var interval = RegressionInterval.FromMetrics("regression", metrics);
+        Assert.NotNull(interval);
+        Assert.True(interval!.IsHeteroscedastic);
+
+        var dir = Path.Combine(Path.GetTempPath(), "mloop-hetero-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        _tempDirs.Add(dir);
+        ml.Model.Save(mainModel, data.Schema, Path.Combine(dir, "model.zip"));
+        ml.Model.Save(norm.AuxModel, null, Path.Combine(dir, "residual-model.zip"));
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var inputRows = new[]
+        {
+            new Dictionary<string, object> { ["X"] = 1.0f },
+            new Dictionary<string, object> { ["X"] = 20.0f },
+        };
+
+        var service = new PredictionService(ml);
+        var result = service.Predict(inputRows, schema, Path.Combine(dir, "model.zip"), "regression", "Y", interval);
+
+        Assert.Equal(2, result.Rows.Count);
+        double w1 = result.Rows[0].ScoreUpperBound!.Value - result.Rows[0].ScoreLowerBound!.Value;
+        double w2 = result.Rows[1].ScoreUpperBound!.Value - result.Rows[1].ScoreLowerBound!.Value;
+        Assert.True(Math.Abs(w1 - w2) > 1e-3, $"per-row band widths should differ (w1={w1:F3}, w2={w2:F3})");
+    }
+
+    [Fact]
     public void Predict_Regression_WithoutInterval_LeavesBoundsNull()
     {
         // Backward-compatible: no interval passed => point estimate only, bounds stay null.
@@ -206,6 +271,34 @@ public class PredictionServiceTests : IDisposable
         Assert.NotNull(interval);
         Assert.Equal(1.5, interval!.HalfWidth, 6);   // the 90% band, not 80/95
         Assert.Equal(0.90, interval.Confidence, 6);
+        Assert.False(interval.IsHeteroscedastic);            // no norm keys → constant width
+        Assert.Equal(1.5, interval.WidthFor(99.0), 6);       // width ignores σ in constant mode
+    }
+
+    [Fact]
+    public void RegressionInterval_FromMetrics_WithNormalizedBand_ReturnsHeteroscedastic()
+    {
+        // ② regression wave (heteroscedastic): when the normalized-conformal keys are present the band
+        // becomes per-row — width = q·(max(σ,0)+β) — and keeps the constant half-width as its fallback.
+        var metrics = new Dictionary<string, double>
+        {
+            ["interval_half_width_90"] = 1.5,   // constant fallback
+            ["norm_interval_q_90"] = 2.0,       // normalized quantile q
+            ["interval_beta"] = 0.5,            // σ floor β
+        };
+
+        var interval = RegressionInterval.FromMetrics("regression", metrics);
+
+        Assert.NotNull(interval);
+        Assert.True(interval!.IsHeteroscedastic);
+        Assert.Equal(1.5, interval.HalfWidth, 6);            // fallback preserved
+        Assert.Equal(2.0, interval.NormalizedQ!.Value, 6);
+        Assert.Equal(0.5, interval.Beta!.Value, 6);
+        // width grows with σ: q·(σ+β). σ=1 → 2·1.5=3.0; σ=3 → 2·3.5=7.0; negative σ clamped to 0 → 2·0.5=1.0
+        Assert.Equal(3.0, interval.WidthFor(1.0), 6);
+        Assert.Equal(7.0, interval.WidthFor(3.0), 6);
+        Assert.Equal(1.0, interval.WidthFor(-5.0), 6);
+        Assert.True(interval.WidthFor(3.0) > interval.WidthFor(1.0)); // wider where σ larger
     }
 
     [Fact]

@@ -7,6 +7,7 @@ using MLoop.Core.Contracts;
 using MLoop.Core.Models;
 using MLoop.Core.Data;
 using MLoop.Core.Prediction;
+using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
@@ -269,20 +270,13 @@ public class PredictionEngine : IPredictionEngine
                 predictions = keyToValue.Fit(predictions).Transform(predictions);
             }
 
-            // ② regression wave: mirror serve /predict — when the model carries a split-conformal band,
-            // wrap the regression Score into [ScoreLowerBound, ScoreUpperBound] so the CSV output matches
-            // the serve JSON (the two predict paths must not drift — the D-series lesson).
+            // ② regression wave: mirror serve /predict — when the model carries a conformal band, wrap
+            // the regression Score into [ScoreLowerBound, ScoreUpperBound] so the CSV output matches the
+            // serve JSON (the two predict paths must not drift — the D-series lesson). Heteroscedastic
+            // models widen the band per row via the sibling σ-model; others use the constant half-width.
             if (interval != null && predictions.Schema.GetColumnOrNull("Score") != null)
             {
-                float halfWidth = (float)interval.HalfWidth;
-                var bandTransform = _mlContext.Transforms.CustomMapping<ScoreOnly, ScoreBand>(
-                    (input, output) =>
-                    {
-                        output.ScoreLowerBound = input.Score - halfWidth;
-                        output.ScoreUpperBound = input.Score + halfWidth;
-                    },
-                    contractName: null);
-                predictions = bandTransform.Fit(predictions).Transform(predictions);
+                predictions = ApplyConformalBand(predictions, interval, modelPath);
             }
 
             // Select only prediction output columns (exclude duplicated input features)
@@ -533,6 +527,57 @@ public class PredictionEngine : IPredictionEngine
         return rows.ToArray();
     }
 
+    /// <summary>
+    /// ② regression wave: adds [ScoreLowerBound, ScoreUpperBound] columns to a scored regression view.
+    /// Heteroscedastic models (interval carries q + β and a sibling residual-model.zip exists) get a
+    /// per-row width q·(max(σ(x),0)+β): the point Score is preserved as PointScore, the σ-model overwrites
+    /// Score with its residual estimate, the band is computed from both, then Score is restored to the
+    /// point prediction. Any failure (no σ-model, missing Features) falls back to the constant half-width
+    /// so the CSV always carries the band — matching serve's behaviour (the two paths must not drift).
+    /// </summary>
+    private IDataView ApplyConformalBand(IDataView predictions, RegressionInterval interval, string modelPath)
+    {
+        var residualPath = Path.Combine(Path.GetDirectoryName(modelPath) ?? ".", ExperimentLayout.ResidualModelFileName);
+        if (interval.IsHeteroscedastic && File.Exists(residualPath))
+        {
+            try
+            {
+                var aux = _mlContext.Model.Load(residualPath, out _);
+                double q = interval.NormalizedQ!.Value, beta = interval.Beta!.Value;
+
+                var withPoint = _mlContext.Transforms.CopyColumns("PointScore", "Score").Fit(predictions).Transform(predictions);
+                var withSigma = aux.Transform(withPoint); // aux "Score" = σ(x), shadows the point Score (preserved as PointScore)
+                if (withSigma.Schema.GetColumnOrNull("Score") is not null)
+                {
+                    var band = _mlContext.Transforms.CustomMapping<PointSigma, ScoreBand>(
+                        (input, output) =>
+                        {
+                            double sigma = Math.Max(input.Score, 0f) + beta;
+                            output.ScoreLowerBound = (float)(input.PointScore - q * sigma);
+                            output.ScoreUpperBound = (float)(input.PointScore + q * sigma);
+                        },
+                        contractName: null).Fit(withSigma).Transform(withSigma);
+                    // Restore Score to the point prediction (aux had shadowed it with σ).
+                    return _mlContext.Transforms.CopyColumns("Score", "PointScore").Fit(band).Transform(band);
+                }
+            }
+            catch
+            {
+                // fall through to constant-width band below
+            }
+        }
+
+        float halfWidth = (float)interval.HalfWidth;
+        var bandTransform = _mlContext.Transforms.CustomMapping<ScoreOnly, ScoreBand>(
+            (input, output) =>
+            {
+                output.ScoreLowerBound = input.Score - halfWidth;
+                output.ScoreUpperBound = input.Score + halfWidth;
+            },
+            contractName: null);
+        return bandTransform.Fit(predictions).Transform(predictions);
+    }
+
     // ② regression wave: CustomMapping shapes for wrapping a regression Score in its conformal band.
     private sealed class ScoreOnly
     {
@@ -543,5 +588,13 @@ public class PredictionEngine : IPredictionEngine
     {
         public float ScoreLowerBound { get; set; }
         public float ScoreUpperBound { get; set; }
+    }
+
+    // Heteroscedastic band input: the preserved point prediction plus the σ-model's residual estimate
+    // (which the σ-model emits into "Score").
+    private sealed class PointSigma
+    {
+        public float PointScore { get; set; }
+        public float Score { get; set; }
     }
 }

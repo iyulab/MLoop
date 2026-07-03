@@ -3,6 +3,7 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Runtime;
+using MLoop.Core.Storage;
 
 namespace MLoop.Core.Prediction;
 
@@ -46,7 +47,18 @@ public class PredictionService
         RuntimeManager.EnsureRuntimeForTask(taskType);
 
         var model = _mlContext.Model.Load(modelPath, out _);
-        return Predict(rows, schema, model, taskType, labelColumn, interval);
+
+        // ② regression wave (heteroscedastic): load the sibling σ-model for per-row band widths when the
+        // interval carries the normalized-conformal parameters and the file was promoted alongside.
+        ITransformer? residualModel = null;
+        if (interval?.IsHeteroscedastic == true)
+        {
+            var residualPath = Path.Combine(Path.GetDirectoryName(modelPath) ?? ".", ExperimentLayout.ResidualModelFileName);
+            if (File.Exists(residualPath))
+                residualModel = _mlContext.Model.Load(residualPath, out _);
+        }
+
+        return Predict(rows, schema, model, taskType, labelColumn, interval, residualModel);
     }
 
     /// <summary>
@@ -63,7 +75,8 @@ public class PredictionService
         ITransformer model,
         string taskType,
         string? labelColumn = null,
-        RegressionInterval? interval = null)
+        RegressionInterval? interval = null,
+        ITransformer? residualModel = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -114,9 +127,20 @@ public class PredictionService
                 $"the training data. Original error: {ex.Message}", ex);
         }
 
+        // ② regression wave (heteroscedastic): the σ-model reads the "Features" column the main model
+        // just produced, so score it here (before RestoreOriginalLabels touches label columns) and
+        // materialize the per-row σ in the same row order the result cursor will iterate. A failure
+        // (e.g. a missing Features column) degrades gracefully to the constant-width band.
+        IReadOnlyList<double>? perRowSigma = null;
+        if (residualModel != null && interval?.IsHeteroscedastic == true)
+        {
+            try { perRowSigma = ComputeResidualSigma(residualModel, predictions); }
+            catch { perRowSigma = null; }
+        }
+
         predictions = RestoreOriginalLabels(predictions);
 
-        var result = ExtractResults(predictions, taskType, interval);
+        var result = ExtractResults(predictions, taskType, interval, perRowSigma);
 
         if (warnings.Count > 0)
         {
@@ -276,7 +300,7 @@ public class PredictionService
     /// <summary>
     /// Eagerly materializes all prediction rows from the IDataView using cursor iteration.
     /// </summary>
-    internal static PredictionResult ExtractResults(IDataView predictions, string taskType, RegressionInterval? interval = null)
+    internal static PredictionResult ExtractResults(IDataView predictions, string taskType, RegressionInterval? interval = null, IReadOnlyList<double>? perRowSigma = null)
     {
         var rows = new List<PredictionRow>();
         var schema = predictions.Schema;
@@ -293,7 +317,7 @@ public class PredictionService
         }
         else if (taskType is "regression" or "forecasting")
         {
-            rows = ExtractRegressionRows(cursor, scoreCol, interval);
+            rows = ExtractRegressionRows(cursor, scoreCol, interval, perRowSigma);
         }
         else if (taskType == "clustering")
         {
@@ -423,7 +447,8 @@ public class PredictionService
     private static List<PredictionRow> ExtractRegressionRows(
         DataViewRowCursor cursor,
         DataViewSchema.Column? scoreCol,
-        RegressionInterval? interval = null)
+        RegressionInterval? interval = null,
+        IReadOnlyList<double>? perRowSigma = null)
     {
         var rows = new List<PredictionRow>();
 
@@ -431,6 +456,7 @@ public class PredictionService
         if (scoreCol.HasValue)
             scoreGetter = cursor.GetGetter<float>(scoreCol.Value);
 
+        int i = 0;
         while (cursor.MoveNext())
         {
             double? score = null;
@@ -441,12 +467,16 @@ public class PredictionService
                 score = scoreValue;
             }
 
-            // ② regression wave: wrap Score in the split-conformal band when the model carries one.
+            // ② regression wave: wrap Score in the conformal band when the model carries one. The width
+            // is per-row (q·σ(x)) when the heteroscedastic σ-model scored this row, else constant.
             double? lower = null, upper = null, confidence = null;
             if (score.HasValue && interval != null)
             {
-                lower = score.Value - interval.HalfWidth;
-                upper = score.Value + interval.HalfWidth;
+                double half = perRowSigma != null && i < perRowSigma.Count
+                    ? interval.WidthFor(perRowSigma[i])
+                    : interval.HalfWidth;
+                lower = score.Value - half;
+                upper = score.Value + half;
                 confidence = interval.Confidence;
             }
 
@@ -457,9 +487,34 @@ public class PredictionService
                 ScoreUpperBound = upper,
                 IntervalConfidence = confidence
             });
+            i++;
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// ② regression wave (heteroscedastic): scores the σ(x) residual model over the main model's output
+    /// (which carries the "Features" column the σ-model reads) and materializes the raw σ per row, in the
+    /// same order a later cursor over <paramref name="scoredByMainModel"/> iterates. The σ-model appends
+    /// its own "Score" column (the predicted residual magnitude), which shadows the main model's Score in
+    /// the transformed view — that latest "Score" is exactly what we read here.
+    /// </summary>
+    private List<double> ComputeResidualSigma(ITransformer residualModel, IDataView scoredByMainModel)
+    {
+        var sigmaView = residualModel.Transform(scoredByMainModel);
+        var sigmaCol = sigmaView.Schema.GetColumnOrNull("Score")
+            ?? throw new InvalidOperationException("Residual σ-model produced no Score column.");
+        var sigmas = new List<double>();
+        using var cursor = sigmaView.GetRowCursor(new[] { sigmaCol });
+        var getter = cursor.GetGetter<float>(sigmaCol);
+        float v = 0;
+        while (cursor.MoveNext())
+        {
+            getter(ref v);
+            sigmas.Add(v);
+        }
+        return sigmas;
     }
 
     private static List<PredictionRow> ExtractClusteringRows(

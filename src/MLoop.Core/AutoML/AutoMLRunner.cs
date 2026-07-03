@@ -246,6 +246,7 @@ public class AutoMLRunner
                 Metrics = result.Metrics,
                 RowCount = result.RowCount,
                 Schema = schema,
+                ResidualModel = result.ResidualModel, // ② regression wave: preserve the σ(x) model through the schema-capture rewrap
             };
         }
 
@@ -539,6 +540,180 @@ public class AutoMLRunner
     }
 
     /// <summary>
+    /// ② regression wave (heteroscedastic): normalized split-conformal prediction intervals. Where
+    /// <see cref="ComputeConformalIntervals"/> gives one constant half-width for every row (valid
+    /// coverage but no per-row triage signal — live-measured recall of the large-error rows equals
+    /// random, cycle-134 M-13), this fits an auxiliary regressor σ(x) that predicts the *magnitude*
+    /// of the residual from the features, so the band <c>[ŷ - q·σ(x), ŷ + q·σ(x)]</c> is wide exactly
+    /// where the model is uncertain. The band width itself becomes the regression escalate signal.
+    /// <para>
+    /// Coverage validity is preserved by splitting the held-out test set into two disjoint folds: the
+    /// σ-model is fit on fold C1, and the normalized nonconformity scores <c>α = |y-ŷ| / σ(x)</c> whose
+    /// quantile becomes <c>q</c> are measured on fold C2 (σ never saw C2's residuals), so the marginal
+    /// guarantee <c>P(|y-ŷ| ≤ q·σ(x)) ≥ level</c> still holds. σ(x) = <c>max(aux(x), 0) + β</c> with a
+    /// positive floor β (a low quantile of the C1 residuals) so a near-zero aux prediction cannot
+    /// collapse the band. When the errors are homoscedastic the aux model degenerates toward a
+    /// constant and the band degrades gracefully to the constant-width result (backward-safe).
+    /// </para>
+    /// The aux trainer is SDCA linear regression: it adds no package dependency beyond core Microsoft.ML
+    /// and captures the (linear) feature-driven heteroscedasticity that the offline ceiling analysis on
+    /// SEQ026 confirmed (recall 0.10→0.24). A tree aux is a demand-driven future option if a live set
+    /// shows nonlinear σ. Returns <c>null</c> (graceful) when score/label are absent, no numeric feature
+    /// exists, or the holdout is too small to split — callers fall back to the constant-width band.
+    /// </summary>
+    /// <param name="ml">The ML.NET context used to fit the auxiliary σ-model and split the folds.</param>
+    /// <param name="scoredPredictions">The held-out test set already transformed by the main model
+    /// (carries the raw feature columns, the label column, and the <paramref name="scoreColumn"/>).</param>
+    /// <param name="labelColumn">Name of the true-value column in <paramref name="scoredPredictions"/>.</param>
+    /// <param name="numericFeatureColumns">Raw numeric feature columns the σ-model reads; non-existent
+    /// names are ignored. Must be present in the predict-time input for the saved aux model to apply.</param>
+    /// <param name="confidenceLevels">Coverage levels to certify (default 0.80/0.90/0.95).</param>
+    /// <param name="scoreColumn">Name of the main model's point-prediction column (default "Score").</param>
+    /// <param name="seed">Deterministic seed for the C1/C2 fold split (reproducibility).</param>
+    public static NormalizedConformalResult? ComputeNormalizedConformal(
+        MLContext ml,
+        IDataView scoredPredictions,
+        string labelColumn,
+        IReadOnlyList<string> numericFeatureColumns,
+        IReadOnlyList<double>? confidenceLevels = null,
+        string scoreColumn = "Score",
+        int seed = 42)
+    {
+        var levels = confidenceLevels ?? new[] { 0.80, 0.90, 0.95 };
+
+        if (scoredPredictions.Schema.GetColumnOrNull(labelColumn) is null ||
+            scoredPredictions.Schema.GetColumnOrNull(scoreColumn) is null)
+            return null;
+
+        var feats = numericFeatureColumns
+            .Where(c => c != labelColumn && c != scoreColumn &&
+                        scoredPredictions.Schema.GetColumnOrNull(c) is { } col && IsSingleOrVectorOfSingle(col.Type))
+            .Distinct()
+            .ToArray();
+        if (feats.Length == 0)
+            return null;
+
+        // Normalize the label/score column names so the CustomMapping (which binds by property name)
+        // can compute Target = |Label - Score| regardless of the caller's label column name.
+        IDataView view = scoredPredictions;
+        if (labelColumn != "Label")
+            view = ml.Transforms.CopyColumns("Label", labelColumn).Fit(view).Transform(view);
+        if (scoreColumn != "Score")
+            view = ml.Transforms.CopyColumns("Score", scoreColumn).Fit(view).Transform(view);
+
+        var mapping = ml.Transforms.CustomMapping<ConformalLabelScore, ConformalResidual>(
+            (input, output) => output.Target = Math.Abs(input.Label - input.Score), contractName: null);
+        var withTarget = mapping.Fit(view).Transform(view);
+
+        // Disjoint folds: C1 fits σ(x), C2 calibrates the normalized quantile q (coverage validity).
+        var split = ml.Data.TrainTestSplit(withTarget, testFraction: 0.5, seed: seed);
+        var c1 = split.TrainSet;
+        var c2 = split.TestSet;
+
+        var c1Residuals = ReadColumn(ml, c1, "Target");
+        if (c1Residuals.Count < 5 || GetRowCount(ml, c2) < 5)
+            return null; // too small to fit + calibrate meaningfully
+
+        // σ-model: raw numeric features → |residual|. Trained only on C1.
+        var auxPipeline = ml.Transforms.Concatenate("Features", feats)
+            .Append(ml.Transforms.NormalizeMinMax("Features"))
+            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Target", featureColumnName: "Features"));
+        var auxModel = auxPipeline.Fit(c1);
+
+        // Positive floor β: a low quantile of the C1 residuals, so σ never collapses the band.
+        var c1Sorted = c1Residuals.OrderBy(r => r).ToList();
+        double beta = c1Sorted[(int)(c1Sorted.Count * 0.10)];
+        double meanResid = c1Residuals.Average();
+        if (beta <= 0) beta = Math.Max(meanResid * 0.01, 1e-6);
+
+        // Normalized nonconformity α = |resid| / σ(x) on C2 (σ from the aux model, unseen residuals).
+        var c2Scored = auxModel.Transform(c2);
+        var sigmaRaw = ReadColumn(ml, c2Scored, "Score");   // aux SDCA output column
+        var c2Residuals = ReadColumn(ml, c2Scored, "Target");
+        if (sigmaRaw.Count == 0 || sigmaRaw.Count != c2Residuals.Count)
+            return null;
+
+        var alphas = new List<double>(sigmaRaw.Count);
+        for (int i = 0; i < sigmaRaw.Count; i++)
+        {
+            double sigma = Math.Max(sigmaRaw[i], 0.0) + beta;
+            alphas.Add(c2Residuals[i] / sigma);
+        }
+        alphas.Sort();
+
+        var metrics = new Dictionary<string, double> { ["interval_beta"] = beta };
+        int n = alphas.Count;
+        foreach (var level in levels)
+        {
+            int rank = (int)Math.Ceiling((n + 1) * level);
+            double q = rank > n ? alphas[n - 1] : alphas[rank - 1];
+            int pct = (int)Math.Round(level * 100);
+            metrics[$"norm_interval_q_{pct}"] = q;
+        }
+
+        return new NormalizedConformalResult(auxModel, metrics);
+    }
+
+    /// <summary>
+    /// Picks the feature representation the σ-model reads from a scored prediction view. MLoop
+    /// pre-featurizes into a single <c>Features</c> vector (the individual raw columns are gone by the
+    /// time the model transforms the test set), so the aux model consumes that same featurized vector —
+    /// which also lets it see categorical/text-derived features, not just raw numerics. Prefers a
+    /// non-internal (<c>__…__</c> are AutoML scratch columns) vector-of-Single column named such as
+    /// <c>Features</c>; falls back to scalar Single columns for callers whose view was never
+    /// pre-featurized. Excludes the label and the point-prediction <c>Score</c>.
+    /// </summary>
+    private static string[] SelectSigmaFeatureColumns(DataViewSchema schema, string labelColumn)
+    {
+        var vector = schema.FirstOrDefault(c =>
+            !c.IsHidden && c.Name != labelColumn && c.Name != "Score" &&
+            !c.Name.StartsWith("__", StringComparison.Ordinal) &&
+            c.Type is VectorDataViewType v && v.ItemType == NumberDataViewType.Single);
+        if (vector.Name is not null)
+            return new[] { vector.Name };
+
+        return schema
+            .Where(c => !c.IsHidden && c.Name != labelColumn && c.Name != "Score" &&
+                        c.Type == NumberDataViewType.Single)
+            .Select(c => c.Name)
+            .ToArray();
+    }
+
+    /// <summary>True for a scalar Single column or a vector-of-Single column (both valid σ-model inputs).
+    /// MLoop pre-featurizes into a single <c>Features</c> vector, so the aux model usually consumes that
+    /// rather than individual scalar columns.</summary>
+    private static bool IsSingleOrVectorOfSingle(DataViewType type) =>
+        type == NumberDataViewType.Single ||
+        (type is VectorDataViewType v && v.ItemType == NumberDataViewType.Single);
+
+    /// <summary>Reads a Single-typed column into a list (helper for conformal calibration).</summary>
+    private static List<double> ReadColumn(MLContext ml, IDataView view, string columnName)
+    {
+        var values = new List<double>();
+        var col = view.Schema.GetColumnOrNull(columnName);
+        if (col is null) return values;
+        using var cursor = view.GetRowCursor(new[] { col.Value });
+        var getter = cursor.GetGetter<float>(col.Value);
+        float v = 0;
+        while (cursor.MoveNext())
+        {
+            getter(ref v);
+            values.Add(v);
+        }
+        return values;
+    }
+
+    private static long GetRowCount(MLContext ml, IDataView view)
+    {
+        long count = view.GetRowCount() ?? -1;
+        if (count >= 0) return count;
+        count = 0;
+        using var cursor = view.GetRowCursor(Array.Empty<DataViewSchema.Column>());
+        while (cursor.MoveNext()) count++;
+        return count;
+    }
+
+    /// <summary>
     /// BUG-36: Manual pipeline fallback for small datasets where AutoML's internal AUC
     /// computation fails. Builds an explicit ML.NET pipeline with SDCA trainer, bypassing
     /// AutoML's cross-validation entirely.
@@ -772,11 +947,25 @@ public class AutoMLRunner
         foreach (var interval in ComputeConformalIntervals(predictions, config.LabelColumn))
             metricsDict[interval.Key] = interval.Value;
 
+        // ② regression wave (heteroscedastic): fit the per-row σ(x) band on top of the constant-width
+        // one. The constant-width metrics stay as the backward-safe fallback; when the aux model fits,
+        // its normalized-quantile metrics + the residual model let predict widen/narrow per row.
+        ITransformer? residualModel = null;
+        var featureColumns = SelectSigmaFeatureColumns(predictions.Schema, config.LabelColumn);
+        var normalized = ComputeNormalizedConformal(_mlContext, predictions, config.LabelColumn, featureColumns);
+        if (normalized is not null)
+        {
+            residualModel = normalized.AuxModel;
+            foreach (var kv in normalized.Metrics)
+                metricsDict[kv.Key] = kv.Value;
+        }
+
         return new AutoMLResult
         {
             BestTrainer = experimentResult.BestRun.TrainerName,
             Model = experimentResult.BestRun.Model,
             Metrics = metricsDict,
+            ResidualModel = residualModel,
             RowCount = trainSet.GetRowCount() ?? 0
         };
     }
@@ -2014,6 +2203,35 @@ public class AutoMLResult
     /// Contains column names, data types, purposes, and categorical value lists.
     /// </summary>
     public InputSchemaInfo? Schema { get; init; }
+
+    /// <summary>
+    /// ② regression wave (heteroscedastic): the auxiliary σ(x) model that predicts residual magnitude
+    /// from the features, used to widen/narrow the conformal band per row. Null for non-regression
+    /// tasks, homoscedastic fallbacks, or when the holdout was too small to fit one — callers then use
+    /// the constant-width band. Persisted alongside the main model (see <c>ResidualModelFileName</c>).
+    /// </summary>
+    public ITransformer? ResidualModel { get; init; }
+}
+
+/// <summary>
+/// ② regression wave (heteroscedastic): output of
+/// <see cref="AutoMLRunner.ComputeNormalizedConformal"/> — the fitted auxiliary σ(x) model plus the
+/// normalized-conformal metrics (<c>norm_interval_q_{pct}</c>, <c>interval_beta</c>) to merge into the
+/// regression metrics dict. Predict-time width for a row = <c>q · (max(σ(x),0) + β)</c>.
+/// </summary>
+public sealed record NormalizedConformalResult(ITransformer AuxModel, Dictionary<string, double> Metrics);
+
+/// <summary>CustomMapping input for computing the conformal residual target (binds by field name).</summary>
+internal sealed class ConformalLabelScore
+{
+    public float Label { get; set; }
+    public float Score { get; set; }
+}
+
+/// <summary>CustomMapping output carrying the absolute residual as the σ-model's regression target.</summary>
+internal sealed class ConformalResidual
+{
+    public float Target { get; set; }
 }
 
 /// <summary>

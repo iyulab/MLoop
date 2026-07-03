@@ -71,6 +71,16 @@ public class ModelRegistry : IModelRegistry
         var targetModelPath = _fileSystem.CombinePath(targetPath, ModelFileName);
         await _fileSystem.CopyFileAsync(sourceModelPath, targetModelPath, overwrite: true, cancellationToken);
 
+        // ② regression wave (heteroscedastic): promote the σ(x) model alongside when present, so the
+        // production predict path can widen the conformal band per row. Non-regression / homoscedastic
+        // experiments have no such file — the production model then serves the constant-width band.
+        var sourceResidualPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.ResidualModelFileName);
+        if (_fileSystem.FileExists(sourceResidualPath))
+        {
+            var targetResidualPath = _fileSystem.CombinePath(targetPath, ExperimentLayout.ResidualModelFileName);
+            await _fileSystem.CopyFileAsync(sourceResidualPath, targetResidualPath, overwrite: true, cancellationToken);
+        }
+
         // Load experiment metadata
         var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
 
