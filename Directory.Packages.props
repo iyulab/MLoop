@@ -17,6 +17,12 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.5" />
     <!-- Logging Packages -->
+    <!-- Pin the transitive Serilog core so CLI (Serilog.Sinks.Console → 4.0.0) and API
+         (Serilog.AspNetCore → 4.3.0) resolve the SAME version. Without this, the two
+         project graphs pick different Serilog.dll versions, and D11's set-difference
+         bundle (which shares same-named DLLs) would ship the CLI's 4.0.0 where the API's
+         deps.json demands 4.3.0 → serve's API child fails to bind Serilog. -->
+    <PackageVersion Include="Serilog" Version="4.3.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
