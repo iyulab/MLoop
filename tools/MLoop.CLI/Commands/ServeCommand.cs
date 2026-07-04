@@ -184,7 +184,9 @@ public class ServeCommand : Command
         // 2. Look for MLoop.API.dll in common locations
         var searchPaths = new List<string>
         {
-            // Same directory as CLI (for bundled deployments)
+            // Same directory as CLI (for bundled deployments). The packed `mloop`
+            // dotnet tool bundles MLoop.API here via MLoop.CLI.csproj's
+            // BundleApiIntoTool target (D11), so installed-tool serve works out-of-box.
             Path.Combine(AppContext.BaseDirectory, "MLoop.API.dll"),
             // Relative paths from CLI location
             Path.Combine(AppContext.BaseDirectory, "..", "MLoop.API", "MLoop.API.dll"),

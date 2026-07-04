@@ -54,4 +54,64 @@
     <Delete Files="@(FilesToDelete)" />
   </Target>
 
+  <!--
+    D11: bundle MLoop.API next to the packed `mloop` tool so `mloop serve` works
+    out-of-the-box (no MLOOP_API_PATH, no source build). ServeCommand.FindApiAssembly
+    search-path #2 loads `AppContext.BaseDirectory/MLoop.API.dll`; this target places
+    it (and only the ASP.NET-specific delta) there.
+
+    We publish MLoop.API to an isolated obj dir and copy only the files NOT already
+    produced by the CLI publish (set difference by relative path). The heavy
+    Microsoft.ML native runtimes and the shared MLoop.Core/DataStore/Ops managed DLLs
+    are already present in the tool output, so the bundle adds ~2.3 MB (~22 files),
+    not a duplicate ~400 MB (which would blow NuGet's package-size limit). Central
+    Package Management pins every shared assembly to one version, so reusing the CLI's
+    copies is safe. serve launches it via `dotnet MLoop.API.dll` (framework-dependent),
+    so the target ASP.NET Core runtime must be installed on the host.
+
+    Runs after CleanPublishOutput (which strips *.pdb/*.xml/appsettings.json) and
+    re-adds MLoop.API's own appsettings.json, which the API needs (JWT/rate-limit/
+    Serilog config). The separate `dotnet publish` invocation breaks the
+    MLoop.API -> MLoop.CLI ProjectReference cycle; it fires only during publish (pack),
+    never on plain build/test (build does not run Publish).
+
+    Scoped to the portable tool pack only: release.yml's publish-binaries job runs
+    `dotnet publish -r <rid> -p:PublishSingleFile=true` for the standalone binaries,
+    which also hits AfterTargets="Publish" — but bundling a portable API into a
+    RID-specific single-file publish is wrong (that artifact ships as a single
+    `mloop-<rid>` file). The RuntimeIdentifier/PublishSingleFile guards keep this target
+    firing only for the portable `dotnet pack` (publish-tool job).
+  -->
+  <Target Name="BundleApiIntoTool" AfterTargets="CleanPublishOutput"
+          Condition="'$(SkipApiBundle)' != 'true' and '$(RuntimeIdentifier)' == '' and '$(PublishSingleFile)' != 'true'">
+    <PropertyGroup>
+      <_ApiProject>$(MSBuildThisFileDirectory)..\MLoop.API\MLoop.API.csproj</_ApiProject>
+      <_ApiBundleDir>$(IntermediateOutputPath)api-bundle\</_ApiBundleDir>
+    </PropertyGroup>
+
+    <Exec Command="dotnet publish &quot;$(_ApiProject)&quot; -c $(Configuration) -f $(TargetFramework) --no-self-contained -o &quot;$(_ApiBundleDir)&quot;" />
+
+    <ItemGroup>
+      <!-- API publish output, minus non-runtime artifacts (mirror CleanPublishOutput). -->
+      <_ApiFile Include="$(_ApiBundleDir)**\*" Exclude="$(_ApiBundleDir)**\*.pdb;$(_ApiBundleDir)**\*.xml;$(_ApiBundleDir)**\*.exe" />
+      <!-- Compare against the CLI build output ($(OutputPath)), NOT $(PublishDir): this
+           target copies the delta into PublishDir, so a repeated local `dotnet pack` would
+           see its own prior copies there and mis-classify them as shared. OutputPath holds
+           the same shared assemblies (Microsoft.ML, runtimes/, etc.) but is never mutated by
+           this target, so the set-difference is deterministic across repacks. -->
+      <_CliFile Include="$(OutputPath)**\*" />
+      <!-- Relative-path identities so Exclude can compare across the two output dirs. -->
+      <_ApiRel Include="@(_ApiFile->'%(RecursiveDir)%(Filename)%(Extension)')" />
+      <_CliRel Include="@(_CliFile->'%(RecursiveDir)%(Filename)%(Extension)')" />
+      <!-- Files present in the API publish but NOT already in the CLI tool output. -->
+      <_ApiDeltaRel Include="@(_ApiRel)" Exclude="@(_CliRel)" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_ApiDeltaRel->'$(_ApiBundleDir)%(Identity)')"
+          DestinationFiles="@(_ApiDeltaRel->'$(PublishDir)%(Identity)')"
+          SkipUnchangedFiles="true" />
+
+    <Message Importance="high" Text="D11: bundled MLoop.API delta into the mloop tool: @(_ApiDeltaRel)" />
+  </Target>
+
 </Project>
