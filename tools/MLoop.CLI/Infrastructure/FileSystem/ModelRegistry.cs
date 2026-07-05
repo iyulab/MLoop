@@ -11,12 +11,10 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// </summary>
 public class ModelRegistry : IModelRegistry
 {
-    // Layout names — including the production registry filename — delegate to the single
-    // ExperimentLayout authority so the writer here cannot drift from ModelNameResolver's reader
-    // (the registry-name drift class; cycle-93/95).
+    // Layout names delegate to the single ExperimentLayout authority so this writer/reader cannot drift
+    // from the layout constants (cycle-93/95).
     private const string ModelsDirectory = ExperimentLayout.ModelsDirectory;
     private const string ProductionDirectory = ExperimentLayout.ProductionDirectory;
-    private const string RegistryFileName = ExperimentLayout.RegistryFileName;
     private const string ModelFileName = ExperimentLayout.ModelFileName;
     private const string MetadataFileName = ExperimentLayout.MetadataFileName;
 
@@ -84,7 +82,10 @@ public class ModelRegistry : IModelRegistry
         // Load experiment metadata
         var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
 
-        // Save metadata
+        // Save production metadata — the single authority for the production pointer + its snapshot
+        // (experimentId/metrics/task/trainer/label), read back via ProductionMetadata. This is the only
+        // production-state artifact written; the parallel registry.json 'production' entry that used to
+        // duplicate it was removed (ProductionMetadata remarks).
         var metadataPath = _fileSystem.CombinePath(targetPath, MetadataFileName);
         await _fileSystem.WriteJsonAsync(metadataPath, new
         {
@@ -96,9 +97,6 @@ public class ModelRegistry : IModelRegistry
             BestTrainer = experiment.Result?.BestTrainer,
             LabelColumn = experiment.Config.LabelColumn
         }, cancellationToken);
-
-        // Update registry
-        await UpdateRegistryAsync(resolvedName, experimentId, experiment, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -107,14 +105,23 @@ public class ModelRegistry : IModelRegistry
         CancellationToken cancellationToken = default)
     {
         var resolvedName = ResolveModelName(modelName);
-        var registry = await LoadRegistryAsync(resolvedName, cancellationToken);
+        var metadata = await ProductionMetadata.ReadAsync(GetProductionPath(resolvedName), cancellationToken);
 
-        if (registry == null || !registry.TryGetValue("production", out var entry))
+        if (metadata?.ExperimentId is null or "")
         {
             return null;
         }
 
-        return ParseModelInfo(resolvedName, entry);
+        return new ModelInfo
+        {
+            ModelName = resolvedName,
+            ExperimentId = metadata.ExperimentId,
+            PromotedAt = metadata.PromotedAt ?? DateTime.UtcNow,
+            Metrics = metadata.Metrics,
+            ModelPath = GetProductionPath(resolvedName),
+            Task = metadata.Task,
+            BestTrainer = metadata.BestTrainer
+        };
     }
 
     /// <inheritdoc />
@@ -285,147 +292,6 @@ public class ModelRegistry : IModelRegistry
         }
 
         return false;
-    }
-
-    private string GetRegistryPath(string modelName)
-    {
-        var modelPath = _fileSystem.CombinePath(_modelsPath, modelName);
-        return _fileSystem.CombinePath(modelPath, RegistryFileName);
-    }
-
-    private async Task<Dictionary<string, Dictionary<string, object?>>?> LoadRegistryAsync(
-        string modelName,
-        CancellationToken cancellationToken)
-    {
-        var registryPath = GetRegistryPath(modelName);
-
-        if (!_fileSystem.FileExists(registryPath))
-        {
-            return null;
-        }
-
-        try
-        {
-            return await _fileSystem.ReadJsonAsync<Dictionary<string, Dictionary<string, object?>>>(
-                registryPath,
-                cancellationToken);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private async Task SaveRegistryAsync(
-        string modelName,
-        Dictionary<string, Dictionary<string, object?>> registry,
-        CancellationToken cancellationToken)
-    {
-        // Ensure model directory exists
-        var modelPath = _fileSystem.CombinePath(_modelsPath, modelName);
-        await _fileSystem.CreateDirectoryAsync(modelPath, cancellationToken);
-
-        var registryPath = GetRegistryPath(modelName);
-        await _fileSystem.WriteJsonAsync(registryPath, registry, cancellationToken);
-    }
-
-    private async Task UpdateRegistryAsync(
-        string modelName,
-        string experimentId,
-        ExperimentData experiment,
-        CancellationToken cancellationToken)
-    {
-        var registry = await LoadRegistryAsync(modelName, cancellationToken)
-            ?? new Dictionary<string, Dictionary<string, object?>>();
-
-        registry["production"] = new Dictionary<string, object?>
-        {
-            ["experimentId"] = experimentId,
-            ["promotedAt"] = DateTime.UtcNow,
-            ["task"] = experiment.Task,
-            ["bestTrainer"] = experiment.Result?.BestTrainer,
-            ["labelColumn"] = experiment.Config.LabelColumn,
-            ["metrics"] = experiment.Metrics
-        };
-
-        await SaveRegistryAsync(modelName, registry, cancellationToken);
-    }
-
-    private ModelInfo? ParseModelInfo(string modelName, Dictionary<string, object?> entry)
-    {
-        if (!entry.TryGetValue("experimentId", out var expIdObj) || expIdObj == null)
-        {
-            return null;
-        }
-
-        // Parse metrics from JSON (handles JsonElement from System.Text.Json)
-        Dictionary<string, double>? metrics = null;
-        if (entry.TryGetValue("metrics", out var metricsObj) && metricsObj != null)
-        {
-            metrics = ParseMetrics(metricsObj);
-        }
-
-        // Parse promoted date
-        DateTime promotedAt = DateTime.UtcNow;
-        if (entry.TryGetValue("promotedAt", out var promotedAtObj) && promotedAtObj != null)
-        {
-            if (promotedAtObj is DateTime dt)
-            {
-                promotedAt = dt;
-            }
-            else if (DateTime.TryParse(promotedAtObj.ToString(), out var parsed))
-            {
-                promotedAt = parsed;
-            }
-        }
-
-        return new ModelInfo
-        {
-            ModelName = modelName,
-            ExperimentId = expIdObj.ToString() ?? string.Empty,
-            PromotedAt = promotedAt,
-            Metrics = metrics,
-            ModelPath = GetProductionPath(modelName),
-            Task = entry.TryGetValue("task", out var taskObj) ? taskObj?.ToString() : null,
-            BestTrainer = entry.TryGetValue("bestTrainer", out var trainerObj) ? trainerObj?.ToString() : null
-        };
-    }
-
-    private static Dictionary<string, double>? ParseMetrics(object metricsObj)
-    {
-        if (metricsObj is System.Text.Json.JsonElement jsonElement)
-        {
-            if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.Object)
-            {
-                var metrics = new Dictionary<string, double>();
-                foreach (var prop in jsonElement.EnumerateObject())
-                {
-                    if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number)
-                    {
-                        metrics[prop.Name] = prop.Value.GetDouble();
-                    }
-                }
-                return metrics.Count > 0 ? metrics : null;
-            }
-        }
-        else if (metricsObj is Dictionary<string, object> dict)
-        {
-            var metrics = new Dictionary<string, double>();
-            foreach (var kvp in dict)
-            {
-                if (double.TryParse(kvp.Value?.ToString(), out var value))
-                {
-                    metrics[kvp.Key] = value;
-                }
-            }
-            return metrics.Count > 0 ? metrics : null;
-        }
-        else if (metricsObj is Dictionary<string, double> directMetrics)
-        {
-            return directMetrics.Count > 0 ? directMetrics : null;
-        }
-
-        return null;
     }
 
     private static string ResolveModelName(string? name)

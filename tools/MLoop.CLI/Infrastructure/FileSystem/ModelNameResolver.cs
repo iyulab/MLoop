@@ -9,15 +9,12 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// </summary>
 public partial class ModelNameResolver : IModelNameResolver
 {
-    // Shared layout names — including the production registry filename — delegate to the
-    // ExperimentLayout authority so this reader cannot drift from ModelRegistry's writer
-    // (the registry-name drift class; cycle-93/95). models.json (the model *index*, distinct from
-    // the per-model registry.json) stays local — it is owned solely by this resolver.
+    // Shared layout names delegate to the ExperimentLayout authority so this reader cannot drift from the
+    // writers. models.json (the model *index*) stays local — it is owned solely by this resolver.
     private const string ModelsDirectory = ExperimentLayout.ModelsDirectory;
     private const string ModelsIndexFileName = "models.json";
     private const string StagingDirectory = ExperimentLayout.StagingDirectory;
     private const string ProductionDirectory = ExperimentLayout.ProductionDirectory;
-    private const string RegistryFileName = ExperimentLayout.RegistryFileName;
 
     // Reserved names that cannot be used as model names
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
@@ -105,26 +102,12 @@ public partial class ModelNameResolver : IModelNameResolver
                 experimentCount = Directory.GetDirectories(stagingPath).Length;
             }
 
-            // Check for production model
-            string? productionExperiment = null;
-            var registryPath = _fileSystem.CombinePath(modelDir, RegistryFileName);
-            if (_fileSystem.FileExists(registryPath))
-            {
-                try
-                {
-                    var registry = await _fileSystem.ReadJsonAsync<Dictionary<string, Dictionary<string, object?>>>(
-                        registryPath, cancellationToken);
-                    if (registry.TryGetValue("production", out var prodEntry) &&
-                        prodEntry.TryGetValue("experimentId", out var expId))
-                    {
-                        productionExperiment = expId?.ToString();
-                    }
-                }
-                catch
-                {
-                    // Ignore registry read errors
-                }
-            }
+            // Check for production model — read the pointer from the single authority
+            // (production/metadata.json via ProductionMetadata), the same source ModelRegistry and
+            // FilePromotionManager read, so `mloop list` can't disagree with them (registry.json removed).
+            var productionDir = _fileSystem.CombinePath(modelDir, ProductionDirectory);
+            var production = await ProductionMetadata.ReadAsync(productionDir, cancellationToken);
+            string? productionExperiment = production?.ExperimentId;
 
             summaries.Add(new ModelSummary
             {
