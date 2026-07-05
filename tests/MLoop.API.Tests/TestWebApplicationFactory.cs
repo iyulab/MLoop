@@ -20,6 +20,11 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
 {
     private readonly string _testProjectRoot;
 
+    /// <summary>The temp project root backing this factory's <c>models/</c>, <c>datasets/</c>, etc. —
+    /// exposed so tests can seed a real production model (model.zip/metadata.json/config.json)
+    /// before exercising an endpoint end-to-end.</summary>
+    public string TestProjectRoot => _testProjectRoot;
+
     public TestWebApplicationFactory()
     {
         // Create a temporary test project directory with .mloop marker
