@@ -243,14 +243,18 @@ public static class PredictCommand
                 }
             }
 
-            // Forecasting: generate future predictions without input data
+            // Forecasting: generate future predictions without input data. The forecast is horizon-based
+            // (stateful SSA replaying the training series), so it exits here before the row-oriented
+            // paths — including the --json PredictionService route, which would silently no-op (D21).
             if (taskType != null && taskType.Equals("forecasting", StringComparison.OrdinalIgnoreCase))
             {
+                if (json)
+                    return await PredictForecastingJsonAsync(resolvedModelPath, resolvedModelName, experimentId);
+
                 var forecastOutputPath = fileSystem.CombinePath(
                     projectRoot, "predictions",
                     $"{resolvedModelName}-forecast-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
-                await PredictForecastingAsync(resolvedModelPath, forecastOutputPath, experimentId);
-                return 0;
+                return await PredictForecastingAsync(resolvedModelPath, forecastOutputPath, experimentId);
             }
 
             // DL tasks (image-classification, object-detection, NLP) need their native runtime
@@ -461,7 +465,8 @@ public static class PredictCommand
                     return 1;
                 }
 
-                var jsonRows = PredictionEngine.LoadCsvAsRows(resolvedDataFile, trainedSchema, configLabelColumn);
+                var jsonRows = PredictionEngine.LoadCsvAsRows(
+                    resolvedDataFile, trainedSchema, LabelColumnToExcludeFromRows(taskType, configLabelColumn));
                 var jsonResult = new PredictionEngine().PredictWithService(
                     jsonRows, trainedSchema, resolvedModelPath, taskType, configLabelColumn, interval);
 
@@ -779,149 +784,230 @@ public static class PredictCommand
         }
     }
 
-    private static async Task PredictForecastingAsync(string modelPath, string outputPath, string? experimentId)
+    /// <summary>
+    /// Which column to strip from the structured-predict input rows. For tabular tasks the label is
+    /// the unknown-to-predict and any stale values in the input CSV must not leak into the features.
+    /// For time-series tasks the "label" IS the monitored series value column — stripping it defaulted
+    /// the whole series to zero and the detector silently returned an all-normal fabrication
+    /// (isAnomaly=false, rawScore=0 on every row) with exit 0 (D23, D20 silent-GIGO family).
+    /// </summary>
+    internal static string? LabelColumnToExcludeFromRows(string? taskType, string? configLabelColumn)
+        => AutoMLRunner.IsTimeSeriesTask(taskType) ? null : configLabelColumn;
+
+    /// <summary>
+    /// Runs the stateful SSA forecast: loads the model, replays the original training series
+    /// (resolved from the experiment config), and extracts the horizon forecast with its native
+    /// confidence bounds. Pure computation shared by the CSV and --json presenters — returns
+    /// either the forecast or an actionable error message, never both.
+    /// </summary>
+    internal static async Task<(ForecastOutput? Forecast, string? Error)> ComputeForecastAsync(
+        string modelPath, string? experimentId)
     {
+        var mlContext = new MLContext();
+        var model = mlContext.Model.Load(modelPath, out var modelSchema);
+
+        // SSA model needs data with the correct value column to transform.
+        // Read config to find original training data and value column.
+        // Config is in staging/{experimentId}/config.json
+        var modelBaseDir = Path.GetDirectoryName(Path.GetDirectoryName(modelPath))!; // models/default/
+        var configPath = experimentId != null
+            ? Path.Combine(modelBaseDir, ExperimentLayout.StagingDirectory, experimentId, ExperimentLayout.ConfigFileName)
+            : Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.ConfigFileName);
+        string? trainDataPath = null;
+        string? valueColName = null;
+
+        if (File.Exists(configPath))
+        {
+            var configJson = await File.ReadAllTextAsync(configPath).ConfigureAwait(false);
+            var configDoc = System.Text.Json.JsonDocument.Parse(configJson);
+            trainDataPath = configDoc.RootElement.TryGetProperty("dataFile", out var df) ? df.GetString() : null;
+            valueColName = configDoc.RootElement.TryGetProperty("labelColumn", out var lc) ? lc.GetString() : null;
+        }
+
+        if (string.IsNullOrEmpty(valueColName))
+        {
+            // Fallback: find from model schema
+            valueColName = modelSchema
+                .Where(c => !c.IsHidden && c.Type == NumberDataViewType.Single)
+                .Select(c => c.Name)
+                .FirstOrDefault(n => n != ForecastOutput.ForecastColumnName
+                                  && n != ForecastOutput.LowerBoundColumnName
+                                  && n != ForecastOutput.UpperBoundColumnName)
+                ?? "Value";
+        }
+
+        if (string.IsNullOrEmpty(trainDataPath) || !File.Exists(trainDataPath))
+        {
+            return (null, "Original training data not found for forecasting predict. " +
+                          "Forecasting models need the training data to generate forecasts.");
+        }
+
+        // Load training data with just the value column — find its index in the CSV header first.
+        var headerLine = File.ReadLines(trainDataPath, System.Text.Encoding.UTF8).First();
+        var headers = CsvFieldParser.ParseFields(headerLine);
+        var colIdx = Array.FindIndex(headers, h => h.Equals(valueColName, StringComparison.OrdinalIgnoreCase));
+        if (colIdx < 0) colIdx = headers.Length - 1; // fallback to last column
+
+        var columnOptions = new TextLoader.Options
+        {
+            Columns = [new TextLoader.Column(valueColName, DataKind.Single, colIdx)],
+            HasHeader = true,
+            Separators = [','],
+            AllowQuoting = true
+        };
+
+        var textLoader = mlContext.Data.CreateTextLoader(columnOptions);
+        var trainData = textLoader.Load(trainDataPath);
+
+        var predictions = model.Transform(trainData);
+        var forecastCol = predictions.Schema.GetColumnOrNull(ForecastOutput.ForecastColumnName);
+        var lowerCol = predictions.Schema.GetColumnOrNull(ForecastOutput.LowerBoundColumnName);
+        var upperCol = predictions.Schema.GetColumnOrNull(ForecastOutput.UpperBoundColumnName);
+
+        if (!forecastCol.HasValue)
+        {
+            return (null, $"Model does not produce {ForecastOutput.ForecastColumnName} column.");
+        }
+
+        using var cursor = predictions.GetRowCursor(predictions.Schema);
+        var forecastGetter = cursor.GetGetter<VBuffer<float>>(forecastCol.Value);
+        var lowerGetter = lowerCol.HasValue ? cursor.GetGetter<VBuffer<float>>(lowerCol.Value) : null;
+        var upperGetter = upperCol.HasValue ? cursor.GetGetter<VBuffer<float>>(upperCol.Value) : null;
+
+        VBuffer<float> forecastBuf = default, lowerBuf = default, upperBuf = default;
+        if (cursor.MoveNext())
+        {
+            forecastGetter(ref forecastBuf);
+            lowerGetter?.Invoke(ref lowerBuf);
+            upperGetter?.Invoke(ref upperBuf);
+        }
+
+        var forecast = new ForecastOutput
+        {
+            ForecastedValues = forecastBuf.DenseValues().ToArray(),
+            LowerBound = lowerBuf.DenseValues().ToArray(),
+            UpperBound = upperBuf.DenseValues().ToArray(),
+        };
+
+        if (forecast.ForecastedValues.Length == 0)
+        {
+            return (null, "Forecast produced 0 values.");
+        }
+
+        return (forecast, null);
+    }
+
+    /// <summary>
+    /// Maps a horizon forecast onto the shared structured-prediction row schema (the same
+    /// PredictionRow the /predict API and tabular --json emit): Score = forecasted value,
+    /// ScoreLowerBound/Upper = SSA native band, IntervalConfidence = its coverage level.
+    /// Row order is the step order — step = index + 1, matching the CSV output's Step column.
+    /// </summary>
+    internal static List<PredictionRow> BuildForecastRows(ForecastOutput forecast)
+    {
+        var rows = new List<PredictionRow>(forecast.ForecastedValues.Length);
+        for (int i = 0; i < forecast.ForecastedValues.Length; i++)
+        {
+            rows.Add(new PredictionRow
+            {
+                Score = forecast.ForecastedValues[i],
+                ScoreLowerBound = i < forecast.LowerBound.Length ? forecast.LowerBound[i] : null,
+                ScoreUpperBound = i < forecast.UpperBound.Length ? forecast.UpperBound[i] : null,
+                IntervalConfidence = ForecastOutput.ConfidenceLevel,
+            });
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// --json presenter for forecasting: emits the horizon forecast to stdout in the same payload
+    /// shape as the tabular --json path, so structured consumers (mloop-mcp) get the forecast and
+    /// its bounds instead of a silently ignored flag (D21's CLI-side gap).
+    /// </summary>
+    private static async Task<int> PredictForecastingJsonAsync(
+        string modelPath, string modelName, string? experimentId)
+    {
+        var (forecast, error) = await ComputeForecastAsync(modelPath, experimentId);
+        if (forecast is null)
+        {
+            // AnsiConsole is rerouted to stderr in --json mode, keeping stdout pure.
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(error ?? "Forecast failed.")}");
+            return 1;
+        }
+
+        var payload = new
+        {
+            model = modelName,
+            task = "forecasting",
+            count = forecast.ForecastedValues.Length,
+            predictions = BuildForecastRows(forecast),
+            warnings = new List<string>(),
+        };
+        Console.Out.WriteLine(JsonSerializer.Serialize(payload, PredictJsonOptions));
+        return 0;
+    }
+
+    private static async Task<int> PredictForecastingAsync(string modelPath, string outputPath, string? experimentId)
+    {
+        var exitCode = 1;
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .StartAsync("[yellow]Generating forecast...[/]", async ctx =>
             {
-                var mlContext = new MLContext();
-                var model = mlContext.Model.Load(modelPath, out var modelSchema);
-
-                // SSA model needs data with the correct value column to transform.
-                // Read config to find original training data and value column.
-                // Config is in staging/{experimentId}/config.json
-                var modelBaseDir = Path.GetDirectoryName(Path.GetDirectoryName(modelPath))!; // models/default/
-                var configPath = experimentId != null
-                    ? Path.Combine(modelBaseDir, ExperimentLayout.StagingDirectory, experimentId, ExperimentLayout.ConfigFileName)
-                    : Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.ConfigFileName);
-                string? trainDataPath = null;
-                string? valueColName = null;
-
-                if (File.Exists(configPath))
+                var (forecast, error) = await ComputeForecastAsync(modelPath, experimentId);
+                if (forecast is null)
                 {
-                    var configJson = await File.ReadAllTextAsync(configPath).ConfigureAwait(false);
-                    var configDoc = System.Text.Json.JsonDocument.Parse(configJson);
-                    trainDataPath = configDoc.RootElement.TryGetProperty("dataFile", out var df) ? df.GetString() : null;
-                    valueColName = configDoc.RootElement.TryGetProperty("labelColumn", out var lc) ? lc.GetString() : null;
-                }
-
-                if (string.IsNullOrEmpty(valueColName))
-                {
-                    // Fallback: find from model schema
-                    valueColName = modelSchema
-                        .Where(c => !c.IsHidden && c.Type == NumberDataViewType.Single)
-                        .Select(c => c.Name)
-                        .FirstOrDefault(n => n != "ForecastedValues" && n != "LowerBound" && n != "UpperBound")
-                        ?? "Value";
-                }
-
-                if (string.IsNullOrEmpty(trainDataPath) || !File.Exists(trainDataPath))
-                {
-                    AnsiConsole.MarkupLine("[red]Error:[/] Original training data not found for forecasting predict.");
-                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Forecasting models need the training data to generate forecasts.");
+                    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(error ?? "Forecast failed.")}");
+                    if (error?.Contains("training data", StringComparison.OrdinalIgnoreCase) == true)
+                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Keep the original training data file in place for forecasting predict.");
                     return;
                 }
 
-                // Load training data with just the value column
-                var columnOptions = new TextLoader.Options
+                var forecastValues = forecast.ForecastedValues;
+                var lowerValues = forecast.LowerBound;
+                var upperValues = forecast.UpperBound;
+
+                // Write forecast CSV
+                var dir = Path.GetDirectoryName(outputPath);
+                if (dir != null) Directory.CreateDirectory(dir);
+
+                await using var writer = new StreamWriter(outputPath, false, new System.Text.UTF8Encoding(true));
+                await writer.WriteLineAsync("Step,ForecastedValue,LowerBound,UpperBound").ConfigureAwait(false);
+                for (int i = 0; i < forecastValues.Length; i++)
                 {
-                    Columns = [new TextLoader.Column(valueColName, DataKind.Single, 0)],
-                    HasHeader = true,
-                    Separators = [','],
-                    AllowQuoting = true
-                };
-
-                // Find the column index for the value column in the CSV
-                var headerLine = File.ReadLines(trainDataPath, System.Text.Encoding.UTF8).First();
-                var headers = CsvFieldParser.ParseFields(headerLine);
-                var colIdx = Array.FindIndex(headers, h => h.Equals(valueColName, StringComparison.OrdinalIgnoreCase));
-                if (colIdx < 0) colIdx = headers.Length - 1; // fallback to last column
-
-                columnOptions.Columns = [new TextLoader.Column(valueColName, DataKind.Single, colIdx)];
-
-                var textLoader = mlContext.Data.CreateTextLoader(columnOptions);
-                var trainData = textLoader.Load(trainDataPath);
-
-                try
-                {
-                    var predictions = model.Transform(trainData);
-                    var forecastCol = predictions.Schema.GetColumnOrNull("ForecastedValues");
-                    var lowerCol = predictions.Schema.GetColumnOrNull("LowerBound");
-                    var upperCol = predictions.Schema.GetColumnOrNull("UpperBound");
-
-                    if (!forecastCol.HasValue)
-                    {
-                        AnsiConsole.MarkupLine("[red]Error:[/] Model does not produce ForecastedValues column.");
-                        return;
-                    }
-
-                    using var cursor = predictions.GetRowCursor(predictions.Schema);
-                    var forecastGetter = cursor.GetGetter<VBuffer<float>>(forecastCol.Value);
-                    var lowerGetter = lowerCol.HasValue ? cursor.GetGetter<VBuffer<float>>(lowerCol.Value) : null;
-                    var upperGetter = upperCol.HasValue ? cursor.GetGetter<VBuffer<float>>(upperCol.Value) : null;
-
-                    VBuffer<float> forecastBuf = default, lowerBuf = default, upperBuf = default;
-                    if (cursor.MoveNext())
-                    {
-                        forecastGetter(ref forecastBuf);
-                        lowerGetter?.Invoke(ref lowerBuf);
-                        upperGetter?.Invoke(ref upperBuf);
-                    }
-
-                    var forecastValues = forecastBuf.DenseValues().ToArray();
-                    var lowerValues = lowerBuf.DenseValues().ToArray();
-                    var upperValues = upperBuf.DenseValues().ToArray();
-
-                    if (forecastValues.Length == 0)
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Warning:[/] Forecast produced 0 values.");
-                        return;
-                    }
-
-                    // Write forecast CSV
-                    var dir = Path.GetDirectoryName(outputPath);
-                    if (dir != null) Directory.CreateDirectory(dir);
-
-                    await using var writer = new StreamWriter(outputPath, false, new System.Text.UTF8Encoding(true));
-                    await writer.WriteLineAsync("Step,ForecastedValue,LowerBound,UpperBound").ConfigureAwait(false);
-                    for (int i = 0; i < forecastValues.Length; i++)
-                    {
-                        var lower = i < lowerValues.Length ? lowerValues[i] : float.NaN;
-                        var upper = i < upperValues.Length ? upperValues[i] : float.NaN;
-                        await writer.WriteLineAsync($"{i + 1},{forecastValues[i]},{lower},{upper}").ConfigureAwait(false);
-                    }
-
-                    ctx.Status("[green]Forecast complete![/]");
-
-                    AnsiConsole.MarkupLine($"[green]>[/] Forecasted: [yellow]{forecastValues.Length}[/] steps ahead");
-                    AnsiConsole.MarkupLine($"[green]>[/] Output saved to: [cyan]{Markup.Escape(outputPath)}[/]");
-                    AnsiConsole.WriteLine();
-
-                    // Show summary table
-                    var table = new Table().Border(TableBorder.Rounded).BorderColor(Color.Grey);
-                    table.AddColumn("Step");
-                    table.AddColumn("Forecast");
-                    table.AddColumn("Lower 95%");
-                    table.AddColumn("Upper 95%");
-
-                    var showCount = Math.Min(forecastValues.Length, 10);
-                    for (int i = 0; i < showCount; i++)
-                    {
-                        var lo = i < lowerValues.Length ? lowerValues[i].ToString("F4") : "-";
-                        var up = i < upperValues.Length ? upperValues[i].ToString("F4") : "-";
-                        table.AddRow((i + 1).ToString(), forecastValues[i].ToString("F4"), lo, up);
-                    }
-                    if (forecastValues.Length > 10)
-                        table.AddRow("...", "...", "...", "...");
-
-                    AnsiConsole.Write(table);
+                    var lower = i < lowerValues.Length ? lowerValues[i] : float.NaN;
+                    var upper = i < upperValues.Length ? upperValues[i] : float.NaN;
+                    await writer.WriteLineAsync($"{i + 1},{forecastValues[i]},{lower},{upper}").ConfigureAwait(false);
                 }
-                finally
+
+                ctx.Status("[green]Forecast complete![/]");
+
+                AnsiConsole.MarkupLine($"[green]>[/] Forecasted: [yellow]{forecastValues.Length}[/] steps ahead");
+                AnsiConsole.MarkupLine($"[green]>[/] Output saved to: [cyan]{Markup.Escape(outputPath)}[/]");
+                AnsiConsole.WriteLine();
+
+                // Show summary table
+                var table = new Table().Border(TableBorder.Rounded).BorderColor(Color.Grey);
+                var confidencePct = (int)Math.Round(ForecastOutput.ConfidenceLevel * 100);
+                table.AddColumn("Step");
+                table.AddColumn("Forecast");
+                table.AddColumn($"Lower {confidencePct}%");
+                table.AddColumn($"Upper {confidencePct}%");
+
+                var showCount = Math.Min(forecastValues.Length, 10);
+                for (int i = 0; i < showCount; i++)
                 {
-                    // No temp file cleanup needed — using original training data
+                    var lo = i < lowerValues.Length ? lowerValues[i].ToString("F4") : "-";
+                    var up = i < upperValues.Length ? upperValues[i].ToString("F4") : "-";
+                    table.AddRow((i + 1).ToString(), forecastValues[i].ToString("F4"), lo, up);
                 }
+                if (forecastValues.Length > 10)
+                    table.AddRow("...", "...", "...", "...");
+
+                AnsiConsole.Write(table);
+                exitCode = 0;
             });
+        return exitCode;
     }
 
     /// <summary>

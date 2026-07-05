@@ -1434,15 +1434,15 @@ public partial class AutoMLRunner
 
             // Build SSA forecasting pipeline
             var pipeline = _mlContext.Forecasting.ForecastBySsa(
-                outputColumnName: "ForecastedValues",
+                outputColumnName: ForecastOutput.ForecastColumnName,
                 inputColumnName: valueColumn,
                 windowSize: windowSize,
                 seriesLength: seriesLength,
                 trainSize: trainSize,
                 horizon: horizon,
-                confidenceLowerBoundColumn: "LowerBound",
-                confidenceUpperBoundColumn: "UpperBound",
-                confidenceLevel: 0.95f);
+                confidenceLowerBoundColumn: ForecastOutput.LowerBoundColumnName,
+                confidenceUpperBoundColumn: ForecastOutput.UpperBoundColumnName,
+                confidenceLevel: (float)ForecastOutput.ConfidenceLevel);
 
             progress?.Report(new TrainingProgress
             {
@@ -1567,7 +1567,7 @@ public partial class AutoMLRunner
             var srCnnWindowSize = Math.Min(64, Math.Max(8, totalRows / 4));
             detectors.Add(("SrCnnAnomaly", () =>
                 _mlContext.Transforms.DetectAnomalyBySrCnn(
-                    outputColumnName: "Prediction",
+                    outputColumnName: TimeSeriesAnomalyOutput.PredictionColumnName,
                     inputColumnName: valueColumn,
                     windowSize: srCnnWindowSize,
                     backAddWindowSize: 5,
@@ -1582,7 +1582,7 @@ public partial class AutoMLRunner
             var ssaTrainingSize = Math.Max(ssaWindowSize * 2 + 1, Math.Min(totalRows, 100));
             detectors.Add(("SsaSpikeDetector", () =>
                 _mlContext.Transforms.DetectSpikeBySsa(
-                    outputColumnName: "Prediction",
+                    outputColumnName: TimeSeriesAnomalyOutput.PredictionColumnName,
                     inputColumnName: valueColumn,
                     confidence: 95.0,
                     pvalueHistoryLength: ssaPValueSize,
@@ -1606,7 +1606,7 @@ public partial class AutoMLRunner
                     var predictions = model.Transform(trainSet);
 
                     // Count anomalies from Prediction column (VBuffer<double>: [alert, score, p-value])
-                    var predCol = predictions.Schema.GetColumnOrNull("Prediction");
+                    var predCol = predictions.Schema.GetColumnOrNull(TimeSeriesAnomalyOutput.PredictionColumnName);
                     long anomalyCount = 0;
                     long rowCount = 0;
 
@@ -2000,10 +2000,32 @@ public class ForecastInput
 }
 
 /// <summary>
-/// Output schema for time series prediction engine
+/// Single authority for the time-series-anomaly detector output contract. Every detector in the
+/// RunTimeSeriesAnomalyAsync chain (SrCnn, SsaSpike) emits one vector column whose first slot is
+/// the alert flag (1 = anomaly) and second the detector's raw score. The third slot's meaning
+/// differs per detector (SrCnn → magnitude, SSA → p-value), so it is not surfaced generically.
+/// Consumed by the trainer chain and PredictionService's extraction so the two never drift.
+/// </summary>
+public static class TimeSeriesAnomalyOutput
+{
+    public const string PredictionColumnName = "Prediction";
+    public const int AlertSlot = 0;
+    public const int RawScoreSlot = 1;
+}
+
+/// <summary>
+/// Output schema for time series prediction engine. Also the single authority for the SSA
+/// forecast output contract — column names and confidence level — consumed by the trainer
+/// pipeline (RunForecastingAsync) and the CLI forecast predict path, so the two never drift.
 /// </summary>
 public class ForecastOutput
 {
+    public const string ForecastColumnName = "ForecastedValues";
+    public const string LowerBoundColumnName = "LowerBound";
+    public const string UpperBoundColumnName = "UpperBound";
+    /// <summary>Coverage level of the SSA native prediction interval (confidenceLevel at train time).</summary>
+    public const double ConfidenceLevel = 0.95;
+
     public float[] ForecastedValues { get; set; } = [];
     public float[] LowerBound { get; set; } = [];
     public float[] UpperBound { get; set; } = [];

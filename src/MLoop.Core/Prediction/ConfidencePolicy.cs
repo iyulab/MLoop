@@ -19,7 +19,11 @@ namespace MLoop.Core.Prediction;
 /// (the model's typical error scale, from <c>metrics.json</c>) makes this dataset-scale-stable, which is
 /// why MLoop is better placed to own it than a consumer using a <c>|Score|</c> heuristic. Regression point
 /// estimates without a band carry no confidence signal → null.</item>
-/// <item><b>Other scalar score</b> (ranking/recommendation) → the score itself, clamped.</item>
+/// <item><b>Ranking / recommendation</b> → null. Their Score is a relative ranking score /
+/// predicted rating on the label's own scale — clamping it into [0,1] fabricated a constant
+/// "fully confident" 1.0 for every recommendation row (a 1–5 rating always clamps to 1) and an
+/// arbitrary value for ranking (D25). Honest null until a real order-uncertainty signal
+/// (top-k score margin) is designed and measured.</item>
 /// </list>
 /// </summary>
 /// <remarks>
@@ -56,8 +60,12 @@ public static class ConfidencePolicy
         if (row.Probabilities is { Count: > 0 } probs)
             return Clamp(probs.Values.Max());
 
-        // Anomaly detection: distance from the 0.5 decision boundary.
-        if (row.AnomalyScore is double anomaly)
+        // Anomaly detection: distance from the 0.5 decision boundary. Gated to anomaly-detection:
+        // time-series-anomaly rows also carry AnomalyScore, but it is the detector's raw score
+        // (SrCnn spectral residual / SSA raw score), not a [0,1] probability with a 0.5 boundary —
+        // running it through this rule would fabricate a confidence, so TS-anomaly stays null until
+        // its own signal mapping is designed and measured (P3-3).
+        if (taskType is "anomaly-detection" && row.AnomalyScore is double anomaly)
             return Clamp(Math.Abs(anomaly - 0.5) * 2.0);
 
         // Regression with a conformal band: narrower band = higher confidence.
@@ -72,19 +80,13 @@ public static class ConfidencePolicy
             return null;
         }
 
-        // Regression point estimate without a band carries no confidence signal.
-        if (IsRegression(taskType))
-            return null;
-
-        // Other scalar-score tasks (ranking/recommendation): the score itself.
-        if (row.Score is double score)
-            return Clamp(score);
-
+        // No other task family exposes a usable [0,1] confidence signal. Ranking/recommendation
+        // scores in particular are NOT confidences: a predicted rating (1-5) clamps to a constant
+        // 1.0 and a ranking score to an arbitrary value — a fabricated "fully confident" signal
+        // for trust-loop consumers (D25). Null is the honest answer until the order-uncertainty
+        // signal (top-k score margin) is designed and measured.
         return null;
     }
-
-    private static bool IsRegression(string? taskType) =>
-        taskType is "regression" or "forecasting";
 
     private static double Clamp(double v) =>
         double.IsFinite(v) ? Math.Clamp(v, 0.0, 1.0) : 0.0;

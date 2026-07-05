@@ -38,6 +38,16 @@ public class ConfidencePolicyTests
         Assert.Equal(expected, ConfidencePolicy.Compute(row, "anomaly-detection")!.Value, 3);
     }
 
+    // D22 guard: a time-series-anomaly row carries the detector's RAW score (SrCnn spectral residual /
+    // SSA raw score), not a [0,1] probability with a 0.5 boundary — applying the anomaly boundary rule
+    // to it would fabricate a confidence. TS-anomaly stays null until its signal mapping lands (P3-3).
+    [Fact]
+    public void TimeSeriesAnomaly_RawScore_NoFabricatedConfidence()
+    {
+        var row = new PredictionRow { IsAnomaly = true, AnomalyScore = 0.85 };
+        Assert.Null(ConfidencePolicy.Compute(row, "time-series-anomaly"));
+    }
+
     [Theory]
     // Regression band normalized by residual_std (k=3): 1 - half/(3*std). std=2 -> denom=6.
     [InlineData(14.0, 16.0, 0.8333)]  // narrow (half=1) -> high
@@ -74,11 +84,18 @@ public class ConfidencePolicyTests
         Assert.Null(ConfidencePolicy.Compute(row, "regression"));
     }
 
-    [Fact]
-    public void RankingScalarScore_ClampedScore()
+    // D25: ranking/recommendation Scores are relative ranking scores / predicted ratings on the
+    // label's own scale, not [0,1] confidences — clamping fabricated a constant 1.0 for every
+    // recommendation row (rating 1-5 always clamps to 1). Honest null until the top-k score-margin
+    // signal is designed.
+    [Theory]
+    [InlineData("ranking", 0.42)]
+    [InlineData("ranking", -1.3)]
+    [InlineData("recommendation", 3.96)]  // live: MatrixFactorization rating → was confidence 1.0
+    public void RankingAndRecommendation_ScoreIsNotAConfidence_ReturnsNull(string taskType, double score)
     {
-        var row = new PredictionRow { Score = 0.42 };
-        Assert.Equal(0.42, ConfidencePolicy.Compute(row, "ranking")!.Value, 6);
+        var row = new PredictionRow { Score = score };
+        Assert.Null(ConfidencePolicy.Compute(row, taskType));
     }
 
     [Fact]
@@ -97,9 +114,6 @@ public class ConfidencePolicyTests
     {
         var nan = new PredictionRow { Probabilities = new() { ["A"] = double.NaN } };
         Assert.Equal(0.0, ConfidencePolicy.Compute(nan, "binary-classification")!.Value, 6);
-
-        var over = new PredictionRow { Score = 1.7 };
-        Assert.Equal(1.0, ConfidencePolicy.Compute(over, "ranking")!.Value, 6);
     }
 
     [Fact]
