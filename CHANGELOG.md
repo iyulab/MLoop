@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **`ConfidencePolicy` documents the regression-confidence usage boundary (doc-only, no behavior change)**: the normalized regression confidence (and the band width it derives from) measures a prediction's **magnitude uncertainty**, not its **decision-boundary risk** — and the two are anti-correlated. On a live KAMP anodizing-thickness regression set the Pearson correlation between band width and the prediction's distance from a fixed pass/fail threshold T was ≈ +0.88 (heteroscedastic variance scales with magnitude, so wide-band rows sit *far* from a mid-range T, not near it). Ranking rows by lowest confidence / widest band to escalate a threshold (pass/fail) decision therefore routes confidently-far-from-line rows and misses the near-boundary rows where decision errors actually live (measured escalation precision 0.00 for width/confidence ranking vs. recall 0.91 for a band-straddles-T predicate). A new `<remarks>` block on `ConfidencePolicy` states this boundary and directs decision-escalation consumers to the band-straddles-T signal (`lower &lt; T &lt; upper`, which needs the domain threshold T as input) instead of the scalar confidence. Prevents consumers (HoneAI, U-Vision, mloop-mcp) from misapplying the confidence contract to threshold decisions. (Measured: honeai-sim R-7 M-17, cycle-140.)
+
 ## [0.19.0] - 2026-07-04
 
 ### Fixed
