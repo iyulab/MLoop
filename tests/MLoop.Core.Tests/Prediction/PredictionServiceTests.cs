@@ -980,6 +980,148 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
+    // P-svc1 (cycle-159): generalizes D20~D26 — a task/model mismatch (a model trained for one task
+    // used with a different declared taskType) can leave every row's defining output field null while
+    // extraction still returns a row per input and the caller still gets 200/success. That silent
+    // all-null result is indistinguishable from "nothing to report". These tests force the mismatch
+    // directly (rather than reproducing a specific historical bug) to pin the generalized backstop.
+    #region P-svc1 (output-contract validation — task/model mismatch)
+
+    [Fact]
+    public void Predict_RegressionModelDeclaredAsMulticlass_ThrowsActionableException()
+    {
+        // A regression model's scored schema has "Score" but no "PredictedLabel" at all — declaring it
+        // as multiclass-classification leaves PredictedLabel null on every row.
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+            new SimpleRegression { X = 3.0f, Y = 6.0f },
+        });
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
+            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        var model = pipeline.Fit(data);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[] { new Dictionary<string, object> { ["X"] = 1.0f } };
+
+        var service = new PredictionService(_mlContext);
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => service.Predict(rows, schema, model, "multiclass-classification", "Y"));
+        Assert.Contains("multiclass-classification", ex.Message);
+        Assert.Contains("every defining output", ex.Message);
+    }
+
+    [Fact]
+    public void Predict_RankingModelDeclaredAsClustering_ThrowsActionableException()
+    {
+        // A ranking model's scored schema has "Score" but no "PredictedLabel" (no cluster id key) —
+        // declaring it as clustering leaves ClusterId null on every row.
+        var data = new List<RankingRow>();
+        var rng = new Random(7);
+        for (int g = 0; g < 3; g++)
+            for (int i = 0; i < 10; i++)
+                data.Add(new RankingRow { Query = $"q{g}", F1 = (float)rng.NextDouble(), F2 = (float)rng.NextDouble(), Label = i % 3 });
+        var trainData = _mlContext.Data.LoadFromEnumerable(data);
+
+        var pipeline = _mlContext.Transforms.Conversion.ConvertType("Label", outputKind: DataKind.Single)
+            .Append(_mlContext.Transforms.Conversion.MapValueToKey("GroupId", "Query"))
+            .Append(_mlContext.Transforms.Concatenate("Features", "F1", "F2"))
+            .Append(_mlContext.Ranking.Trainers.FastTree(
+                labelColumnName: "Label", featureColumnName: "Features", rowGroupColumnName: "GroupId",
+                numberOfTrees: 5, numberOfLeaves: 4, minimumExampleCountPerLeaf: 2));
+        var model = pipeline.Fit(trainData);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "Query", DataType = "Categorical", Purpose = "Feature" },
+                new() { Name = "F1", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "F2", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Label", DataType = "Numeric", Purpose = "Label" },
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[] { new Dictionary<string, object> { ["Query"] = "q0", ["F1"] = 0.5f, ["F2"] = 0.5f } };
+
+        var service = new PredictionService(_mlContext);
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => service.Predict(rows, schema, model, "clustering", "Label"));
+        Assert.Contains("clustering", ex.Message);
+    }
+
+    [Fact]
+    public void Predict_FeaturizeOnlyModelDeclaredAsAnomalyDetection_ThrowsActionableException()
+    {
+        // A pure featurizer (no trainer appended) has neither "PredictedLabel" nor "Score" — declaring
+        // it as anomaly-detection leaves both IsAnomaly and AnomalyScore null on every row.
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+        });
+        var model = _mlContext.Transforms.Concatenate("Features", "X").Fit(data);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[] { new Dictionary<string, object> { ["X"] = 1.0f } };
+
+        var service = new PredictionService(_mlContext);
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => service.Predict(rows, schema, model, "anomaly-detection"));
+        Assert.Contains("anomaly-detection", ex.Message);
+    }
+
+    [Fact]
+    public void Predict_FeaturizeOnlyModelDeclaredAsTimeSeriesAnomaly_ThrowsActionableException()
+    {
+        // Same featurizer-only model as above, declared as time-series-anomaly instead — neither
+        // "Prediction" nor a fallback Score/PredictedLabel exists, so the TS-anomaly extractor also
+        // comes back fully null.
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+        });
+        var model = _mlContext.Transforms.Concatenate("Features", "X").Fit(data);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[] { new Dictionary<string, object> { ["X"] = 1.0f } };
+
+        var service = new PredictionService(_mlContext);
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => service.Predict(rows, schema, model, "time-series-anomaly"));
+        Assert.Contains("time-series-anomaly", ex.Message);
+    }
+
+    // No-false-positive check: `Predict_AnomalyDetection_ConcatenatesIndividualColumnsIntoFeatures`
+    // below already asserts a legitimate anomaly-detection result (non-null AnomalyScore) passes
+    // through — if RequireNonDegenerateOutput false-triggered there, that existing test would fail.
+
+    #endregion
+
     #region Binary classification (D12/D13 — serve /predict Features vector + Boolean PredictedLabel)
 
     [Fact]

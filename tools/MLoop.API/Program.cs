@@ -389,6 +389,51 @@ app.MapPost("/predict", async (
             return Results.NotFound(new { error = $"Model file not found: {modelPath}" });
         }
 
+        var taskType = productionModel.Task ?? "regression";
+
+        // D21-A: forecasting is horizon-based (stateful SSA replaying its training series), not
+        // row-based — PredictionService.Predict rejects it outright (D21). Body is an optional
+        // {"horizon":N}; omitted (or a non-object/no body) uses the model's trained horizon.
+        // Bypasses InputSchema/row-parsing entirely — neither applies to a horizon replay.
+        if (string.Equals(taskType, "forecasting", StringComparison.OrdinalIgnoreCase))
+        {
+            int? requestedHorizon = null;
+            if (input.ValueKind == JsonValueKind.Object &&
+                input.TryGetProperty("horizon", out var horizonProp) &&
+                horizonProp.ValueKind == JsonValueKind.Number)
+            {
+                requestedHorizon = horizonProp.GetInt32();
+            }
+
+            var (forecast, forecastError) = await ForecastReplayService.ComputeForecastAsync(
+                mlContext, modelPath, productionModel.ExperimentId, requestedHorizon);
+
+            if (forecast is null)
+            {
+                logger.LogWarning("Forecast failed for '{ModelName}': {Error}", modelName, forecastError);
+                return Results.Problem(
+                    title: "Forecast failed",
+                    detail: forecastError ?? "Forecast failed.",
+                    statusCode: StatusCodes.Status400BadRequest
+                );
+            }
+
+            var forecastRows = ForecastReplayService.BuildForecastRows(forecast);
+            logger.LogInformation("Forecast completed for '{ModelName}': {Count} steps in {ElapsedMs}ms",
+                modelName, forecastRows.Count, stopwatch.ElapsedMilliseconds);
+
+            return Results.Ok(new
+            {
+                modelName,
+                experimentId = productionModel.ExperimentId,
+                predictedAt = DateTime.UtcNow,
+                task = "forecasting",
+                count = forecastRows.Count,
+                predictions = forecastRows,
+                warnings = new List<string>()
+            });
+        }
+
         // Load experiment data to get InputSchema
         var expData = await experimentStore.LoadAsync(modelName, productionModel.ExperimentId, ct);
         var schema = expData?.Config?.InputSchema;
@@ -410,7 +455,6 @@ app.MapPost("/predict", async (
         var rows = ParseJsonInput(input);
 
         // Run prediction through shared PredictionService
-        var taskType = productionModel.Task ?? "regression";
         var labelColumn = expData?.Config?.LabelColumn;
         var predictionService = new PredictionService(mlContext);
 

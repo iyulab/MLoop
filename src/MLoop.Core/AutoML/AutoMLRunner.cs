@@ -1145,7 +1145,23 @@ public partial class AutoMLRunner
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for clustering.");
 
-            var concatenate = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray());
+            // D24: featurize BEFORE fitting and fit only the trainer on the result, instead of
+            // embedding Concatenate inside the saved pipeline. The embedded shape used to be
+            // fragile because CsvDataLoader picks a "dummy label" column for InferColumns on
+            // label-less data (clustering has none), so trainSet's schema mixed a leftover scalar
+            // (the dummy label) with an already-partially-merged "Features" vector that excluded
+            // it — the model's own Concatenate("Features", [dummy, Features]) baked in that exact,
+            // incidental shape. At predict time PredictionService.EnsureFeaturesColumn (D8)
+            // independently builds its own "Features" from every non-excluded named column
+            // (including the erstwhile dummy label, since predict-time has no concept of it) and
+            // the model's embedded Concatenate then re-consumed that already-built "Features" as
+            // one of *its* inputs, double-counting a dimension ("expected Vector<3>, got Vector<4>",
+            // cycle-154). Pre-featurizing here and fitting the trainer alone means the saved model's
+            // only input contract is "Features" — exactly what EnsureFeaturesColumn builds, once,
+            // with no re-concatenation to collide with it.
+            var featurizer = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray()).Fit(trainSet);
+            var featurizedTrainSet = featurizer.Transform(trainSet);
+            var featurizedTestSet = featurizer.Transform(testSet);
 
             // Determine K values to try
             int[] kValues;
@@ -1173,13 +1189,12 @@ public partial class AutoMLRunner
                 cancellationToken.ThrowIfCancellationRequested();
                 var k = kValues[i];
 
-                var pipeline = concatenate
-                    .Append(_mlContext.Clustering.Trainers.KMeans(
-                        featureColumnName: "Features",
-                        numberOfClusters: k));
+                var pipeline = _mlContext.Clustering.Trainers.KMeans(
+                    featureColumnName: "Features",
+                    numberOfClusters: k);
 
-                var model = pipeline.Fit(trainSet);
-                var predictions = model.Transform(testSet);
+                var model = pipeline.Fit(featurizedTrainSet);
+                var predictions = model.Transform(featurizedTestSet);
 
                 // Evaluate. featureColumnName is REQUIRED for ML.NET to compute the Davies-Bouldin
                 // Index — without it DBI comes back 0, which made `useDbi` below always false so the
@@ -1227,7 +1242,7 @@ public partial class AutoMLRunner
             // Add cluster distribution info from best model
             if (bestModel != null && bestMetrics != null)
             {
-                var bestPredictions = bestModel.Transform(testSet);
+                var bestPredictions = bestModel.Transform(featurizedTestSet);
                 var clusterCounts = new Dictionary<uint, long>();
                 var predictedLabelCol = bestPredictions.Schema.GetColumnOrNull("PredictedLabel");
 

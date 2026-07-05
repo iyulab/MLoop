@@ -500,7 +500,8 @@ public static class PredictCommand
                         CancellationToken.None,
                         configLabelColumn,
                         preserveColumns,
-                        interval);
+                        interval,
+                        taskType);
 
                     ctx.Status("[green]Predictions complete![/]");
                 });
@@ -795,131 +796,6 @@ public static class PredictCommand
         => AutoMLRunner.IsTimeSeriesTask(taskType) ? null : configLabelColumn;
 
     /// <summary>
-    /// Runs the stateful SSA forecast: loads the model, replays the original training series
-    /// (resolved from the experiment config), and extracts the horizon forecast with its native
-    /// confidence bounds. Pure computation shared by the CSV and --json presenters — returns
-    /// either the forecast or an actionable error message, never both.
-    /// </summary>
-    internal static async Task<(ForecastOutput? Forecast, string? Error)> ComputeForecastAsync(
-        string modelPath, string? experimentId)
-    {
-        var mlContext = new MLContext();
-        var model = mlContext.Model.Load(modelPath, out var modelSchema);
-
-        // SSA model needs data with the correct value column to transform.
-        // Read config to find original training data and value column.
-        // Config is in staging/{experimentId}/config.json
-        var modelBaseDir = Path.GetDirectoryName(Path.GetDirectoryName(modelPath))!; // models/default/
-        var configPath = experimentId != null
-            ? Path.Combine(modelBaseDir, ExperimentLayout.StagingDirectory, experimentId, ExperimentLayout.ConfigFileName)
-            : Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.ConfigFileName);
-        string? trainDataPath = null;
-        string? valueColName = null;
-
-        if (File.Exists(configPath))
-        {
-            var configJson = await File.ReadAllTextAsync(configPath).ConfigureAwait(false);
-            var configDoc = System.Text.Json.JsonDocument.Parse(configJson);
-            trainDataPath = configDoc.RootElement.TryGetProperty("dataFile", out var df) ? df.GetString() : null;
-            valueColName = configDoc.RootElement.TryGetProperty("labelColumn", out var lc) ? lc.GetString() : null;
-        }
-
-        if (string.IsNullOrEmpty(valueColName))
-        {
-            // Fallback: find from model schema
-            valueColName = modelSchema
-                .Where(c => !c.IsHidden && c.Type == NumberDataViewType.Single)
-                .Select(c => c.Name)
-                .FirstOrDefault(n => n != ForecastOutput.ForecastColumnName
-                                  && n != ForecastOutput.LowerBoundColumnName
-                                  && n != ForecastOutput.UpperBoundColumnName)
-                ?? "Value";
-        }
-
-        if (string.IsNullOrEmpty(trainDataPath) || !File.Exists(trainDataPath))
-        {
-            return (null, "Original training data not found for forecasting predict. " +
-                          "Forecasting models need the training data to generate forecasts.");
-        }
-
-        // Load training data with just the value column — find its index in the CSV header first.
-        var headerLine = File.ReadLines(trainDataPath, System.Text.Encoding.UTF8).First();
-        var headers = CsvFieldParser.ParseFields(headerLine);
-        var colIdx = Array.FindIndex(headers, h => h.Equals(valueColName, StringComparison.OrdinalIgnoreCase));
-        if (colIdx < 0) colIdx = headers.Length - 1; // fallback to last column
-
-        var columnOptions = new TextLoader.Options
-        {
-            Columns = [new TextLoader.Column(valueColName, DataKind.Single, colIdx)],
-            HasHeader = true,
-            Separators = [','],
-            AllowQuoting = true
-        };
-
-        var textLoader = mlContext.Data.CreateTextLoader(columnOptions);
-        var trainData = textLoader.Load(trainDataPath);
-
-        var predictions = model.Transform(trainData);
-        var forecastCol = predictions.Schema.GetColumnOrNull(ForecastOutput.ForecastColumnName);
-        var lowerCol = predictions.Schema.GetColumnOrNull(ForecastOutput.LowerBoundColumnName);
-        var upperCol = predictions.Schema.GetColumnOrNull(ForecastOutput.UpperBoundColumnName);
-
-        if (!forecastCol.HasValue)
-        {
-            return (null, $"Model does not produce {ForecastOutput.ForecastColumnName} column.");
-        }
-
-        using var cursor = predictions.GetRowCursor(predictions.Schema);
-        var forecastGetter = cursor.GetGetter<VBuffer<float>>(forecastCol.Value);
-        var lowerGetter = lowerCol.HasValue ? cursor.GetGetter<VBuffer<float>>(lowerCol.Value) : null;
-        var upperGetter = upperCol.HasValue ? cursor.GetGetter<VBuffer<float>>(upperCol.Value) : null;
-
-        VBuffer<float> forecastBuf = default, lowerBuf = default, upperBuf = default;
-        if (cursor.MoveNext())
-        {
-            forecastGetter(ref forecastBuf);
-            lowerGetter?.Invoke(ref lowerBuf);
-            upperGetter?.Invoke(ref upperBuf);
-        }
-
-        var forecast = new ForecastOutput
-        {
-            ForecastedValues = forecastBuf.DenseValues().ToArray(),
-            LowerBound = lowerBuf.DenseValues().ToArray(),
-            UpperBound = upperBuf.DenseValues().ToArray(),
-        };
-
-        if (forecast.ForecastedValues.Length == 0)
-        {
-            return (null, "Forecast produced 0 values.");
-        }
-
-        return (forecast, null);
-    }
-
-    /// <summary>
-    /// Maps a horizon forecast onto the shared structured-prediction row schema (the same
-    /// PredictionRow the /predict API and tabular --json emit): Score = forecasted value,
-    /// ScoreLowerBound/Upper = SSA native band, IntervalConfidence = its coverage level.
-    /// Row order is the step order — step = index + 1, matching the CSV output's Step column.
-    /// </summary>
-    internal static List<PredictionRow> BuildForecastRows(ForecastOutput forecast)
-    {
-        var rows = new List<PredictionRow>(forecast.ForecastedValues.Length);
-        for (int i = 0; i < forecast.ForecastedValues.Length; i++)
-        {
-            rows.Add(new PredictionRow
-            {
-                Score = forecast.ForecastedValues[i],
-                ScoreLowerBound = i < forecast.LowerBound.Length ? forecast.LowerBound[i] : null,
-                ScoreUpperBound = i < forecast.UpperBound.Length ? forecast.UpperBound[i] : null,
-                IntervalConfidence = ForecastOutput.ConfidenceLevel,
-            });
-        }
-        return rows;
-    }
-
-    /// <summary>
     /// --json presenter for forecasting: emits the horizon forecast to stdout in the same payload
     /// shape as the tabular --json path, so structured consumers (mloop-mcp) get the forecast and
     /// its bounds instead of a silently ignored flag (D21's CLI-side gap).
@@ -927,7 +803,7 @@ public static class PredictCommand
     private static async Task<int> PredictForecastingJsonAsync(
         string modelPath, string modelName, string? experimentId)
     {
-        var (forecast, error) = await ComputeForecastAsync(modelPath, experimentId);
+        var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(new MLContext(), modelPath, experimentId);
         if (forecast is null)
         {
             // AnsiConsole is rerouted to stderr in --json mode, keeping stdout pure.
@@ -940,7 +816,7 @@ public static class PredictCommand
             model = modelName,
             task = "forecasting",
             count = forecast.ForecastedValues.Length,
-            predictions = BuildForecastRows(forecast),
+            predictions = ForecastReplayService.BuildForecastRows(forecast),
             warnings = new List<string>(),
         };
         Console.Out.WriteLine(JsonSerializer.Serialize(payload, PredictJsonOptions));
@@ -954,7 +830,7 @@ public static class PredictCommand
             .Spinner(Spinner.Known.Dots)
             .StartAsync("[yellow]Generating forecast...[/]", async ctx =>
             {
-                var (forecast, error) = await ComputeForecastAsync(modelPath, experimentId);
+                var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(new MLContext(), modelPath, experimentId);
                 if (forecast is null)
                 {
                     AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(error ?? "Forecast failed.")}");

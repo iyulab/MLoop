@@ -2,6 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Commands;
 using MLoop.Core.AutoML;
+using MLoop.Core.Prediction;
 
 namespace MLoop.Tests.Commands;
 
@@ -118,7 +119,7 @@ public class PredictForecastingTests : IDisposable
 
         var (modelPath, _) = CreateForecastingFixture(horizon: 5);
 
-        var (forecast, error) = await PredictCommand.ComputeForecastAsync(modelPath, experimentId: null);
+        var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(new MLContext(), modelPath, experimentId: null);
 
         Assert.Null(error);
         Assert.NotNull(forecast);
@@ -143,11 +144,48 @@ public class PredictForecastingTests : IDisposable
         var (modelPath, trainCsvPath) = CreateForecastingFixture();
         File.Delete(trainCsvPath);
 
-        var (forecast, error) = await PredictCommand.ComputeForecastAsync(modelPath, experimentId: null);
+        var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(new MLContext(), modelPath, experimentId: null);
 
         Assert.Null(forecast);
         Assert.NotNull(error);
         Assert.Contains("training data", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // D21-A: serve POST /predict accepts an optional {"horizon":N} body. The saved SSA model's
+    // horizon is fixed at train time (variableHorizon is not enabled), so a mismatched override
+    // must fail fast with an actionable message rather than silently ignoring the request or
+    // truncating/padding the result — the same "no silent GIGO" discipline as D20/D21/D22.
+    [Fact]
+    public async Task ComputeForecastAsync_RequestedHorizonMatchesTrained_Succeeds()
+    {
+        if (!MklAvailable.Value)
+            return;
+
+        var (modelPath, _) = CreateForecastingFixture(horizon: 5);
+
+        var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(
+            new MLContext(), modelPath, experimentId: null, requestedHorizon: 5);
+
+        Assert.Null(error);
+        Assert.NotNull(forecast);
+        Assert.Equal(5, forecast!.ForecastedValues.Length);
+    }
+
+    [Fact]
+    public async Task ComputeForecastAsync_RequestedHorizonMismatch_ReturnsActionableError()
+    {
+        if (!MklAvailable.Value)
+            return;
+
+        var (modelPath, _) = CreateForecastingFixture(horizon: 5);
+
+        var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(
+            new MLContext(), modelPath, experimentId: null, requestedHorizon: 10);
+
+        Assert.Null(forecast);
+        Assert.NotNull(error);
+        Assert.Contains("fixed horizon of 5", error);
+        Assert.Contains("10", error);
     }
 
     [Fact]
@@ -160,7 +198,7 @@ public class PredictForecastingTests : IDisposable
             UpperBound = [46.22f, 46.70f],
         };
 
-        var rows = PredictCommand.BuildForecastRows(forecast);
+        var rows = ForecastReplayService.BuildForecastRows(forecast);
 
         Assert.Equal(2, rows.Count);
         // Row order == step order (step = index + 1, matching the CSV Step column).
@@ -192,7 +230,7 @@ public class PredictForecastingTests : IDisposable
     {
         var forecast = new ForecastOutput { ForecastedValues = [1.0f] };
 
-        var rows = PredictCommand.BuildForecastRows(forecast);
+        var rows = ForecastReplayService.BuildForecastRows(forecast);
 
         Assert.Single(rows);
         Assert.Equal(1.0f, rows[0].Score!.Value, 3);

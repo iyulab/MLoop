@@ -54,7 +54,8 @@ public class PredictionEngine : IPredictionEngine
         CancellationToken cancellationToken = default,
         string? labelColumnOverride = null,
         IEnumerable<string>? preserveColumns = null,
-        RegressionInterval? interval = null)
+        RegressionInterval? interval = null,
+        string? taskType = null)
     {
         if (!File.Exists(modelPath))
         {
@@ -235,6 +236,23 @@ public class PredictionEngine : IPredictionEngine
             // in the pipeline, so the label column must be present in the input schema.
             // The label values are ignored during prediction.
             IDataView processedData = inputData;
+
+            // D24: clustering's saved model now expects a single "Features" vector built from every
+            // feature column (train-side fix, AutoMLRunner.RunClusteringAsync) — including the CSV's
+            // first column, which InferColumns always treats as *some* label (there being no real one
+            // for label-less clustering) and therefore excludes from its own "Features" merge above.
+            // Left alone, this predict path's "Features" would carry one fewer dimension than the
+            // model expects. Re-concatenate the placeholder label back in — but only when it truly is
+            // a placeholder (labelColumn is null, i.e. no schema column actually carries Purpose=Label);
+            // a real declared label must stay excluded, matching the train-time featurizer.
+            if (string.Equals(taskType, "clustering", StringComparison.OrdinalIgnoreCase)
+                && labelColumn is null
+                && processedData.Schema.GetColumnOrNull("Features") is not null)
+            {
+                processedData = _mlContext.Transforms.Concatenate("Features", dummyLabel, "Features")
+                    .Fit(processedData)
+                    .Transform(processedData);
+            }
 
             // Make predictions
             IDataView predictions;

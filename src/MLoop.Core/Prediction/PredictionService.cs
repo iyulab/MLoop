@@ -387,6 +387,8 @@ public class PredictionService
             rows = ExtractRegressionRows(cursor, scoreCol);
         }
 
+        RequireNonDegenerateOutput(rows, taskType);
+
         // Single authority for the normalized per-row confidence — computed once here so every consumer
         // of PredictionService (serve, CLI) gets the same value and none re-derives it (ConfidencePolicy).
         double? residualStd = interval?.ResidualStd;
@@ -398,6 +400,42 @@ public class PredictionService
             TaskType = taskType,
             Rows = rows
         };
+    }
+
+    /// <summary>
+    /// P-svc1 (cycle-159): generalizes D20~D26 — each task-specific extractor above reads the scored
+    /// schema for that task's defining output column(s), but a schema/taskType mismatch (a renamed
+    /// column, a model trained for a different task than the caller declared, an unhandled model shape)
+    /// leaves every row's defining field null while the extractor still returns a row per input and the
+    /// caller still gets 200/success. That silent all-null result is indistinguishable from "nothing to
+    /// report" and is exactly the D20 (zero column overlap)/D21 (stateless forecast)/D22 (unread TS-anomaly
+    /// vector) failure shape, generalized to a single backstop instead of one bespoke guard per bug. Only
+    /// trips when EVERY row is degenerate — a genuine "no anomalies"/"cluster 0 for everyone" result has
+    /// non-null (if boring) values and passes through untouched.
+    /// </summary>
+    private static void RequireNonDegenerateOutput(List<PredictionRow> rows, string taskType)
+    {
+        if (rows.Count == 0) return;
+
+        bool allDegenerate = taskType switch
+        {
+            _ when IsClassificationTask(taskType) => rows.All(r => r.PredictedLabel is null),
+            "regression" or "forecasting" => rows.All(r => r.Score is null),
+            "clustering" => rows.All(r => r.ClusterId is null),
+            "anomaly-detection" or "time-series-anomaly" =>
+                rows.All(r => r.IsAnomaly is null && r.AnomalyScore is null),
+            _ => rows.All(r => r.Score is null), // ranking, recommendation, etc.
+        };
+
+        if (!allDegenerate) return;
+
+        throw new InvalidOperationException(
+            $"Prediction for task '{taskType}' produced {rows.Count} row(s) but every defining output " +
+            "field came back null. This means the scored model's schema doesn't carry the output this " +
+            "task type expects (a missing, renamed, or differently-shaped column) — likely a task/model " +
+            "mismatch. Returning this as a successful result would silently fabricate an empty-looking " +
+            "'nothing to report' answer (the D20~D26 failure family). Verify the model was trained for " +
+            "task '" + taskType + "' and that its saved schema matches.");
     }
 
     private static List<PredictionRow> ExtractClassificationRows(
