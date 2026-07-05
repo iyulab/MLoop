@@ -546,7 +546,6 @@ public class PredictionEngine : IPredictionEngine
             try
             {
                 var aux = _mlContext.Model.Load(residualPath, out _);
-                double q = interval.NormalizedQ!.Value, beta = interval.Beta!.Value;
 
                 var withPoint = _mlContext.Transforms.CopyColumns("PointScore", "Score").Fit(predictions).Transform(predictions);
                 var withSigma = aux.Transform(withPoint); // aux "Score" = σ(x), shadows the point Score (preserved as PointScore)
@@ -555,9 +554,13 @@ public class PredictionEngine : IPredictionEngine
                     var band = _mlContext.Transforms.CustomMapping<PointSigma, ScoreBand>(
                         (input, output) =>
                         {
-                            double sigma = Math.Max(input.Score, 0f) + beta;
-                            output.ScoreLowerBound = (float)(input.PointScore - q * sigma);
-                            output.ScoreUpperBound = (float)(input.PointScore + q * sigma);
+                            // Single source for the per-row half-width: q·(max(σ,0)+β) lives only in
+                            // RegressionInterval.WidthFor, shared with PredictionService's regression path
+                            // so the CSV and the serve JSON can't drift on the band (PRED-1). input.Score
+                            // here is the σ-model's raw residual estimate.
+                            double half = interval.WidthFor(input.Score);
+                            output.ScoreLowerBound = (float)(input.PointScore - half);
+                            output.ScoreUpperBound = (float)(input.PointScore + half);
                         },
                         contractName: null).Fit(withSigma).Transform(withSigma);
                     // Restore Score to the point prediction (aux had shadowed it with σ).
