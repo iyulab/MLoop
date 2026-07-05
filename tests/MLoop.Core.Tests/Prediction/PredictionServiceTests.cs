@@ -377,6 +377,66 @@ public class PredictionServiceTests : IDisposable
         Assert.Contains("X", ex.Message);   // actionable: names the expected columns
     }
 
+    // D21 (cycle-150, forecasting serve dogfooding): posting rows to a forecasting model used to
+    // return 200 with every output field null (the stateful SSA forecaster extracts nothing from a
+    // stateless per-row Transform — silent no-op, same family as D20). Must fail fast instead,
+    // pointing the caller at the horizon-based CLI path. Fires before the model file is touched.
+    [Fact]
+    public void Predict_Forecasting_RowBased_ThrowsActionableArgumentException()
+    {
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "Temp", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[] { new Dictionary<string, object> { ["Temp"] = 42.0f } };
+
+        var service = new PredictionService(_mlContext);
+        // Path overload: guard must reject before attempting to load the (nonexistent) model.
+        var ex = Assert.Throws<ArgumentException>(
+            () => service.Predict(rows, schema, "nonexistent.zip", "forecasting", "Temp"));
+        Assert.Contains("row-based prediction", ex.Message);
+        Assert.Contains("mloop predict", ex.Message);   // actionable: names the working path
+
+        // Case-insensitive, and empty rows don't bypass the guard.
+        Assert.Throws<ArgumentException>(
+            () => service.Predict(Array.Empty<Dictionary<string, object>>(), schema, "nonexistent.zip", "Forecasting", "Temp"));
+    }
+
+    // The pre-loaded-transformer overload (serve model cache path) rejects forecasting too.
+    [Fact]
+    public void Predict_Forecasting_WithPreLoadedTransformer_Throws()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+            new SimpleRegression { X = 3.0f, Y = 6.0f },
+        });
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
+            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        var model = pipeline.Fit(data);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[] { new Dictionary<string, object> { ["X"] = 1.0f } };
+
+        var service = new PredictionService(_mlContext);
+        var ex = Assert.Throws<ArgumentException>(
+            () => service.Predict(rows, schema, model, "forecasting", "Y"));
+        Assert.Contains("row-based prediction", ex.Message);
+    }
+
     // Partial overlap stays legitimate — missing columns default as before (no regression from D20).
     [Fact]
     public void Predict_RowsWithPartialSchemaOverlap_StillPredicts()
@@ -766,6 +826,119 @@ public class PredictionServiceTests : IDisposable
         Assert.NotNull(result.Rows[0].AnomalyScore);
     }
 
+    // D22 (cycle-152, TS-anomaly live dogfooding): time-series-anomaly models emit a single vector
+    // column (Prediction = [alert, raw score, ...]) instead of PredictedLabel/Score, so the generic
+    // extraction read none of it — serve /predict and mloop predict --json returned rows of all-null
+    // fields with 200/exit-0 (observed live: 5000 × {} on a KAMP sensor series). The dedicated
+    // extractor must surface the alert and the raw score.
+    [Fact]
+    public void Predict_TimeSeriesAnomaly_ExtractsAlertAndRawScore()
+    {
+        // Flat-ish series with one large spike — SrCnn (the campaign's winning detector) must alert on it.
+        var series = new List<SimpleSeries>();
+        for (int i = 0; i < 40; i++)
+            series.Add(new SimpleSeries { Value = 10f + (i % 3) * 0.1f });
+        series[30] = new SimpleSeries { Value = 100f };
+
+        var trainData = _mlContext.Data.LoadFromEnumerable(series);
+        var pipeline = _mlContext.Transforms.DetectAnomalyBySrCnn(
+            outputColumnName: TimeSeriesAnomalyOutput.PredictionColumnName,
+            inputColumnName: "Value",
+            windowSize: 8,
+            backAddWindowSize: 5,
+            lookaheadWindowSize: 5,
+            averagingWindowSize: 3,
+            judgementWindowSize: 8,   // must be <= windowSize (ML.NET contract)
+            threshold: 0.3);
+        var model = pipeline.Fit(trainData);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "Value", DataType = "Numeric", Purpose = "Feature" },
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = series.Select(s => new Dictionary<string, object> { ["Value"] = s.Value }).ToArray();
+
+        var service = new PredictionService(_mlContext);
+        var result = service.Predict(rows, schema, model, "time-series-anomaly");
+
+        Assert.Equal("time-series-anomaly", result.TaskType);
+        Assert.Equal(series.Count, result.Rows.Count);
+        Assert.All(result.Rows, r =>
+        {
+            Assert.NotNull(r.IsAnomaly);      // alert slot surfaced
+            Assert.NotNull(r.AnomalyScore);   // raw-score slot surfaced
+        });
+        Assert.Contains(result.Rows, r => r.IsAnomaly == true);   // the spike alerts
+        // The raw score is NOT a [0,1] boundary-0.5 probability — no confidence may be fabricated
+        // from it until the TS-anomaly signal mapping is designed (P3-3).
+        Assert.All(result.Rows, r => Assert.Null(r.Confidence));
+    }
+
+    // D26 (cycle-155, ranking live dogfooding): ranking was missing from RequiresFeaturesVectorInput,
+    // so the loaded named columns never got a "Features" vector and every structured ranking predict
+    // (serve /predict, mloop predict --json) failed with "Could not find input column 'Features'"
+    // while the CSV path worked. Mirrors the RunRankingAsync model shape: embedded ConvertType +
+    // MapValueToKey(GroupId) + Concatenate + ranking trainer.
+    [Fact]
+    public void Predict_Ranking_BuildsFeaturesAndReturnsScores()
+    {
+        var data = new List<RankingRow>();
+        var rng = new Random(7);
+        for (int g = 0; g < 5; g++)
+            for (int i = 0; i < 20; i++)
+            {
+                var f1 = (float)rng.NextDouble();
+                var f2 = (float)rng.NextDouble();
+                data.Add(new RankingRow
+                {
+                    Query = $"q{g}",
+                    F1 = f1,
+                    F2 = f2,
+                    Label = (float)Math.Clamp(Math.Round(2 * (0.7 * f1 + 0.3 * f2)), 0, 2)
+                });
+            }
+        var trainData = _mlContext.Data.LoadFromEnumerable(data);
+
+        var pipeline = _mlContext.Transforms.Conversion.ConvertType("Label", outputKind: DataKind.Single)
+            .Append(_mlContext.Transforms.Conversion.MapValueToKey("GroupId", "Query"))
+            .Append(_mlContext.Transforms.Concatenate("Features", "F1", "F2"))
+            .Append(_mlContext.Ranking.Trainers.FastTree(
+                labelColumnName: "Label", featureColumnName: "Features", rowGroupColumnName: "GroupId",
+                numberOfTrees: 5, numberOfLeaves: 4, minimumExampleCountPerLeaf: 2));
+        var model = pipeline.Fit(trainData);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "Query", DataType = "Categorical", Purpose = "Feature" },
+                new() { Name = "F1", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "F2", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Label", DataType = "Numeric", Purpose = "Label" },
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["Query"] = "q0", ["F1"] = 0.9f, ["F2"] = 0.8f },
+            new Dictionary<string, object> { ["Query"] = "q0", ["F1"] = 0.1f, ["F2"] = 0.2f },
+        };
+
+        var service = new PredictionService(_mlContext);
+        var result = service.Predict(rows, schema, model, "ranking", "Label");
+
+        Assert.Equal(2, result.Rows.Count);
+        Assert.All(result.Rows, r => Assert.NotNull(r.Score));
+        // Higher-feature row must outrank the lower one (sanity: the score is a real ranking score).
+        Assert.True(result.Rows[0].Score > result.Rows[1].Score);
+        // D25: a ranking score is not a [0,1] confidence — nothing may be fabricated from it.
+        Assert.All(result.Rows, r => Assert.Null(r.Confidence));
+    }
+
     #endregion
 
     #region Binary classification (D12/D13 — serve /predict Features vector + Boolean PredictedLabel)
@@ -920,6 +1093,19 @@ public class PredictionServiceTests : IDisposable
     {
         [VectorType(3)]
         public float[] Features { get; set; } = new float[3];
+    }
+
+    private class SimpleSeries
+    {
+        public float Value { get; set; }
+    }
+
+    private class RankingRow
+    {
+        public string Query { get; set; } = "";
+        public float F1 { get; set; }
+        public float F2 { get; set; }
+        public float Label { get; set; }
     }
 
     private class KeyOnlyRow

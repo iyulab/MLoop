@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.AutoML;
 using MLoop.Core.Models;
 using MLoop.Core.Runtime;
 using MLoop.Core.Storage;
@@ -33,6 +34,8 @@ public class PredictionService
         string? labelColumn = null,
         RegressionInterval? interval = null)
     {
+        RejectRowBasedForecasting(taskType);
+
         if (rows.Length == 0)
         {
             return new PredictionResult
@@ -79,6 +82,8 @@ public class PredictionService
         ITransformer? residualModel = null)
     {
         ArgumentNullException.ThrowIfNull(model);
+
+        RejectRowBasedForecasting(taskType);
 
         if (rows.Length == 0)
         {
@@ -240,6 +245,24 @@ public class PredictionService
     /// prediction with 200/no-warning (silent garbage-in-garbage-out, D20). Partial overlap is
     /// legitimate (missing values default) and stays untouched.
     /// </summary>
+    /// <summary>
+    /// Throws for forecasting models: the SSA forecaster is stateful (it forecasts a fixed horizon
+    /// ahead of its training series), so a stateless per-row Transform extracts nothing — every
+    /// output field comes back null while the response still reports success (silent no-op, D21 —
+    /// same silent-failure family as the D20 zero-overlap guard). Fail fast with the working path
+    /// instead of fabricating an all-null 200.
+    /// </summary>
+    private static void RejectRowBasedForecasting(string taskType)
+    {
+        if (string.Equals(taskType, "forecasting", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                "Forecasting models do not support row-based prediction: the SSA forecaster is stateful and " +
+                "forecasts a fixed horizon ahead of its training series, so transforming posted rows yields no output. " +
+                "Use 'mloop predict' (optionally with --json) to generate the horizon forecast with confidence bounds.");
+        }
+    }
+
     private static void RequireSchemaColumnOverlap(Dictionary<string, object>[] rows, InputSchemaInfo schema)
     {
         var inputColumns = schema.Columns
@@ -353,6 +376,10 @@ public class PredictionService
         else if (taskType == "anomaly-detection")
         {
             rows = ExtractAnomalyRows(cursor, predictedLabelCol, scoreCol);
+        }
+        else if (taskType == "time-series-anomaly")
+        {
+            rows = ExtractTimeSeriesAnomalyRows(cursor, schema);
         }
         else
         {
@@ -630,6 +657,44 @@ public class PredictionService
         return rows;
     }
 
+    /// <summary>
+    /// Time-series anomaly models emit a single vector column (<c>Prediction</c> = [alert, raw score,
+    /// detector-specific third slot]) instead of PredictedLabel/Score — the generic score-based
+    /// extraction read none of it and returned all-null rows with a 200/exit-0 (silent no-op, D22,
+    /// same family as D20/D21). Map the authoritative slots onto the anomaly row fields.
+    /// </summary>
+    private static List<PredictionRow> ExtractTimeSeriesAnomalyRows(
+        DataViewRowCursor cursor, DataViewSchema schema)
+    {
+        var rows = new List<PredictionRow>();
+
+        var predCol = schema.GetColumnOrNull(TimeSeriesAnomalyOutput.PredictionColumnName);
+        ValueGetter<VBuffer<double>>? predGetter = predCol.HasValue
+            ? cursor.GetGetter<VBuffer<double>>(predCol.Value)
+            : null;
+
+        while (cursor.MoveNext())
+        {
+            bool? isAnomaly = null;
+            double? rawScore = null;
+
+            if (predGetter != null)
+            {
+                VBuffer<double> pred = default;
+                predGetter(ref pred);
+                var values = pred.DenseValues().ToArray();
+                if (values.Length > TimeSeriesAnomalyOutput.AlertSlot)
+                    isAnomaly = values[TimeSeriesAnomalyOutput.AlertSlot] != 0;
+                if (values.Length > TimeSeriesAnomalyOutput.RawScoreSlot)
+                    rawScore = values[TimeSeriesAnomalyOutput.RawScoreSlot];
+            }
+
+            rows.Add(new PredictionRow { IsAnomaly = isAnomaly, AnomalyScore = rawScore });
+        }
+
+        return rows;
+    }
+
     private static bool IsClassificationTask(string taskType) =>
         taskType is "binary-classification" or "multiclass-classification"
             or "text-classification" or "image-classification";
@@ -652,7 +717,7 @@ public class PredictionService
     /// </summary>
     private static bool RequiresFeaturesVectorInput(string taskType) =>
         taskType is "anomaly-detection" or "clustering" or "time-series-anomaly"
-                 or "regression" or "forecasting"
+                 or "regression" or "forecasting" or "ranking"
         || IsClassificationTask(taskType);
 
     /// <summary>
