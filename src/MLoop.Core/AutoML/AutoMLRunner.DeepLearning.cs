@@ -199,6 +199,16 @@ public partial class AutoMLRunner
                 .Append(_mlContext.Transforms.Conversion.MapKeyToValue(
                     outputColumnName: "PredictedLabel", inputColumnName: "PredictedLabel"));
 
+            // D27: real-data OD training intermittently dies with a native access violation
+            // (0xC0000005) inside libtorch, crash location varying between runs (Linear_forward,
+            // Tensor.backward). Upstream research (dotnet/TorchSharp#1292) traces this class of
+            // crash to native heap corruption whose exact failure point shifts with memory/thread
+            // pressure — forcing libtorch to a single thread removes that pressure source. This is
+            // a defensive mitigation, not a confirmed fix (unverified under this investigation's
+            // resource-constrained environment — see D27 issue); it carries no downside beyond
+            // slower CPU training, so it is applied unconditionally rather than gated on success.
+            TorchSharp.torch.set_num_threads(1);
+
             progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "ObjectDetection (AutoFormerV2)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
 
             var model = pipeline.Fit(trainSet);
