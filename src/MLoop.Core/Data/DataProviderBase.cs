@@ -38,6 +38,9 @@ public abstract class DataProviderBase : IDataProvider
         data.Schema.Any(col => col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase));
 
     /// <inheritdoc />
+    public virtual IReadOnlyDictionary<string, string[]>? GetMergedColumnGroups() => null;
+
+    /// <inheritdoc />
     public virtual DataSchema GetSchema(IDataView data)
     {
         var columns = data.Schema

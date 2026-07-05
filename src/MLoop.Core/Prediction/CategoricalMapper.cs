@@ -86,7 +86,7 @@ public class CategoricalMapper
 
             foreach (var schemaCol in trainedSchema.Columns)
             {
-                if (schemaCol.DataType == "Categorical" &&
+                if (schemaCol.DataType == SchemaDataTypes.Categorical &&
                     schemaCol.Purpose == "Feature" &&
                     schemaCol.CategoricalValues != null)
                 {
@@ -248,7 +248,7 @@ public class CategoricalMapper
         var categoricalColumns = new Dictionary<int, ColumnSchema>();
         foreach (var schemaCol in trainedSchema.Columns)
         {
-            if (schemaCol.DataType == "Categorical" &&
+            if (schemaCol.DataType == SchemaDataTypes.Categorical &&
                 schemaCol.Purpose == "Feature" &&
                 schemaCol.CategoricalValues != null)
             {

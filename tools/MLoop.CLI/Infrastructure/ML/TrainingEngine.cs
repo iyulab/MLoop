@@ -598,13 +598,13 @@ public class TrainingEngine : ITrainingEngine
             new ColumnSchema
             {
                 Name = ImageDirectoryLoader.ImagePathColumn,
-                DataType = "Text",
+                DataType = SchemaDataTypes.Text,
                 Purpose = "Feature"
             },
             new ColumnSchema
             {
                 Name = label,
-                DataType = "Categorical",
+                DataType = SchemaDataTypes.Categorical,
                 Purpose = "Label",
                 // Class count (folder count) feeds the promotion quality gate's 1/N threshold
                 // for image classification. Null when unknown (e.g. object detection, whose
@@ -711,16 +711,16 @@ public class TrainingEngine : ITrainingEngine
                 // so schema should remain "Numeric" for regression tasks.
                 var isRegressionCapture = string.Equals(taskType, "regression", StringComparison.OrdinalIgnoreCase)
                                        || string.Equals(taskType, "Regression", StringComparison.OrdinalIgnoreCase);
-                if (purpose == "Label" && labelInferredKind == DataKind.Boolean && dataType == "Numeric"
+                if (purpose == "Label" && labelInferredKind == DataKind.Boolean && dataType == SchemaDataTypes.Numeric
                     && !isRegressionCapture)
                 {
-                    dataType = "Categorical";
+                    dataType = SchemaDataTypes.Categorical;
                 }
 
                 // BUG-25: If InferColumns classified a text column as Ignored,
                 // but InferColumnTypeFromData detected it as Text, override purpose to Feature.
                 // This aligns schema metadata with AutoMLRunner's BuildColumnInformation behavior.
-                if (purpose == "Ignore" && dataType == "Text")
+                if (purpose == "Ignore" && dataType == SchemaDataTypes.Text)
                 {
                     purpose = "Feature";
                     Console.WriteLine($"[Info] Column '{colName}' reclassified: Ignored → Text Feature");
@@ -737,15 +737,15 @@ public class TrainingEngine : ITrainingEngine
                     switch (normalizedType)
                     {
                         case "text":
-                            dataType = "Text";
+                            dataType = SchemaDataTypes.Text;
                             if (purpose != "Label") purpose = "Feature";
                             break;
                         case "categorical":
-                            dataType = "Categorical";
+                            dataType = SchemaDataTypes.Categorical;
                             if (purpose != "Label") purpose = "Feature";
                             break;
                         case "numeric":
-                            dataType = "Numeric";
+                            dataType = SchemaDataTypes.Numeric;
                             if (purpose != "Label") purpose = "Feature";
                             break;
                         case "ignore":
@@ -839,14 +839,14 @@ public class TrainingEngine : ITrainingEngine
                 if (count > 0 && dataLines.Length > 0 && LooksLikeText(colIndex, dataLines, count))
                 {
                     Console.WriteLine($"[Info] Column '{columnName}' reclassified: Categorical → Text (text-like content: {count} unique values in {dataLines.Length} rows)");
-                    return ("Text", null, count);
+                    return (SchemaDataTypes.Text, null, count);
                 }
-                return ("Categorical", values, count);
+                return (SchemaDataTypes.Categorical, values, count);
             }
             if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
-                return ("Numeric", null, null);
+                return (SchemaDataTypes.Numeric, null, null);
             if (columnInfo.TextColumnNames?.Contains(columnName) == true)
-                return ("Text", null, null);
+                return (SchemaDataTypes.Text, null, null);
         }
 
         // Fallback: Infer type from actual values
@@ -887,7 +887,7 @@ public class TrainingEngine : ITrainingEngine
         // High numeric ratio (>90%) = Numeric column
         if (numericRatio > 0.9)
         {
-            return ("Numeric", null, null);
+            return (SchemaDataTypes.Numeric, null, null);
         }
 
         // Low unique count relative to total = likely Categorical
@@ -896,14 +896,14 @@ public class TrainingEngine : ITrainingEngine
         {
             if (totalCount > 0 && LooksLikeText(colIndex, dataLines, uniqueCount))
             {
-                return ("Text", null, uniqueCount);
+                return (SchemaDataTypes.Text, null, uniqueCount);
             }
             var categoricalValues = uniqueValues.OrderBy(v => v).ToList();
-            return ("Categorical", categoricalValues, uniqueCount);
+            return (SchemaDataTypes.Categorical, categoricalValues, uniqueCount);
         }
 
         // High cardinality text
-        return ("Text", null, uniqueCount);
+        return (SchemaDataTypes.Text, null, uniqueCount);
     }
 
     private (List<string>? Values, int Count) CollectCategoricalValues(int colIndex, string[] dataLines)
@@ -1003,7 +1003,7 @@ public class TrainingEngine : ITrainingEngine
         {
             var col = columns[ci];
             if (col.Purpose != "Feature") continue;
-            if (col.DataType != "Text" && col.DataType != "Unknown") continue;
+            if (col.DataType != SchemaDataTypes.Text && col.DataType != "Unknown") continue;
 
             // Collect sample values for this column
             List<string>? sampleValues = null;
@@ -1165,7 +1165,7 @@ public class TrainingEngine : ITrainingEngine
         var catColumns = new Dictionary<int, ColumnSchema>();
         foreach (var col in columns)
         {
-            if (col.DataType == "Categorical" && (col.Purpose == "Feature" || col.Purpose == "Label"))
+            if (col.DataType == SchemaDataTypes.Categorical && (col.Purpose == "Feature" || col.Purpose == "Label"))
             {
                 var idx = Array.IndexOf(columnNames, col.Name);
                 if (idx >= 0) catColumns[idx] = col;
