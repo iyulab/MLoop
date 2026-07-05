@@ -92,6 +92,14 @@ public class PredictionService
 
         var warnings = new List<string>();
 
+        // Silent-GIGO guard: if the input rows share NO column with the trained schema (e.g. the
+        // caller wrapped rows in an envelope like {"rows":[...]} or posted an unrelated payload),
+        // every schema column falls back to its default value and the model emits an all-zero score
+        // whose argmax is a fabricated label — returned with 200 and no warning. Fail fast instead:
+        // partial column overlap stays legitimate (missing values are defaulted below), but zero
+        // overlap is unambiguous caller error.
+        RequireSchemaColumnOverlap(rows, schema);
+
         MapCategoricalValues(rows, schema, warnings);
 
         bool needsDummyLabel = IsLabelRequiredForTransform(taskType);
@@ -226,6 +234,31 @@ public class PredictionService
     /// BUG-11/12: Use schema dataType, NOT InferColumns.
     /// BUG-15/17/23: Label type depends on task type.
     /// </summary>
+    /// <summary>
+    /// Throws when the input rows contain none of the trained schema's non-label input columns —
+    /// with zero overlap every column defaults and the model returns a fabricated all-zero-score
+    /// prediction with 200/no-warning (silent garbage-in-garbage-out, D20). Partial overlap is
+    /// legitimate (missing values default) and stays untouched.
+    /// </summary>
+    private static void RequireSchemaColumnOverlap(Dictionary<string, object>[] rows, InputSchemaInfo schema)
+    {
+        var inputColumns = schema.Columns
+            .Where(c => !string.Equals(c.Purpose, "Label", StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (inputColumns.Count == 0)
+            return;
+
+        if (rows.Any(r => r.Keys.Any(inputColumns.Contains)))
+            return;
+
+        var provided = rows.SelectMany(r => r.Keys).Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToList();
+        throw new ArgumentException(
+            $"Input rows contain none of the model's input columns. " +
+            $"Expected columns like [{string.Join(", ", inputColumns.Take(8))}] but got [{string.Join(", ", provided)}]. " +
+            $"If calling the API, POST a bare JSON array of row objects (e.g. [{{\"col\":1}}]) — not an envelope like {{\"rows\":[...]}}.");
+    }
+
     private static DataKind ResolveDataKind(ColumnSchema col, string taskType, string? labelColumn)
     {
         bool isLabel = labelColumn != null &&
