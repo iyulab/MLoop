@@ -342,6 +342,75 @@ public class PredictionServiceTests : IDisposable
         Assert.Contains(result.Warnings, w => w.Contains("No input rows"));
     }
 
+    // D20 (cycle-146, serve image dogfooding): rows sharing NO column with the trained schema
+    // (e.g. an envelope like {"rows":[...]} posted to /predict) used to default every column and
+    // return 200 with a fabricated all-zero-score label and no warning. Zero overlap must fail fast.
+    [Fact]
+    public void Predict_RowsShareNoSchemaColumn_ThrowsActionableArgumentException()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+            new SimpleRegression { X = 3.0f, Y = 6.0f },
+        });
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
+            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        var model = pipeline.Fit(data);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+
+        var rows = new[] { new Dictionary<string, object> { ["rows"] = "[{\"X\":1}]" } };
+
+        var service = new PredictionService(_mlContext);
+        var ex = Assert.Throws<ArgumentException>(
+            () => service.Predict(rows, schema, model, "regression", "Y"));
+        Assert.Contains("none of the model's input columns", ex.Message);
+        Assert.Contains("X", ex.Message);   // actionable: names the expected columns
+    }
+
+    // Partial overlap stays legitimate — missing columns default as before (no regression from D20).
+    [Fact]
+    public void Predict_RowsWithPartialSchemaOverlap_StillPredicts()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new TwoFeatureRegression { X = 1.0f, Z = 1.0f, Y = 2.0f },
+            new TwoFeatureRegression { X = 2.0f, Z = 1.0f, Y = 4.0f },
+            new TwoFeatureRegression { X = 3.0f, Z = 1.0f, Y = 6.0f },
+        });
+        var pipeline = _mlContext.Transforms.Concatenate("Features", "X", "Z")
+            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+        var model = pipeline.Fit(data);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Z", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" }
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+
+        // "Z" missing — defaults; must not throw.
+        var rows = new[] { new Dictionary<string, object> { ["X"] = 2.0f } };
+
+        var service = new PredictionService(_mlContext);
+        var result = service.Predict(rows, schema, model, "regression", "Y");
+        Assert.Single(result.Rows);
+        Assert.NotNull(result.Rows[0].Score);
+    }
+
     [Fact]
     public void Predict_WithPreLoadedTransformer_ReturnsSameResultAsPathOverload()
     {
@@ -823,6 +892,13 @@ public class PredictionServiceTests : IDisposable
     private class SimpleRegression
     {
         public float X { get; set; }
+        public float Y { get; set; }
+    }
+
+    private class TwoFeatureRegression
+    {
+        public float X { get; set; }
+        public float Z { get; set; }
         public float Y { get; set; }
     }
 

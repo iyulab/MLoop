@@ -452,6 +452,17 @@ app.MapPost("/predict", async (
             warnings = result.Warnings
         });
     }
+    catch (ArgumentException ex)
+    {
+        // Caller error (e.g. rows share no column with the trained schema — D20 silent-GIGO guard):
+        // 400 with the actionable message, not a 500.
+        logger.LogWarning(ex, "Prediction rejected for '{ModelName}': invalid input rows", modelName);
+        return Results.Problem(
+            title: "Invalid prediction input",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status400BadRequest
+        );
+    }
     catch (Exception ex)
     {
         logger.LogError(ex, "Prediction failed for '{ModelName}' with {Count} input(s) after {ElapsedMs}ms",
