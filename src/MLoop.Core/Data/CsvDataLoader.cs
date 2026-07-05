@@ -10,10 +10,20 @@ namespace MLoop.Core.Data;
 /// </summary>
 public class CsvDataLoader : DataProviderBase
 {
+    private IReadOnlyDictionary<string, string[]>? _mergedColumnGroups;
+
     public CsvDataLoader(MLContext mlContext, Action<string>? log = null)
         : base(mlContext, log)
     {
     }
+
+    /// <summary>
+    /// Merged-vector-to-source-names mapping from the most recent <see cref="LoadData"/> call
+    /// (see <see cref="Contracts.IDataProvider.GetMergedColumnGroups"/>). InferColumns merges
+    /// adjacent same-kind CSV columns into one ranged vector column; the loaded IDataView
+    /// loses the source names, so schema capture recovers them here (upstream-008).
+    /// </summary>
+    public override IReadOnlyDictionary<string, string[]>? GetMergedColumnGroups() => _mergedColumnGroups;
 
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
         IEnumerable<string>? preserveColumns = null)
@@ -22,6 +32,8 @@ public class CsvDataLoader : DataProviderBase
         {
             throw new FileNotFoundException($"Data file not found: {filePath}");
         }
+
+        _mergedColumnGroups = null;
 
         // Ensure UTF-8 BOM for ML.NET compatibility (ML.NET's InferColumns relies on BOM detection)
         string mlnetCompatiblePath = EnsureUtf8Bom(filePath);
@@ -182,6 +194,12 @@ public class CsvDataLoader : DataProviderBase
         // inferred kind untouched.
         ApplyColumnPreservation(columnInference, mlnetCompatiblePath, preserveColumns);
 
+        // Record which source columns each merged range spans — the loaded IDataView
+        // carries no slot names, so this mapping is what lets schema capture expand the
+        // merged vector back into named columns (upstream-008).
+        _mergedColumnGroups = ComputeMergedColumnGroups(
+            columnInference.TextLoaderOptions, ReadCsvHeaders(mlnetCompatiblePath));
+
         // Create text loader with inferred schema
         // Ensure RFC 4180 compliance: handle commas inside quoted fields
         columnInference.TextLoaderOptions.AllowQuoting = true;
@@ -290,15 +308,8 @@ public class CsvDataLoader : DataProviderBase
     /// type tables cannot drift (the predict-only "String" case BUG-42 was exactly such a drift).
     /// Returns <paramref name="fallback"/> for unknown type names so the inferred kind is kept.
     /// </summary>
-    public static DataKind MapTrainedTypeToDataKind(string dataType, DataKind fallback) => dataType switch
-    {
-        "Numeric" => DataKind.Single,
-        "Categorical" => DataKind.String,
-        "Text" => DataKind.String,
-        "String" => DataKind.String, // BUG-42: tolerate raw type name
-        "Boolean" => DataKind.Boolean,
-        _ => fallback
-    };
+    public static DataKind MapTrainedTypeToDataKind(string dataType, DataKind fallback) =>
+        SchemaDataTypes.ToDataKind(dataType, fallback);
 
     /// <summary>
     /// Splits preserved columns (group_column, user_column, item_column, and the statistical-prep
@@ -371,6 +382,36 @@ public class CsvDataLoader : DataProviderBase
             newColumns.Add(new Microsoft.ML.Data.TextLoader.Column(colName, splitKind, headerIdx));
             options.Columns = newColumns.ToArray();
         }
+    }
+
+    /// <summary>
+    /// Maps each TextLoader column that spans more than one source index (a merged range
+    /// InferColumns produced) to the CSV header names it covers, in slot order.
+    /// Returns null when no column is merged.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string[]>? ComputeMergedColumnGroups(
+        TextLoader.Options options, string[] headers)
+    {
+        if (options.Columns is null) return null;
+
+        Dictionary<string, string[]>? groups = null;
+        foreach (var col in options.Columns)
+        {
+            if (col.Name is null || col.Source is null) continue;
+
+            var indices = new List<int>();
+            foreach (var src in col.Source)
+            {
+                for (int i = src.Min; i <= (src.Max ?? src.Min); i++)
+                    indices.Add(i);
+            }
+            if (indices.Count <= 1) continue;
+            if (indices.Any(i => i < 0 || i >= headers.Length)) continue;
+
+            (groups ??= new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase))[col.Name] =
+                indices.Select(i => headers[i]).ToArray();
+        }
+        return groups;
     }
 
     /// <summary>

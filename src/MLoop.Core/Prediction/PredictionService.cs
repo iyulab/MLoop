@@ -259,14 +259,8 @@ public class PredictionService
         return MapDataTypeToDataKind(col.DataType);
     }
 
-    private static DataKind MapDataTypeToDataKind(string dataType) => dataType switch
-    {
-        "Numeric" => DataKind.Single,
-        "Categorical" => DataKind.String,
-        "Text" => DataKind.String,
-        "Boolean" => DataKind.Boolean,
-        _ => DataKind.String
-    };
+    private static DataKind MapDataTypeToDataKind(string dataType) =>
+        SchemaDataTypes.ToDataKind(dataType, fallback: DataKind.String);
 
     /// <summary>
     /// For classification tasks, restores original label values from Key type using MapKeyToValue.
@@ -642,7 +636,7 @@ public class PredictionService
         // feature columns at train time. Driven by DataType (not Purpose), since Purpose may be absent
         // when the schema was deserialized from config.json, whereas DataType is always populated.
         var featureColumns = schema.Columns
-            .Where(c => c.DataType.Equals("Numeric", StringComparison.OrdinalIgnoreCase)
+            .Where(c => c.DataType.Equals(SchemaDataTypes.Numeric, StringComparison.OrdinalIgnoreCase)
                      && !c.Purpose.Equals("Exclude", StringComparison.OrdinalIgnoreCase)
                      && (labelColumn is null || !c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)))
             .Select(c => c.Name)
