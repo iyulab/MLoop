@@ -7,9 +7,10 @@ namespace MLoop.Ops.Services;
 /// <summary>
 /// Filesystem-based promotion support: backs up the current production model and
 /// records promotion history. The promotion copy itself is performed by the
-/// authoritative <c>ModelRegistry</c> (CLI/REST), which owns <c>registry.json</c>;
-/// this service reads the production model's own <c>metadata.json</c> (written by that
-/// registry) rather than maintaining a second registry file.
+/// authoritative <c>ModelRegistry</c> (CLI/REST); this service reads the current
+/// production pointer from the same single authority (<c>production/metadata.json</c>
+/// via <see cref="ProductionMetadata"/>) that the registry writes and reads, so all
+/// three production-state consumers agree.
 /// </summary>
 public sealed class FilePromotionManager : IPromotionManager
 {
@@ -101,26 +102,12 @@ public sealed class FilePromotionManager : IPromotionManager
         string modelName,
         CancellationToken cancellationToken)
     {
-        var metadataPath = Path.Combine(
+        var productionDir = Path.Combine(
             GetModelPath(modelName),
-            ExperimentLayout.ProductionDirectory,
-            ExperimentLayout.MetadataFileName);
+            ExperimentLayout.ProductionDirectory);
 
-        if (!File.Exists(metadataPath))
-        {
-            return null;
-        }
-
-        var json = await File.ReadAllTextAsync(metadataPath, cancellationToken).ConfigureAwait(false);
-        var metadata = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOptions);
-
-        if (metadata != null && metadata.TryGetValue("experimentId", out var expIdElement) &&
-            expIdElement.ValueKind == JsonValueKind.String)
-        {
-            return expIdElement.GetString();
-        }
-
-        return null;
+        var metadata = await ProductionMetadata.ReadAsync(productionDir, cancellationToken).ConfigureAwait(false);
+        return metadata?.ExperimentId;
     }
 
     public static void CopyDirectory(string source, string destination)
