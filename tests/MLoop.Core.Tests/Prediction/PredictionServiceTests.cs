@@ -844,12 +844,20 @@ public class PredictionServiceTests : IDisposable
             var ml = new MLContext(seed: 0);
             var data = ml.Data.LoadFromEnumerable(
                 Enumerable.Range(0, 16).Select(i => new SimpleSeries { Value = i }));
-            ml.Transforms.DetectAnomalyBySrCnn(
+            var transformed = ml.Transforms.DetectAnomalyBySrCnn(
                     outputColumnName: TimeSeriesAnomalyOutput.PredictionColumnName,
                     inputColumnName: nameof(SimpleSeries.Value),
                     windowSize: 8, backAddWindowSize: 5, lookaheadWindowSize: 5,
                     averagingWindowSize: 3, judgementWindowSize: 8, threshold: 0.3)
-                .Fit(data).Transform(data).Preview(1);
+                .Fit(data).Transform(data);
+            // Materialize EVERY row: the FFT (and hence the MKL load) only fires once the sliding
+            // window fills, so previewing a single warmup row would falsely report MKL as present.
+            using var cursor = transformed.GetRowCursor(transformed.Schema);
+            var col = transformed.Schema[TimeSeriesAnomalyOutput.PredictionColumnName];
+            var getter = cursor.GetGetter<VBuffer<double>>(col);
+            VBuffer<double> buf = default;
+            while (cursor.MoveNext())
+                getter(ref buf);
             return true;
         }
         catch (Exception ex) when (ex is DllNotFoundException or TypeInitializationException
