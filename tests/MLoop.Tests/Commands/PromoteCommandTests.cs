@@ -142,4 +142,128 @@ public class PromoteCommandTests : IDisposable
     }
 
     #endregion
+
+    #region SelectExperiment (--latest / --best)
+
+    private static MLoop.CLI.Infrastructure.FileSystem.ExperimentSummary Summary(
+        string id, string status = "Completed", double? metric = null, string? metricName = null,
+        int ageMinutes = 0)
+        => new()
+        {
+            ModelName = "default",
+            ExperimentId = id,
+            Status = status,
+            Timestamp = DateTime.UtcNow.AddMinutes(-ageMinutes),
+            BestMetric = metric,
+            MetricName = metricName,
+        };
+
+    [Fact]
+    public void SelectExperiment_Latest_PicksNewestCompleted()
+    {
+        var candidates = new[]
+        {
+            Summary("exp-001", ageMinutes: 60),
+            Summary("exp-002", ageMinutes: 30),
+            Summary("exp-003", status: "Failed", ageMinutes: 5), // newest but not completed
+        };
+
+        var (id, reason, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(candidates, "default", best: false);
+
+        Assert.Null(error);
+        Assert.Equal("exp-002", id);
+        Assert.Equal("latest", reason);
+    }
+
+    [Fact]
+    public void SelectExperiment_Best_HigherIsBetter_PicksMax()
+    {
+        var candidates = new[]
+        {
+            Summary("exp-001", metric: 0.80, metricName: "accuracy", ageMinutes: 60),
+            Summary("exp-002", metric: 0.92, metricName: "accuracy", ageMinutes: 30),
+            Summary("exp-003", metric: 0.85, metricName: "accuracy", ageMinutes: 5),
+        };
+
+        var (id, reason, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(candidates, "default", best: true);
+
+        Assert.Null(error);
+        Assert.Equal("exp-002", id);
+        Assert.Contains("accuracy", reason);
+    }
+
+    [Fact]
+    public void SelectExperiment_Best_LowerIsBetter_PicksMin()
+    {
+        // rmse is an error metric — the MetricDirection authority says lower wins.
+        var candidates = new[]
+        {
+            Summary("exp-001", metric: 3.2, metricName: "root_mean_squared_error", ageMinutes: 60),
+            Summary("exp-002", metric: 1.4, metricName: "root_mean_squared_error", ageMinutes: 30),
+            Summary("exp-003", metric: 2.0, metricName: "root_mean_squared_error", ageMinutes: 5),
+        };
+
+        var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(candidates, "default", best: true);
+
+        Assert.Null(error);
+        Assert.Equal("exp-002", id);
+    }
+
+    [Fact]
+    public void SelectExperiment_Best_MixedMetricNames_FailsActionable()
+    {
+        // Comparing accuracy against rmse is meaningless — must refuse, not silently pick one.
+        var candidates = new[]
+        {
+            Summary("exp-001", metric: 0.9, metricName: "accuracy"),
+            Summary("exp-002", metric: 1.4, metricName: "root_mean_squared_error"),
+        };
+
+        var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(candidates, "default", best: true);
+
+        Assert.Null(id);
+        Assert.NotNull(error);
+        Assert.Contains("different metrics", error);
+    }
+
+    [Fact]
+    public void SelectExperiment_Best_NoMetrics_FailsActionable()
+    {
+        var candidates = new[] { Summary("exp-001"), Summary("exp-002") };
+
+        var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(candidates, "default", best: true);
+
+        Assert.Null(id);
+        Assert.NotNull(error);
+        Assert.Contains("--latest", error);
+    }
+
+    [Fact]
+    public void SelectExperiment_NoCompleted_FailsActionable()
+    {
+        var candidates = new[] { Summary("exp-001", status: "Failed") };
+
+        var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(candidates, "default", best: false);
+
+        Assert.Null(id);
+        Assert.NotNull(error);
+        Assert.Contains("No completed experiments", error);
+    }
+
+    [Fact]
+    public void SelectExperiment_Best_Tie_PrefersNewer()
+    {
+        var candidates = new[]
+        {
+            Summary("exp-001", metric: 0.9, metricName: "accuracy", ageMinutes: 60),
+            Summary("exp-002", metric: 0.9, metricName: "accuracy", ageMinutes: 10),
+        };
+
+        var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(candidates, "default", best: true);
+
+        Assert.Null(error);
+        Assert.Equal("exp-002", id);
+    }
+
+    #endregion
 }

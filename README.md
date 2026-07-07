@@ -138,8 +138,9 @@ That's it! Your model is trained and ready to use.
 mloop init <project> --task <type>    # Initialize ML project
 mloop train <data> <label> [options]  # Train with AutoML
 mloop predict [model] [data]          # Run predictions
-mloop list                             # View experiments
-mloop promote <exp-id>                # Promote to production
+mloop list [--json]                    # View experiments
+mloop promote [exp-id] [--latest|--best] [--json]  # Promote to production (auto-select newest/best)
+mloop detect <data> [--column <col>]   # One-shot TS-anomaly detection with SPC bounds (no training)
 mloop evaluate <model> <test> <label> # Evaluate performance
 mloop info <data>                      # Dataset profiling with encoding detection
 mloop analyze profile <data>           # Column types, null %, cardinality, constant columns
