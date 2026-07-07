@@ -663,10 +663,22 @@ public partial class AutoMLRunner
         if (c1Residuals.Count < 5 || GetRowCount(ml, c2) < 5)
             return null; // too small to fit + calibrate meaningfully
 
-        // σ-model: raw numeric features → |residual|. Trained only on C1.
+        // σ-model: raw numeric features → |residual|. Trained only on C1. FastForest, not SDCA:
+        // SDCA's fit is platform-/thread-trajectory-sensitive and can silently DIVERGE on this tiny
+        // aux problem (observed: σ ≈ -8.7e7 single-threaded on win-x64, and the macOS-arm64 CI's
+        // multi-threaded fit degenerated the same way), and the max(σ,0)+β floor then masks the
+        // divergence as a constant-width band while the metadata still claims heteroscedastic.
+        // A forest predicts leaf averages of the |residual| target, so σ is structurally bounded to
+        // the training residual range (never negative, cannot diverge); NumberOfThreads = 1 keeps
+        // the conformal calibration reproducible for the same data.
         var auxPipeline = ml.Transforms.Concatenate("Features", feats)
             .Append(ml.Transforms.NormalizeMinMax("Features"))
-            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Target", featureColumnName: "Features"));
+            .Append(ml.Regression.Trainers.FastForest(new Microsoft.ML.Trainers.FastTree.FastForestRegressionTrainer.Options
+            {
+                LabelColumnName = "Target",
+                FeatureColumnName = "Features",
+                NumberOfThreads = 1,
+            }));
         var auxModel = auxPipeline.Fit(c1);
 
         // Positive floor β: a low quantile of the C1 residuals, so σ never collapses the band.
