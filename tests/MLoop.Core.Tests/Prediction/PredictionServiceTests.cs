@@ -218,7 +218,19 @@ public class PredictionServiceTests : IDisposable
         Assert.Equal(2, result.Rows.Count);
         double w1 = result.Rows[0].ScoreUpperBound!.Value - result.Rows[0].ScoreLowerBound!.Value;
         double w2 = result.Rows[1].ScoreUpperBound!.Value - result.Rows[1].ScoreLowerBound!.Value;
-        Assert.True(Math.Abs(w1 - w2) > 1e-3, $"per-row band widths should differ (w1={w1:F3}, w2={w2:F3})");
+
+        // Diagnostic readout of the aux σ-model itself: on a failure this tells apart "the σ-model fit
+        // degenerated to a constant" from "the service path fell back to the constant-width band"
+        // (the macOS-arm64 CI failure class — see ISSUE-mloop-20260705-macos-predictionservice-test-failures).
+        var probe = ml.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f },
+            new SimpleRegression { X = 20.0f },
+        });
+        var probeSigmas = norm.AuxModel.Transform(mainModel.Transform(probe)).GetColumn<float>("Score").ToArray();
+
+        Assert.True(Math.Abs(w1 - w2) > 1e-3,
+            $"per-row band widths should differ (w1={w1:F3}, w2={w2:F3}; aux σ(X=1)={probeSigmas[0]:F4}, σ(X=20)={probeSigmas[1]:F4})");
     }
 
     [Fact]
@@ -1209,7 +1221,10 @@ public class PredictionServiceTests : IDisposable
 
         var keyed = _mlContext.Transforms.Conversion.MapValueToKey("Label", "Label").Fit(data).Transform(data);
         var featurized = _mlContext.Transforms.Concatenate("Features", "X1", "X2").Fit(keyed).Transform(keyed);
-        var trainer = _mlContext.MulticlassClassification.Trainers.LightGbm(
+        // SdcaMaximumEntropy, not LightGbm: the pinned regression is the serve path's label *loading*
+        // (String vs Single before the model's MapValueToKey), so any multiclass trainer reproduces it —
+        // and lib_lightgbm ships no osx-arm64 native, which made this test DllNotFound on macOS CI.
+        var trainer = _mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(
             labelColumnName: "Label", featureColumnName: "Features");
         var model = trainer.Fit(featurized);
         var modelPath = SaveModel(model, featurized.Schema);

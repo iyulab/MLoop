@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.AutoML;
 using MLoop.Core.Models;
@@ -132,7 +133,15 @@ public class CrossPathConformalBandTests : IDisposable
         // constant width — otherwise the guard would pass trivially.
         double w0 = csvBands[0].Upper - csvBands[0].Lower;
         double w1 = csvBands[1].Upper - csvBands[1].Lower;
-        Assert.True(Math.Abs(w0 - w1) > 1e-3, $"expected per-row widths to differ (w0={w0:F3}, w1={w1:F3})");
+
+        // Diagnostic readout of the aux σ-model itself: on a failure this tells apart "the σ-model fit
+        // degenerated to a constant" from "both paths fell back to the constant-width band"
+        // (the macOS-arm64 CI failure class — see ISSUE-mloop-20260705-macos-predictionservice-test-failures).
+        var probe = ml.Data.LoadFromEnumerable(xs.Select(x => new SimpleReg { X = x }));
+        var probeSigmas = norm.AuxModel.Transform(mainModel.Transform(probe)).GetColumn<float>("Score").ToArray();
+
+        Assert.True(Math.Abs(w0 - w1) > 1e-3,
+            $"expected per-row widths to differ (w0={w0:F3}, w1={w1:F3}; aux σ(X=1)={probeSigmas[0]:F4}, σ(X=20)={probeSigmas[1]:F4})");
     }
 
     private static List<(double Lower, double Upper)> ReadCsvBands(string csvPath)

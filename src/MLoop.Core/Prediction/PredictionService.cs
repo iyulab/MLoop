@@ -148,7 +148,13 @@ public class PredictionService
         if (residualModel != null && interval?.IsHeteroscedastic == true)
         {
             try { perRowSigma = ComputeResidualSigma(residualModel, predictions); }
-            catch { perRowSigma = null; }
+            catch (Exception ex)
+            {
+                // Graceful degradation, but not silent (P-svc1 lesson): the caller should know the
+                // band fell back to constant width instead of assuming per-row σ was applied.
+                perRowSigma = null;
+                warnings.Add($"Residual σ-model scoring failed; using constant-width interval instead: {ex.Message}");
+            }
         }
 
         predictions = RestoreOriginalLabels(predictions);
