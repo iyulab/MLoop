@@ -48,17 +48,14 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
                 services.Remove(descriptor);
             }
 
-            // Add test-specific ProjectDiscovery that uses our temp directory
-            services.AddSingleton<IProjectDiscovery>(sp =>
-            {
-                var fileSystem = sp.GetRequiredService<IFileSystemManager>();
-                var discovery = new ProjectDiscovery(fileSystem);
-
-                // Override the current directory to our test project root
-                Environment.CurrentDirectory = _testProjectRoot;
-
-                return discovery;
-            });
+            // Add test-specific ProjectDiscovery pinned to our temp directory. Deliberately NOT via
+            // Environment.CurrentDirectory: that is process-global state, and xUnit runs test classes
+            // (= factory instances) in parallel — the old CWD mutation let one factory's Dispose
+            // delete the directory another factory's Program startup was using as its working
+            // directory, so the entry point died before ever building an IHost. Latent while
+            // ApiIntegrationTests was the only factory consumer; exposed when ForecastingApiTests
+            // added a second one (D21-A).
+            services.AddSingleton<IProjectDiscovery>(new FixedRootProjectDiscovery(_testProjectRoot));
 
             // Override Ops/DataStore services to use test directory
             ReplaceService<IModelComparer>(services, new FileModelComparer(_testProjectRoot));
@@ -110,6 +107,25 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
                 // Ignore cleanup errors
             }
         }
+    }
+
+    /// <summary>An <see cref="IProjectDiscovery"/> pinned to a known root — no process-global
+    /// CWD dependency, so parallel factories (one per test class) stay isolated.</summary>
+    private sealed class FixedRootProjectDiscovery : IProjectDiscovery
+    {
+        private readonly string _root;
+
+        public FixedRootProjectDiscovery(string root) => _root = root;
+
+        public string FindRoot() => _root;
+
+        public string FindRoot(string startingDirectory) => _root;
+
+        public bool IsProjectRoot(string path) => Directory.Exists(Path.Combine(path, ".mloop"));
+
+        public void EnsureProjectRoot() { }
+
+        public string GetMLoopDirectory(string projectRoot) => Path.Combine(projectRoot, ".mloop");
     }
 }
 
