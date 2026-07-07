@@ -3,6 +3,7 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Data;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 
 namespace MLoop.CLI.Infrastructure.ML;
@@ -56,9 +57,9 @@ public class EvaluationEngine
                     var dirScored = trainedModel.Transform(dirData);
 
                     if (taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
-                        return MLoop.Core.Evaluation.ObjectDetectionEvaluator.Evaluate(_mlContext, dirScored);
+                        return MetricSanitizer.SanitizeAndReturn(MLoop.Core.Evaluation.ObjectDetectionEvaluator.Evaluate(_mlContext, dirScored));
 
-                    return EvaluateMulticlassClassification(dirScored, "Label");
+                    return MetricSanitizer.SanitizeAndReturn(EvaluateMulticlassClassification(dirScored, "Label"));
                 }
 
                 // F-26: ranking/recommendation models reference the group/user/item columns
@@ -149,7 +150,10 @@ public class EvaluationEngine
                     throw new NotSupportedException($"Task type '{taskType}' is not supported for evaluation.");
                 }
 
-                return metrics;
+                // Single-authority guard: normalize any non-finite metric (NaN/±∞) to the
+                // direction-aware worst before it is returned/persisted (mirrors the training
+                // path in AutoMLRunner.RunAsync). System.Text.Json cannot serialize non-finite.
+                return MetricSanitizer.SanitizeAndReturn(metrics);
             }
             finally
             {
@@ -327,10 +331,13 @@ public class EvaluationEngine
 
         try
         {
+            // Non-finite values are normalized centrally by MetricSanitizer at EvaluateAsync's
+            // return (direction-aware worst) — a local NaN→0 guard would wrongly launder a broken
+            // error metric into a perfect-looking 0.
             var metrics = _mlContext.Regression.Evaluate(predictions, labelColumnName: labelColumn);
-            metricsDict["rmse"] = double.IsNaN(metrics.RootMeanSquaredError) ? 0 : metrics.RootMeanSquaredError;
-            metricsDict["mae"] = double.IsNaN(metrics.MeanAbsoluteError) ? 0 : metrics.MeanAbsoluteError;
-            metricsDict["r_squared"] = double.IsNaN(metrics.RSquared) ? 0 : metrics.RSquared;
+            metricsDict["rmse"] = metrics.RootMeanSquaredError;
+            metricsDict["mae"] = metrics.MeanAbsoluteError;
+            metricsDict["r_squared"] = metrics.RSquared;
         }
         catch
         {

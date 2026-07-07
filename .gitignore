@@ -2,6 +2,9 @@
 bin/
 obj/
 nupkg/
+
+# Runtime logs (MLoop.API 등 서버 실행 산출물)
+logs/
 *.user
 *.suo
 *.cache

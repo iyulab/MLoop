@@ -12,7 +12,10 @@ namespace MLoop.CLI.Commands;
 /// </summary>
 public class ServeCommand : Command
 {
-    public ServeCommand() : base("serve", "Start REST API server for model serving")
+    public ServeCommand() : base("serve",
+        "Start REST API server for model serving. All endpoints except /health require a JWT bearer " +
+        "token — mint one with `mloop token` (add `--role admin` for write endpoints) and send it as " +
+        "the `Authorization: Bearer <token>` header. Set `Jwt:Key` for production.")
     {
         var portOption = new Option<int>("--port", "-p")
         {

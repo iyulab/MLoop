@@ -74,7 +74,10 @@ public static class PredictCommand
             Description = "Emit structured predictions as JSON to stdout (same schema as the /predict API, incl. normalized confidence) instead of writing a CSV. Progress goes to stderr."
         };
 
-        var command = new Command("predict", "Make predictions with a trained model");
+        var command = new Command("predict",
+            "Make predictions with a trained model. The default output mixes a human-readable " +
+            "summary with the results — for machine/automation consumption use --json (pure JSON " +
+            "to stdout, progress on stderr) or --output <file> (CSV).");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
         command.Options.Add(modelPathOption);
