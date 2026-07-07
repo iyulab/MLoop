@@ -205,6 +205,18 @@ public partial class AutoMLRunner
             _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
         };
 
+        // Single-authority guard: replace any non-finite metric (NaN/±∞ — e.g. R² on a
+        // near-zero-variance test split, or log-loss when a class probability underflows to 0)
+        // with the direction-aware worst value, so a broken measurement can never win selection,
+        // pass the quality gate, or crash metrics.json serialization. Runs before hooks/persistence
+        // so every downstream consumer of result.Metrics sees only finite values.
+        var undefinedMetrics = Evaluation.MetricSanitizer.SanitizeInPlace(result.Metrics);
+        if (undefinedMetrics.Count > 0)
+            _logger.Warning(
+                $"{undefinedMetrics.Count} metric(s) were undefined (NaN/Infinity), most likely because the " +
+                $"test split has too few samples (near-zero variance). Recorded as worst-case so they cannot be " +
+                $"mistaken for a good model: {string.Join(", ", undefinedMetrics)}. Provide more data for reliable metrics.");
+
         // Execute post-train hooks
         if (hooks.Count > 0)
         {
@@ -570,7 +582,15 @@ public partial class AutoMLRunner
             return result;
 
         absResiduals.Sort();
-        result["residual_std"] = Math.Sqrt(sumSquares / n);
+        // Descriptive uncertainty stats are graceful (see summary): when the residuals are
+        // non-finite — e.g. a degenerate model scored NaN on a near-empty test split — omit the
+        // key rather than emit a meaningless value. These are not optimization metrics, so the
+        // MetricSanitizer's direction-aware worst-sentinel would wrongly stamp a nonsensical
+        // -double.MaxValue "residual std"; absence is the honest "interval unavailable" signal
+        // (predict/serve already fall back when the keys are missing).
+        var residualStd = Math.Sqrt(sumSquares / n);
+        if (double.IsFinite(residualStd))
+            result["residual_std"] = residualStd;
 
         foreach (var level in levels)
         {
@@ -582,7 +602,8 @@ public partial class AutoMLRunner
             int rank = (int)Math.Ceiling((n + 1) * level);
             double q = rank > n ? absResiduals[n - 1] : absResiduals[rank - 1];
             int pct = (int)Math.Round(level * 100);
-            result[$"interval_half_width_{pct}"] = q;
+            if (double.IsFinite(q))
+                result[$"interval_half_width_{pct}"] = q;
         }
 
         return result;
@@ -711,6 +732,13 @@ public partial class AutoMLRunner
             int pct = (int)Math.Round(level * 100);
             metrics[$"norm_interval_q_{pct}"] = q;
         }
+
+        // Omit any non-finite descriptive stat (same graceful contract as ComputeConformalIntervals):
+        // these interval widths are not optimization metrics, so absence — not a worst-sentinel — is
+        // the correct "interval unavailable" signal.
+        foreach (var key in metrics.Keys.ToArray())
+            if (!double.IsFinite(metrics[key]))
+                metrics.Remove(key);
 
         return new NormalizedConformalResult(auxModel, metrics);
     }
@@ -1752,12 +1780,15 @@ public partial class AutoMLRunner
             var predictions = model.Transform(testSet);
             var regressionMetrics = _mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
 
+            // Non-finite values are normalized centrally by MetricSanitizer in RunAsync
+            // (direction-aware worst) — a local NaN→0 guard here would wrongly launder a broken
+            // error metric into a perfect-looking 0.
             var metricsDict = new Dictionary<string, double>
             {
-                ["rmse"] = double.IsNaN(regressionMetrics.RootMeanSquaredError) ? 0 : regressionMetrics.RootMeanSquaredError,
-                ["mae"] = double.IsNaN(regressionMetrics.MeanAbsoluteError) ? 0 : regressionMetrics.MeanAbsoluteError,
-                ["r_squared"] = double.IsNaN(regressionMetrics.RSquared) ? 0 : regressionMetrics.RSquared,
-                ["loss_function"] = double.IsNaN(regressionMetrics.LossFunction) ? 0 : regressionMetrics.LossFunction
+                ["rmse"] = regressionMetrics.RootMeanSquaredError,
+                ["mae"] = regressionMetrics.MeanAbsoluteError,
+                ["r_squared"] = regressionMetrics.RSquared,
+                ["loss_function"] = regressionMetrics.LossFunction
             };
 
             return new AutoMLResult
@@ -1769,8 +1800,6 @@ public partial class AutoMLRunner
             };
         }, cancellationToken).ConfigureAwait(false);
     }
-
-    private static double NanSafe(double value) => double.IsNaN(value) ? 0 : value;
 
     private static string? FindFirstTextColumn(DataViewSchema schema, string labelColumn)
     {

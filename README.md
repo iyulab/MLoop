@@ -290,8 +290,12 @@ mloop predict data.csv --name churn
 
 # Serve multiple models via API
 mloop serve
-# GET /predict?name=churn
-# GET /predict?name=revenue
+# All endpoints except /health require a JWT: mint one with `mloop token`
+# (add --role admin for write endpoints) and send it as `Authorization: Bearer <token>`.
+# A programmatic caller must issue/refresh the token itself — the server has no token endpoint.
+export MLOOP_TOKEN=$(mloop token --quiet)
+# GET /predict?name=churn   -H "Authorization: Bearer $MLOOP_TOKEN"
+# GET /predict?name=revenue -H "Authorization: Bearer $MLOOP_TOKEN"
 ```
 
 **Directory Structure with Multiple Models:**

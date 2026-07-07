@@ -126,6 +126,28 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             NameClaimType = "sub",
             RoleClaimType = "role"
         };
+
+        // Replace the default empty 401 body with an actionable hint. A programmatic caller
+        // embedding `mloop serve` otherwise gets a bare 401 with no clue that a token is
+        // required nor how to mint one — the token-issuance surface is the CLI (`mloop token`),
+        // not the server, so it isn't self-evident from the API alone.
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                context.HandleResponse(); // suppress the default challenge (empty body)
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    error = "Unauthorized",
+                    hint = "This endpoint requires a JWT bearer token. Issue one with the CLI — " +
+                           "`mloop token` for read endpoints (/predict, /info, /logs …), or " +
+                           "`mloop token --role admin` for write endpoints (/promote, /train, /evaluate) — " +
+                           "then send it as the `Authorization: Bearer <token>` header. See `mloop token --help`."
+                });
+            }
+        };
     });
 
 builder.Services.AddAuthorization(options =>

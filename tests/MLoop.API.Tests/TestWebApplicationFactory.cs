@@ -65,18 +65,27 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
             ReplaceService<IPromotionManager>(services, new FilePromotionManager(_testProjectRoot));
         });
 
-        // Override authentication for tests (no real JWT needed)
-        builder.ConfigureServices(services =>
+        // Override authentication for tests (no real JWT needed) — unless a subclass keeps the
+        // real JwtBearer pipeline to exercise the unauthenticated-challenge behavior (401 body).
+        if (UseTestAuthentication)
         {
-            services.AddAuthentication("Test")
-                .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TestAuthHandler>("Test", options => { });
-            services.AddAuthorization(options =>
+            builder.ConfigureServices(services =>
             {
-                options.AddPolicy("Admin", policy => policy.RequireRole("admin"));
-                options.AddPolicy("ReadOnly", policy => policy.RequireAuthenticatedUser());
+                services.AddAuthentication("Test")
+                    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TestAuthHandler>("Test", options => { });
+                services.AddAuthorization(options =>
+                {
+                    options.AddPolicy("Admin", policy => policy.RequireRole("admin"));
+                    options.AddPolicy("ReadOnly", policy => policy.RequireAuthenticatedUser());
+                });
             });
-        });
+        }
     }
+
+    /// <summary>When true (default) the factory swaps in an always-succeed test auth handler so
+    /// endpoint tests don't need real tokens. A subclass returns false to keep the production
+    /// JwtBearer pipeline — needed to verify the real unauthenticated 401 challenge response.</summary>
+    protected virtual bool UseTestAuthentication => true;
 
     private static void ReplaceService<T>(IServiceCollection services, T implementation) where T : class
     {

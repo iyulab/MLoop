@@ -195,6 +195,9 @@ mloop predict
 mloop predict <model-path> <data-file> [options]
 
 # Options:
+#   --json                       Emit pure JSON to stdout (progress on stderr) — use this for
+#                                machine/automation consumption. The default output mixes a
+#                                human-readable summary into stdout.
 #   --output <path>              Output file path (default: predictions/predictions-TIMESTAMP.csv)
 #   --unknown-strategy <mode>    Handle unknown categorical values (v0.6.1+):
 #                                'auto'               - Auto-select based on ratio (default)
@@ -368,18 +371,26 @@ mloop serve --detach
 # GET  /models              - List all models
 # POST /predict             - Make predictions
 
+# Authentication: every endpoint except /health requires a JWT bearer token. Mint one with the
+# CLI (it signs with the same dev defaults the server validates out of the box), then attach it:
+export MLOOP_TOKEN=$(mloop token --quiet)              # add --role admin for write endpoints
+# A programmatic caller must issue/refresh this token itself — the server has no token endpoint.
+
 # Example prediction request:
 curl -X POST http://localhost:5000/predict \
+  -H "Authorization: Bearer $MLOOP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"feature1": 1.0, "feature2": 2.0}'
 
 # Batch prediction:
 curl -X POST http://localhost:5000/predict \
+  -H "Authorization: Bearer $MLOOP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '[
     {"feature1": 1.0, "feature2": 2.0},
     {"feature1": 3.0, "feature2": 4.0}
   ]'
+# A call without the Authorization header returns 401 with a body hint pointing to `mloop token`.
 ```
 
 **Features**:

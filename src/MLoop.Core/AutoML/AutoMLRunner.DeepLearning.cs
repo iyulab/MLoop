@@ -50,9 +50,9 @@ public partial class AutoMLRunner
                 Model = model,
                 Metrics = new Dictionary<string, double>
                 {
-                    ["accuracy"] = NanSafe(metrics.MacroAccuracy),
-                    ["micro_accuracy"] = NanSafe(metrics.MicroAccuracy),
-                    ["log_loss"] = NanSafe(metrics.LogLoss)
+                    ["accuracy"] = metrics.MacroAccuracy,
+                    ["micro_accuracy"] = metrics.MicroAccuracy,
+                    ["log_loss"] = metrics.LogLoss
                 },
                 RowCount = trainSet.GetRowCount() ?? 0
             };
@@ -87,9 +87,9 @@ public partial class AutoMLRunner
                 Model = model,
                 Metrics = new Dictionary<string, double>
                 {
-                    ["accuracy"] = NanSafe(metrics.MacroAccuracy),
-                    ["micro_accuracy"] = NanSafe(metrics.MicroAccuracy),
-                    ["log_loss"] = NanSafe(metrics.LogLoss)
+                    ["accuracy"] = metrics.MacroAccuracy,
+                    ["micro_accuracy"] = metrics.MicroAccuracy,
+                    ["log_loss"] = metrics.LogLoss
                 },
                 RowCount = trainSet.GetRowCount() ?? 0
             };
@@ -125,9 +125,9 @@ public partial class AutoMLRunner
                 Model = model,
                 Metrics = new Dictionary<string, double>
                 {
-                    ["r_squared"] = NanSafe(metrics.RSquared),
-                    ["rmse"] = NanSafe(metrics.RootMeanSquaredError),
-                    ["mae"] = NanSafe(metrics.MeanAbsoluteError)
+                    ["r_squared"] = metrics.RSquared,
+                    ["rmse"] = metrics.RootMeanSquaredError,
+                    ["mae"] = metrics.MeanAbsoluteError
                 },
                 RowCount = trainSet.GetRowCount() ?? 0
             };
@@ -162,8 +162,8 @@ public partial class AutoMLRunner
                 Model = model,
                 Metrics = new Dictionary<string, double>
                 {
-                    ["accuracy"] = NanSafe(metrics.MacroAccuracy),
-                    ["micro_accuracy"] = NanSafe(metrics.MicroAccuracy)
+                    ["accuracy"] = metrics.MacroAccuracy,
+                    ["micro_accuracy"] = metrics.MicroAccuracy
                 },
                 RowCount = trainSet.GetRowCount() ?? 0
             };
