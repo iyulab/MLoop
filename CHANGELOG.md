@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Dropped consumer-side `System.Security.Cryptography.Xml` transitive pin** — FilePrepper 0.7.1 raises its EPPlus floor to 8.5.4, which pulls the patched `Cryptography.Xml` 10.0.7. The upstream remediation makes MLoop's temporary pin (10.0.9, for GHSA-37gx-xxp4-5rgx / GHSA-w3x6-4m5h-cxqf) unnecessary; removed. Verified: `dotnet list package --vulnerable --include-transitive` reports no vulnerable packages and build emits 0 NU1903 after removal. **Requires FilePrepper 0.7.1 on nuget.org before restore.**
+
 ## [0.21.0] - 2026-07-07
 
 ### Added
