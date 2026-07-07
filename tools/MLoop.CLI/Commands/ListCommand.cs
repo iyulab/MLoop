@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using Spectre.Console;
@@ -23,21 +24,28 @@ public static class ListCommand
             DefaultValueFactory = _ => false
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Output in JSON format (machine-readable)"
+        };
+
         var command = new Command("list", "List all experiments");
         command.Options.Add(nameOption);
         command.Options.Add(allOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
             var name = parseResult.GetValue(nameOption);
             var showAll = parseResult.GetValue(allOption);
-            return ExecuteAsync(name, showAll);
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteAsync(name, showAll, json);
         });
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(string? modelName, bool showAll)
+    private static async Task<int> ExecuteAsync(string? modelName, bool showAll, bool jsonOutput = false)
     {
         try
         {
@@ -62,6 +70,15 @@ public static class ListCommand
                     .ToList();
             }
 
+            // Sort by timestamp (newest first) — same order for both output modes.
+            experimentsList = experimentsList.OrderByDescending(e => e.Timestamp).ToList();
+
+            if (jsonOutput)
+            {
+                OutputAsJson(resolvedModelName, experimentsList, productionDict);
+                return 0;
+            }
+
             if (!experimentsList.Any())
             {
                 if (resolvedModelName != null)
@@ -76,9 +93,6 @@ public static class ListCommand
                 }
                 return 0;
             }
-
-            // Sort by timestamp (newest first)
-            experimentsList = experimentsList.OrderByDescending(e => e.Timestamp).ToList();
 
             AnsiConsole.WriteLine();
 
@@ -184,6 +198,42 @@ public static class ListCommand
             ErrorSuggestions.DisplayError(ex, "list");
             return 1;
         }
+    }
+
+    private static void OutputAsJson(
+        string? modelFilter,
+        IReadOnlyList<Infrastructure.FileSystem.ExperimentSummary> experiments,
+        IReadOnlyDictionary<string, string> productionByModel)
+    {
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        var payload = new
+        {
+            Model = modelFilter,
+            Experiments = experiments.Select(e =>
+            {
+                var expModelName = e.ModelName ?? ConfigDefaults.DefaultModelName;
+                return new
+                {
+                    ModelName = expModelName,
+                    e.ExperimentId,
+                    Timestamp = e.Timestamp.ToString("o"),
+                    e.Status,
+                    e.BestTrainer,
+                    e.MetricName,
+                    e.BestMetric,
+                    IsProduction = productionByModel.TryGetValue(expModelName, out var prodId)
+                                   && e.ExperimentId == prodId,
+                };
+            }),
+            Production = productionByModel,
+        };
+
+        Console.WriteLine(JsonSerializer.Serialize(payload, options));
     }
 
     internal static string FormatRelativeTime(DateTime timestamp)
