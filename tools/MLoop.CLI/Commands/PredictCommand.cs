@@ -672,9 +672,7 @@ public static class PredictCommand
             await foreach (var record in outputCsv.GetRecordsAsync<dynamic>())
             {
                 var dict = (IDictionary<string, object>)record;
-                // Use the last column as prediction (typically "PredictedLabel" or "Score")
-                var lastValue = dict.Values.LastOrDefault() ?? string.Empty;
-                predictions.Add(lastValue);
+                predictions.Add(SelectPredictionValue(dict));
             }
         }
 
@@ -697,6 +695,36 @@ public static class PredictCommand
         {
             await logger.LogBatchAsync(modelName, experimentId, entries);
         }
+    }
+
+    /// <summary>Columns appended by the CSV predict path that enrich, not replace, the prediction — the
+    /// conformal band and the additive <c>Confidence</c> column. None of these may ever be logged as the
+    /// prediction.</summary>
+    private static readonly HashSet<string> EnrichmentColumns =
+        new(StringComparer.OrdinalIgnoreCase) { "Confidence", "ScoreLowerBound", "ScoreUpperBound" };
+
+    /// <summary>
+    /// Selects the canonical point prediction from a prediction CSV row by column NAME, not position.
+    /// ML.NET emits <c>PredictedLabel</c> (classification/clustering/anomaly-detection) or a scalar
+    /// <c>Score</c> (regression/ranking) as the actual prediction. A positional "last column" heuristic
+    /// silently logs whichever column happens to trail — the appended <c>Confidence</c> (or, pre-change,
+    /// <c>ScoreUpperBound</c> for banded regression) — corrupting the prediction logs that feed
+    /// feedback/trigger/drift. When no named prediction column exists (time-series-anomaly emits a
+    /// <c>Prediction</c> vector split into <c>Prediction.0/1/2</c>), fall back to the last column but skip
+    /// <see cref="EnrichmentColumns"/> so an appended enrichment is never mistaken for the prediction.
+    /// </summary>
+    internal static object SelectPredictionValue(IDictionary<string, object> row)
+    {
+        foreach (var name in new[] { "PredictedLabel", "Score" })
+        {
+            if (row.TryGetValue(name, out var value) && value != null)
+            {
+                return value;
+            }
+        }
+        return row.Where(kv => !EnrichmentColumns.Contains(kv.Key))
+                  .Select(kv => kv.Value)
+                  .LastOrDefault() ?? string.Empty;
     }
 
     private static void DisplayPredictionPreview(string outputPath)
