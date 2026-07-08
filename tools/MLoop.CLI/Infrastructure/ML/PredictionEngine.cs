@@ -344,6 +344,28 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
 
+            // ① Confidence column: derive the normalized per-row confidence from the SAME authority the
+            // --json/serve path uses (PredictionService.ComputeRowConfidences → ConfidencePolicy), reading
+            // the band columns already in `outputData`, so the CSV carries an additive trailing Confidence
+            // column without re-implementing the confidence rule in ML.NET column space (the drift
+            // ConfidencePolicy exists to prevent). Computed before SaveAsText so a failure degrades to no
+            // column, never a broken CSV (MLoop convention: enrichment must not break core prediction).
+            // Costs a second scoring pass over `outputData` — acceptable for a one-shot CLI predict, and
+            // consistent with the path already re-reading the output for merge/preview/distribution.
+            IReadOnlyList<double?>? confidences = null;
+            if (!string.IsNullOrEmpty(taskType))
+            {
+                try
+                {
+                    confidences = MLoop.Core.Prediction.PredictionService
+                        .ComputeRowConfidences(outputData, taskType, interval);
+                }
+                catch
+                {
+                    confidences = null; // graceful degradation — the core CSV must not depend on this
+                }
+            }
+
             // Save predictions to CSV (without schema metadata for cleaner output)
             await using (var fileStream = File.Create(outputPath))
             {
@@ -353,6 +375,11 @@ public class PredictionEngine : IPredictionEngine
             // BUG-14: Fix empty headers for vector columns (e.g., multiclass Score)
             // SaveAsText outputs empty column names for VBuffer columns
             FixVectorColumnHeaders(outputPath, outputData.Schema);
+
+            // Append the additive Confidence column only when the task exposes a real signal (all rows null
+            // for clustering/ranking/recommendation/regression-without-band/time-series-anomaly → omitted).
+            if (confidences != null && confidences.Any(c => c.HasValue))
+                AppendConfidenceColumn(outputPath, confidences);
 
             return rowCount;
         }
@@ -380,6 +407,31 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// ① Appends a trailing <c>Confidence</c> column to the just-written prediction CSV — additive, so the
+    /// existing columns stay byte-identical and downstream consumers (including MergeInputWithPredictions)
+    /// see the new column at the end. Values are the normalized confidence ∈ [0,1] from
+    /// <see cref="MLoop.Core.Prediction.ConfidencePolicy"/> (via PredictionService); a null row (no signal)
+    /// writes an empty cell. Defensive on any header/row-count mismatch — leaves the CSV exactly as written
+    /// rather than risk misaligning columns.
+    /// </summary>
+    private static void AppendConfidenceColumn(string filePath, IReadOnlyList<double?> confidences)
+    {
+        var lines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+        // header (line 0) + one line per data row must line up with the confidence count exactly.
+        if (lines.Length == 0 || lines.Length - 1 != confidences.Count) return;
+
+        lines[0] += ",Confidence";
+        for (int i = 1; i < lines.Length; i++)
+        {
+            var c = confidences[i - 1];
+            lines[i] += "," + (c.HasValue
+                ? c.Value.ToString("0.######", CultureInfo.InvariantCulture)
+                : string.Empty);
+        }
+        File.WriteAllLines(filePath, lines, new System.Text.UTF8Encoding(true));
     }
 
     /// <summary>

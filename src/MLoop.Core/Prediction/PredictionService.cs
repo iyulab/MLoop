@@ -358,7 +358,56 @@ public class PredictionService
     /// </summary>
     internal static PredictionResult ExtractResults(IDataView predictions, string taskType, RegressionInterval? interval = null, IReadOnlyList<double>? perRowSigma = null)
     {
-        var rows = new List<PredictionRow>();
+        var rows = ExtractRows(predictions, taskType, interval, perRowSigma);
+
+        RequireNonDegenerateOutput(rows, taskType);
+
+        // Single authority for the normalized per-row confidence — computed once here so every consumer
+        // of PredictionService (serve, CLI) gets the same value and none re-derives it (ConfidencePolicy).
+        ApplyConfidence(rows, taskType, interval);
+
+        return new PredictionResult
+        {
+            TaskType = taskType,
+            Rows = rows
+        };
+    }
+
+    /// <summary>
+    /// Per-row normalized confidence ∈ [0,1] (or null) for an already-scored view, reusing the SAME
+    /// materialization (<see cref="ExtractRows"/>) and rule authority (<see cref="ConfidencePolicy"/>)
+    /// as <see cref="ExtractResults"/>. This is the seam the CLI CSV writer uses so its <c>Confidence</c>
+    /// column carries exactly the value the <c>--json</c>/serve path would — without re-deriving the rule
+    /// in ML.NET column space (the drift <see cref="ConfidencePolicy"/> exists to prevent). Unlike
+    /// <see cref="ExtractResults"/> it deliberately skips <see cref="RequireNonDegenerateOutput"/>: it is a
+    /// read-only enrichment over a view the caller has already chosen to serialize, so it must never turn a
+    /// writable prediction into a throw. When the view already carries the conformal band columns
+    /// (<c>ScoreLowerBound</c>/<c>ScoreUpperBound</c>), the regression confidence is derived from those
+    /// actual per-row bounds, so it stays consistent with the band written to the CSV.
+    /// </summary>
+    /// <returns>One entry per input row, in the same order the view cursors.</returns>
+    public static IReadOnlyList<double?> ComputeRowConfidences(IDataView predictions, string taskType, RegressionInterval? interval = null)
+    {
+        var rows = ExtractRows(predictions, taskType, interval);
+        ApplyConfidence(rows, taskType, interval);
+        return rows.Select(r => r.Confidence).ToList();
+    }
+
+    /// <summary>Fills each row's <see cref="PredictionRow.Confidence"/> via the single ConfidencePolicy authority.</summary>
+    private static void ApplyConfidence(List<PredictionRow> rows, string taskType, RegressionInterval? interval)
+    {
+        double? residualStd = interval?.ResidualStd;
+        for (int r = 0; r < rows.Count; r++)
+            rows[r] = rows[r] with { Confidence = ConfidencePolicy.Compute(rows[r], taskType, residualStd) };
+    }
+
+    /// <summary>
+    /// Materializes prediction rows from a scored view via the task-appropriate extractor — the single
+    /// materialization shared by <see cref="ExtractResults"/> (full result + degeneracy guard) and
+    /// <see cref="ComputeRowConfidences"/> (confidence-only enrichment). No guard, no confidence here.
+    /// </summary>
+    private static List<PredictionRow> ExtractRows(IDataView predictions, string taskType, RegressionInterval? interval, IReadOnlyList<double>? perRowSigma = null)
+    {
         var schema = predictions.Schema;
 
         var predictedLabelCol = schema.GetColumnOrNull("PredictedLabel");
@@ -368,44 +417,19 @@ public class PredictionService
         using var cursor = predictions.GetRowCursor(schema);
 
         if (IsClassificationTask(taskType))
-        {
-            rows = ExtractClassificationRows(cursor, predictedLabelCol, scoreCol, probabilityCol);
-        }
-        else if (taskType is "regression" or "forecasting")
-        {
-            rows = ExtractRegressionRows(cursor, scoreCol, interval, perRowSigma);
-        }
-        else if (taskType == "clustering")
-        {
-            rows = ExtractClusteringRows(cursor, predictedLabelCol, scoreCol);
-        }
-        else if (taskType == "anomaly-detection")
-        {
-            rows = ExtractAnomalyRows(cursor, predictedLabelCol, scoreCol);
-        }
-        else if (taskType == "time-series-anomaly")
-        {
-            rows = ExtractTimeSeriesAnomalyRows(cursor, schema);
-        }
-        else
-        {
-            // ranking, recommendation, etc. — just score (no conformal band; interval is regression-only)
-            rows = ExtractRegressionRows(cursor, scoreCol);
-        }
+            return ExtractClassificationRows(cursor, predictedLabelCol, scoreCol, probabilityCol);
+        if (taskType is "regression" or "forecasting")
+            return ExtractRegressionRows(cursor, scoreCol, interval, perRowSigma,
+                schema.GetColumnOrNull("ScoreLowerBound"), schema.GetColumnOrNull("ScoreUpperBound"));
+        if (taskType == "clustering")
+            return ExtractClusteringRows(cursor, predictedLabelCol, scoreCol);
+        if (taskType == "anomaly-detection")
+            return ExtractAnomalyRows(cursor, predictedLabelCol, scoreCol);
+        if (taskType == "time-series-anomaly")
+            return ExtractTimeSeriesAnomalyRows(cursor, schema);
 
-        RequireNonDegenerateOutput(rows, taskType);
-
-        // Single authority for the normalized per-row confidence — computed once here so every consumer
-        // of PredictionService (serve, CLI) gets the same value and none re-derives it (ConfidencePolicy).
-        double? residualStd = interval?.ResidualStd;
-        for (int r = 0; r < rows.Count; r++)
-            rows[r] = rows[r] with { Confidence = ConfidencePolicy.Compute(rows[r], taskType, residualStd) };
-
-        return new PredictionResult
-        {
-            TaskType = taskType,
-            Rows = rows
-        };
+        // ranking, recommendation, etc. — just score (no conformal band; interval is regression-only)
+        return ExtractRegressionRows(cursor, scoreCol);
     }
 
     /// <summary>
@@ -552,13 +576,24 @@ public class PredictionService
         DataViewRowCursor cursor,
         DataViewSchema.Column? scoreCol,
         RegressionInterval? interval = null,
-        IReadOnlyList<double>? perRowSigma = null)
+        IReadOnlyList<double>? perRowSigma = null,
+        DataViewSchema.Column? lowerCol = null,
+        DataViewSchema.Column? upperCol = null)
     {
         var rows = new List<PredictionRow>();
 
         ValueGetter<float>? scoreGetter = null;
         if (scoreCol.HasValue)
             scoreGetter = cursor.GetGetter<float>(scoreCol.Value);
+
+        // When the scored view already carries the conformal band columns — the CLI CSV path applies the
+        // band (ApplyConformalBand) before extracting confidence — read the actual per-row bounds instead
+        // of recomputing from the interval. This keeps the confidence derived here consistent with the band
+        // already written to the CSV, including heteroscedastic per-row widths. The serve/--json path scores
+        // named columns with no band columns present, so it falls through to the compute-from-interval path.
+        ValueGetter<float>? lowerGetter = lowerCol.HasValue ? cursor.GetGetter<float>(lowerCol.Value) : null;
+        ValueGetter<float>? upperGetter = upperCol.HasValue ? cursor.GetGetter<float>(upperCol.Value) : null;
+        bool readBounds = lowerGetter != null && upperGetter != null;
 
         int i = 0;
         while (cursor.MoveNext())
@@ -574,7 +609,16 @@ public class PredictionService
             // ② regression wave: wrap Score in the conformal band when the model carries one. The width
             // is per-row (q·σ(x)) when the heteroscedastic σ-model scored this row, else constant.
             double? lower = null, upper = null, confidence = null;
-            if (score.HasValue && interval != null)
+            if (readBounds)
+            {
+                float lo = 0, up = 0;
+                lowerGetter!(ref lo);
+                upperGetter!(ref up);
+                lower = lo;
+                upper = up;
+                confidence = interval?.Confidence;
+            }
+            else if (score.HasValue && interval != null)
             {
                 double half = perRowSigma != null && i < perRowSigma.Count
                     ? interval.WidthFor(perRowSigma[i])

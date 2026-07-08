@@ -1256,12 +1256,119 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
+    #region ComputeRowConfidences (① — CSV path reuses the single ConfidencePolicy authority)
+
+    [Fact]
+    public void ComputeRowConfidences_RegressionWithBandColumns_DerivesFromWrittenBounds()
+    {
+        // The CLI CSV path applies the conformal band BEFORE extracting confidence, so the scored view
+        // already carries ScoreLowerBound/ScoreUpperBound. ComputeRowConfidences must read those actual
+        // per-row bounds (not recompute), so the Confidence column stays consistent with the band already
+        // in the CSV. residual_std=2, k=3 → 1 - half/(3*2): half=1 → 0.8333, half=3 → 0.5, half=7 → 0.
+        var view = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new RegressionBandRow { Score = 15f, ScoreLowerBound = 14f, ScoreUpperBound = 16f }, // narrow
+            new RegressionBandRow { Score = 15f, ScoreLowerBound = 12f, ScoreUpperBound = 18f }, // moderate
+            new RegressionBandRow { Score = 15f, ScoreLowerBound = 8f, ScoreUpperBound = 22f },  // wide
+        });
+        var interval = new RegressionInterval(HalfWidth: 99.0, Confidence: 0.90, ResidualStd: 2.0);
+
+        var conf = PredictionService.ComputeRowConfidences(view, "regression", interval);
+
+        Assert.Equal(3, conf.Count);
+        Assert.Equal(0.8333, conf[0]!.Value, 3);
+        Assert.Equal(0.5000, conf[1]!.Value, 3);
+        Assert.Equal(0.0000, conf[2]!.Value, 3);
+        // Reads the actual bounds, NOT interval.HalfWidth (99) — else every row would clamp to 0.
+    }
+
+    [Fact]
+    public void ComputeRowConfidences_Binary_ReturnsMaxClassProbabilityPerRow()
+    {
+        // Reuses ExtractClassificationRows + ConfidencePolicy over a real scored view, so the CSV path's
+        // confidence matches the --json path's exactly (one authority, no re-derivation).
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleBinary { X1 = 1f, X2 = 1f, Label = true },
+            new SimpleBinary { X1 = 1.1f, X2 = 0.9f, Label = true },
+            new SimpleBinary { X1 = 0.9f, X2 = 1.1f, Label = true },
+            new SimpleBinary { X1 = 5f, X2 = 5f, Label = false },
+            new SimpleBinary { X1 = 5.1f, X2 = 4.9f, Label = false },
+            new SimpleBinary { X1 = 4.9f, X2 = 5.1f, Label = false },
+        });
+        var model = _mlContext.Transforms.Concatenate("Features", "X1", "X2")
+            .Append(_mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
+                labelColumnName: "Label", featureColumnName: "Features"))
+            .Fit(data);
+        var scored = model.Transform(data);
+
+        var conf = PredictionService.ComputeRowConfidences(scored, "binary-classification");
+
+        Assert.Equal(6, conf.Count);
+        // Confidence = max(P(True), P(False)) ∈ [0.5, 1] for every row (both classes exposed).
+        Assert.All(conf, c =>
+        {
+            Assert.NotNull(c);
+            Assert.InRange(c!.Value, 0.5, 1.0);
+        });
+    }
+
+    [Fact]
+    public void ComputeRowConfidences_DegenerateView_ReturnsNullsWithoutThrowing()
+    {
+        // ExtractResults throws RequireNonDegenerateOutput on an all-null scored view (D20~D26 guard).
+        // ComputeRowConfidences is a read-only enrichment over a view the caller already writes, so it must
+        // NOT throw — it returns null confidence per row and lets the caller omit the column.
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+        });
+        var featurizeOnly = _mlContext.Transforms.Concatenate("Features", "X").Fit(data);
+        var scored = featurizeOnly.Transform(data);
+
+        var conf = PredictionService.ComputeRowConfidences(scored, "anomaly-detection");
+
+        Assert.Equal(2, conf.Count);
+        Assert.All(conf, Assert.Null);
+    }
+
+    [Fact]
+    public void ComputeRowConfidences_RegressionPointOnly_ReturnsNull()
+    {
+        // A bare regression point estimate (no band columns) carries no confidence signal — null, and the
+        // CLI omits the Confidence column entirely (honest: Score is a target value, not a confidence).
+        var pointView = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new ScoreOnlyRow { Score = 12.5f },
+        });
+
+        var conf = PredictionService.ComputeRowConfidences(pointView, "regression");
+
+        var c = Assert.Single(conf);
+        Assert.Null(c);
+    }
+
+    #endregion
+
     #region Helper Classes
 
     private class SimpleRegression
     {
         public float X { get; set; }
         public float Y { get; set; }
+    }
+
+    private class RegressionBandRow
+    {
+        public float Score { get; set; }
+        public float ScoreLowerBound { get; set; }
+        public float ScoreUpperBound { get; set; }
+    }
+
+    private class ScoreOnlyRow
+    {
+        public float Score { get; set; }
     }
 
     private class TwoFeatureRegression
