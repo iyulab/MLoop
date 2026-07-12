@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-07-12
+
+### Fixed
+- **Degenerate all-NaN-scoring regression models no longer pass the quality gate or pollute predict output** (live repro: an 8-row perfectly-linear regression trained a FastForest that scored `NaN` for *every* input). Three compounding silent failures fixed at their roots:
+  - **Train**: ML.NET's `Regression.Evaluate` silently filters non-finite-scored rows, so an all-NaN holdout yielded fabricated all-zero metrics — `r²=0` **and** `rmse=0`, a mathematically contradictory pair that sailed through the quality gate and got promoted. `AutoMLRunner` now detects the all-non-finite holdout directly (`AllScoresNonFinite`) and marks the core metrics `NaN`, so the existing `MetricSanitizer` funnel records them as direction-aware worst-sentinels (with its "too few samples" warning), and conformal calibration over meaningless residuals is skipped.
+  - **Promotion gate**: `MetricSanitizer`'s contract says a worst-sentinel metric "must never pass the promotion gate", but the gate only enforced floor thresholds for higher-is-better metrics — a regression optimized on `rmse`/`mae`/`mse` had **no floor at all**, so even the honest `rmse = double.MaxValue` sentinel still auto-promoted as the first production model (verified live). `ShouldPromoteAsync` now rejects any experiment whose gate metric carries the direction-aware undefined-metric sentinel (`MetricPolicy.IsUndefinedMetricSentinel`), closing the gate for both metric directions.
+  - **Predict (CSV)**: `SaveAsText` serialized the `NaN` scores as literal `?` into the user's output CSV with exit 0 — silent data pollution indistinguishable from real predictions downstream. The CSV path now runs the same all-degenerate guard as the `--json`/serve path (`PredictionService.RequireNonDegenerateScoredView`) before writing, failing fast with an actionable degenerate-model error (new `DegeneratePredictionException`, a `InvalidOperationException` subtype).
+  - **Predict (`--json`/serve)**: non-finite signal values (`Score`, band bounds, `Probability`, per-class probabilities, cluster distances, anomaly scores) flowed into `PredictionRow` and crashed `System.Text.Json` ("infinity cannot be written as valid JSON", exit 1 with empty stdout). They are now scrubbed to `null` at the single row-materialization authority — the all-NaN case is caught honestly by the degeneracy guard, and partially-degenerate rows serialize as honest `null`s (their `Confidence` is `null` instead of a fabricated `0`).
+
 ## [0.22.0] - 2026-07-09
 
 ### Added

@@ -232,6 +232,17 @@ public class ModelRegistry : IModelRegistry
             }
         }
 
+        // An undefined-metric sentinel (MetricSanitizer's direction-aware worst-case for a NaN/∞
+        // measurement — e.g. an all-NaN-scoring degenerate model whose evaluator saw zero usable
+        // rows) must never pass the gate, per the sanitizer's own contract. Checked explicitly
+        // because the floor-threshold check below only gates higher-is-better metrics: a regression
+        // optimized on rmse/mae/mse had NO floor at all, so rmse = MaxValue still auto-promoted as
+        // the first production model.
+        if (metricKey != null && MetricPolicy.IsUndefinedMetricSentinel(metricKey, experiment.Metrics[metricKey]))
+        {
+            return false; // metric was undefined — a fabricated/degenerate measurement
+        }
+
         // Check minimum metric threshold (quality gate) — only when the metric is present.
         // Threshold and error-direction are computed from the RESOLVED canonical key, not the
         // raw user/project metric: "auto" and aliases ("f1", "r2") have no entry in the

@@ -366,6 +366,28 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
 
+            // All-degenerate guard (same authority as the --json/serve path): an all-NaN-scoring model
+            // (degenerate, e.g. trained on a handful of rows) previously wrote a CSV of literal '?'
+            // values with exit 0 — silent data pollution the consumer can't distinguish from real
+            // predictions. Fail fast with the explicit degenerate-model error instead. Partially
+            // degenerate results (isolated unparseable rows) still pass through.
+            if (!string.IsNullOrEmpty(taskType))
+            {
+                try
+                {
+                    MLoop.Core.Prediction.PredictionService.RequireNonDegenerateScoredView(outputData, taskType, interval);
+                }
+                catch (MLoop.Core.Prediction.DegeneratePredictionException)
+                {
+                    throw; // the guard's verdict — the '?' CSV must not be written
+                }
+                catch
+                {
+                    // Materialization quirk on an exotic schema — the guard must never break a CSV
+                    // this path could previously write (same contract as the Confidence enrichment).
+                }
+            }
+
             // Save predictions to CSV (without schema metadata for cleaner output)
             await using (var fileStream = File.Create(outputPath))
             {

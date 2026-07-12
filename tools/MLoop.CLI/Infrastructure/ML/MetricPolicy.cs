@@ -127,6 +127,22 @@ public static class MetricPolicy
         => MetricDirection.IsLowerBetter(metricName);
 
     /// <summary>
+    /// True when a metric value is the direction-aware worst-case sentinel that
+    /// <see cref="MetricSanitizer"/> records for an undefined (NaN/±∞) measurement —
+    /// <see cref="double.MaxValue"/> for lower-is-better metrics, <see cref="double.MinValue"/>
+    /// for higher-is-better. The sanitizer's contract says such a value "must never … pass the
+    /// promotion gate", but the gate only enforced floors for higher-is-better metrics — a
+    /// regression optimized on rmse had NO floor at all, so an all-NaN-scoring degenerate model
+    /// (recorded as rmse = MaxValue) still auto-promoted as the first production model. Exact
+    /// equality is correct here: the sentinels are exact assignments, and no real evaluator
+    /// metric lands on ±double.Max/MinValue.
+    /// </summary>
+    public static bool IsUndefinedMetricSentinel(string metricName, double value)
+        => MetricDirection.IsLowerBetter(metricName)
+            ? value == double.MaxValue
+            : value == double.MinValue;
+
+    /// <summary>
     /// Detects degenerate classification models that achieve high accuracy by only
     /// predicting one class. Returns true if accuracy > 0.5 but F1 ≈ 0 (always-negative
     /// degenerate), or, symmetrically, if the model never predicts the negative class at

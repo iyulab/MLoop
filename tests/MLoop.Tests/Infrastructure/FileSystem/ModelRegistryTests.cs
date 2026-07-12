@@ -420,6 +420,49 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task ShouldPromoteAsync_UndefinedErrorMetricSentinel_ReturnsFalse()
+    {
+        // Live repro (8-row regression, --metric rmse): the model scored NaN for every holdout row,
+        // MetricSanitizer recorded rmse as the worst-case sentinel — and the gate still promoted it,
+        // because error-direction metrics have no floor threshold. The sentinel check must block it.
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["r_squared"] = double.MinValue,
+            ["rmse"] = double.MaxValue,
+            ["mae"] = double.MaxValue,
+            ["mse"] = double.MaxValue
+        });
+
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
+            experimentId,
+            "rmse",
+            CancellationToken.None);
+
+        Assert.False(result); // undefined-metric sentinel — degenerate model must not promote
+    }
+
+    [Fact]
+    public async Task ShouldPromoteAsync_UndefinedHigherBetterMetricSentinel_ReturnsFalse()
+    {
+        // Same degenerate signature gated via a higher-is-better metric: r² = MinValue is caught by
+        // the sentinel check (it also happens to sit below the 0.0 floor — both agree).
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["r_squared"] = double.MinValue,
+            ["rmse"] = double.MaxValue
+        });
+
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
+            experimentId,
+            "r_squared",
+            CancellationToken.None);
+
+        Assert.False(result);
+    }
+
+    [Fact]
     public async Task ShouldPromoteAsync_AucBelowRandom_ReturnsFalse()
     {
         // Arrange — AUC below 0.5 should be rejected (worse than random)
