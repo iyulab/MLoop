@@ -610,6 +610,34 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
+    /// True when a scored view has at least one row and EVERY row's <paramref name="scoreColumn"/> is
+    /// non-finite (NaN/±∞) — the signature of a degenerate model that predicts nothing usable (e.g.
+    /// FastForest fitted on a handful of rows). Callers must treat the evaluator's metrics for such a
+    /// view as fabricated: ML.NET evaluators silently filter non-finite-scored rows, so an all-non-finite
+    /// holdout yields all-zero metrics that look boundary-passing. Returns false when the column is
+    /// absent, not scalar-Single, or any row scores a finite value.
+    /// </summary>
+    public static bool AllScoresNonFinite(IDataView predictions, string scoreColumn = "Score")
+    {
+        var col = predictions.Schema.GetColumnOrNull(scoreColumn);
+        if (col is null || col.Value.Type != NumberDataViewType.Single)
+            return false;
+
+        bool anyRow = false;
+        using var cursor = predictions.GetRowCursor(new[] { col.Value });
+        var getter = cursor.GetGetter<float>(col.Value);
+        float value = 0;
+        while (cursor.MoveNext())
+        {
+            anyRow = true;
+            getter(ref value);
+            if (float.IsFinite(value))
+                return false;
+        }
+        return anyRow;
+    }
+
+    /// <summary>
     /// ② regression wave (heteroscedastic): normalized split-conformal prediction intervals. Where
     /// <see cref="ComputeConformalIntervals"/> gives one constant half-width for every row (valid
     /// coverage but no per-row triage signal — live-measured recall of the large-error rows equals
@@ -1030,23 +1058,46 @@ public partial class AutoMLRunner
             ["mse"] = metrics.MeanSquaredError
         };
 
-        // ② regression wave: derive split-conformal prediction-interval half-widths from the same
-        // held-out test predictions used for metrics, so predict/serve can surface an uncertainty
-        // band [Score ± q] (the regression analogue of the confidence signal binary/multiclass expose).
-        foreach (var interval in ComputeConformalIntervals(predictions, config.LabelColumn))
-            metricsDict[interval.Key] = interval.Value;
-
-        // ② regression wave (heteroscedastic): fit the per-row σ(x) band on top of the constant-width
-        // one. The constant-width metrics stay as the backward-safe fallback; when the aux model fits,
-        // its normalized-quantile metrics + the residual model let predict widen/narrow per row.
+        // ML.NET's Regression.Evaluate silently drops rows whose Score is non-finite. When the best
+        // model is degenerate (e.g. FastForest fitted on a handful of rows scores NaN for EVERY input)
+        // the evaluator is left with zero usable rows and fabricates all-zero metrics — r²=0 AND rmse=0,
+        // a mathematically contradictory pair that lands exactly on the quality gate's r²≥0 boundary and
+        // gets promoted; predict then emits literal '?' CSVs. Detect the all-non-finite holdout directly
+        // and mark the core metrics NaN so the MetricSanitizer funnel (RunAsync) replaces them with
+        // direction-aware worst-sentinels — the existing r²<0 gate then blocks promotion, with no new
+        // gate logic and no way for the fabricated zeros to masquerade as a boundary-passing model.
         ITransformer? residualModel = null;
-        var featureColumns = SelectSigmaFeatureColumns(predictions.Schema, config.LabelColumn);
-        var normalized = ComputeNormalizedConformal(_mlContext, predictions, config.LabelColumn, featureColumns);
-        if (normalized is not null)
+        if (AllScoresNonFinite(predictions))
         {
-            residualModel = normalized.AuxModel;
-            foreach (var kv in normalized.Metrics)
-                metricsDict[kv.Key] = kv.Value;
+            _logger.Warning(
+                "The selected model scored a non-finite value (NaN/Infinity) for every holdout row — a " +
+                "degenerate model, typically the result of training on too little data. The evaluator " +
+                "metrics are fabricated (every row was filtered out) and will be recorded as worst-case " +
+                "so this model cannot pass the quality gate. Provide more training data.");
+            foreach (var key in metricsDict.Keys.ToArray())
+                metricsDict[key] = double.NaN;
+            // Conformal calibration over all-NaN residuals is meaningless — skip it (its graceful
+            // key-omission contract would drop everything anyway).
+        }
+        else
+        {
+            // ② regression wave: derive split-conformal prediction-interval half-widths from the same
+            // held-out test predictions used for metrics, so predict/serve can surface an uncertainty
+            // band [Score ± q] (the regression analogue of the confidence signal binary/multiclass expose).
+            foreach (var interval in ComputeConformalIntervals(predictions, config.LabelColumn))
+                metricsDict[interval.Key] = interval.Value;
+
+            // ② regression wave (heteroscedastic): fit the per-row σ(x) band on top of the constant-width
+            // one. The constant-width metrics stay as the backward-safe fallback; when the aux model fits,
+            // its normalized-quantile metrics + the residual model let predict widen/narrow per row.
+            var featureColumns = SelectSigmaFeatureColumns(predictions.Schema, config.LabelColumn);
+            var normalized = ComputeNormalizedConformal(_mlContext, predictions, config.LabelColumn, featureColumns);
+            if (normalized is not null)
+            {
+                residualModel = normalized.AuxModel;
+                foreach (var kv in normalized.Metrics)
+                    metricsDict[kv.Key] = kv.Value;
+            }
         }
 
         return new AutoMLResult

@@ -333,4 +333,28 @@ public class MetricPolicyTests
     }
 
     #endregion
+
+    // MetricSanitizer records an undefined (NaN/∞) metric as the direction-aware worst-case
+    // sentinel; its contract says such a value must never pass the promotion gate. The floor
+    // gate only covers higher-is-better metrics, so this predicate is what blocks an
+    // all-NaN-scoring degenerate regression (rmse = MaxValue) from auto-promoting.
+    #region IsUndefinedMetricSentinel
+
+    [Theory]
+    [InlineData("rmse", double.MaxValue, true)]     // lower-better sentinel
+    [InlineData("mae", double.MaxValue, true)]
+    [InlineData("log_loss", double.MaxValue, true)]
+    [InlineData("r_squared", double.MinValue, true)] // higher-better sentinel
+    [InlineData("accuracy", double.MinValue, true)]
+    [InlineData("rmse", double.MinValue, false)]     // wrong-direction extreme is not the sentinel
+    [InlineData("r_squared", double.MaxValue, false)]
+    [InlineData("rmse", 123.4, false)]               // ordinary values pass
+    [InlineData("r_squared", -0.5, false)]           // bad-but-real values are the floor gate's job
+    [InlineData("accuracy", 0.0, false)]
+    public void IsUndefinedMetricSentinel_DetectsDirectionAwareWorstCase(string metric, double value, bool expected)
+    {
+        Assert.Equal(expected, MetricPolicy.IsUndefinedMetricSentinel(metric, value));
+    }
+
+    #endregion
 }

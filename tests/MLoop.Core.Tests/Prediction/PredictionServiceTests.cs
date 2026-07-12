@@ -1026,7 +1026,7 @@ public class PredictionServiceTests : IDisposable
         var rows = new[] { new Dictionary<string, object> { ["X"] = 1.0f } };
 
         var service = new PredictionService(_mlContext);
-        var ex = Assert.Throws<InvalidOperationException>(
+        var ex = Assert.Throws<DegeneratePredictionException>(
             () => service.Predict(rows, schema, model, "multiclass-classification", "Y"));
         Assert.Contains("multiclass-classification", ex.Message);
         Assert.Contains("every defining output", ex.Message);
@@ -1066,7 +1066,7 @@ public class PredictionServiceTests : IDisposable
         var rows = new[] { new Dictionary<string, object> { ["Query"] = "q0", ["F1"] = 0.5f, ["F2"] = 0.5f } };
 
         var service = new PredictionService(_mlContext);
-        var ex = Assert.Throws<InvalidOperationException>(
+        var ex = Assert.Throws<DegeneratePredictionException>(
             () => service.Predict(rows, schema, model, "clustering", "Label"));
         Assert.Contains("clustering", ex.Message);
     }
@@ -1094,7 +1094,7 @@ public class PredictionServiceTests : IDisposable
         var rows = new[] { new Dictionary<string, object> { ["X"] = 1.0f } };
 
         var service = new PredictionService(_mlContext);
-        var ex = Assert.Throws<InvalidOperationException>(
+        var ex = Assert.Throws<DegeneratePredictionException>(
             () => service.Predict(rows, schema, model, "anomaly-detection"));
         Assert.Contains("anomaly-detection", ex.Message);
     }
@@ -1123,7 +1123,7 @@ public class PredictionServiceTests : IDisposable
         var rows = new[] { new Dictionary<string, object> { ["X"] = 1.0f } };
 
         var service = new PredictionService(_mlContext);
-        var ex = Assert.Throws<InvalidOperationException>(
+        var ex = Assert.Throws<DegeneratePredictionException>(
             () => service.Predict(rows, schema, model, "time-series-anomaly"));
         Assert.Contains("time-series-anomaly", ex.Message);
     }
@@ -1351,7 +1351,118 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
+    // Live repro (2026-07-12, v0.22.0): FastForest fitted on an 8-row set scored NaN for EVERY input;
+    // the NaN flowed through as a value — SaveAsText wrote literal '?' into the user's CSV with exit 0
+    // and System.Text.Json crashed the --json/serve path. Non-finite signal values are scrubbed to null
+    // at the single materialization authority, so the all-degenerate guard catches the all-NaN case and
+    // partial rows serialize as honest nulls.
+    #region Non-finite score scrub (degenerate NaN-scoring model)
+
+    [Fact]
+    public void Predict_AllRowsScoreNonFinite_ThrowsDegeneratePredictionException()
+    {
+        var fitSource = _mlContext.Data.LoadFromEnumerable(new[] { new XOnlyRow { X = 1f } });
+        var model = _mlContext.Transforms.CustomMapping<XOnlyRow, ScoreOnlyRow>(
+            (input, output) => output.Score = float.NaN, contractName: null).Fit(fitSource);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema> { new() { Name = "X", DataType = "Numeric", Purpose = "Feature" } },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["X"] = 1.0f },
+            new Dictionary<string, object> { ["X"] = 2.0f },
+        };
+
+        var service = new PredictionService(_mlContext);
+        var ex = Assert.Throws<DegeneratePredictionException>(
+            () => service.Predict(rows, schema, model, "regression"));
+        Assert.Contains("non-finite", ex.Message);
+    }
+
+    [Fact]
+    public void Predict_PartiallyNonFiniteScores_MapsThoseRowsToNullAndSucceeds()
+    {
+        var fitSource = _mlContext.Data.LoadFromEnumerable(new[] { new XOnlyRow { X = 1f } });
+        var model = _mlContext.Transforms.CustomMapping<XOnlyRow, ScoreOnlyRow>(
+            (input, output) => output.Score = input.X == 1f ? float.NaN : input.X * 2f,
+            contractName: null).Fit(fitSource);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema> { new() { Name = "X", DataType = "Numeric", Purpose = "Feature" } },
+            CapturedAt = DateTime.UtcNow
+        };
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["X"] = 1.0f },
+            new Dictionary<string, object> { ["X"] = 3.0f },
+        };
+
+        var service = new PredictionService(_mlContext);
+        var result = service.Predict(rows, schema, model, "regression");
+
+        Assert.Equal(2, result.Rows.Count);
+        Assert.Null(result.Rows[0].Score);       // NaN scrubbed to "no point estimate"
+        Assert.Null(result.Rows[0].Confidence);
+        Assert.NotNull(result.Rows[1].Score);
+        Assert.Equal(6.0, result.Rows[1].Score!.Value, 3);
+    }
+
+    [Fact]
+    public void RequireNonDegenerateScoredView_AllNonFinite_Throws()
+    {
+        // The CLI CSV seam: SaveAsText serializes the raw IDataView, so this guard is what stands
+        // between an all-NaN model and a CSV full of literal '?' values written with exit 0.
+        var view = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new ScoreOnlyRow { Score = float.NaN },
+            new ScoreOnlyRow { Score = float.PositiveInfinity },
+        });
+
+        Assert.Throws<DegeneratePredictionException>(
+            () => PredictionService.RequireNonDegenerateScoredView(view, "regression"));
+    }
+
+    [Fact]
+    public void RequireNonDegenerateScoredView_FiniteScores_Passes()
+    {
+        var view = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new ScoreOnlyRow { Score = float.NaN },  // one bad row is legitimate
+            new ScoreOnlyRow { Score = 3.5f },
+        });
+
+        PredictionService.RequireNonDegenerateScoredView(view, "regression"); // must not throw
+    }
+
+    [Fact]
+    public void ComputeRowConfidences_NonFiniteBandBounds_ReturnsNull()
+    {
+        // A NaN band is no band: previously half-width = NaN clamped to confidence 0 (fabricated
+        // "fully uncertain"); scrubbed bounds mean point-only → honest null → column omitted.
+        var view = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new RegressionBandRow { Score = 15f, ScoreLowerBound = float.NaN, ScoreUpperBound = float.NaN },
+        });
+        var interval = new RegressionInterval(HalfWidth: 1.0, Confidence: 0.90, ResidualStd: 2.0);
+
+        var conf = PredictionService.ComputeRowConfidences(view, "regression", interval);
+
+        var c = Assert.Single(conf);
+        Assert.Null(c);
+    }
+
+    #endregion
+
     #region Helper Classes
+
+    private class XOnlyRow
+    {
+        public float X { get; set; }
+    }
 
     private class SimpleRegression
     {

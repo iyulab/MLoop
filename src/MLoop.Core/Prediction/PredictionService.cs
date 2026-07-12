@@ -393,6 +393,19 @@ public class PredictionService
         return rows.Select(r => r.Confidence).ToList();
     }
 
+    /// <summary>
+    /// Runs the all-degenerate guard (<see cref="RequireNonDegenerateOutput"/>) over an already-scored
+    /// view, using the SAME materialization (<see cref="ExtractRows"/>) as the structured result path.
+    /// This is the seam the CLI CSV writer uses before <c>SaveAsText</c>: that path serializes the raw
+    /// IDataView (never a <see cref="PredictionResult"/>), so without this call an all-NaN-scoring
+    /// degenerate model wrote a CSV of literal '?' values with exit 0 — silent data pollution in the
+    /// user's ledger, the same D20~D26 silent-failure family the guard exists to stop. Throws
+    /// <see cref="InvalidOperationException"/> when EVERY row's defining output is null/non-finite;
+    /// a partially-degenerate result passes through untouched.
+    /// </summary>
+    public static void RequireNonDegenerateScoredView(IDataView predictions, string taskType, RegressionInterval? interval = null)
+        => RequireNonDegenerateOutput(ExtractRows(predictions, taskType, interval), taskType);
+
     /// <summary>Fills each row's <see cref="PredictionRow.Confidence"/> via the single ConfidencePolicy authority.</summary>
     private static void ApplyConfidence(List<PredictionRow> rows, string taskType, RegressionInterval? interval)
     {
@@ -459,13 +472,15 @@ public class PredictionService
 
         if (!allDegenerate) return;
 
-        throw new InvalidOperationException(
+        throw new DegeneratePredictionException(
             $"Prediction for task '{taskType}' produced {rows.Count} row(s) but every defining output " +
-            "field came back null. This means the scored model's schema doesn't carry the output this " +
-            "task type expects (a missing, renamed, or differently-shaped column) — likely a task/model " +
-            "mismatch. Returning this as a successful result would silently fabricate an empty-looking " +
-            "'nothing to report' answer (the D20~D26 failure family). Verify the model was trained for " +
-            "task '" + taskType + "' and that its saved schema matches.");
+            "field came back null. Either the scored model's schema doesn't carry the output this task " +
+            "type expects (a missing, renamed, or differently-shaped column — likely a task/model " +
+            "mismatch), or the model scored a non-finite value (NaN/Infinity) for every row — a " +
+            "degenerate model, typically one trained on too little data. Returning this as a successful " +
+            "result would silently fabricate an empty-looking 'nothing to report' answer (the D20~D26 " +
+            "failure family). Verify the model was trained for task '" + taskType + "' with enough data " +
+            "and that its saved schema matches.");
     }
 
     private static List<PredictionRow> ExtractClassificationRows(
@@ -533,10 +548,16 @@ public class PredictionService
                 VBuffer<float> scoreBuffer = default;
                 scoreGetter(ref scoreBuffer);
                 var scores = scoreBuffer.DenseValues().ToArray();
-                probabilities = new Dictionary<string, double>();
-                for (int i = 0; i < scores.Length; i++)
+                // A distribution containing NaN/±∞ is no distribution — emitting it crashes JSON
+                // serialization (--json/serve) and fabricates a confidence. Omit it wholesale; a
+                // partially-scrubbed dict would misrepresent the class distribution.
+                if (scores.All(float.IsFinite))
                 {
-                    probabilities[$"class_{i}"] = scores[i];
+                    probabilities = new Dictionary<string, double>();
+                    for (int i = 0; i < scores.Length; i++)
+                    {
+                        probabilities[$"class_{i}"] = scores[i];
+                    }
                 }
             }
 
@@ -544,7 +565,8 @@ public class PredictionService
             {
                 float prob = 0;
                 probGetter(ref prob);
-                probability = prob;
+                if (float.IsFinite(prob))
+                    probability = prob;
             }
 
             // binary-classification returns a single scalar Probability = P(positive/True), not a
@@ -598,12 +620,18 @@ public class PredictionService
         int i = 0;
         while (cursor.MoveNext())
         {
+            // A non-finite score (NaN/±∞) is not a prediction: a degenerate model (e.g. FastForest
+            // fitted on a handful of rows) scores NaN for EVERY input, and letting that value through
+            // poisoned both sinks — System.Text.Json rejects non-finite numbers (--json/serve crash)
+            // and SaveAsText writes the literal '?' into the user's CSV with exit 0. Map it to null
+            // ("no point estimate"), which the all-degenerate guard below then catches honestly.
             double? score = null;
             if (scoreGetter != null)
             {
                 float scoreValue = 0;
                 scoreGetter(ref scoreValue);
-                score = scoreValue;
+                if (float.IsFinite(scoreValue))
+                    score = scoreValue;
             }
 
             // ② regression wave: wrap Score in the conformal band when the model carries one. The width
@@ -614,9 +642,12 @@ public class PredictionService
                 float lo = 0, up = 0;
                 lowerGetter!(ref lo);
                 upperGetter!(ref up);
-                lower = lo;
-                upper = up;
-                confidence = interval?.Confidence;
+                if (float.IsFinite(lo) && float.IsFinite(up))
+                {
+                    lower = lo;
+                    upper = up;
+                    confidence = interval?.Confidence;
+                }
             }
             else if (score.HasValue && interval != null)
             {
@@ -696,7 +727,10 @@ public class PredictionService
             {
                 VBuffer<float> scoreBuffer = default;
                 scoreGetter(ref scoreBuffer);
-                distances = scoreBuffer.DenseValues().Select(v => (double)v).ToArray();
+                var values = scoreBuffer.DenseValues().ToArray();
+                // Same non-finite scrub as the other extractors: NaN distances crash JSON serialization.
+                if (values.All(float.IsFinite))
+                    distances = values.Select(v => (double)v).ToArray();
             }
 
             rows.Add(new PredictionRow { ClusterId = clusterId, Distances = distances });
@@ -736,7 +770,8 @@ public class PredictionService
             {
                 float scoreValue = 0;
                 scoreGetter(ref scoreValue);
-                anomalyScore = scoreValue;
+                if (float.IsFinite(scoreValue))
+                    anomalyScore = scoreValue;
             }
 
             rows.Add(new PredictionRow { IsAnomaly = isAnomaly, AnomalyScore = anomalyScore });
@@ -773,7 +808,8 @@ public class PredictionService
                 var values = pred.DenseValues().ToArray();
                 if (values.Length > TimeSeriesAnomalyOutput.AlertSlot)
                     isAnomaly = values[TimeSeriesAnomalyOutput.AlertSlot] != 0;
-                if (values.Length > TimeSeriesAnomalyOutput.RawScoreSlot)
+                if (values.Length > TimeSeriesAnomalyOutput.RawScoreSlot
+                    && double.IsFinite(values[TimeSeriesAnomalyOutput.RawScoreSlot]))
                     rawScore = values[TimeSeriesAnomalyOutput.RawScoreSlot];
             }
 

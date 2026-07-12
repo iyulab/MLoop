@@ -370,6 +370,59 @@ public class AutoMLRunnerTests
 
     #endregion
 
+    // ML.NET's Regression.Evaluate silently filters non-finite-scored rows, so an all-NaN-scoring
+    // degenerate model (live repro: FastForest on 8 rows) yields fabricated all-zero metrics —
+    // r²=0 AND rmse=0, which passes the r²≥0 quality gate. AllScoresNonFinite is the direct
+    // detector RunRegressionAsync uses to mark those metrics NaN (→ MetricSanitizer worst-sentinel
+    // → gate blocks).
+    #region AllScoresNonFinite Tests (degenerate-model holdout detection)
+
+    [Fact]
+    public void AllScoresNonFinite_AllNaN_ReturnsTrue()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new RegressionScored { Label = 1f, Score = float.NaN },
+            new RegressionScored { Label = 2f, Score = float.PositiveInfinity },
+        });
+
+        Assert.True(AutoMLRunner.AllScoresNonFinite(data));
+    }
+
+    [Fact]
+    public void AllScoresNonFinite_AnyFiniteScore_ReturnsFalse()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new RegressionScored { Label = 1f, Score = float.NaN },
+            new RegressionScored { Label = 2f, Score = 3.5f },
+        });
+
+        Assert.False(AutoMLRunner.AllScoresNonFinite(data));
+    }
+
+    [Fact]
+    public void AllScoresNonFinite_EmptyView_ReturnsFalse()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(Array.Empty<RegressionScored>());
+
+        Assert.False(AutoMLRunner.AllScoresNonFinite(data));
+    }
+
+    [Fact]
+    public void AllScoresNonFinite_MissingScoreColumn_ReturnsFalse()
+    {
+        // Graceful: never claims degeneracy it cannot measure.
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new NumericData { Feature1 = 1f, Feature2 = 1f, Label = true },
+        });
+
+        Assert.False(AutoMLRunner.AllScoresNonFinite(data));
+    }
+
+    #endregion
+
     #region ComputeNormalizedConformal Tests (② regression wave — heteroscedastic per-row band)
 
     // Residual magnitude grows linearly with X: |Label - Score| = 0.5*X. A per-row σ(X) model should
