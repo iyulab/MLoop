@@ -35,4 +35,18 @@
     <PackageReference Include="FilePrepper" />
   </ItemGroup>
 
+  <!--
+    Security floor (CVE-2026-26127 / NU1903): Microsoft.Bcl.Memory is a *transitive*
+    dependency of the ML.NET graph that resolves to the vulnerable 9.0.4 by default.
+    Directory.Packages.props pins 9.0.14 via CentralPackageTransitivePinningEnabled, but
+    that pin is repo-build-scoped and does NOT cross the ProjectReference boundary — a
+    submodule/in-process consumer of MLoop.Core would silently inherit 9.0.4. Declaring the
+    (CPM-versioned) reference *directly* makes 9.0.14 a resolved direct dependency so the
+    fixed floor propagates to every ProjectReference consumer. Do not remove as "unused":
+    it is intentionally direct to carry the security floor across the assembly boundary.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Bcl.Memory" />
+  </ItemGroup>
+
 </Project>
