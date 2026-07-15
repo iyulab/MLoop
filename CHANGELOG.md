@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-15
+
+### Added
+- **New `MLoop.Core.DeepLearning` assembly** isolates all deep-learning task support (the six DL handlers — image-classification, text-classification, sentence-similarity, ner, object-detection, question-answering — plus `ObjectDetectionEvaluator`, `ObjectDetectionPredictor`, `ImageDirectoryLoader`, `ObjectDetectionDataLoader`) behind an `IDeepLearningModule` seam registered once at startup via `DeepLearningRegistry`. `MLoop.CLI`/`MLoop.API` reference the new assembly and register the module, so their DL behavior is unchanged. A tabular-only in-process consumer that references `MLoop.Core` alone gets an actionable "requires the MLoop.Core.DeepLearning package" error for DL tasks instead of a crash or silent success.
+
+### Changed
+- **`MLoop.Core` no longer carries a compile-time reference to `Microsoft.ML.TorchSharp` / `Microsoft.ML.Vision`.** The DL task handlers were extracted (see Added), the `AutoMLRunner.RunAsync` task switch and `DataLoaderFactory.Create` now dispatch DL tasks through `DeepLearningRegistry`, and the two `PackageReference`s were removed from `MLoop.Core.csproj`. `MLoop.Core.dll` is now **Torch/Vision-free at the IL level** — pinned by two boundary-guard regression tests (a referenced-assembly assert and a `MLoop.Core.csproj`-text assert). No behavior change for tabular tasks (binary/multiclass/regression, clustering, ranking, forecasting, time-series-anomaly, anomaly-detection, recommendation).
+  - **Consumer note — pruning the transitive DL weight:** this split does **not** by itself shrink a tabular-only consumer's `dotnet publish --self-contained` output, because `Microsoft.ML.AutoML` (MLoop.Core's core engine, irremovable) transitively depends on `Microsoft.ML.TorchSharp` + `Microsoft.ML.Vision`. What the split delivers is that excluding those transitive DLLs is now **safe** (pre-split, `MLoop.Core.dll` referenced Torch types, so pruning the DLLs would crash Core on load). A tabular-only consumer prunes them by adding, to its own project:
+    ```xml
+    <PackageReference Include="Microsoft.ML.TorchSharp" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.ML.Vision" ExcludeAssets="all" />
+    <PackageReference Include="TorchSharp" ExcludeAssets="all" />
+    ```
+    Verified: the tabular self-contained publish then contains no TorchSharp/Vision/LibTorchSharp assemblies and tabular AutoML still runs.
+- **A directory-based task (`image-classification`/`object-detection`) whose DL data loader is unavailable now throws an actionable error instead of silently falling back to the CSV loader** (`DataLoaderFactory.Create`) — closing a latent silent-wrong-loader trap surfaced during the split's final review.
+
 ## [0.22.1] - 2026-07-12
 
 ### Fixed
