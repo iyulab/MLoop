@@ -12,8 +12,6 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
-    <!-- Object-detection evaluation integration test drives the AutoFormerV2 trainer directly. -->
-    <PackageReference Include="Microsoft.ML.TorchSharp" />
   </ItemGroup>
 
   <ItemGroup>

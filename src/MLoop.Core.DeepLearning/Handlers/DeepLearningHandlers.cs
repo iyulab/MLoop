@@ -1,48 +1,47 @@
 using Microsoft.ML;
 using Microsoft.ML.TorchSharp;
+using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 
-namespace MLoop.Core.AutoML;
+namespace MLoop.Core.DeepLearning;
 
 /// <summary>
 /// Deep-learning task handlers (TensorFlow/TorchSharp-backed): image-classification,
 /// text-classification, sentence-similarity, ner, object-detection, question-answering.
 ///
-/// Kept in this partial — separate from the classic-ML.NET tabular handlers — so the
-/// Microsoft.ML.TorchSharp / Microsoft.ML.Vision usings stay confined to one file. This is
-/// stage 1 of upstream-007 (tabular-slim MLoop.Core): the managed DL assemblies are still
-/// compile-time references of MLoop.Core, but extracting them into an optional
-/// MLoop.Core.DeepLearning package is now a mechanical move of this file plus
-/// ObjectDetectionEvaluator, ImageDirectoryLoader, and the Torch/TensorFlow
-/// RuntimeDefinitions. Native runtimes are already task-gated at run time by
-/// RuntimeManager.EnsureRuntimeForTask.
+/// Moved out of <c>MLoop.Core.AutoML.AutoMLRunner</c> (upstream-007 stage 2, task 3) into this
+/// optional <c>MLoop.Core.DeepLearning</c> assembly, so the Microsoft.ML.TorchSharp /
+/// Microsoft.ML.Vision usings — and their heavy native runtime dependencies — no longer live in
+/// MLoop.Core. Invoked via <see cref="DeepLearningModule"/>, which is registered with
+/// <see cref="DeepLearningRegistry"/> by consumers (MLoop.CLI / MLoop.API) that opt into DL support.
 /// </summary>
-public partial class AutoMLRunner
+internal static class DeepLearningHandlers
 {
-    private async Task<AutoMLResult> RunImageClassificationAsync(
+    public static async Task<AutoMLResult> RunImageClassificationAsync(
+        MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
     {
         return await Task.Run(() =>
         {
-            _logger.Info($"Image classification: label='{config.LabelColumn}', TensorFlow transfer learning");
+            log($"Image classification: label='{config.LabelColumn}', TensorFlow transfer learning");
 
             // The ImageClassification trainer requires raw image bytes as its feature
             // column. ImageDirectoryLoader produces an "ImagePath" string column, so
             // LoadRawImageBytes reads each file into a VarVector<byte> before fitting.
-            var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
-                .Append(_mlContext.Transforms.LoadRawImageBytes(
+            var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
+                .Append(mlContext.Transforms.LoadRawImageBytes(
                     outputColumnName: "ImageBytes", imageFolder: null, inputColumnName: "ImagePath"))
-                .Append(_mlContext.MulticlassClassification.Trainers.ImageClassification(
+                .Append(mlContext.MulticlassClassification.Trainers.ImageClassification(
                     featureColumnName: "ImageBytes", labelColumnName: "Label"))
-                .Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+                .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "ImageClassification (TF)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
-            var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+            var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
             return new AutoMLResult
             {
@@ -59,7 +58,8 @@ public partial class AutoMLRunner
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<AutoMLResult> RunTextClassificationAsync(
+    public static async Task<AutoMLResult> RunTextClassificationAsync(
+        MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
     {
@@ -68,18 +68,18 @@ public partial class AutoMLRunner
             var textCol = TextColumnFinder.FindFirst(trainSet.Schema, config.LabelColumn)
                 ?? throw new InvalidOperationException("No text column found for text classification.");
 
-            _logger.Info($"Text classification: text='{textCol}', label='{config.LabelColumn}'");
+            log($"Text classification: text='{textCol}', label='{config.LabelColumn}'");
 
-            var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
-                .Append(_mlContext.MulticlassClassification.Trainers.TextClassification(
+            var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
+                .Append(mlContext.MulticlassClassification.Trainers.TextClassification(
                     labelColumnName: "Label", sentence1ColumnName: textCol))
-                .Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+                .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "TextClassification (NAS-BERT)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
-            var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+            var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
             return new AutoMLResult
             {
@@ -96,7 +96,8 @@ public partial class AutoMLRunner
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<AutoMLResult> RunSentenceSimilarityAsync(
+    public static async Task<AutoMLResult> RunSentenceSimilarityAsync(
+        MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
     {
@@ -106,9 +107,9 @@ public partial class AutoMLRunner
             if (textCols.Count < 2)
                 throw new InvalidOperationException("Sentence similarity requires at least two text columns.");
 
-            _logger.Info($"Sentence similarity: s1='{textCols[0]}', s2='{textCols[1]}', label='{config.LabelColumn}'");
+            log($"Sentence similarity: s1='{textCols[0]}', s2='{textCols[1]}', label='{config.LabelColumn}'");
 
-            var pipeline = _mlContext.Regression.Trainers.SentenceSimilarity(
+            var pipeline = mlContext.Regression.Trainers.SentenceSimilarity(
                 labelColumnName: config.LabelColumn,
                 sentence1ColumnName: textCols[0],
                 sentence2ColumnName: textCols[1]);
@@ -117,7 +118,7 @@ public partial class AutoMLRunner
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
-            var metrics = _mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
+            var metrics = mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
 
             return new AutoMLResult
             {
@@ -134,7 +135,8 @@ public partial class AutoMLRunner
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<AutoMLResult> RunNerAsync(
+    public static async Task<AutoMLResult> RunNerAsync(
+        MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
     {
@@ -143,18 +145,18 @@ public partial class AutoMLRunner
             var textCol = TextColumnFinder.FindFirst(trainSet.Schema, config.LabelColumn)
                 ?? throw new InvalidOperationException("No text column found for NER.");
 
-            _logger.Info($"NER: text='{textCol}', label='{config.LabelColumn}'");
+            log($"NER: text='{textCol}', label='{config.LabelColumn}'");
 
-            var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
-                .Append(_mlContext.MulticlassClassification.Trainers.NamedEntityRecognition(
+            var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
+                .Append(mlContext.MulticlassClassification.Trainers.NamedEntityRecognition(
                     labelColumnName: "Label", sentence1ColumnName: textCol))
-                .Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+                .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "NER (NAS-BERT)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
-            var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+            var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
             return new AutoMLResult
             {
@@ -170,7 +172,8 @@ public partial class AutoMLRunner
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<AutoMLResult> RunObjectDetectionAsync(
+    public static async Task<AutoMLResult> RunObjectDetectionAsync(
+        MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
     {
@@ -180,7 +183,7 @@ public partial class AutoMLRunner
                 ? CocoDataLoader.DefaultLabelColumn
                 : config.LabelColumn;
 
-            _logger.Info($"Object detection: label='{labelColumn}', AutoFormerV2 transfer learning");
+            log($"Object detection: label='{labelColumn}', AutoFormerV2 transfer learning");
 
             // CocoDataLoader produces three columns: ImagePath (string), the label vector
             // (VBuffer<string>, one class name per object), and BoundingBoxes (VBuffer<float>,
@@ -188,15 +191,15 @@ public partial class AutoMLRunner
             // trainer requires the image as an MLImage, the label as a vector of keys, and the
             // bounding-box float vector as-is — so LoadImages converts the path and
             // MapValueToKey converts the label vector before fitting.
-            var pipeline = _mlContext.Transforms.LoadImages(
+            var pipeline = mlContext.Transforms.LoadImages(
                     outputColumnName: "Image", imageFolder: string.Empty, inputColumnName: CocoDataLoader.ImagePathColumn)
-                .Append(_mlContext.Transforms.Conversion.MapValueToKey(
+                .Append(mlContext.Transforms.Conversion.MapValueToKey(
                     outputColumnName: "LabelKey", inputColumnName: labelColumn))
-                .Append(_mlContext.MulticlassClassification.Trainers.ObjectDetection(
+                .Append(mlContext.MulticlassClassification.Trainers.ObjectDetection(
                     labelColumnName: "LabelKey",
                     boundingBoxColumnName: CocoDataLoader.BoundingBoxColumn,
                     imageColumnName: "Image"))
-                .Append(_mlContext.Transforms.Conversion.MapKeyToValue(
+                .Append(mlContext.Transforms.Conversion.MapKeyToValue(
                     outputColumnName: "PredictedLabel", inputColumnName: "PredictedLabel"));
 
             // D27: real-data OD training intermittently dies with a native access violation
@@ -224,7 +227,8 @@ public partial class AutoMLRunner
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<AutoMLResult> RunQuestionAnsweringAsync(
+    public static async Task<AutoMLResult> RunQuestionAnsweringAsync(
+        MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
     {
@@ -234,9 +238,9 @@ public partial class AutoMLRunner
             var contextCol = textCols.Count > 0 ? textCols[0] : throw new InvalidOperationException("No context column found.");
             var questionCol = textCols.Count > 1 ? textCols[1] : contextCol;
 
-            _logger.Info($"Question answering: context='{contextCol}', question='{questionCol}', answer='{config.LabelColumn}'");
+            log($"Question answering: context='{contextCol}', question='{questionCol}', answer='{config.LabelColumn}'");
 
-            var pipeline = _mlContext.MulticlassClassification.Trainers.QuestionAnswer(
+            var pipeline = mlContext.MulticlassClassification.Trainers.QuestionAnswer(
                 contextColumnName: contextCol,
                 questionColumnName: questionCol);
 

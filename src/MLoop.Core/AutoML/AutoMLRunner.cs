@@ -190,19 +190,8 @@ public partial class AutoMLRunner
                 trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "recommendation" => await RunRecommendationAsync(
                 trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
-            "image-classification" => await RunImageClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
-            "text-classification" => await RunTextClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
-            "sentence-similarity" => await RunSentenceSimilarityAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
-            "ner" => await RunNerAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
-            "object-detection" => await RunObjectDetectionAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
-            "question-answering" => await RunQuestionAnsweringAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
-            _ => throw new NotSupportedException($"Task type '{config.Task}' is not supported")
+            _ => await RunDeepLearningOrThrowAsync(
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false)
         };
 
         // Single-authority guard: replace any non-finite metric (NaN/±∞ — e.g. R² on a
@@ -267,6 +256,30 @@ public partial class AutoMLRunner
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Dispatches deep-learning tasks (image-classification, text-classification,
+    /// sentence-similarity, ner, object-detection, question-answering) to the optional
+    /// <see cref="DeepLearningRegistry.Current"/> module. MLoop.Core no longer references the
+    /// TorchSharp/Vision-backed handlers directly (upstream-007 stage 2) — they live in
+    /// MLoop.Core.DeepLearning, and consumers register the module at startup. If no module is
+    /// registered (or it doesn't recognize the task), this throws an actionable error rather
+    /// than silently failing.
+    /// </summary>
+    private async Task<AutoMLResult> RunDeepLearningOrThrowAsync(
+        IDataView trainSet, IDataView testSet, TrainingConfig config,
+        IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
+    {
+        var module = DeepLearningRegistry.Current;
+        if (module is null || !module.CanHandleTask(config.Task))
+            throw new NotSupportedException(
+                $"Task type '{config.Task}' is not supported. " +
+                "Deep-learning tasks (image-classification, text-classification, sentence-similarity, " +
+                "ner, object-detection, question-answering) require the MLoop.Core.DeepLearning package.");
+        return await module.TrainAsync(
+            _mlContext, msg => _logger.Info(msg), config.Task,
+            trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

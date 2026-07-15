@@ -19,12 +19,15 @@ public static class DataLoaderFactory
     {
         ArgumentNullException.ThrowIfNull(mlContext);
 
-        return taskType?.ToLowerInvariant() switch
-        {
-            "image-classification" => new ImageDirectoryLoader(mlContext, log),
-            "object-detection" => new ObjectDetectionDataLoader(mlContext, log),
-            _ => new CsvDataLoader(mlContext, log)
-        };
+        if (IsDirectoryBased(taskType) && !MLoop.Core.AutoML.DeepLearningRegistry.IsRegistered)
+            throw new NotSupportedException(
+                $"Task '{taskType}' requires the MLoop.Core.DeepLearning package (data loader not registered).");
+
+        var dl = MLoop.Core.AutoML.DeepLearningRegistry.Current?.CreateDataLoader(
+            taskType ?? string.Empty, mlContext, log);
+        if (dl is not null) return dl;
+
+        return new CsvDataLoader(mlContext, log);
     }
 
     /// <summary>
