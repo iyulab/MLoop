@@ -27,6 +27,16 @@ public static class DataLoaderFactory
             taskType ?? string.Empty, mlContext, log);
         if (dl is not null) return dl;
 
+        // Invariant: a directory-based task must never fall back to CsvDataLoader.
+        // If we reach here for such a task, a DL module IS registered but its
+        // CreateDataLoader returned null (e.g. a task added to IsDirectoryBased
+        // without a corresponding case in the module's loader switch). Silently
+        // returning CsvDataLoader would misinterpret a directory/COCO layout as CSV.
+        if (IsDirectoryBased(taskType))
+            throw new NotSupportedException(
+                $"Task '{taskType}' is directory-based but no data loader was provided by " +
+                "the registered MLoop.Core.DeepLearning module (CreateDataLoader returned null).");
+
         return new CsvDataLoader(mlContext, log);
     }
 
