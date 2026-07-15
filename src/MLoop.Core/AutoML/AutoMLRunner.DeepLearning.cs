@@ -65,7 +65,7 @@ public partial class AutoMLRunner
     {
         return await Task.Run(() =>
         {
-            var textCol = FindFirstTextColumn(trainSet.Schema, config.LabelColumn)
+            var textCol = TextColumnFinder.FindFirst(trainSet.Schema, config.LabelColumn)
                 ?? throw new InvalidOperationException("No text column found for text classification.");
 
             _logger.Info($"Text classification: text='{textCol}', label='{config.LabelColumn}'");
@@ -102,7 +102,7 @@ public partial class AutoMLRunner
     {
         return await Task.Run(() =>
         {
-            var textCols = FindTextColumns(trainSet.Schema, config.LabelColumn, 2);
+            var textCols = TextColumnFinder.Find(trainSet.Schema, config.LabelColumn, 2);
             if (textCols.Count < 2)
                 throw new InvalidOperationException("Sentence similarity requires at least two text columns.");
 
@@ -140,7 +140,7 @@ public partial class AutoMLRunner
     {
         return await Task.Run(() =>
         {
-            var textCol = FindFirstTextColumn(trainSet.Schema, config.LabelColumn)
+            var textCol = TextColumnFinder.FindFirst(trainSet.Schema, config.LabelColumn)
                 ?? throw new InvalidOperationException("No text column found for NER.");
 
             _logger.Info($"NER: text='{textCol}', label='{config.LabelColumn}'");
@@ -230,7 +230,7 @@ public partial class AutoMLRunner
     {
         return await Task.Run(() =>
         {
-            var textCols = FindTextColumns(trainSet.Schema, config.LabelColumn, 2);
+            var textCols = TextColumnFinder.Find(trainSet.Schema, config.LabelColumn, 2);
             var contextCol = textCols.Count > 0 ? textCols[0] : throw new InvalidOperationException("No context column found.");
             var questionCol = textCols.Count > 1 ? textCols[1] : contextCol;
 
