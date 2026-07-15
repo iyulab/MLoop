@@ -325,6 +325,7 @@ models/
 
 ### Technical Documentation
 - **[Architecture](docs/ARCHITECTURE.md)** - System design and technical decisions
+- **[Embedding MLoop.Core](docs/EMBEDDING.md)** - In-process consumers: DL-weight pruning recipe & security floor
 - **[Contributing](CONTRIBUTING.md)** - Contribution guidelines and development workflow
 
 ## Why MLoop?

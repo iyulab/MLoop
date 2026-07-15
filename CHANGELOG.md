@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.23.2] - 2026-07-15
+
+### Security
+- **`Microsoft.Bcl.Memory` promoted to a direct `PackageReference` on `MLoop.Core` (pinned 9.0.14, clears CVE-2026-26127 / GHSA-73j8-2gch-69rq / NU1903).** The vulnerable 9.0.4 enters the graph *transitively* via the ML.NET stack; MLoop's repo build already overrode it to 9.0.14 through `CentralPackageTransitivePinningEnabled`, but **a CPM transitive pin is repo-build-scoped and does not cross a `ProjectReference` boundary** — a submodule / in-process consumer of `MLoop.Core` silently re-inherited the vulnerable 9.0.4 (confirmed by an external consumer whose NU1903 reappeared when it dropped its own workaround pin). Declaring the (CPM-versioned) reference *directly* makes 9.0.14 a resolved direct dependency so the fixed floor now propagates to every `ProjectReference` consumer automatically. NuGet consumers were already covered via the transitive-pin in the resolved dependency set; this closes the `ProjectReference` gap. Verified `dotnet list package --vulnerable --include-transitive` is clean across all projects. Consumers on ≥ 0.23.2 can drop any manual `Microsoft.Bcl.Memory 9.0.14` workaround pin.
+
+### Documentation
+- **New [`docs/EMBEDDING.md`](docs/EMBEDDING.md) — a durable guide for in-process consumers of `MLoop.Core`.** The tabular-slim DL-pruning `ExcludeAssets` recipe (previously only in the 0.23.0 changelog) now has a stable home, with two clarifications surfaced by a consumer: (1) the recipe must live in the **publishing** project (the executable), not an intermediate library — `ExcludeAssets` does **not** flow transitively through a `ProjectReference`, so a shared `.props` `<Import>`ed by each publishable entry point is the working pattern; (2) **non-CPM consumers** must specify versions explicitly (the versionless form fails NU1015), and should **derive** them via `dotnet list package --include-transitive` rather than freezing a hardcoded trio that drifts on every `Microsoft.ML.AutoML` bump. Linked from the README documentation index.
+
 ## [0.23.1] - 2026-07-15
 
 ### Security
