@@ -245,26 +245,12 @@ public class CocoDataLoaderTests : IDisposable
         Assert.False(_loader.ValidateLabelColumn(data, "Missing"));
     }
 
-    [Fact]
-    public void DataLoaderFactory_ReturnsObjectDetectionLoaderForObjectDetection()
-    {
-        // object-detection routes to the format-detecting dispatcher (COCO or YOLO).
-        var loader = DataLoaderFactory.Create("object-detection", _mlContext);
-        Assert.IsType<ObjectDetectionDataLoader>(loader);
-        Assert.True(DataLoaderFactory.IsDirectoryBased("object-detection"));
-    }
-
-    [Fact]
-    public void ObjectDetectionLoader_DispatchesToCocoForJsonAnnotations()
-    {
-        CreateValidDataset();
-        var loader = new ObjectDetectionDataLoader(_mlContext, _ => { });
-
-        var data = loader.LoadData(_tempDirectory, taskType: "object-detection");
-
-        Assert.Contains(data.Schema, c => c.Name == CocoDataLoader.BoundingBoxColumn);
-        Assert.Equal(2, data.GetRowCount());
-    }
+    // DataLoaderFactory_ReturnsObjectDetectionLoaderForObjectDetection and
+    // ObjectDetectionLoader_DispatchesToCocoForJsonAnnotations moved to
+    // MLoop.Core.DeepLearning.Tests/Data/ObjectDetectionDataLoaderTests.cs (upstream-007 stage 2
+    // t3): ObjectDetectionDataLoader now lives in MLoop.Core.DeepLearning, which MLoop.Core.Tests
+    // does not (and should not) reference — DeepLearningRegistry.Current is null here, so
+    // DataLoaderFactory.Create("object-detection", ...) throws rather than dispatching.
 
     // --- helpers ---
 

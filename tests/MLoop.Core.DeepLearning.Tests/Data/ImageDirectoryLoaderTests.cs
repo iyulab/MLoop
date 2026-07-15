@@ -2,7 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.Data;
 
-namespace MLoop.Core.Tests.Data;
+namespace MLoop.Core.DeepLearning.Tests.Data;
 
 public class ImageDirectoryLoaderTests : IDisposable
 {

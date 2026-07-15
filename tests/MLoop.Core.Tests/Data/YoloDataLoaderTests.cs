@@ -158,21 +158,9 @@ public class YoloDataLoaderTests : IDisposable
         Assert.Equal(1, data.GetRowCount());
     }
 
-    [Fact]
-    public void DataLoaderFactory_ReturnsObjectDetectionLoaderAndDispatchesYolo()
-    {
-        var loader = DataLoaderFactory.Create("object-detection", _mlContext, _ => { });
-        Assert.IsType<ObjectDetectionDataLoader>(loader);
-
-        var (imagesDir, labelsDir) = CreateImagesLabelsDirs();
-        CreateBmp(Path.Combine(imagesDir, "a.bmp"), 100, 100);
-        File.WriteAllText(Path.Combine(labelsDir, "a.txt"), "0 0.5 0.5 0.2 0.2");
-
-        // The dispatcher detects the YOLO layout and produces the OD schema.
-        var data = loader.LoadData(_tempDirectory, taskType: "object-detection");
-        Assert.Contains(data.Schema, c => c.Name == YoloDataLoader.BoundingBoxColumn);
-        Assert.Equal(1, data.GetRowCount());
-    }
+    // DataLoaderFactory_ReturnsObjectDetectionLoaderAndDispatchesYolo moved to
+    // MLoop.Core.DeepLearning.Tests/Data/ObjectDetectionDataLoaderTests.cs (upstream-007 stage 2
+    // t3) — see the note in CocoDataLoaderTests for why.
 
     [Fact]
     public void SplitData_ProducesTrainAndTestSets()
