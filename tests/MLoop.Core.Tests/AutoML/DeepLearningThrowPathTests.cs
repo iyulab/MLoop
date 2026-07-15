@@ -45,6 +45,63 @@ public class DeepLearningThrowPathTests
         Assert.IsType<CsvDataLoader>(loader);
     }
 
+    /// <summary>
+    /// Fake <see cref="IDeepLearningModule"/> that IS registered but whose
+    /// <see cref="CreateDataLoader"/> returns null unconditionally — simulating a future
+    /// directory-based task added to <see cref="DataLoaderFactory.IsDirectoryBased"/> without a
+    /// corresponding case in the real module's loader switch.
+    /// </summary>
+    private sealed class NullLoaderDeepLearningModule : IDeepLearningModule
+    {
+        public bool CanHandleTask(string task) => true;
+
+        public Task<AutoMLResult> TrainAsync(
+            MLContext mlContext, Action<string> log, string task,
+            IDataView trainSet, IDataView testSet, TrainingConfig config,
+            IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
+            => throw new NotImplementedException("Not exercised by this test.");
+
+        public IDataProvider? CreateDataLoader(string task, MLContext mlContext, Action<string>? log) => null;
+    }
+
+    [Fact]
+    public void Create_DirectoryBasedTask_RegisteredModuleReturnsNullLoader_ThrowsNotSupportedException()
+    {
+        DeepLearningRegistry.Register(new NullLoaderDeepLearningModule());
+        try
+        {
+            var ex = Assert.Throws<NotSupportedException>(
+                () => DataLoaderFactory.Create("object-detection", new MLContext()));
+
+            Assert.Contains("object-detection", ex.Message);
+            Assert.Contains("MLoop.Core.DeepLearning", ex.Message);
+        }
+        finally
+        {
+            // Restore null-registry assumption other Core.Tests (and this class's own
+            // no-registry tests) rely on for the rest of the assembly's test run.
+            DeepLearningRegistry.Register(null!);
+        }
+    }
+
+    [Fact]
+    public void Create_TabularTask_RegisteredModuleReturnsNullLoader_StillReturnsCsvDataLoader()
+    {
+        // Negative control: even with a DL module registered that returns null for every task,
+        // a non-directory-based task must still fall back to CsvDataLoader unchanged.
+        DeepLearningRegistry.Register(new NullLoaderDeepLearningModule());
+        try
+        {
+            var loader = DataLoaderFactory.Create("regression", new MLContext());
+
+            Assert.IsType<CsvDataLoader>(loader);
+        }
+        finally
+        {
+            DeepLearningRegistry.Register(null!);
+        }
+    }
+
     // ---- AutoMLRunner.RunAsync -> RunDeepLearningOrThrowAsync ----------------------------
 
     private sealed class InMemoryDataProvider : IDataProvider
