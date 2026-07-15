@@ -1852,34 +1852,6 @@ public partial class AutoMLRunner
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private static string? FindFirstTextColumn(DataViewSchema schema, string labelColumn)
-    {
-        foreach (var col in schema)
-        {
-            if (col.IsHidden) continue;
-            if (col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)) continue;
-            if (col.Type is TextDataViewType)
-                return col.Name;
-        }
-        return null;
-    }
-
-    private static List<string> FindTextColumns(DataViewSchema schema, string labelColumn, int maxCount)
-    {
-        var result = new List<string>();
-        foreach (var col in schema)
-        {
-            if (col.IsHidden) continue;
-            if (col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)) continue;
-            if (col.Type is TextDataViewType)
-            {
-                result.Add(col.Name);
-                if (result.Count >= maxCount) break;
-            }
-        }
-        return result;
-    }
-
     private BinaryClassificationMetric GetBinaryMetric(string metricName)
     {
         return metricName.ToLowerInvariant() switch
