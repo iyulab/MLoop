@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-07-15
+
+### Security
+- **Microsoft.OpenApi 2.4.1 → 2.10.0** clears the high-severity advisory **GHSA-v5pm-xwqc-g5wc (NU1903)** that `MLoop.API`/`MLoop.API.Tests` inherited transitively through Swashbuckle. The advisory is patched at 2.7.5 within the 2.x line, so the fix stays on the Swashbuckle-compatible 2.x major (3.x breaks Swagger with 500s on `/swagger/v1/swagger.json`) — no code change and no migration off Swashbuckle. Verified `dotnet list package --vulnerable` is clean across all projects and the existing Swagger endpoint tests (`SwaggerEndpoint_*`) still pass, confirming `Swashbuckle.AspNetCore 10.2.3` + `Microsoft.OpenApi 2.10.0` serve the document without regression.
+
+### Changed
+- **Dependency servicing (low-risk, .NET 10 train alignment):** `Microsoft.AspNetCore.Authentication.JwtBearer` 10.0.5 → 10.0.10, `Microsoft.AspNetCore.Mvc.Testing` 10.0.5 → 10.0.10, `Microsoft.Extensions.*` (Caching.Memory/DependencyInjection/Logging/Logging.Console) 10.0.5 → 10.0.10, `System.CommandLine` 2.0.5 → 2.0.10, `System.IdentityModel.Tokens.Jwt` 8.16.0 → 8.19.2, `Swashbuckle.AspNetCore` 10.1.7 → 10.2.3, `Microsoft.NET.Test.Sdk` 18.4.0 → 18.8.1, `Microsoft.SourceLink.GitHub` 10.0.201 → 10.0.301.
+- **Ecosystem package bumps:** `DataLens` 0.13.1 → 0.13.3, `FilePrepper` 0.7.1 → 0.7.2 (both consumed transitively — DataLens 0.13.3 requires FilePrepper 0.7.2).
+- **Deliberately frozen (not bumped):** ML.NET stack (`Microsoft.ML`/`AutoML`/`TorchSharp`/`Vision`, native-coupled), `Serilog 4.3.0` (D11 bundle skew), `Microsoft.Bcl.Memory 9.0.14` (CVE override), and the OpenApi 2.x / Swashbuckle compatibility pairing. Majors deferred to individual evaluation: YamlDotNet 17→18, coverlet 8→10, Spectre 0.55→0.57, Roslyn 5.3→5.6 (removal candidate via the tabular-slim scripting-split follow-up).
+
 ## [0.23.0] - 2026-07-15
 
 ### Added
