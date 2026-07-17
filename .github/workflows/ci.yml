@@ -46,7 +46,13 @@ jobs:
       with:
         path: ~/.nuget/packages
         key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
-        # No restore-keys: stale cache accumulation prevention
+        # restore-keys fallback: on a lockfile/csproj change, reuse the previous cache and
+        # download only the delta instead of a full cold restore of the ML.NET/TorchSharp
+        # stack (which has hung for hours — see CI 229min on the 0.23.2 Bcl.Memory bump).
+        # NuGet packages are immutable/content-addressed, so a partial-hit reuse is safe;
+        # GitHub evicts caches (7-day / 10GB) so stale extras don't accumulate.
+        restore-keys: |
+          ${{ runner.os }}-nuget-
 
     - name: Restore dependencies
       run: dotnet restore MLoop.slnx
@@ -84,6 +90,14 @@ jobs:
       with:
         dotnet-version: '10.0.x'
 
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
     - name: Restore dependencies
       run: dotnet restore MLoop.slnx
 
@@ -107,6 +121,14 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
 
     - name: Check vulnerable packages
       run: |
