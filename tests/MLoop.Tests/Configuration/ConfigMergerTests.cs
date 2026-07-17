@@ -196,7 +196,9 @@ public class ConfigMergerTests
 
         var result = _merger.GetEffectiveModelDefinition(config, "default");
 
-        Assert.Equal(ConfigDefaults.DefaultTimeLimitSeconds, result.Training?.TimeLimitSeconds);
+        // Unspecified time_limit_seconds resolves to null (= auto-time), not a fixed 300s,
+        // so the init+train project workflow defaults to data-size-based estimation.
+        Assert.Null(result.Training?.TimeLimitSeconds);
         Assert.Equal(ConfigDefaults.DefaultMetric, result.Training?.Metric);
         Assert.Equal(ConfigDefaults.DefaultTestSplit, result.Training?.TestSplit);
     }
@@ -210,7 +212,9 @@ public class ConfigMergerTests
     {
         var result = _merger.MergeTrainingSettings(null, null, null);
 
-        Assert.Equal(ConfigDefaults.DefaultTimeLimitSeconds, result.TimeLimitSeconds);
+        // Unspecified time resolves to null (= auto-time), not a fixed 300s; Metric/TestSplit
+        // keep concrete defaults (no auto semantics).
+        Assert.Null(result.TimeLimitSeconds);
         Assert.Equal(ConfigDefaults.DefaultMetric, result.Metric);
         Assert.Equal(ConfigDefaults.DefaultTestSplit, result.TestSplit);
     }

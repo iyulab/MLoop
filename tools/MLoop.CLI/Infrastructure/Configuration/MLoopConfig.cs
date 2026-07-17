@@ -179,7 +179,10 @@ public static class ConfigDefaults
     /// </summary>
     public static TrainingSettings CreateDefaultTrainingSettings() => new()
     {
-        TimeLimitSeconds = DefaultTimeLimitSeconds,
+        // TimeLimitSeconds intentionally left null: "unspecified" means auto-time (estimated
+        // from data size), not a fixed 300s. The fixed 300s is only the fallback applied
+        // downstream (`?? DefaultTimeLimitSeconds`) when auto-time is explicitly disabled.
+        TimeLimitSeconds = null,
         Metric = DefaultMetric,
         TestSplit = DefaultTestSplit
     };

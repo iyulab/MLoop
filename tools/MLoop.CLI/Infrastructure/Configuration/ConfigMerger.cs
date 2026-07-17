@@ -103,7 +103,11 @@ public class ConfigMerger
     {
         var merged = new TrainingSettings
         {
-            TimeLimitSeconds = ConfigDefaults.DefaultTimeLimitSeconds,
+            // Leave TimeLimitSeconds unset (null) so an unspecified time flows through as
+            // "auto-time" rather than a fixed 300s — the project workflow then honors the
+            // documented auto-time default. Downstream resolves null via `?? DefaultTimeLimitSeconds`
+            // when auto-time is off. Metric/TestSplit keep concrete defaults (no auto semantics).
+            TimeLimitSeconds = null,
             Metric = ConfigDefaults.DefaultMetric,
             TestSplit = ConfigDefaults.DefaultTestSplit
         };
