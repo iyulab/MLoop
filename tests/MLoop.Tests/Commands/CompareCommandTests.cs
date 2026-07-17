@@ -171,6 +171,86 @@ public class CompareCommandTests : IDisposable
         Assert.Equal(2, completedExperiments.Count);
     }
 
+    // ---- Provided-state comparison (compare --metrics-file) ----
+
+    private static MLoop.CLI.Commands.CompareCommand.ProvidedCandidate Cand(
+        string id, params (string key, double val)[] metrics) =>
+        new(id, metrics.ToDictionary(m => m.key, m => m.val));
+
+    [Fact]
+    public void CompareProvidedMetrics_HigherIsBetter_PicksMax()
+    {
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("champion", ("r_squared", 0.85)), Cand("challenger", ("r_squared", 0.87)) },
+            "r_squared");
+
+        Assert.Equal("challenger", result.Best);
+        Assert.Equal("maximize", result.Direction);
+        Assert.Equal("challenger", result.Ranking[0].Id); // ranked best-first
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_LowerIsBetter_PicksMin()
+    {
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("champion", ("rmse", 1.30)), Cand("challenger", ("rmse", 1.20)) },
+            "rmse");
+
+        Assert.Equal("challenger", result.Best);
+        Assert.Equal("minimize", result.Direction);
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_NoMetric_SingleShared_Infers()
+    {
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("a", ("r_squared", 0.80)), Cand("b", ("r_squared", 0.90)) },
+            metric: null);
+
+        Assert.Equal("r_squared", result.Metric);
+        Assert.Equal("b", result.Best);
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_NoMetric_MultipleShared_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+                new[]
+                {
+                    Cand("a", ("r_squared", 0.80), ("rmse", 1.0)),
+                    Cand("b", ("r_squared", 0.90), ("rmse", 0.5))
+                },
+                metric: null));
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_MetricNotFound_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+                new[] { Cand("a", ("r_squared", 0.80)) }, "auc"));
+    }
+
+    [Fact]
+    public void ParseCandidates_MissingId_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            MLoop.CLI.Commands.CompareCommand.ParseCandidates(
+                "[{\"metrics\":{\"r_squared\":0.8}}]"));
+    }
+
+    [Fact]
+    public void ParseCandidates_Valid_RoundTrips()
+    {
+        var cands = MLoop.CLI.Commands.CompareCommand.ParseCandidates(
+            "[{\"id\":\"exp-a\",\"metrics\":{\"r_squared\":0.87}}]");
+
+        Assert.Single(cands);
+        Assert.Equal("exp-a", cands[0].Id);
+        Assert.Equal(0.87, cands[0].Metrics["r_squared"]);
+    }
+
     private async Task<ExperimentData> CreateTestExperiment(
         string modelName,
         string experimentId,
