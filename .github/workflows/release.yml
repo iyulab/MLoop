@@ -63,6 +63,18 @@ jobs:
 
         echo "Version: $VERSION"
 
+    - name: Cache NuGet packages
+      if: steps.version.outputs.tag_exists == 'false'
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+        # Release had NO cache → 5 cold restores of the ML.NET/TorchSharp stack per run
+        # (build + publish-binaries×3 + publish-tool), which hung for hours (release 212min
+        # on 0.23.2, 28min on 0.24.0). Shared key: build populates, downstream jobs reuse.
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
     - name: Restore dependencies
       if: steps.version.outputs.tag_exists == 'false'
       run: dotnet restore MLoop.slnx
@@ -96,6 +108,14 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
 
     - name: Restore dependencies
       run: dotnet restore MLoop.slnx
@@ -221,6 +241,14 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
 
     - name: Pack dotnet tool
       run: dotnet pack tools/MLoop.CLI/MLoop.CLI.csproj --configuration Release -o ./nupkg
