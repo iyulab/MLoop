@@ -154,6 +154,7 @@ mloop prep plan --set <type[:method]> [--columns ...] [--json]  # Declare prep s
 mloop prep run [options]               # Run preprocessing pipeline
 mloop features select --drop/--keep <cols> [--reset] [--json]   # Declare feature include/exclude (policy only)
 mloop compare <exp1> <exp2>            # Compare experiment metrics
+mloop compare --metrics-file <path> --json  # Provided-state: rank/select best from supplied metrics (no local .mloop/; distributed consumers)
 mloop serve                            # Start REST API server
 mloop docker                           # Generate Docker deployment files
 mloop update                           # Self-update to latest version

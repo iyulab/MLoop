@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-07-17
+
+### Added
+- **`mloop compare --metrics-file <path> --json`** — a provided-state comparison mode that ranks candidates and selects the direction-aware best from a supplied JSON array of metrics, **without a local `.mloop/` project**. Input `[{"id":"exp-a","metrics":{"r_squared":0.87}}, ...]` (use `-` for stdin); output `{"metric","direction","best","ranking":[...]}`. Distributed / external-SoR consumers — whose experiments live in their own database rather than a local `.mloop/` — can now delegate mloop's direction-aware best-selection (reusing the same `MetricDirection` authority the local path uses) instead of re-implementing it and risking semantic drift. `--metric` picks the ranking metric (inferred when candidates share exactly one). Read/decide only; no project state is touched. Addresses the empirical finding that `promote --decide-only` (0.24.0) can't serve a distributed consumer whose ephemeral checkout holds only a single experiment (no champion present locally to compare against).
+
 ## [0.25.0] - 2026-07-17
 
 ### Changed

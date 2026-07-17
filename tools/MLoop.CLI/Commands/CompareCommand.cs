@@ -1,4 +1,6 @@
 using System.CommandLine;
+using System.Text.Json;
+using MLoop.Core.Evaluation;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -35,11 +37,26 @@ public static class CompareCommand
             Description = "Sort by specific metric (default: best metric from training)"
         };
 
+        var metricsFileOption = new Option<string?>("--metrics-file")
+        {
+            Description = "Provided-state mode: rank candidates and select the best from a JSON file of " +
+                          "candidate metrics, without a local .mloop/ project (for distributed/external-SoR " +
+                          "consumers). Use '-' to read from stdin. Implies --json. " +
+                          "Input: [{\"id\":\"exp-a\",\"metrics\":{\"r_squared\":0.87}}, ...]"
+        };
+
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Output the result as JSON (machine-readable)"
+        };
+
         var command = new Command("compare", "Compare experiments side by side");
         command.Arguments.Add(experimentsArgument);
         command.Options.Add(nameOption);
         command.Options.Add(bestOption);
         command.Options.Add(metricOption);
+        command.Options.Add(metricsFileOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
@@ -47,7 +64,9 @@ public static class CompareCommand
             var name = parseResult.GetValue(nameOption);
             var best = parseResult.GetValue(bestOption);
             var metric = parseResult.GetValue(metricOption);
-            return ExecuteAsync(experiments, name, best, metric);
+            var metricsFile = parseResult.GetValue(metricsFileOption);
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteAsync(experiments, name, best, metric, metricsFile, json);
         });
 
         return command;
@@ -57,8 +76,16 @@ public static class CompareCommand
         string[] experimentIds,
         string? modelName,
         int? bestCount,
-        string? sortMetric)
+        string? sortMetric,
+        string? metricsFile,
+        bool jsonOutput)
     {
+        // Provided-state mode: rank/select from supplied metrics with no local .mloop/ project.
+        // Read/decide only — never touches project state — so distributed consumers (external SoR)
+        // can delegate mloop's direction-aware best-selection instead of re-implementing it.
+        if (metricsFile != null)
+            return await ExecuteProvidedStateAsync(metricsFile, sortMetric);
+
         try
         {
             var ctx = CommandContext.TryCreate();
@@ -313,6 +340,125 @@ public static class CompareCommand
         catch (Exception ex)
         {
             ErrorSuggestions.DisplayError(ex, "compare");
+            return 1;
+        }
+    }
+
+    // ---- Provided-state comparison (no local .mloop/) ----
+
+    /// <summary>A candidate to rank, supplied by an external caller (its own SoR).</summary>
+    public sealed record ProvidedCandidate(string Id, Dictionary<string, double> Metrics);
+
+    public sealed record ProvidedRankEntry(string Id, double Value);
+
+    public sealed record ProvidedCompareResult(
+        string Metric, string Direction, string Best, IReadOnlyList<ProvidedRankEntry> Ranking);
+
+    private static readonly JsonSerializerOptions ProvidedJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    /// <summary>
+    /// Direction-aware ranking/best-selection over caller-supplied metrics — the same authority
+    /// (<see cref="MetricDirection"/>) the local-state path uses, so a distributed consumer gets
+    /// identical semantics without re-implementing them. Pure; no filesystem/project state.
+    /// </summary>
+    internal static ProvidedCompareResult CompareProvidedMetrics(
+        IReadOnlyList<ProvidedCandidate> candidates, string? metric)
+    {
+        if (candidates.Count == 0)
+            throw new ArgumentException("No candidates provided.");
+
+        var allKeys = candidates.SelectMany(c => c.Metrics.Keys).Distinct().ToList();
+
+        string metricKey;
+        if (!string.IsNullOrWhiteSpace(metric))
+        {
+            metricKey = MetricPolicy.ResolveMetricKey(metric, allKeys)
+                ?? throw new ArgumentException(
+                    $"Metric '{metric}' not found in provided candidates. Available: {string.Join(", ", allKeys)}");
+        }
+        else
+        {
+            // Comparing across different metrics is meaningless; require a single shared metric.
+            var common = allKeys.Where(k => candidates.All(c => c.Metrics.ContainsKey(k))).ToList();
+            if (common.Count != 1)
+                throw new ArgumentException(common.Count == 0
+                    ? "No metric is present on all candidates; specify --metric."
+                    : $"Multiple metrics present ({string.Join(", ", common)}); specify --metric.");
+            metricKey = common[0];
+        }
+
+        var scored = candidates.Where(c => c.Metrics.ContainsKey(metricKey)).ToList();
+        if (scored.Count == 0)
+            throw new ArgumentException($"No candidate has metric '{metricKey}'.");
+
+        var lowerBetter = MetricDirection.IsLowerBetter(metricKey);
+        var ranked = (lowerBetter
+                ? scored.OrderBy(c => c.Metrics[metricKey])
+                : scored.OrderByDescending(c => c.Metrics[metricKey]))
+            .ToList();
+
+        return new ProvidedCompareResult(
+            metricKey,
+            lowerBetter ? "minimize" : "maximize",
+            ranked[0].Id,
+            ranked.Select(c => new ProvidedRankEntry(c.Id, c.Metrics[metricKey])).ToList());
+    }
+
+    private sealed class CandidateDto
+    {
+        public string? Id { get; set; }
+        public Dictionary<string, double>? Metrics { get; set; }
+    }
+
+    internal static IReadOnlyList<ProvidedCandidate> ParseCandidates(string json)
+    {
+        var dtos = JsonSerializer.Deserialize<List<CandidateDto>>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? throw new ArgumentException("Metrics input did not parse to a candidate array.");
+
+        var result = new List<ProvidedCandidate>();
+        for (var i = 0; i < dtos.Count; i++)
+        {
+            var d = dtos[i];
+            if (string.IsNullOrWhiteSpace(d.Id))
+                throw new ArgumentException($"Candidate at index {i} is missing 'id'.");
+            if (d.Metrics == null || d.Metrics.Count == 0)
+                throw new ArgumentException($"Candidate '{d.Id}' is missing 'metrics'.");
+            result.Add(new ProvidedCandidate(d.Id, d.Metrics));
+        }
+        return result;
+    }
+
+    private static async Task<int> ExecuteProvidedStateAsync(string metricsFile, string? metric)
+    {
+        try
+        {
+            string content;
+            if (metricsFile == "-")
+            {
+                content = await Console.In.ReadToEndAsync();
+            }
+            else if (File.Exists(metricsFile))
+            {
+                content = await File.ReadAllTextAsync(metricsFile);
+            }
+            else
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new { error = $"Metrics file not found: {metricsFile}" }));
+                return 1;
+            }
+
+            var result = CompareProvidedMetrics(ParseCandidates(content), metric);
+            Console.WriteLine(JsonSerializer.Serialize(result, ProvidedJsonOptions));
+            return 0;
+        }
+        catch (Exception ex) when (ex is ArgumentException or JsonException or IOException)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new { error = ex.Message }));
             return 1;
         }
     }
