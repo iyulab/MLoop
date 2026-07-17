@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-17
+
+### Added
+- **`mloop train --auto-time`** — an opt-in flag (the symmetric twin of `--no-auto-time`) that forces data-size-based automatic time estimation **even when `mloop.yaml` sets `time_limit_seconds`**. Previously auto-time was reachable only in the yaml-less single-file training path: the `mloop init` template hardcodes `time_limit_seconds: 300`, so any project-workflow train (`init` → `train`) silently used the fixed 300s and never the `TimeEstimator`, despite `--help` advertising auto-time as the default. A consumer (fire-and-forget distributed MLOps) that wanted "training time scaled to data size" through the project workflow had no way to request it without editing the yaml schema. `--auto-time` gives that opt-in without coupling the consumer to the yaml format. The training-config summary now shows `Time Limit: auto (estimated from data size)` when auto-time is active (previously it printed the yaml/default `300s` even while the engine estimated a different value — an honest record-vs-actual fix that also covers the pre-existing yaml-less auto-time path). Contradictory combinations (`--auto-time` with `--no-auto-time`, with an explicit `--time`, or on image/directory tasks) are rejected with an actionable error. **Note:** whether `mloop init` should stop hardcoding `time_limit_seconds` — making auto-time the project-workflow *default* and the `--help` statement literally true — is a separate product decision (it changes every new project's behavior from a predictable 300s to an adaptive 30–1800s) and is intentionally **not** changed here.
+- **`mloop promote --decide-only`** — reports which experiment the direction-aware `--best`/`--latest` selection *would* promote **without moving the production pointer** (`applied: false` in `--json`; `wouldReplace` flags whether it would displace the current production). Lets a consumer that owns its own system-of-record delegate mloop's best-selection logic (rather than re-implementing direction-aware metric comparison, risking semantic drift) while applying the promotion in its own store. The decision reuses the existing `SelectExperiment` primitive; only the write side (backup / pointer move / history) is skipped.
+
 ## [0.23.2] - 2026-07-15
 
 ### Security
