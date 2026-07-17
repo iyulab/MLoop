@@ -26,7 +26,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Cost diet: PRs validate on ubuntu only (fast, cheap feedback); pushes to
+        # main/develop run the full 3-OS matrix (windows=2x, macOS=10x billing) to keep
+        # cross-OS ML.NET native validation on the integration branch before release.
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
         dotnet-version: ['10.0.x']
       fail-fast: false
 
@@ -61,10 +64,12 @@ jobs:
       run: dotnet build MLoop.slnx --configuration Release --no-restore
 
     - name: Run tests (CI - excludes heavy tests)
+      # Coverage is only uploaded from ubuntu (see Codecov step), so only collect it there —
+      # instrumenting on windows/macOS just slowed those legs for a discarded result.
       run: |
         # Run only lightweight tests in CI (excludes LLM, Slow, E2E, Database tests)
         # Heavy tests should be run locally with: dotnet test --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
-        dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
+        dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal ${{ matrix.os == 'ubuntu-latest' && '--collect:"XPlat Code Coverage"' || '' }} --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
 
     - name: Upload coverage reports to Codecov
       if: matrix.os == 'ubuntu-latest'
