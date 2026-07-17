@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-17
+
+### Changed
+- **The `init` → `train` project workflow now defaults to auto-time** (data-size-based estimation clamped to `[30, 1800]s`), exactly as `train --help` has always advertised. Two changes together deliver this: (1) `mloop init` no longer hardcodes `time_limit_seconds: 300` in the generated `mloop.yaml` — the key ships as a commented example; (2) the config merge now treats an **unspecified `time_limit_seconds` as auto-time (null)** rather than seeding a fixed 300s, so the auto-time gate is reachable through a project config. Previously the hardcoded 300s *and* the merge's 300s seed both made auto-time reachable only in the yaml-less single-file path; 0.24.0's `--auto-time` opt-in remains the way to force auto-time when a project *does* set an explicit `time_limit_seconds`. **Impact:** new projects get training time scaled to their data instead of a fixed 300s — set an explicit `time_limit_seconds` in `mloop.yaml` (or pass `--time`) to opt back into a fixed budget. Existing projects that already set `time_limit_seconds` are unaffected. Resolves the contract inconsistency where `--help` promised auto-time by default but `init` + the config merge silently defeated it. The fixed 300s remains the fallback only when auto-time is explicitly disabled (`--no-auto-time`).
+
 ## [0.24.0] - 2026-07-17
 
 ### Added

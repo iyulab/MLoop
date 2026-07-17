@@ -645,7 +645,8 @@ models:
     label: {labelColumn}{taskSpecificFields}
     description: Default model for {task}
     training:
-      time_limit_seconds: 300
+      # time_limit_seconds: 300   # optional — omit to let mloop auto-estimate the training
+      #                             time from data size ([30, 1800]s). Set a fixed value to override.
       metric: {metricExample}
       test_split: 0.2
 
