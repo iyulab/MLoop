@@ -121,7 +121,9 @@ mloop train <data-file> <label-column> [options]
 
 # Model Management (v0.6.1+):
 #   --no-promote                Skip automatic promotion to production
-#   --no-auto-time              Disable automatic training time estimation
+#   --no-auto-time              Disable automatic training time estimation (use default 300s)
+#   --auto-time                 Force automatic time estimation, overriding time_limit_seconds in
+#                               mloop.yaml (reaches auto-time from the init+train project workflow)
 
 # Examples
 mloop train datasets/train.csv price --time 120

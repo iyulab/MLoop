@@ -67,7 +67,7 @@ internal static class TrainPresenter
     /// Displays the training configuration before training starts.
     /// </summary>
     public static void DisplayTrainingConfig(
-        string dataFile, string modelName, ModelDefinition definition, string? testDataFile = null)
+        string dataFile, string modelName, ModelDefinition definition, string? testDataFile = null, bool useAutoTime = false)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[blue]Training Configuration[/]").LeftJustified());
@@ -82,7 +82,9 @@ internal static class TrainPresenter
         table.AddRow("Task", definition.Task);
         table.AddRow("Data File", Path.GetFileName(dataFile));
         table.AddRow("Label Column", definition.Label);
-        table.AddRow("Time Limit", $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
+        table.AddRow("Time Limit", useAutoTime
+            ? "[cyan]auto[/] (estimated from data size)"
+            : $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
 
         if (testDataFile != null)

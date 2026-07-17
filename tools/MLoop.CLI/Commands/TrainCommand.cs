@@ -101,6 +101,12 @@ public static class TrainCommand
             DefaultValueFactory = _ => false
         };
 
+        var autoTimeOption = new Option<bool>("--auto-time")
+        {
+            Description = "Force automatic time estimation based on data size, overriding any time_limit_seconds set in mloop.yaml",
+            DefaultValueFactory = _ => false
+        };
+
         var balanceOption = new Option<string?>("--balance", "-b")
         {
             Description = "Class balancing strategy: 'auto' (balance to 10:1 if ratio > 10:1), 'none' (no balancing), or target ratio (e.g., '5' for 5:1). Use without value for 'auto'.",
@@ -147,6 +153,7 @@ public static class TrainCommand
         command.Options.Add(dropMissingLabelsOption);
         command.Options.Add(dataOption);
         command.Options.Add(noAutoTimeOption);
+        command.Options.Add(autoTimeOption);
         command.Options.Add(balanceOption);
         command.Options.Add(groupColumnOption);
         command.Options.Add(maxRowsOption);
@@ -170,6 +177,7 @@ public static class TrainCommand
             var dropMissingLabels = parseResult.GetValue(dropMissingLabelsOption);
             var dataPaths = parseResult.GetValue(dataOption);
             var noAutoTime = parseResult.GetValue(noAutoTimeOption);
+            var autoTime = parseResult.GetValue(autoTimeOption);
             var balance = parseResult.GetValue(balanceOption);
             var groupColumn = parseResult.GetValue(groupColumnOption);
             var maxRows = parseResult.GetValue(maxRowsOption);
@@ -180,7 +188,7 @@ public static class TrainCommand
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, balance, groupColumn, maxRows, samplingStrategy, seed);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed);
         });
 
         return command;
@@ -201,6 +209,7 @@ public static class TrainCommand
         bool? dropMissingLabels,
         string[]? dataPaths,
         bool noAutoTime,
+        bool autoTime,
         string? balance,
         string? groupColumn,
         int? maxRows = null,
@@ -312,6 +321,26 @@ public static class TrainCommand
             string? resolvedDataFile;
             var datasetDiscovery = new DatasetDiscovery(fileSystem);
             var isDirectoryBased = DataLoaderFactory.IsDirectoryBased(effectiveDefinition.Task);
+
+            // Validate --auto-time opt-in against contradictory inputs before doing any work.
+            if (autoTime)
+            {
+                if (noAutoTime)
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] --auto-time and --no-auto-time cannot be used together.");
+                    return 1;
+                }
+                if (time.HasValue)
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] --auto-time cannot be combined with an explicit --time value.");
+                    return 1;
+                }
+                if (isDirectoryBased)
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] --auto-time is not supported for image/directory training (time estimation probes CSV rows).");
+                    return 1;
+                }
+            }
 
             if (isDirectoryBased)
             {
@@ -773,8 +802,20 @@ public static class TrainCommand
             if (!isDirectoryBased)
                 TrainPresenter.DisplayDataSummary(resolvedDataFile, effectiveDefinition.Label);
 
-            // Display training configuration
-            TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition, testDataFile);
+            // Determine auto-time eligibility:
+            // - If --auto-time was explicitly specified, force auto-time even when mloop.yaml
+            //   sets time_limit_seconds (the project-workflow opt-in; contradictions already rejected above).
+            // - If --time was explicitly specified, use that value (no auto-time)
+            // - If --no-auto-time was specified, use default 300s (no auto-time)
+            // - If neither --time nor yaml time_limit_seconds is set, enable auto-time
+            var yamlHasTimeLimit = effectiveDefinition.Training?.TimeLimitSeconds != null;
+            // Auto-time probing samples CSV rows, which does not apply to image directories.
+            var useAutoTime = autoTime
+                || (!time.HasValue && !yamlHasTimeLimit && !noAutoTime && !isDirectoryBased);
+
+            // Display training configuration (auto-time shows an "auto" limit, not the yaml/default seconds,
+            // so the summary matches what the engine actually does — honest record vs. actual)
+            TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition, testDataFile, useAutoTime);
 
             // Validate label column exists (skip for unsupervised and directory-based tasks)
             if (requiresLabel && !isDirectoryBased)
@@ -791,14 +832,6 @@ public static class TrainCommand
 
             // Ensure model directory structure exists
             await modelNameResolver.EnsureModelDirectoryAsync(resolvedModelName);
-
-            // Determine auto-time eligibility:
-            // - If --time was explicitly specified, use that value (no auto-time)
-            // - If --no-auto-time was specified, use default 300s (no auto-time)
-            // - If neither --time nor yaml time_limit_seconds is set, enable auto-time
-            var yamlHasTimeLimit = effectiveDefinition.Training?.TimeLimitSeconds != null;
-            // Auto-time probing samples CSV rows, which does not apply to image directories.
-            var useAutoTime = !time.HasValue && !yamlHasTimeLimit && !noAutoTime && !isDirectoryBased;
 
             var trainingConfig = new TrainingConfig
             {

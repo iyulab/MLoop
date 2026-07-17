@@ -57,6 +57,12 @@ public static class PromoteCommand
             Description = "Output the result as JSON (machine-readable, non-interactive)"
         };
 
+        var decideOnlyOption = new Option<bool>("--decide-only")
+        {
+            Description = "Report which experiment would be promoted (direction-aware best/latest selection) without moving the production pointer; pairs with --json for external-SoR consumers",
+            DefaultValueFactory = _ => false
+        };
+
         var command = new Command("promote", "Promote an experiment to production");
         command.Arguments.Add(experimentIdArg);
         command.Options.Add(nameOption);
@@ -65,6 +71,7 @@ public static class PromoteCommand
         command.Options.Add(forceOption);
         command.Options.Add(noBackupOption);
         command.Options.Add(jsonOption);
+        command.Options.Add(decideOnlyOption);
 
         command.SetAction((parseResult) =>
         {
@@ -75,7 +82,8 @@ public static class PromoteCommand
             var force = parseResult.GetValue(forceOption);
             var noBackup = parseResult.GetValue(noBackupOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(experimentId, name, latest, best, force, noBackup, json);
+            var decideOnly = parseResult.GetValue(decideOnlyOption);
+            return ExecuteAsync(experimentId, name, latest, best, force, noBackup, json, decideOnly);
         });
 
         return command;
@@ -88,7 +96,8 @@ public static class PromoteCommand
         bool best,
         bool force,
         bool noBackup,
-        bool jsonOutput)
+        bool jsonOutput,
+        bool decideOnly)
     {
         try
         {
@@ -165,6 +174,19 @@ public static class PromoteCommand
 
             // Check if replacing existing production model
             var currentProduction = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
+
+            // --decide-only: report the selection verdict without moving the production pointer.
+            // Lets a consumer with its own system-of-record delegate mloop's direction-aware
+            // best/latest selection (SelectExperiment) while applying the promotion in its own store.
+            if (decideOnly)
+            {
+                if (jsonOutput)
+                    OutputDecisionAsJson(resolvedModelName, experimentId, autoSelectionReason, currentProduction?.ExperimentId);
+                else
+                    ShowDecision(resolvedModelName, experimentId, autoSelectionReason, currentProduction?.ExperimentId);
+                return 0;
+            }
+
             if (currentProduction != null && !jsonOutput)
             {
                 AnsiConsole.MarkupLine($"[yellow]Warning:[/] This will replace the current production model: [cyan]{currentProduction.ExperimentId}[/]");
@@ -357,6 +379,47 @@ public static class PromoteCommand
             PreviousProduction = previousProduction,
             BackupPath = backupPath,
         }, options));
+    }
+
+    /// <summary>
+    /// --decide-only JSON: the promotion verdict only (which experiment, how it was selected,
+    /// whether it would replace the current production), with the pointer left untouched
+    /// (<c>applied: false</c>) so an external-SoR consumer applies it in its own store.
+    /// </summary>
+    private static void OutputDecisionAsJson(
+        string modelName, string experimentId, string? autoSelectionReason, string? currentProduction)
+    {
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            Model = modelName,
+            ExperimentId = experimentId,
+            Status = "decided",
+            SelectedBy = autoSelectionReason ?? "explicit",
+            CurrentProduction = currentProduction,
+            WouldReplace = currentProduction != null && currentProduction != experimentId,
+            Applied = false,
+        }, options));
+    }
+
+    private static void ShowDecision(
+        string modelName, string experimentId, string? autoSelectionReason, string? currentProduction)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[grey]Decision only — production pointer not moved.[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Would promote: [cyan]{experimentId}[/]" +
+            (autoSelectionReason != null ? $" [grey]({autoSelectionReason})[/]" : ""));
+        if (currentProduction != null && currentProduction != experimentId)
+            AnsiConsole.MarkupLine($"[green]>[/] Would replace current production: [cyan]{currentProduction}[/]");
+        else if (currentProduction == experimentId)
+            AnsiConsole.MarkupLine($"[green]>[/] Already in production.");
+        AnsiConsole.MarkupLine($"[grey]  Run without [blue]--decide-only[/] to apply.[/]");
+        AnsiConsole.WriteLine();
     }
 
     private static void WriteError(string message, bool jsonOutput)
