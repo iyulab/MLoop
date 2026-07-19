@@ -286,11 +286,14 @@ public static class DetectCommand
     {
         if (jsonOutput)
         {
+            // The JSON envelope stays on stdout for --json consumers; the cause is mirrored to
+            // stderr so "exit != 0 ⇒ stderr has a cause" holds in every mode.
             Console.WriteLine(JsonSerializer.Serialize(new { error = message }));
+            Console.Error.WriteLine(message);
         }
         else
         {
-            AnsiConsole.MarkupLineInterpolated($"[red]Error:[/] {message}");
+            ErrorConsole.Out.MarkupLineInterpolated($"[red]Error:[/] {message}");
         }
     }
 }

@@ -85,7 +85,7 @@ public static class SampleCommand
             if (!string.IsNullOrEmpty(modelName))
                 return ExecuteCreateAsync(modelName, size, strategy, output);
 
-            AnsiConsole.MarkupLine("[red]Error:[/] Either --from <csv-file> or --model <name> is required.");
+            ErrorConsole.Error("Either --from <csv-file> or --model <name> is required.");
             AnsiConsole.MarkupLine("[grey]Examples:[/]");
             AnsiConsole.MarkupLine("  [blue]mloop sample create --from train.csv --rows 100[/]");
             AnsiConsole.MarkupLine("  [blue]mloop sample create --model default --rows 500[/]");
@@ -134,7 +134,7 @@ public static class SampleCommand
             var csvStrategy = ParseCsvStrategy(strategyName);
             if (csvStrategy == null)
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Unknown strategy '{strategyName}'");
+                ErrorConsole.Error($"Unknown strategy '{strategyName}'");
                 AnsiConsole.MarkupLine("[grey]Valid strategies for CSV: random, head, stratified[/]");
                 return 1;
             }
@@ -143,7 +143,7 @@ public static class SampleCommand
             var resolvedInput = Path.GetFullPath(fromPath);
             if (!File.Exists(resolvedInput))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {resolvedInput}");
+                ErrorConsole.Error($"File not found: {resolvedInput}");
                 return 1;
             }
 
@@ -194,7 +194,7 @@ public static class SampleCommand
             var strategy = ParseStrategy(strategyName);
             if (strategy == null)
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Unknown strategy '{strategyName}'");
+                ErrorConsole.Error($"Unknown strategy '{strategyName}'");
                 AnsiConsole.MarkupLine("[grey]Valid strategies: random, recent, feedback-priority[/]");
                 return 1;
             }
@@ -399,7 +399,7 @@ public static class SampleCommand
         }
         catch (InvalidOperationException)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
+            ErrorConsole.Error("Not inside a MLoop project.");
             AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
             return null;
         }

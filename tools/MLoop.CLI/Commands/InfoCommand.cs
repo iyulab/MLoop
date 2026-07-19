@@ -102,7 +102,7 @@ public static class InfoCommand
 
             if (!File.Exists(resolvedDataFile))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {resolvedDataFile}");
+                ErrorConsole.Error($"File not found: {resolvedDataFile}");
                 return 1;
             }
 

@@ -14,29 +14,34 @@ public static class ErrorSuggestions
     /// </summary>
     public static void DisplayError(Exception ex, string context = "")
     {
-        AnsiConsole.Markup("[red]Error:[/] ");
-        AnsiConsole.WriteLine(ex.Message);
+        // stderr, not stdout: every command's top-level catch funnels here before returning a
+        // non-zero exit code, so this one routing decision is what makes "exit != 0 ⇒ stderr has a
+        // cause" true CLI-wide. See ErrorConsole for the full rationale.
+        var err = ErrorConsole.Out;
+
+        err.Markup("[red]Error:[/] ");
+        err.WriteLine(ex.Message);
 
         if (ex.InnerException != null)
         {
-            AnsiConsole.MarkupLine($"[grey]  Inner: {Markup.Escape(ex.InnerException.Message)}[/]");
+            err.MarkupLine($"[grey]  Inner: {Markup.Escape(ex.InnerException.Message)}[/]");
         }
 
         // Get and display suggestions
         var suggestions = GetSuggestions(ex, context);
         if (suggestions.Count > 0)
         {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[yellow]Suggestions:[/]");
+            err.WriteLine();
+            err.MarkupLine("[yellow]Suggestions:[/]");
             foreach (var suggestion in suggestions)
             {
-                AnsiConsole.MarkupLine($"  [blue]>[/] {suggestion}");
+                err.MarkupLine($"  [blue]>[/] {suggestion}");
             }
         }
 
         // Always show version for diagnostics
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[grey]mloop v{GetVersion()}[/]");
+        err.WriteLine();
+        err.MarkupLine($"[grey]mloop v{GetVersion()}[/]");
     }
 
     /// <summary>
@@ -274,38 +279,40 @@ public static class ErrorSuggestions
     /// </summary>
     public static void DisplayTrainingError(Exception ex, string modelName, string? dataFile = null)
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[red]Training failed for model '[cyan]{Markup.Escape(modelName)}[/]'[/]");
-        AnsiConsole.WriteLine();
+        var err = ErrorConsole.Out;
 
-        AnsiConsole.MarkupLine("[red]Error:[/]");
-        AnsiConsole.WriteLine($"  {ex.Message}");
+        err.WriteLine();
+        err.MarkupLine($"[red]Training failed for model '[cyan]{Markup.Escape(modelName)}[/]'[/]");
+        err.WriteLine();
+
+        err.MarkupLine("[red]Error:[/]");
+        err.WriteLine($"  {ex.Message}");
 
         if (ex.InnerException != null)
         {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[grey]Inner exception:[/]");
-            AnsiConsole.WriteLine($"  {ex.InnerException.Message}");
+            err.WriteLine();
+            err.MarkupLine("[grey]Inner exception:[/]");
+            err.WriteLine($"  {ex.InnerException.Message}");
         }
 
         var suggestions = GetSuggestions(ex, "training");
         if (suggestions.Count > 0)
         {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[yellow]What you can try:[/]");
+            err.WriteLine();
+            err.MarkupLine("[yellow]What you can try:[/]");
             foreach (var suggestion in suggestions)
             {
-                AnsiConsole.MarkupLine($"  [blue]1.[/] {suggestion}");
+                err.MarkupLine($"  [blue]1.[/] {suggestion}");
             }
         }
 
         // Quick diagnostic commands
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[grey]Diagnostic commands:[/]");
+        err.WriteLine();
+        err.MarkupLine("[grey]Diagnostic commands:[/]");
         if (!string.IsNullOrEmpty(dataFile))
         {
-            AnsiConsole.MarkupLine($"  [cyan]mloop analyze {Markup.Escape(dataFile)}[/]  - Analyze your data");
+            err.MarkupLine($"  [cyan]mloop analyze {Markup.Escape(dataFile)}[/]  - Analyze your data");
         }
-        AnsiConsole.MarkupLine("  [cyan]mloop status[/]                    - Check project status");
+        err.MarkupLine("  [cyan]mloop status[/]                    - Check project status");
     }
 }

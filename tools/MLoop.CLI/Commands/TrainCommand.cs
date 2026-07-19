@@ -230,7 +230,7 @@ public static class TrainCommand
             }
             catch (InvalidOperationException)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
+                ErrorConsole.Error("Not inside a MLoop project.");
                 AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
                 return 1;
             }
@@ -271,7 +271,7 @@ public static class TrainCommand
             }
             catch (InvalidOperationException ex)
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+                ErrorConsole.Error($"{ex.Message}");
                 return 1;
             }
 
@@ -287,7 +287,7 @@ public static class TrainCommand
             if (string.IsNullOrEmpty(effectiveDefinition.Task) ||
                 (requiresLabel && string.IsNullOrEmpty(effectiveDefinition.Label)))
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Task is required. Label is required for supervised tasks. Use --task and <label> arguments, or define them in mloop.yaml");
+                ErrorConsole.Error("Task is required. Label is required for supervised tasks. Use --task and <label> arguments, or define them in mloop.yaml");
                 return 1;
             }
 
@@ -295,7 +295,7 @@ public static class TrainCommand
             if (effectiveDefinition.Task.Equals("ranking", StringComparison.OrdinalIgnoreCase) &&
                 string.IsNullOrEmpty(effectiveDefinition.GroupColumn))
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Ranking task requires a group column. Use --group-column or set 'group_column' in mloop.yaml");
+                ErrorConsole.Error("Ranking task requires a group column. Use --group-column or set 'group_column' in mloop.yaml");
                 return 1;
             }
 
@@ -304,7 +304,7 @@ public static class TrainCommand
             {
                 if (string.IsNullOrEmpty(effectiveDefinition.UserColumn) || string.IsNullOrEmpty(effectiveDefinition.ItemColumn))
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] Recommendation task requires user_column and item_column. Set them in mloop.yaml");
+                    ErrorConsole.Error("Recommendation task requires user_column and item_column. Set them in mloop.yaml");
                     return 1;
                 }
             }
@@ -313,7 +313,7 @@ public static class TrainCommand
             if (effectiveDefinition.Task.Equals("forecasting", StringComparison.OrdinalIgnoreCase) &&
                 (effectiveDefinition.Horizon ?? 0) <= 0)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Forecasting task requires horizon > 0. Set 'horizon' in mloop.yaml");
+                ErrorConsole.Error("Forecasting task requires horizon > 0. Set 'horizon' in mloop.yaml");
                 return 1;
             }
 
@@ -327,17 +327,17 @@ public static class TrainCommand
             {
                 if (noAutoTime)
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] --auto-time and --no-auto-time cannot be used together.");
+                    ErrorConsole.Error("--auto-time and --no-auto-time cannot be used together.");
                     return 1;
                 }
                 if (time.HasValue)
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] --auto-time cannot be combined with an explicit --time value.");
+                    ErrorConsole.Error("--auto-time cannot be combined with an explicit --time value.");
                     return 1;
                 }
                 if (isDirectoryBased)
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] --auto-time is not supported for image/directory training (time estimation probes CSV rows).");
+                    ErrorConsole.Error("--auto-time is not supported for image/directory training (time estimation probes CSV rows).");
                     return 1;
                 }
             }
@@ -352,13 +352,13 @@ public static class TrainCommand
                 {
                     if (effectiveDefinition.Task.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
                     {
-                        AnsiConsole.MarkupLine("[red]Error:[/] Object-detection dataset not found.");
-                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Put a COCO annotations.json plus images under datasets/coco/, or pass a directory: mloop train --task object-detection <dir>");
+                        ErrorConsole.Error("Object-detection dataset not found.");
+                        ErrorConsole.Tip("Put a COCO annotations.json plus images under datasets/coco/, or pass a directory: mloop train --task object-detection <dir>");
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine("[red]Error:[/] Image dataset directory not found.");
-                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
+                        ErrorConsole.Error("Image dataset directory not found.");
+                        ErrorConsole.Tip("Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
                     }
                     return 1;
                 }
@@ -375,7 +375,7 @@ public static class TrainCommand
                     var resolved = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(projectRoot, path));
                     if (!File.Exists(resolved))
                     {
-                        AnsiConsole.MarkupLine($"[red]Error:[/] Data file not found: {path}");
+                        ErrorConsole.Error($"Data file not found: {path}");
                         return 1;
                     }
                     resolvedPaths.Add(resolved);
@@ -403,7 +403,7 @@ public static class TrainCommand
                     var validation = await csvMerger.ValidateSchemaCompatibilityAsync(resolvedPaths);
                     if (!validation.IsCompatible)
                     {
-                        AnsiConsole.MarkupLine($"[red]Error:[/] Schema mismatch between files: {validation.Message}");
+                        ErrorConsole.Error($"Schema mismatch between files: {validation.Message}");
                         return 1;
                     }
 
@@ -419,7 +419,7 @@ public static class TrainCommand
 
                     if (!mergeResult.Success)
                     {
-                        AnsiConsole.MarkupLine($"[red]Error:[/] Failed to merge files: {mergeResult.Error}");
+                        ErrorConsole.Error($"Failed to merge files: {mergeResult.Error}");
                         return 1;
                     }
 
@@ -495,8 +495,8 @@ public static class TrainCommand
 
             if (resolvedDataFile == null)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] No data file specified and datasets/train.csv not found.");
-                AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/train.csv or specify a file: mloop train <data-file>");
+                ErrorConsole.Error("No data file specified and datasets/train.csv not found.");
+                ErrorConsole.Tip("Create datasets/train.csv or specify a file: mloop train <data-file>");
                 return 1;
             }
 
@@ -585,7 +585,7 @@ public static class TrainCommand
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"[red]Error:[/] Failed to clean label data: {cleanResult.Error}");
+                        ErrorConsole.Error($"Failed to clean label data: {cleanResult.Error}");
                         return 1;
                     }
                 }
@@ -612,8 +612,8 @@ public static class TrainCommand
                     // Single-class early termination: cannot train a classifier with one class
                     if (distributionResult.ClassCount <= 1)
                     {
-                        AnsiConsole.MarkupLine("[red]Error:[/] Cannot train a classifier with only one class.");
-                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Check if the correct label column is specified, or if the data contains only one category.");
+                        ErrorConsole.Error("Cannot train a classifier with only one class.");
+                        ErrorConsole.Tip("Check if the correct label column is specified, or if the data contains only one category.");
                         return 1;
                     }
                 }
@@ -681,8 +681,8 @@ public static class TrainCommand
                 }
                 catch (Exception ex)
                 {
-                    AnsiConsole.MarkupLine("[red]Preprocessing pipeline failed:[/]");
-                    AnsiConsole.WriteLine(ex.Message);
+                    ErrorConsole.Out.MarkupLine("[red]Preprocessing pipeline failed:[/]");
+                    ErrorConsole.Out.WriteLine(ex.Message);
                     return 1;
                 }
             }
@@ -704,8 +704,8 @@ public static class TrainCommand
                 }
                 catch (InvalidOperationException ex)
                 {
-                    AnsiConsole.MarkupLine("[red]Preprocessing failed:[/]");
-                    AnsiConsole.WriteLine(ex.Message);
+                    ErrorConsole.Out.MarkupLine("[red]Preprocessing failed:[/]");
+                    ErrorConsole.Out.WriteLine(ex.Message);
                     return 1;
                 }
             }
@@ -888,7 +888,7 @@ public static class TrainCommand
             var preTrainSuccess = await hookEngine.ExecuteHooksAsync(HookType.PreTrain, preTrainContext);
             if (!preTrainSuccess)
             {
-                AnsiConsole.MarkupLine("[red]Training aborted by pre-train hook[/]");
+                ErrorConsole.Out.MarkupLine("[red]Training aborted by pre-train hook[/]");
                 return 1;
             }
 
@@ -966,12 +966,12 @@ public static class TrainCommand
 
             if (result == null)
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Training failed for model '[cyan]{resolvedModelName}[/]'");
-                AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[yellow]Suggestions:[/]");
-                AnsiConsole.MarkupLine("  [blue]>[/] Try increasing the time limit: [cyan]--time 120[/]");
-                AnsiConsole.MarkupLine("  [blue]>[/] Check data quality: [cyan]mloop analyze[/]");
-                AnsiConsole.MarkupLine("  [blue]>[/] Verify label column exists and has valid values");
+                ErrorConsole.Error($"Training failed for model '[cyan]{resolvedModelName}[/]'");
+                ErrorConsole.Out.WriteLine();
+                ErrorConsole.Out.MarkupLine("[yellow]Suggestions:[/]");
+                ErrorConsole.Out.MarkupLine("  [blue]>[/] Try increasing the time limit: [cyan]--time 120[/]");
+                ErrorConsole.Out.MarkupLine("  [blue]>[/] Check data quality: [cyan]mloop analyze[/]");
+                ErrorConsole.Out.MarkupLine("  [blue]>[/] Verify label column exists and has valid values");
                 return 1;
             }
 
@@ -1066,7 +1066,11 @@ public static class TrainCommand
                 var minThreshold = displayMetricKey != null
                     ? MetricPolicy.GetMinimumMetricThreshold(displayMetricKey, classCount)
                     : null;
-                TrainPresenter.DisplayPromotionResult(promoted, primaryMetric, result, production, minThreshold);
+                // Report the resolved key, not the raw request: the presenter both names the metric
+                // in its messages and looks it up in result.Metrics. An unresolved sentinel made
+                // every TryGetValue miss, so the staging *reason* silently vanished instead of
+                // being shown.
+                TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold);
             }
 
             // T4.6: Unused data warning - only scan project's datasets/ directory.
@@ -1218,11 +1222,14 @@ public static class TrainCommand
         public void Debug(string message) => AnsiConsole.MarkupLine($"[grey]{message}[/]");
         public void Info(string message) => AnsiConsole.WriteLine(message);
         public void Warning(string message) => AnsiConsole.MarkupLine($"[yellow]{message}[/]");
-        public void Error(string message) => AnsiConsole.MarkupLine($"[red]{message}[/]");
+        // Error/Warning go to stderr: these surface while training is already streaming progress to
+        // stdout, and a subprocess consumer reading stderr on a non-zero exit must find the cause
+        // there. Debug/Info stay on stdout — they are narration, not diagnostics.
+        public void Error(string message) => ErrorConsole.Out.MarkupLine($"[red]{message}[/]");
         public void Error(string message, Exception exception)
         {
-            AnsiConsole.MarkupLine($"[red]{message}[/]");
-            AnsiConsole.WriteException(exception);
+            ErrorConsole.Out.MarkupLine($"[red]{message}[/]");
+            ErrorConsole.Out.WriteException(exception);
         }
     }
 }

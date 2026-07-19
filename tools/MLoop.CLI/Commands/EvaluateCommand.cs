@@ -68,7 +68,7 @@ public static class EvaluateCommand
             }
             catch (InvalidOperationException)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
+                ErrorConsole.Error("Not inside a MLoop project.");
                 AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
                 return 1;
             }
@@ -112,8 +112,8 @@ public static class EvaluateCommand
 
                 if (!experimentStore.ExperimentExists(resolvedModelName, resolvedExperimentId))
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Experiment not found: {resolvedExperimentId} for model '{resolvedModelName}'");
-                    AnsiConsole.MarkupLine($"[yellow]Tip:[/] Run [blue]mloop list --name {resolvedModelName}[/] to see all experiments.");
+                    ErrorConsole.Error($"Experiment not found: {resolvedExperimentId} for model '{resolvedModelName}'");
+                    ErrorConsole.Tip($"Run [blue]mloop list --name {resolvedModelName}[/] to see all experiments.");
                     return 1;
                 }
 
@@ -127,7 +127,7 @@ public static class EvaluateCommand
 
             if (!File.Exists(resolvedModelPath))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Model file not found: {resolvedModelPath}");
+                ErrorConsole.Error($"Model file not found: {resolvedModelPath}");
                 return 1;
             }
 
@@ -146,8 +146,8 @@ public static class EvaluateCommand
                     var dir = DatasetDiscovery.FindDirectoryDataset(projectRoot, experimentData?.Task);
                     if (dir == null)
                     {
-                        AnsiConsole.MarkupLine("[red]Error:[/] No test data specified and no image dataset found (datasets/images, datasets/coco, datasets/yolo, or datasets/).");
-                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Pass a directory: mloop evaluate <experiment-id> <dir>");
+                        ErrorConsole.Error("No test data specified and no image dataset found (datasets/images, datasets/coco, datasets/yolo, or datasets/).");
+                        ErrorConsole.Tip("Pass a directory: mloop evaluate <experiment-id> <dir>");
                         return 1;
                     }
                     resolvedTestDataFile = dir;
@@ -161,8 +161,8 @@ public static class EvaluateCommand
 
                     if (datasets?.TestPath == null)
                     {
-                        AnsiConsole.MarkupLine("[red]Error:[/] No test data specified and datasets/test.csv not found.");
-                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/test.csv or specify a file: mloop evaluate <experiment-id> <test-file>");
+                        ErrorConsole.Error("No test data specified and datasets/test.csv not found.");
+                        ErrorConsole.Tip("Create datasets/test.csv or specify a file: mloop evaluate <experiment-id> <test-file>");
                         return 1;
                     }
 
@@ -182,7 +182,7 @@ public static class EvaluateCommand
                     : File.Exists(resolvedTestDataFile);
                 if (!exists)
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Test data not found: {resolvedTestDataFile}");
+                    ErrorConsole.Error($"Test data not found: {resolvedTestDataFile}");
                     return 1;
                 }
 

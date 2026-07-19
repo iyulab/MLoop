@@ -426,11 +426,15 @@ public static class PromoteCommand
     {
         if (jsonOutput)
         {
+            // The JSON envelope stays on stdout — that is what a --json consumer parses — but the
+            // cause is mirrored to stderr so "exit != 0 ⇒ stderr has a cause" holds in every mode,
+            // including for consumers that only check the exit code and read stderr.
             Console.WriteLine(JsonSerializer.Serialize(new { error = message }));
+            Console.Error.WriteLine(message);
         }
         else
         {
-            AnsiConsole.MarkupLineInterpolated($"[red]Error:[/] {message}");
+            ErrorConsole.Out.MarkupLineInterpolated($"[red]Error:[/] {message}");
         }
     }
 }

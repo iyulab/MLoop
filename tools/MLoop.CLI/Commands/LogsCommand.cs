@@ -84,7 +84,7 @@ public static class LogsCommand
             }
             catch (InvalidOperationException)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
+                ErrorConsole.Error("Not inside a MLoop project.");
                 AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
                 return 1;
             }

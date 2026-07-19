@@ -1,4 +1,5 @@
 using MLoop.Core.AutoML;
+using MLoop.Core.Evaluation;
 
 namespace MLoop.CLI.Infrastructure.Configuration;
 
@@ -74,6 +75,22 @@ public class ConfigMerger
             ConfigDefaults.CreateDefaultTrainingSettings(),
             baseDefinition?.Training,
             cliTraining);
+
+        // "auto" is a *request* ("let the task decide"), not a *result*. Resolve it here — the one
+        // place in the merge chain where the task is known — so everything downstream records the
+        // metric the experiment actually optimized. Leaving the sentinel to flow through made
+        // metadata.json/config.json/experiment-index report metricName "auto" for any model without
+        // an explicit `training.metric` in mloop.yaml, i.e. models registered by
+        // `train --name <new>` rather than `init` (which resolves via PrimaryMetricOrAuto itself).
+        // That mislabels the score and makes direction lookups treat it as an unknown metric.
+        // Same family as BUG-46 — TaskMetadata is the authority (TD-06); ConfigMerger was the one
+        // consumer still missing from it.
+        // Tasks with no canonical primary (object detection, unknown) keep "auto": that deferred
+        // case is intentional and PrimaryMetricOrAuto preserves it.
+        if (string.Equals(training.Metric, ConfigDefaults.DefaultMetric, StringComparison.OrdinalIgnoreCase))
+        {
+            training.Metric = TaskMetadata.PrimaryMetricOrAuto(task);
+        }
 
         return new ModelDefinition
         {

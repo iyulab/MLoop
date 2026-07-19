@@ -2178,9 +2178,11 @@ internal sealed class ConformalResidual
 /// </summary>
 internal class ConsoleLogger : ILogger
 {
+    // Errors go to stderr so a non-zero exit always carries its cause there (the CLI's ErrorConsole
+    // owns the same contract on its side). Info/Warning/Debug remain narration on stdout.
     public void Info(string message) => Console.WriteLine($"ℹ️  {message}");
     public void Warning(string message) => Console.WriteLine($"⚠️  {message}");
-    public void Error(string message) => Console.WriteLine($"❌ {message}");
-    public void Error(string message, Exception exception) => Console.WriteLine($"❌ {message}{Environment.NewLine}{exception}");
+    public void Error(string message) => Console.Error.WriteLine($"❌ {message}");
+    public void Error(string message, Exception exception) => Console.Error.WriteLine($"❌ {message}{Environment.NewLine}{exception}");
     public void Debug(string message) => Console.WriteLine($"🔍 {message}");
 }

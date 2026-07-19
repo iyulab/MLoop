@@ -144,7 +144,7 @@ public static class PredictCommand
             }
             catch (InvalidOperationException)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
+                ErrorConsole.Error("Not inside a MLoop project.");
                 AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
                 return 1;
             }
@@ -178,8 +178,8 @@ public static class PredictCommand
 
                 if (productionModel == null)
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] No production model found for '[cyan]{resolvedModelName}[/]'.");
-                    AnsiConsole.MarkupLine($"[yellow]Tip:[/] Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
+                    ErrorConsole.Error($"No production model found for '[cyan]{resolvedModelName}[/]'.");
+                    ErrorConsole.Tip($"Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
                     return 1;
                 }
 
@@ -213,7 +213,7 @@ public static class PredictCommand
 
                 if (!File.Exists(resolvedModelPath))
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Model file not found: {resolvedModelPath}");
+                    ErrorConsole.Error($"Model file not found: {resolvedModelPath}");
                     return 1;
                 }
 
@@ -272,7 +272,7 @@ public static class PredictCommand
                 }
                 catch (InvalidOperationException ex)
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+                    ErrorConsole.Error($"{Markup.Escape(ex.Message)}");
                     return 1;
                 }
             }
@@ -297,8 +297,8 @@ public static class PredictCommand
 
                 if (datasets?.PredictPath == null)
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] No data file specified and datasets/predict.csv not found.");
-                    AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/predict.csv or specify a file: mloop predict <data-file>");
+                    ErrorConsole.Error("No data file specified and datasets/predict.csv not found.");
+                    ErrorConsole.Tip("Create datasets/predict.csv or specify a file: mloop predict <data-file>");
                     return 1;
                 }
 
@@ -314,7 +314,7 @@ public static class PredictCommand
 
                 if (!File.Exists(resolvedDataFile))
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(BuildMissingDataFileMessage(resolvedDataFile, taskType))}");
+                    ErrorConsole.Error($"{Markup.Escape(BuildMissingDataFileMessage(resolvedDataFile, taskType))}");
                     return 1;
                 }
             }
@@ -464,7 +464,7 @@ public static class PredictCommand
             {
                 if (trainedSchema is null || string.IsNullOrEmpty(taskType))
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] --json requires a trained schema/task (train and promote a model first).");
+                    ErrorConsole.Error("--json requires a trained schema/task (train and promote a model first).");
                     return 1;
                 }
 
@@ -838,7 +838,7 @@ public static class PredictCommand
         if (forecast is null)
         {
             // AnsiConsole is rerouted to stderr in --json mode, keeping stdout pure.
-            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(error ?? "Forecast failed.")}");
+            ErrorConsole.Error($"{Markup.Escape(error ?? "Forecast failed.")}");
             return 1;
         }
 
@@ -864,9 +864,9 @@ public static class PredictCommand
                 var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(new MLContext(), modelPath, experimentId);
                 if (forecast is null)
                 {
-                    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(error ?? "Forecast failed.")}");
+                    ErrorConsole.Error($"{Markup.Escape(error ?? "Forecast failed.")}");
                     if (error?.Contains("training data", StringComparison.OrdinalIgnoreCase) == true)
-                        AnsiConsole.MarkupLine("[yellow]Tip:[/] Keep the original training data file in place for forecasting predict.");
+                        ErrorConsole.Tip("Keep the original training data file in place for forecasting predict.");
                     return;
                 }
 
@@ -938,8 +938,8 @@ public static class PredictCommand
             var odDir = DatasetDiscovery.FindDirectoryDataset(projectRoot, "object-detection");
             if (odDir == null)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] No data specified and no object-detection dataset found (datasets/coco, datasets/yolo, or datasets/).");
-                AnsiConsole.MarkupLine("[yellow]Tip:[/] Pass a directory: mloop predict <dir>");
+                ErrorConsole.Error("No data specified and no object-detection dataset found (datasets/coco, datasets/yolo, or datasets/).");
+                ErrorConsole.Tip("Pass a directory: mloop predict <dir>");
                 return 1;
             }
             resolvedDataDir = odDir;
@@ -950,7 +950,7 @@ public static class PredictCommand
             resolvedDataDir = Path.IsPathRooted(dataFile) ? dataFile : Path.Combine(projectRoot, dataFile);
             if (!Directory.Exists(resolvedDataDir) && !File.Exists(resolvedDataDir))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Data not found: {resolvedDataDir}");
+                ErrorConsole.Error($"Data not found: {resolvedDataDir}");
                 return 1;
             }
         }

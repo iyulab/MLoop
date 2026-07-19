@@ -108,7 +108,7 @@ public static class PreprocessCommand
             }
             catch (InvalidOperationException)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
+                ErrorConsole.Error("Not inside a MLoop project.");
                 AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
                 return 1;
             }
@@ -167,8 +167,8 @@ public static class PreprocessCommand
 
             if (datasets?.TrainPath == null)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] No input file specified and datasets/train.csv not found.");
-                AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/train.csv or specify a file: mloop preprocess <input-file>");
+                ErrorConsole.Error("No input file specified and datasets/train.csv not found.");
+                ErrorConsole.Tip("Create datasets/train.csv or specify a file: mloop preprocess <input-file>");
                 return 1;
             }
 
@@ -184,7 +184,7 @@ public static class PreprocessCommand
 
             if (!File.Exists(resolvedInputFile))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Input file not found: {resolvedInputFile}");
+                ErrorConsole.Error($"Input file not found: {resolvedInputFile}");
                 return 1;
             }
 
@@ -250,8 +250,8 @@ public static class PreprocessCommand
 
             if (datasets?.TrainPath == null)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] No input file specified and datasets/train.csv not found.");
-                AnsiConsole.MarkupLine("[yellow]Tip:[/] Create datasets/train.csv or specify a file: mloop preprocess <input-file>");
+                ErrorConsole.Error("No input file specified and datasets/train.csv not found.");
+                ErrorConsole.Tip("Create datasets/train.csv or specify a file: mloop preprocess <input-file>");
                 return 1;
             }
 
@@ -267,7 +267,7 @@ public static class PreprocessCommand
 
             if (!File.Exists(resolvedInputFile))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Input file not found: {resolvedInputFile}");
+                ErrorConsole.Error($"Input file not found: {resolvedInputFile}");
                 return 1;
             }
 
