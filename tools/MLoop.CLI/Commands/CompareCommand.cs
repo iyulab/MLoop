@@ -351,8 +351,17 @@ public static class CompareCommand
 
     public sealed record ProvidedRankEntry(string Id, double Value);
 
+    /// <summary>A candidate dropped from ranking, with why — never silently omitted.</summary>
+    public sealed record ProvidedExcludedEntry(string Id, string Reason);
+
     public sealed record ProvidedCompareResult(
-        string Metric, string Direction, string Best, IReadOnlyList<ProvidedRankEntry> Ranking);
+        string Metric,
+        string Direction,
+        string DirectionSource,
+        string Best,
+        bool Tie,
+        IReadOnlyList<ProvidedRankEntry> Ranking,
+        IReadOnlyList<ProvidedExcludedEntry> Excluded);
 
     private static readonly JsonSerializerOptions ProvidedJsonOptions = new()
     {
@@ -395,17 +404,33 @@ public static class CompareCommand
         if (scored.Count == 0)
             throw new ArgumentException($"No candidate has metric '{metricKey}'.");
 
+        // Candidates lacking the requested metric are excluded explicitly (with a reason) rather
+        // than vanishing silently — a delegating consumer must be able to tell "won" from
+        // "was the only one left".
+        var excluded = candidates
+            .Where(c => !c.Metrics.ContainsKey(metricKey))
+            .Select(c => new ProvidedExcludedEntry(c.Id, "metric-missing"))
+            .ToList();
+
         var lowerBetter = MetricDirection.IsLowerBetter(metricKey);
         var ranked = (lowerBetter
                 ? scored.OrderBy(c => c.Metrics[metricKey])
                 : scored.OrderByDescending(c => c.Metrics[metricKey]))
             .ToList();
 
+        // Best is order-dependent only when the top values tie; surface that so a consumer can
+        // apply its own tie policy (e.g. "keep champion") instead of relying on input order.
+        var tie = ranked.Count >= 2
+            && ranked[0].Metrics[metricKey] == ranked[1].Metrics[metricKey];
+
         return new ProvidedCompareResult(
             metricKey,
             lowerBetter ? "minimize" : "maximize",
+            MetricDirection.IsKnown(metricKey) ? "known" : "default",
             ranked[0].Id,
-            ranked.Select(c => new ProvidedRankEntry(c.Id, c.Metrics[metricKey])).ToList());
+            tie,
+            ranked.Select(c => new ProvidedRankEntry(c.Id, c.Metrics[metricKey])).ToList(),
+            excluded);
     }
 
     private sealed class CandidateDto
