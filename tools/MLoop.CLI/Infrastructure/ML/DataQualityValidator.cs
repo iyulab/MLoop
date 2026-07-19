@@ -350,11 +350,10 @@ public class DataQualityValidator
 
         // Below this a class cannot exist in the train and test partitions at the same time: a
         // stratified split has to keep at least one row in train, so a single-sample class leaves the
-        // test partition without it, and every metric that needs the class is undefined. Training then
-        // burns the whole time budget only to die inside ML.NET with "AUC is not defined when there is
-        // no positive class". That is provable from the split arithmetic, not a heuristic, so it is
-        // rejected up front rather than warned about. Measured: 1 sample always fails; 2 samples
-        // trains and produces honest (degenerate) metrics that the promotion quality gate then blocks.
+        // test partition without it and every metric that needs the class is undefined. That follows
+        // from the split arithmetic rather than being a tuned heuristic. Measured at 2 samples the run
+        // completes and reports honest (degenerate) metrics for the promotion gate to block, so the
+        // floor is exactly 2 — see below for when a starved class is fatal rather than merely lossy.
         const int UNTRAINABLE_PER_CLASS = 2;
         // Per-class minimum: need at least 5 samples per class for any CV fold to work
         const int MINIMUM_PER_CLASS = 5;
@@ -364,31 +363,50 @@ public class DataQualityValidator
         var untrainableClasses = classCounts.Where(c => c.Count < UNTRAINABLE_PER_CLASS).ToList();
         if (untrainableClasses.Count > 0)
         {
-            result.IsValid = false;
-            // Drop the imbalance advice collected just before this. It suggests oversampling and
-            // shorter time limits, which are answers to "training will be unstable" — not to "this
-            // class cannot be split at all". Two competing explanations for one rejection is worse
-            // than one correct explanation.
-            result.Suggestions.Clear();
-            result.Warnings.Clear();
-            result.ErrorMessage =
-                $"Class{(untrainableClasses.Count > 1 ? "es" : "")} " +
-                $"{string.Join(", ", untrainableClasses.Select(c => $"'{c.Class}' ({c.Count} sample)"))} " +
-                $"cannot be trained on: fewer than {UNTRAINABLE_PER_CLASS} samples";
-            result.ErrorMessageEn =
-                "A class needs at least one row in the training set and one in the test set. " +
-                "With a single sample it can only be in one of them, so the model cannot be evaluated on it.";
-            result.Suggestions.Add("Class distribution:");
-            foreach (var c in classCounts)
+            // Losing a class is only fatal when it leaves nothing to classify. Measured on both
+            // shapes: 356 negatives + 1 positive dies inside ML.NET after burning the full time
+            // budget, because the one class that mattered cannot be evaluated — while 80/80/1 across
+            // three classes trains fine and produces a model that is genuinely useful for the two
+            // healthy classes. Rejecting the second case would remove working capability, so the
+            // rejection is scoped to "fewer than two classes survive", not "some class is starved".
+            var viableClassCount = classCount - untrainableClasses.Count;
+            var starved = string.Join(", ", untrainableClasses.Select(c => $"'{c.Class}' ({c.Count} sample)"));
+
+            if (viableClassCount < 2)
             {
-                result.Suggestions.Add($"   '{c.Class}': {c.Count} samples ({(double)c.Count / totalSamples:P1})");
+                result.IsValid = false;
+                // Drop the imbalance advice collected just before this. It suggests oversampling and
+                // shorter time limits, which are answers to "training will be unstable" — not to
+                // "there is nothing left to tell apart". Two competing explanations for one rejection
+                // is worse than one correct explanation.
+                result.Suggestions.Clear();
+                result.Warnings.Clear();
+                result.ErrorMessage =
+                    $"Only {viableClassCount} class has enough samples to train on: " +
+                    $"{starved} {(untrainableClasses.Count > 1 ? "have" : "has")} " +
+                    $"fewer than {UNTRAINABLE_PER_CLASS} samples";
+                result.ErrorMessageEn =
+                    "A class needs at least one row in the training set and one in the test set. With a " +
+                    "single sample it can only be in one of them, so the model cannot be evaluated on it — " +
+                    "and here that leaves no second class to classify against.";
+                result.Suggestions.Add("Class distribution:");
+                foreach (var c in classCounts)
+                {
+                    result.Suggestions.Add($"   '{c.Class}': {c.Count} samples ({(double)c.Count / totalSamples:P1})");
+                }
+                result.Suggestions.Add("");
+                result.Suggestions.Add("🔧 Options:");
+                result.Suggestions.Add($"   1. Collect more samples for the rare class (target: ≥{RECOMMENDED_PER_CLASS})");
+                result.Suggestions.Add("   2. If the rare class is what you want to find, use --task anomaly-detection");
+                return;
             }
-            result.Suggestions.Add("");
-            result.Suggestions.Add("🔧 Options:");
-            result.Suggestions.Add($"   1. Collect more samples for the rare class (target: ≥{RECOMMENDED_PER_CLASS})");
-            result.Suggestions.Add("   2. Remove the rare class and train on the remaining ones");
-            result.Suggestions.Add("   3. If the rare class is what you want to find, use --task anomaly-detection");
-            return;
+
+            result.Warnings.Add(
+                $"🔴 {starved} — too few samples to appear in both the train and test sets");
+            result.Warnings.Add(
+                $"   Training continues on the remaining {viableClassCount} classes, but the model will not " +
+                "learn or be evaluated on the class(es) above");
+            result.Suggestions.Add($"💡 Collect more samples for the rare class (target: ≥{RECOMMENDED_PER_CLASS}) or drop it from the data");
         }
 
         var classesBelow5 = classCounts.Where(c => c.Count < MINIMUM_PER_CLASS).ToList();
