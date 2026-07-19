@@ -67,12 +67,47 @@ public static class InferenceDataPreprocessor
         }
         else
         {
+            // No recorded decision to apply, so the training-time one is reconstructed from this file.
+            // That reconstruction is a guess: the rules are data-dependent, and inference data is a
+            // different slice than training data, so a column that was constant in one and not the
+            // other yields a feature vector the model was not fitted on. Unlike the training path —
+            // where the decision exists and is now shared (CsvDataLoader.DetermineExcludedColumns) —
+            // here the information is genuinely absent, so the fallback stays; what it must not do is
+            // stay silent, because the symptom it produces is an opaque ML.NET schema-mismatch error.
+            var before = ReadHeaderCount(current);
             current = Step(CsvDataLoader.RemoveDateTimeColumns(current, labelColumn, log), current, tempFiles);
             current = Step(CsvDataLoader.RemoveSparseColumns(current, labelColumn, log: log), current, tempFiles);
             current = Step(CsvDataLoader.RemoveConstantColumns(current, labelColumn, log), current, tempFiles);
+
+            if (ReadHeaderCount(current) != before)
+            {
+                (log ?? Console.WriteLine)(
+                    "[Warning] This model has no recorded feature-exclusion schema, so the excluded columns " +
+                    "were re-derived from the inference data. If the result disagrees with what training " +
+                    "dropped, the model will report a feature-vector size mismatch — retrain to record the " +
+                    "schema (mloop train).");
+            }
         }
 
         return current;
+    }
+
+    /// <summary>
+    /// Column count of the CSV header, or -1 when the file cannot be read (the caller only compares
+    /// two readings of the same file, so an unreadable file simply reports "unchanged").
+    /// </summary>
+    private static int ReadHeaderCount(string path)
+    {
+        try
+        {
+            using var reader = new StreamReader(path, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var header = reader.ReadLine();
+            return header is null ? -1 : Prediction.CsvFieldParser.ParseFields(header).Length;
+        }
+        catch
+        {
+            return -1;
+        }
     }
 
     /// <summary>

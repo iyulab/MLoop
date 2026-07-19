@@ -26,7 +26,7 @@ public class CsvDataLoader : DataProviderBase
     public override IReadOnlyDictionary<string, string[]>? GetMergedColumnGroups() => _mergedColumnGroups;
 
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null)
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null)
     {
         if (!File.Exists(filePath))
         {
@@ -53,20 +53,30 @@ public class CsvDataLoader : DataProviderBase
         // Warn about monotonically increasing columns that may be IDs
         WarnMonotonicColumns(mlnetCompatiblePath, labelColumn);
 
-        // Pre-InferColumns: Remove DateTime columns from CSV.
-        // ML.NET treats datetime strings as text and applies FeaturizeText,
-        // creating tens of thousands of character n-gram features.
-        // Removing from CSV ensures InferColumns never sees them.
-        mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn);
+        if (featureExclusions is not null)
+        {
+            // The caller already decided — apply that decision verbatim. Re-deriving it from this
+            // file would let a train/test partition disagree with the rest of the run about the
+            // feature width (see DetermineExcludedColumns).
+            mlnetCompatiblePath = RemoveExcludedColumns(mlnetCompatiblePath, featureExclusions, _log);
+        }
+        else
+        {
+            // Pre-InferColumns: Remove DateTime columns from CSV.
+            // ML.NET treats datetime strings as text and applies FeaturizeText,
+            // creating tens of thousands of character n-gram features.
+            // Removing from CSV ensures InferColumns never sees them.
+            mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn);
 
-        // Pre-InferColumns: Remove sparse columns (>90% missing) from CSV.
-        // ML.NET may combine sparse columns into a "Features" vector, preventing
-        // post-InferColumns detection. Pre-removing prevents OOM from FeaturizeText.
-        mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn);
+            // Pre-InferColumns: Remove sparse columns (>90% missing) from CSV.
+            // ML.NET may combine sparse columns into a "Features" vector, preventing
+            // post-InferColumns detection. Pre-removing prevents OOM from FeaturizeText.
+            mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn);
 
-        // Pre-InferColumns: Remove constant columns (all identical values) from CSV.
-        // Constant columns provide zero predictive signal and waste compute resources.
-        mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn);
+            // Pre-InferColumns: Remove constant columns (all identical values) from CSV.
+            // Constant columns provide zero predictive signal and waste compute resources.
+            mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn);
+        }
 
         // Pre-InferColumns: Warn about mixed-type columns (mostly numeric with some text).
         // InferColumns may classify these as Text, causing TF-IDF featurization and schema mismatches.
@@ -1099,6 +1109,80 @@ public class CsvDataLoader : DataProviderBase
         catch
         {
             return filePath; // Non-critical, continue with original
+        }
+    }
+
+    /// <summary>
+    /// The single authority for "which columns does featurization drop?" — DateTime, sparse, and
+    /// constant, in the exact order and with the exact semantics <see cref="LoadData"/> applies them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The decision is data-dependent, so recomputing it per data slice is unsound: a near-constant
+    /// column (two distinct values across the full file, one of them in only a handful of rows) is
+    /// constant inside one train/test partition and not the other. Each slice then produces a
+    /// different feature width, and the pipeline fitted on one width fails on the other with
+    /// "Schema mismatch for feature column 'Features': expected Vector&lt;Single, N&gt;, got
+    /// Vector&lt;Single, N-1&gt;". The cure is to decide once, here, and hand the result to every
+    /// downstream slice — training partitions via <see cref="LoadData"/>'s
+    /// <c>featureExclusions</c> argument, prediction/evaluation via the saved schema and
+    /// <see cref="RemoveExcludedColumns"/>.
+    /// </para>
+    /// <para>
+    /// Implemented by running the real removal chain and diffing headers rather than by
+    /// re-deriving the rules: a second implementation of "what counts as constant" is exactly the
+    /// drift this method exists to remove.
+    /// </para>
+    /// </remarks>
+    /// <returns>Excluded column names paired with the reason, in removal order. Empty when nothing is dropped.</returns>
+    public static IReadOnlyList<ExcludedColumn> DetermineExcludedColumns(
+        string filePath, string? labelColumn, Action<string>? log = null)
+    {
+        var temps = new List<string>();
+        try
+        {
+            var beforeDateTime = ReadCsvHeaders(filePath);
+
+            var afterDateTimePath = Track(RemoveDateTimeColumns(filePath, labelColumn, log));
+            var afterDateTime = ReadCsvHeaders(afterDateTimePath);
+
+            var afterSparsePath = Track(RemoveSparseColumns(afterDateTimePath, labelColumn, log: log));
+            var afterSparse = ReadCsvHeaders(afterSparsePath);
+
+            var afterConstantPath = Track(RemoveConstantColumns(afterSparsePath, labelColumn, log));
+            var afterConstant = ReadCsvHeaders(afterConstantPath);
+
+            var excluded = new List<ExcludedColumn>();
+            excluded.AddRange(Dropped(beforeDateTime, afterDateTime, SchemaDataTypes.ExcludedDateTime));
+            excluded.AddRange(Dropped(afterDateTime, afterSparse, SchemaDataTypes.ExcludedSparse));
+            excluded.AddRange(Dropped(afterSparse, afterConstant, SchemaDataTypes.ExcludedConstant));
+            return excluded;
+
+            string Track(string path)
+            {
+                if (path != filePath && !temps.Contains(path)) temps.Add(path);
+                return path;
+            }
+
+            static IEnumerable<ExcludedColumn> Dropped(string[] before, string[] after, string reason)
+            {
+                var kept = new HashSet<string>(after, StringComparer.Ordinal);
+                return before.Where(name => !kept.Contains(name))
+                             .Select(name => new ExcludedColumn(name, reason));
+            }
+        }
+        catch
+        {
+            // Non-critical: an unreadable file simply means "nothing decided here" — LoadData's own
+            // guarded passes will surface the real failure.
+            return Array.Empty<ExcludedColumn>();
+        }
+        finally
+        {
+            foreach (var temp in temps)
+            {
+                try { File.Delete(temp); } catch { /* temp cleanup is best-effort */ }
+            }
         }
     }
 

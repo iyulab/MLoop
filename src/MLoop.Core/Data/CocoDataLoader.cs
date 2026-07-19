@@ -60,7 +60,7 @@ public sealed class CocoDataLoader : DataProviderBase
     /// <c>(ImagePath, Label, BoundingBoxes)</c> rows — one row per image that has annotations.
     /// </summary>
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null)
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null)
     {
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("Object-detection dataset path must be provided.", nameof(filePath));

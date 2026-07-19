@@ -41,7 +41,7 @@ public sealed class ImageDirectoryLoader : DataProviderBase
     /// builds an <see cref="IDataView"/> of <c>(ImagePath, Label)</c> rows.
     /// </summary>
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null)
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null)
     {
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("Image directory path must be provided.", nameof(filePath));

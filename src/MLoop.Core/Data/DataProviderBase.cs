@@ -31,7 +31,7 @@ public abstract class DataProviderBase : IDataProvider
 
     /// <inheritdoc />
     public abstract IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null);
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null);
 
     /// <inheritdoc />
     public virtual bool ValidateLabelColumn(IDataView data, string labelColumn) =>

@@ -22,7 +22,7 @@ public static class ErrorSuggestions
         err.Markup("[red]Error:[/] ");
         err.WriteLine(ex.Message);
 
-        if (ex.InnerException != null)
+        if (ex.InnerException != null && AddsInformation(ex.Message, ex.InnerException.Message))
         {
             err.MarkupLine($"[grey]  Inner: {Markup.Escape(ex.InnerException.Message)}[/]");
         }
@@ -42,6 +42,24 @@ public static class ErrorSuggestions
         // Always show version for diagnostics
         err.WriteLine();
         err.MarkupLine($"[grey]mloop v{GetVersion()}[/]");
+    }
+
+    /// <summary>
+    /// Whether the inner message is worth printing, i.e. the outer message does not already carry it.
+    /// </summary>
+    /// <remarks>
+    /// Wrapping sites commonly build the outer message as "{context}: {inner.Message}" (see
+    /// TrainingEngine's "Training failed for experiment {id}: …"). Each layer is reasonable alone, but
+    /// together they print the same diagnosis twice — harmless when the message was one line, glaring
+    /// once diagnostics grew to a class-distribution table plus remediation options. The display layer
+    /// is the right place to resolve it: its job is to add information, and repeating text the reader
+    /// has already seen adds none.
+    /// </remarks>
+    internal static bool AddsInformation(string outerMessage, string innerMessage)
+    {
+        var inner = innerMessage?.Trim();
+        if (string.IsNullOrEmpty(inner)) return false;
+        return !(outerMessage ?? string.Empty).Contains(inner, StringComparison.Ordinal);
     }
 
     /// <summary>

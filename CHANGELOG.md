@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-07-19
+
+### Fixed
+- **Feature exclusion is decided once per run instead of per data slice.** Which columns featurization drops (DateTime / sparse / constant) is a *data-dependent* judgement, and it was being made independently in three places: the saved-schema capture (which carried its own mirror of the loader's constant/sparse rules), the training-partition load, and the test-partition load. A *near-constant* column — two distinct values across the file, the minority present in only a handful of rows — is genuinely constant inside one partition and not the other, so the partitions ended up with different feature widths and the pipeline fitted on one failed on the other with `Schema mismatch for feature column 'Features': expected Vector<Single, 30>, got Vector<Single, 29>`. Data that is perfectly trainable died on an internal inconsistency. The decision now has one authority, `CsvDataLoader.DetermineExcludedColumns`, computed once from the full dataset and handed to every consumer — both partitions and the saved schema that predict and evaluate replay. The authority derives the set by running the real removal chain and diffing headers rather than restating the rules, so a second implementation cannot drift from the first; the three mirror methods in `TrainingEngine` are gone. This also closes a quieter defect the same drift produced: the saved schema could describe a column as a `Feature` that the training partition had actually dropped, promising predict a column the model was never fitted on. Reported from downstream (KAMP SEQ061-P2, 357×48 with 3 positives) against 0.29.0.
+- **A training failure's diagnosis is no longer printed twice on stderr.** The wrapping site builds its message as `Training failed for experiment {id}: {inner.Message}`, and the display layer then printed the inner message again on an `Inner:` line. Both layers were individually reasonable, and while exception messages were one-liners the repeat was invisible; 0.29.0's untrainable-class diagnosis (class distribution plus remediation options) made it a duplicated block — 1375 bytes of stderr for roughly half that much information. The display layer now suppresses the `Inner:` line when the outer message already contains it, and still shows it when the inner exception adds something new.
+
+### Changed
+- `IDataProvider.LoadData` takes an optional `featureExclusions` argument — the decided exclusion set to apply verbatim, instead of re-deriving it from the file being loaded. Non-tabular loaders (image directories, COCO/YOLO) ignore it, as they already do `GetMergedColumnGroups`.
+- When a model has **no recorded exclusion schema** (experiments trained before schema capture), predict and evaluate still reconstruct the exclusions from the inference data — there is no recorded decision to apply — but they now say so instead of doing it silently, since a reconstruction that disagrees with training surfaces only as an opaque feature-vector size mismatch.
+
 ## [0.29.0] - 2026-07-19
 
 ### Fixed

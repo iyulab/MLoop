@@ -80,6 +80,20 @@ public record TrainingConfig
     public List<string>? PreFeaturizerColumns { get; init; }
 
     /// <summary>
+    /// Columns featurization drops (DateTime / sparse / constant), decided once for the whole run by
+    /// <see cref="Data.CsvDataLoader.DetermineExcludedColumns"/> and applied to every slice — the
+    /// train partition, the test partition, and the saved input schema that predict and evaluate
+    /// replay. Null means the decision has not been made upstream, in which case the loader falls
+    /// back to deciding from whatever file it is handed.
+    /// </summary>
+    /// <remarks>
+    /// Deciding per slice is the drift this field exists to prevent: a column that is constant only
+    /// inside one partition changes that partition's feature width, and the pipeline fitted on the
+    /// other width then fails with a "Schema mismatch for feature column 'Features'" error.
+    /// </remarks>
+    public IReadOnlyCollection<string>? FeatureExclusions { get; init; }
+
+    /// <summary>
     /// Number of clusters for clustering task (0 = auto-select via silhouette search)
     /// </summary>
     public int NumClusters { get; init; } = 0;

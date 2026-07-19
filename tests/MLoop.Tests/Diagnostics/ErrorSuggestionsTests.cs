@@ -128,4 +128,33 @@ public class ErrorSuggestionsTests
         Assert.Contains(suggestions, s => s.Contains("columns") || s.Contains("schema"));
         Assert.Contains(suggestions, s => s.Contains("type"));
     }
+
+    [Fact]
+    public void AddsInformation_OuterAlreadyCarriesInner_IsSuppressed()
+    {
+        // The wrapping convention "{context}: {inner.Message}" — TrainingEngine's
+        // "Training failed for experiment default/exp-001: {inner}" — makes the Inner line a verbatim
+        // repeat. With a multi-line diagnosis (class distribution + remediation options) that doubled
+        // the whole block on stderr.
+        var inner = "Only 1 class has enough samples to train on: 'P' (1 sample)\n  Options: retrain with more rows";
+        var outer = $"Training failed for experiment default/exp-001: {inner}";
+
+        Assert.False(ErrorSuggestions.AddsInformation(outer, inner));
+    }
+
+    [Fact]
+    public void AddsInformation_InnerCarriesNewDetail_IsShown()
+    {
+        Assert.True(ErrorSuggestions.AddsInformation(
+            "Training failed for experiment default/exp-001.",
+            "The process cannot access the file because it is being used by another process."));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddsInformation_EmptyInner_IsSuppressed(string inner)
+    {
+        Assert.False(ErrorSuggestions.AddsInformation("Something failed.", inner));
+    }
 }

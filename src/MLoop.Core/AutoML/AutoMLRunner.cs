@@ -111,24 +111,40 @@ public partial class AutoMLRunner
         IReadOnlyDictionary<string, string[]>? mergedColumnGroups;
         if (!string.IsNullOrEmpty(config.TestDataFile))
         {
-            // Pre-split data (e.g. balanced training with separate test set)
-            trainSet = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
+            // Pre-split data (e.g. stratified classification split, or balanced training with a
+            // separate test set). Both files must be featurized identically, so the exclusion set is
+            // decided once — normally upstream by the caller, and from the training file here when
+            // the caller made no decision. Letting each file decide for itself is what produced the
+            // "expected Vector<Single, N>, got Vector<Single, N-1>" schema mismatch: a column that is
+            // constant only inside one partition silently narrows that partition alone.
+            var featureExclusions = config.FeatureExclusions;
+            if (featureExclusions is null && !DataLoaderFactory.IsDirectoryBased(config.Task))
+            {
+                featureExclusions = CsvDataLoader
+                    .DetermineExcludedColumns(config.DataFile, config.LabelColumn, _logger.Info)
+                    .Select(c => c.Name).ToList();
+            }
+
+            trainSet = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, featureExclusions);
             // Grab the training file's merge mapping before the test-file load overwrites it
             mergedColumnGroups = loader.GetMergedColumnGroups();
-            testSet = loader.LoadData(config.TestDataFile, config.LabelColumn, config.Task, preserve);
+            testSet = loader.LoadData(config.TestDataFile, config.LabelColumn, config.Task, preserve, featureExclusions);
         }
         else if (isTimeSeriesTask)
         {
             // Time series: use full dataset (no random split — temporal order matters)
             // Forecasting/TS-Anomaly handle holdout internally
-            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
+            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions);
             trainSet = dataView;
             testSet = dataView; // same data — internal holdout handles evaluation
             mergedColumnGroups = loader.GetMergedColumnGroups();
         }
         else
         {
-            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve);
+            // Single file split in-memory: both partitions come from one load, so they share one
+            // featurization by construction. The exclusion set still flows through so the saved
+            // schema predict replays describes exactly what was fitted.
+            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions);
             (trainSet, testSet) = loader.SplitData(dataView, config.TestSplit);
             mergedColumnGroups = loader.GetMergedColumnGroups();
         }
