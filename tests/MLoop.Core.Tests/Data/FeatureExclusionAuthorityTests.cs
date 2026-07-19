@@ -136,24 +136,53 @@ public class FeatureExclusionAuthorityTests : IDisposable
         Assert.Contains("near_constant", ColumnNames(train));
     }
 
+    [Fact]
+    public void LoadData_NumericNearConstant_SharedExclusionsKeepFeatureWidthEqual()
+    {
+        // The reported crash is about the *merged* feature vector, and InferColumns only merges
+        // adjacent numeric columns — a text near-constant column changes the column list without
+        // changing Vector<Single, N>. This is the numeric shape, which is what actually produced
+        // "expected Vector<Single, 7>, got Vector<Single, 8>" on 0.29.0.
+        var (trainPath, testPath) = CreateNearConstantSplit(nearConstantValues: ("0", "1"));
+
+        var exclusions = new List<string>(); // full data has two values → nothing excluded
+
+        var train = _loader.LoadData(trainPath, "label", "binary-classification", null, exclusions);
+        var test = _loader.LoadData(testPath, "label", "binary-classification", null, exclusions);
+
+        Assert.Equal(FeatureWidth(train), FeatureWidth(test));
+    }
+
+    /// <summary>
+    /// Total width of the numeric feature space: vector columns count for their size, scalars for one.
+    /// This is the quantity ML.NET compares when it reports a "Schema mismatch for feature column".
+    /// </summary>
+    private static int FeatureWidth(Microsoft.ML.IDataView view) =>
+        view.Schema
+            .Where(c => c.Name != "label")
+            .Sum(c => c.Type is Microsoft.ML.Data.VectorDataViewType vector ? vector.Size : 1);
+
     /// <summary>
     /// Builds a train/test pair where "near_constant" holds a single value in the train partition and
     /// two values in the test partition — the shape a stratified split produces when the off-value
     /// rows land on one side.
     /// </summary>
-    private (string TrainPath, string TestPath) CreateNearConstantSplit()
+    private (string TrainPath, string TestPath) CreateNearConstantSplit(
+        (string Common, string Rare)? nearConstantValues = null)
     {
+        var (common, rare) = nearConstantValues ?? ("A", "B");
         var header = "f1,near_constant,label";
+        var suffix = common + rare;
 
         var train = new List<string> { header };
         for (int i = 0; i < 60; i++)
-            train.Add($"{i},A,{i % 2}");
+            train.Add($"{i},{common},{i % 2}");
 
         var test = new List<string> { header };
         for (int i = 0; i < 20; i++)
-            test.Add($"{i},{(i < 2 ? "B" : "A")},{i % 2}");
+            test.Add($"{i},{(i < 2 ? rare : common)},{i % 2}");
 
-        return (CreateCsv("train.csv", train), CreateCsv("test.csv", test));
+        return (CreateCsv($"train_{suffix}.csv", train), CreateCsv($"test_{suffix}.csv", test));
     }
 
     private static string ReasonFor(IReadOnlyList<ExcludedColumn> excluded, string name) =>
