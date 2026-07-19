@@ -10,6 +10,13 @@ namespace MLoop.Core.Evaluation;
 /// fell out of sync and flagged init's own metrics as "Unknown"). Add a task here once and
 /// every consumer stays consistent (TD-06 / D4).
 /// <para>
+/// <c>ConfigMerger</c> joined the consumer list late: it filled the metric default from
+/// <c>ConfigDefaults.DefaultMetric</c> ("auto") without consulting this map even though it had
+/// already resolved the task, so any model lacking an explicit <c>training.metric</c> in
+/// mloop.yaml persisted the unresolved sentinel as its experiment's metric name. Resolve the
+/// sentinel wherever a task is known — the sentinel is a request, never a recorded result.
+/// </para>
+/// <para>
 /// Lives in <c>MLoop.Core.Evaluation</c> alongside <see cref="MetricDirection"/> so the two
 /// halves of ML-metric knowledge — a task's canonical metric <i>name</i> here, that metric's
 /// optimization <i>direction</i> there — share one home and both <c>MLoop.CLI</c> and

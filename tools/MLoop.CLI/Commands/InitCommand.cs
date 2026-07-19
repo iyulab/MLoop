@@ -82,13 +82,13 @@ public static class InitCommand
             // Validate project name
             if (string.IsNullOrWhiteSpace(projectName))
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Project name cannot be empty");
+                ErrorConsole.Error("Project name cannot be empty");
                 return 1;
             }
 
             if (projectName != "." && projectName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Project name contains invalid characters");
+                ErrorConsole.Error("Project name contains invalid characters");
                 return 1;
             }
 
@@ -103,7 +103,7 @@ public static class InitCommand
             };
             if (!validTasks.Contains(task))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Invalid task type. Valid options: {string.Join(", ", validTasks)}");
+                ErrorConsole.Error($"Invalid task type. Valid options: {string.Join(", ", validTasks)}");
                 return 1;
             }
 
@@ -131,15 +131,15 @@ public static class InitCommand
             // Check if directory/project already exists
             if (projectName != "." && Directory.Exists(projectPath) && !force)
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Directory '{projectName}' already exists");
-                AnsiConsole.MarkupLine("[yellow]Tip:[/] Use --force to reinitialize (preserves scripts/)");
+                ErrorConsole.Error($"Directory '{projectName}' already exists");
+                ErrorConsole.Tip("Use --force to reinitialize (preserves scripts/)");
                 return 1;
             }
 
             if (isReinitialize && !force)
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Project already initialized at {projectPath}");
-                AnsiConsole.MarkupLine("[yellow]Tip:[/] Use --force to reinitialize (preserves scripts/)");
+                ErrorConsole.Error($"Project already initialized at {projectPath}");
+                ErrorConsole.Tip("Use --force to reinitialize (preserves scripts/)");
                 return 1;
             }
 

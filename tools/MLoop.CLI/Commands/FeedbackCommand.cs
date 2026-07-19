@@ -181,7 +181,7 @@ public static class FeedbackCommand
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            ErrorConsole.Error($"{ex.Message}");
             AnsiConsole.MarkupLine("[grey]Make sure the prediction was logged with [blue]--log[/] option.[/]");
             return 1;
         }
@@ -295,7 +295,7 @@ public static class FeedbackCommand
         }
         catch (InvalidOperationException)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
+            ErrorConsole.Error("Not inside a MLoop project.");
             AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
             return null;
         }

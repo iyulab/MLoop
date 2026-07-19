@@ -5,6 +5,7 @@ using MLoop.Core.Models;
 using FilePrepper.Pipeline;
 using Spectre.Console;
 using System.Text;
+using MLoop.CLI.Infrastructure.Diagnostics;
 
 namespace MLoop.CLI.Commands;
 
@@ -46,12 +47,12 @@ internal static class TrainDataValidator
         if (!availableColumns.Contains(labelColumn))
         {
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[red]Error:[/] Label column not found in data for model '[cyan]{modelName}[/]'");
+            ErrorConsole.Error($"Label column not found in data for model '[cyan]{modelName}[/]'");
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine($"  [yellow]Label specified:[/] '{labelColumn}'");
             AnsiConsole.MarkupLine($"  [yellow]Available columns:[/] {string.Join(", ", availableColumns)}");
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[yellow]Tip:[/] Update the label in mloop.yaml or use --label option for --name {modelName}");
+            ErrorConsole.Tip($"Update the label in mloop.yaml or use --label option for --name {modelName}");
             AnsiConsole.WriteLine();
 
             throw new ArgumentException(

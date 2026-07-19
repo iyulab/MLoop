@@ -1,6 +1,7 @@
 using System.CommandLine;
 using MLoop.Core.Runtime;
 using Spectre.Console;
+using MLoop.CLI.Infrastructure.Diagnostics;
 
 namespace MLoop.CLI.Commands;
 
@@ -80,7 +81,7 @@ public static class RuntimeCommand
 
             if (runtime == null)
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Unknown runtime '{runtimeId}'. Available: {string.Join(", ", RuntimeRegistry.All.Select(r => r.Id))}");
+                ErrorConsole.Error($"Unknown runtime '{runtimeId}'. Available: {string.Join(", ", RuntimeRegistry.All.Select(r => r.Id))}");
                 return 1;
             }
 
@@ -151,7 +152,7 @@ public static class RuntimeCommand
 
             if (runtime == null)
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Unknown runtime '{runtimeId}'");
+                ErrorConsole.Error($"Unknown runtime '{runtimeId}'");
                 return Task.FromResult(1);
             }
 

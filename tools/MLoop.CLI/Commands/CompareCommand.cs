@@ -124,7 +124,7 @@ public static class CompareCommand
                 // Compare all experiments for the model
                 if (string.IsNullOrWhiteSpace(modelName))
                 {
-                    AnsiConsole.MarkupLine("[red]Error:[/] Model name is required when not specifying experiment IDs.");
+                    ErrorConsole.Error("Model name is required when not specifying experiment IDs.");
                     AnsiConsole.MarkupLine("Usage: [blue]mloop compare exp-001 exp-002[/] or [blue]mloop compare --name <model>[/]");
                     return 1;
                 }

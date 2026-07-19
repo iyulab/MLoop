@@ -68,7 +68,7 @@ public static class NewHookCommand
             }
             catch (InvalidOperationException)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] Not inside a MLoop project.");
+                ErrorConsole.Error("Not inside a MLoop project.");
                 AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
                 return 1;
             }
@@ -86,7 +86,7 @@ public static class NewHookCommand
 
             if (File.Exists(filePath))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Hook already exists: {fileName}");
+                ErrorConsole.Error($"Hook already exists: {fileName}");
                 AnsiConsole.MarkupLine($"[yellow]Path:[/] {filePath}");
                 return 1;
             }
@@ -134,7 +134,7 @@ public static class NewHookCommand
 
         if (!validTypes.TryGetValue(type, out var hookType))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Invalid hook type '{type}'");
+            ErrorConsole.Error($"Invalid hook type '{type}'");
             AnsiConsole.MarkupLine("[yellow]Valid types:[/] pre-train, post-train, pre-predict, post-evaluate");
             return null;
         }

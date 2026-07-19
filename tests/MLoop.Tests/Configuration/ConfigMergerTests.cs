@@ -199,8 +199,91 @@ public class ConfigMergerTests
         // Unspecified time_limit_seconds resolves to null (= auto-time), not a fixed 300s,
         // so the init+train project workflow defaults to data-size-based estimation.
         Assert.Null(result.Training?.TimeLimitSeconds);
-        Assert.Equal(ConfigDefaults.DefaultMetric, result.Training?.Metric);
+        // An unspecified metric resolves to the task's canonical primary, NOT the "auto" sentinel.
+        // This assertion previously expected ConfigDefaults.DefaultMetric and so pinned the defect
+        // in place: the unresolved sentinel flowed into the experiment's recorded metricName.
+        Assert.Equal("r_squared", result.Training?.Metric);
         Assert.Equal(ConfigDefaults.DefaultTestSplit, result.Training?.TestSplit);
+    }
+
+    // --- metric sentinel resolution ------------------------------------------------------------
+    // "auto" means "let the task decide", so it must never survive into a ModelDefinition once the
+    // task is known. Leaving it unresolved made metadata.json/config.json/experiment-index report
+    // metricName "auto", which mislabels the score and defeats metric-direction lookups.
+
+    [Theory]
+    [InlineData("binary-classification", "accuracy")]
+    [InlineData("multiclass-classification", "macro_accuracy")]
+    [InlineData("regression", "r_squared")]
+    public void GetEffectiveModelDefinition_UnregisteredModel_ResolvesMetricToTaskPrimary(
+        string task, string expectedMetric)
+    {
+        // The model is absent from mloop.yaml — the shape `train --name <new-model>` produces, and
+        // the one that leaked the sentinel. A model registered by `init` was only ever correct
+        // because init had already written the resolved name into the yaml.
+        var config = new MLoopConfig { Models = new Dictionary<string, ModelDefinition>() };
+
+        var result = _merger.GetEffectiveModelDefinition(
+            config, "obj-42", cliLabel: "Label", cliTask: task);
+
+        Assert.Equal(expectedMetric, result.Training?.Metric);
+    }
+
+    [Fact]
+    public void GetEffectiveModelDefinition_YamlMetricAuto_IsResolved()
+    {
+        // Recovery path: a project whose yaml already fossilized `metric: auto` (written back by an
+        // earlier train run) must heal on the next train rather than staying poisoned forever.
+        var config = new MLoopConfig
+        {
+            Models = new Dictionary<string, ModelDefinition>
+            {
+                ["default"] = new()
+                {
+                    Task = "binary-classification",
+                    Label = "Label",
+                    Training = new TrainingSettings { Metric = "auto" }
+                }
+            }
+        };
+
+        var result = _merger.GetEffectiveModelDefinition(config, "default");
+
+        Assert.Equal("accuracy", result.Training?.Metric);
+    }
+
+    [Fact]
+    public void GetEffectiveModelDefinition_ExplicitMetric_IsPreserved()
+    {
+        var config = new MLoopConfig
+        {
+            Models = new Dictionary<string, ModelDefinition>
+            {
+                ["default"] = new()
+                {
+                    Task = "binary-classification",
+                    Label = "Label",
+                    Training = new TrainingSettings { Metric = "f1" }
+                }
+            }
+        };
+
+        var result = _merger.GetEffectiveModelDefinition(config, "default");
+
+        Assert.Equal("f1", result.Training?.Metric);
+    }
+
+    [Fact]
+    public void GetEffectiveModelDefinition_TaskWithoutPrimaryMetric_KeepsAutoSentinel()
+    {
+        // Object detection has no thresholded scalar primary, so "auto" is a legitimate *result*
+        // there — resolution must not invent a metric for it.
+        var config = new MLoopConfig { Models = new Dictionary<string, ModelDefinition>() };
+
+        var result = _merger.GetEffectiveModelDefinition(
+            config, "detector", cliLabel: "Label", cliTask: "object-detection");
+
+        Assert.Equal(ConfigDefaults.DefaultMetric, result.Training?.Metric);
     }
 
     #endregion
