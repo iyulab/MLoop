@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-07-19
+
+### Added
+- **`mloop compare --metrics-file` now exposes judgment provenance** — three additive JSON fields so a consumer delegating best-selection can keep its own conservative policy instead of trusting a silent default:
+  - `directionSource: "known" | "default"` — whether the `MetricDirection` authority actually recognized the metric's direction, or fell through to the `maximize` default. Previously an unrecognized *lower-is-better* custom metric was silently ranked as maximize, making the **worst** model "best" with no signal. Backed by a new `MetricDirection.IsKnown(metric)` on the single-source authority.
+  - `excluded: [{"id","reason":"metric-missing"}]` — candidates lacking the requested metric are now reported explicitly rather than silently dropped from `ranking`, so a consumer can distinguish "won" from "was the only one left".
+  - `tie: true|false` — set when the top two values are equal (best is otherwise input-order-dependent), letting a consumer apply its own tie policy (e.g. "keep champion").
+
+  All three are additive (existing `metric`/`direction`/`best`/`ranking` unchanged). Addresses the empirical finding (All.Models TH-D4 adoption) that a provided-state judgment surface must expose provenance for a conservative consumer to delegate to it — a `maximize` default indistinguishable from an authoritative determination blocked full best-selection delegation.
+
 ## [0.26.0] - 2026-07-17
 
 ### Added

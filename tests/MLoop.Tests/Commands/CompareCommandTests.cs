@@ -232,6 +232,104 @@ public class CompareCommandTests : IDisposable
                 new[] { Cand("a", ("r_squared", 0.80)) }, "auc"));
     }
 
+    // ---- Direction provenance & honest exclusion/tie signals (compare provenance gaps) ----
+
+    [Fact]
+    public void CompareProvidedMetrics_KnownMetric_DirectionSourceKnown()
+    {
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("a", ("r_squared", 0.80)), Cand("b", ("r_squared", 0.90)) },
+            "r_squared");
+
+        Assert.Equal("known", result.DirectionSource);
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_UnknownMetric_DirectionSourceDefault_NotSilentlyKnown()
+    {
+        // A custom metric the direction authority does not recognize must not masquerade as an
+        // authoritative "maximize" — the consumer needs to know it fell through to the default.
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("a", ("weirdmetric", 1.0)), Cand("b", ("weirdmetric", 2.0)) },
+            "weirdmetric");
+
+        Assert.Equal("maximize", result.Direction);
+        Assert.Equal("default", result.DirectionSource);
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_CandidateMissingMetric_ExcludedNotSilentlyDropped()
+    {
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("champ", ("accuracy", 0.9)), Cand("chall", ("rmse", 1.0)) },
+            "accuracy");
+
+        Assert.Equal("champ", result.Best);
+        Assert.Single(result.Ranking);
+        var excluded = Assert.Single(result.Excluded);
+        Assert.Equal("chall", excluded.Id);
+        Assert.Equal("metric-missing", excluded.Reason);
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_AllScored_ExcludedEmpty()
+    {
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("a", ("r_squared", 0.80)), Cand("b", ("r_squared", 0.90)) },
+            "r_squared");
+
+        Assert.Empty(result.Excluded);
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_EqualTopValues_TieSignalled()
+    {
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("champ", ("r_squared", 0.90)), Cand("chall", ("r_squared", 0.90)) },
+            "r_squared");
+
+        Assert.True(result.Tie);
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_DistinctTopValues_NoTie()
+    {
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("champ", ("r_squared", 0.85)), Cand("chall", ("r_squared", 0.90)) },
+            "r_squared");
+
+        Assert.False(result.Tie);
+    }
+
+    [Fact]
+    public void CompareProvidedMetrics_SingleCandidate_NoTie()
+    {
+        var result = MLoop.CLI.Commands.CompareCommand.CompareProvidedMetrics(
+            new[] { Cand("only", ("r_squared", 0.90)) }, "r_squared");
+
+        Assert.False(result.Tie);
+    }
+
+    [Theory]
+    [InlineData("r_squared")]
+    [InlineData("accuracy")]
+    [InlineData("macro_accuracy")]
+    [InlineData("auc")]
+    [InlineData("ndcg")]
+    [InlineData("f1_score")]
+    [InlineData("rmse")]
+    [InlineData("mae")]
+    [InlineData("average_distance")]
+    public void MetricDirection_IsKnown_RecognizedMetrics_True(string metric)
+        => Assert.True(MLoop.Core.Evaluation.MetricDirection.IsKnown(metric));
+
+    [Theory]
+    [InlineData("weirdmetric")]
+    [InlineData("custom_score")]
+    [InlineData("")]
+    public void MetricDirection_IsKnown_UnrecognizedMetrics_False(string metric)
+        => Assert.False(MLoop.Core.Evaluation.MetricDirection.IsKnown(metric));
+
     [Fact]
     public void ParseCandidates_MissingId_Throws()
     {

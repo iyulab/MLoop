@@ -31,4 +31,42 @@ public static class MetricDirection
             || lower == "average_distance"
             || lower == "davies_bouldin_index";
     }
+
+    /// <summary>
+    /// True when this authority actually recognizes the metric's direction — either as a known
+    /// lower-is-better metric (<see cref="IsLowerBetter"/>) or a known higher-is-better one.
+    /// False means <see cref="IsLowerBetter"/> returned its catch-all <c>false</c> (i.e.
+    /// "maximize" is a *default*, not a determination). A judgment-delegation consumer needs this
+    /// distinction: a lower-is-better custom metric arriving unrecognized would otherwise be
+    /// silently ranked as maximize, making the worst model "best". Incompleteness here is safe by
+    /// construction — an unrecognized higher-is-better metric reports <c>default</c>, which a
+    /// conservative consumer treats as ambiguous (over-cautious), never as a wrong direction.
+    /// </summary>
+    public static bool IsKnown(string metricName)
+    {
+        if (string.IsNullOrWhiteSpace(metricName))
+            return false;
+        return IsLowerBetter(metricName) || IsKnownHigherBetter(metricName.ToLowerInvariant());
+    }
+
+    /// <summary>
+    /// Recognized higher-is-better metrics (canonical primaries from <see cref="TaskMetadata"/> —
+    /// accuracy/macro_accuracy/micro_accuracy, r_squared, auc, ndcg, detection_rate — plus common
+    /// classification/ranking variants). Kept as an explicit recognizer here, the direction
+    /// authority's home, rather than inferring "not lower-better ⇒ higher-better" so that
+    /// <see cref="IsKnown"/> can tell a determination from the default.
+    /// </summary>
+    private static bool IsKnownHigherBetter(string lower) =>
+        lower.Contains("accuracy")
+        || lower.Contains("auc")
+        || lower.Contains("auprc")
+        || lower.Contains("r_squared")
+        || lower.Contains("rsquared")
+        || lower == "r2"
+        || lower.Contains("f1")
+        || lower.Contains("precision")
+        || lower.Contains("recall")
+        || lower.Contains("ndcg")
+        || lower.Contains("dcg")
+        || lower == "detection_rate";
 }
