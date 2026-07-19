@@ -5,7 +5,14 @@ namespace MLoop.Core.Models;
 /// <summary>
 /// Configuration for model training
 /// </summary>
-public class TrainingConfig
+/// <remarks>
+/// A <c>record</c> so that pipeline stages which need to change one field (e.g. TrainingEngine
+/// swapping <see cref="DataFile"/> for an encoding-converted copy) can use <c>with</c> instead of
+/// re-listing every property in a hand-written constructor call. The hand-written form silently
+/// dropped whatever it forgot — <see cref="TestDataFile"/> and the pre-featurizer fields were lost
+/// on every encoding conversion — and each new property re-opened the same hole.
+/// </remarks>
+public record TrainingConfig
 {
     /// <summary>
     /// Model name for multi-model support (defaults to "default")

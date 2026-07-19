@@ -66,6 +66,7 @@ public class TrainingEngine : ITrainingEngine
         // Track original data file and temp file for cleanup (encoding conversion)
         string originalDataFile = config.DataFile;
         string? tempEncodingFile = null;
+        string? stratifiedSplitDirectory = null;
 
         try
         {
@@ -119,25 +120,10 @@ public class TrainingEngine : ITrainingEngine
                 // Update config DataFile so AutoMLRunner uses the processed file
                 if (dataFilePath != config.DataFile)
                 {
-                    config = new TrainingConfig
-                    {
-                        ModelName = config.ModelName,
-                        DataFile = dataFilePath,
-                        LabelColumn = config.LabelColumn,
-                        Task = config.Task,
-                        TimeLimitSeconds = config.TimeLimitSeconds,
-                        Metric = config.Metric,
-                        TestSplit = config.TestSplit,
-                        UseAutoTime = config.UseAutoTime,
-                        ColumnOverrides = config.ColumnOverrides,
-                        NumClusters = config.NumClusters,
-                        GroupColumn = config.GroupColumn,
-                        Horizon = config.Horizon,
-                        WindowSize = config.WindowSize,
-                        SeriesLength = config.SeriesLength,
-                        UserColumn = config.UserColumn,
-                        ItemColumn = config.ItemColumn
-                    };
+                    // `with` rather than a re-listed constructor: the previous hand-written copy
+                    // omitted TestDataFile and the pre-featurizer fields, so any dataset needing an
+                    // encoding conversion silently lost its pre-split test set and prep featurizer.
+                    config = config with { DataFile = dataFilePath };
                 }
 
                 // Validate data quality before training (label column + dataset size)
@@ -170,8 +156,40 @@ public class TrainingEngine : ITrainingEngine
                     Console.WriteLine();
                 }
 
-                // Capture input schema before training (using enhanced detection)
+                // Capture input schema before training (using enhanced detection).
+                // Deliberately from the full dataset, not the train split — the schema must describe
+                // every category the model may be asked to predict on.
                 inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides);
+
+                // Stratify the train/test split for classification. The unstratified alternative is
+                // ML.NET's TrainTestSplit (DataProviderBase.SplitData), which draws rows uniformly and
+                // therefore leaves a rare class out of the test partition entirely with high probability
+                // — 3 positives in 357 rows lands a positive-free test set about half the time, and every
+                // classification metric that needs both classes is then undefined, which is what the
+                // AUC-fallback chain was built to paper over.
+                //
+                // Note ML.NET's samplingKeyColumnName is NOT stratification: it is grouping (keeping equal
+                // keys on one side to prevent leakage), so passing the label there would guarantee the
+                // failure instead of preventing it. The split has to be done on the rows themselves.
+                if (RequiresStratifiedSplit(config))
+                {
+                    stratifiedSplitDirectory = Path.Combine(
+                        Path.GetTempPath(), "mloop-split-" + Guid.NewGuid().ToString("N"));
+
+                    var split = new CsvSplitter().StratifiedSplit(
+                        dataFilePath, config.LabelColumn, config.TestSplit,
+                        outputDirectory: stratifiedSplitDirectory);
+
+                    // TestSplit stays on the config for provenance (the experiment records the fraction
+                    // that was actually requested); AutoMLRunner switches to the pre-split path on the
+                    // presence of TestDataFile alone.
+                    config = config with { DataFile = split.TrainFile, TestDataFile = split.TestFile };
+
+                    Console.WriteLine(
+                        $"[Info] Stratified split: train={split.TrainRows}, test={split.TestRows} " +
+                        $"({string.Join(", ", split.PerClass.OrderBy(c => c.Value.Train + c.Value.Test)
+                            .Select(c => $"'{c.Key}' {c.Value.Train}/{c.Value.Test}"))} as train/test)");
+                }
             }
 
             // Execute PreTrain hooks
@@ -372,8 +390,33 @@ public class TrainingEngine : ITrainingEngine
             {
                 try { File.Delete(tempEncodingFile); } catch (IOException) { /* Ignore cleanup errors */ }
             }
+
+            // The stratified split writes to a temp directory rather than datasets/, so routine
+            // training leaves no artifacts behind for the user to wonder about or accidentally commit.
+            if (stratifiedSplitDirectory != null && Directory.Exists(stratifiedSplitDirectory))
+            {
+                try { Directory.Delete(stratifiedSplitDirectory, recursive: true); }
+                catch (IOException) { /* Ignore cleanup errors */ }
+                catch (UnauthorizedAccessException) { /* Ignore cleanup errors */ }
+            }
         }
     }
+
+    /// <summary>
+    /// Whether this run should replace ML.NET's uniform random split with a stratified one.
+    /// </summary>
+    /// <remarks>
+    /// Only classification cares about class proportions. A caller that already supplied a test file
+    /// (the <c>--balance</c> flow, which stratify-splits upstream before oversampling) is left alone —
+    /// splitting again would discard its work. <c>TestSplit == 0</c> means the caller opted out of a
+    /// holdout entirely and AutoML validates internally.
+    /// </remarks>
+    private static bool RequiresStratifiedSplit(TrainingConfig config) =>
+        config.TestSplit > 0
+        && string.IsNullOrEmpty(config.TestDataFile)
+        && !string.IsNullOrEmpty(config.LabelColumn)
+        && !DataLoaderFactory.IsDirectoryBased(config.Task)
+        && config.Task.ToLowerInvariant() is "binary-classification" or "multiclass-classification";
 
     /// <summary>
     /// Two-phase auto-time training: static estimate -> probe run -> reactive estimate -> main run
@@ -393,25 +436,10 @@ public class TrainingEngine : ITrainingEngine
         var probeTime = TimeEstimator.GetProbeTime(staticEstimate);
 
         // Phase 1: Quick Probe
-        var probeConfig = new TrainingConfig
-        {
-            ModelName = config.ModelName,
-            DataFile = config.DataFile,
-            LabelColumn = config.LabelColumn,
-            Task = config.Task,
-            TimeLimitSeconds = probeTime,
-            Metric = config.Metric,
-            TestSplit = config.TestSplit,
-            UseAutoTime = false,
-            ColumnOverrides = config.ColumnOverrides,
-            NumClusters = config.NumClusters,
-            GroupColumn = config.GroupColumn,
-            Horizon = config.Horizon,
-            WindowSize = config.WindowSize,
-            SeriesLength = config.SeriesLength,
-            UserColumn = config.UserColumn,
-            ItemColumn = config.ItemColumn
-        };
+        // `with` rather than a re-listed constructor: the earlier hand-written copies omitted
+        // TestDataFile and the pre-featurizer fields, so auto-time (the default when --time is not
+        // given) silently discarded any pre-split test set and the prep pre-featurizer.
+        var probeConfig = config with { TimeLimitSeconds = probeTime, UseAutoTime = false };
 
         var probeTrialCount = 0;
         progress?.Report(new TrainingProgress
@@ -463,25 +491,7 @@ public class TrainingEngine : ITrainingEngine
             FinalTimeSeconds = finalTime
         });
 
-        var mainConfig = new TrainingConfig
-        {
-            ModelName = config.ModelName,
-            DataFile = config.DataFile,
-            LabelColumn = config.LabelColumn,
-            Task = config.Task,
-            TimeLimitSeconds = finalTime,
-            Metric = config.Metric,
-            TestSplit = config.TestSplit,
-            UseAutoTime = false,
-            ColumnOverrides = config.ColumnOverrides,
-            NumClusters = config.NumClusters,
-            GroupColumn = config.GroupColumn,
-            Horizon = config.Horizon,
-            WindowSize = config.WindowSize,
-            SeriesLength = config.SeriesLength,
-            UserColumn = config.UserColumn,
-            ItemColumn = config.ItemColumn
-        };
+        var mainConfig = config with { TimeLimitSeconds = finalTime, UseAutoTime = false };
 
         var mainResult = await _autoMLRunner.RunAsync(mainConfig, progress, cancellationToken);
 

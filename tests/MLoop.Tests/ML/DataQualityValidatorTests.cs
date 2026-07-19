@@ -157,7 +157,9 @@ public class DataQualityValidatorTests : IDisposable
     [Fact]
     public void ValidateTrainingData_TooManyClassesForBinary_ReturnsWarning()
     {
-        var csv = "Feature1,Target\n1,A\n2,B\n3,C\n4,D\n";
+        // Two rows per class: one row per class is now a hard rejection (a class that small cannot
+        // be in the train and test partitions at once), which would mask the warning under test.
+        var csv = "Feature1,Target\n1,A\n2,A\n3,B\n4,B\n5,C\n6,C\n7,D\n8,D\n";
         var path = CreateCsv(csv);
 
         var result = _validator.ValidateTrainingData(path, "Target", "binary-classification");
@@ -214,7 +216,7 @@ public class DataQualityValidatorTests : IDisposable
         var result = _validator.ValidateTrainingData(path, "Target", "multiclass-classification");
 
         Assert.True(result.IsValid); // warning, not error
-        Assert.Contains(result.Warnings, w => w.Contains("Multiclass training at risk"));
+        Assert.Contains(result.Warnings, w => w.Contains("Training at risk"));
         Assert.Contains(result.Warnings, w => w.Contains("ClassB")); // 2 samples
     }
 
@@ -247,13 +249,18 @@ public class DataQualityValidatorTests : IDisposable
         var result = _validator.ValidateTrainingData(path, "Target", "multiclass-classification");
 
         Assert.True(result.IsValid);
-        Assert.DoesNotContain(result.Warnings, w => w.Contains("Multiclass"));
+        // Matched on the per-class wording, not on the word "Multiclass" — that word left the
+        // messages when the check stopped being multiclass-only, and a substring that can no longer
+        // appear would make this assertion pass no matter what the validator did.
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("Training at risk") || w.Contains("may be unstable"));
     }
 
     [Fact]
-    public void ValidateTrainingData_BinaryClassification_SkipsMulticlassCheck()
+    public void ValidateTrainingData_BinaryTinyClasses_ReturnsWarning()
     {
-        // Binary classification with small classes → should NOT trigger multiclass warning
+        // Binary classification with 3 samples per class. This check used to be multiclass-only,
+        // which left extremely imbalanced binary sets — the shape that actually fails in the wild —
+        // without any per-class warning. The class count never made it a different problem.
         var lines = new List<string> { "F1,Target" };
         for (int i = 0; i < 3; i++) lines.Add($"{i},Yes");
         for (int i = 0; i < 3; i++) lines.Add($"{10 + i},No");
@@ -261,8 +268,47 @@ public class DataQualityValidatorTests : IDisposable
 
         var result = _validator.ValidateTrainingData(path, "Target", "binary-classification");
 
+        Assert.True(result.IsValid); // warning, not rejection
+        Assert.Contains(result.Warnings, w => w.Contains("Training at risk"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_ClassWithSingleSample_IsRejected()
+    {
+        // One positive among many negatives: a stratified split must keep it in train, so the test
+        // partition has no positive and every metric needing one is undefined. Measured end-to-end:
+        // without this rejection the run burns its whole time budget and dies inside ML.NET with
+        // "AUC is not defined when there is no positive class".
+        var lines = new List<string> { "F1,Target" };
+        for (int i = 0; i < 40; i++) lines.Add($"{i},No");
+        lines.Add("99,Yes");
+        var path = CreateCsv(string.Join("\n", lines));
+
+        var result = _validator.ValidateTrainingData(path, "Target", "binary-classification");
+
+        Assert.False(result.IsValid);
+        Assert.Contains("'Yes'", result.ErrorMessage!);
+        Assert.Contains("fewer than 2 samples", result.ErrorMessage!);
+        // The imbalance advice collected moments earlier (oversample, shorten the time limit) answers
+        // a different question and must not compete with the rejection's own explanation.
+        Assert.DoesNotContain(result.Suggestions, s => s.Contains("SMOTE"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_TwoSampleClass_IsAccepted()
+    {
+        // The floor is exactly 2: one row can go to train and one to test, so the run completes and
+        // reports honest (likely degenerate) metrics for the promotion gate to judge. Rejecting here
+        // would refuse work that currently succeeds.
+        var lines = new List<string> { "F1,Target" };
+        for (int i = 0; i < 40; i++) lines.Add($"{i},No");
+        lines.Add("98,Yes");
+        lines.Add("99,Yes");
+        var path = CreateCsv(string.Join("\n", lines));
+
+        var result = _validator.ValidateTrainingData(path, "Target", "binary-classification");
+
         Assert.True(result.IsValid);
-        Assert.DoesNotContain(result.Warnings, w => w.Contains("Multiclass"));
     }
 
     [Fact]
@@ -278,7 +324,7 @@ public class DataQualityValidatorTests : IDisposable
         var result = _validator.ValidateTrainingData(path, "Target", "multiclass-classification");
 
         Assert.True(result.IsValid);
-        Assert.Contains(result.Warnings, w => w.Contains("Multiclass training at risk"));
+        Assert.Contains(result.Warnings, w => w.Contains("Training at risk"));
     }
 
     #endregion
