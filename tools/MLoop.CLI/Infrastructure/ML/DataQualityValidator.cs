@@ -163,8 +163,8 @@ public class DataQualityValidator
                     // Check 3: Class imbalance detection
                     CheckClassImbalance(textLabelValues, uniqueClasses, result);
 
-                    // Check 4: Multiclass insufficient samples per class
-                    CheckMulticlassMinimumSamples(textLabelValues, uniqueClasses, taskType, result);
+                    // Check 4: insufficient samples in some class
+                    CheckPerClassMinimumSamples(textLabelValues, uniqueClasses, taskType, result);
 
                     // Valid text labels for classification
                     return result;
@@ -177,7 +177,7 @@ public class DataQualityValidator
                 var uniqueNumericClasses = numericLabelValues.Select(v => v.ToString()).Distinct().ToList();
                 var allLabelStrings = numericLabelValues.Select(v => v.ToString()).ToList();
                 CheckClassImbalance(allLabelStrings, uniqueNumericClasses, result);
-                CheckMulticlassMinimumSamples(allLabelStrings, uniqueNumericClasses, taskType, result);
+                CheckPerClassMinimumSamples(allLabelStrings, uniqueNumericClasses, taskType, result);
             }
 
             // For regression or mixed labels, require numeric values
@@ -323,13 +323,20 @@ public class DataQualityValidator
     }
 
     /// <summary>
-    /// Checks if multiclass classification has enough samples per class for reliable training.
-    /// Issues warnings when classes have too few samples for cross-validation to work properly.
+    /// Checks whether every class has enough samples for the train/test split and cross-validation
+    /// to be meaningful. Rejects the provably untrainable case and warns about the merely risky ones.
     /// </summary>
-    private static void CheckMulticlassMinimumSamples(
+    /// <remarks>
+    /// This used to be multiclass-only, which excluded exactly the shape that fails hardest in
+    /// practice: an extremely imbalanced binary set (e.g. 3 positives in 357 rows). The per-class
+    /// sample count matters identically in both — the class count never made it a different problem.
+    /// </remarks>
+    private static void CheckPerClassMinimumSamples(
         List<string> labelValues, List<string> uniqueClasses, string? taskType, DataQualityResult result)
     {
-        if (taskType?.ToLowerInvariant() != "multiclass-classification" || uniqueClasses.Count <= 2)
+        var isClassification = taskType?.ToLowerInvariant()
+            is "binary-classification" or "multiclass-classification";
+        if (!isClassification || uniqueClasses.Count < 2)
             return;
 
         var classCounts = uniqueClasses
@@ -341,17 +348,55 @@ public class DataQualityValidator
         var classCount = uniqueClasses.Count;
         var smallestClass = classCounts.First();
 
+        // Below this a class cannot exist in the train and test partitions at the same time: a
+        // stratified split has to keep at least one row in train, so a single-sample class leaves the
+        // test partition without it, and every metric that needs the class is undefined. Training then
+        // burns the whole time budget only to die inside ML.NET with "AUC is not defined when there is
+        // no positive class". That is provable from the split arithmetic, not a heuristic, so it is
+        // rejected up front rather than warned about. Measured: 1 sample always fails; 2 samples
+        // trains and produces honest (degenerate) metrics that the promotion quality gate then blocks.
+        const int UNTRAINABLE_PER_CLASS = 2;
         // Per-class minimum: need at least 5 samples per class for any CV fold to work
         const int MINIMUM_PER_CLASS = 5;
         // Recommended minimum: 15 samples per class for stable cross-validation
         const int RECOMMENDED_PER_CLASS = 15;
+
+        var untrainableClasses = classCounts.Where(c => c.Count < UNTRAINABLE_PER_CLASS).ToList();
+        if (untrainableClasses.Count > 0)
+        {
+            result.IsValid = false;
+            // Drop the imbalance advice collected just before this. It suggests oversampling and
+            // shorter time limits, which are answers to "training will be unstable" — not to "this
+            // class cannot be split at all". Two competing explanations for one rejection is worse
+            // than one correct explanation.
+            result.Suggestions.Clear();
+            result.Warnings.Clear();
+            result.ErrorMessage =
+                $"Class{(untrainableClasses.Count > 1 ? "es" : "")} " +
+                $"{string.Join(", ", untrainableClasses.Select(c => $"'{c.Class}' ({c.Count} sample)"))} " +
+                $"cannot be trained on: fewer than {UNTRAINABLE_PER_CLASS} samples";
+            result.ErrorMessageEn =
+                "A class needs at least one row in the training set and one in the test set. " +
+                "With a single sample it can only be in one of them, so the model cannot be evaluated on it.";
+            result.Suggestions.Add("Class distribution:");
+            foreach (var c in classCounts)
+            {
+                result.Suggestions.Add($"   '{c.Class}': {c.Count} samples ({(double)c.Count / totalSamples:P1})");
+            }
+            result.Suggestions.Add("");
+            result.Suggestions.Add("🔧 Options:");
+            result.Suggestions.Add($"   1. Collect more samples for the rare class (target: ≥{RECOMMENDED_PER_CLASS})");
+            result.Suggestions.Add("   2. Remove the rare class and train on the remaining ones");
+            result.Suggestions.Add("   3. If the rare class is what you want to find, use --task anomaly-detection");
+            return;
+        }
 
         var classesBelow5 = classCounts.Where(c => c.Count < MINIMUM_PER_CLASS).ToList();
         var classesBelow15 = classCounts.Where(c => c.Count < RECOMMENDED_PER_CLASS).ToList();
 
         if (classesBelow5.Count > 0)
         {
-            result.Warnings.Add($"🔴 Multiclass training at risk: {classesBelow5.Count} of {classCount} classes have fewer than {MINIMUM_PER_CLASS} samples");
+            result.Warnings.Add($"🔴 Training at risk: {classesBelow5.Count} of {classCount} classes have fewer than {MINIMUM_PER_CLASS} samples");
             foreach (var c in classesBelow5)
             {
                 result.Warnings.Add($"   Class '{c.Class}': {c.Count} samples");
@@ -360,7 +405,7 @@ public class DataQualityValidator
             result.Warnings.Add("");
             result.Warnings.Add("   Cross-validation folds will likely have empty classes, causing AutoML to fail");
             result.Warnings.Add("");
-            result.Suggestions.Add("🔧 For small multiclass datasets:");
+            result.Suggestions.Add("🔧 For datasets with rare classes:");
             result.Suggestions.Add($"   1. Collect more data (target: ≥{RECOMMENDED_PER_CLASS} samples per class, ≥{classCount * RECOMMENDED_PER_CLASS} total)");
             result.Suggestions.Add("   2. Merge similar classes to reduce class count");
             result.Suggestions.Add("   3. Remove classes with very few samples");
@@ -368,7 +413,7 @@ public class DataQualityValidator
         }
         else if (classesBelow15.Count > 0)
         {
-            result.Warnings.Add($"🟡 Multiclass training may be unstable: {classesBelow15.Count} of {classCount} classes have fewer than {RECOMMENDED_PER_CLASS} samples");
+            result.Warnings.Add($"🟡 Training may be unstable: {classesBelow15.Count} of {classCount} classes have fewer than {RECOMMENDED_PER_CLASS} samples");
             result.Warnings.Add($"   Smallest class '{smallestClass.Class}': {smallestClass.Count} samples");
             result.Warnings.Add($"   Total dataset: {totalSamples} rows, {classCount} classes");
             result.Suggestions.Add($"💡 Target: ≥{RECOMMENDED_PER_CLASS} samples per class for stable training");

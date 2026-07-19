@@ -53,6 +53,40 @@ public class CsvSplitterTests : IDisposable
     }
 
     [Fact]
+    public void StratifiedSplit_WritesToRequestedDirectory()
+    {
+        // The default split path sends the two files to a temp directory it deletes afterwards, so
+        // ordinary training does not leave artifacts in the user's datasets/ folder.
+        var dataFile = CreateDataset(new Dictionary<string, int> { ["A"] = 20, ["B"] = 20 });
+        var outputDir = Path.Combine(_testDir, "elsewhere", "nested");
+
+        var result = new CsvSplitter().StratifiedSplit(dataFile, "Label", 0.2, outputDirectory: outputDir);
+
+        Assert.Equal(outputDir, Path.GetDirectoryName(result.TrainFile));
+        Assert.Equal(outputDir, Path.GetDirectoryName(result.TestFile));
+        Assert.True(File.Exists(result.TrainFile));
+        Assert.True(File.Exists(result.TestFile));
+    }
+
+    [Fact]
+    public void StratifiedSplit_ReportsPerClassCounts()
+    {
+        // The per-class report is what makes the split auditable: the whole point is that a rare
+        // class reaches both partitions, and the caller should not have to re-read the files to know.
+        var dataFile = CreateDataset(new Dictionary<string, int> { ["Common"] = 100, ["Rare"] = 3 });
+
+        var result = new CsvSplitter().StratifiedSplit(dataFile, "Label", 0.2);
+
+        Assert.Equal(2, result.PerClass.Count);
+        var (rareTrain, rareTest) = result.PerClass["Rare"];
+        Assert.Equal(3, rareTrain + rareTest);
+        Assert.True(rareTest >= 1, "The rare class must reach the test partition — that is the reason to stratify");
+        Assert.True(rareTrain >= 1, "The rare class must also stay in train");
+        Assert.Equal(result.TrainRows, result.PerClass.Values.Sum(c => c.Train));
+        Assert.Equal(result.TestRows, result.PerClass.Values.Sum(c => c.Test));
+    }
+
+    [Fact]
     public void StratifiedSplit_BothSetsHaveHeaders()
     {
         var dataFile = CreateDataset(new Dictionary<string, int> { ["A"] = 10, ["B"] = 10 });

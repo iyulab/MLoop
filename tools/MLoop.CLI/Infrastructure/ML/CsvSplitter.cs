@@ -19,6 +19,14 @@ public class CsvSplitter
         public required string TestFile { get; init; }
         public int TrainRows { get; init; }
         public int TestRows { get; init; }
+
+        /// <summary>
+        /// Per-class train/test counts. The point of stratifying is that every class survives into
+        /// both partitions, so the split reports what it actually achieved rather than leaving the
+        /// caller to re-scan the files to find out.
+        /// </summary>
+        public IReadOnlyDictionary<string, (int Train, int Test)> PerClass { get; init; }
+            = new Dictionary<string, (int, int)>();
     }
 
     /// <summary>
@@ -29,8 +37,14 @@ public class CsvSplitter
     /// <param name="labelColumn">Name of the label column for stratification</param>
     /// <param name="testFraction">Fraction of data for test set (0.0-1.0)</param>
     /// <param name="seed">Random seed for reproducibility</param>
+    /// <param name="outputDirectory">
+    /// Where to write the two split files. Defaults to the input file's directory, which is what the
+    /// <c>--balance</c> flow wants (the splits are user-visible artifacts there). The default split
+    /// path passes a temp directory instead, so routine training does not litter <c>datasets/</c>.
+    /// </param>
     /// <returns>Paths to train and test split files</returns>
-    public SplitResult StratifiedSplit(string dataFile, string labelColumn, double testFraction, int seed = 42)
+    public SplitResult StratifiedSplit(string dataFile, string labelColumn, double testFraction, int seed = 42,
+        string? outputDirectory = null)
     {
         // Flatten multiline quoted fields before line-by-line processing
         dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile);
@@ -72,8 +86,9 @@ public class CsvSplitter
         var random = new Random(seed);
         var trainRows = new List<string>();
         var testRows = new List<string>();
+        var perClass = new Dictionary<string, (int Train, int Test)>();
 
-        foreach (var (_, rows) in classBuckets)
+        foreach (var (label, rows) in classBuckets)
         {
             // Shuffle within each class
             var shuffled = rows.OrderBy(_ => random.Next()).ToList();
@@ -87,11 +102,13 @@ public class CsvSplitter
 
             testRows.AddRange(shuffled.Take(testCount));
             trainRows.AddRange(shuffled.Skip(testCount));
+            perClass[label] = (shuffled.Count - testCount, testCount);
         }
 
         // Write output files
         var baseName = Path.GetFileNameWithoutExtension(dataFile);
-        var dir = Path.GetDirectoryName(dataFile)!;
+        var dir = outputDirectory ?? Path.GetDirectoryName(dataFile)!;
+        Directory.CreateDirectory(dir);
 
         var trainFile = Path.Combine(dir, $"{baseName}_train_split.csv");
         var testFile = Path.Combine(dir, $"{baseName}_test_split.csv");
@@ -109,7 +126,8 @@ public class CsvSplitter
             TrainFile = trainFile,
             TestFile = testFile,
             TrainRows = trainRows.Count,
-            TestRows = testRows.Count
+            TestRows = testRows.Count,
+            PerClass = perClass
         };
     }
 }
