@@ -156,10 +156,24 @@ public class TrainingEngine : ITrainingEngine
                     Console.WriteLine();
                 }
 
+                // Decide once, here, which columns featurization drops. Everything downstream — the
+                // saved schema below, the train partition, the test partition — consumes this one
+                // decision instead of re-deriving it from whatever slice it happens to hold. Deciding
+                // per slice is unsound because the rules are data-dependent: a column that is
+                // constant only inside one partition narrows that partition alone, and the pipeline
+                // fitted on one width then fails on the other ("Schema mismatch for feature column
+                // 'Features': expected Vector<Single, 30>, got Vector<Single, 29>").
+                //
+                // The full dataset is the deciding slice, matching the schema capture below: a column
+                // is dropped because it carries no signal in the data as a whole, not because one
+                // random partition happened to flatten it.
+                var featureExclusions = CsvDataLoader.DetermineExcludedColumns(dataFilePath, config.LabelColumn);
+                config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
+
                 // Capture input schema before training (using enhanced detection).
                 // Deliberately from the full dataset, not the train split — the schema must describe
                 // every category the model may be asked to predict on.
-                inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides);
+                inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides, featureExclusions);
 
                 // Stratify the train/test split for classification. The unstratified alternative is
                 // ML.NET's TrainTestSplit (DataProviderBase.SplitData), which draws rows uniformly and
@@ -642,7 +656,8 @@ public class TrainingEngine : ITrainingEngine
         };
     }
 
-    private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn, string? taskType = null, Dictionary<string, string>? columnOverrides = null)
+    private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn, string? taskType = null, Dictionary<string, string>? columnOverrides = null,
+        IReadOnlyList<ExcludedColumn>? featureExclusions = null)
     {
         try
         {
@@ -779,20 +794,16 @@ public class TrainingEngine : ITrainingEngine
                 });
             }
 
-            // IMP-R2-10: Mark DateTime columns as "Exclude" in schema
-            // CsvDataLoader.ExcludeDateTimeColumns removes these during training,
-            // so the schema should reflect they are not used as features.
-            MarkDateTimeColumnsAsExcluded(columns, columnNames, dataLines);
-
-            // BUG-21: Mark constant columns as "Exclude" in schema
-            // CsvDataLoader.RemoveConstantColumns removes these during training,
-            // so the schema should reflect they are not used as features.
-            MarkConstantColumnsAsExcluded(columns, columnNames, dataLines, labelColumn);
-
-            // Mark sparse columns (>90% missing) as "Exclude" in schema
-            // CsvDataLoader.RemoveSparseColumns removes these during training,
-            // so the schema should reflect they are not used as features.
-            MarkSparseColumnsAsExcluded(columns, columnNames, dataLines, labelColumn);
+            // Mark the columns featurization drops (DateTime / sparse / constant) as "Exclude", so
+            // the saved schema describes exactly the feature set the model was fitted on — predict
+            // and evaluate replay it through CsvDataLoader.RemoveExcludedColumns.
+            //
+            // The set is not re-derived here. It is the same decision the loader applies, taken once
+            // by CsvDataLoader.DetermineExcludedColumns: this method used to mirror the loader's
+            // constant/sparse rules against its own 200-row sample, which is a second implementation
+            // of a data-dependent rule and therefore a drift waiting to happen (CLAUDE.md
+            // "Single-Source Authorities").
+            MarkColumnsAsExcluded(columns, featureExclusions);
 
             // BUG-R2-06: Collect complete categorical values from the FULL file.
             // The 1000-row sample above is only for type inference heuristics.
@@ -998,169 +1009,38 @@ public class TrainingEngine : ITrainingEngine
     /// Streams through the entire file to collect all unique categorical values.
     /// The initial type inference uses a 1000-row sample, but categorical values
     /// <summary>
-    /// Marks DateTime columns as "Exclude" in the schema.
-    /// Mirrors the logic in CsvDataLoader.ExcludeDateTimeColumns so the saved schema
-    /// accurately reflects which columns are actually used during training.
+    /// Applies the run's single featurization-exclusion decision to the captured schema.
     /// </summary>
-    private static void MarkDateTimeColumnsAsExcluded(
-        List<ColumnSchema> columns, string[] columnNames, string[] dataLines)
+    /// <remarks>
+    /// Columns already excluded for another reason (a "ignore" column override, or the label) keep
+    /// their existing purpose — the exclusion set only ever adds exclusions.
+    /// </remarks>
+    private static void MarkColumnsAsExcluded(
+        List<ColumnSchema> columns, IReadOnlyList<ExcludedColumn>? featureExclusions)
     {
-        // BUG-24: Collect replacements first, then apply — modifying a List<T>
-        // during foreach enumeration throws "Collection was modified" exception.
-        var replacements = new List<(int Index, ColumnSchema NewCol)>();
+        if (featureExclusions is null || featureExclusions.Count == 0) return;
 
-        for (int ci = 0; ci < columns.Count; ci++)
+        foreach (var exclusion in featureExclusions)
         {
-            var col = columns[ci];
-            if (col.Purpose != "Feature") continue;
-            if (col.DataType != SchemaDataTypes.Text && col.DataType != "Unknown") continue;
+            var index = columns.FindIndex(c => c.Name.Equals(exclusion.Name, StringComparison.OrdinalIgnoreCase));
+            if (index < 0) continue;
 
-            // Collect sample values for this column
-            List<string>? sampleValues = null;
-            var colIndex = Array.IndexOf(columnNames, col.Name);
-            if (colIndex >= 0)
-            {
-                sampleValues = new List<string>();
-                var checkCount = Math.Min(dataLines.Length, 10);
-                for (int i = 0; i < checkCount; i++)
-                {
-                    var fields = CsvFieldParser.ParseFields(dataLines[i]);
-                    if (colIndex < fields.Length)
-                    {
-                        sampleValues.Add(fields[colIndex].Trim());
-                    }
-                }
-            }
+            var col = columns[index];
+            if (col.Purpose is "Label" or "Exclude") continue;
 
-            if (DateTimeDetector.IsDateTimeColumn(col.Name, sampleValues))
-            {
-                replacements.Add((ci, new ColumnSchema
-                {
-                    Name = col.Name,
-                    DataType = "DateTime",
-                    Purpose = "Exclude",
-                    CategoricalValues = null,
-                    UniqueValueCount = null
-                }));
-            }
-        }
-
-        foreach (var (index, newCol) in replacements)
-        {
-            columns[index] = newCol;
-        }
-    }
-
-    /// <summary>
-    /// Marks constant columns as "Exclude" in the schema.
-    /// Mirrors the logic in CsvDataLoader.RemoveConstantColumns so the saved schema
-    /// accurately reflects which columns are actually used during training.
-    /// </summary>
-    private static void MarkConstantColumnsAsExcluded(
-        List<ColumnSchema> columns, string[] columnNames, string[] dataLines, string labelColumn)
-    {
-        if (dataLines.Length == 0) return;
-
-        // Sample up to 200 rows (same as CsvDataLoader.RemoveConstantColumns)
-        var sampleCount = Math.Min(dataLines.Length, 200);
-        var uniqueValues = new HashSet<string>[columnNames.Length];
-        for (int i = 0; i < columnNames.Length; i++)
-        {
-            uniqueValues[i] = new HashSet<string>();
-        }
-
-        for (int i = 0; i < sampleCount; i++)
-        {
-            var fields = CsvFieldParser.ParseFields(dataLines[i]);
-            for (int j = 0; j < Math.Min(fields.Length, columnNames.Length); j++)
-            {
-                var val = fields[j].Trim();
-                if (!string.IsNullOrEmpty(val))
-                {
-                    uniqueValues[j].Add(val);
-                }
-            }
-        }
-
-        for (int j = 0; j < columnNames.Length; j++)
-        {
-            // Skip label column
-            if (columnNames[j].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            // Constant = exactly 1 unique non-empty value
-            if (uniqueValues[j].Count != 1)
-                continue;
-
-            var col = columns.FirstOrDefault(c => c.Name == columnNames[j]);
-            if (col == null || col.Purpose == "Label" || col.Purpose == "Exclude")
-                continue;
-
-            var index = columns.IndexOf(col);
             columns[index] = new ColumnSchema
             {
                 Name = col.Name,
-                DataType = "Constant",
+                DataType = exclusion.Reason,
                 Purpose = "Exclude",
                 CategoricalValues = null,
-                UniqueValueCount = 1
+                UniqueValueCount = exclusion.Reason == SchemaDataTypes.ExcludedConstant ? 1 : null
             };
         }
     }
 
     /// <summary>
-    /// Marks sparse columns (>threshold missing values) as "Exclude" in the schema.
-    /// Mirrors the logic in CsvDataLoader.RemoveSparseColumns so the saved schema
-    /// accurately reflects which columns are actually used during training.
-    /// </summary>
-    private static void MarkSparseColumnsAsExcluded(
-        List<ColumnSchema> columns, string[] columnNames, string[] dataLines, string labelColumn,
-        double threshold = 0.90)
-    {
-        if (dataLines.Length == 0) return;
-
-        // Sample up to 200 rows (same as CsvDataLoader.RemoveSparseColumns)
-        var sampleCount = Math.Min(dataLines.Length, 200);
-        var missingCounts = new int[columnNames.Length];
-
-        for (int i = 0; i < sampleCount; i++)
-        {
-            var fields = CsvFieldParser.ParseFields(dataLines[i]);
-            for (int j = 0; j < columnNames.Length; j++)
-            {
-                if (j >= fields.Length || string.IsNullOrWhiteSpace(fields[j].Trim()))
-                {
-                    missingCounts[j]++;
-                }
-            }
-        }
-
-        for (int j = 0; j < columnNames.Length; j++)
-        {
-            // Skip label column
-            if (columnNames[j].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            double missingRate = (double)missingCounts[j] / sampleCount;
-            if (missingRate < threshold)
-                continue;
-
-            var col = columns.FirstOrDefault(c => c.Name == columnNames[j]);
-            if (col == null || col.Purpose == "Label" || col.Purpose == "Exclude")
-                continue;
-
-            var index = columns.IndexOf(col);
-            columns[index] = new ColumnSchema
-            {
-                Name = col.Name,
-                DataType = "Sparse",
-                Purpose = "Exclude",
-                CategoricalValues = null,
-                UniqueValueCount = null
-            };
-        }
-    }
-
+    /// Collects the complete set of categorical values for every categorical column. The set
     /// must be complete to prevent predict-time failures when unseen categories appear.
     /// Memory-efficient: only stores unique values per column, not all rows.
     /// </summary>

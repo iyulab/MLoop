@@ -24,7 +24,7 @@ public sealed class ObjectDetectionDataLoader : DataProviderBase
     }
 
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null)
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null)
     {
         // YOLO's images/ + labels/*.txt layout is the most distinctive signal; prefer it,
         // otherwise fall back to the COCO parser (which gives a clear error if no JSON exists).

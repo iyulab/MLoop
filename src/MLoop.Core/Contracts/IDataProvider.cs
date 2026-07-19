@@ -11,8 +11,17 @@ public interface IDataProvider
     /// <summary>
     /// Loads data from a file path
     /// </summary>
+    /// <param name="featureExclusions">
+    /// Columns featurization must drop, decided once for the whole run (see
+    /// <see cref="Data.CsvDataLoader.DetermineExcludedColumns"/>). When supplied the loader applies
+    /// this set verbatim instead of re-deriving it from <paramref name="filePath"/> — the two
+    /// partitions of one split must agree on the feature width, and a data-dependent rule evaluated
+    /// per partition does not. Null means "no decision has been made yet; decide from this file".
+    /// Loaders whose input is not tabular (image folders, COCO/YOLO annotations) have no such
+    /// columns and ignore it, as they do <see cref="GetMergedColumnGroups"/>.
+    /// </param>
     IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null);
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null);
 
     /// <summary>
     /// Validates that the label column exists in the data

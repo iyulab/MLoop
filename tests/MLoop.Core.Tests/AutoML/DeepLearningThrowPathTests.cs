@@ -116,7 +116,8 @@ public class DeepLearningThrowPathTests
         }
 
         public IDataView LoadData(string filePath, string? labelColumn = null,
-            string? taskType = null, IEnumerable<string>? preserveColumns = null)
+            string? taskType = null, IEnumerable<string>? preserveColumns = null,
+            IReadOnlyCollection<string>? featureExclusions = null)
             => _fullData;
 
         public bool ValidateLabelColumn(IDataView data, string labelColumn)

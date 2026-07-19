@@ -20,6 +20,20 @@ public static class SchemaDataTypes
     public const string Boolean = "Boolean";
 
     /// <summary>
+    /// Exclusion markers: the <see cref="ColumnSchema.DataType"/> a column carries when
+    /// featurization dropped it (<see cref="ColumnSchema.Purpose"/> is then "Exclude").
+    /// The reason is part of the same vocabulary because the saved schema is what predict and
+    /// evaluate replay — see <see cref="Data.CsvDataLoader.DetermineExcludedColumns"/>.
+    /// </summary>
+    public const string ExcludedDateTime = "DateTime";
+
+    /// <inheritdoc cref="ExcludedDateTime"/>
+    public const string ExcludedSparse = "Sparse";
+
+    /// <inheritdoc cref="ExcludedDateTime"/>
+    public const string ExcludedConstant = "Constant";
+
+    /// <summary>
     /// Producer-side mapping: raw CLR type of a DataView column (or vector item) to the
     /// semantic vocabulary. String-typed columns map to <see cref="Text"/> — the producer
     /// upgrades to <see cref="Categorical"/> when it captures the column's distinct values.
