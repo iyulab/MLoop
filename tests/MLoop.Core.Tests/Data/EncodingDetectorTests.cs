@@ -58,7 +58,6 @@ public class EncodingDetectorTests : IDisposable
 
         Assert.Equal("UTF-8", result.EncodingName);
         Assert.True(result.HasBom);
-        Assert.Equal(1.0f, result.Confidence);
     }
 
     [Fact]
@@ -70,7 +69,6 @@ public class EncodingDetectorTests : IDisposable
 
         Assert.Equal("UTF-8", result.EncodingName);
         Assert.False(result.HasBom);
-        Assert.True(result.Confidence >= 0.5f, $"Confidence {result.Confidence} should be >= 0.5 for ASCII content");
     }
 
     [Fact]
@@ -81,7 +79,6 @@ public class EncodingDetectorTests : IDisposable
         var result = EncodingDetector.DetectEncoding(path);
 
         Assert.Equal("UTF-8", result.EncodingName);
-        Assert.True(result.Confidence >= 0.9f);
     }
 
     #endregion
@@ -133,7 +130,6 @@ public class EncodingDetectorTests : IDisposable
         var result = EncodingDetector.DetectEncoding(path);
 
         Assert.Equal("CP949", result.EncodingName);
-        Assert.True(result.Confidence >= 0.5f);
     }
 
     #endregion
@@ -210,8 +206,6 @@ public class EncodingDetectorTests : IDisposable
 
         // Must detect as CP949, NOT UTF-8 — even though body is mostly ASCII
         Assert.Equal("CP949", result.EncodingName);
-        Assert.True(result.Confidence >= 0.5f,
-            $"Expected CP949 confidence >= 0.5, got {result.Confidence}");
     }
 
     [Fact]
@@ -251,7 +245,6 @@ public class EncodingDetectorTests : IDisposable
         var result = EncodingDetector.DetectEncoding(path);
 
         Assert.Equal("UTF-8", result.EncodingName);
-        Assert.Equal(1.0f, result.Confidence);
     }
 
     [Fact]

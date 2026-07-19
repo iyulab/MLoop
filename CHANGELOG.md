@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-07-19
+
+### Changed
+- **CP949/EUC-KR encoding detection now delegates to FilePrepper (0.7.2 → 0.7.3), removing a duplicated implementation.** `MLoop.Core.Data.EncodingDetector` carried its own ~180-line copy of the byte-pattern detection (BOM / UTF-8 validity / Korean-pattern) that FilePrepper — the file-prep layer MLoop.Core already depends on — also implements. The two could drift; MLoop's convenience surface (`DetectionResult`, and the `ConvertToUtf8WithBom` policy ML.NET's TextLoader needs) is now a thin adapter over FilePrepper's single authority. Detection results are unchanged, verified by the existing detector tests (UTF-8 with/without BOM, UTF-16 LE/BE, CP949, and the KAMP-style Korean-header + ASCII-body case). FilePrepper 0.7.3 additionally fixes a boundary bug where a large UTF-8 file whose 64KB detection sample cut a multibyte character was misdetected as CP949 — MLoop inherits that fix.
+- `DetectionResult.Confidence` removed (no consumer read it; the delegated authority reports a decided encoding, not a score). `HasBom` now recognizes UTF-16 LE/BE marks in addition to UTF-8.
+
 ## [0.27.0] - 2026-07-19
 
 ### Added
