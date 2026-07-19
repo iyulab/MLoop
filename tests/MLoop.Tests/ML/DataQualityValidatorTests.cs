@@ -289,9 +289,30 @@ public class DataQualityValidatorTests : IDisposable
         Assert.False(result.IsValid);
         Assert.Contains("'Yes'", result.ErrorMessage!);
         Assert.Contains("fewer than 2 samples", result.ErrorMessage!);
+        Assert.Contains("Only 1 class", result.ErrorMessage!);
         // The imbalance advice collected moments earlier (oversample, shorten the time limit) answers
         // a different question and must not compete with the rejection's own explanation.
         Assert.DoesNotContain(result.Suggestions, s => s.Contains("SMOTE"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_MulticlassWithOneStarvedClass_TrainsOnTheRest()
+    {
+        // Measured against the previous release: 80/80/1 across three classes trained successfully
+        // and promoted (macro-accuracy 0.92, macro-F1 0.61) — the model is genuinely useful for the
+        // two healthy classes. Rejecting it because one class is unsplittable would remove working
+        // capability, so a starved class is only fatal when fewer than two classes survive it.
+        var lines = new List<string> { "F1,Target" };
+        for (int i = 0; i < 40; i++) lines.Add($"{i},A");
+        for (int i = 0; i < 40; i++) lines.Add($"{100 + i},B");
+        lines.Add("999,Rare");
+        var path = CreateCsv(string.Join("\n", lines));
+
+        var result = _validator.ValidateTrainingData(path, "Target", "multiclass-classification");
+
+        Assert.True(result.IsValid);
+        Assert.Contains(result.Warnings, w => w.Contains("'Rare'") && w.Contains("both the train and test sets"));
+        Assert.Contains(result.Warnings, w => w.Contains("will not"));
     }
 
     [Fact]
