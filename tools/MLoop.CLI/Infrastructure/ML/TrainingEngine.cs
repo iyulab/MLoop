@@ -463,10 +463,13 @@ public class TrainingEngine : ITrainingEngine
             ProbeTimeSeconds = probeTime
         });
 
+        // Interlocked, not ++: AutoML reports trials from its own worker threads, so the callback
+        // is not serialized. (Before per-trial reporting was wired up this counter never moved at
+        // all on tabular tasks, which is why the race was invisible.)
         var probeProgress = progress != null
             ? new Progress<TrainingProgress>(p =>
             {
-                probeTrialCount++;
+                Interlocked.Increment(ref probeTrialCount);
                 progress.Report(p);
             })
             : null;

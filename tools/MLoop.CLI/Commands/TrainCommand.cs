@@ -918,27 +918,29 @@ public static class TrainCommand
                 {
                     var progressTask = ctx.AddTask($"[green]Training {resolvedModelName}...[/]", maxValue: 100);
 
+                    var progressTracker = new TrainingProgressTracker(trainingConfig.TimeLimitSeconds);
+
                     var progress = new Progress<TrainingProgress>(p =>
                     {
                         if (p.Phase.HasValue)
                         {
                             lastAutoTimeEvent = p;
+                            progressTracker.EnterPhase(p);
                             progressTask.Description = p.Phase switch
                             {
                                 AutoTimePhase.ProbeStart => $"[cyan]Phase 1:[/] Probe ({p.ProbeTimeSeconds}s)...",
                                 AutoTimePhase.ProbeComplete => $"[cyan]Phase 2:[/] Main training ({p.FinalTimeSeconds}s)...",
-                                AutoTimePhase.ProbeConverged => $"[green]Converged[/] in probe phase",
+                                AutoTimePhase.ProbeConverged => "[green]Converged[/] in probe phase",
                                 _ => progressTask.Description
                             };
                             return;
                         }
 
-                        progressTask.Description = $"[green]Trial {p.TrialNumber}:[/] {p.TrainerName} - {p.MetricName}={p.Metric:F4}";
+                        var trainer = TrainingProgressTracker.ShortTrainerName(p.TrainerName);
+                        progressTask.Description = $"[green]Trial {p.TrialNumber}:[/] {trainer} - {p.MetricName}={p.Metric:F4}";
 
-                        var progressPercent = Math.Min(
-                            (p.ElapsedSeconds / trainingConfig.TimeLimitSeconds) * 100,
-                            99);
-                        progressTask.Value = progressPercent;
+                        if (progressTracker.PercentFor(p) is { } percent)
+                            progressTask.Value = percent;
                     });
 
                     result = await trainingEngine.TrainAsync(trainingConfig, progress, CancellationToken.None);
