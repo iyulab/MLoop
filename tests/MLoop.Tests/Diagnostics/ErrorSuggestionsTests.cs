@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.Core.AutoML;
 
 namespace MLoop.Tests.Diagnostics;
 
@@ -156,5 +157,97 @@ public class ErrorSuggestionsTests
     public void AddsInformation_EmptyInner_IsSuppressed(string inner)
     {
         Assert.False(ErrorSuggestions.AddsInformation("Something failed.", inner));
+    }
+
+    // --- Resource / no-trial failures (issue: OOM diagnostic contract, cycle-174) ---
+    //
+    // TrainingEngine rethrows as "Training failed for experiment {id}: {inner.Message}", so every
+    // suggestion rule sees the *wrapper*. Anything keyed on the exception type therefore has to walk
+    // the inner chain — otherwise the rule silently never fires in production.
+
+    private static Exception AsTrainingEngineWraps(Exception inner) =>
+        new InvalidOperationException($"Training failed for experiment default/exp-001: {inner.Message}", inner);
+
+    [Fact]
+    public void GetSuggestions_NoSuccessfulTrial_DoesNotAdviseShrinkingTheTimeBudget()
+    {
+        // The failure IS "the budget bought no finished trial". The generic training fallback used to
+        // answer it with "try --time 30" — advice that makes the very failure it is answering worse.
+        var ex = AsTrainingEngineWraps(new NoSuccessfulTrialException(900, null));
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "training");
+
+        Assert.DoesNotContain(suggestions, s => s.Contains("--time 30"));
+        Assert.DoesNotContain(suggestions, s => s.Contains("smaller time limit"));
+    }
+
+    [Fact]
+    public void GetSuggestions_RawMlNetTimeout_IsRecognisedByTypeNotWording()
+    {
+        // The shape actually observed downstream, before AutoMLRunner translates it: ML.NET's own
+        // message, which contains neither "timeout" nor "memory", so every message-keyed rule misses it
+        // and the generic training fallback answers with "--time 30". Keyed on the type, it can't miss.
+        var ex = AsTrainingEngineWraps(new TimeoutException(
+            "Training time finished without completing a successful trial. " +
+            "Either no trial completed or the metric for all completed trials are NaN or Infinity"));
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "training");
+
+        Assert.DoesNotContain(suggestions, s => s.Contains("--time 30"));
+        Assert.DoesNotContain(suggestions, s => s.Contains("smaller time limit"));
+        Assert.Contains(suggestions, s => s.Contains("--max-rows") || s.Contains("mloop sample"));
+    }
+
+    [Fact]
+    public void GetSuggestions_NoSuccessfulTrial_OffersBothCauses()
+    {
+        var ex = AsTrainingEngineWraps(new NoSuccessfulTrialException(900, null));
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "training");
+
+        // Cause A: budget too small → give more time.
+        Assert.Contains(suggestions, s => s.Contains("--time"));
+        // Cause B: trials dying on resources → give them less work.
+        Assert.Contains(suggestions, s => s.Contains("--max-rows") || s.Contains("mloop sample"));
+    }
+
+    [Fact]
+    public void GetSuggestions_NoSuccessfulTrial_DoesNotRepeatTheSameRemedyTwice()
+    {
+        // Caught end-to-end: the no-trial message names memory as a candidate cause, which then matched
+        // the memory rule's substring test — printing "--max-rows" and "drop columns" twice each, in
+        // slightly different words. Two rules agreeing is not two pieces of advice.
+        var ex = AsTrainingEngineWraps(new NoSuccessfulTrialException(900, null));
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "training");
+
+        Assert.Single(suggestions, s => s.Contains("--max-rows"));
+        Assert.Single(suggestions, s => s.Contains("olumns"));
+    }
+
+    [Fact]
+    public void GetSuggestions_WrappedOutOfMemory_SuggestsResourceRemedies()
+    {
+        // AutoML surfaces OOM through an AggregateException, which AutoMLRunner unwraps; the CLI then
+        // wraps it again. The memory rule existed all along but only matched a *bare* OutOfMemoryException.
+        var ex = AsTrainingEngineWraps(new OutOfMemoryException("Insufficient memory to continue."));
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "training");
+
+        Assert.Contains(suggestions, s => s.Contains("--max-rows") || s.Contains("mloop sample"));
+    }
+
+    [Theory]
+    [InlineData("bad allocation")]
+    [InlineData("std::bad_alloc")]
+    public void GetSuggestions_NativeAllocationFailure_SuggestsResourceRemedies(string nativeText)
+    {
+        // Native trainers (LightGBM) report exhaustion in their own words; when that text does reach a
+        // managed message, it means the same thing as OutOfMemoryException.
+        var ex = new InvalidOperationException($"LightGBM training failed: {nativeText}");
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "training");
+
+        Assert.Contains(suggestions, s => s.Contains("--max-rows") || s.Contains("mloop sample"));
     }
 }

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.29.2] - 2026-07-20
+
+### Fixed
+- **A run that completes no trial now explains itself, instead of being advised to shorten the time budget.** When AutoML ends without a single successful trial it throws ML.NET's own `TimeoutException` ("Training time finished without completing a successful trial"), wrapped in an `AggregateException` by its internal threading. That message contains neither "timeout" nor "memory", so every suggestion rule missed it and the generic training fallback answered with `Try with a smaller time limit first: mloop train --time 30` — advice that makes the very failure it is answering worse. The wrapper is now unwrapped where AutoML failures are already interpreted (`AutoMLRunner`, alongside the AUC-undefined recovery) and the condition is recognised **by exception type**, not by matching an ML.NET English string that a localization or wording change would break. The diagnosis deliberately names **two** causes — a budget too small, or trials that all died before finishing — because in this path MLoop genuinely cannot distinguish them: when no trial completes, AutoML's `progressHandler` reports nothing at all (measured against Microsoft.ML.AutoML 0.23.0). Naming only one would be a guess presented as a diagnosis. The suggestions cover both directions: raise `--time`, or reduce the work per trial with `--max-rows` / `mloop sample create` / fewer columns.
+- **Out-of-memory failures reached the user with no memory advice at all.** The suggestion layer had a memory rule since early on, but it tested `ex is OutOfMemoryException` against the *wrapper*: AutoML wraps the failure in an `AggregateException` and the CLI wraps again as `Training failed for experiment {id}: …`, so the rule never fired on a real training run. Exception-type rules now walk the inner chain. Native trainers that report exhaustion in their own words (`bad allocation`, `bad_alloc` — LightGBM) are recognised too, for the cases where that text reaches a managed message.
+
+### Known limitation
+- A **native** out-of-memory crash (the trainer's own allocator aborting the process) still cannot be attributed: no managed exception is raised, so no MLoop code runs to diagnose it. Measured, for the record: LightGBM's native warnings go to **stdout (fd 1)**, bypassing `MLContext.Log` and managed `Console` redirection entirely — so they cannot be captured as a diagnostic signal without OS-level fd interception, and equally they do **not** break the "exit != 0 ⇒ stderr carries the cause" contract (stderr stayed empty across the measurements).
+
 ## [0.29.1] - 2026-07-19
 
 ### Fixed
