@@ -1,4 +1,5 @@
 using System.Reflection;
+using MLoop.Core.AutoML;
 using Spectre.Console;
 
 namespace MLoop.CLI.Infrastructure.Diagnostics;
@@ -63,6 +64,31 @@ public static class ErrorSuggestions
     }
 
     /// <summary>
+    /// Whether <typeparamref name="T"/> appears anywhere in the exception's inner chain.
+    /// </summary>
+    /// <remarks>
+    /// Every rule here sees a *wrapped* exception: TrainingEngine rethrows as
+    /// "Training failed for experiment {id}: {inner.Message}", and AutoML adds an
+    /// <see cref="AggregateException"/> of its own. A plain <c>ex is T</c> test therefore reads the
+    /// wrapper's type and silently never fires — the failure mode that kept the memory rule dark on
+    /// every real training run.
+    /// </remarks>
+    private static bool HasInChain<T>(Exception ex) where T : Exception
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is T) return true;
+            if (current is AggregateException aggregate
+                && aggregate.Flatten().InnerExceptions.Any(inner => HasInChain<T>(inner)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Gets actionable suggestions for the given exception.
     /// </summary>
     public static List<string> GetSuggestions(Exception ex, string context = "")
@@ -124,12 +150,38 @@ public static class ErrorSuggestions
             suggestions.Add("Update in mloop.yaml or use: [cyan]mloop train --task <task-type>[/]");
         }
 
-        // Memory and resource errors
-        if (ex is OutOfMemoryException || message.Contains("out of memory") || message.Contains("memory"))
+        // No trial completed. Recognised by type, because the message that reaches here is ML.NET's
+        // own ("Training time finished without completing a successful trial") — it contains neither
+        // "timeout" nor "memory", so every message rule below misses it and the generic training
+        // fallback used to answer with "try --time 30": shrink the budget that already bought nothing.
+        // Both causes are named because MLoop cannot tell them apart here (see NoSuccessfulTrialException).
+        var noTrialCompleted = HasInChain<NoSuccessfulTrialException>(ex)
+            || (context == "training" && HasInChain<TimeoutException>(ex));
+
+        if (noTrialCompleted)
         {
-            suggestions.Add("Try reducing the dataset size with sampling");
+            suggestions.Add("No trial finished, so there is no model to report — either the time budget was too short, or every trial died before finishing");
+            suggestions.Add("Give it more time: [cyan]mloop train --time <seconds>[/]");
+            suggestions.Add("Or give each trial less work: [cyan]mloop train --max-rows <n>[/], or pre-sample with [cyan]mloop sample create[/]");
+            suggestions.Add("Drop columns you don't need — feature width drives memory as much as row count");
+            suggestions.Add("If the log showed native allocation warnings (e.g. [[LightGBM]] bad allocation), memory is the likely cause");
+        }
+
+        // Memory and resource errors. The type test walks the inner chain: AutoML wraps OOM in an
+        // AggregateException and the CLI wraps again ("Training failed for experiment {id}: …"), so a
+        // bare `ex is OutOfMemoryException` never matched in production. Native trainers report the
+        // same exhaustion in their own words ("bad allocation" / "bad_alloc") when it reaches a message.
+        //
+        // Skipped once the no-trial rule has spoken: that rule already offers the same remedies, and its
+        // message names memory as a candidate cause — which would otherwise match the substring test
+        // below and print each remedy twice, in slightly different words.
+        if (!noTrialCompleted
+            && (HasInChain<OutOfMemoryException>(ex) || message.Contains("out of memory") || message.Contains("memory")
+                || message.Contains("bad allocation") || message.Contains("bad_alloc")))
+        {
+            suggestions.Add("Reduce the data per run: [cyan]mloop train --max-rows <n>[/] or [cyan]mloop sample create[/]");
+            suggestions.Add("Drop unneeded columns — wide feature vectors cost more memory than extra rows");
             suggestions.Add("Close other applications to free memory");
-            suggestions.Add("Consider using incremental training or data chunking");
         }
 
         // Timeout errors

@@ -11,6 +11,10 @@ public interface IDataProvider
     /// <summary>
     /// Loads data from a file path
     /// </summary>
+    /// <param name="filePath">Path to the data file (or, for non-tabular loaders, its root folder).</param>
+    /// <param name="labelColumn">The label column name; null lets the loader infer or skip it.</param>
+    /// <param name="taskType">Task the data is being loaded for, when the loader varies by task.</param>
+    /// <param name="preserveColumns">Columns to keep loadable even if they are not features.</param>
     /// <param name="featureExclusions">
     /// Columns featurization must drop, decided once for the whole run (see
     /// <see cref="Data.CsvDataLoader.DetermineExcludedColumns"/>). When supplied the loader applies

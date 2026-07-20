@@ -483,11 +483,11 @@ public partial class AutoMLRunner
         // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
-        var experimentResult = await Task.Run(
+        var experimentResult = await ExecuteExperimentAsync(
             () => columnInfo != null
                 ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer)
                 : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, preFeaturizer: config.PreFeaturizer),
-            cancellationToken).ConfigureAwait(false);
+            config, cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
@@ -1002,11 +1002,11 @@ public partial class AutoMLRunner
         // BUG-25: Explicit ColumnInformation for text column featurization
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
-        var experimentResult = await Task.Run(
+        var experimentResult = await ExecuteExperimentAsync(
             () => columnInfo != null
                 ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer)
                 : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, preFeaturizer: config.PreFeaturizer),
-            cancellationToken).ConfigureAwait(false);
+            config, cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
@@ -1069,11 +1069,11 @@ public partial class AutoMLRunner
         // BUG-25: Explicit ColumnInformation for text column featurization
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
-        var experimentResult = await Task.Run(
+        var experimentResult = await ExecuteExperimentAsync(
             () => columnInfo != null
                 ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer)
                 : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, preFeaturizer: config.PreFeaturizer),
-            cancellationToken).ConfigureAwait(false);
+            config, cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
@@ -1948,6 +1948,33 @@ public partial class AutoMLRunner
             "mse" => metrics.MeanSquaredError,
             _ => metrics.RSquared
         };
+    }
+
+    /// <summary>
+    /// Runs an AutoML experiment and translates its terminal failures (see
+    /// <see cref="AutoMLFailureTranslator"/>) before they escape this class.
+    /// </summary>
+    /// <remarks>
+    /// Every task type funnels through here so the translation happens once. Doing it at each
+    /// <c>Execute</c> call site instead would put the same knowledge in three places — the drift the
+    /// Single-Source Authorities rule exists to prevent.
+    /// </remarks>
+    private static async Task<TResult> ExecuteExperimentAsync<TResult>(
+        Func<TResult> execute,
+        TrainingConfig config,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await Task.Run(execute, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            if (AutoMLFailureTranslator.TryTranslate(ex, config.TimeLimitSeconds, out var translated))
+                throw translated;
+
+            throw;
+        }
     }
 
     /// <summary>
