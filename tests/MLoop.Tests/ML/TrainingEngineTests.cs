@@ -526,6 +526,61 @@ public class TrainingEngineTests : IDisposable
         File.WriteAllText(Path.Combine(dir, "annotations.json"), json);
     }
 
+    /// <summary>
+    /// Auto-time's probe summary counted trials by watching the progress stream, and the three
+    /// mainstream tabular tasks never reported one — so "N trials" was structurally always 0 and no
+    /// test noticed. This pins the counter to the stream it is derived from.
+    /// </summary>
+    [Fact]
+    public async Task TrainAsync_AutoTime_ProbeSummaryCountsTheTrialsItObserved()
+    {
+        var csv = Path.Combine(_tempDir, "train.csv");
+        var lines = new List<string> { "age,income,score,label" };
+        var rnd = new Random(7);
+        for (int i = 0; i < 2000; i++)
+        {
+            var age = rnd.Next(20, 70);
+            var income = rnd.Next(1000, 9000);
+            var score = rnd.NextDouble();
+            // Cleanly separable, so the probe converges and main training is skipped.
+            lines.Add($"{age},{income},{score:F4},{(income + age * 50 + score * 1000 > 6500 ? 1 : 0)}");
+        }
+        await File.WriteAllLinesAsync(csv, lines);
+
+        var config = new TrainingConfig
+        {
+            ModelName = "autotime",
+            DataFile = csv,
+            LabelColumn = "label",
+            Task = "binary-classification",
+            UseAutoTime = true
+        };
+
+        var events = new List<TrainingProgress>();
+        var progress = new InlineProgress(p => { lock (events) events.Add(p); });
+
+        await NewEngine().TrainAsync(config, progress, CancellationToken.None);
+
+        List<TrainingProgress> seen;
+        lock (events) seen = [.. events];
+
+        var trials = seen.Where(p => p.Phase is null).ToList();
+        Assert.NotEmpty(trials);
+
+        var summary = seen.LastOrDefault(p =>
+            p.Phase is AutoTimePhase.ProbeConverged or AutoTimePhase.ProbeComplete);
+        Assert.NotNull(summary);
+        Assert.True(summary!.TrialNumber > 0,
+            "the probe summary reported 0 trials while the progress stream carried " +
+            $"{trials.Count} — the counter is no longer fed by the stream");
+    }
+
+    /// <summary>Reports on the calling thread so assertions do not race Progress&lt;T&gt;'s thread pool hand-off.</summary>
+    private sealed class InlineProgress(Action<TrainingProgress> onReport) : IProgress<TrainingProgress>
+    {
+        public void Report(TrainingProgress value) => onReport(value);
+    }
+
     private TrainingEngine NewEngine()
     {
         var fs = new FileSystemManager();

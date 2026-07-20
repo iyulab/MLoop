@@ -426,7 +426,7 @@ public partial class AutoMLRunner
         try
         {
             return await RunBinaryClassificationCoreAsync(
-                trainSet, testSet, config, optimizingMetric, cancellationToken).ConfigureAwait(false);
+                trainSet, testSet, config, optimizingMetric, progress, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsAucUndefinedException(ex))
         {
@@ -439,7 +439,7 @@ public partial class AutoMLRunner
                 // Already using F1Score — fall back to manual pipeline directly.
                 _logger.Warning("AutoML failed with F1Score metric. Falling back to direct pipeline training (SDCA).");
                 return await RunManualBinaryClassificationAsync(
-                    trainSet, testSet, config, cancellationToken).ConfigureAwait(false);
+                    trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false);
             }
 
             var originalMetric = optimizingMetric.ToString();
@@ -449,7 +449,7 @@ public partial class AutoMLRunner
             try
             {
                 return await RunBinaryClassificationCoreAsync(
-                    trainSet, testSet, config, BinaryClassificationMetric.F1Score, cancellationToken,
+                    trainSet, testSet, config, BinaryClassificationMetric.F1Score, progress, cancellationToken,
                     metricFallbackNote).ConfigureAwait(false);
             }
             catch (Exception fallbackEx) when (IsAucUndefinedException(fallbackEx))
@@ -457,7 +457,7 @@ public partial class AutoMLRunner
                 // BUG-36: AutoML failed with both metrics — fall back to manual pipeline training.
                 _logger.Warning("AutoML failed with both metrics. Falling back to direct pipeline training (SDCA).");
                 return await RunManualBinaryClassificationAsync(
-                    trainSet, testSet, config, cancellationToken).ConfigureAwait(false);
+                    trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -467,6 +467,7 @@ public partial class AutoMLRunner
         IDataView testSet,
         TrainingConfig config,
         BinaryClassificationMetric optimizingMetric,
+        IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken,
         string? metricFallbackNote = null)
     {
@@ -483,10 +484,13 @@ public partial class AutoMLRunner
         // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
+        var trialReporter = CreateTrialReporter(progress, DescribeBinaryMetric(optimizingMetric));
+
         var experimentResult = await ExecuteExperimentAsync(
             () => columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer)
-                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, preFeaturizer: config.PreFeaturizer),
+                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer, trialReporter)
+                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
+                    preFeaturizer: config.PreFeaturizer, progressHandler: trialReporter),
             config, cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
@@ -868,8 +872,21 @@ public partial class AutoMLRunner
         IDataView trainSet,
         IDataView testSet,
         TrainingConfig config,
+        IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
+        // One synthetic trial, as the non-AutoML task paths do: this pipeline has no trials to
+        // report, but leaving the progress channel silent would strand the caller's display at 0%
+        // for the whole fit.
+        progress?.Report(new TrainingProgress
+        {
+            TrialNumber = 1,
+            TrainerName = "SdcaLogisticRegression (fallback)",
+            MetricName = "accuracy",
+            Metric = 0,
+            ElapsedSeconds = 0
+        });
+
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
         // Build feature pipeline based on column types
@@ -990,10 +1007,11 @@ public partial class AutoMLRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
+        var optimizingMetric = GetMulticlassMetric(config.Metric);
         var settings = new MulticlassExperimentSettings
         {
             MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
-            OptimizingMetric = GetMulticlassMetric(config.Metric),
+            OptimizingMetric = optimizingMetric,
             CancellationToken = cancellationToken
         };
 
@@ -1002,10 +1020,13 @@ public partial class AutoMLRunner
         // BUG-25: Explicit ColumnInformation for text column featurization
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
+        var trialReporter = CreateTrialReporter(progress, DescribeMulticlassMetric(optimizingMetric));
+
         var experimentResult = await ExecuteExperimentAsync(
             () => columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer)
-                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, preFeaturizer: config.PreFeaturizer),
+                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer, trialReporter)
+                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
+                    preFeaturizer: config.PreFeaturizer, progressHandler: trialReporter),
             config, cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
@@ -1057,10 +1078,11 @@ public partial class AutoMLRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
+        var optimizingMetric = GetRegressionMetric(config.Metric);
         var settings = new RegressionExperimentSettings
         {
             MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
-            OptimizingMetric = GetRegressionMetric(config.Metric),
+            OptimizingMetric = optimizingMetric,
             CancellationToken = cancellationToken
         };
 
@@ -1069,10 +1091,13 @@ public partial class AutoMLRunner
         // BUG-25: Explicit ColumnInformation for text column featurization
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
+        var trialReporter = CreateTrialReporter(progress, DescribeRegressionMetric(optimizingMetric));
+
         var experimentResult = await ExecuteExperimentAsync(
             () => columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer)
-                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, preFeaturizer: config.PreFeaturizer),
+                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer, trialReporter)
+                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
+                    preFeaturizer: config.PreFeaturizer, progressHandler: trialReporter),
             config, cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
@@ -1916,39 +1941,56 @@ public partial class AutoMLRunner
         };
     }
 
-    private double GetMetricValue(BinaryClassificationMetrics metrics, string metricName)
-    {
-        return metricName.ToLowerInvariant() switch
-        {
-            "accuracy" => metrics.Accuracy,
-            "auc" => metrics.AreaUnderRocCurve,
-            "f1" or "f1_score" => metrics.F1Score,
-            _ => metrics.Accuracy
-        };
-    }
+    /// <summary>
+    /// Builds the per-trial progress adapter, or <c>null</c> when nobody is listening — ML.NET
+    /// accepts a null progressHandler, so the three tabular paths keep one call shape either way.
+    /// </summary>
+    private static TrialProgressReporter<TMetrics>? CreateTrialReporter<TMetrics>(
+        IProgress<TrainingProgress>? progress,
+        (string Name, Func<TMetrics, double> Select) metric) where TMetrics : class
+        => progress is null ? null : new TrialProgressReporter<TMetrics>(progress, metric.Name, metric.Select);
 
-    private double GetMetricValue(MulticlassClassificationMetrics metrics, string metricName)
-    {
-        return metricName.ToLowerInvariant() switch
-        {
-            "accuracy" or "macro_accuracy" => metrics.MacroAccuracy,
-            "micro_accuracy" => metrics.MicroAccuracy,
-            "log_loss" => metrics.LogLoss,
-            _ => metrics.MacroAccuracy
-        };
-    }
+    // Per-trial metric reporting: name + reader for the metric AutoML is actually optimizing.
+    //
+    // Keyed on the ML.NET enum rather than on config.Metric, because the two can diverge: binary
+    // classification switches the optimizing metric to F1Score mid-run when AUC turns out to be
+    // undefined (BUG-22/24, see RunBinaryClassificationAsync). The enum is what the experiment ranks
+    // by, so it is the honest source for what to display.
+    //
+    // Names use MLoop's own metric vocabulary (the keys of AutoMLResult.Metrics) so a trial line and
+    // the final results table talk about the same thing.
 
-    private double GetMetricValue(RegressionMetrics metrics, string metricName)
-    {
-        return metricName.ToLowerInvariant() switch
+    private static (string Name, Func<BinaryClassificationMetrics, double> Select) DescribeBinaryMetric(
+        BinaryClassificationMetric metric) => metric switch
         {
-            "r_squared" or "r2" => metrics.RSquared,
-            "rmse" => metrics.RootMeanSquaredError,
-            "mae" => metrics.MeanAbsoluteError,
-            "mse" => metrics.MeanSquaredError,
-            _ => metrics.RSquared
+            BinaryClassificationMetric.AreaUnderRocCurve => ("auc", m => m.AreaUnderRocCurve),
+            BinaryClassificationMetric.AreaUnderPrecisionRecallCurve => ("auprc", m => m.AreaUnderPrecisionRecallCurve),
+            BinaryClassificationMetric.F1Score => ("f1_score", m => m.F1Score),
+            BinaryClassificationMetric.PositivePrecision => ("precision", m => m.PositivePrecision),
+            BinaryClassificationMetric.PositiveRecall => ("recall", m => m.PositiveRecall),
+            BinaryClassificationMetric.NegativePrecision => ("negative_precision", m => m.NegativePrecision),
+            BinaryClassificationMetric.NegativeRecall => ("negative_recall", m => m.NegativeRecall),
+            _ => ("accuracy", m => m.Accuracy)
         };
-    }
+
+    private static (string Name, Func<MulticlassClassificationMetrics, double> Select) DescribeMulticlassMetric(
+        MulticlassClassificationMetric metric) => metric switch
+        {
+            MulticlassClassificationMetric.MicroAccuracy => ("micro_accuracy", m => m.MicroAccuracy),
+            MulticlassClassificationMetric.LogLoss => ("log_loss", m => m.LogLoss),
+            MulticlassClassificationMetric.LogLossReduction => ("log_loss_reduction", m => m.LogLossReduction),
+            MulticlassClassificationMetric.TopKAccuracy => ("top_k_accuracy", m => m.TopKAccuracy),
+            _ => ("macro_accuracy", m => m.MacroAccuracy)
+        };
+
+    private static (string Name, Func<RegressionMetrics, double> Select) DescribeRegressionMetric(
+        RegressionMetric metric) => metric switch
+        {
+            RegressionMetric.RootMeanSquaredError => ("rmse", m => m.RootMeanSquaredError),
+            RegressionMetric.MeanAbsoluteError => ("mae", m => m.MeanAbsoluteError),
+            RegressionMetric.MeanSquaredError => ("mse", m => m.MeanSquaredError),
+            _ => ("r_squared", m => m.RSquared)
+        };
 
     /// <summary>
     /// Runs an AutoML experiment and translates its terminal failures (see
