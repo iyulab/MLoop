@@ -55,6 +55,10 @@
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Security: Override transitive dependency (CVE-2026-26127, GHSA-73j8-2gch-69rq) -->
     <PackageVersion Include="Microsoft.Bcl.Memory" Version="9.0.14" />
+    <!-- Security: Override transitive dependency via FilePrepper→EPPlus (GHSA-cvvh-rhrc-wg4q,
+         GHSA-g8r8-53c2-pm3f, GHSA-23rf-6693-g89p, GHSA-8q5v-6pqq-x66h — 4 High advisories against
+         10.0.7). Remove once FilePrepper's own floor reaches a patched version. -->
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
     <!-- Testing Packages -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
