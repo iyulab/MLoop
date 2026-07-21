@@ -19,7 +19,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 - **No daemon, no servers**: Each command runs independently and exits cleanly
 
 **2. AutoML-First, Minimal Coding**
-- **One command to train**: `mloop train datasets/train.csv price --time 60`
+- **One command to train**: `mloop train datasets/train.csv --label price --time 60`
 - **Automatic model selection**: ML.NET AutoML finds the best algorithm for your data
 - **No feature engineering required**: Optional FilePrepper integration for complex preprocessing
 - **Production-ready in minutes**: From CSV to deployed model in 3 commands
@@ -93,7 +93,7 @@ The package ID on [NuGet.org](https://www.nuget.org/packages/mloop) is `mloop`. 
 framework-dependent tool, so it reuses your installed .NET runtime — ideal for slim Docker images:
 
 ```dockerfile
-RUN dotnet tool install --global mloop --version 0.18.0
+RUN dotnet tool install --global mloop
 ENV PATH="$PATH:/root/.dotnet/tools"
 ```
 
@@ -123,11 +123,12 @@ cd my-ml-project
 cp ~/data/train.csv datasets/train.csv
 
 # 3. Train model (60 seconds)
-mloop train datasets/train.csv price --time 60
+mloop train datasets/train.csv --label price --time 60
 
-# 4. Make predictions
+# 4. Add the rows you want scored, then predict
+cp ~/data/new.csv datasets/predict.csv
 mloop predict
-# ✅ Output: predictions/predictions-TIMESTAMP.csv
+# ✅ Output: predictions/default-predictions-TIMESTAMP.csv
 ```
 
 That's it! Your model is trained and ready to use.
@@ -136,7 +137,7 @@ That's it! Your model is trained and ready to use.
 
 ```bash
 mloop init <project> --task <type>    # Initialize ML project
-mloop train <data> <label> [options]  # Train with AutoML
+mloop train <data> --label <label> [options]  # Train with AutoML
 mloop predict [model] [data]          # Run predictions
 mloop list [--json]                    # View experiments
 mloop promote [exp-id] [--latest|--best] [--json] [--decide-only]  # Promote to production (auto-select newest/best; --decide-only reports the pick without moving the pointer)
@@ -170,11 +171,15 @@ mloop train --data file1.csv file2.csv --label Target --task regression
 mloop train --auto-merge --label Target --task regression
 
 # Handle Korean/Chinese encoded files (CP949, EUC-KR auto-converted)
-mloop train korean_data.csv label --task regression
+mloop train korean_data.csv --label label --task regression
 # Output: [Info] Converted CP949 → UTF-8
 
 # Drop missing label values (default for classification)
-mloop train data.csv label --task binary-classification --drop-missing-labels
+mloop train data.csv --label label --task binary-classification --drop-missing-labels
+
+# Machine-readable training: stdout becomes an NDJSON event stream
+# (phase / trial / warning / result / error — one JSON object per line, flushed per event)
+mloop train data.csv --label label --task binary-classification --time 60 --json
 ```
 
 ### Image Classification
@@ -250,9 +255,9 @@ my-ml-project/
 
 ```bash
 # Train multiple experiments
-mloop train datasets/train.csv price --time 60   # exp-001
-mloop train datasets/train.csv price --time 120  # exp-002 (better)
-mloop train datasets/train.csv price --time 180  # exp-003 (best!)
+mloop train datasets/train.csv --label price --time 60   # exp-001
+mloop train datasets/train.csv --label price --time 120  # exp-002 (better)
+mloop train datasets/train.csv --label price --time 180  # exp-003 (best!)
 
 # Review experiments
 mloop list
