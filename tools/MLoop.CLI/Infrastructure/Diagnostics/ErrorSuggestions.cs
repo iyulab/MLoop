@@ -23,6 +23,9 @@ public static class ErrorSuggestions
         err.Markup("[red]Error:[/] ");
         err.WriteLine(ex.Message);
 
+        // Same cause into the machine-readable stream when one is active (see MachineOutputScope).
+        MachineOutputScope.ReportError(ex.Message);
+
         if (ex.InnerException != null && AddsInformation(ex.Message, ex.InnerException.Message))
         {
             err.MarkupLine($"[grey]  Inner: {Markup.Escape(ex.InnerException.Message)}[/]");

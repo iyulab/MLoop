@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.Core.Evaluation;
+using MLoop.Core.Models;
 using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
@@ -20,6 +21,8 @@ public class ExperimentStore : IExperimentStore
     private const string MetadataFileName = ExperimentLayout.MetadataFileName;
     private const string MetricsFileName = ExperimentLayout.MetricsFileName;
     private const string ConfigFileName = ExperimentLayout.ConfigFileName;
+    private const string TrialsFileName = ExperimentLayout.TrialsFileName;
+    private const string LeaderboardFileName = ExperimentLayout.LeaderboardFileName;
 
     private readonly IFileSystemManager _fileSystem;
     private readonly IProjectDiscovery _projectDiscovery;
@@ -130,9 +133,75 @@ public class ExperimentStore : IExperimentStore
         var configPath = _fileSystem.CombinePath(experimentPath, ConfigFileName);
         await _fileSystem.WriteJsonAsync(configPath, experiment.Config, cancellationToken);
 
+        // Save the search's trial history — what else was tried and how it scored. Nothing is
+        // written when the task fit a single pipeline: an empty leaderboard would claim a search
+        // happened and found nothing.
+        if (experiment.Trials.Count > 0)
+            await SaveTrialsAsync(experimentPath, experiment, cancellationToken);
+
         // Update experiment index
         await UpdateIndexWithExperimentAsync(resolvedName, experiment, cancellationToken);
     }
+
+    /// <summary>
+    /// Writes the trial history two ways: <c>trials.ndjson</c> in completion order (streamable, one
+    /// object per line) and <c>leaderboard.json</c> ranked by the metric the search optimized.
+    /// </summary>
+    /// <remarks>
+    /// The ranking direction comes from <see cref="MetricDirection"/> rather than a local
+    /// lower-is-better test, because that knowledge had already drifted across four sites once and
+    /// ranked the worst clustering model first (F-27). When the metric is one this authority does not
+    /// recognize, the leaderboard records the trials unranked and says so — sorting by a guessed
+    /// direction would silently present the worst trial as the best.
+    /// </remarks>
+    private async Task SaveTrialsAsync(
+        string experimentPath, ExperimentData experiment, CancellationToken cancellationToken)
+    {
+        var lines = experiment.Trials.Select(t => JsonSerializer.Serialize(t, TrialJsonOptions));
+        var trialsPath = _fileSystem.CombinePath(experimentPath, TrialsFileName);
+        await _fileSystem.WriteTextAsync(trialsPath, string.Join(Environment.NewLine, lines), cancellationToken);
+
+        var metric = experiment.RankingMetric;
+        var ranked = metric is not null && MetricDirection.IsKnown(metric)
+            ? Rank(experiment.Trials, metric)
+            : null;
+
+        var leaderboardPath = _fileSystem.CombinePath(experimentPath, LeaderboardFileName);
+        await _fileSystem.WriteJsonAsync(leaderboardPath, new
+        {
+            Metric = metric,
+            Direction = metric is not null && MetricDirection.IsKnown(metric)
+                ? (MetricDirection.IsLowerBetter(metric) ? "lower_is_better" : "higher_is_better")
+                : "unknown",
+            TrialCount = experiment.Trials.Count,
+            Trials = ranked ?? experiment.Trials
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Best first. A trial that did not produce the ranking metric sorts last rather than being
+    /// dropped — it ran, and the trials file records it.
+    /// </summary>
+    private static List<TrialRecord> Rank(IReadOnlyList<TrialRecord> trials, string metric)
+    {
+        var lowerIsBetter = MetricDirection.IsLowerBetter(metric);
+        return [.. trials.OrderBy(t => t.Metrics.ContainsKey(metric) ? 0 : 1)
+            .ThenBy(t => t.Metrics.TryGetValue(metric, out var v)
+                ? (lowerIsBetter ? v : -v)
+                : double.MaxValue)];
+    }
+
+    /// <summary>
+    /// NDJSON is written directly rather than through <c>WriteJsonAsync</c> (one object per line, not
+    /// one document), so the naming policy has to be restated here — every other artifact this store
+    /// writes is camelCase, and a trials file in PascalCase would make the two halves of the same
+    /// history disagree about what a field is called.
+    /// </summary>
+    private static readonly JsonSerializerOptions TrialJsonOptions = new()
+    {
+        WriteIndented = false,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
 
     /// <inheritdoc />
     public async Task<ExperimentData> LoadAsync(string modelName, string experimentId, CancellationToken cancellationToken = default)

@@ -256,18 +256,16 @@ public partial class AutoMLRunner
             }
         }
 
-        // Capture input schema from training data for prediction use
+        // Capture input schema from training data for prediction use.
+        // `with` rather than a hand-written copy: this rewrap used to list every property, so each
+        // field added to AutoMLResult was silently dropped here until someone noticed — the σ(x)
+        // residual model needed an explicit line, and the trial history was lost the same way until
+        // the empty leaderboard gave it away. A copy that names nothing cannot forget anything.
         if (result.Schema == null)
         {
-            var schema = CaptureInputSchema(trainSet, config.LabelColumn, mergedColumnGroups);
-            result = new AutoMLResult
+            result = result with
             {
-                BestTrainer = result.BestTrainer,
-                Model = result.Model,
-                Metrics = result.Metrics,
-                RowCount = result.RowCount,
-                Schema = schema,
-                ResidualModel = result.ResidualModel, // ② regression wave: preserve the σ(x) model through the schema-capture rewrap
+                Schema = CaptureInputSchema(trainSet, config.LabelColumn, mergedColumnGroups)
             };
         }
 
@@ -538,7 +536,9 @@ public partial class AutoMLRunner
             BestTrainer = trainerName,
             Model = EnsureCalibratedModel(_mlContext, experimentResult.BestRun.Model, predictions, config.LabelColumn, hasProbability),
             Metrics = metricsDict,
-            RowCount = trainSet.GetRowCount() ?? 0
+            RowCount = trainSet.GetRowCount() ?? 0,
+            Trials = CollectTrials(experimentResult.RunDetails, DescribeAllBinaryMetrics),
+            RankingMetric = DescribeBinaryMetric(optimizingMetric).Name
         };
     }
 
@@ -875,17 +875,9 @@ public partial class AutoMLRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
-        // One synthetic trial, as the non-AutoML task paths do: this pipeline has no trials to
-        // report, but leaving the progress channel silent would strand the caller's display at 0%
-        // for the whole fit.
-        progress?.Report(new TrainingProgress
-        {
-            TrialNumber = 1,
-            TrainerName = "SdcaLogisticRegression (fallback)",
-            MetricName = "accuracy",
-            Metric = 0,
-            ElapsedSeconds = 0
-        });
+        // This pipeline has no AutoML trials; it reports itself as one, once it has a result to
+        // report (see TrialProgressChannel — reporting up front meant sending accuracy=0).
+        var trialChannel = CreateTrialChannel(progress);
 
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
@@ -930,6 +922,8 @@ public partial class AutoMLRunner
             if (!double.IsNaN(metrics.AreaUnderRocCurve))
                 metricsDict["auc"] = metrics.AreaUnderRocCurve;
         }
+
+        trialChannel?.ReportCompleted("SdcaLogisticRegression (fallback)", "accuracy", metricsDict["accuracy"]);
 
         return new AutoMLResult
         {
@@ -1067,7 +1061,9 @@ public partial class AutoMLRunner
             BestTrainer = experimentResult.BestRun.TrainerName,
             Model = experimentResult.BestRun.Model,
             Metrics = metricsDict,
-            RowCount = trainSet.GetRowCount() ?? 0
+            RowCount = trainSet.GetRowCount() ?? 0,
+            Trials = CollectTrials(experimentResult.RunDetails, DescribeAllMulticlassMetrics),
+            RankingMetric = DescribeMulticlassMetric(optimizingMetric).Name
         };
     }
 
@@ -1160,7 +1156,9 @@ public partial class AutoMLRunner
             Model = experimentResult.BestRun.Model,
             Metrics = metricsDict,
             ResidualModel = residualModel,
-            RowCount = trainSet.GetRowCount() ?? 0
+            RowCount = trainSet.GetRowCount() ?? 0,
+            Trials = CollectTrials(experimentResult.RunDetails, DescribeAllRegressionMetrics),
+            RankingMetric = DescribeRegressionMetric(optimizingMetric).Name
         };
     }
 
@@ -1199,15 +1197,7 @@ public partial class AutoMLRunner
                     rank: rank,
                     oversampling: 20));
 
-            // Train
-            progress?.Report(new TrainingProgress
-            {
-                TrialNumber = 1,
-                TrainerName = "RandomizedPca",
-                MetricName = "detection_rate",
-                Metric = 0,
-                ElapsedSeconds = 0
-            });
+            var trialChannel = CreateTrialChannel(progress);
 
             var model = pipeline.Fit(trainSet);
 
@@ -1255,6 +1245,11 @@ public partial class AutoMLRunner
                 metricsDict["total_count"] = totalCount;
                 metricsDict["detection_rate"] = totalCount > 0 ? (double)anomalyCount / totalCount : 0;
             }
+
+            // No detection rate means the prediction produced nothing to report — stay silent
+            // rather than send a zero, as the AutoML reporter does for a trial without metrics.
+            if (metricsDict.TryGetValue("detection_rate", out var detectionRate))
+                trialChannel?.ReportCompleted($"RandomizedPca (rank={rank})", "detection_rate", detectionRate);
 
             return new AutoMLResult
             {
@@ -1328,6 +1323,7 @@ public partial class AutoMLRunner
             double bestDbi = double.MaxValue; // DBI: lower is better (considers both separation and cohesion)
             int bestK = kValues[0];
             Dictionary<string, double>? bestMetrics = null;
+            var trialChannel = CreateTrialChannel(progress);
 
             for (int i = 0; i < kValues.Length; i++)
             {
@@ -1351,14 +1347,7 @@ public partial class AutoMLRunner
                 var dbi = double.IsNaN(clusterMetrics.DaviesBouldinIndex) ? double.MaxValue : clusterMetrics.DaviesBouldinIndex;
                 var nmi = double.IsNaN(clusterMetrics.NormalizedMutualInformation) ? 0 : clusterMetrics.NormalizedMutualInformation;
 
-                progress?.Report(new TrainingProgress
-                {
-                    TrialNumber = i + 1,
-                    TrainerName = $"KMeans (k={k})",
-                    MetricName = "davies_bouldin_index",
-                    Metric = dbi,
-                    ElapsedSeconds = 0
-                });
+                trialChannel?.ReportCompleted($"KMeans (k={k})", "davies_bouldin_index", dbi);
 
                 // Select K with lowest DBI (Davies-Bouldin Index).
                 // Unlike average_distance which monotonically decreases with K,
@@ -1478,6 +1467,7 @@ public partial class AutoMLRunner
             double bestNdcg = double.MinValue;
             string bestTrainerName = trainers[0].Name;
             Dictionary<string, double>? bestMetrics = null;
+            var trialChannel = CreateTrialChannel(progress);
 
             for (int i = 0; i < trainers.Length; i++)
             {
@@ -1514,14 +1504,7 @@ public partial class AutoMLRunner
                     if (double.IsNaN(primaryNdcg)) primaryNdcg = 0;
                     metricsDict["ndcg"] = primaryNdcg;
 
-                    progress?.Report(new TrainingProgress
-                    {
-                        TrialNumber = i + 1,
-                        TrainerName = trainerName,
-                        MetricName = "ndcg",
-                        Metric = primaryNdcg,
-                        ElapsedSeconds = 0
-                    });
+                    trialChannel?.ReportCompleted(trainerName, "ndcg", primaryNdcg);
 
                     if (primaryNdcg > bestNdcg)
                     {
@@ -1604,14 +1587,7 @@ public partial class AutoMLRunner
                 confidenceUpperBoundColumn: ForecastOutput.UpperBoundColumnName,
                 confidenceLevel: (float)ForecastOutput.ConfidenceLevel);
 
-            progress?.Report(new TrainingProgress
-            {
-                TrialNumber = 1,
-                TrainerName = "SsaForecasting",
-                MetricName = "mae",
-                Metric = 0,
-                ElapsedSeconds = 0
-            });
+            var trialChannel = CreateTrialChannel(progress);
 
             var model = pipeline.Fit(trainSet);
 
@@ -1680,6 +1656,12 @@ public partial class AutoMLRunner
                     }
                 }
             }
+
+            // The holdout comparison above is skipped when the series is too short to leave one, so
+            // there may be no error metric to report — say nothing rather than report mae=0, which
+            // reads as a perfect forecast.
+            if (metricsDict.TryGetValue("mae", out var mae))
+                trialChannel?.ReportCompleted("SsaForecasting", "mae", mae);
 
             metricsDict["horizon"] = horizon;
             metricsDict["window_size"] = windowSize;
@@ -1753,6 +1735,7 @@ public partial class AutoMLRunner
             string bestDetectorName = "";
             Dictionary<string, double>? bestMetrics = null;
             long bestAnomalyCount = -1;
+            var trialChannel = CreateTrialChannel(progress);
 
             for (int i = 0; i < detectors.Count; i++)
             {
@@ -1795,14 +1778,7 @@ public partial class AutoMLRunner
                         ["detection_rate"] = detectionRate
                     };
 
-                    progress?.Report(new TrainingProgress
-                    {
-                        TrialNumber = i + 1,
-                        TrainerName = name,
-                        MetricName = "detection_rate",
-                        Metric = detectionRate,
-                        ElapsedSeconds = 0
-                    });
+                    trialChannel?.ReportCompleted(name, "detection_rate", detectionRate);
 
                     // Pick the first detector that produces reasonable results
                     if (bestModel == null)
@@ -1870,14 +1846,7 @@ public partial class AutoMLRunner
                     numberOfIterations: 20,
                     approximationRank: 32));
 
-            progress?.Report(new TrainingProgress
-            {
-                TrialNumber = 1,
-                TrainerName = "MatrixFactorization",
-                MetricName = "rmse",
-                Metric = 0,
-                ElapsedSeconds = 0
-            });
+            var trialChannel = CreateTrialChannel(progress);
 
             var model = pipeline.Fit(trainSet);
 
@@ -1895,6 +1864,8 @@ public partial class AutoMLRunner
                 ["r_squared"] = regressionMetrics.RSquared,
                 ["loss_function"] = regressionMetrics.LossFunction
             };
+
+            trialChannel?.ReportCompleted("MatrixFactorization", "rmse", metricsDict["rmse"]);
 
             return new AutoMLResult
             {
@@ -1950,6 +1921,14 @@ public partial class AutoMLRunner
         (string Name, Func<TMetrics, double> Select) metric) where TMetrics : class
         => progress is null ? null : new TrialProgressReporter<TMetrics>(progress, metric.Name, metric.Select);
 
+    /// <summary>
+    /// Progress channel for the task paths that do not run AutoML: they fit one explicit pipeline
+    /// (or loop over a few candidates) and report each one as it completes. Null when nobody is
+    /// listening, so the call sites stay a single <c>channel?.ReportCompleted(...)</c>.
+    /// </summary>
+    private static TrialProgressChannel? CreateTrialChannel(IProgress<TrainingProgress>? progress)
+        => progress is null ? null : new TrialProgressChannel(progress);
+
     // Per-trial metric reporting: name + reader for the metric AutoML is actually optimizing.
     //
     // Keyed on the ML.NET enum rather than on config.Metric, because the two can diverge: binary
@@ -1991,6 +1970,85 @@ public partial class AutoMLRunner
             RegressionMetric.MeanSquaredError => ("mse", m => m.MeanSquaredError),
             _ => ("r_squared", m => m.RSquared)
         };
+
+    // Trial history: the full leaderboard ML.NET keeps on the experiment result. Taken from
+    // RunDetails after the run rather than from the live progress channel, because RunDetails carries
+    // each trial's complete metric set and its own runtime, and is present whether or not anyone was
+    // listening to progress.
+
+    /// <summary>
+    /// Turns AutoML's per-trial run details into the records persisted with the experiment. Trials
+    /// that threw carry no validation metrics and are skipped — there is nothing to rank them by,
+    /// and the terminal exception already reports the failure.
+    /// </summary>
+    private static List<TrialRecord> CollectTrials<TMetrics>(
+        IEnumerable<RunDetail<TMetrics>> runDetails,
+        Func<TMetrics, Dictionary<string, double>> describeAll) where TMetrics : class
+    {
+        var trials = new List<TrialRecord>();
+
+        foreach (var run in runDetails)
+        {
+            if (run.ValidationMetrics is null)
+                continue;
+
+            trials.Add(new TrialRecord
+            {
+                TrialNumber = trials.Count + 1,
+                TrainerName = string.IsNullOrWhiteSpace(run.TrainerName) ? "(unknown)" : run.TrainerName,
+                Metrics = OnlyFinite(describeAll(run.ValidationMetrics)),
+                RuntimeSeconds = run.RuntimeInSeconds
+            });
+        }
+
+        return trials;
+    }
+
+    /// <summary>
+    /// Drops non-finite metric values. A trial that failed to produce a usable AUC reports
+    /// <c>NaN</c>, which has no JSON representation — writing it would make the whole trials file
+    /// unparseable, and coercing it to 0 would rank a broken trial as a perfect one.
+    /// </summary>
+    private static Dictionary<string, double> OnlyFinite(Dictionary<string, double> metrics)
+    {
+        var finite = new Dictionary<string, double>(metrics.Count);
+        foreach (var (key, value) in metrics)
+        {
+            if (double.IsFinite(value))
+                finite[key] = value;
+        }
+        return finite;
+    }
+
+    // The full metric set per trial, in MLoop's own vocabulary — the same keys the final
+    // AutoMLResult.Metrics uses, so a trial row and the results table name the same things.
+
+    private static Dictionary<string, double> DescribeAllBinaryMetrics(BinaryClassificationMetrics m) => new()
+    {
+        ["accuracy"] = m.Accuracy,
+        ["auc"] = m.AreaUnderRocCurve,
+        ["auprc"] = m.AreaUnderPrecisionRecallCurve,
+        ["f1_score"] = m.F1Score,
+        ["precision"] = m.PositivePrecision,
+        ["recall"] = m.PositiveRecall,
+        ["negative_recall"] = m.NegativeRecall
+    };
+
+    private static Dictionary<string, double> DescribeAllMulticlassMetrics(MulticlassClassificationMetrics m) => new()
+    {
+        ["micro_accuracy"] = m.MicroAccuracy,
+        ["macro_accuracy"] = m.MacroAccuracy,
+        ["log_loss"] = m.LogLoss,
+        ["log_loss_reduction"] = m.LogLossReduction
+    };
+
+    private static Dictionary<string, double> DescribeAllRegressionMetrics(RegressionMetrics m) => new()
+    {
+        ["r_squared"] = m.RSquared,
+        ["rmse"] = m.RootMeanSquaredError,
+        ["mae"] = m.MeanAbsoluteError,
+        ["mse"] = m.MeanSquaredError
+    };
 
     /// <summary>
     /// Runs an AutoML experiment and translates its terminal failures (see
@@ -2211,7 +2269,12 @@ public class ForecastOutput
 /// <summary>
 /// Result from AutoML execution
 /// </summary>
-public class AutoMLResult
+/// <remarks>
+/// A record, not a plain class, so <c>RunAsync</c>'s schema-capture step can rewrap it with
+/// <c>with</c>. The hand-written copy it replaced had to name every property, which made adding a
+/// property a silent-data-loss hazard rather than a compile error.
+/// </remarks>
+public record AutoMLResult
 {
     public required string BestTrainer { get; init; }
     public required ITransformer Model { get; init; }
@@ -2235,6 +2298,22 @@ public class AutoMLResult
     /// the constant-width band. Persisted alongside the main model (see <c>ResidualModelFileName</c>).
     /// </summary>
     public ITransformer? ResidualModel { get; init; }
+
+    /// <summary>
+    /// Every completed trial of the search, in completion order — the leaderboard that used to be
+    /// discarded with <c>RunDetails</c> once <c>BestRun</c> had been taken off it. Empty for the task
+    /// paths that fit a single explicit pipeline instead of searching (there is no leaderboard to
+    /// keep: the one result is already the experiment's metrics).
+    /// </summary>
+    public IReadOnlyList<TrialRecord> Trials { get; init; } = [];
+
+    /// <summary>
+    /// Canonical name of the metric the search ranked trials by — the key to sort
+    /// <see cref="Trials"/> on. Kept separately from the requested metric because the two can
+    /// diverge: binary classification switches to <c>f1_score</c> mid-run when AUC turns out to be
+    /// undefined. Null when nothing was ranked.
+    /// </summary>
+    public string? RankingMetric { get; init; }
 }
 
 /// <summary>

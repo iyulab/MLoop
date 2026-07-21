@@ -42,7 +42,14 @@ public static class ErrorConsole
     /// Writes an <c>Error:</c> line to stderr. <paramref name="markup"/> is Spectre markup — escape
     /// interpolated user data with <see cref="Markup.Escape"/>.
     /// </summary>
-    public static void Error(string markup) => Out.MarkupLine($"[red]Error:[/] {markup}");
+    public static void Error(string markup)
+    {
+        Out.MarkupLine($"[red]Error:[/] {markup}");
+
+        // A command in machine-readable mode reports the same cause as an event, so a consumer
+        // reading only the event stream is not left with an empty stdout and a non-zero exit.
+        MachineOutputScope.ReportError(markup);
+    }
 
     /// <summary>
     /// Writes a <c>Tip:</c> line to stderr. Tips accompany an error as part of the cause a machine

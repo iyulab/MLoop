@@ -343,7 +343,9 @@ public class TrainingEngine : ITrainingEngine
                     BestTrainer = autoMLResult.BestTrainer,
                     TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds
                 },
-                Metrics = autoMLResult.Metrics
+                Metrics = autoMLResult.Metrics,
+                Trials = autoMLResult.Trials,
+                RankingMetric = autoMLResult.RankingMetric
             };
 
             // Save experiment metadata

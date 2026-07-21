@@ -138,6 +138,12 @@ public static class TrainCommand
             Description = "Random seed for sampling reproducibility (default: 42)"
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit newline-delimited JSON events (phase/trial/warning/result/error) on stdout instead of the rich display",
+            DefaultValueFactory = _ => false
+        };
+
         var command = new Command("train", "Train a model using AutoML");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
@@ -160,6 +166,7 @@ public static class TrainCommand
         command.Options.Add(samplingStrategyOption);
         command.Options.Add(samplingStrategyAliasOption);
         command.Options.Add(seedOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
@@ -183,12 +190,13 @@ public static class TrainCommand
             var maxRows = parseResult.GetValue(maxRowsOption);
             var samplingStrategy = parseResult.GetValue(samplingStrategyOption) ?? parseResult.GetValue(samplingStrategyAliasOption);
             var seed = parseResult.GetValue(seedOption);
+            var json = parseResult.GetValue(jsonOption);
             // Handle --balance without argument: default to "auto"
             if (balance == null && parseResult.Tokens.Any(t => t.Value == "--balance" || t.Value == "-b"))
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json);
         });
 
         return command;
@@ -214,8 +222,22 @@ public static class TrainCommand
         string? groupColumn,
         int? maxRows = null,
         string? samplingStrategy = null,
-        int? seed = null)
+        int? seed = null,
+        bool json = false)
     {
+        // --json reserves stdout for the event stream: every renderer and narrator in the training
+        // path is silenced for the duration, and the real stdout is handed to the emitter. Disposed
+        // in the finally below so the console is restored even on the error paths.
+        using var machineOutput = json ? new MachineOutputScope() : null;
+        var events = machineOutput is null ? null : new TrainJsonEmitter(machineOutput.Stdout);
+        if (machineOutput is not null && events is not null)
+        {
+            // Every failure path in this command already ends at the stderr diagnostics sink — one
+            // top-level catch plus a dozen validation early-returns. Hooking the sink emits the error
+            // event from all of them instead of tagging each return site.
+            machineOutput.ErrorSink = events.Error;
+        }
+
         try
         {
             // Initialize components
@@ -924,6 +946,7 @@ public static class TrainCommand
                     {
                         if (p.Phase.HasValue)
                         {
+                            events?.Phase(p);
                             lastAutoTimeEvent = p;
                             progressTracker.EnterPhase(p);
                             progressTask.Description = p.Phase switch
@@ -935,6 +958,8 @@ public static class TrainCommand
                             };
                             return;
                         }
+
+                        events?.Trial(p);
 
                         var trainer = TrainingProgressTracker.ShortTrainerName(p.TrainerName);
                         progressTask.Description = $"[green]Trial {p.TrialNumber}:[/] {trainer} - {p.MetricName}={p.Metric:F4}";
@@ -1010,6 +1035,8 @@ public static class TrainCommand
 
             // Sync mloop.yaml if CLI overrode label or task
             await SyncYamlConfigAsync(configLoader, userConfig, resolvedModelName, effectiveDefinition, label, task);
+
+            events?.Result(result, resolvedModelName);
 
             // Display results
             TrainPresenter.DisplayResults(result, resolvedModelName);
