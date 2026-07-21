@@ -49,7 +49,7 @@ cd my-ml-project
 cp ~/data/train.csv datasets/train.csv
 
 # 2. Train with AutoML (60 seconds)
-mloop train datasets/train.csv price --time 60
+mloop train datasets/train.csv --label price --time 60
 
 # Output:
 # ✅ Training complete: exp-001
@@ -126,17 +126,17 @@ mloop train <data-file> <label-column> [options]
 #                               mloop.yaml (reaches auto-time from the init+train project workflow)
 
 # Examples
-mloop train datasets/train.csv price --time 120
-mloop train data/sales.csv revenue --time 300 --metric r_squared
-mloop train data/fraud.csv is_fraud --time 180 --test-split 0.3
+mloop train datasets/train.csv --label price --time 120
+mloop train data/sales.csv --label revenue --time 300 --metric r_squared
+mloop train data/fraud.csv --label is_fraud --time 180 --test-split 0.3
 
 # Multi-file training (v0.4.0+)
 mloop train --data normal.csv outlier.csv --label Target --task regression
 mloop train --auto-merge --label Status --task binary-classification
 
 # Class imbalance handling (v0.5.0+)
-mloop train data.csv is_fraud --task binary-classification --balance auto
-mloop train data.csv defect --task binary-classification --balance 5  # Target 5:1 ratio
+mloop train data.csv --label is_fraud --task binary-classification --balance auto
+mloop train data.csv --label defect --task binary-classification --balance 5  # Target 5:1 ratio
 ```
 
 **Automatic Features**:
@@ -748,9 +748,9 @@ mloop predict models/staging/exp-005/model.zip data/custom.csv --output results.
 
 ```bash
 # Typical workflow
-mloop train datasets/train.csv price --time 60   # Experiment
-mloop train datasets/train.csv price --time 120  # Improve
-mloop train datasets/train.csv price --time 180  # Optimize
+mloop train datasets/train.csv --label price --time 60   # Experiment
+mloop train datasets/train.csv --label price --time 120  # Improve
+mloop train datasets/train.csv --label price --time 180  # Optimize
 
 # Review results
 mloop list
@@ -822,9 +822,9 @@ When running multiple training jobs simultaneously, system resources (CPU/memory
 
 ```bash
 # ❌ All 3 jobs compete for CPU → system slowdown
-$ mloop train dataset1.csv price --time 1800 &
-$ mloop train dataset2.csv price --time 1800 &
-$ mloop train dataset3.csv price --time 1800 &
+$ mloop train dataset1.csv --label price --time 1800 &
+$ mloop train dataset2.csv --label price --time 1800 &
+$ mloop train dataset3.csv --label price --time 1800 &
 ```
 
 ### Solution 1: Sequential Wrapper Script (Recommended)
@@ -839,11 +839,11 @@ $ examples/scripts/mloop-queue.sh \
     "train dataset3.csv price --time 1800"
 
 # Output:
-# [1/3] Running: mloop train dataset1.csv price --time 1800
+# [1/3] Running: mloop train dataset1.csv --label price --time 1800
 # ✅ Job 1 complete (30 min)
-# [2/3] Running: mloop train dataset2.csv price --time 1800
+# [2/3] Running: mloop train dataset2.csv --label price --time 1800
 # ✅ Job 2 complete (30 min)
-# [3/3] Running: mloop train dataset3.csv price --time 1800
+# [3/3] Running: mloop train dataset3.csv --label price --time 1800
 # ✅ Job 3 complete (30 min)
 # 🎉 All jobs complete: 3/3 succeeded
 ```
@@ -881,7 +881,7 @@ $ parallel -j 2 mloop train {} ::: dataset1.csv dataset2.csv dataset3.csv
 $ parallel --resume --joblog jobs.log -j 1 mloop train {} ::: dataset*.csv
 
 # Different time budgets per job
-$ parallel --colsep ',' mloop train {1} price --time {2} :::: jobs.csv
+$ parallel --colsep ',' mloop train {1} --label price --time {2} :::: jobs.csv
 
 # jobs.csv:
 # dataset1.csv,1800
@@ -897,17 +897,17 @@ Use standard Unix tools for background job management:
 
 ```bash
 # Schedule jobs with 'at'
-$ echo "mloop train dataset1.csv price --time 1800" | at now
-$ echo "mloop train dataset2.csv price --time 1800" | at now + 30 minutes
-$ echo "mloop train dataset3.csv price --time 1800" | at now + 60 minutes
+$ echo "mloop train dataset1.csv --label price --time 1800" | at now
+$ echo "mloop train dataset2.csv --label price --time 1800" | at now + 30 minutes
+$ echo "mloop train dataset3.csv --label price --time 1800" | at now + 60 minutes
 
 # Monitor with screen/tmux
 $ screen -S training1
-$ mloop train dataset1.csv price --time 1800
+$ mloop train dataset1.csv --label price --time 1800
 # Ctrl+A, D to detach
 
 $ screen -S training2
-$ mloop train dataset2.csv price --time 1800
+$ mloop train dataset2.csv --label price --time 1800
 # Ctrl+A, D to detach
 
 # List sessions
@@ -932,7 +932,7 @@ jobs:
       max-parallel: 1  # Sequential execution
     steps:
       - name: Train model
-        run: mloop train ${{ matrix.dataset }}.csv price --time 1800
+        run: mloop train ${{ matrix.dataset }}.csv --label price --time 1800
 ```
 
 **Kubernetes**:
@@ -963,13 +963,13 @@ dag = DAG('mloop_training', schedule_interval='@daily')
 
 train1 = BashOperator(
     task_id='train_dataset1',
-    bash_command='mloop train dataset1.csv price --time 1800',
+    bash_command='mloop train dataset1.csv --label price --time 1800',
     dag=dag
 )
 
 train2 = BashOperator(
     task_id='train_dataset2',
-    bash_command='mloop train dataset2.csv price --time 1800',
+    bash_command='mloop train dataset2.csv --label price --time 1800',
     dag=dag
 )
 
@@ -1007,13 +1007,13 @@ $ iotop
 
 ```bash
 # Reduce CPU usage with nice (lower priority)
-$ nice -n 19 mloop train dataset.csv price --time 1800
+$ nice -n 19 mloop train dataset.csv --label price --time 1800
 
 # Pin to specific CPU cores (Linux)
-$ taskset -c 0-3 mloop train dataset.csv price --time 1800
+$ taskset -c 0-3 mloop train dataset.csv --label price --time 1800
 
 # Set memory limits (Linux)
-$ systemd-run --scope -p MemoryMax=4G mloop train dataset.csv price --time 1800
+$ systemd-run --scope -p MemoryMax=4G mloop train dataset.csv --label price --time 1800
 ```
 
 ---
@@ -1033,7 +1033,7 @@ mloop info data.csv
 # Output: [Info] Converted CP949 → UTF-8
 
 # Train will also auto-convert
-mloop train data.csv label --task regression
+mloop train data.csv --label label --task regression
 ```
 
 If still having issues:
@@ -1064,7 +1064,7 @@ mloop train --auto-merge --label Target --task regression
 **Solution**: Use `--drop-missing-labels` (default for classification):
 ```bash
 # Explicit handling
-mloop train data.csv label --task binary-classification --drop-missing-labels
+mloop train data.csv --label label --task binary-classification --drop-missing-labels
 
 # Check the output for dropped row count
 # Output: "Warning: Dropped 113 rows with missing labels"
@@ -1107,13 +1107,13 @@ This occurs when minority class samples are too few for cross-validation folds.
 **Solution**:
 ```bash
 # Use --balance option to oversample minority class
-mloop train data.csv is_fraud --task binary-classification --balance auto
+mloop train data.csv --label is_fraud --task binary-classification --balance auto
 
 # For extreme imbalance (e.g., 50:1), use aggressive balancing
-mloop train data.csv defect --task binary-classification --balance 5
+mloop train data.csv --label defect --task binary-classification --balance 5
 
 # Alternative: use F1-score metric instead of AUC
-mloop train data.csv is_fraud --task binary-classification --metric f1_score
+mloop train data.csv --label is_fraud --task binary-classification --metric f1_score
 ```
 
 **Class Imbalance Thresholds**:
@@ -1129,10 +1129,10 @@ mloop train data.csv is_fraud --task binary-classification --metric f1_score
 **Solution**:
 ```bash
 # Increase training time budget
-mloop train data.csv label --time 600  # 10 minutes
+mloop train data.csv --label label --time 600  # 10 minutes
 
 # For complex datasets, try 30 minutes
-mloop train data.csv label --time 1800
+mloop train data.csv --label label --time 1800
 ```
 
 ### API Server Won't Start
