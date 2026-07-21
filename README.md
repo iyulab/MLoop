@@ -141,7 +141,7 @@ mloop train <data> --label <label> [options]  # Train with AutoML
 mloop predict [model] [data]          # Run predictions
 mloop list [--json]                    # View experiments
 mloop promote [exp-id] [--latest|--best] [--json] [--decide-only]  # Promote to production (auto-select newest/best; --decide-only reports the pick without moving the pointer)
-mloop detect <data> [--column <col>]   # One-shot TS-anomaly detection with SPC bounds (no training)
+mloop detect <data> [--column <col>]   # One-shot TS-anomaly detection with control limits (no training)
 mloop evaluate <model> <test> <label> # Evaluate performance
 mloop info <data>                      # Dataset profiling with encoding detection
 mloop analyze profile <data>           # Column types, null %, cardinality, constant columns

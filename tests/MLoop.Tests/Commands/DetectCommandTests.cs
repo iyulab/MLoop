@@ -1,4 +1,5 @@
 using MLoop.CLI.Commands;
+using MLoop.Core.Detection;
 using Xunit;
 
 namespace MLoop.Tests.Commands;
@@ -91,6 +92,37 @@ public class DetectCommandTests : IDisposable
         });
 
         Assert.Empty(parse.Errors);
+    }
+
+    [Fact]
+    public async Task WriteCsv_EmitsControlAndMarginBandsSeparately()
+    {
+        // The two bands answer different questions (chartable limits vs the gate behind the verdict),
+        // so neither may be dropped and neither may be labelled just "Lower/Upper".
+        var path = Path.Combine(Path.GetTempPath(), $"mloop-detect-out-{Guid.NewGuid():N}.csv");
+        _tempFiles.Add(path);
+
+        var result = new OneShotAnomalyResult
+        {
+            Period = 0,
+            ResidualSigma = 0.5,
+            Points = new[]
+            {
+                new OneShotAnomalyPoint
+                {
+                    Index = 0, Value = 10.0, IsAnomaly = false, Score = 0.1, ExpectedValue = 9.0,
+                    ControlLower = 7.5, ControlUpper = 10.5, MarginLower = 8.9, MarginUpper = 9.1,
+                }
+            }
+        };
+
+        await DetectCommand.WriteCsvAsync(path, result);
+
+        var lines = await File.ReadAllLinesAsync(path);
+        Assert.Equal(DetectCommand.CsvHeader, lines[0]);
+        Assert.Contains("ControlLower,ControlUpper,MarginLower,MarginUpper", lines[0]);
+        Assert.Equal(lines[0].Split(',').Length, lines[1].Split(',').Length);
+        Assert.Contains("7.5,10.5,8.9,9.1", lines[1]);
     }
 
     [Fact]

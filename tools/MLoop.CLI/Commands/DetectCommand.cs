@@ -11,8 +11,8 @@ namespace MLoop.CLI.Commands;
 /// <summary>
 /// mloop detect - One-shot time-series anomaly detection over an entire series (no train/predict
 /// split, no model artifact). SR-CNN AnomalyAndMargin mode: every point gets an anomaly verdict,
-/// score, and SPC-chart bounds (ExpectedValue/UpperBound/LowerBound). Works on any CSV — does not
-/// require an MLoop project.
+/// score, an expected value, control limits (chart these) and the detection margin that produced the
+/// verdict. Works on any CSV — does not require an MLoop project.
 /// </summary>
 public static class DetectCommand
 {
@@ -36,7 +36,8 @@ public static class DetectCommand
 
         var sensitivityOption = new Option<double>("--sensitivity")
         {
-            Description = "Boundary sensitivity in [0, 100] — larger = tighter bounds",
+            Description = "Detection margin sensitivity in [0, 100] — larger = tighter margin, more anomalies kept "
+                          + "(does not affect control limits)",
             DefaultValueFactory = _ => 99.0
         };
 
@@ -189,16 +190,19 @@ public static class DetectCommand
         return (values, resolved);
     }
 
-    private static async Task WriteCsvAsync(string outputPath, OneShotAnomalyResult result)
+    /// <summary>Per-point output columns. Margin = the gate behind IsAnomaly; Control = the band to
+    /// chart. See <see cref="OneShotAnomalyPoint"/> for why they are separate.</summary>
+    internal const string CsvHeader =
+        "Index,Value,IsAnomaly,Score,ExpectedValue,ControlLower,ControlUpper,MarginLower,MarginUpper";
+
+    internal static async Task WriteCsvAsync(string outputPath, OneShotAnomalyResult result)
     {
-        var lines = new List<string>(result.Points.Count + 1)
-        {
-            "Index,Value,IsAnomaly,Score,ExpectedValue,UpperBound,LowerBound"
-        };
+        var lines = new List<string>(result.Points.Count + 1) { CsvHeader };
         foreach (var p in result.Points)
         {
             lines.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{p.Index},{p.Value},{(p.IsAnomaly ? 1 : 0)},{p.Score},{p.ExpectedValue},{p.UpperBound},{p.LowerBound}"));
+                $"{p.Index},{p.Value},{(p.IsAnomaly ? 1 : 0)},{p.Score},{p.ExpectedValue}," +
+                $"{p.ControlLower},{p.ControlUpper},{p.MarginLower},{p.MarginUpper}"));
         }
         await File.WriteAllLinesAsync(outputPath, lines);
     }
@@ -217,6 +221,7 @@ public static class DetectCommand
             TotalPoints = result.Points.Count,
             result.AnomalyCount,
             result.Period,
+            result.ResidualSigma,
             OutputFile = outputPath,
             Points = result.Points.Select(p => new
             {
@@ -225,8 +230,10 @@ public static class DetectCommand
                 p.IsAnomaly,
                 p.Score,
                 p.ExpectedValue,
-                p.UpperBound,
-                p.LowerBound
+                p.ControlLower,
+                p.ControlUpper,
+                p.MarginLower,
+                p.MarginUpper
             })
         };
 
@@ -239,7 +246,8 @@ public static class DetectCommand
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"Column: [cyan]{column}[/]  Points: [cyan]{result.Points.Count}[/]  " +
                                $"Anomalies: [{(result.AnomalyCount > 0 ? "red" : "green")}]{result.AnomalyCount}[/]  " +
-                               $"Period: [cyan]{(result.Period > 0 ? result.Period.ToString() : "none")}[/]");
+                               $"Period: [cyan]{(result.Period > 0 ? result.Period.ToString() : "none")}[/]  " +
+                               $"Sigma: [cyan]{result.ResidualSigma.ToString("G4", CultureInfo.InvariantCulture)}[/]");
         AnsiConsole.WriteLine();
 
         if (result.AnomalyCount == 0)
@@ -254,8 +262,8 @@ public static class DetectCommand
             table.AddColumn("Value");
             table.AddColumn("Score");
             table.AddColumn("Expected");
-            table.AddColumn("Lower");
-            table.AddColumn("Upper");
+            table.AddColumn("Control Lower");
+            table.AddColumn("Control Upper");
 
             const int maxRows = 50;
             foreach (var p in result.Points.Where(p => p.IsAnomaly).Take(maxRows))
@@ -265,8 +273,8 @@ public static class DetectCommand
                     p.Value.ToString("G6", CultureInfo.InvariantCulture),
                     p.Score.ToString("F3", CultureInfo.InvariantCulture),
                     p.ExpectedValue.ToString("G6", CultureInfo.InvariantCulture),
-                    p.LowerBound.ToString("G6", CultureInfo.InvariantCulture),
-                    p.UpperBound.ToString("G6", CultureInfo.InvariantCulture));
+                    p.ControlLower.ToString("G6", CultureInfo.InvariantCulture),
+                    p.ControlUpper.ToString("G6", CultureInfo.InvariantCulture));
             }
 
             AnsiConsole.Write(table);
@@ -279,7 +287,7 @@ public static class DetectCommand
         if (outputPath != null)
             AnsiConsole.MarkupLine($"[green]Full per-point result written to:[/] {outputPath}");
         else
-            AnsiConsole.MarkupLine("[grey]Use [blue]--output result.csv[/] for per-point bounds or [blue]--json[/] for machine-readable output.[/]");
+            AnsiConsole.MarkupLine("[grey]Use [blue]--output result.csv[/] for per-point control limits or [blue]--json[/] for machine-readable output.[/]");
     }
 
     private static void WriteError(string message, bool jsonOutput)
