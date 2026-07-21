@@ -88,6 +88,13 @@ public sealed class TrainJsonEmitter(TextWriter output)
     /// A condition the run recovered from. Carries no error code: MLoop has no such vocabulary yet,
     /// and inventing one per call site would be a code the consumer cannot rely on.
     /// </summary>
+    /// <remarks>
+    /// <b>Reserved — nothing calls this yet.</b> Errors were straightforward because every failure
+    /// path already funnels through one stderr sink the scope can hook; warnings have no such seam
+    /// (they are raised from Spectre render calls in the command and from <c>ILogger.Warning</c> in
+    /// two assemblies), and in machine mode all of them are discarded with the rest of the
+    /// narration. Wiring those sources is follow-up work, not something this shape does on its own.
+    /// </remarks>
     public void Warning(string message) => Write(new
     {
         @event = "warning",

@@ -1036,6 +1036,10 @@ public static class TrainCommand
             // Sync mloop.yaml if CLI overrode label or task
             await SyncYamlConfigAsync(configLoader, userConfig, resolvedModelName, effectiveDefinition, label, task);
 
+            // Emitted here, before auto-promote: the experiment is finished and recorded at this
+            // point. A promotion that fails afterwards adds an error event and a non-zero exit, so a
+            // consumer must not read "a result arrived" as "the command succeeded" — the exit code
+            // is what says that.
             events?.Result(result, resolvedModelName);
 
             // Display results
