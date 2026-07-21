@@ -38,13 +38,14 @@ public sealed class TrainingProgressTracker
 
         switch (phaseEvent.Phase)
         {
-            case AutoTimePhase.ProbeStart:
+            case TrainingPhase.ProbeStart:
                 _budgetSeconds = phaseEvent.ProbeTimeSeconds;
                 break;
-            case AutoTimePhase.ProbeComplete:
+            case TrainingPhase.ProbeComplete:
+            case TrainingPhase.MainStart:
                 _budgetSeconds = phaseEvent.FinalTimeSeconds;
                 break;
-            // ProbeConverged ends training; the budget it would switch to is never used.
+            // ProbeConverged and Complete end training; the budget they would switch to is never used.
         }
     }
 

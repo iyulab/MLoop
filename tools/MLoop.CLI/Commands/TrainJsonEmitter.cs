@@ -23,10 +23,14 @@ namespace MLoop.CLI.Commands;
 /// </remarks>
 public sealed class TrainJsonEmitter(TextWriter output)
 {
+    // Nulls are omitted, not written: a phase event says nothing about values the run does not
+    // have (a fixed-budget run has no probe time; nothing has a metric before training starts).
+    // Writing 0 in their place would be indistinguishable from a measured zero.
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = false,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
     private readonly TextWriter _output = output ?? throw new ArgumentNullException(nameof(output));
@@ -48,26 +52,45 @@ public sealed class TrainJsonEmitter(TextWriter output)
 
     private static string Now() => DateTime.UtcNow.ToString("o");
 
-    /// <summary>An auto-time budget transition: the probe starting, main training starting, or the probe converging.</summary>
+    /// <summary>
+    /// A training-window boundary. The vocabulary is shared across budgeting modes so a consumer
+    /// never branches on how the run was scheduled: auto-time emits <c>probe</c> → <c>main</c>
+    /// (or <c>converged</c>), a fixed budget emits <c>main</c> directly, and every successful run
+    /// ends the stream of phases with <c>complete</c>. Fields the phase has no fact for are
+    /// omitted rather than zero-filled.
+    /// </summary>
     public void Phase(TrainingProgress progress)
     {
         if (progress.Phase is not { } phase)
             return;
+
+        // Which facts each boundary actually carries: a probe announces only its own budget; the
+        // main window announces its budget (plus probe results under auto-time); the terminal
+        // markers report what the search did. Metric values belong to trial/result events — a
+        // boundary only repeats the probe's best where that is the fact being announced.
+        var hasProbe = phase is TrainingPhase.ProbeStart or TrainingPhase.ProbeComplete or TrainingPhase.ProbeConverged;
+        var hasBudget = phase is TrainingPhase.ProbeComplete or TrainingPhase.MainStart;
+        var hasMetric = phase is TrainingPhase.ProbeComplete or TrainingPhase.ProbeConverged;
+        var hasTrials = phase is not (TrainingPhase.ProbeStart or TrainingPhase.MainStart);
+        var hasElapsed = phase is TrainingPhase.Complete;
 
         Write(new
         {
             @event = "phase",
             phase = phase switch
             {
-                AutoTimePhase.ProbeStart => "probe",
-                AutoTimePhase.ProbeComplete => "main",
-                AutoTimePhase.ProbeConverged => "converged",
+                TrainingPhase.ProbeStart => "probe",
+                TrainingPhase.ProbeComplete => "main",
+                TrainingPhase.MainStart => "main",
+                TrainingPhase.ProbeConverged => "converged",
+                TrainingPhase.Complete => "complete",
                 _ => phase.ToString().ToLowerInvariant()
             },
-            probeTimeSec = progress.ProbeTimeSeconds,
-            timeLimitSec = progress.FinalTimeSeconds,
-            trials = progress.TrialNumber,
-            metric = progress.Metric,
+            probeTimeSec = hasProbe ? progress.ProbeTimeSeconds : (int?)null,
+            timeLimitSec = hasBudget ? progress.FinalTimeSeconds : (int?)null,
+            trials = hasTrials ? progress.TrialNumber : (int?)null,
+            metric = hasMetric ? progress.Metric : (double?)null,
+            elapsedMs = hasElapsed ? (long)(progress.ElapsedSeconds * 1000) : (long?)null,
             ts = Now()
         });
     }

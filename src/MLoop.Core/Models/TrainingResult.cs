@@ -16,16 +16,22 @@ public class TrainingResult
 }
 
 /// <summary>
-/// Auto-time training phase markers reported via IProgress&lt;TrainingProgress&gt;.
+/// Training phase markers reported via IProgress&lt;TrainingProgress&gt;. The probe members only
+/// occur under auto-time; <see cref="MainStart"/> and <see cref="Complete"/> bound the training
+/// window on every path, so a consumer never has to know which budgeting mode produced the run.
 /// </summary>
-public enum AutoTimePhase
+public enum TrainingPhase
 {
-    /// <summary>Probe phase is starting. Data: ProbeTimeSeconds.</summary>
+    /// <summary>Probe phase is starting (auto-time only). Data: ProbeTimeSeconds.</summary>
     ProbeStart,
-    /// <summary>Probe phase completed, main training will start. Data: ProbeTimeSeconds, Metric (best), TrialNumber (trials), FinalTimeSeconds.</summary>
+    /// <summary>Probe phase completed, main training will start (auto-time only). Data: ProbeTimeSeconds, Metric (best), TrialNumber (trials), FinalTimeSeconds.</summary>
     ProbeComplete,
-    /// <summary>Probe converged early; main training skipped. Data: ProbeTimeSeconds, Metric (best).</summary>
-    ProbeConverged
+    /// <summary>Probe converged early; main training skipped (auto-time only). Data: ProbeTimeSeconds, Metric (best), TrialNumber (trials).</summary>
+    ProbeConverged,
+    /// <summary>The training window is starting under a fixed budget (no probe). Data: FinalTimeSeconds.</summary>
+    MainStart,
+    /// <summary>The training window ended; post-training steps (save, evaluate, promote) follow. Every successful run ends its phase stream with this. Data: TrialNumber (trials retained in the experiment — matches trials.ndjson; under auto-time, discarded probe trials are not in it), ElapsedSeconds.</summary>
+    Complete
 }
 
 /// <summary>
@@ -40,7 +46,7 @@ public class TrainingProgress
     public required double ElapsedSeconds { get; init; }
 
     // Auto-time phase reporting (null = normal trial update)
-    public AutoTimePhase? Phase { get; init; }
+    public TrainingPhase? Phase { get; init; }
     public int ProbeTimeSeconds { get; init; }
     public int FinalTimeSeconds { get; init; }
 }

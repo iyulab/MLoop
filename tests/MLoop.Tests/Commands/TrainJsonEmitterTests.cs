@@ -46,11 +46,21 @@ public class TrainJsonEmitterTests
         Assert.False(string.IsNullOrWhiteSpace(e.GetProperty("ts").GetString()));
     }
 
+    /// <summary>
+    /// Each boundary carries exactly the facts it has — a field the phase cannot know (a probe
+    /// time on a fixed-budget run, a metric before training starts) is omitted, never zero-filled.
+    /// The name column doubles as the shared-vocabulary pin: a fixed budget's MainStart and
+    /// auto-time's ProbeComplete both say "main", so consumers never branch on budgeting mode.
+    /// </summary>
     [Theory]
-    [InlineData(AutoTimePhase.ProbeStart, "probe")]
-    [InlineData(AutoTimePhase.ProbeComplete, "main")]
-    [InlineData(AutoTimePhase.ProbeConverged, "converged")]
-    public void Phase_names_the_auto_time_transition_in_the_streams_own_vocabulary(AutoTimePhase phase, string expected)
+    [InlineData(TrainingPhase.ProbeStart, "probe", true, false, false, false, false)]
+    [InlineData(TrainingPhase.ProbeComplete, "main", true, true, true, true, false)]
+    [InlineData(TrainingPhase.ProbeConverged, "converged", true, false, true, true, false)]
+    [InlineData(TrainingPhase.MainStart, "main", false, true, false, false, false)]
+    [InlineData(TrainingPhase.Complete, "complete", false, false, true, false, true)]
+    public void Phase_names_the_boundary_and_carries_only_the_facts_it_has(
+        TrainingPhase phase, string expected,
+        bool probe, bool budget, bool trials, bool metric, bool elapsed)
     {
         var (emitter, sink) = Build();
 
@@ -60,7 +70,7 @@ public class TrainJsonEmitterTests
             TrainerName = "",
             MetricName = "",
             Metric = 0.7,
-            ElapsedSeconds = 0,
+            ElapsedSeconds = 12.5,
             Phase = phase,
             ProbeTimeSeconds = 30,
             FinalTimeSeconds = 300
@@ -69,8 +79,17 @@ public class TrainJsonEmitterTests
         var e = Assert.Single(Events(sink));
         Assert.Equal("phase", e.GetProperty("event").GetString());
         Assert.Equal(expected, e.GetProperty("phase").GetString());
-        Assert.Equal(30, e.GetProperty("probeTimeSec").GetInt32());
-        Assert.Equal(300, e.GetProperty("timeLimitSec").GetInt32());
+
+        Assert.Equal(probe, e.TryGetProperty("probeTimeSec", out var p));
+        if (probe) Assert.Equal(30, p.GetInt32());
+        Assert.Equal(budget, e.TryGetProperty("timeLimitSec", out var b));
+        if (budget) Assert.Equal(300, b.GetInt32());
+        Assert.Equal(trials, e.TryGetProperty("trials", out var t));
+        if (trials) Assert.Equal(4, t.GetInt32());
+        Assert.Equal(metric, e.TryGetProperty("metric", out var m));
+        if (metric) Assert.Equal(0.7, m.GetDouble());
+        Assert.Equal(elapsed, e.TryGetProperty("elapsedMs", out var el));
+        if (elapsed) Assert.Equal(12500, el.GetInt64());
     }
 
     [Fact]
