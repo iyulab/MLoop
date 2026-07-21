@@ -11,8 +11,10 @@ using MLoop.Core.Hooks;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
 using MLoop.Core.Storage;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
+using Spectre.Console;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
@@ -139,10 +141,17 @@ public class TrainingEngine : ITrainingEngine
                         $"{string.Join("\n", qualityResult.Suggestions)}");
                 }
 
-                // Show warnings if any
+                // Show warnings if any. Through the warning seam, not Console directly: data-quality
+                // findings (class imbalance, starved classes) are exactly what a --json consumer
+                // asked to receive as events instead of parsing "[Warning]" prose.
                 foreach (var warning in qualityResult.Warnings)
                 {
-                    Console.WriteLine($"[Warning] {warning}");
+                    // Blank entries are visual spacing between console blocks, not findings —
+                    // they keep their spacing role but must not become empty warning events.
+                    if (string.IsNullOrWhiteSpace(warning))
+                        Console.WriteLine();
+                    else
+                        WarningConsole.Warn(Markup.Escape(warning));
                 }
 
                 // Show suggestions if any
@@ -333,8 +342,8 @@ public class TrainingEngine : ITrainingEngine
                 var hooksPassed = await _hookEngine.ExecuteHooksAsync(HookType.PostTrain, hookContext);
                 if (!hooksPassed)
                 {
-                    // PostTrain hooks can't abort (model already trained), just log warning
-                    Console.WriteLine("[Warning] PostTrain hook requested abort, but model is already trained");
+                    // PostTrain hooks can't abort (model already trained), just warn
+                    WarningConsole.Warn("PostTrain hook requested abort, but model is already trained");
                 }
             }
 
@@ -1134,7 +1143,9 @@ public class TrainingEngine : ITrainingEngine
     {
         public void Debug(string message) { } // Silent during training
         public void Info(string message) => Console.WriteLine(message);
-        public void Warning(string message) => Console.WriteLine($"[Warning] {message}");
+        // Through the warning seam: Core raises its warnings on this logger (e.g. the metric
+        // sanitizer's undefined-metric notice), and this is the one place they surface in the CLI.
+        public void Warning(string message) => WarningConsole.Warn(Markup.Escape(message));
         public void Error(string message) => Console.WriteLine($"[Error] {message}");
         public void Error(string message, Exception exception)
         {

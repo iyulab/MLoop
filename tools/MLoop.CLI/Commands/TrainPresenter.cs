@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.DataQuality;
@@ -262,7 +263,10 @@ internal static class TrainPresenter
                 result.Metrics.TryGetValue(primaryMetric, out var metricValue) &&
                 metricValue < minThreshold.Value)
             {
-                AnsiConsole.MarkupLine($"[red]   Model {primaryMetric} ({metricValue:F4}) is below minimum threshold ({minThreshold.Value:F4})[/]");
+                // The quality gate blocking promotion is a warning-class fact: it goes through the
+                // warning seam so a --json consumer receives it as an event instead of losing it
+                // with the silenced narration.
+                WarningConsole.Warn($"Model {primaryMetric} ({metricValue:F4}) is below minimum threshold ({minThreshold.Value:F4}) — saved to staging, not promoted");
                 AnsiConsole.MarkupLine("[grey]   Tip: Model performance is near-random. Check data quality and feature relevance.[/]");
             }
             else if (production?.Metrics != null && result.Metrics != null && production.Metrics.ContainsKey(primaryMetric))

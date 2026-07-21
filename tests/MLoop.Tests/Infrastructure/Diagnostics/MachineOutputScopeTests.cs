@@ -110,4 +110,46 @@ public class MachineOutputScopeTests
         MachineOutputScope.ReportError("no scope is active");
         Assert.Null(MachineOutputScope.Current);
     }
+
+    [Fact]
+    public void A_warning_raised_through_the_seam_is_reported_to_the_event_stream_without_its_markup()
+    {
+        var original = Console.Out;
+        Console.SetOut(new StringWriter());
+        try
+        {
+            var reported = new List<string>();
+            using (var scope = new MachineOutputScope())
+            {
+                scope.WarningSink = reported.Add;
+                WarningConsole.Warn("Class imbalance detected (ratio [cyan]19.0[/]:1)");
+            }
+
+            Assert.Equal("Class imbalance detected (ratio 19.0:1)", Assert.Single(reported));
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+    }
+
+    [Fact]
+    public void Outside_machine_mode_a_warning_is_a_rendered_line_not_an_event()
+    {
+        var captured = new StringWriter();
+        var originalConsole = AnsiConsole.Console;
+        AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(captured) });
+        try
+        {
+            WarningConsole.Warn("something recoverable happened");
+
+            Assert.Contains("Warning:", captured.ToString());
+            Assert.Contains("something recoverable happened", captured.ToString());
+            Assert.Null(MachineOutputScope.Current);
+        }
+        finally
+        {
+            AnsiConsole.Console = originalConsole;
+        }
+    }
 }
