@@ -103,6 +103,19 @@ public class ExperimentData
     /// Evaluation metrics (null if not available)
     /// </summary>
     public Dictionary<string, double>? Metrics { get; init; }
+
+    /// <summary>
+    /// Every completed trial of the search, in completion order. Empty for the task paths that fit a
+    /// single pipeline instead of searching — nothing is written in that case.
+    /// </summary>
+    public IReadOnlyList<TrialRecord> Trials { get; init; } = [];
+
+    /// <summary>
+    /// Canonical name of the metric the search ranked trials by — what the leaderboard is sorted on.
+    /// Can differ from <see cref="ExperimentConfig.Metric"/>: binary classification switches to
+    /// <c>f1_score</c> when AUC turns out to be undefined.
+    /// </summary>
+    public string? RankingMetric { get; init; }
 }
 
 /// <summary>

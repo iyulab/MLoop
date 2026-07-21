@@ -575,6 +575,47 @@ public class TrainingEngineTests : IDisposable
             $"{trials.Count} — the counter is no longer fed by the stream");
     }
 
+    /// <summary>
+    /// End-to-end pin for the trial history: a real training run has to leave the search's
+    /// leaderboard on disk. The collection and the writing are each covered on their own, so what
+    /// this adds is the wiring between them — the one thing a silently-dropped property breaks
+    /// without any other test noticing (the schema-capture rewrap did exactly that).
+    /// </summary>
+    [Fact]
+    public async Task TrainAsync_LeavesTheSearchesTrialHistoryInTheExperimentDirectory()
+    {
+        var csv = Path.Combine(_tempDir, "history.csv");
+        var lines = new List<string> { "age,income,score,label" };
+        var rnd = new Random(11);
+        for (int i = 0; i < 1500; i++)
+        {
+            var age = rnd.Next(20, 70);
+            var income = rnd.Next(1000, 9000);
+            var score = rnd.NextDouble();
+            lines.Add($"{age},{income},{score:F4},{(income + age * 50 + score * 1000 > 6500 ? 1 : 0)}");
+        }
+        await File.WriteAllLinesAsync(csv, lines);
+
+        var config = new TrainingConfig
+        {
+            ModelName = "history",
+            DataFile = csv,
+            LabelColumn = "label",
+            Task = "binary-classification",
+            TimeLimitSeconds = 20
+        };
+
+        var result = await NewEngine().TrainAsync(config, progress: null, CancellationToken.None);
+
+        var experimentPath = Path.Combine(
+            _tempDir, "models", "history", "staging", result.ExperimentId);
+
+        var trialsPath = Path.Combine(experimentPath, "trials.ndjson");
+        Assert.True(File.Exists(trialsPath), "the run left no trials.ndjson behind");
+        Assert.NotEmpty(await File.ReadAllLinesAsync(trialsPath));
+        Assert.True(File.Exists(Path.Combine(experimentPath, "leaderboard.json")));
+    }
+
     /// <summary>Reports on the calling thread so assertions do not race Progress&lt;T&gt;'s thread pool hand-off.</summary>
     private sealed class InlineProgress(Action<TrainingProgress> onReport) : IProgress<TrainingProgress>
     {

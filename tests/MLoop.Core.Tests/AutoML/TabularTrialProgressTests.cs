@@ -87,22 +87,51 @@ public class TabularTrialProgressTests : IDisposable
         });
     }
 
-    [Fact]
-    public async Task Binary_classification_reports_every_completed_trial()
+    private static List<string> BinaryFixture(int rows)
     {
         var lines = new List<string> { "f1,f2,label" };
-        for (int i = 0; i < 150; i++)
+        for (int i = 0; i < rows; i++)
         {
             var f1 = i % 37;
             var f2 = i % 17;
             lines.Add($"{f1},{f2},{(f1 + f2 > 25 ? 1 : 0)}");
         }
-        var csv = await WriteCsvAsync("binary.csv", lines);
+        return lines;
+    }
+
+    [Fact]
+    public async Task Binary_classification_reports_every_completed_trial()
+    {
+        // 400 rows, not the 150 the other fixtures use: measured, AutoML's internal AUC computation
+        // fails on this fixture at 150 rows and the run diverts to the BUG-36 manual SDCA pipeline,
+        // so a smaller fixture stops covering the AutoML path this test exists for. The trainer-name
+        // assertion below is what keeps that substitution from happening silently again.
+        var csv = await WriteCsvAsync("binary.csv", BinaryFixture(rows: 400));
 
         var (result, progress) = await TrainAsync(csv, "binary-classification", "label", metric: "accuracy");
 
         Assert.NotNull(result.Model);
         AssertTrialsWereReported(progress, expectedMetricName: "accuracy");
+        Assert.DoesNotContain(progress.Trials, t => t.TrainerName.Contains("fallback"));
+    }
+
+    [Fact]
+    public async Task Manual_fallback_reports_the_metric_it_actually_measured()
+    {
+        // The path taken when AutoML's AUC computation fails (BUG-36). It used to announce itself
+        // before fitting with accuracy=0 and elapsed=0 — a trial line reading "accuracy=0.0000" and
+        // a progress bar pinned at 0%, since the CLI derives its percentage from ElapsedSeconds.
+        // 150 rows is the size measured to divert here.
+        var csv = await WriteCsvAsync("fallback.csv", BinaryFixture(rows: 150));
+
+        var (result, progress) = await TrainAsync(csv, "binary-classification", "label", metric: "accuracy");
+
+        Assert.NotNull(result.Model);
+        var trial = Assert.Single(progress.Trials);
+        Assert.Contains("fallback", trial.TrainerName);
+        Assert.Equal("accuracy", trial.MetricName);
+        Assert.Equal(result.Metrics["accuracy"], trial.Metric);
+        Assert.True(trial.ElapsedSeconds > 0, "the fallback reported zero elapsed time");
     }
 
     [Fact]

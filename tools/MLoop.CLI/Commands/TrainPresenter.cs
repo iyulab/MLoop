@@ -310,7 +310,7 @@ internal static class TrainPresenter
             AnsiConsole.MarkupLine("[grey]  Unused files:[/]");
             foreach (var file in scanResult.UnusedFiles)
             {
-                AnsiConsole.MarkupLine($"[grey]    {Emoji.Known.SmallBlueDiamond} {file.FileName} ({file.SizeFormatted})[/]");
+                AnsiConsole.MarkupLine($"[grey]    {Emoji.Known.SmallBlueDiamond} {file.DisplayName} ({file.SizeFormatted})[/]");
             }
         }
         else
@@ -319,7 +319,7 @@ internal static class TrainPresenter
             AnsiConsole.MarkupLine("[grey]  Unused files:[/]");
             foreach (var file in scanResult.UnusedFiles.Take(3))
             {
-                AnsiConsole.MarkupLine($"[grey]    {Emoji.Known.SmallBlueDiamond} {file.FileName} ({file.SizeFormatted})[/]");
+                AnsiConsole.MarkupLine($"[grey]    {Emoji.Known.SmallBlueDiamond} {file.DisplayName} ({file.SizeFormatted})[/]");
             }
             AnsiConsole.MarkupLine($"[grey]    ... and {remaining} more[/]");
         }

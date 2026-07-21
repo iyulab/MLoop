@@ -48,6 +48,21 @@ public static class ExperimentLayout
     /// <summary>Per-model atomic experiment-id counter, sibling of <c>staging/</c>.</summary>
     public const string IndexFileName = "experiment-index.json";
 
+    /// <summary>
+    /// Every completed trial of the search, one JSON object per line, in completion order — inside
+    /// <c>staging/{expId}/</c>. NDJSON rather than a JSON array so a long search can be streamed and
+    /// tailed; absent for the task paths that fit a single pipeline instead of searching.
+    /// </summary>
+    public const string TrialsFileName = "trials.ndjson";
+
+    /// <summary>
+    /// The same trials ranked by the metric the search optimized, best first, inside
+    /// <c>staging/{expId}/</c>. Written beside <see cref="TrialsFileName"/> because ranking needs the
+    /// metric's direction (<c>MLoop.Core.Evaluation.MetricDirection</c>) — knowledge a reader of the
+    /// raw trials file should not have to re-derive.
+    /// </summary>
+    public const string LeaderboardFileName = "leaderboard.json";
+
     // The per-model production pointer + snapshot lives in production/metadata.json (the
     // ProductionMetadata authority), co-located with model.zip. The parallel registry.json that used to
     // duplicate it was removed (ProductionMetadata remarks) — there is no separate production registry file.

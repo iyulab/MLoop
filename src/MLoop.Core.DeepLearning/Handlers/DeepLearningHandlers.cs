@@ -37,11 +37,13 @@ internal static class DeepLearningHandlers
                     featureColumnName: "ImageBytes", labelColumnName: "Label"))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
-            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "ImageClassification (TF)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
+            var trialChannel = progress is null ? null : new TrialProgressChannel(progress);
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+
+            trialChannel?.ReportCompleted("ImageClassification (TF)", "accuracy", metrics.MacroAccuracy);
 
             return new AutoMLResult
             {
@@ -75,11 +77,13 @@ internal static class DeepLearningHandlers
                     labelColumnName: "Label", sentence1ColumnName: textCol))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
-            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "TextClassification (NAS-BERT)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
+            var trialChannel = progress is null ? null : new TrialProgressChannel(progress);
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+
+            trialChannel?.ReportCompleted("TextClassification (NAS-BERT)", "accuracy", metrics.MacroAccuracy);
 
             return new AutoMLResult
             {
@@ -114,11 +118,13 @@ internal static class DeepLearningHandlers
                 sentence1ColumnName: textCols[0],
                 sentence2ColumnName: textCols[1]);
 
-            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "SentenceSimilarity (NAS-BERT)", MetricName = "r_squared", Metric = 0, ElapsedSeconds = 0 });
+            var trialChannel = progress is null ? null : new TrialProgressChannel(progress);
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
+
+            trialChannel?.ReportCompleted("SentenceSimilarity (NAS-BERT)", "r_squared", metrics.RSquared);
 
             return new AutoMLResult
             {
@@ -152,11 +158,13 @@ internal static class DeepLearningHandlers
                     labelColumnName: "Label", sentence1ColumnName: textCol))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
-            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "NER (NAS-BERT)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
+            var trialChannel = progress is null ? null : new TrialProgressChannel(progress);
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+
+            trialChannel?.ReportCompleted("NER (NAS-BERT)", "accuracy", metrics.MacroAccuracy);
 
             return new AutoMLResult
             {
@@ -212,8 +220,9 @@ internal static class DeepLearningHandlers
             // slower CPU training, so it is applied unconditionally rather than gated on success.
             TorchSharp.torch.set_num_threads(1);
 
-            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "ObjectDetection (AutoFormerV2)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
-
+            // No trial is reported: this handler computes no metrics (see the empty Metrics below),
+            // and the progress channel carries a metric value by construction — the previous
+            // report said accuracy=0, which for a detector reads as "found nothing".
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
 
@@ -244,8 +253,7 @@ internal static class DeepLearningHandlers
                 contextColumnName: contextCol,
                 questionColumnName: questionCol);
 
-            progress?.Report(new TrainingProgress { TrialNumber = 1, TrainerName = "QA (NAS-BERT)", MetricName = "accuracy", Metric = 0, ElapsedSeconds = 0 });
-
+            // No trial is reported — this handler computes no metrics, same as object detection above.
             var model = pipeline.Fit(trainSet);
 
             return new AutoMLResult

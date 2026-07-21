@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.ML.AutoML;
 using MLoop.Core.Models;
 
@@ -16,9 +15,9 @@ namespace MLoop.Core.AutoML;
 /// <see cref="NoSuccessfulTrialException"/> reports at the end.
 /// </para>
 /// <para>
-/// Two fields cannot be taken from <see cref="RunDetail{TMetrics}"/> directly:
-/// it carries no trial number, so the ordinal is counted here; and its
-/// <c>RuntimeInSeconds</c> is that one trial's duration, whereas
+/// Two fields cannot be taken from <see cref="RunDetail{TMetrics}"/> directly, and both are owned by
+/// <see cref="TrialProgressChannel"/> instead: it carries no trial number, so the ordinal is counted
+/// there; and its <c>RuntimeInSeconds</c> is that one trial's duration, whereas
 /// <see cref="TrainingProgress.ElapsedSeconds"/> is read as elapsed-since-start by the
 /// percentage calculation in the CLI's progress bar. Reporting per-trial runtime there would make
 /// the bar jump backwards on every fast trial.
@@ -27,11 +26,9 @@ namespace MLoop.Core.AutoML;
 public sealed class TrialProgressReporter<TMetrics> : IProgress<RunDetail<TMetrics>>
     where TMetrics : class
 {
-    private readonly IProgress<TrainingProgress> _sink;
+    private readonly TrialProgressChannel _channel;
     private readonly string _metricName;
     private readonly Func<TMetrics, double> _selectMetric;
-    private readonly Stopwatch _clock;
-    private int _completedTrials;
 
     /// <param name="sink">MLoop's progress channel; every completed trial is forwarded here.</param>
     /// <param name="metricName">
@@ -43,14 +40,13 @@ public sealed class TrialProgressReporter<TMetrics> : IProgress<RunDetail<TMetri
         string metricName,
         Func<TMetrics, double> selectMetric)
     {
-        _sink = sink ?? throw new ArgumentNullException(nameof(sink));
+        _channel = new TrialProgressChannel(sink);
         _metricName = metricName ?? throw new ArgumentNullException(nameof(metricName));
         _selectMetric = selectMetric ?? throw new ArgumentNullException(nameof(selectMetric));
-        _clock = Stopwatch.StartNew();
     }
 
     /// <summary>Number of trials forwarded so far.</summary>
-    public int CompletedTrials => Volatile.Read(ref _completedTrials);
+    public int CompletedTrials => _channel.CompletedTrials;
 
     public void Report(RunDetail<TMetrics> value)
         => ReportTrial(value?.TrainerName, value?.ValidationMetrics);
@@ -71,13 +67,6 @@ public sealed class TrialProgressReporter<TMetrics> : IProgress<RunDetail<TMetri
         if (metrics is null)
             return;
 
-        _sink.Report(new TrainingProgress
-        {
-            TrialNumber = Interlocked.Increment(ref _completedTrials),
-            TrainerName = string.IsNullOrWhiteSpace(trainerName) ? "(unknown)" : trainerName,
-            MetricName = _metricName,
-            Metric = _selectMetric(metrics),
-            ElapsedSeconds = _clock.Elapsed.TotalSeconds
-        });
+        _channel.ReportCompleted(trainerName, _metricName, _selectMetric(metrics));
     }
 }
