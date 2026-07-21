@@ -568,7 +568,7 @@ public class TrainingEngineTests : IDisposable
         Assert.NotEmpty(trials);
 
         var summary = seen.LastOrDefault(p =>
-            p.Phase is AutoTimePhase.ProbeConverged or AutoTimePhase.ProbeComplete);
+            p.Phase is TrainingPhase.ProbeConverged or TrainingPhase.ProbeComplete);
         Assert.NotNull(summary);
         Assert.True(summary!.TrialNumber > 0,
             "the probe summary reported 0 trials while the progress stream carried " +
@@ -614,6 +614,57 @@ public class TrainingEngineTests : IDisposable
         Assert.True(File.Exists(trialsPath), "the run left no trials.ndjson behind");
         Assert.NotEmpty(await File.ReadAllLinesAsync(trialsPath));
         Assert.True(File.Exists(Path.Combine(experimentPath, "leaderboard.json")));
+    }
+
+    /// <summary>
+    /// A fixed-budget run has to announce its training window the way auto-time announces its
+    /// phases: MainStart before any trial, Complete after the last one. Without these a consumer
+    /// capturing the event stream of a <c>--time N</c> run gets no phase at all — the gap the
+    /// downstream tree UI reported as "62 seconds of complete silence".
+    /// </summary>
+    [Fact]
+    public async Task TrainAsync_FixedBudget_BoundsTheTrainingWindowWithPhaseEvents()
+    {
+        var csv = Path.Combine(_tempDir, "fixed-budget.csv");
+        var lines = new List<string> { "age,income,score,label" };
+        var rnd = new Random(23);
+        for (int i = 0; i < 1500; i++)
+        {
+            var age = rnd.Next(20, 70);
+            var income = rnd.Next(1000, 9000);
+            var score = rnd.NextDouble();
+            lines.Add($"{age},{income},{score:F4},{(income + age * 50 + score * 1000 > 6500 ? 1 : 0)}");
+        }
+        await File.WriteAllLinesAsync(csv, lines);
+
+        var config = new TrainingConfig
+        {
+            ModelName = "fixedbudget",
+            DataFile = csv,
+            LabelColumn = "label",
+            Task = "binary-classification",
+            TimeLimitSeconds = 20
+        };
+
+        var events = new List<TrainingProgress>();
+        var progress = new InlineProgress(p => { lock (events) events.Add(p); });
+
+        await NewEngine().TrainAsync(config, progress, CancellationToken.None);
+
+        List<TrainingProgress> seen;
+        lock (events) seen = [.. events];
+
+        var start = Assert.Single(seen, p => p.Phase == TrainingPhase.MainStart);
+        Assert.Equal(config.TimeLimitSeconds, start.FinalTimeSeconds);
+        Assert.Equal(0, seen.IndexOf(start));
+
+        var complete = Assert.Single(seen, p => p.Phase == TrainingPhase.Complete);
+        Assert.Equal(seen.Count - 1, seen.IndexOf(complete));
+        Assert.True(complete.ElapsedSeconds > 0, "Complete reported no elapsed time");
+
+        var trials = seen.Where(p => p.Phase is null).ToList();
+        Assert.NotEmpty(trials);
+        Assert.Equal(trials.Count, complete.TrialNumber);
     }
 
     /// <summary>Reports on the calling thread so assertions do not race Progress&lt;T&gt;'s thread pool hand-off.</summary>

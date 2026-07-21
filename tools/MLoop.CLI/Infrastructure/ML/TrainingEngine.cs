@@ -266,10 +266,30 @@ public class TrainingEngine : ITrainingEngine
             }
             else
             {
+                // Fixed-budget runs get the same start boundary auto-time announces via its probe
+                // phases: without it a consumer capturing the event stream sees nothing between the
+                // pre-training summary and the first completed trial.
+                progress?.Report(new TrainingProgress
+                {
+                    TrialNumber = 0, TrainerName = "", Metric = 0, MetricName = "", ElapsedSeconds = 0,
+                    Phase = TrainingPhase.MainStart,
+                    FinalTimeSeconds = config.TimeLimitSeconds
+                });
+
                 autoMLResult = await _autoMLRunner.RunAsync(config, progress, cancellationToken);
             }
 
             stopwatch.Stop();
+
+            // The uniform end-of-training-window marker, on every path (fixed budget, auto-time
+            // main, auto-time converged): post-training steps — save, evaluate, promote — still run
+            // after this, so a consumer can tell "still training" from "finalizing".
+            progress?.Report(new TrainingProgress
+            {
+                TrialNumber = autoMLResult.Trials.Count, TrainerName = "", Metric = 0, MetricName = "",
+                ElapsedSeconds = stopwatch.Elapsed.TotalSeconds,
+                Phase = TrainingPhase.Complete
+            });
 
             // Save model
             var modelPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.ModelFileName);
@@ -461,7 +481,7 @@ public class TrainingEngine : ITrainingEngine
         progress?.Report(new TrainingProgress
         {
             TrialNumber = 0, TrainerName = "", Metric = 0, MetricName = "", ElapsedSeconds = 0,
-            Phase = AutoTimePhase.ProbeStart,
+            Phase = TrainingPhase.ProbeStart,
             ProbeTimeSeconds = probeTime
         });
 
@@ -496,7 +516,7 @@ public class TrainingEngine : ITrainingEngine
             progress?.Report(new TrainingProgress
             {
                 TrialNumber = probeTrialCount, TrainerName = "", Metric = bestMetric, MetricName = "", ElapsedSeconds = 0,
-                Phase = AutoTimePhase.ProbeConverged,
+                Phase = TrainingPhase.ProbeConverged,
                 ProbeTimeSeconds = probeTime
             });
             return probeAutoMLResult;
@@ -505,7 +525,7 @@ public class TrainingEngine : ITrainingEngine
         progress?.Report(new TrainingProgress
         {
             TrialNumber = probeTrialCount, TrainerName = "", Metric = bestMetric, MetricName = "", ElapsedSeconds = 0,
-            Phase = AutoTimePhase.ProbeComplete,
+            Phase = TrainingPhase.ProbeComplete,
             ProbeTimeSeconds = probeTime,
             FinalTimeSeconds = finalTime
         });

@@ -947,13 +947,18 @@ public static class TrainCommand
                         if (p.Phase.HasValue)
                         {
                             events?.Phase(p);
-                            lastAutoTimeEvent = p;
+                            // The post-run probe summary keys off the last *probe* phase; the
+                            // window boundaries (MainStart/Complete) every run now reports would
+                            // otherwise overwrite it and silently drop the summary.
+                            if (p.Phase is TrainingPhase.ProbeStart or TrainingPhase.ProbeComplete or TrainingPhase.ProbeConverged)
+                                lastAutoTimeEvent = p;
                             progressTracker.EnterPhase(p);
                             progressTask.Description = p.Phase switch
                             {
-                                AutoTimePhase.ProbeStart => $"[cyan]Phase 1:[/] Probe ({p.ProbeTimeSeconds}s)...",
-                                AutoTimePhase.ProbeComplete => $"[cyan]Phase 2:[/] Main training ({p.FinalTimeSeconds}s)...",
-                                AutoTimePhase.ProbeConverged => "[green]Converged[/] in probe phase",
+                                TrainingPhase.ProbeStart => $"[cyan]Phase 1:[/] Probe ({p.ProbeTimeSeconds}s)...",
+                                TrainingPhase.ProbeComplete => $"[cyan]Phase 2:[/] Main training ({p.FinalTimeSeconds}s)...",
+                                TrainingPhase.ProbeConverged => "[green]Converged[/] in probe phase",
+                                TrainingPhase.Complete => $"[green]Finalizing {resolvedModelName}...[/]",
                                 _ => progressTask.Description
                             };
                             return;
@@ -974,7 +979,7 @@ public static class TrainCommand
                 });
 
             // Display auto-time phase summary after progress bar completes
-            if (lastAutoTimeEvent?.Phase == AutoTimePhase.ProbeComplete)
+            if (lastAutoTimeEvent?.Phase == TrainingPhase.ProbeComplete)
             {
                 TrainPresenter.DisplayProbeResult(
                     lastAutoTimeEvent.ProbeTimeSeconds,
@@ -983,7 +988,7 @@ public static class TrainCommand
                     lastAutoTimeEvent.FinalTimeSeconds);
                 AnsiConsole.WriteLine();
             }
-            else if (lastAutoTimeEvent?.Phase == AutoTimePhase.ProbeConverged)
+            else if (lastAutoTimeEvent?.Phase == TrainingPhase.ProbeConverged)
             {
                 TrainPresenter.DisplayProbeConverged(
                     lastAutoTimeEvent.ProbeTimeSeconds,

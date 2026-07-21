@@ -19,7 +19,7 @@ public class TrainingProgressTrackerTests
         ElapsedSeconds = elapsedSeconds
     };
 
-    private static TrainingProgress Phase(AutoTimePhase phase, int probeSeconds = 0, int finalSeconds = 0) => new()
+    private static TrainingProgress Phase(TrainingPhase phase, int probeSeconds = 0, int finalSeconds = 0) => new()
     {
         TrialNumber = 0,
         TrainerName = "",
@@ -47,11 +47,11 @@ public class TrainingProgressTrackerTests
         // trial clock at zero.
         var tracker = new TrainingProgressTracker(configuredTimeLimitSeconds: 300);
 
-        tracker.EnterPhase(Phase(AutoTimePhase.ProbeStart, probeSeconds: 20));
+        tracker.EnterPhase(Phase(TrainingPhase.ProbeStart, probeSeconds: 20));
         Assert.Equal(20, tracker.BudgetSeconds);
         Assert.Equal(50, tracker.PercentFor(Trial(elapsedSeconds: 10)));
 
-        tracker.EnterPhase(Phase(AutoTimePhase.ProbeComplete, probeSeconds: 20, finalSeconds: 200));
+        tracker.EnterPhase(Phase(TrainingPhase.ProbeComplete, probeSeconds: 20, finalSeconds: 200));
         Assert.Equal(200, tracker.BudgetSeconds);
         Assert.Equal(5, tracker.PercentFor(Trial(elapsedSeconds: 10)));
     }
@@ -76,11 +76,37 @@ public class TrainingProgressTrackerTests
     public void Converged_phase_leaves_the_budget_alone()
     {
         var tracker = new TrainingProgressTracker(configuredTimeLimitSeconds: 300);
-        tracker.EnterPhase(Phase(AutoTimePhase.ProbeStart, probeSeconds: 20));
+        tracker.EnterPhase(Phase(TrainingPhase.ProbeStart, probeSeconds: 20));
 
-        tracker.EnterPhase(Phase(AutoTimePhase.ProbeConverged, probeSeconds: 20));
+        tracker.EnterPhase(Phase(TrainingPhase.ProbeConverged, probeSeconds: 20));
 
         Assert.Equal(20, tracker.BudgetSeconds);
+    }
+
+    [Fact]
+    public void MainStart_measures_against_the_announced_fixed_budget()
+    {
+        // A fixed-budget run announces its window with MainStart; the tracker adopts that budget
+        // the same way it adopts auto-time's main budget, so both modes share one arithmetic.
+        var tracker = new TrainingProgressTracker(configuredTimeLimitSeconds: 300);
+
+        tracker.EnterPhase(Phase(TrainingPhase.MainStart, finalSeconds: 60));
+
+        Assert.Equal(60, tracker.BudgetSeconds);
+        Assert.Equal(50, tracker.PercentFor(Trial(elapsedSeconds: 30)));
+    }
+
+    [Fact]
+    public void Complete_phase_leaves_the_budget_alone()
+    {
+        // Complete carries no budget (FinalTimeSeconds is 0 on it); switching to it would divide
+        // by zero-or-nothing. The window is over — whatever budget was in force stays.
+        var tracker = new TrainingProgressTracker(configuredTimeLimitSeconds: 300);
+        tracker.EnterPhase(Phase(TrainingPhase.MainStart, finalSeconds: 60));
+
+        tracker.EnterPhase(Phase(TrainingPhase.Complete));
+
+        Assert.Equal(60, tracker.BudgetSeconds);
     }
 
     [Theory]
