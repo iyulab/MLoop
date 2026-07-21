@@ -31,6 +31,110 @@ public class SrCnnOneShotDetectorTests
         return series;
     }
 
+    /// <summary>Deterministic pseudo-noise in (-1, 1) — a seeded <c>Random</c> is not guaranteed
+    /// stable across runtimes, and these tests assert on dispersion.</summary>
+    private static double Jitter(int i) => Math.Sin(i * 12.9898) * 43758.5453 % 1.0;
+
+    /// <summary>
+    /// Sine + noise around <paramref name="level"/> with four injected spikes. <paramref name="scale"/>
+    /// multiplies every deviation from the level (noise, seasonal swing, and spikes alike), so
+    /// <c>level</c> and <c>scale</c> move the series' magnitude and its dispersion independently —
+    /// that separation is what the control-limit contract is about.
+    /// </summary>
+    private static List<double> SeasonalNoisySeries(double level = 25.0, double scale = 1.0, int length = 300)
+    {
+        var spikes = new HashSet<int> { 50, 120, 200, 250 };
+        return Enumerable.Range(0, length)
+            .Select(i =>
+            {
+                var deviation = 2.2 * Math.Sin(2 * Math.PI * i / 63) + 0.4 * Jitter(i) + (spikes.Contains(i) ? 12.0 : 0.0);
+                return level + scale * deviation;
+            })
+            .ToList();
+    }
+
+    private static double MedianControlWidth(OneShotAnomalyResult result)
+    {
+        var widths = result.Points.Select(p => p.ControlUpper - p.ControlLower).OrderBy(w => w).ToList();
+        return widths[widths.Count / 2];
+    }
+
+    [Fact]
+    public void Detect_ControlLimits_TrackDispersionNotMagnitude()
+    {
+        if (!MklAvailable.Value)
+            return;
+
+        // The defect this pins: the SR-CNN *margin* is scaled by CalculateBoundaryUnit, which measures
+        // the series' level/trend, not its spread — so it widens ~41x when the level shifts and does
+        // not move at all when the noise grows 5x. Control limits must do exactly the opposite.
+        var baseline = SrCnnOneShotDetector.Detect(SeasonalNoisySeries());
+        var shifted = SrCnnOneShotDetector.Detect(SeasonalNoisySeries(level: 1025.0));
+        var noisier = SrCnnOneShotDetector.Detect(SeasonalNoisySeries(scale: 5.0));
+
+        var baseWidth = MedianControlWidth(baseline);
+        Assert.True(baseWidth > 0, "baseline control band collapsed to zero width");
+
+        var shiftedRatio = MedianControlWidth(shifted) / baseWidth;
+        Assert.InRange(shiftedRatio, 0.8, 1.25); // level +1000, same spread ⇒ same band
+
+        var noisierRatio = MedianControlWidth(noisier) / baseWidth;
+        Assert.InRange(noisierRatio, 3.5, 6.5); // spread x5 ⇒ band ~5x
+    }
+
+    [Fact]
+    public void Detect_NormalPoints_LieWithinControlLimits()
+    {
+        if (!MklAvailable.Value)
+            return;
+
+        // The SPC semantic: a control chart is unusable if normal operation plots as violations.
+        var result = SrCnnOneShotDetector.Detect(SeasonalNoisySeries());
+
+        var normal = result.Points.Where(p => !p.IsAnomaly).ToList();
+        var inside = normal.Count(p => p.Value >= p.ControlLower && p.Value <= p.ControlUpper);
+
+        Assert.True(inside >= normal.Count * 0.95,
+            $"only {inside}/{normal.Count} normal points inside the control band");
+    }
+
+    [Fact]
+    public void Detect_Anomalies_LieOutsideMargin()
+    {
+        if (!MklAvailable.Value)
+            return;
+
+        // Upstream invariant, pinned so the margin band keeps explaining the verdict: SR-CNN clears
+        // the anomaly flag for any point inside the margin, so IsAnomaly ⇒ outside. (The converse
+        // does not hold — the margin never raises a flag — which is why it is not a control limit.)
+        var result = SrCnnOneShotDetector.Detect(SeasonalNoisySeries());
+
+        Assert.Contains(result.Points, p => p.IsAnomaly);
+        Assert.All(result.Points.Where(p => p.IsAnomaly), p =>
+            Assert.True(p.Value < p.MarginLower || p.Value > p.MarginUpper,
+                $"anomaly at {p.Index} sits inside its margin band"));
+    }
+
+    [Fact]
+    public void Detect_ConstantSeries_ControlBandDoesNotExcludeNormalPoints()
+    {
+        if (!MklAvailable.Value)
+            return;
+
+        // Zero dispersion ⇒ a zero-width band is the honest answer, but it must not report the
+        // flat series as all-violations (inclusive comparison, no NaN).
+        var result = SrCnnOneShotDetector.Detect(Enumerable.Repeat(7.0, 48).ToList(),
+            new OneShotAnomalyOptions { Period = 0 });
+
+        Assert.All(result.Points, p =>
+        {
+            Assert.False(double.IsNaN(p.ControlLower) || double.IsNaN(p.ControlUpper));
+            Assert.True(p.ControlUpper >= p.ControlLower);
+        });
+        var violations = result.Points.Count(p => p.Value < p.ControlLower || p.Value > p.ControlUpper);
+        Assert.True(violations <= 2, $"constant series produced {violations} control violations");
+    }
+
     [Fact]
     public void Detect_SpikeSeries_FlagsSpikeWithBounds()
     {
@@ -46,13 +150,15 @@ public class SrCnnOneShotDetectorTests
         var spike = result.Points[30];
         Assert.True(spike.IsAnomaly, $"spike at index 30 should be anomalous (score={spike.Score:F3})");
 
-        // Margin mode: every point carries a coherent SPC band around its expected value.
+        // Both bands must bracket the expected value.
         Assert.All(result.Points, p =>
         {
-            Assert.True(p.UpperBound >= p.ExpectedValue,
-                $"upper {p.UpperBound} < expected {p.ExpectedValue} at index {p.Index}");
-            Assert.True(p.ExpectedValue >= p.LowerBound,
-                $"expected {p.ExpectedValue} < lower {p.LowerBound} at index {p.Index}");
+            Assert.True(p.MarginUpper >= p.ExpectedValue,
+                $"margin upper {p.MarginUpper} < expected {p.ExpectedValue} at index {p.Index}");
+            Assert.True(p.ExpectedValue >= p.MarginLower,
+                $"expected {p.ExpectedValue} < margin lower {p.MarginLower} at index {p.Index}");
+            Assert.True(p.ControlUpper >= p.ExpectedValue && p.ExpectedValue >= p.ControlLower,
+                $"control band does not bracket expected at index {p.Index}");
         });
 
         // The detector should not scream anomaly on the flat bulk of the series.
