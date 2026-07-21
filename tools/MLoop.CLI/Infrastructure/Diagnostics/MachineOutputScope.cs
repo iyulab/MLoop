@@ -61,12 +61,23 @@ public sealed class MachineOutputScope : IDisposable
     public Action<string>? ErrorSink { get; set; }
 
     /// <summary>
+    /// Where a warning raised through <see cref="WarningConsole"/> is reported as an event. Same
+    /// ownership rule as <see cref="ErrorSink"/>: null until the command wires its emitter.
+    /// </summary>
+    public Action<string>? WarningSink { get; set; }
+
+    /// <summary>
     /// Called by the stderr diagnostics sinks. Markup is stripped — the event carries the message a
     /// consumer would print, not Spectre's rendering instructions.
     /// </summary>
-    public static void ReportError(string message)
+    public static void ReportError(string message) => Report(Current?.ErrorSink, message);
+
+    /// <summary>Called by <see cref="WarningConsole"/>. Markup is stripped, as for errors.</summary>
+    public static void ReportWarning(string message) => Report(Current?.WarningSink, message);
+
+    private static void Report(Action<string>? sink, string message)
     {
-        if (Current?.ErrorSink is not { } sink)
+        if (sink is null)
             return;
 
         var plain = message;

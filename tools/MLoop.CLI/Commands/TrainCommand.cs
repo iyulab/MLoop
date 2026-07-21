@@ -236,6 +236,7 @@ public static class TrainCommand
             // top-level catch plus a dozen validation early-returns. Hooking the sink emits the error
             // event from all of them instead of tagging each return site.
             machineOutput.ErrorSink = events.Error;
+            machineOutput.WarningSink = events.Warning;
         }
 
         try
@@ -586,7 +587,7 @@ public static class TrainCommand
                 }
                 else if (labelAnalysis.HasMissingValues)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] Found {labelAnalysis.MissingCount}/{labelAnalysis.TotalRows} rows ({labelAnalysis.MissingPercentage:F1}%) with missing labels");
+                    WarningConsole.Warn($"Found {labelAnalysis.MissingCount}/{labelAnalysis.TotalRows} rows ({labelAnalysis.MissingPercentage:F1}%) with missing labels");
 
                     // Create cleaned data file
                     var cleanedDataPath = Path.Combine(
@@ -1034,7 +1035,7 @@ public static class TrainCommand
             var postTrainSuccess = await hookEngine.ExecuteHooksAsync(HookType.PostTrain, postTrainContext);
             if (!postTrainSuccess)
             {
-                AnsiConsole.MarkupLine("[yellow]Warning:[/] Post-train hook aborted, but model was saved successfully");
+                WarningConsole.Warn("Post-train hook aborted, but model was saved successfully");
                 // Don't return 1 here - training succeeded, only post-processing failed
             }
 
