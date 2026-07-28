@@ -138,7 +138,11 @@ public partial class ModelNameResolver : IModelNameResolver
 
         if (Exists(resolvedName))
         {
-            throw new InvalidOperationException($"Model '{resolvedName}' already exists.");
+            // Names the way out, like the sibling rejection above: a bare "already exists" leaves the
+            // caller to guess whether the existing model is reusable or has to be renamed around.
+            throw new InvalidOperationException(
+                $"Model '{resolvedName}' already exists. " +
+                $"Train into it with --name {resolvedName}, or choose a different name.");
         }
 
         // Create directory structure

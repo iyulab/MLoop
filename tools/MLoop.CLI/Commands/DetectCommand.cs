@@ -292,16 +292,14 @@ public static class DetectCommand
 
     private static void WriteError(string message, bool jsonOutput)
     {
+        // The JSON envelope stays on stdout for --json consumers; the cause goes to stderr through
+        // the shared sink either way, so "exit != 0 ⇒ stderr has a cause" holds in every mode and the
+        // "Error:" prefix reads the same as every other command. The message is escaped rather than
+        // interpolated as markup: it carries user data (file paths, column names) that may contain
+        // brackets Spectre would otherwise try to parse.
         if (jsonOutput)
-        {
-            // The JSON envelope stays on stdout for --json consumers; the cause is mirrored to
-            // stderr so "exit != 0 ⇒ stderr has a cause" holds in every mode.
             Console.WriteLine(JsonSerializer.Serialize(new { error = message }));
-            Console.Error.WriteLine(message);
-        }
-        else
-        {
-            ErrorConsole.Out.MarkupLineInterpolated($"[red]Error:[/] {message}");
-        }
+
+        ErrorConsole.Error(Markup.Escape(message));
     }
 }

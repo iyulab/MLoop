@@ -1,4 +1,4 @@
-using MLoop.CLI.Infrastructure.Configuration;
+﻿using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
@@ -248,7 +248,8 @@ internal static class TrainPresenter
         string primaryMetric,
         TrainingResult result,
         ModelInfo? production,
-        double? minThreshold)
+        double? minThreshold,
+        double? majorityClassRatio = null)
     {
         if (promoted)
         {
@@ -266,8 +267,16 @@ internal static class TrainPresenter
                 // The quality gate blocking promotion is a warning-class fact: it goes through the
                 // warning seam so a --json consumer receives it as an event instead of losing it
                 // with the silenced narration.
-                WarningConsole.Warn($"Model {primaryMetric} ({metricValue:F4}) is below minimum threshold ({minThreshold.Value:F4}) — saved to staging, not promoted");
-                AnsiConsole.MarkupLine("[grey]   Tip: Model performance is near-random. Check data quality and feature relevance.[/]");
+                // Name the opponent the model lost to. "Near-random" was the only explanation on
+                // offer, and on imbalanced data it is the wrong one — a model can sit far above
+                // chance and still be beaten by answering with the most common class every time.
+                var beatenBy = majorityClassRatio.HasValue && minThreshold.Value >= majorityClassRatio.Value - 1e-9
+                    ? $"always predicting the most common class scores {majorityClassRatio.Value:P1} here"
+                    : "that floor is the accuracy of random guessing";
+                WarningConsole.Warn(
+                    $"Model {primaryMetric} ({metricValue:F4}) is below minimum threshold ({minThreshold.Value:F4}) " +
+                    $"— saved to staging, not promoted. The threshold is what a model that learned nothing would score: " +
+                    $"{beatenBy}. Check data quality, feature relevance, and class balance.");
             }
             else if (production?.Metrics != null && result.Metrics != null && production.Metrics.ContainsKey(primaryMetric))
             {

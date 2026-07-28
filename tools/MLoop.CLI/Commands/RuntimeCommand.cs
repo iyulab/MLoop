@@ -81,7 +81,7 @@ public static class RuntimeCommand
 
             if (runtime == null)
             {
-                ErrorConsole.Error($"Unknown runtime '{runtimeId}'. Available: {string.Join(", ", RuntimeRegistry.All.Select(r => r.Id))}");
+                ErrorConsole.Error(UnknownRuntime(runtimeId));
                 return 1;
             }
 
@@ -152,7 +152,7 @@ public static class RuntimeCommand
 
             if (runtime == null)
             {
-                ErrorConsole.Error($"Unknown runtime '{runtimeId}'");
+                ErrorConsole.Error(UnknownRuntime(runtimeId));
                 return Task.FromResult(1);
             }
 
@@ -170,4 +170,12 @@ public static class RuntimeCommand
 
         return command;
     }
+
+    /// <summary>
+    /// The rejection for an unrecognised runtime id, listing what the user could have typed. Shared
+    /// by <c>install</c> and <c>remove</c>: worded per command, only one of them named the valid ids
+    /// and the other left the user guessing.
+    /// </summary>
+    private static string UnknownRuntime(string? runtimeId) =>
+        $"Unknown runtime '{runtimeId}'. Available: {string.Join(", ", RuntimeRegistry.All.Select(r => r.Id))}";
 }

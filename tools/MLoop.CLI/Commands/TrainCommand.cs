@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using Microsoft.ML;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
@@ -253,8 +253,9 @@ public static class TrainCommand
             }
             catch (InvalidOperationException)
             {
-                ErrorConsole.Error("Not inside a MLoop project.");
-                AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
+                ErrorConsole.Error(
+                    ProjectDiscovery.NotInsideProjectCause,
+                    ProjectDiscovery.NotInsideProjectGuidance);
                 return 1;
             }
 
@@ -375,13 +376,15 @@ public static class TrainCommand
                 {
                     if (effectiveDefinition.Task.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
                     {
-                        ErrorConsole.Error("Object-detection dataset not found.");
-                        ErrorConsole.Tip("Put a COCO annotations.json plus images under datasets/coco/, or pass a directory: mloop train --task object-detection <dir>");
+                        ErrorConsole.Error(
+                            "Object-detection dataset not found.",
+                            "Put a COCO annotations.json plus images under datasets/coco/, or pass a directory: mloop train --task object-detection <dir>");
                     }
                     else
                     {
-                        ErrorConsole.Error("Image dataset directory not found.");
-                        ErrorConsole.Tip("Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
+                        ErrorConsole.Error(
+                            "Image dataset directory not found.",
+                            "Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
                     }
                     return 1;
                 }
@@ -518,8 +521,9 @@ public static class TrainCommand
 
             if (resolvedDataFile == null)
             {
-                ErrorConsole.Error("No data file specified and datasets/train.csv not found.");
-                ErrorConsole.Tip("Create datasets/train.csv or specify a file: mloop train <data-file>");
+                ErrorConsole.Error(
+                    "No data file specified and datasets/train.csv not found.",
+                    "Create datasets/train.csv or specify a file: mloop train <data-file>");
                 return 1;
             }
 
@@ -635,8 +639,9 @@ public static class TrainCommand
                     // Single-class early termination: cannot train a classifier with one class
                     if (distributionResult.ClassCount <= 1)
                     {
-                        ErrorConsole.Error("Cannot train a classifier with only one class.");
-                        ErrorConsole.Tip("Check if the correct label column is specified, or if the data contains only one category.");
+                        ErrorConsole.Error(
+                            "Cannot train a classifier with only one class.",
+                            "Check if the correct label column is specified, or if the data contains only one category.");
                         return 1;
                     }
                 }
@@ -1083,6 +1088,7 @@ public static class TrainCommand
 
                 // Resolve class count for quality gate threshold
                 int? classCount = null;
+                double? majorityClassRatio = null;
                 if (!promoted)
                 {
                     try
@@ -1092,6 +1098,9 @@ public static class TrainCommand
                             .FirstOrDefault(s => s.Name.Equals(trainingConfig.LabelColumn, StringComparison.OrdinalIgnoreCase));
                         if (labelSchema?.UniqueValueCount > 0)
                             classCount = labelSchema.UniqueValueCount;
+                        // Read alongside the class count so the threshold shown is the one the gate
+                        // applied — a display that omits it would understate why the model was held.
+                        majorityClassRatio = labelSchema?.MajorityClassRatio;
                     }
                     catch (Exception) { /* schema unavailable, use default threshold */ }
                 }
@@ -1103,13 +1112,13 @@ public static class TrainCommand
                     ? MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, trainingConfig.Task, result.Metrics.Keys)
                     : null;
                 var minThreshold = displayMetricKey != null
-                    ? MetricPolicy.GetMinimumMetricThreshold(displayMetricKey, classCount)
+                    ? MetricPolicy.GetMinimumMetricThreshold(displayMetricKey, classCount, majorityClassRatio)
                     : null;
                 // Report the resolved key, not the raw request: the presenter both names the metric
                 // in its messages and looks it up in result.Metrics. An unresolved sentinel made
                 // every TryGetValue miss, so the staging *reason* silently vanished instead of
                 // being shown.
-                TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold);
+                TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold, majorityClassRatio);
             }
 
             // T4.6: Unused data warning - only scan project's datasets/ directory.

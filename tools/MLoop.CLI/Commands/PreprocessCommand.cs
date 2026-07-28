@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using Microsoft.Data.Analysis;
 using Microsoft.Extensions.Logging;
 using MLoop.CLI.Infrastructure.Configuration;
@@ -108,8 +108,9 @@ public static class PreprocessCommand
             }
             catch (InvalidOperationException)
             {
-                ErrorConsole.Error("Not inside a MLoop project.");
-                AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
+                ErrorConsole.Error(
+                    ProjectDiscovery.NotInsideProjectCause,
+                    ProjectDiscovery.NotInsideProjectGuidance);
                 return 1;
             }
 
@@ -167,8 +168,9 @@ public static class PreprocessCommand
 
             if (datasets?.TrainPath == null)
             {
-                ErrorConsole.Error("No input file specified and datasets/train.csv not found.");
-                ErrorConsole.Tip("Create datasets/train.csv or specify a file: mloop preprocess <input-file>");
+                ErrorConsole.Error(
+                    "No input file specified and datasets/train.csv not found.",
+                    "Create datasets/train.csv or specify a file: mloop preprocess <input-file>");
                 return 1;
             }
 
@@ -250,8 +252,9 @@ public static class PreprocessCommand
 
             if (datasets?.TrainPath == null)
             {
-                ErrorConsole.Error("No input file specified and datasets/train.csv not found.");
-                ErrorConsole.Tip("Create datasets/train.csv or specify a file: mloop preprocess <input-file>");
+                ErrorConsole.Error(
+                    "No input file specified and datasets/train.csv not found.",
+                    "Create datasets/train.csv or specify a file: mloop preprocess <input-file>");
                 return 1;
             }
 

@@ -220,8 +220,10 @@ public class ModelRegistry : IModelRegistry
         // silently skipped (BUG-46).
         var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
 
-        // Extract class count from schema for dynamic thresholds
+        // Extract the label's shape from the schema for the dynamic thresholds: how many classes
+        // there are, and how strong a model that always answers with the most common one would be.
         int? classCount = null;
+        double? majorityClassRatio = null;
         if (experiment.Config?.InputSchema?.Columns != null && experiment.Config.LabelColumn != null)
         {
             var labelSchema = experiment.Config.InputSchema.Columns
@@ -230,6 +232,9 @@ public class ModelRegistry : IModelRegistry
             {
                 classCount = labelSchema.UniqueValueCount;
             }
+            // Absent on experiments trained before the ratio was recorded, and on numeric labels —
+            // left null so the gate falls back to 1/N rather than to a fabricated 0.
+            majorityClassRatio = labelSchema?.MajorityClassRatio;
         }
 
         // An undefined-metric sentinel (MetricSanitizer's direction-aware worst-case for a NaN/∞
@@ -249,7 +254,7 @@ public class ModelRegistry : IModelRegistry
         // threshold table, so using the raw value silently skipped the gate (BUG-45/46 root).
         if (metricKey != null && !MetricPolicy.IsErrorMetric(metricKey))
         {
-            var minThreshold = MetricPolicy.GetMinimumMetricThreshold(metricKey, classCount);
+            var minThreshold = MetricPolicy.GetMinimumMetricThreshold(metricKey, classCount, majorityClassRatio);
             if (minThreshold.HasValue && experiment.Metrics[metricKey] < minThreshold.Value)
             {
                 return false; // Below minimum viable threshold

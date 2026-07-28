@@ -46,13 +46,15 @@ internal static class TrainDataValidator
 
         if (!availableColumns.Contains(labelColumn))
         {
+            // The column list is what makes this failure fixable, so it belongs in the cause rather
+            // than in a stdout aside — the exception below has always carried it, and a --json
+            // consumer would otherwise get "label not found" with no way to see what was available.
+            var columnList = Markup.Escape(string.Join(", ", availableColumns));
             AnsiConsole.WriteLine();
-            ErrorConsole.Error($"Label column not found in data for model '[cyan]{modelName}[/]'");
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"  [yellow]Label specified:[/] '{labelColumn}'");
-            AnsiConsole.MarkupLine($"  [yellow]Available columns:[/] {string.Join(", ", availableColumns)}");
-            AnsiConsole.WriteLine();
-            ErrorConsole.Tip($"Update the label in mloop.yaml or use --label option for --name {modelName}");
+            ErrorConsole.Error(
+                $"Label column '[cyan]{Markup.Escape(labelColumn)}[/]' not found in data for model " +
+                $"'[cyan]{Markup.Escape(modelName)}[/]'. Available columns: {columnList}",
+                $"Update the label in mloop.yaml or use --label option for --name {Markup.Escape(modelName)}");
             AnsiConsole.WriteLine();
 
             throw new ArgumentException(

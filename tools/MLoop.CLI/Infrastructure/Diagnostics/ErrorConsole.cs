@@ -52,8 +52,34 @@ public static class ErrorConsole
     }
 
     /// <summary>
-    /// Writes a <c>Tip:</c> line to stderr. Tips accompany an error as part of the cause a machine
-    /// consumer persists, so they belong on the same channel as the error itself.
+    /// Writes an <c>Error:</c> line followed by its <c>Tip:</c> line, and reports the two together as
+    /// a <b>single</b> event.
+    /// <para>
+    /// This is the shape to reach for whenever the tip is part of the cause rather than an aside. A
+    /// tip written on its own reaches the terminal only (see <see cref="Tip"/>), so an error whose
+    /// guidance lives in a separate <see cref="Tip"/> call tells a machine consumer *what* failed
+    /// while withholding *what to do* — the half of the message that resolves the failure. Reporting
+    /// one combined event rather than two keeps "one failure ⇒ one error event" intact.
+    /// </para>
+    /// </summary>
+    public static void Error(string markup, string tip)
+    {
+        var console = Out;
+        console.MarkupLine($"[red]Error:[/] {markup}");
+        console.MarkupLine($"[yellow]Tip:[/] {tip}");
+
+        MachineOutputScope.ReportError($"{markup} {tip}");
+    }
+
+    /// <summary>
+    /// Writes a <c>Tip:</c> line to stderr, for guidance that stands on its own — a second tip after
+    /// <see cref="Error(string, string)"/>, or advice not attached to a failure at all.
+    /// <para>
+    /// <b>Terminal only.</b> A tip does not become an event: the sink reports failures, and a bare
+    /// tip has no failure to attach to. When the guidance belongs to an error, pass it to
+    /// <see cref="Error(string, string)"/> instead of writing it here, or a <c>--json</c> consumer
+    /// silently loses it.
+    /// </para>
     /// </summary>
     public static void Tip(string markup) => Out.MarkupLine($"[yellow]Tip:[/] {markup}");
 }

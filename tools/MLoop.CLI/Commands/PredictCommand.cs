@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
 using CsvHelper;
@@ -144,8 +144,9 @@ public static class PredictCommand
             }
             catch (InvalidOperationException)
             {
-                ErrorConsole.Error("Not inside a MLoop project.");
-                AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
+                ErrorConsole.Error(
+                    ProjectDiscovery.NotInsideProjectCause,
+                    ProjectDiscovery.NotInsideProjectGuidance);
                 return 1;
             }
 
@@ -178,8 +179,9 @@ public static class PredictCommand
 
                 if (productionModel == null)
                 {
-                    ErrorConsole.Error($"No production model found for '[cyan]{resolvedModelName}[/]'.");
-                    ErrorConsole.Tip($"Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
+                    ErrorConsole.Error(
+                        $"No production model found for '[cyan]{resolvedModelName}[/]'.",
+                        $"Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
                     return 1;
                 }
 
@@ -297,8 +299,9 @@ public static class PredictCommand
 
                 if (datasets?.PredictPath == null)
                 {
-                    ErrorConsole.Error("No data file specified and datasets/predict.csv not found.");
-                    ErrorConsole.Tip("Create datasets/predict.csv or specify a file: mloop predict <data-file>");
+                    ErrorConsole.Error(
+                        "No data file specified and datasets/predict.csv not found.",
+                        "Create datasets/predict.csv or specify a file: mloop predict <data-file>");
                     return 1;
                 }
 
@@ -864,9 +867,11 @@ public static class PredictCommand
                 var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(new MLContext(), modelPath, experimentId);
                 if (forecast is null)
                 {
-                    ErrorConsole.Error($"{Markup.Escape(error ?? "Forecast failed.")}");
+                    var cause = Markup.Escape(error ?? "Forecast failed.");
                     if (error?.Contains("training data", StringComparison.OrdinalIgnoreCase) == true)
-                        ErrorConsole.Tip("Keep the original training data file in place for forecasting predict.");
+                        ErrorConsole.Error(cause, "Keep the original training data file in place for forecasting predict.");
+                    else
+                        ErrorConsole.Error(cause);
                     return;
                 }
 
@@ -938,8 +943,9 @@ public static class PredictCommand
             var odDir = DatasetDiscovery.FindDirectoryDataset(projectRoot, "object-detection");
             if (odDir == null)
             {
-                ErrorConsole.Error("No data specified and no object-detection dataset found (datasets/coco, datasets/yolo, or datasets/).");
-                ErrorConsole.Tip("Pass a directory: mloop predict <dir>");
+                ErrorConsole.Error(
+                    "No data specified and no object-detection dataset found (datasets/coco, datasets/yolo, or datasets/).",
+                    "Pass a directory: mloop predict <dir>");
                 return 1;
             }
             resolvedDataDir = odDir;

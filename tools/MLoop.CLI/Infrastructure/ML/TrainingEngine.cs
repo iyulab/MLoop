@@ -1098,8 +1098,11 @@ public class TrainingEngine : ITrainingEngine
 
         if (catColumns.Count == 0) return;
 
-        // Stream through file collecting unique values (no full-file memory load)
-        var uniqueSets = catColumns.ToDictionary(kv => kv.Key, _ => new HashSet<string>());
+        // Stream through file counting occurrences per value (no full-file memory load). Counts
+        // rather than a plain set: the label's class distribution is what tells the promotion gate
+        // how strong a "predict the majority class every time" model would be, and this pass already
+        // visits every row, so measuring it costs no extra IO.
+        var valueCounts = catColumns.ToDictionary(kv => kv.Key, _ => new Dictionary<string, int>());
 
         using var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         reader.ReadLine(); // skip header
@@ -1114,7 +1117,10 @@ public class TrainingEngine : ITrainingEngine
                 {
                     var value = fields[colIndex].Trim();
                     if (!string.IsNullOrEmpty(value))
-                        uniqueSets[colIndex].Add(value);
+                    {
+                        var counts = valueCounts[colIndex];
+                        counts[value] = counts.GetValueOrDefault(value) + 1;
+                    }
                 }
             }
         }
@@ -1123,7 +1129,7 @@ public class TrainingEngine : ITrainingEngine
         // ColumnSchema uses init-only properties, so replace items in the list
         foreach (var (colIndex, col) in catColumns)
         {
-            var unique = uniqueSets[colIndex];
+            var counts = valueCounts[colIndex];
             var listIndex = columns.IndexOf(col);
             if (listIndex >= 0)
             {
@@ -1132,11 +1138,27 @@ public class TrainingEngine : ITrainingEngine
                     Name = col.Name,
                     DataType = col.DataType,
                     Purpose = col.Purpose,
-                    CategoricalValues = unique.OrderBy(v => v).ToList(),
-                    UniqueValueCount = unique.Count
+                    CategoricalValues = counts.Keys.OrderBy(v => v).ToList(),
+                    UniqueValueCount = counts.Count,
+                    // Only for the label: on a feature this number would describe nothing the
+                    // pipeline acts on, and a plausible-looking value invites a use it cannot support.
+                    MajorityClassRatio = col.Purpose == "Label" ? MajorityShare(counts) : null
                 };
             }
         }
+    }
+
+    /// <summary>
+    /// The share of labelled rows in the most common class — the accuracy of a model that always
+    /// predicts that class. Null when nothing was counted, so the caller can tell "not measured"
+    /// from a genuine ratio.
+    /// </summary>
+    private static double? MajorityShare(Dictionary<string, int> counts)
+    {
+        if (counts.Count == 0) return null;
+
+        long total = counts.Values.Sum(c => (long)c);
+        return total > 0 ? counts.Values.Max() / (double)total : null;
     }
 
     private class TrainingEngineLogger : ILogger
