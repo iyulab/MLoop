@@ -1,4 +1,4 @@
-using MLoop.CLI.Infrastructure.Configuration;
+﻿using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 using MLoop.CLI.Infrastructure.Diagnostics;
@@ -49,8 +49,10 @@ public sealed class CommandContext
         }
         catch (InvalidOperationException)
         {
-            ErrorConsole.Error("Not inside a MLoop project.");
-            AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
+            // Qualified: this type's own ProjectDiscovery property shadows the class name here.
+            ErrorConsole.Error(
+                Infrastructure.FileSystem.ProjectDiscovery.NotInsideProjectCause,
+                Infrastructure.FileSystem.ProjectDiscovery.NotInsideProjectGuidance);
             return null;
         }
 

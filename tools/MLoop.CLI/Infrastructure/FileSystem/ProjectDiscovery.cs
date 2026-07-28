@@ -50,10 +50,22 @@ public class ProjectDiscovery : IProjectDiscovery
             directory = directory.Parent;
         }
 
-        throw new InvalidOperationException(
-            $"Not inside a MLoop project. Run 'mloop init' to create a new project, " +
-            $"or navigate to an existing project directory.");
+        throw new InvalidOperationException($"{NotInsideProjectCause} {NotInsideProjectGuidance}");
     }
+
+    /// <summary>
+    /// What went wrong when no project root is found, worded once. Twelve call sites report this
+    /// failure — eleven commands catching the exception plus <see cref="FindRoot(string)"/> throwing
+    /// it — and each used to carry its own copy, so the guidance drifted between the thrown message
+    /// ("or navigate to an existing project directory") and what the commands printed (only "run
+    /// mloop init"). Report it through <c>ErrorConsole.Error(cause, guidance)</c> so the two lines
+    /// reach a machine consumer as one event.
+    /// </summary>
+    public const string NotInsideProjectCause = "Not inside a MLoop project.";
+
+    /// <inheritdoc cref="NotInsideProjectCause"/>
+    public const string NotInsideProjectGuidance =
+        "Run 'mloop init' to create a new project, or navigate to an existing project directory.";
 
     public bool IsProjectRoot(string path)
     {

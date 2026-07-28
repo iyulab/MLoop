@@ -1,8 +1,9 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Security;
 using Spectre.Console;
 
@@ -59,7 +60,9 @@ public class TokenCommand : Command
 
             if (key.Length < 32)
             {
-                AnsiConsole.MarkupLine("[red]X[/] Signing key must be at least 32 characters.");
+                ErrorConsole.Error(
+                    "Signing key must be at least 32 characters.",
+                    "Pass a longer key with --key, or set Jwt:Key in configuration.");
                 return 1;
             }
 

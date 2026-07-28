@@ -104,6 +104,32 @@ public class MachineOutputScopeTests
     }
 
     [Fact]
+    public void An_errors_tip_reaches_the_event_stream_as_part_of_the_same_event()
+    {
+        // The tip is the half of the message that says what to do about the failure. Written through
+        // the standalone Tip it reaches the terminal only, so a --json consumer used to be told what
+        // broke and not how to fix it — and two events would break "one failure ⇒ one error event".
+        var original = Console.Out;
+        Console.SetOut(new StringWriter());
+        try
+        {
+            var reported = new List<string>();
+            using (var scope = new MachineOutputScope())
+            {
+                scope.ErrorSink = reported.Add;
+                ErrorConsole.Error("Not inside a MLoop project.", "Run [blue]mloop init[/] to create a new project.");
+            }
+
+            Assert.Equal("Not inside a MLoop project. Run mloop init to create a new project.",
+                Assert.Single(reported));
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+    }
+
+    [Fact]
     public void Outside_the_scope_reporting_an_error_is_a_no_op()
     {
         // Every other command still calls the same stderr sink; it must not require a scope.

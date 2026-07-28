@@ -1,4 +1,4 @@
-using Microsoft.ML;
+﻿using Microsoft.ML;
 using MLoop.API.Caching;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
@@ -107,7 +107,8 @@ if (isDefaultKey)
 if (jwtKey!.Length < 32)
 {
     Log.Fatal("JWT key must be at least 32 characters. Current length: {Length}", jwtKey.Length);
-    throw new InvalidOperationException("JWT key must be at least 32 characters.");
+    throw new InvalidOperationException(
+        "JWT key must be at least 32 characters. Set Jwt:Key in configuration.");
 }
 
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? MLoop.Core.Security.DevJwtDefaults.Issuer;

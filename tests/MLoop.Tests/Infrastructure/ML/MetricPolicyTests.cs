@@ -89,6 +89,53 @@ public class MetricPolicyTests
         Assert.True(withClass > withoutClass);
     }
 
+    [Fact]
+    public void Accuracy_floor_rises_to_the_majority_class_on_imbalanced_data()
+    {
+        // The case this exists for, measured downstream: a binary label 99.2% of one class, and a
+        // model scoring 0.986 — worse than answering with a constant, yet clearing the 1/N = 0.5
+        // floor with room to spare.
+        var floor = MetricPolicy.GetMinimumMetricThreshold("accuracy", classCount: 2, majorityClassRatio: 0.992);
+
+        Assert.NotNull(floor);
+        Assert.Equal(0.992, floor.Value, 3);
+        Assert.True(0.986 < floor.Value, "a model below the no-information rate must not clear the gate");
+    }
+
+    [Fact]
+    public void Accuracy_floor_keeps_the_random_baseline_when_the_majority_class_is_weaker()
+    {
+        // Balanced 4-class data: the majority class is ~1/4, so neither trivial model dominates and
+        // the floor must not *drop* to the smaller of the two.
+        var floor = MetricPolicy.GetMinimumMetricThreshold("accuracy", classCount: 4, majorityClassRatio: 0.26);
+
+        Assert.Equal(0.26, floor!.Value, 3);
+        Assert.True(floor.Value >= 1.0 / 4);
+    }
+
+    [Fact]
+    public void An_unmeasured_majority_ratio_leaves_the_random_baseline_untouched()
+    {
+        // Experiments trained before the ratio was recorded, and numeric labels, carry null. Null is
+        // "not measured" — reading it as 0 would be a fabricated baseline.
+        Assert.Equal(
+            MetricPolicy.GetMinimumMetricThreshold("accuracy", classCount: 3),
+            MetricPolicy.GetMinimumMetricThreshold("accuracy", classCount: 3, majorityClassRatio: null));
+    }
+
+    [Theory]
+    [InlineData("macro_accuracy")]
+    [InlineData("macro_f1")]
+    public void Macro_metrics_keep_the_random_baseline_because_that_is_what_a_constant_model_scores(string metric)
+    {
+        // Not an oversight: always predicting one class gives recall 1 on that class and 0 on every
+        // other, so its macro accuracy is exactly 1/N however imbalanced the data is. Raising these
+        // to the majority ratio would reject models that genuinely beat the trivial one.
+        var floor = MetricPolicy.GetMinimumMetricThreshold(metric, classCount: 5, majorityClassRatio: 0.9);
+
+        Assert.Equal(0.2, floor!.Value, 3);
+    }
+
     [Theory]
     [InlineData("auto", "image-classification", "micro_accuracy")]
     [InlineData("auto", "regression", "r_squared")]

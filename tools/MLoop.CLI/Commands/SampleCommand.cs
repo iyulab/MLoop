@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
@@ -399,8 +399,9 @@ public static class SampleCommand
         }
         catch (InvalidOperationException)
         {
-            ErrorConsole.Error("Not inside a MLoop project.");
-            AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
+            ErrorConsole.Error(
+                ProjectDiscovery.NotInsideProjectCause,
+                ProjectDiscovery.NotInsideProjectGuidance);
             return null;
         }
     }

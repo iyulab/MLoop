@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.Reflection;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
@@ -131,15 +131,17 @@ public static class InitCommand
             // Check if directory/project already exists
             if (projectName != "." && Directory.Exists(projectPath) && !force)
             {
-                ErrorConsole.Error($"Directory '{projectName}' already exists");
-                ErrorConsole.Tip("Use --force to reinitialize (preserves scripts/)");
+                ErrorConsole.Error(
+                    $"Directory '{projectName}' already exists",
+                    "Use --force to reinitialize (preserves scripts/)");
                 return 1;
             }
 
             if (isReinitialize && !force)
             {
-                ErrorConsole.Error($"Project already initialized at {projectPath}");
-                ErrorConsole.Tip("Use --force to reinitialize (preserves scripts/)");
+                ErrorConsole.Error(
+                    $"Project already initialized at {projectPath}",
+                    "Use --force to reinitialize (preserves scripts/)");
                 return 1;
             }
 

@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Hooks;
@@ -68,8 +68,9 @@ public static class NewHookCommand
             }
             catch (InvalidOperationException)
             {
-                ErrorConsole.Error("Not inside a MLoop project.");
-                AnsiConsole.MarkupLine("Run [blue]mloop init[/] to create a new project.");
+                ErrorConsole.Error(
+                    ProjectDiscovery.NotInsideProjectCause,
+                    ProjectDiscovery.NotInsideProjectGuidance);
                 return 1;
             }
 

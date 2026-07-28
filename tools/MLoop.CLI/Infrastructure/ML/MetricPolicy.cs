@@ -96,15 +96,27 @@ public static class MetricPolicy
     /// Models scoring below this threshold are not promoted to production.
     /// Returns null for metrics without a universal minimum (e.g., error metrics).
     /// </summary>
-    public static double? GetMinimumMetricThreshold(string metricName, int? classCount = null)
+    /// <param name="majorityClassRatio">
+    /// The label's no-information rate (see <see cref="MLoop.Core.Models.ColumnSchema.MajorityClassRatio"/>),
+    /// or null when it was not measured. Only <c>accuracy</c>/<c>micro_accuracy</c> use it, because
+    /// only those two are what a majority-class predictor actually scores. The macro metrics keep the
+    /// <c>1/N</c> floor and that floor is <i>correct</i> for them: always predicting one class gives
+    /// recall 1 on that class and 0 on the rest, so its macro accuracy is exactly <c>1/N</c>.
+    /// </param>
+    public static double? GetMinimumMetricThreshold(
+        string metricName, int? classCount = null, double? majorityClassRatio = null)
     {
         return metricName.ToLowerInvariant() switch
         {
             "r_squared" or "r2" => 0.0,                // Must be better than mean prediction
             "auc" or "area_under_roc_curve" => 0.5,     // Must be better than random
-            "accuracy" or "micro_accuracy" => classCount.HasValue && classCount.Value > 1
-                ? 1.0 / classCount.Value                 // Must be better than random (1/N)
-                : 0.0,
+            // Must beat the better of the two trivial models: random guessing (1/N) and always
+            // predicting the majority class. On imbalanced data the second is far stronger — a
+            // measured 99.2%-majority label makes 1/N = 0.5 meaningless, and a 98.6%-accurate model
+            // that is *worse than a constant* used to promote cleanly.
+            "accuracy" or "micro_accuracy" => Math.Max(
+                classCount is > 1 ? 1.0 / classCount.Value : 0.0,
+                majorityClassRatio ?? 0.0),
             "macro_accuracy" => classCount.HasValue && classCount.Value > 1
                 ? 1.0 / classCount.Value                 // Must be better than random (1/N)
                 : 0.0,
