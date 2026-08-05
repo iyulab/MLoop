@@ -39,7 +39,7 @@ public class ExperimentTrialHistoryTests : IDisposable
         new()
         {
             TrialNumber = n,
-            TrainerName = trainer,
+            Trainer = TrainerDescriptor.Of(trainer),
             Metrics = new Dictionary<string, double> { [metric] = value },
             RuntimeSeconds = runtime
         };
@@ -92,6 +92,32 @@ public class ExperimentTrialHistoryTests : IDisposable
         Assert.Equal(0.9, first.GetProperty("runtimeSeconds").GetDouble());
         Assert.Equal(0.71, first.GetProperty("metrics").GetProperty("r_squared").GetDouble());
         Assert.Equal(2, JsonDocument.Parse(lines[1]).RootElement.GetProperty("trialNumber").GetInt32());
+    }
+
+    /// <summary>
+    /// A leaderboard whose rows are the same trainer at different hyperparameters is where the
+    /// folded name hurts most: <c>KMeans (k=2)</c> … <c>KMeans (k=10)</c> reads as ten trainers. The
+    /// display form stays in <c>trainerName</c> for readers that have it; the parts sit beside it.
+    /// </summary>
+    [Fact]
+    public async Task A_trial_row_carries_the_trainer_in_parts_beside_its_display_name()
+    {
+        var path = await SaveAsync([
+            new TrialRecord
+            {
+                TrialNumber = 1,
+                Trainer = TrainerDescriptor.Of("KMeans", ("k", 3)),
+                Metrics = new Dictionary<string, double> { ["davies_bouldin_index"] = 0.19 },
+                RuntimeSeconds = 0.2
+            }
+        ], rankingMetric: "davies_bouldin_index");
+
+        var row = JsonDocument.Parse(
+            (await File.ReadAllLinesAsync(Path.Combine(path, "trials.ndjson")))[0]).RootElement;
+
+        Assert.Equal("KMeans (k=3)", row.GetProperty("trainerName").GetString());
+        Assert.Equal("KMeans", row.GetProperty("trainer").GetProperty("name").GetString());
+        Assert.Equal("3", row.GetProperty("trainer").GetProperty("params").GetProperty("k").GetString());
     }
 
     [Fact]
@@ -153,7 +179,7 @@ public class ExperimentTrialHistoryTests : IDisposable
         var withoutMetric = new TrialRecord
         {
             TrialNumber = 2,
-            TrainerName = "NoMetric",
+            Trainer = TrainerDescriptor.Of("NoMetric"),
             Metrics = new Dictionary<string, double>(),
             RuntimeSeconds = 0.2
         };
@@ -167,10 +193,12 @@ public class ExperimentTrialHistoryTests : IDisposable
     }
 
     [Fact]
-    public async Task A_single_pipeline_task_writes_no_trial_files_at_all()
+    public async Task A_run_that_reported_no_trial_writes_no_trial_files_at_all()
     {
-        // Anomaly detection, forecasting, the DL handlers: one explicit pipeline, no search. An empty
-        // leaderboard would claim a search happened and turned up nothing.
+        // The paths with no metric to report (object detection, QA) record no trials, so there is
+        // nothing to write. An empty leaderboard would claim a search happened and turned up
+        // nothing. Note this is no longer "single pipeline": a task that fits one pipeline and
+        // measures it does record that one candidate (cycle-190).
         var path = await SaveAsync([], rankingMetric: null, task: "anomaly-detection");
 
         Assert.False(File.Exists(Path.Combine(path, "trials.ndjson")));

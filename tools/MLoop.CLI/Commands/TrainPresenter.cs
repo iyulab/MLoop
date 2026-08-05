@@ -109,6 +109,22 @@ internal static class TrainPresenter
     }
 
     /// <summary>
+    /// The trainer as a one-line summary: the trainer itself, not the whole pipeline AutoML
+    /// assembled, plus whatever qualifies it (hyperparameters, a fallback reason).
+    /// </summary>
+    /// <remarks>
+    /// A full pipeline name is one unbreakable 68-character token
+    /// (<c>ReplaceMissingValues=&gt;FeaturizeText=&gt;Concatenate=&gt;LightGbmRegression</c>), and
+    /// <c>"&gt; Best Trainer: "</c> plus that exceeds the 80 columns Spectre assumes when stdout is
+    /// redirected. It wrapped, leaving the label alone on its line — which reads as a missing value,
+    /// and was reported as one by a downstream consumer. Shortening is not a workaround for the
+    /// wrap: a summary line should say which trainer won, and the assembled pipeline is still
+    /// carried in full by <c>--json</c>, <c>metadata.json</c> and <c>mloop list</c>.
+    /// </remarks>
+    private static string SummarizeTrainer(TrainerDescriptor trainer) =>
+        (trainer with { Name = TrainingProgressTracker.ShortTrainerName(trainer.Name) }).Display;
+
+    /// <summary>
     /// Displays training results including metrics table and next steps.
     /// </summary>
     public static void DisplayResults(TrainingResult result, string modelName)
@@ -119,7 +135,7 @@ internal static class TrainPresenter
 
         AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{modelName}[/]");
         AnsiConsole.MarkupLine($"[green]>[/] Experiment ID: [blue]{result.ExperimentId}[/]");
-        AnsiConsole.MarkupLine($"[green]>[/] Best Trainer: [yellow]{Markup.Escape(result.BestTrainer)}[/]");
+        AnsiConsole.MarkupLine($"[green]>[/] Best Trainer: [yellow]{Markup.Escape(SummarizeTrainer(result.Trainer))}[/]");
         AnsiConsole.MarkupLine($"[green]>[/] Training Time: [cyan]{result.TrainingTimeSeconds:F2}s[/]");
         AnsiConsole.WriteLine();
 

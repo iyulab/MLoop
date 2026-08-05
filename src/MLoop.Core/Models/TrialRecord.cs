@@ -16,8 +16,24 @@ public sealed class TrialRecord
     /// <summary>1-based position in the order AutoML completed the trials.</summary>
     public required int TrialNumber { get; init; }
 
-    /// <summary>AutoML's name for the trial's pipeline, e.g. <c>…=&gt;FastTreeBinary</c>.</summary>
-    public required string TrainerName { get; init; }
+    /// <summary>
+    /// What this trial trained, in parts — so a reader can group or compare trials by trainer
+    /// without parsing <see cref="TrainerName"/>.
+    /// </summary>
+    /// <remarks>
+    /// The hand-rolled searches identify their candidates by hyperparameter — <c>KMeans (k=3)</c>,
+    /// <c>RandomizedPca (rank=20)</c> — so on those paths the trial's name is exactly the folded
+    /// string that made <c>bestTrainer</c> unusable as an identifier. A leaderboard whose rows are
+    /// "the same trainer at different k" is the case where telling them apart matters most.
+    /// </remarks>
+    public required TrainerDescriptor Trainer { get; init; }
+
+    /// <summary>
+    /// The trial's trainer as displayed, e.g. <c>…=&gt;FastTreeBinary</c> or <c>KMeans (k=3)</c>.
+    /// Derived from <see cref="Trainer"/>, and still written to <c>trials.ndjson</c> — readers of
+    /// that file keep the field they have.
+    /// </summary>
+    public string TrainerName => Trainer.Display;
 
     /// <summary>
     /// The trial's validation metrics in MLoop's own vocabulary (the keys of

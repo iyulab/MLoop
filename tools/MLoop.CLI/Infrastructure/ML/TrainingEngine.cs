@@ -44,7 +44,13 @@ public class TrainingEngine : ITrainingEngine
         // Initialize ML.NET components
         _mlContext = new MLContext(seed: 42);
         _dataLoader = new CsvDataLoader(_mlContext);
-        _autoMLRunner = new AutoMLRunner(_mlContext, _dataLoader);
+        // The runner's warnings go through this CLI's warning seam rather than being narrated by
+        // Core: that is what makes them a `Warning:` line for a human and a `warning` event for a
+        // consumer. Without it the AUC-fallback chain and the hook failures were console-only, and a
+        // --json run never heard about them.
+        _autoMLRunner = new AutoMLRunner(
+            _mlContext, _dataLoader,
+            warningSink: message => WarningConsole.Warn(Markup.Escape(message)));
 
         // Initialize HookEngine if project root provided
         if (!string.IsNullOrEmpty(projectRoot) && logger != null)
@@ -178,6 +184,19 @@ public class TrainingEngine : ITrainingEngine
                 // random partition happened to flatten it.
                 var featureExclusions = CsvDataLoader.DetermineExcludedColumns(dataFilePath, config.LabelColumn);
                 config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
+
+                // Say which columns the model will not see, and why. The removal chain narrates this
+                // as it goes, but as prose on the info channel — so a --json consumer, whose stdout
+                // carries only events, learned nothing about it and had to re-derive the post-exclusion
+                // schema to know what was actually trained on. The reasons are already structured
+                // here, which is why this is a warning raised from the decision rather than a string
+                // scraped out of the chain.
+                foreach (var group in featureExclusions.GroupBy(c => c.Reason))
+                {
+                    WarningConsole.Warn(
+                        $"Excluded from features ({Markup.Escape(group.Key)}): " +
+                        Markup.Escape(string.Join(", ", group.Select(c => c.Name))));
+                }
 
                 // Capture input schema before training (using enhanced detection).
                 // Deliberately from the full dataset, not the train split — the schema must describe
@@ -347,6 +366,8 @@ public class TrainingEngine : ITrainingEngine
                 }
             }
 
+            WarnIfAccuracyDoesNotBeatTheMajorityClass(config, autoMLResult.Metrics, inputSchema);
+
             // Prepare experiment data
             var experimentData = new ExperimentData
             {
@@ -370,6 +391,7 @@ public class TrainingEngine : ITrainingEngine
                 Result = new ExperimentResult
                 {
                     BestTrainer = autoMLResult.BestTrainer,
+                    Trainer = autoMLResult.Trainer,
                     TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds
                 },
                 Metrics = autoMLResult.Metrics,
@@ -383,7 +405,7 @@ public class TrainingEngine : ITrainingEngine
             return new TrainingResult
             {
                 ExperimentId = experimentId,
-                BestTrainer = autoMLResult.BestTrainer,
+                Trainer = autoMLResult.Trainer,
                 Metrics = autoMLResult.Metrics,
                 TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds,
                 ModelPath = modelPath,
@@ -1161,12 +1183,57 @@ public class TrainingEngine : ITrainingEngine
         return total > 0 ? counts.Values.Max() / (double)total : null;
     }
 
+    /// <summary>
+    /// Warns when the run's accuracy does not beat always predicting the most common class.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A high-looking accuracy on an imbalanced label can be worse than a constant: 0.986 against a
+    /// 0.992 majority share was observed repeatedly in a downstream catalogue. The promotion gate
+    /// already refuses that model <em>when it is judged on accuracy</em> — its floor is
+    /// <c>max(1/N, majority share)</c>. This covers the gap that leaves: a run optimizing
+    /// <c>f1_score</c> or a macro metric is judged by a floor that knows nothing about the majority
+    /// share, so it can promote while its accuracy figure is meaningless.
+    /// </para>
+    /// <para>
+    /// Silent when the gate's own metric is accuracy — it would say the same thing twice, once here
+    /// and once as the staging reason.
+    /// </para>
+    /// </remarks>
+    private static void WarnIfAccuracyDoesNotBeatTheMajorityClass(
+        TrainingConfig config, IReadOnlyDictionary<string, double> metrics, InputSchemaInfo? schema)
+    {
+        var majorityShare = schema?.Columns?
+            .FirstOrDefault(c => c.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase))
+            ?.MajorityClassRatio;
+        if (majorityShare is not > 0)
+            return;
+
+        var judgedOn = MetricPolicy.ResolveCanonicalMetricKey(config.Metric ?? string.Empty, config.Task, metrics.Keys);
+        if (judgedOn is "accuracy" or "micro_accuracy")
+            return;
+
+        if (!metrics.TryGetValue("accuracy", out var accuracy) || accuracy > majorityShare)
+            return;
+
+        // No markup in the text. The seam strips it before the event is emitted, but only when the
+        // markup parses — an unescaped bracket anywhere in it and the raw string goes out verbatim.
+        // A message a machine reads should not be carrying display tags in the first place.
+        WarningConsole.Warn(Markup.Escape(
+            $"Accuracy {accuracy:F4} does not beat always predicting the most common class " +
+            $"({majorityShare:P1} of rows). The model is judged on {judgedOn ?? "another metric"}, " +
+            "so the promotion gate's accuracy floor does not apply here — read the accuracy figure " +
+            "against that baseline, not against 0."));
+    }
+
     private class TrainingEngineLogger : ILogger
     {
         public void Debug(string message) { } // Silent during training
         public void Info(string message) => Console.WriteLine(message);
-        // Through the warning seam: Core raises its warnings on this logger (e.g. the metric
-        // sanitizer's undefined-metric notice), and this is the one place they surface in the CLI.
+        // Through the warning seam. This logger reaches Core only via the hook engine; the runner's
+        // own warnings arrive through the warningSink handed to AutoMLRunner in the constructor.
+        // (This comment used to claim it was "the one place" Core warnings surface — it was not:
+        // the runner built its own console logger and never saw this one.)
         public void Warning(string message) => WarningConsole.Warn(Markup.Escape(message));
         public void Error(string message) => Console.WriteLine($"[Error] {message}");
         public void Error(string message, Exception exception)

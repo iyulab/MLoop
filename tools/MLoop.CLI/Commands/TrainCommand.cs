@@ -1269,10 +1269,17 @@ public static class TrainCommand
     {
         public void Debug(string message) => AnsiConsole.MarkupLine($"[grey]{message}[/]");
         public void Info(string message) => AnsiConsole.WriteLine(message);
-        public void Warning(string message) => AnsiConsole.MarkupLine($"[yellow]{message}[/]");
-        // Error/Warning go to stderr: these surface while training is already streaming progress to
-        // stdout, and a subprocess consumer reading stderr on a non-zero exit must find the cause
-        // there. Debug/Info stay on stdout — they are narration, not diagnostics.
+
+        // Through the warning seam, not straight to the ambient console. Core raises real findings on
+        // this logger — LabelValueHandler's "Dropped N/M rows with missing labels" among them — and
+        // rendering them here directly meant machine mode silenced them with the rest of the
+        // narration: no `Warning:` line and, worse, no `warning` event. Label-drop was listed as one
+        // of the wired warning sources, and it was not one.
+        public void Warning(string message) => WarningConsole.Warn(Markup.Escape(message));
+
+        // Errors go to stderr: they surface while training is already streaming progress to stdout,
+        // and a subprocess consumer reading stderr on a non-zero exit must find the cause there.
+        // Debug/Info stay on stdout — they are narration, not diagnostics.
         public void Error(string message) => ErrorConsole.Out.MarkupLine($"[red]{message}[/]");
         public void Error(string message, Exception exception)
         {

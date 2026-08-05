@@ -118,7 +118,7 @@ public class TrainJsonEmitterTests
         emitter.Result(new TrainingResult
         {
             ExperimentId = "exp-003",
-            BestTrainer = "LightGbmBinary",
+            Trainer = TrainerDescriptor.Of("LightGbmBinary"),
             Metrics = new Dictionary<string, double> { ["accuracy"] = 0.9012 },
             TrainingTimeSeconds = 298.5,
             ModelPath = "/models/default/staging/exp-003/model.zip"
@@ -131,6 +131,69 @@ public class TrainJsonEmitterTests
         Assert.Equal("LightGbmBinary", e.GetProperty("bestTrainer").GetString());
         Assert.Equal(0.9012, e.GetProperty("metrics").GetProperty("accuracy").GetDouble());
         Assert.Equal(298.5, e.GetProperty("trainingTimeSec").GetDouble());
+    }
+
+    /// <summary>
+    /// The parts a consumer needs in order to use the trainer as an identifier. <c>bestTrainer</c>
+    /// carries hyperparameters and fallback notes inside the name — that is what it has always
+    /// rendered, and it keeps doing so — so the structured field is what makes parsing unnecessary.
+    /// </summary>
+    [Fact]
+    public void Result_carries_the_trainer_in_parts_beside_its_display_form()
+    {
+        var (emitter, sink) = Build();
+
+        emitter.Result(new TrainingResult
+        {
+            ExperimentId = "exp-004",
+            Trainer = new TrainerDescriptor
+            {
+                Name = "SdcaLogisticRegression",
+                FallbackReason = "manual fallback: AutoML AUC failure"
+            },
+            Metrics = new Dictionary<string, double> { ["accuracy"] = 0.96 },
+            TrainingTimeSeconds = 21.3,
+            ModelPath = "/models/default/staging/exp-004/model.zip"
+        }, "default");
+
+        var e = Assert.Single(Events(sink));
+        Assert.Equal(
+            "SdcaLogisticRegression [manual fallback: AutoML AUC failure]",
+            e.GetProperty("bestTrainer").GetString());
+
+        var trainer = e.GetProperty("trainer");
+        Assert.Equal("SdcaLogisticRegression", trainer.GetProperty("name").GetString());
+        Assert.Equal("manual fallback: AutoML AUC failure", trainer.GetProperty("fallbackReason").GetString());
+        // No hyperparameters here, so the field is absent rather than an empty object claiming none.
+        Assert.False(trainer.TryGetProperty("params", out _));
+    }
+
+    /// <summary>
+    /// Hyperparameters are the other half of the same problem: <c>KMeans (k=3)</c> reads as a
+    /// trainer name and is not one.
+    /// </summary>
+    [Fact]
+    public void Result_names_hyperparameters_separately_from_the_trainer()
+    {
+        var (emitter, sink) = Build();
+
+        emitter.Result(new TrainingResult
+        {
+            ExperimentId = "exp-005",
+            Trainer = TrainerDescriptor.Of("SsaForecasting", ("window", 7), ("horizon", 3)),
+            Metrics = new Dictionary<string, double> { ["mae"] = 1.2 },
+            TrainingTimeSeconds = 4.0,
+            ModelPath = "/models/default/staging/exp-005/model.zip"
+        }, "default");
+
+        var e = Assert.Single(Events(sink));
+        Assert.Equal("SsaForecasting (window=7, horizon=3)", e.GetProperty("bestTrainer").GetString());
+
+        var trainer = e.GetProperty("trainer");
+        Assert.Equal("SsaForecasting", trainer.GetProperty("name").GetString());
+        Assert.Equal("7", trainer.GetProperty("params").GetProperty("window").GetString());
+        Assert.Equal("3", trainer.GetProperty("params").GetProperty("horizon").GetString());
+        Assert.False(trainer.TryGetProperty("fallbackReason", out _));
     }
 
     [Fact]
