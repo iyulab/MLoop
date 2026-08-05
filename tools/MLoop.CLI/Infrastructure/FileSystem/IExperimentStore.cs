@@ -142,6 +142,15 @@ public class ExperimentConfig
 public class ExperimentResult
 {
     public required string BestTrainer { get; init; }
+
+    /// <summary>
+    /// The same trainer in parts — name, hyperparameters, fallback reason — so a reader
+    /// (<c>list</c>, <c>compare</c>, the API) gets an identifier without parsing
+    /// <see cref="BestTrainer"/>'s display form. Null on experiments written before this field
+    /// existed, and on the failure record where no trainer ran.
+    /// </summary>
+    public TrainerDescriptor? Trainer { get; init; }
+
     public required double TrainingTimeSeconds { get; init; }
 }
 

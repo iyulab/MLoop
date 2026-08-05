@@ -73,7 +73,8 @@ public class TabularTrialProgressTests : IDisposable
         return (result, progress);
     }
 
-    private static void AssertTrialsWereReported(CollectingProgress progress, string expectedMetricName)
+    private static void AssertTrialsWereReported(
+        AutoMLResult result, CollectingProgress progress, string expectedMetricName)
     {
         var trials = progress.Trials;
 
@@ -85,6 +86,13 @@ public class TabularTrialProgressTests : IDisposable
             Assert.Equal(expectedMetricName, t.MetricName);
             Assert.True(t.ElapsedSeconds > 0, "a trial reported zero elapsed time");
         });
+
+        // The ledger invariant: what a run reported and what it persists are one set. These are
+        // produced two ways on the AutoML paths — live from the progress channel, after the fact
+        // from RunDetails — and are held together only by a shared membership rule
+        // (TrialLedger.IsReportable). This asserts the rule is actually shared.
+        Assert.Equal(trials.Count, result.Trials.Count);
+        Assert.Equal(expectedMetricName, result.RankingMetric);
     }
 
     private static List<string> BinaryFixture(int rows)
@@ -111,7 +119,7 @@ public class TabularTrialProgressTests : IDisposable
         var (result, progress) = await TrainAsync(csv, "binary-classification", "label", metric: "accuracy");
 
         Assert.NotNull(result.Model);
-        AssertTrialsWereReported(progress, expectedMetricName: "accuracy");
+        AssertTrialsWereReported(result, progress, expectedMetricName: "accuracy");
         Assert.DoesNotContain(progress.Trials, t => t.TrainerName.Contains("fallback"));
     }
 
@@ -132,6 +140,13 @@ public class TabularTrialProgressTests : IDisposable
         Assert.Equal("accuracy", trial.MetricName);
         Assert.Equal(result.Metrics["accuracy"], trial.Metric);
         Assert.True(trial.ElapsedSeconds > 0, "the fallback reported zero elapsed time");
+
+        // The fallback is the path where reported and recorded came apart: it announced a trial and
+        // left the result's trial list empty, so the run summarised itself as "0 trials".
+        var record = Assert.Single(result.Trials);
+        Assert.Equal(trial.TrainerName, record.TrainerName);
+        Assert.Equal(trial.Metric, record.Metrics["accuracy"]);
+        Assert.Equal("accuracy", result.RankingMetric);
     }
 
     [Fact]
@@ -154,7 +169,7 @@ public class TabularTrialProgressTests : IDisposable
             csv, "multiclass-classification", "label", metric: "micro_accuracy", timeLimitSeconds: 30);
 
         Assert.NotNull(result.Model);
-        AssertTrialsWereReported(progress, expectedMetricName: "micro_accuracy");
+        AssertTrialsWereReported(result, progress, expectedMetricName: "micro_accuracy");
     }
 
     [Fact]
@@ -172,7 +187,7 @@ public class TabularTrialProgressTests : IDisposable
         var (result, progress) = await TrainAsync(csv, "regression", "response", metric: "r_squared");
 
         Assert.NotNull(result.Model);
-        AssertTrialsWereReported(progress, expectedMetricName: "r_squared");
+        AssertTrialsWereReported(result, progress, expectedMetricName: "r_squared");
     }
 
     [Fact]

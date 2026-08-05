@@ -37,25 +37,30 @@ internal static class DeepLearningHandlers
                     featureColumnName: "ImageBytes", labelColumnName: "Label"))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
-            var trialChannel = progress is null ? null : new TrialProgressChannel(progress);
+            var trialChannel = new TrialProgressChannel(progress);
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
-            trialChannel?.ReportCompleted("ImageClassification (TF)", "accuracy", metrics.MacroAccuracy);
+            var metricsDict = new Dictionary<string, double>
+            {
+                ["accuracy"] = metrics.MacroAccuracy,
+                ["micro_accuracy"] = metrics.MicroAccuracy,
+                ["log_loss"] = metrics.LogLoss
+            };
+
+            trialChannel.ReportCompleted(
+                TrainerDescriptor.Of("ImageClassification (TF)"), "accuracy", metrics.MacroAccuracy, metricsDict);
 
             return new AutoMLResult
             {
-                BestTrainer = "ImageClassification (TensorFlow)",
+                Trainer = TrainerDescriptor.Of("ImageClassification (TensorFlow)"),
                 Model = model,
-                Metrics = new Dictionary<string, double>
-                {
-                    ["accuracy"] = metrics.MacroAccuracy,
-                    ["micro_accuracy"] = metrics.MicroAccuracy,
-                    ["log_loss"] = metrics.LogLoss
-                },
-                RowCount = trainSet.GetRowCount() ?? 0
+                Metrics = metricsDict,
+                RowCount = trainSet.GetRowCount() ?? 0,
+                Trials = trialChannel.Records,
+                RankingMetric = trialChannel.RankingMetric
             };
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -77,25 +82,30 @@ internal static class DeepLearningHandlers
                     labelColumnName: "Label", sentence1ColumnName: textCol))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
-            var trialChannel = progress is null ? null : new TrialProgressChannel(progress);
+            var trialChannel = new TrialProgressChannel(progress);
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
-            trialChannel?.ReportCompleted("TextClassification (NAS-BERT)", "accuracy", metrics.MacroAccuracy);
+            var metricsDict = new Dictionary<string, double>
+            {
+                ["accuracy"] = metrics.MacroAccuracy,
+                ["micro_accuracy"] = metrics.MicroAccuracy,
+                ["log_loss"] = metrics.LogLoss
+            };
+
+            trialChannel.ReportCompleted(
+                TrainerDescriptor.Of("TextClassification (NAS-BERT)"), "accuracy", metrics.MacroAccuracy, metricsDict);
 
             return new AutoMLResult
             {
-                BestTrainer = "TextClassification (NAS-BERT)",
+                Trainer = TrainerDescriptor.Of("TextClassification (NAS-BERT)"),
                 Model = model,
-                Metrics = new Dictionary<string, double>
-                {
-                    ["accuracy"] = metrics.MacroAccuracy,
-                    ["micro_accuracy"] = metrics.MicroAccuracy,
-                    ["log_loss"] = metrics.LogLoss
-                },
-                RowCount = trainSet.GetRowCount() ?? 0
+                Metrics = metricsDict,
+                RowCount = trainSet.GetRowCount() ?? 0,
+                Trials = trialChannel.Records,
+                RankingMetric = trialChannel.RankingMetric
             };
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -118,25 +128,30 @@ internal static class DeepLearningHandlers
                 sentence1ColumnName: textCols[0],
                 sentence2ColumnName: textCols[1]);
 
-            var trialChannel = progress is null ? null : new TrialProgressChannel(progress);
+            var trialChannel = new TrialProgressChannel(progress);
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
 
-            trialChannel?.ReportCompleted("SentenceSimilarity (NAS-BERT)", "r_squared", metrics.RSquared);
+            var metricsDict = new Dictionary<string, double>
+            {
+                ["r_squared"] = metrics.RSquared,
+                ["rmse"] = metrics.RootMeanSquaredError,
+                ["mae"] = metrics.MeanAbsoluteError
+            };
+
+            trialChannel.ReportCompleted(
+                TrainerDescriptor.Of("SentenceSimilarity (NAS-BERT)"), "r_squared", metrics.RSquared, metricsDict);
 
             return new AutoMLResult
             {
-                BestTrainer = "SentenceSimilarity (NAS-BERT)",
+                Trainer = TrainerDescriptor.Of("SentenceSimilarity (NAS-BERT)"),
                 Model = model,
-                Metrics = new Dictionary<string, double>
-                {
-                    ["r_squared"] = metrics.RSquared,
-                    ["rmse"] = metrics.RootMeanSquaredError,
-                    ["mae"] = metrics.MeanAbsoluteError
-                },
-                RowCount = trainSet.GetRowCount() ?? 0
+                Metrics = metricsDict,
+                RowCount = trainSet.GetRowCount() ?? 0,
+                Trials = trialChannel.Records,
+                RankingMetric = trialChannel.RankingMetric
             };
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -158,24 +173,28 @@ internal static class DeepLearningHandlers
                     labelColumnName: "Label", sentence1ColumnName: textCol))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
-            var trialChannel = progress is null ? null : new TrialProgressChannel(progress);
+            var trialChannel = new TrialProgressChannel(progress);
 
             var model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
-            trialChannel?.ReportCompleted("NER (NAS-BERT)", "accuracy", metrics.MacroAccuracy);
+            var metricsDict = new Dictionary<string, double>
+            {
+                ["accuracy"] = metrics.MacroAccuracy,
+                ["micro_accuracy"] = metrics.MicroAccuracy
+            };
+
+            trialChannel.ReportCompleted(TrainerDescriptor.Of("NER (NAS-BERT)"), "accuracy", metrics.MacroAccuracy, metricsDict);
 
             return new AutoMLResult
             {
-                BestTrainer = "NER (NAS-BERT)",
+                Trainer = TrainerDescriptor.Of("NER (NAS-BERT)"),
                 Model = model,
-                Metrics = new Dictionary<string, double>
-                {
-                    ["accuracy"] = metrics.MacroAccuracy,
-                    ["micro_accuracy"] = metrics.MicroAccuracy
-                },
-                RowCount = trainSet.GetRowCount() ?? 0
+                Metrics = metricsDict,
+                RowCount = trainSet.GetRowCount() ?? 0,
+                Trials = trialChannel.Records,
+                RankingMetric = trialChannel.RankingMetric
             };
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -228,7 +247,7 @@ internal static class DeepLearningHandlers
 
             return new AutoMLResult
             {
-                BestTrainer = "ObjectDetection (AutoFormerV2)",
+                Trainer = TrainerDescriptor.Of("ObjectDetection (AutoFormerV2)"),
                 Model = model,
                 Metrics = new Dictionary<string, double>(),
                 RowCount = trainSet.GetRowCount() ?? 0
@@ -258,7 +277,7 @@ internal static class DeepLearningHandlers
 
             return new AutoMLResult
             {
-                BestTrainer = "QA (NAS-BERT)",
+                Trainer = TrainerDescriptor.Of("QA (NAS-BERT)"),
                 Model = model,
                 Metrics = new Dictionary<string, double>(),
                 RowCount = trainSet.GetRowCount() ?? 0

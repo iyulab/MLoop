@@ -59,6 +59,15 @@ public sealed class TrainJsonEmitter(TextWriter output)
     /// ends the stream of phases with <c>complete</c>. Fields the phase has no fact for are
     /// omitted rather than zero-filled.
     /// </summary>
+    /// <remarks>
+    /// <c>trials</c> counts <b>the trials this run completed and reported</b> — the same number as
+    /// the <c>trial</c> events on this stream and the rows of <c>trials.ndjson</c>, with no
+    /// exceptions per task or per path. It was defined as "persisted trials" once, which read as
+    /// self-consistent while the manual fallback reported a trial and persisted none: a consumer
+    /// drawing trial nodes under a phase drew one node beneath a "0 trials" summary. The rule that
+    /// keeps the three in step is <c>TrialLedger.IsReportable</c> — a reported trial always has a
+    /// record, so no boundary can be drawn where the counts could differ.
+    /// </remarks>
     public void Phase(TrainingProgress progress)
     {
         if (progress.Phase is not { } phase)
@@ -125,12 +134,20 @@ public sealed class TrainJsonEmitter(TextWriter output)
     });
 
     /// <summary>The finished experiment. Emitted once, last, on a successful run.</summary>
+    /// <remarks>
+    /// <c>bestTrainer</c> is the display string and stays exactly as it was — consumers reading it
+    /// today keep working. <c>trainer</c> is the same fact in parts, for consumers that need an
+    /// identifier: <c>bestTrainer</c> has never been one (it carries hyperparameters like
+    /// <c>KMeans (k=3)</c> and fallback notes), so reading it as one meant parsing an unspecified,
+    /// per-task format. Absent parts are omitted, not blanked.
+    /// </remarks>
     public void Result(TrainingResult result, string modelName) => Write(new
     {
         @event = "result",
         model = modelName,
         experimentId = result.ExperimentId,
         bestTrainer = result.BestTrainer,
+        trainer = result.Trainer,
         metrics = result.Metrics,
         trainingTimeSec = result.TrainingTimeSeconds,
         modelPath = result.ModelPath,

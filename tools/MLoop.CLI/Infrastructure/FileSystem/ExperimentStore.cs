@@ -133,9 +133,12 @@ public class ExperimentStore : IExperimentStore
         var configPath = _fileSystem.CombinePath(experimentPath, ConfigFileName);
         await _fileSystem.WriteJsonAsync(configPath, experiment.Config, cancellationToken);
 
-        // Save the search's trial history — what else was tried and how it scored. Nothing is
-        // written when the task fit a single pipeline: an empty leaderboard would claim a search
-        // happened and found nothing.
+        // Save the trial history — what was tried and how it scored. Every trial the run reported
+        // has a record here, including the tasks that fit one pipeline: a one-row leaderboard is a
+        // true statement, and exempting those paths is what let the reported count and the recorded
+        // count drift apart. Nothing is written only when nothing was tried — the tasks with no
+        // metric to report (object detection, QA) record no trials and so leave no file, rather
+        // than an empty leaderboard claiming a search found nothing.
         if (experiment.Trials.Count > 0)
             await SaveTrialsAsync(experimentPath, experiment, cancellationToken);
 

@@ -28,7 +28,7 @@ public class TrialProgressChannelTests
     {
         var (channel, reported) = Build();
 
-        channel.ReportCompleted("KMeans (k=3)", "davies_bouldin_index", 0.7421);
+        channel.ReportCompleted(TrainerDescriptor.Of("KMeans (k=3)"), "davies_bouldin_index", 0.7421);
 
         var progress = Assert.Single(reported);
         Assert.Equal("KMeans (k=3)", progress.TrainerName);
@@ -42,8 +42,8 @@ public class TrialProgressChannelTests
     {
         var (channel, reported) = Build();
 
-        channel.ReportCompleted("A", "ndcg", 0.1);
-        channel.ReportCompleted("B", "ndcg", 0.2);
+        channel.ReportCompleted(TrainerDescriptor.Of("A"), "ndcg", 0.1);
+        channel.ReportCompleted(TrainerDescriptor.Of("B"), "ndcg", 0.2);
 
         Assert.Equal([1, 2], reported.Select(p => p.TrialNumber));
         Assert.Equal(2, channel.CompletedTrials);
@@ -54,7 +54,7 @@ public class TrialProgressChannelTests
     {
         var (channel, reported) = Build();
 
-        channel.ReportCompleted("A", "mae", 12.5);
+        channel.ReportCompleted(TrainerDescriptor.Of("A"), "mae", 12.5);
 
         Assert.True(Assert.Single(reported).ElapsedSeconds > 0, "the channel reported zero elapsed time");
     }
@@ -64,21 +64,44 @@ public class TrialProgressChannelTests
     {
         var (channel, reported) = Build();
 
-        channel.ReportCompleted("A", "rmse", 1.0);
+        channel.ReportCompleted(TrainerDescriptor.Of("A"), "rmse", 1.0);
         Thread.Sleep(30);
-        channel.ReportCompleted("B", "rmse", 0.9);
+        channel.ReportCompleted(TrainerDescriptor.Of("B"), "rmse", 0.9);
 
         Assert.True(reported[1].ElapsedSeconds > reported[0].ElapsedSeconds,
             $"elapsed did not advance: {reported[0].ElapsedSeconds} → {reported[1].ElapsedSeconds}");
     }
 
+    /// <summary>
+    /// The blank-name guard lives on <see cref="TrainerDescriptor"/> now, so it holds for every
+    /// path into the channel rather than for the one that remembered to check.
+    /// </summary>
     [Fact]
     public void ReportCompleted_names_an_unnamed_trial_rather_than_reporting_a_blank()
     {
         var (channel, reported) = Build();
 
-        channel.ReportCompleted(trainerName: null, "accuracy", 0.5);
+        channel.ReportCompleted(TrainerDescriptor.Of(null!), "accuracy", 0.5);
 
         Assert.Equal("(unknown)", Assert.Single(reported).TrainerName);
+    }
+
+    /// <summary>
+    /// The record the channel keeps and the progress it forwards describe one trial — the record
+    /// carries the trainer in parts, the progress line its rendering.
+    /// </summary>
+    [Fact]
+    public void ReportCompleted_records_the_trainer_in_parts()
+    {
+        var (channel, reported) = Build();
+
+        channel.ReportCompleted(
+            TrainerDescriptor.Of("KMeans", ("k", 3)), "davies_bouldin_index", 0.7421);
+
+        var record = Assert.Single(channel.Records);
+        Assert.Equal("KMeans", record.Trainer.Name);
+        Assert.Equal("3", record.Trainer.Params!["k"]);
+        Assert.Equal("KMeans (k=3)", record.TrainerName);
+        Assert.Equal("KMeans (k=3)", Assert.Single(reported).TrainerName);
     }
 }

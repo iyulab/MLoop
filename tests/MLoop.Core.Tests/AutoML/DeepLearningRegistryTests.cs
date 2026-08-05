@@ -1,3 +1,4 @@
+using MLoop.Core.Models;
 using MLoop.Core.AutoML;
 using Xunit;
 
@@ -31,7 +32,7 @@ public class DeepLearningRegistryTests
             IProgress<MLoop.Core.Models.TrainingProgress>? progress, CancellationToken ct)
             => Task.FromResult(new AutoMLResult
             {
-                BestTrainer = "fake",
+                Trainer = TrainerDescriptor.Of("fake"),
                 Model = null!,
                 Metrics = new Dictionary<string, double>()
             });

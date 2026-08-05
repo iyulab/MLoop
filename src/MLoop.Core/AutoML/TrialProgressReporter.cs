@@ -64,9 +64,13 @@ public sealed class TrialProgressReporter<TMetrics> : IProgress<RunDetail<TMetri
     /// </param>
     public void ReportTrial(string? trainerName, TMetrics? metrics)
     {
-        if (metrics is null)
+        if (!TrialLedger.IsReportable(metrics))
             return;
 
-        _channel.ReportCompleted(trainerName, _metricName, _selectMetric(metrics));
+        // AutoML names a whole assembled pipeline (…=>FastTreeBinary) and exposes no hyperparameters
+        // to separate out, so the name is the descriptor. A blank name is labelled by the descriptor
+        // itself, so no call site has to remember to.
+        _channel.ReportCompleted(
+            TrainerDescriptor.Of(trainerName!), _metricName, _selectMetric(metrics!));
     }
 }

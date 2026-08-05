@@ -108,18 +108,37 @@ public class TrialHistoryCollectionTests : IDisposable
         Assert.Contains("mae", trial.Metrics.Keys);
     }
 
+    /// <summary>
+    /// A task that fits one pipeline records that one candidate — it is not exempt.
+    /// </summary>
+    /// <remarks>
+    /// This asserted the opposite ("no history for a single-pipeline task") on the theory that an
+    /// empty leaderboard would falsely claim a search had happened. The exemption turned out to be
+    /// the defect: these paths still <em>report</em> a trial, so exempting them from recording it
+    /// made the event stream and the summary count different things, which is what a downstream
+    /// consumer hit. There is also no test that separates "single pipeline" from "search" — the
+    /// manual fallback fits exactly one pipeline too, and it plainly needs a record.
+    ///
+    /// So the rule is total: a reported trial always has a record. A one-row leaderboard states
+    /// something true ("one candidate was tried, here it is"), and a zero-row one can no longer
+    /// arise, since a path that reports nothing records nothing.
+    /// </remarks>
     [Fact]
-    public async Task A_single_pipeline_task_reports_no_trial_history()
+    public async Task A_single_pipeline_task_records_the_one_candidate_it_fitted()
     {
-        // Anomaly detection fits one explicit pipeline; there is no search and therefore no
-        // leaderboard. Its one result is already the experiment's metrics.
+        // Anomaly detection derives its PCA rank once and fits a single pipeline — no search.
         var lines = new List<string> { "v1,v2" };
         for (int i = 0; i < 200; i++)
             lines.Add($"{i % 23},{(i % 47) * 0.5}");
 
+        // No progress listener, deliberately: the history must not depend on anyone watching.
         var result = await TrainAsync("anomaly.csv", lines, "anomaly-detection", label: string.Empty);
 
-        Assert.Empty(result.Trials);
-        Assert.Null(result.RankingMetric);
+        var trial = Assert.Single(result.Trials);
+        Assert.Equal(1, trial.TrialNumber);
+        Assert.Contains("RandomizedPca", trial.TrainerName);
+        Assert.Equal("detection_rate", result.RankingMetric);
+        Assert.Contains("detection_rate", trial.Metrics.Keys);
+        Assert.All(trial.Metrics.Values, v => Assert.True(double.IsFinite(v), "a non-finite metric was recorded"));
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Models;
@@ -665,6 +666,70 @@ public class TrainingEngineTests : IDisposable
         var trials = seen.Where(p => p.Phase is null).ToList();
         Assert.NotEmpty(trials);
         Assert.Equal(trials.Count, complete.TrialNumber);
+    }
+
+    /// <summary>
+    /// One run reports its trials three ways — the live <c>trial</c> events, the count on
+    /// <c>phase(complete)</c>, and the rows of <c>trials.ndjson</c> — and they have to be the same
+    /// number. They were not: <c>complete</c> read <c>AutoMLResult.Trials</c> while the events came
+    /// from the progress channel, and the manual fallback filled only the second, so a run that
+    /// emitted one trial summarised itself as "0 trials" and wrote no file. A downstream tree UI
+    /// drew one node under a "0 trials" heading and reported it.
+    ///
+    /// The fallback is the case to pin because it is the one where the two productions came apart,
+    /// and a unit test on the emitter cannot see it — the disagreement only exists once a real run
+    /// has both a channel and a persisted result.
+    /// </summary>
+    [Fact]
+    public async Task TrainAsync_ManualFallback_ReportedTrialsAgreeWithSummaryAndFile()
+    {
+        // Two positives in 150 rows: AUC needs both classes present in whatever holdout AutoML
+        // validates against, and at this ratio it cannot count on that — the run raises
+        // AUC-undefined for both AUC and F1Score and diverts to the BUG-36 manual SDCA pipeline.
+        // Constructed from that property rather than a magic row count, so it stays the fallback
+        // path. The trainer-name assertion below fails loudly if it ever stops diverting, rather
+        // than passing on the AutoML path by accident.
+        var csv = Path.Combine(_tempDir, "fallback-ledger.csv");
+        var lines = new List<string> { "f1,f2,label" };
+        for (int i = 0; i < 150; i++)
+            lines.Add($"{i % 37},{i % 17},{(i is 40 or 90 ? 1 : 0)}");
+        await File.WriteAllLinesAsync(csv, lines);
+
+        var config = new TrainingConfig
+        {
+            ModelName = "ledger",
+            DataFile = csv,
+            LabelColumn = "label",
+            Task = "binary-classification",
+            TimeLimitSeconds = 20
+        };
+
+        var events = new List<TrainingProgress>();
+        var progress = new InlineProgress(p => { lock (events) events.Add(p); });
+
+        var result = await NewEngine().TrainAsync(config, progress, CancellationToken.None);
+
+        List<TrainingProgress> seen;
+        lock (events) seen = [.. events];
+
+        var reported = seen.Where(p => p.Phase is null).ToList();
+        var trial = Assert.Single(reported);
+        Assert.Contains("fallback", trial.TrainerName);
+
+        var complete = Assert.Single(seen, p => p.Phase == TrainingPhase.Complete);
+        Assert.Equal(reported.Count, complete.TrialNumber);
+
+        var experimentPath = Path.Combine(_tempDir, "models", "ledger", "staging", result.ExperimentId);
+        var trialsPath = Path.Combine(experimentPath, "trials.ndjson");
+        Assert.True(File.Exists(trialsPath), "a reported trial left no row in trials.ndjson");
+        Assert.Equal(reported.Count, (await File.ReadAllLinesAsync(trialsPath)).Length);
+
+        // A leaderboard the search can be ranked by: the fallback optimizes accuracy, which
+        // MetricDirection knows, so "unknown" here would mean the ranking metric went unrecorded.
+        var leaderboard = JsonDocument.Parse(
+            await File.ReadAllTextAsync(Path.Combine(experimentPath, "leaderboard.json")));
+        Assert.Equal(reported.Count, leaderboard.RootElement.GetProperty("trialCount").GetInt32());
+        Assert.Equal("higher_is_better", leaderboard.RootElement.GetProperty("direction").GetString());
     }
 
     /// <summary>Reports on the calling thread so assertions do not race Progress&lt;T&gt;'s thread pool hand-off.</summary>

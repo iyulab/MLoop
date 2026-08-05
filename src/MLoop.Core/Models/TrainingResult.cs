@@ -7,7 +7,12 @@ namespace MLoop.Core.Models;
 public class TrainingResult
 {
     public required string ExperimentId { get; init; }
-    public required string BestTrainer { get; init; }
+
+    /// <summary>What was trained, in parts — name, hyperparameters, fallback reason.</summary>
+    public required TrainerDescriptor Trainer { get; init; }
+
+    /// <summary>The human-facing rendering of <see cref="Trainer"/>. Derived, not stored.</summary>
+    public string BestTrainer => Trainer.Display;
     public required Dictionary<string, double> Metrics { get; init; }
     public required double TrainingTimeSeconds { get; init; }
     public required string ModelPath { get; init; }
