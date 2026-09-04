@@ -401,7 +401,7 @@ public static class TrainCommand
                     var resolved = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(projectRoot, path));
                     if (!File.Exists(resolved))
                     {
-                        ErrorConsole.Error($"Data file not found: {path}");
+                        ErrorConsole.Error($"Data file not found: {path}", ErrorConsole.PathNotFoundTip(projectRoot));
                         return 1;
                     }
                     resolvedPaths.Add(resolved);

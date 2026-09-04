@@ -76,6 +76,29 @@ public class ErrorConsoleTests
     }
 
     [Fact]
+    public void PathNotFoundTip_NamesTheProjectRoot()
+    {
+        // Every explicit-path command option resolves a relative path against the project root
+        // before checking existence — the tip states that rule so a consumer under a different
+        // working directory isn't left guessing which base was actually used.
+        var tip = ErrorConsole.PathNotFoundTip(@"D:\projects\my-model");
+
+        Assert.Contains(@"D:\projects\my-model", tip);
+        Assert.Contains("project root", tip);
+    }
+
+    [Fact]
+    public void PathNotFoundTipCwd_NamesTheCurrentDirectory()
+    {
+        // `sample create --from` is the one path option that resolves against the current
+        // directory instead of the project root — a distinct fact from PathNotFoundTip's.
+        var tip = ErrorConsole.PathNotFoundTipCwd();
+
+        Assert.Contains(Directory.GetCurrentDirectory(), tip);
+        Assert.Contains("current directory", tip);
+    }
+
+    [Fact]
     public void Out_ReboundsToCurrentStdErr()
     {
         // The console must not cache a writer captured at first use — otherwise a redirection

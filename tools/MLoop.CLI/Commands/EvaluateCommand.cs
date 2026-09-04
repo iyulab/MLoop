@@ -186,7 +186,7 @@ public static class EvaluateCommand
                     : File.Exists(resolvedTestDataFile);
                 if (!exists)
                 {
-                    ErrorConsole.Error($"Test data not found: {resolvedTestDataFile}");
+                    ErrorConsole.Error($"Test data not found: {resolvedTestDataFile}", ErrorConsole.PathNotFoundTip(projectRoot));
                     return 1;
                 }
 
