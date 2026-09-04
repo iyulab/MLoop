@@ -254,10 +254,16 @@ public class ModelRegistry : IModelRegistry
         // threshold table, so using the raw value silently skipped the gate (BUG-45/46 root).
         if (metricKey != null && !MetricPolicy.IsErrorMetric(metricKey))
         {
+            // <=, not <: every threshold here is a "must be better than the trivial baseline"
+            // floor (R² > 0 beats mean-prediction, AUC > 0.5 beats random, accuracy beats the
+            // majority-class predictor, …) — sitting exactly on the floor means the model is
+            // exactly as good as the trivial baseline, not better than it. A strict `<` let a
+            // model that scored precisely at the floor (e.g. R² == 0.0 on a degenerate test
+            // split) through as if it had passed.
             var minThreshold = MetricPolicy.GetMinimumMetricThreshold(metricKey, classCount, majorityClassRatio);
-            if (minThreshold.HasValue && experiment.Metrics[metricKey] < minThreshold.Value)
+            if (minThreshold.HasValue && experiment.Metrics[metricKey] <= minThreshold.Value)
             {
-                return false; // Below minimum viable threshold
+                return false; // At or below minimum viable threshold
             }
         }
 

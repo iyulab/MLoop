@@ -420,6 +420,27 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task ShouldPromoteAsync_RSquaredExactlyZero_ReturnsFalse()
+    {
+        // BD-15: the gate compared with a strict `<`, so R² == 0.0 — exactly as good as always
+        // predicting the mean, i.e. a model that learned nothing — sat exactly on the floor and
+        // was treated as passing it. "Must be better than mean prediction" (MetricPolicy's own
+        // comment on this threshold) means strictly better, so equality must be rejected too.
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["r_squared"] = 0.0
+        });
+
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
+            experimentId,
+            "r_squared",
+            CancellationToken.None);
+
+        Assert.False(result); // Exactly at the floor is not better than the floor
+    }
+
+    [Fact]
     public async Task ShouldPromoteAsync_UndefinedErrorMetricSentinel_ReturnsFalse()
     {
         // Live repro (8-row regression, --metric rmse): the model scored NaN for every holdout row,
@@ -480,6 +501,25 @@ public class ModelRegistryTests : IDisposable
 
         // Assert
         Assert.False(result); // Below minimum threshold (0.5)
+    }
+
+    [Fact]
+    public async Task ShouldPromoteAsync_AucExactlyRandom_ReturnsFalse()
+    {
+        // Same boundary bug as R² == 0.0, for the "better than random" family: AUC == 0.5 is a
+        // coin flip, not better than one.
+        var experimentId = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["auc"] = 0.5
+        });
+
+        var result = await _modelRegistry.ShouldPromoteAsync(
+            DefaultModelName,
+            experimentId,
+            "auc",
+            CancellationToken.None);
+
+        Assert.False(result); // Exactly random is not better than random
     }
 
     [Fact]
