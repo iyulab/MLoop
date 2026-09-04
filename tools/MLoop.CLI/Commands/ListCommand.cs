@@ -2,6 +2,8 @@ using System.CommandLine;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.Core.Models;
+using MLoop.Core.Storage;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -29,20 +31,139 @@ public static class ListCommand
             Description = "Output in JSON format (machine-readable)"
         };
 
+        var trialsOption = new Option<string?>("--trials")
+        {
+            Description = "Show the trial leaderboard for one experiment (e.g. clustering's K=2..10 " +
+                          "search) instead of the experiment overview. The data already exists in " +
+                          "leaderboard.json — this is just a CLI surface for it."
+        };
+
         var command = new Command("list", "List all experiments");
         command.Options.Add(nameOption);
         command.Options.Add(allOption);
         command.Options.Add(jsonOption);
+        command.Options.Add(trialsOption);
 
         command.SetAction((parseResult) =>
         {
             var name = parseResult.GetValue(nameOption);
             var showAll = parseResult.GetValue(allOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(name, showAll, json);
+            var trialsExperimentId = parseResult.GetValue(trialsOption);
+            return trialsExperimentId != null
+                ? ExecuteTrialsAsync(name, trialsExperimentId, json)
+                : ExecuteAsync(name, showAll, json);
         });
 
         return command;
+    }
+
+    /// <summary>
+    /// Renders one experiment's <c>leaderboard.json</c> — the trial history a search produced
+    /// (e.g. clustering's K=2..10 sweep) that until now had no CLI surface, only the file itself.
+    /// </summary>
+    private static async Task<int> ExecuteTrialsAsync(string? modelName, string experimentId, bool jsonOutput)
+    {
+        try
+        {
+            var ctx = CommandContext.TryCreate();
+            if (ctx == null) return 1;
+
+            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
+                ? ConfigDefaults.DefaultModelName
+                : modelName.Trim().ToLowerInvariant();
+
+            if (!ctx.ExperimentStore.ExperimentExists(resolvedModelName, experimentId))
+            {
+                ErrorConsole.Error(
+                    $"Experiment not found: {resolvedModelName}/{experimentId}",
+                    "Run mloop list --name " + resolvedModelName + " to see available experiment IDs.");
+                return 1;
+            }
+
+            var experimentPath = ctx.ExperimentStore.GetExperimentPath(resolvedModelName, experimentId);
+            var leaderboardPath = ctx.FileSystem.CombinePath(experimentPath, ExperimentLayout.LeaderboardFileName);
+
+            if (!ctx.FileSystem.FileExists(leaderboardPath))
+            {
+                ErrorConsole.Error(
+                    $"No trial leaderboard for experiment '{experimentId}'.",
+                    "Only tasks AutoML searches over (e.g. binary/multiclass/regression, or a hand-rolled " +
+                    "sweep like clustering's K) produce one; a single fixed-pipeline run has nothing to rank.");
+                return 1;
+            }
+
+            var leaderboard = await ctx.FileSystem.ReadJsonAsync<LeaderboardFile>(leaderboardPath);
+
+            if (jsonOutput)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(leaderboard, new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                }));
+                return 0;
+            }
+
+            AnsiConsole.WriteLine();
+            AnsiConsole.Write(new Rule($"[bold]Trial leaderboard — {experimentId}[/]").LeftJustified());
+            AnsiConsole.WriteLine();
+
+            if (leaderboard.Metric == null)
+            {
+                AnsiConsole.MarkupLine(
+                    "[yellow]Ranked by an unrecognized metric — trials are listed in completion order, not ranked.[/]");
+            }
+            else
+            {
+                var arrow = leaderboard.Direction == "lower_is_better" ? "↓ lower is better" : "↑ higher is better";
+                AnsiConsole.MarkupLine($"[grey]Ranked by [cyan]{Markup.Escape(leaderboard.Metric)}[/] ({arrow})[/]");
+            }
+            AnsiConsole.WriteLine();
+
+            var table = new Table().Border(TableBorder.Rounded).BorderColor(Color.Grey);
+            table.AddColumn(new TableColumn("[bold]Rank[/]").Centered());
+            table.AddColumn(new TableColumn("[bold]Trainer[/]"));
+            table.AddColumn(new TableColumn("[bold]" + (leaderboard.Metric ?? "Metric") + "[/]").RightAligned());
+            table.AddColumn(new TableColumn("[bold]Runtime[/]").RightAligned());
+
+            var rank = 0;
+            foreach (var trial in leaderboard.Trials)
+            {
+                rank++;
+                var metricDisplay = leaderboard.Metric != null && trial.Metrics.TryGetValue(leaderboard.Metric, out var v)
+                    ? v.ToString("F4")
+                    : "[grey]-[/]";
+                var rankDisplay = rank == 1 ? "[green bold]1[/]" : rank.ToString();
+
+                table.AddRow(
+                    rankDisplay,
+                    $"[cyan]{Markup.Escape(trial.Trainer.Display)}[/]",
+                    metricDisplay,
+                    $"{trial.RuntimeSeconds:F1}s");
+            }
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[grey]{leaderboard.TrialCount} trial(s)[/]");
+            AnsiConsole.WriteLine();
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            ErrorSuggestions.DisplayError(ex, "list");
+            return 1;
+        }
+    }
+
+    /// <summary>Mirrors the anonymous shape <c>ExperimentStore.SaveTrialsAsync</c> writes.</summary>
+    private sealed class LeaderboardFile
+    {
+        public string? Metric { get; init; }
+        public string? Direction { get; init; }
+        public int TrialCount { get; init; }
+        public List<TrialRecord> Trials { get; init; } = [];
     }
 
     private static async Task<int> ExecuteAsync(string? modelName, bool showAll, bool jsonOutput = false)
