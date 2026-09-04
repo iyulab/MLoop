@@ -102,7 +102,9 @@ public static class InfoCommand
 
             if (!File.Exists(resolvedDataFile))
             {
-                ErrorConsole.Error($"File not found: {resolvedDataFile}");
+                ErrorConsole.Error(
+                    $"File not found: {resolvedDataFile}",
+                    projectRoot != null ? ErrorConsole.PathNotFoundTip(projectRoot) : ErrorConsole.PathNotFoundTipCwd());
                 return 1;
             }
 

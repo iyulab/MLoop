@@ -82,4 +82,20 @@ public static class ErrorConsole
     /// </para>
     /// </summary>
     public static void Tip(string markup) => Out.MarkupLine($"[yellow]Tip:[/] {markup}");
+
+    /// <summary>
+    /// The tip for a user-supplied path that resolved to something that doesn't exist, where the
+    /// resolution base was the project root (the common case: every explicit-path option is joined
+    /// against <paramref name="projectRoot"/> when it isn't already absolute). Centralized so the
+    /// wording — and the resolution rule it states — stays one fact instead of drifting per call site.
+    /// </summary>
+    public static string PathNotFoundTip(string projectRoot) =>
+        $"A relative path resolves against the project root ([cyan]{Markup.Escape(projectRoot)}[/]) — pass an absolute path if the file lives elsewhere.";
+
+    /// <summary>
+    /// Same as <see cref="PathNotFoundTip(string)"/>, for the one command (<c>sample create --from</c>)
+    /// that resolves its explicit path against the current directory instead of the project root.
+    /// </summary>
+    public static string PathNotFoundTipCwd() =>
+        $"A relative path resolves against the current directory ([cyan]{Markup.Escape(Directory.GetCurrentDirectory())}[/]) — pass an absolute path if the file lives elsewhere.";
 }

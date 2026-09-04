@@ -956,7 +956,7 @@ public static class PredictCommand
             resolvedDataDir = Path.IsPathRooted(dataFile) ? dataFile : Path.Combine(projectRoot, dataFile);
             if (!Directory.Exists(resolvedDataDir) && !File.Exists(resolvedDataDir))
             {
-                ErrorConsole.Error($"Data not found: {resolvedDataDir}");
+                ErrorConsole.Error($"Data not found: {resolvedDataDir}", ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
         }

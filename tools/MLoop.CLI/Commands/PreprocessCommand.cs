@@ -186,7 +186,7 @@ public static class PreprocessCommand
 
             if (!File.Exists(resolvedInputFile))
             {
-                ErrorConsole.Error($"Input file not found: {resolvedInputFile}");
+                ErrorConsole.Error($"Input file not found: {resolvedInputFile}", ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
 
@@ -270,7 +270,7 @@ public static class PreprocessCommand
 
             if (!File.Exists(resolvedInputFile))
             {
-                ErrorConsole.Error($"Input file not found: {resolvedInputFile}");
+                ErrorConsole.Error($"Input file not found: {resolvedInputFile}", ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
 

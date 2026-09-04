@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **A missing file was named without saying where the CLI looked for it.** `analyze`, `info`, `prep run`, `predict`, `evaluate`, and `train --data` each reported "File/Data not found: {path}" with the resolved absolute path and nothing else — leaving a relative-path typo to guess whether that path was relative to the project, the shell's current directory, or something else. Every one of these resolves an explicit relative path by joining it against the project root before checking existence (`sample create --from` is the sole exception, resolving against the current directory instead) — now stated as a `Tip:` line alongside the error, so a user who passed a wrong-but-plausible relative path is told which base was actually used rather than left to reason about it from the absolute path alone.
+
 ## [0.31.0] - 2026-09-04
 
 ### Added

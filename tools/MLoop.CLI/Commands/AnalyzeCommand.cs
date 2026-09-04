@@ -96,7 +96,9 @@ public static class AnalyzeCommand
                 AnsiConsole.MarkupLine(
                     "[red]Error:[/] No data file specified and none found. Pass [blue]<data-file>[/] or set [blue]data.train[/] in mloop.yaml.");
             else
-                ErrorConsole.Error($"File not found: {resolved ?? dataFile}");
+                ErrorConsole.Error(
+                    $"File not found: {resolved ?? dataFile}",
+                    projectRoot != null ? ErrorConsole.PathNotFoundTip(projectRoot) : ErrorConsole.PathNotFoundTipCwd());
             return null;
         }
 

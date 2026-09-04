@@ -143,7 +143,7 @@ public static class SampleCommand
             var resolvedInput = Path.GetFullPath(fromPath);
             if (!File.Exists(resolvedInput))
             {
-                ErrorConsole.Error($"File not found: {resolvedInput}");
+                ErrorConsole.Error($"File not found: {resolvedInput}", ErrorConsole.PathNotFoundTipCwd());
                 return 1;
             }
 
