@@ -91,20 +91,37 @@ public static class ValidateCommand
             DefaultValueFactory = _ => false
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the validation result as JSON to stdout instead of the human report. " +
+                          "Progress and narration go to stderr."
+        };
+
         var command = new Command("validate", "Validate project configuration (mloop.yaml)");
         command.Options.Add(verboseOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
             var verbose = parseResult.GetValue(verboseOption);
-            return ExecuteAsync(verbose);
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteAsync(verbose, json);
         });
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(bool verbose)
+    private static async Task<int> ExecuteAsync(bool verbose, bool jsonOutput = false)
     {
+        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
+        // stderr — the same reassignment predict/evaluate --json use, which keeps every existing
+        // AnsiConsole call site in this method unchanged.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             var ctx = CommandContext.TryCreate();
@@ -123,6 +140,7 @@ public static class ValidateCommand
             {
                 errors.Add(new ValidationError("mloop.yaml", "Configuration file not found"));
                 DisplayResults(errors, warnings, verbose);
+                EmitJson(errors, warnings, jsonOutput);
                 return 1;
             }
 
@@ -142,6 +160,7 @@ public static class ValidateCommand
             {
                 errors.Add(new ValidationError("mloop.yaml", $"Failed to parse YAML: {ex.Message}"));
                 DisplayResults(errors, warnings, verbose);
+                EmitJson(errors, warnings, jsonOutput);
                 return 1;
             }
 
@@ -187,16 +206,19 @@ public static class ValidateCommand
             if (errors.Count > 0)
             {
                 AnsiConsole.MarkupLine("[red]Validation failed.[/] Please fix the errors above.");
+                EmitJson(errors, warnings, jsonOutput);
                 return 1;
             }
 
             if (warnings.Count > 0)
             {
                 AnsiConsole.MarkupLine("[yellow]Validation passed with warnings.[/]");
+                EmitJson(errors, warnings, jsonOutput);
                 return 0;
             }
 
             AnsiConsole.MarkupLine("[green]Validation successful![/] Configuration is valid.");
+            EmitJson(errors, warnings, jsonOutput);
             return 0;
         }
         catch (Exception ex)
@@ -204,6 +226,29 @@ public static class ValidateCommand
             ErrorSuggestions.DisplayError(ex, "validate");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// The <c>--json</c> counterpart to <see cref="DisplayResults"/> — same data, machine shape.
+    /// No-op when <paramref name="jsonOutput"/> is false so every exit point can call it
+    /// unconditionally rather than repeating the branch.
+    /// </summary>
+    private static void EmitJson(List<ValidationError> errors, List<ValidationWarning> warnings, bool jsonOutput)
+    {
+        if (!jsonOutput)
+            return;
+
+        var payload = new
+        {
+            Valid = errors.Count == 0,
+            Errors = errors.Select(e => new { e.Path, e.Message }),
+            Warnings = warnings.Select(w => new { w.Path, w.Message })
+        };
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        }));
     }
 
     internal static void ValidateModel(
