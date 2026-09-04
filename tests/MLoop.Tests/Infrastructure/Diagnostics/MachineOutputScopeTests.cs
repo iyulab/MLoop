@@ -130,6 +130,62 @@ public class MachineOutputScopeTests
     }
 
     [Fact]
+    public void DisplayError_suggestions_reach_the_event_stream_as_part_of_the_same_event()
+    {
+        // Every command's top-level catch funnels through DisplayError, and its Suggestions block
+        // used to render on stderr only — MachineOutputScope.ReportError was called with just
+        // ex.Message, before suggestions were even computed. A --json consumer got the cause and
+        // none of what resolves it: the same defect class the tip combine-fix above closed, at the
+        // scale of the shared top-level handler rather than one call site.
+        var original = Console.Out;
+        Console.SetOut(new StringWriter());
+        try
+        {
+            var reported = new List<string>();
+            using (var scope = new MachineOutputScope())
+            {
+                scope.ErrorSink = reported.Add;
+                ErrorSuggestions.DisplayError(new FileNotFoundException("File not found: data.csv"), "training");
+            }
+
+            var message = Assert.Single(reported);
+            Assert.Contains("File not found", message);
+            Assert.Contains("Suggestions:", message);
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+    }
+
+    [Fact]
+    public void DisplayTrainingError_reaches_the_event_stream()
+    {
+        // DisplayTrainingError reported nothing to MachineOutputScope at all until this fix — not
+        // even the bare cause DisplayError already carried. A --json train run failing through
+        // this path produced zero error events.
+        var original = Console.Out;
+        Console.SetOut(new StringWriter());
+        try
+        {
+            var reported = new List<string>();
+            using (var scope = new MachineOutputScope())
+            {
+                scope.ErrorSink = reported.Add;
+                ErrorSuggestions.DisplayTrainingError(new FileNotFoundException("File not found: data.csv"), "my-model");
+            }
+
+            var message = Assert.Single(reported);
+            Assert.Contains("my-model", message);
+            Assert.Contains("File not found", message);
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+    }
+
+    [Fact]
     public void Outside_the_scope_reporting_an_error_is_a_no_op()
     {
         // Every other command still calls the same stderr sink; it must not require a scope.

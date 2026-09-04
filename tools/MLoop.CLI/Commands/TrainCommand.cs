@@ -1146,8 +1146,16 @@ public static class TrainCommand
         }
         catch (Exception ex)
         {
-            // T8.3: Enhanced error messaging with actionable suggestions
-            ErrorSuggestions.DisplayError(ex, "training");
+            // DisplayTrainingError has existed since 0.28.0 (its CHANGELOG entry describes it as
+            // already wired here) but was never actually called from this catch — every training
+            // failure rendered through the generic DisplayError instead, losing the model name in
+            // the heading and the "mloop analyze"/"mloop status" diagnostic hints the dedicated
+            // path was built to add. resolvedModelName is recomputed here (pure function of
+            // modelName, safe to redo) since the try-scoped local isn't visible in catch.
+            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
+                ? ConfigDefaults.DefaultModelName
+                : modelName.Trim().ToLowerInvariant();
+            ErrorSuggestions.DisplayTrainingError(ex, resolvedModelName, dataFile);
             return 1;
         }
     }
