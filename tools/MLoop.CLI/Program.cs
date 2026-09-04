@@ -32,45 +32,7 @@ internal class Program
                 // Console.WriteLine($"Loaded environment from {envPath}");
             }
         }
-        var rootCommand = new RootCommand("MLoop - A modern CLI tool for ML.NET with filesystem-based MLOps")
-        {
-            // Phase 1 Commands (MVP)
-            InitCommand.Create(),
-            TrainCommand.Create(),
-            PredictCommand.Create(),
-            PreprocessCommand.Create(),
-            ListCommand.Create(),
-            LogsCommand.Create(),
-            FeedbackCommand.Create(),
-            SampleCommand.Create(),
-            TriggerCommand.Create(),
-            CompareCommand.Create(),
-            PromoteCommand.Create(),
-            InfoCommand.Create(),
-            AnalyzeCommand.Create(),
-            DetectCommand.Create(),
-            EvaluateCommand.Create(),
-            ValidateCommand.Create(),
-            ExtensionsCommand.Create(),
-            NewCommand.Create(),
-            StatusCommand.Create(),
-
-            // Phase 2 Commands
-            new ServeCommand(),
-            new TokenCommand(),  // Issue JWT bearer tokens for the serve API
-            new PipelineCommand(),
-            new PrepCommand(),  // Data preprocessing pipeline
-            new FeaturesCommand(),  // Feature selection policy (mloop.yaml)
-
-            // Phase 4: Production Deployment
-            DockerCommand.Create(),
-
-            // Runtime Management
-            RuntimeCommand.Create(),
-
-            // Utility
-            UpdateCommand.Create(),
-        };
+        var rootCommand = BuildRootCommand();
 
         // Display banner
         if (args.Length == 0)
@@ -114,6 +76,52 @@ internal class Program
 
         return exitCode;
     }
+
+    /// <summary>
+    /// The full command tree, factored out so tests parse the exact same tree <c>Main</c> runs
+    /// against rather than a hand-maintained copy that could drift from it (see
+    /// <c>ReadmeCommandContractTests</c>).
+    /// </summary>
+    internal static RootCommand BuildRootCommand() =>
+        new("MLoop - A modern CLI tool for ML.NET with filesystem-based MLOps")
+        {
+            // Phase 1 Commands (MVP)
+            InitCommand.Create(),
+            TrainCommand.Create(),
+            PredictCommand.Create(),
+            PreprocessCommand.Create(),
+            ListCommand.Create(),
+            LogsCommand.Create(),
+            FeedbackCommand.Create(),
+            SampleCommand.Create(),
+            TriggerCommand.Create(),
+            CompareCommand.Create(),
+            PromoteCommand.Create(),
+            InfoCommand.Create(),
+            AnalyzeCommand.Create(),
+            DetectCommand.Create(),
+            EvaluateCommand.Create(),
+            ValidateCommand.Create(),
+            ExtensionsCommand.Create(),
+            NewCommand.Create(),
+            StatusCommand.Create(),
+
+            // Phase 2 Commands
+            new ServeCommand(),
+            new TokenCommand(),  // Issue JWT bearer tokens for the serve API
+            new PipelineCommand(),
+            new PrepCommand(),  // Data preprocessing pipeline
+            new FeaturesCommand(),  // Feature selection policy (mloop.yaml)
+
+            // Phase 4: Production Deployment
+            DockerCommand.Create(),
+
+            // Runtime Management
+            RuntimeCommand.Create(),
+
+            // Utility
+            UpdateCommand.Create(),
+        };
 
     private static void DisplayBanner()
     {
