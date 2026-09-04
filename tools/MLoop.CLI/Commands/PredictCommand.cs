@@ -317,7 +317,19 @@ public static class PredictCommand
 
                 if (!File.Exists(resolvedDataFile))
                 {
-                    ErrorConsole.Error($"{Markup.Escape(BuildMissingDataFileMessage(resolvedDataFile, taskType))}");
+                    var cause = Markup.Escape(BuildMissingDataFileMessage(resolvedDataFile, taskType));
+                    if (Directory.Exists(resolvedDataFile))
+                    {
+                        // A directory at this path is a wrong-type mismatch, not a wrong-location
+                        // one — the path resolution rule below doesn't explain what to do about it,
+                        // and the image-classification branch of the message already carries its
+                        // own remedy.
+                        ErrorConsole.Error(cause);
+                    }
+                    else
+                    {
+                        ErrorConsole.Error(cause, ErrorConsole.PathNotFoundTip(projectRoot));
+                    }
                     return 1;
                 }
             }

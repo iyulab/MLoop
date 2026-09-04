@@ -429,7 +429,14 @@ public static class TrainCommand
                     var validation = await csvMerger.ValidateSchemaCompatibilityAsync(resolvedPaths);
                     if (!validation.IsCompatible)
                     {
-                        ErrorConsole.Error($"Schema mismatch between files: {validation.Message}");
+                        // validation.Message only counts the mismatch; the columns that actually
+                        // differ per file live in MismatchedColumns and were computed regardless —
+                        // surface them instead of making the user re-diff the files by hand.
+                        var perFile = string.Join("; ", validation.MismatchedColumns
+                            .Select(kv => $"{Markup.Escape(kv.Key)}: {Markup.Escape(string.Join(", ", kv.Value))}"));
+                        ErrorConsole.Error(
+                            $"Schema mismatch between files: {validation.Message}",
+                            $"Columns unique to each file — {perFile}. Keep only the {validation.CommonColumns.Count} shared columns across files, or merge files with matching schemas.");
                         return 1;
                     }
 
@@ -445,7 +452,9 @@ public static class TrainCommand
 
                     if (!mergeResult.Success)
                     {
-                        ErrorConsole.Error($"Failed to merge files: {mergeResult.Error}");
+                        ErrorConsole.Error(
+                            $"Failed to merge files: {mergeResult.Error}",
+                            "Check that each file is a valid, non-empty CSV with a header row.");
                         return 1;
                     }
 
@@ -612,7 +621,9 @@ public static class TrainCommand
                     }
                     else
                     {
-                        ErrorConsole.Error($"Failed to clean label data: {cleanResult.Error}");
+                        ErrorConsole.Error(
+                            $"Failed to clean label data: {cleanResult.Error}",
+                            $"Run [blue]mloop info {Markup.Escape(Path.GetRelativePath(projectRoot, resolvedDataFile))}[/] to check the label column '{Markup.Escape(effectiveDefinition.Label)}' exists and has values.");
                         return 1;
                     }
                 }

@@ -85,10 +85,9 @@ public static class SampleCommand
             if (!string.IsNullOrEmpty(modelName))
                 return ExecuteCreateAsync(modelName, size, strategy, output);
 
-            ErrorConsole.Error("Either --from <csv-file> or --model <name> is required.");
-            AnsiConsole.MarkupLine("[grey]Examples:[/]");
-            AnsiConsole.MarkupLine("  [blue]mloop sample create --from train.csv --rows 100[/]");
-            AnsiConsole.MarkupLine("  [blue]mloop sample create --model default --rows 500[/]");
+            ErrorConsole.Error(
+                "Either --from <csv-file> or --model <name> is required.",
+                "Examples: mloop sample create --from train.csv --rows 100, or mloop sample create --model default --rows 500");
             return Task.FromResult(1);
         });
 
@@ -134,8 +133,7 @@ public static class SampleCommand
             var csvStrategy = ParseCsvStrategy(strategyName);
             if (csvStrategy == null)
             {
-                ErrorConsole.Error($"Unknown strategy '{strategyName}'");
-                AnsiConsole.MarkupLine("[grey]Valid strategies for CSV: random, head, stratified[/]");
+                ErrorConsole.Error($"Unknown strategy '{strategyName}'", "Valid strategies for CSV: random, head, stratified");
                 return 1;
             }
 
@@ -194,8 +192,7 @@ public static class SampleCommand
             var strategy = ParseStrategy(strategyName);
             if (strategy == null)
             {
-                ErrorConsole.Error($"Unknown strategy '{strategyName}'");
-                AnsiConsole.MarkupLine("[grey]Valid strategies: random, recent, feedback-priority[/]");
+                ErrorConsole.Error($"Unknown strategy '{strategyName}'", "Valid strategies: random, recent, feedback-priority");
                 return 1;
             }
 
