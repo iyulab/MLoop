@@ -23,12 +23,17 @@ public static class ErrorSuggestions
         err.Markup("[red]Error:[/] ");
         err.WriteLine(ex.Message);
 
-        // Same cause into the machine-readable stream when one is active (see MachineOutputScope).
-        MachineOutputScope.ReportError(ex.Message);
+        // Collected as we go and reported once at the end — the machine channel used to receive
+        // only ex.Message, dropping the inner exception and the whole Suggestions block that
+        // follows it on stderr. A --json consumer got the cause with none of what resolves it,
+        // the exact defect class ErrorConsole.Error(cause, tip) exists to close, just at the
+        // scale of every command's top-level catch rather than one call site.
+        var machineParts = new List<string> { ex.Message };
 
         if (ex.InnerException != null && AddsInformation(ex.Message, ex.InnerException.Message))
         {
             err.MarkupLine($"[grey]  Inner: {Markup.Escape(ex.InnerException.Message)}[/]");
+            machineParts.Add($"Inner: {ex.InnerException.Message}");
         }
 
         // Get and display suggestions
@@ -41,7 +46,13 @@ public static class ErrorSuggestions
             {
                 err.MarkupLine($"  [blue]>[/] {suggestion}");
             }
+            // Suggestion text carries markup (e.g. "[cyan]mloop analyze[/]") for the terminal;
+            // MachineOutputScope.Report strips it before reaching the event stream, same as
+            // every other markup-bearing string reported through it.
+            machineParts.Add("Suggestions: " + string.Join("; ", suggestions));
         }
+
+        MachineOutputScope.ReportError(string.Join(" ", machineParts));
 
         // Always show version for diagnostics
         err.WriteLine();
@@ -361,11 +372,17 @@ public static class ErrorSuggestions
         err.MarkupLine("[red]Error:[/]");
         err.WriteLine($"  {ex.Message}");
 
+        // Same combine-then-report shape as DisplayError: nothing here reached the machine
+        // channel at all until this fix, not even the cause — a --json train run that failed
+        // through this path reported no error event whatsoever.
+        var machineParts = new List<string> { $"Training failed for model '{modelName}': {ex.Message}" };
+
         if (ex.InnerException != null)
         {
             err.WriteLine();
             err.MarkupLine("[grey]Inner exception:[/]");
             err.WriteLine($"  {ex.InnerException.Message}");
+            machineParts.Add($"Inner: {ex.InnerException.Message}");
         }
 
         var suggestions = GetSuggestions(ex, "training");
@@ -377,7 +394,10 @@ public static class ErrorSuggestions
             {
                 err.MarkupLine($"  [blue]1.[/] {suggestion}");
             }
+            machineParts.Add("Suggestions: " + string.Join("; ", suggestions));
         }
+
+        MachineOutputScope.ReportError(string.Join(" ", machineParts));
 
         // Quick diagnostic commands
         err.WriteLine();

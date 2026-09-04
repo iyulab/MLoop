@@ -11,6 +11,15 @@ namespace MLoop.Tests.Diagnostics;
 /// error, since System.CommandLine's own parse errors did go to stderr.
 /// </para>
 /// </summary>
+/// <remarks>
+/// <see cref="ErrorConsole.Error(string)"/> unconditionally reports into
+/// <see cref="MachineOutputScope.Current"/> — a process-global static — so a test here that runs
+/// concurrently with a <see cref="MachineOutputScope"/>-owning test (a different default xUnit
+/// collection, absent this attribute) can report into that *other* test's <c>ErrorSink</c> instead
+/// of nobody's. Shares the "FileSystem" collection with <c>MachineOutputScopeTests</c> so xUnit
+/// serializes them against each other; the collection name is otherwise unrelated to this concern.
+/// </remarks>
+[Collection("FileSystem")]
 public class ErrorConsoleTests
 {
     /// <summary>
