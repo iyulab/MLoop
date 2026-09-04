@@ -181,8 +181,10 @@ public static class FeedbackCommand
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
         {
-            ErrorConsole.Error($"{ex.Message}");
-            AnsiConsole.MarkupLine("[grey]Make sure the prediction was logged with [blue]--log[/] option.[/]");
+            // The tip used to render via a bare AnsiConsole.MarkupLine after ErrorConsole.Error —
+            // stdout, not stderr, so a --json consumer got the cause and lost the remedy (the same
+            // channel defect ErrorConsole.Error(cause, tip) exists to close; see cycle-188).
+            ErrorConsole.Error(ex.Message, "Make sure the prediction was logged with --log.");
             return 1;
         }
         catch (Exception ex)
