@@ -88,7 +88,12 @@ public static class InitCommand
 
             if (projectName != "." && projectName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             {
-                ErrorConsole.Error("Project name contains invalid characters");
+                var offending = projectName
+                    .Where(c => Path.GetInvalidFileNameChars().Contains(c))
+                    .Distinct();
+                ErrorConsole.Error(
+                    "Project name contains invalid characters.",
+                    $"Remove: {string.Join(" ", offending.Select(c => $"'{c}'"))} — a project name becomes a directory name.");
                 return 1;
             }
 
@@ -110,8 +115,15 @@ public static class InitCommand
             // Validate model name
             if (!IsValidModelName(modelName))
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] Invalid model name '{modelName}'. " +
-                    "Model names must be lowercase alphanumeric with hyphens, 2-50 characters.");
+                // The old message named only the length/character rule, so a name rejected for
+                // being one of IsValidModelName's reserved words (e.g. "staging") was told a rule
+                // it already satisfied. It also bypassed ErrorConsole entirely — stdout, not
+                // stderr, and never reported to MachineOutputScope, so a --json consumer got no
+                // signal at all for this failure (worse than the wrong-channel class cycle-197
+                // fixed, which at least reported the cause).
+                ErrorConsole.Error(
+                    $"Invalid model name '{modelName}'.",
+                    "Model names must be 2-50 characters, lowercase alphanumeric with hyphens (e.g. my-model), and not a reserved name: staging, production, temp, cache, index, registry.");
                 return 1;
             }
 
