@@ -210,7 +210,7 @@ mloop predict <model-path> <data-file> [options]
 
 # Examples
 mloop predict                                          # Auto mode
-mloop predict models/staging/exp-003/model.zip data/test.csv
+mloop predict data/test.csv --model models/staging/exp-003/model.zip
 mloop predict --output results/forecast.csv
 mloop predict --unknown-strategy use-most-frequent     # Handle unseen categorical values
 ```
@@ -238,18 +238,16 @@ mloop list --all
 
 ### `mloop promote`
 
-Manually promote experiments to production or staging.
+Manually promote an experiment to production — the only promotion target; an unpromoted experiment
+already lives under `staging/`, so there is no separate "promote to staging" step.
 
 ```bash
-# Promote to production (default)
 mloop promote <experiment-id>
-
-# Promote to staging
-mloop promote <experiment-id> --to staging
 
 # Examples
 mloop promote exp-002              # Promote to production
-mloop promote exp-005 --to staging
+mloop promote --latest             # Auto-select the most recent experiment
+mloop promote --best               # Auto-select the best-scoring experiment
 ```
 
 ### `mloop info`
@@ -301,10 +299,10 @@ mloop info datasets/train.csv --name fraud-detector
 Evaluate model performance on test data.
 
 ```bash
-mloop evaluate <model-path> <test-data> <label-column>
+mloop evaluate <experiment-id> <test-data>
 
-# Example
-mloop evaluate models/production/current/model.zip datasets/test.csv price
+# Example — the label column comes from the experiment's own training config, not an argument
+mloop evaluate exp-003 datasets/test.csv
 
 # Output:
 # 📊 Evaluation Results
@@ -315,20 +313,17 @@ mloop evaluate models/production/current/model.zip datasets/test.csv price
 
 ### `mloop validate`
 
-Validate extensibility scripts (hooks and metrics).
+Validate `mloop.yaml` — task types, column types, metrics, and prep steps.
 
 ```bash
-# Validate all scripts
 mloop validate
 
-# Validate specific type
-mloop validate --type hooks
-mloop validate --type metrics
+# Detailed results
+mloop validate --verbose
 
 # Output:
-# ✅ Hook: PreTrainValidator (Valid)
-# ✅ Metric: CustomF1Score (Valid)
-# ❌ Hook: InvalidHook (Compilation failed)
+# ✅ Configuration is valid
+# ❌ models.default.task: Invalid task type 'regressoin'. Valid values: binary-classification, ...
 ```
 
 ### `mloop extensions`
@@ -722,7 +717,7 @@ my-ml-project/
 **Manual Override**:
 All paths can be explicitly specified when needed:
 ```bash
-mloop predict models/staging/exp-005/model.zip data/custom.csv --output results.csv
+mloop predict data/custom.csv --model models/staging/exp-005/model.zip --output results.csv
 ```
 
 ---
@@ -759,7 +754,7 @@ mloop list
 mloop promote exp-003
 
 # Validate
-mloop evaluate models/production/current/model.zip datasets/test.csv price
+mloop evaluate exp-003 datasets/test.csv
 
 # Deploy
 mloop predict
@@ -796,7 +791,7 @@ models/staging/*/metadata.json # Experiment metadata (small)
 mloop info datasets/train.csv
 
 # Use exact column name (case-sensitive)
-mloop train datasets/train.csv Price  # If column is 'Price'
+mloop train datasets/train.csv --label Price  # If column is 'Price'
 ```
 
 **Low model accuracy**:
