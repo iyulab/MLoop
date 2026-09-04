@@ -33,17 +33,25 @@ public static class EvaluateCommand
             Description = $"Model name (default: '{ConfigDefaults.DefaultModelName}')"
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the evaluation result as JSON to stdout instead of the human table. " +
+                          "Progress and narration go to stderr."
+        };
+
         var command = new Command("evaluate", "Evaluate model performance on test data");
         command.Arguments.Add(experimentArg);
         command.Arguments.Add(testDataArg);
         command.Options.Add(nameOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
             var experimentId = parseResult.GetValue(experimentArg);
             var testDataFile = parseResult.GetValue(testDataArg);
             var name = parseResult.GetValue(nameOption);
-            return ExecuteAsync(experimentId, testDataFile, name);
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteAsync(experimentId, testDataFile, name, json);
         });
 
         return command;
@@ -52,8 +60,18 @@ public static class EvaluateCommand
     private static async Task<int> ExecuteAsync(
         string? experimentId,
         string? testDataFile,
-        string? modelName)
+        string? modelName,
+        bool jsonOutput = false)
     {
+        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
+        // stderr — the same reassignment predict --json uses, which keeps every existing
+        // AnsiConsole call site in this method unchanged.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             // Initialize components
@@ -284,8 +302,10 @@ public static class EvaluateCommand
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();
 
+            var overfitting = DetectOverfitting(experimentData.Task ?? "", trainingMetrics, testMetrics!);
+
             // Overfitting warning
-            if (DetectOverfitting(experimentData.Task ?? "", trainingMetrics, testMetrics!))
+            if (overfitting)
             {
                 AnsiConsole.MarkupLine("[yellow]Warning:[/] Large metric difference detected between training and test. Model may be overfitting.");
                 AnsiConsole.WriteLine();
@@ -295,6 +315,24 @@ public static class EvaluateCommand
             AnsiConsole.MarkupLine($"[green]>[/] Experiment: [cyan]{resolvedExperimentId}[/]");
             AnsiConsole.MarkupLine("[green]>[/] Evaluation complete!");
             AnsiConsole.WriteLine();
+
+            if (jsonOutput)
+            {
+                var payload = new
+                {
+                    Model = resolvedModelName,
+                    ExperimentId = resolvedExperimentId,
+                    TestDataFile = resolvedTestDataFile,
+                    TrainingMetrics = trainingMetrics,
+                    TestMetrics = testMetrics,
+                    PossibleOverfitting = overfitting
+                };
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                }));
+            }
 
             return 0;
         }
