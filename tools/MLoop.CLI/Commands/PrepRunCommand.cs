@@ -167,13 +167,7 @@ public static class PrepRunCommand
             {
                 var step = modelDef.Prep[i];
                 var details = GetStepDetails(step);
-                // GetStepDetails renders raw column lists like "columns: [pH, Temp]" — Spectre
-                // treats table cell strings as markup by default, so an un-escaped "[...]" is
-                // parsed as a style tag ("Could not find color or style 'pH, Temp'") instead of
-                // displayed literally. Escape here, not inside GetStepDetails, so the unit-tested
-                // plain-text contract (asserted against directly, e.g. "columns: [pH, Temp]") stays
-                // unchanged — only the markup renderer needs the escaped form.
-                stepsTable.AddRow($"{i + 1}", $"[cyan]{step.Type}[/]", Markup.Escape(details));
+                stepsTable.AddRow($"{i + 1}", $"[cyan]{step.Type}[/]", details);
             }
 
             AnsiConsole.Write(stepsTable);
@@ -303,7 +297,11 @@ public static class PrepRunCommand
         if (step.Seed != 42 && step.Count > 0) // Only show non-default seed for sample steps
             parts.Add($"seed: {step.Seed}");
 
-        return parts.Count > 0 ? string.Join(", ", parts) : "[grey]-[/]";
+        // The joined parts are plain user data (column names etc.) and may contain raw "[...]"
+        // (e.g. "columns: [pH, Temp]") that Spectre would otherwise parse as a style tag when
+        // rendered — escape only this branch. The empty-case sentinel below is deliberately
+        // literal Spectre markup, not user data, so it stays un-escaped.
+        return parts.Count > 0 ? Markup.Escape(string.Join(", ", parts)) : "[grey]-[/]";
     }
 
     private class PrepRunLogger : ILogger
