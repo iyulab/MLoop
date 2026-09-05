@@ -19,20 +19,37 @@ public static class StatusCommand
             DefaultValueFactory = _ => false
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the project status as JSON to stdout instead of the human report. " +
+                          "Progress and narration go to stderr."
+        };
+
         var command = new Command("status", "Show project status at a glance");
         command.Options.Add(verboseOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
             var verbose = parseResult.GetValue(verboseOption);
-            return ExecuteAsync(verbose);
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteAsync(verbose, json);
         });
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(bool verbose)
+    private static async Task<int> ExecuteAsync(bool verbose, bool jsonOutput = false)
     {
+        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
+        // stderr — the same reassignment predict/evaluate/validate --json use, which keeps every
+        // existing AnsiConsole call site in this method unchanged.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             var ctx = CommandContext.TryCreate();
@@ -77,6 +94,7 @@ public static class StatusCommand
                 AnsiConsole.MarkupLine("[yellow]No models found.[/]");
                 AnsiConsole.MarkupLine("[grey]Get started with: [blue]mloop train <data.csv> <label-column>[/][/]");
                 AnsiConsole.WriteLine();
+                EmitJson(ctx.ProjectRoot, [], null, 0, 0, 0, 0, jsonOutput);
                 return 0;
             }
 
@@ -95,6 +113,9 @@ public static class StatusCommand
 
             var predictionsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "predictions");
 
+            // Collect model rows first so the same data feeds both the human table and --json —
+            // one computation path (BD-7: evaluate/validate pattern), no separate JSON re-derivation.
+            var modelRows = new List<ModelStatusRow>();
             foreach (var modelName in modelNames)
             {
                 var modelExperiments = experimentsList
@@ -106,35 +127,56 @@ public static class StatusCommand
                     e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase));
 
                 var hasProduction = productionDict.TryGetValue(modelName, out var prodExpId);
-                var productionStatus = hasProduction
-                    ? $"[green]✓[/] {prodExpId}"
-                    : "[grey]-[/]";
 
                 // F-28: honor metric direction so lower-is-better metrics (clustering/forecasting/
                 // recommendation) don't report the worst experiment as best.
                 var bestMetric = ExperimentRanking.SelectBest(modelExperiments)?.BestMetric;
 
-                var bestMetricStr = bestMetric.HasValue
-                    ? $"[yellow]{bestMetric.Value:F4}[/]"
+                var lastPredictionDisplay = GetLatestPrediction(predictionsDir, modelName);
+                var lastPredictionAtUtc = GetLatestPredictionTimestampUtc(predictionsDir, modelName);
+
+                modelRows.Add(new ModelStatusRow(
+                    modelName, total, completed, hasProduction,
+                    hasProduction ? prodExpId : null, bestMetric,
+                    lastPredictionDisplay, lastPredictionAtUtc));
+            }
+
+            foreach (var row in modelRows)
+            {
+                var productionStatus = row.HasProduction
+                    ? $"[green]✓[/] {row.ProductionExperimentId}"
                     : "[grey]-[/]";
 
-                var lastPrediction = GetLatestPrediction(predictionsDir, modelName);
+                var bestMetricStr = row.BestMetric.HasValue
+                    ? $"[yellow]{row.BestMetric.Value:F4}[/]"
+                    : "[grey]-[/]";
 
                 modelsTable.AddRow(
-                    $"[cyan]{modelName}[/]",
-                    total.ToString(),
-                    completed > 0 ? $"[green]{completed}[/]" : "[grey]0[/]",
+                    $"[cyan]{row.ModelName}[/]",
+                    row.TotalExperiments.ToString(),
+                    row.CompletedExperiments > 0 ? $"[green]{row.CompletedExperiments}[/]" : "[grey]0[/]",
                     productionStatus,
                     bestMetricStr,
-                    lastPrediction);
+                    row.LastPredictionDisplay);
             }
 
             AnsiConsole.Write(modelsTable);
             AnsiConsole.WriteLine();
 
             // Data Files Status
+            List<DataFileRow>? dataFileRows = null;
             if (verbose)
             {
+                var datasetsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "datasets");
+
+                dataFileRows =
+                [
+                    CheckDataFile(ctx, "Train", datasetsDir, "train.csv"),
+                    CheckDataFile(ctx, "Test", datasetsDir, "test.csv"),
+                    CheckDataFile(ctx, "Predict", datasetsDir, "predict.csv"),
+                    GetPredictionsDataFile(ctx, predictionsDir)
+                ];
+
                 var dataTable = new Table()
                     .Border(TableBorder.Rounded)
                     .BorderColor(Color.Grey)
@@ -144,33 +186,9 @@ public static class StatusCommand
                 dataTable.AddColumn(new TableColumn("[bold]Path[/]"));
                 dataTable.AddColumn(new TableColumn("[bold]Status[/]").Centered());
 
-                var datasetsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "datasets");
-
-                // Check for common data files
-                CheckDataFile(dataTable, ctx, "Train", datasetsDir, "train.csv");
-                CheckDataFile(dataTable, ctx, "Test", datasetsDir, "test.csv");
-                CheckDataFile(dataTable, ctx, "Predict", datasetsDir, "predict.csv");
-
-                // Check predictions directory
-                if (ctx.FileSystem.DirectoryExists(predictionsDir))
+                foreach (var row in dataFileRows)
                 {
-                    var predFiles = Directory.GetFiles(predictionsDir, "*.csv");
-                    if (predFiles.Length > 0)
-                    {
-                        var latestPred = predFiles
-                            .OrderByDescending(f => File.GetLastWriteTime(f))
-                            .First();
-                        var relativePath = Path.GetRelativePath(ctx.ProjectRoot, latestPred);
-                        dataTable.AddRow("Predictions", relativePath, "[green]✓[/]");
-                    }
-                    else
-                    {
-                        dataTable.AddRow("Predictions", "predictions/", "[grey]-[/]");
-                    }
-                }
-                else
-                {
-                    dataTable.AddRow("Predictions", "predictions/", "[grey]-[/]");
+                    dataTable.AddRow(row.Type, row.Path, row.Exists ? "[green]✓[/]" : "[grey]-[/]");
                 }
 
                 AnsiConsole.Write(dataTable);
@@ -218,6 +236,8 @@ public static class StatusCommand
             }
 
             AnsiConsole.WriteLine();
+            EmitJson(ctx.ProjectRoot, modelRows, dataFileRows, totalExperiments, completedExperiments,
+                failedExperiments, productionCount, jsonOutput);
             return 0;
         }
         catch (Exception ex)
@@ -226,6 +246,66 @@ public static class StatusCommand
             return 1;
         }
     }
+
+    /// <summary>
+    /// The <c>--json</c> counterpart to the human tables above — same data (<see cref="ModelStatusRow"/>/
+    /// <see cref="DataFileRow"/> collected once in <see cref="ExecuteAsync"/>), machine shape. No-op when
+    /// <paramref name="jsonOutput"/> is false so both exit points can call it unconditionally.
+    /// </summary>
+    private static void EmitJson(
+        string projectRoot,
+        List<ModelStatusRow> modelRows,
+        List<DataFileRow>? dataFileRows,
+        int totalExperiments,
+        int completedExperiments,
+        int failedExperiments,
+        int productionCount,
+        bool jsonOutput)
+    {
+        if (!jsonOutput)
+            return;
+
+        var payload = new
+        {
+            ProjectRoot = projectRoot,
+            Models = modelRows.Select(r => new
+            {
+                r.ModelName,
+                r.TotalExperiments,
+                r.CompletedExperiments,
+                r.HasProduction,
+                r.ProductionExperimentId,
+                r.BestMetric,
+                LastPredictionAt = r.LastPredictionAtUtc
+            }),
+            DataFiles = dataFileRows?.Select(d => new { d.Type, d.Path, d.Exists }),
+            Summary = new
+            {
+                ModelsCount = modelRows.Count,
+                TotalExperiments = totalExperiments,
+                CompletedExperiments = completedExperiments,
+                FailedExperiments = failedExperiments,
+                ProductionCount = productionCount
+            }
+        };
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        }));
+    }
+
+    internal record ModelStatusRow(
+        string ModelName,
+        int TotalExperiments,
+        int CompletedExperiments,
+        bool HasProduction,
+        string? ProductionExperimentId,
+        double? BestMetric,
+        string LastPredictionDisplay,
+        DateTime? LastPredictionAtUtc);
+
+    internal record DataFileRow(string Type, string Path, bool Exists);
 
     private static async Task ShowConfigSummaryAsync(CommandContext ctx)
     {
@@ -271,21 +351,11 @@ public static class StatusCommand
 
     internal static string GetLatestPrediction(string predictionsDir, string modelName)
     {
-        if (!Directory.Exists(predictionsDir))
+        var lastWrite = GetLatestPredictionTimestampUtc(predictionsDir, modelName);
+        if (lastWrite == null)
             return "[grey]-[/]";
 
-        var pattern = $"{modelName}-predictions-*.csv";
-        var files = Directory.GetFiles(predictionsDir, pattern);
-
-        if (files.Length == 0)
-            return "[grey]-[/]";
-
-        var latestFile = files
-            .OrderByDescending(f => File.GetLastWriteTimeUtc(f))
-            .First();
-
-        var lastWrite = File.GetLastWriteTimeUtc(latestFile);
-        var age = DateTime.UtcNow - lastWrite;
+        var age = DateTime.UtcNow - lastWrite.Value;
 
         if (age.TotalMinutes < 60)
             return $"[green]{(int)age.TotalMinutes}m ago[/]";
@@ -294,11 +364,30 @@ public static class StatusCommand
         if (age.TotalDays < 30)
             return $"[yellow]{(int)age.TotalDays}d ago[/]";
 
-        return $"[grey]{lastWrite:yyyy-MM-dd}[/]";
+        return $"[grey]{lastWrite.Value:yyyy-MM-dd}[/]";
     }
 
-    private static void CheckDataFile(
-        Table table,
+    /// <summary>Raw fact behind <see cref="GetLatestPrediction"/>'s markup — the <c>--json</c> shape
+    /// wants the timestamp itself, not a "15m ago" display string.</summary>
+    internal static DateTime? GetLatestPredictionTimestampUtc(string predictionsDir, string modelName)
+    {
+        if (!Directory.Exists(predictionsDir))
+            return null;
+
+        var pattern = $"{modelName}-predictions-*.csv";
+        var files = Directory.GetFiles(predictionsDir, pattern);
+
+        if (files.Length == 0)
+            return null;
+
+        var latestFile = files
+            .OrderByDescending(f => File.GetLastWriteTimeUtc(f))
+            .First();
+
+        return File.GetLastWriteTimeUtc(latestFile);
+    }
+
+    private static DataFileRow CheckDataFile(
         CommandContext ctx,
         string type,
         string directory,
@@ -307,13 +396,22 @@ public static class StatusCommand
         var filePath = ctx.FileSystem.CombinePath(directory, filename);
         var relativePath = $"datasets/{filename}";
 
-        if (ctx.FileSystem.FileExists(filePath))
-        {
-            table.AddRow(type, relativePath, "[green]✓[/]");
-        }
-        else
-        {
-            table.AddRow(type, relativePath, "[grey]-[/]");
-        }
+        return new DataFileRow(type, relativePath, ctx.FileSystem.FileExists(filePath));
+    }
+
+    private static DataFileRow GetPredictionsDataFile(CommandContext ctx, string predictionsDir)
+    {
+        if (!ctx.FileSystem.DirectoryExists(predictionsDir))
+            return new DataFileRow("Predictions", "predictions/", false);
+
+        var predFiles = Directory.GetFiles(predictionsDir, "*.csv");
+        if (predFiles.Length == 0)
+            return new DataFileRow("Predictions", "predictions/", false);
+
+        var latestPred = predFiles
+            .OrderByDescending(f => File.GetLastWriteTime(f))
+            .First();
+        var relativePath = Path.GetRelativePath(ctx.ProjectRoot, latestPred);
+        return new DataFileRow("Predictions", relativePath, true);
     }
 }
