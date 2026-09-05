@@ -96,6 +96,33 @@ public class InfoCommandTests : IDisposable
 
     #endregion
 
+    #region Double2DArrayJsonConverter
+
+    // System.Text.Json has no built-in support for double[,] (DataLens's CorrelationReport.Matrix
+    // and PcaReport.Loadings are both this shape), and NaN/Infinity cells are reachable on
+    // ordinary data (e.g. a zero-variance column makes Pearson correlation 0/0). This is a
+    // deterministic unit test of that converter alone, with no DataLens dependency.
+    [Fact]
+    public void Double2DArrayJsonConverter_NaNAndInfinityCells_SerializeAsQuotedStrings()
+    {
+        var matrix = new double[,] { { 1.0, double.NaN }, { double.PositiveInfinity, double.NegativeInfinity } };
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            Converters = { new InfoCommand.Double2DArrayJsonConverter() }
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(matrix, options);
+        using var doc = System.Text.Json.JsonDocument.Parse(json); // throws if invalid JSON
+
+        var root = doc.RootElement;
+        Assert.Equal(1.0, root[0][0].GetDouble());
+        Assert.Equal("NaN", root[0][1].GetString());
+        Assert.Equal("Infinity", root[1][0].GetString());
+        Assert.Equal("-Infinity", root[1][1].GetString());
+    }
+
+    #endregion
+
     #region CalculateColumnStats
 
     [Fact]
