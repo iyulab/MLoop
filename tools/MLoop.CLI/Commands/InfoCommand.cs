@@ -48,12 +48,19 @@ public static class InfoCommand
             DefaultValueFactory = _ => 50_000
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the profiling result as JSON to stdout instead of the human report. " +
+                          "Progress and narration go to stderr."
+        };
+
         var command = new Command("info", "Display dataset profiling information");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(labelOption);
         command.Options.Add(nameOption);
         command.Options.Add(analyzeOption);
         command.Options.Add(sampleSizeOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
@@ -62,7 +69,8 @@ public static class InfoCommand
             var modelName = parseResult.GetValue(nameOption)!;
             var analyze = parseResult.GetValue(analyzeOption);
             var sampleSize = parseResult.GetValue(sampleSizeOption);
-            return ExecuteAsync(dataFile, label, modelName, analyze, sampleSize);
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteAsync(dataFile, label, modelName, analyze, sampleSize, json);
         });
 
         return command;
@@ -70,8 +78,17 @@ public static class InfoCommand
 
     private static async Task<int> ExecuteAsync(
         string dataFile, string? labelOption, string modelName,
-        bool analyze, int sampleSize)
+        bool analyze, int sampleSize, bool jsonOutput = false)
     {
+        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
+        // stderr — the same reassignment status/validate/prep run --json use, which keeps every
+        // existing AnsiConsole call site in this command unchanged.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             // Initialize components
@@ -105,6 +122,8 @@ public static class InfoCommand
                 ErrorConsole.Error(
                     $"File not found: {resolvedDataFile}",
                     projectRoot != null ? ErrorConsole.PathNotFoundTip(projectRoot) : ErrorConsole.PathNotFoundTipCwd());
+                EmitJson(resolvedDataFile, null, null, analyze, null, null, null, null, null,
+                    [$"File not found: {resolvedDataFile}"], jsonOutput);
                 return 1;
             }
 
@@ -146,9 +165,7 @@ public static class InfoCommand
             }
 
             // Profile the dataset
-            await ProfileDatasetAsync(resolvedDataFile, labelColumn, analyze, sampleSize, columnOverrides);
-
-            return 0;
+            return await ProfileDatasetAsync(resolvedDataFile, labelColumn, labelSource, analyze, sampleSize, columnOverrides, jsonOutput);
         }
         catch (Exception ex)
         {
@@ -157,10 +174,11 @@ public static class InfoCommand
         }
     }
 
-    private static async Task ProfileDatasetAsync(
-        string dataFile, string? labelColumn, bool analyze, int sampleSize,
-        Dictionary<string, string>? columnOverrides = null)
+    private static async Task<int> ProfileDatasetAsync(
+        string dataFile, string? labelColumn, string? labelSource, bool analyze, int sampleSize,
+        Dictionary<string, string>? columnOverrides = null, bool jsonOutput = false)
     {
+        var reportedDataFile = dataFile;
         var mlContext = new MLContext(seed: 42);
 
         // Keep original path for DataLens (which requires .csv extension via CsvBridge)
@@ -207,7 +225,9 @@ public static class InfoCommand
         if (string.IsNullOrEmpty(firstLine))
         {
             AnsiConsole.MarkupLine("[red]File is empty[/]");
-            return;
+            EmitJson(reportedDataFile, labelColumn, labelSource, analyze, null, null, null, null, null,
+                ["File is empty"], jsonOutput);
+            return 1;
         }
 
         // 1. File Information
@@ -292,6 +312,21 @@ public static class InfoCommand
             kvp => kvp.Key,
             kvp => (kvp.Value.MissingCount, kvp.Value.UniqueCount));
 
+        // Same per-column classification InfoPresenter.DisplayColumnInfo just rendered, built again
+        // here as plain data for --json (the lambdas are pure and cheap per column; keeping the
+        // display call's own signature untouched avoids threading a view model through it).
+        var columnRows = new List<ColumnInfoRow>();
+        for (int ci = 0; ci < columns.Length; ci++)
+        {
+            var dataType = InferDisplayType(columns[ci], columnInference, ci, sampleLines);
+            var purpose = GetColumnPurpose(columns[ci], columnInference.ColumnInformation, dataType);
+            string? overrideType = columnOverrides != null && columnOverrides.TryGetValue(columns[ci], out var ot)
+                ? ot
+                : null;
+            var stat = columnStats.TryGetValue(columns[ci], out var s) ? s : new ColumnStatInfo(0, 0);
+            columnRows.Add(new ColumnInfoRow(columns[ci], dataType, purpose, overrideType, stat.MissingCount, stat.UniqueCount));
+        }
+
         // 5. Display enhanced stats (with profile data if available)
         InfoPresenter.DisplayDataStatistics(columns, statsDict, lineCount, profile);
 
@@ -313,13 +348,21 @@ public static class InfoCommand
         }
 
         // 8. Deep analysis (--analyze)
+        AnalysisResult? analysisResult = null;
         if (analyze)
         {
-            await RunDeepAnalysisAsync(dataLens, originalDataFile, labelColumn);
+            analysisResult = await RunDeepAnalysisAsync(dataLens, originalDataFile, labelColumn);
         }
+
+        EmitJson(
+            reportedDataFile, labelColumn, labelSource, analyze,
+            new FileInfoRow(Path.GetFileName(dataFile), fileInfo.Length, lineCount, fileInfo.LastWriteTime),
+            columnRows, labelDistribution, profile, analysisResult, null, jsonOutput);
+
+        return 0;
     }
 
-    private static async Task RunDeepAnalysisAsync(
+    private static async Task<AnalysisResult?> RunDeepAnalysisAsync(
         DataLensAnalyzer dataLens, string dataFile, string? labelColumn)
     {
         if (!dataLens.IsAvailable)
@@ -327,7 +370,7 @@ public static class InfoCommand
             AnsiConsole.MarkupLine("[yellow]Warning:[/] --analyze requires DataLens library. Skipping deep analysis.");
             AnsiConsole.MarkupLine("[grey]  Install DataLens NuGet package to enable.[/]");
             AnsiConsole.WriteLine();
-            return;
+            return null;
         }
 
         AnsiConsole.Write(new Rule("[blue]Deep Analysis (DataLens)[/]").LeftJustified());
@@ -352,7 +395,7 @@ public static class InfoCommand
         {
             AnsiConsole.MarkupLine("[yellow]Deep analysis returned no results.[/]");
             AnsiConsole.WriteLine();
-            return;
+            return null;
         }
 
         // a. Descriptive Statistics (quartiles, skewness, kurtosis)
@@ -384,30 +427,37 @@ public static class InfoCommand
         {
             InfoPresenter.DisplayOutlierSummary(result.Outliers);
         }
+
+        return result;
     }
 
+    /// <summary>
+    /// Plain semantic classification of a column's role (Label / Ignored / Text Feature / ...).
+    /// Display-only coloring is applied by <see cref="InfoPresenter"/>, not here, so this value is
+    /// also what the <c>--json</c> payload reports for each column.
+    /// </summary>
     internal static string GetColumnPurpose(string columnName, ColumnInformation columnInfo, string dataType)
     {
         if (columnInfo.LabelColumnName == columnName)
-            return "[green]Label[/]";
+            return "Label";
         if (columnInfo.IgnoredColumnNames?.Contains(columnName) == true)
-            return "[grey]Ignored[/]";
+            return "Ignored";
 
         // Use dataType (which incorporates text-likeness reclassification) over raw ML.NET inference
         if (dataType == "Text")
-            return "[blue]Text Feature[/]";
+            return "Text Feature";
         if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
-            return "[yellow]Categorical Feature[/]";
+            return "Categorical Feature";
         if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
-            return "[cyan]Numeric Feature[/]";
+            return "Numeric Feature";
         if (columnInfo.TextColumnNames?.Contains(columnName) == true)
-            return "[blue]Text Feature[/]";
+            return "Text Feature";
 
         return dataType switch
         {
-            "Numeric" or "Integer" => "[cyan]Numeric Feature[/]",
-            "Boolean" => "[cyan]Numeric Feature[/]",
-            _ => "[grey]Feature[/]"
+            "Numeric" or "Integer" => "Numeric Feature",
+            "Boolean" => "Numeric Feature",
+            _ => "Feature"
         };
     }
 
@@ -538,5 +588,93 @@ public static class InfoCommand
         }
 
         return (result, labelDistribution);
+    }
+
+    internal record FileInfoRow(string FileName, long SizeBytes, int LineCount, DateTime LastModified);
+
+    internal record ColumnInfoRow(
+        string Name, string DataType, string Purpose, string? Override, long MissingCount, int UniqueCount);
+
+    private static void EmitJson(
+        string dataFile,
+        string? labelColumn,
+        string? labelSource,
+        bool analyze,
+        FileInfoRow? fileInfo,
+        List<ColumnInfoRow>? columns,
+        Dictionary<string, int>? labelDistribution,
+        ProfileReport? profile,
+        AnalysisResult? analysis,
+        List<string>? errors,
+        bool jsonOutput)
+    {
+        if (!jsonOutput)
+            return;
+
+        var payload = new
+        {
+            DataFile = dataFile,
+            LabelColumn = labelColumn,
+            LabelSource = labelSource,
+            Analyze = analyze,
+            FileInfo = fileInfo,
+            Columns = columns,
+            LabelDistribution = labelDistribution,
+            Profile = profile,
+            Analysis = analysis,
+            Errors = errors
+        };
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            // Descriptive stats (e.g. kurtosis on a near-constant or tiny sample) and DataLens's own
+            // profile numerics can legitimately be NaN/Infinity — the default serializer throws
+            // rather than emit them. This writes them as the quoted strings "NaN"/"Infinity"/
+            // "-Infinity" instead, matching the values themselves being non-numbers.
+            NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals,
+            Converters = { new Double2DArrayJsonConverter() }
+        }));
+    }
+
+    /// <summary>
+    /// <c>System.Text.Json</c> has no built-in support for multi-dimensional arrays (thrown as
+    /// "Serialization and deserialization of 'System.Double[,]' instances is not supported") —
+    /// DataLens's <c>CorrelationReport.Matrix</c> and <c>PcaReport.Loadings</c> are both <see
+    /// cref="double"/>[,]. Writes rows as nested JSON arrays; a general fix rather than reshaping
+    /// each report type individually, since any future DataLens report field of this shape would
+    /// hit the same gap.
+    /// </summary>
+    internal sealed class Double2DArrayJsonConverter : System.Text.Json.Serialization.JsonConverter<double[,]>
+    {
+        public override double[,] Read(
+            ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+            => throw new NotSupportedException("info --json output is not deserialized back into this type.");
+
+        public override void Write(System.Text.Json.Utf8JsonWriter writer, double[,] value, System.Text.Json.JsonSerializerOptions options)
+        {
+            writer.WriteStartArray();
+            for (int r = 0; r < value.GetLength(0); r++)
+            {
+                writer.WriteStartArray();
+                for (int c = 0; c < value.GetLength(1); c++)
+                    WriteDouble(writer, value[r, c]);
+                writer.WriteEndArray();
+            }
+            writer.WriteEndArray();
+        }
+
+        // A zero-variance column makes Pearson correlation 0/0 = NaN, so this is reachable on
+        // ordinary data, not just constructed edge cases. Matches the scalar-double path elsewhere
+        // in this payload (JsonNumberHandling.AllowNamedFloatingPointLiterals), which writes these
+        // as the quoted strings "NaN"/"Infinity"/"-Infinity" — bare, unquoted NaN is not valid JSON.
+        private static void WriteDouble(System.Text.Json.Utf8JsonWriter writer, double value)
+        {
+            if (double.IsNaN(value)) writer.WriteStringValue("NaN");
+            else if (double.IsPositiveInfinity(value)) writer.WriteStringValue("Infinity");
+            else if (double.IsNegativeInfinity(value)) writer.WriteStringValue("-Infinity");
+            else writer.WriteNumberValue(value);
+        }
     }
 }

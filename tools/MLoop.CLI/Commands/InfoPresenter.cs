@@ -45,22 +45,38 @@ internal static class InfoPresenter
         {
             var dataType = inferDisplayType(columns[i], i);
             var purpose = getColumnPurpose(columns[i], dataType);
+            var displayDataType = dataType;
+            var displayPurpose = ColorizePurpose(purpose);
 
             // Show override indicator if column has a type override
             if (columnOverrides != null &&
                 columnOverrides.TryGetValue(columns[i], out var overrideType))
             {
-                dataType = $"[yellow]{Markup.Escape(overrideType)}[/] [grey](override)[/]";
+                displayDataType = $"[yellow]{Markup.Escape(overrideType)}[/] [grey](override)[/]";
                 if (overrideType.Equals("ignore", StringComparison.OrdinalIgnoreCase))
-                    purpose = "[grey]Excluded[/]";
+                    displayPurpose = "[grey]Excluded[/]";
             }
 
-            table.AddRow((i + 1).ToString(), columns[i], dataType, purpose);
+            table.AddRow((i + 1).ToString(), columns[i], displayDataType, displayPurpose);
         }
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
     }
+
+    /// <summary>
+    /// Applies the display-only color for a plain purpose value from
+    /// <see cref="InfoCommand.GetColumnPurpose"/> (e.g. "Numeric Feature" -> "[cyan]Numeric Feature[/]").
+    /// </summary>
+    private static string ColorizePurpose(string purpose) => purpose switch
+    {
+        "Label" => $"[green]{purpose}[/]",
+        "Ignored" => $"[grey]{purpose}[/]",
+        "Text Feature" => $"[blue]{purpose}[/]",
+        "Categorical Feature" => $"[yellow]{purpose}[/]",
+        "Numeric Feature" => $"[cyan]{purpose}[/]",
+        _ => $"[grey]{purpose}[/]"
+    };
 
     /// <summary>
     /// Displays the enhanced statistics table with DataLens profile data merged in.
