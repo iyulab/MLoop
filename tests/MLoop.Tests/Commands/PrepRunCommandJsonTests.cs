@@ -157,4 +157,29 @@ public class PrepRunCommandJsonTests : IDisposable
         Assert.Equal(3, doc.RootElement.GetProperty("rowsAfter").GetInt32());
         Assert.NotNull(doc.RootElement.GetProperty("output").GetString());
     }
+
+    // Regression guard: a step with no parameters (e.g. drop-duplicates) renders its Details cell
+    // via the empty-case sentinel in GetStepDetails, which is itself Spectre markup ("[grey]-[/]")
+    // rather than escapable user data. Escaping it at the wrong layer once made this literal text
+    // ("[grey]-[/]") leak into the rendered table instead of a grey dash.
+    [Fact]
+    public async Task PrepRun_Human_ParamlessStep_RendersDashNotLiteralMarkup()
+    {
+        WriteYaml("""
+            project: test
+            models:
+              default:
+                task: regression
+                label: b
+                prep:
+                  - type: drop-duplicates
+            """);
+        WriteTrainCsv();
+
+        var (exitCode, stdout) = await RunAsync("prep", "run", "--dry-run");
+
+        Assert.Equal(0, exitCode);
+        Assert.DoesNotContain("[grey]", stdout);
+        Assert.DoesNotContain("[/]", stdout);
+    }
 }
