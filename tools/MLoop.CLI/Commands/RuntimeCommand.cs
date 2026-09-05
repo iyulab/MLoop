@@ -20,9 +20,27 @@ public static class RuntimeCommand
 
     private static Command CreateListCommand()
     {
-        var command = new Command("list", "List available and installed runtimes");
-        command.SetAction(_ =>
+        var jsonOption = new Option<bool>("--json")
         {
+            Description = "Emit the runtime list as JSON to stdout instead of the human table. " +
+                          "Progress and narration go to stderr."
+        };
+
+        var command = new Command("list", "List available and installed runtimes");
+        command.Options.Add(jsonOption);
+
+        command.SetAction((parseResult) =>
+        {
+            var jsonOutput = parseResult.GetValue(jsonOption);
+
+            // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
+            // stderr — the same reassignment predict/evaluate/validate/status --json use.
+            if (jsonOutput)
+                AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+                {
+                    Out = new AnsiConsoleOutput(Console.Error)
+                });
+
             var manager = new RuntimeManager();
             var table = new Table();
             table.AddColumn("ID");
@@ -31,9 +49,14 @@ public static class RuntimeCommand
             table.AddColumn("Size");
             table.AddColumn("Tasks");
 
-            foreach (var runtime in RuntimeRegistry.All)
+            // Collect statuses once so the human table and --json consume the same data (BD-7:
+            // evaluate/validate/status pattern), rather than computing GetStatus twice.
+            var statuses = RuntimeRegistry.All
+                .Select(runtime => (Runtime: runtime, Status: manager.GetStatus(runtime)))
+                .ToList();
+
+            foreach (var (runtime, status) in statuses)
             {
-                var status = manager.GetStatus(runtime);
                 var statusText = status.Installed
                     ? "[green]Installed[/]"
                     : $"[dim]Not installed (~{runtime.ApproximateSizeMB}MB)[/]";
@@ -51,6 +74,28 @@ public static class RuntimeCommand
             }
 
             AnsiConsole.Write(table);
+
+            if (jsonOutput)
+            {
+                var payload = new
+                {
+                    Runtimes = statuses.Select(s => new
+                    {
+                        s.Runtime.Id,
+                        s.Runtime.DisplayName,
+                        s.Status.Installed,
+                        SizeBytes = s.Status.Installed ? s.Status.SizeBytes : (long?)null,
+                        s.Runtime.ApproximateSizeMB,
+                        s.Runtime.RequiredByTasks
+                    })
+                };
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                }));
+            }
+
             return Task.FromResult(0);
         });
 
