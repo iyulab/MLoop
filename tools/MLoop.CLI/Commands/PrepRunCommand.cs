@@ -36,11 +36,18 @@ public static class PrepRunCommand
             DefaultValueFactory = _ => false
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the pipeline result as JSON to stdout instead of the human report. " +
+                          "Progress and narration go to stderr."
+        };
+
         var command = new Command("run", "Execute YAML preprocessing pipeline");
         command.Options.Add(inputOption);
         command.Options.Add(outputOption);
         command.Options.Add(modelOption);
         command.Options.Add(dryRunOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
@@ -48,7 +55,8 @@ public static class PrepRunCommand
             var output = parseResult.GetValue(outputOption);
             var modelName = parseResult.GetValue(modelOption);
             var dryRun = parseResult.GetValue(dryRunOption);
-            return ExecuteAsync(input, output, modelName, dryRun);
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteAsync(input, output, modelName, dryRun, json);
         });
 
         return command;
@@ -58,8 +66,19 @@ public static class PrepRunCommand
         string? inputPath,
         string? outputPath,
         string? modelName,
-        bool dryRun)
+        bool dryRun,
+        bool jsonOutput = false)
     {
+        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
+        // stderr — the same reassignment predict/evaluate/validate/status/runtime-list --json use.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
+        var resolvedModelName = modelName ?? ConfigDefaults.DefaultModelName;
+
         try
         {
             var ctx = CommandContext.TryCreate();
@@ -69,11 +88,12 @@ public static class PrepRunCommand
             var config = await ctx.ConfigLoader.LoadUserConfigAsync();
 
             // Resolve model name
-            var resolvedModelName = modelName ?? ConfigDefaults.DefaultModelName;
             if (!config.Models.TryGetValue(resolvedModelName, out var modelDef))
             {
                 AnsiConsole.MarkupLine($"[red]Model '{resolvedModelName}' not found in mloop.yaml.[/]");
                 AnsiConsole.MarkupLine($"[grey]Available models: {string.Join(", ", config.Models.Keys)}[/]");
+                EmitJson(resolvedModelName, dryRun, null, null, null,
+                    [$"Model '{resolvedModelName}' not found in mloop.yaml"], null, null, jsonOutput);
                 return 1;
             }
 
@@ -85,8 +105,11 @@ public static class PrepRunCommand
                 AnsiConsole.MarkupLine("[grey]Example:[/]");
                 AnsiConsole.MarkupLine("[grey]  prep:[/]");
                 AnsiConsole.MarkupLine("[grey]    - type: fill-missing[/]");
-                AnsiConsole.MarkupLine("[grey]      columns: [pH, Temp][/]");
+                // Literal brackets in Spectre markup must be doubled ("[[" / "]]") or they're
+                // parsed as a style tag (same class of defect as the table-cell fix above).
+                AnsiConsole.MarkupLine("[grey]      columns: [[pH, Temp]][/]");
                 AnsiConsole.MarkupLine("[grey]      method: mean[/]");
+                EmitJson(resolvedModelName, dryRun, null, null, [], null, null, null, jsonOutput);
                 return 0;
             }
 
@@ -99,6 +122,7 @@ public static class PrepRunCommand
                 {
                     AnsiConsole.MarkupLine($"  [red]✗[/] {error}");
                 }
+                EmitJson(resolvedModelName, dryRun, null, null, modelDef.Prep, validationErrors, null, null, jsonOutput);
                 return 1;
             }
 
@@ -121,6 +145,8 @@ public static class PrepRunCommand
             {
                 AnsiConsole.MarkupLine($"[red]Input file not found: {resolvedInput}[/]");
                 AnsiConsole.MarkupLine("[grey]Use --input to specify the CSV file path.[/]");
+                EmitJson(resolvedModelName, dryRun, resolvedInput, null, modelDef.Prep,
+                    [$"Input file not found: {resolvedInput}"], null, null, jsonOutput);
                 return 1;
             }
 
@@ -141,7 +167,13 @@ public static class PrepRunCommand
             {
                 var step = modelDef.Prep[i];
                 var details = GetStepDetails(step);
-                stepsTable.AddRow($"{i + 1}", $"[cyan]{step.Type}[/]", details);
+                // GetStepDetails renders raw column lists like "columns: [pH, Temp]" — Spectre
+                // treats table cell strings as markup by default, so an un-escaped "[...]" is
+                // parsed as a style tag ("Could not find color or style 'pH, Temp'") instead of
+                // displayed literally. Escape here, not inside GetStepDetails, so the unit-tested
+                // plain-text contract (asserted against directly, e.g. "columns: [pH, Temp]") stays
+                // unchanged — only the markup renderer needs the escaped form.
+                stepsTable.AddRow($"{i + 1}", $"[cyan]{step.Type}[/]", Markup.Escape(details));
             }
 
             AnsiConsole.Write(stepsTable);
@@ -153,6 +185,7 @@ public static class PrepRunCommand
             {
                 AnsiConsole.MarkupLine("[yellow]Dry run mode — no changes made.[/]");
                 AnsiConsole.WriteLine();
+                EmitJson(resolvedModelName, dryRun, resolvedInput, null, modelDef.Prep, null, null, null, jsonOutput);
                 return 0;
             }
 
@@ -189,6 +222,8 @@ public static class PrepRunCommand
             AnsiConsole.MarkupLine($"[grey]  Output: {resolvedOutput}[/]");
             AnsiConsole.WriteLine();
 
+            EmitJson(resolvedModelName, dryRun, resolvedInput, resolvedOutput, modelDef.Prep, null,
+                inputLines - 1, outputLines - 1, jsonOutput);
             return 0;
         }
         catch (Exception ex)
@@ -196,6 +231,47 @@ public static class PrepRunCommand
             ErrorSuggestions.DisplayError(ex, "preprocessing");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// The <c>--json</c> counterpart to the human report above — same data (the resolved paths and
+    /// the model's own <see cref="PrepStep"/> list, already fully structured — no separate view model
+    /// needed), machine shape. No-op when <paramref name="jsonOutput"/> is false so every exit point
+    /// can call it unconditionally rather than repeating the branch (the <c>validate --json</c>
+    /// pattern). <paramref name="errors"/> covers every failure exit (model/steps/input not found,
+    /// validation failures) with one shape rather than a separate one per case.
+    /// </summary>
+    private static void EmitJson(
+        string modelName,
+        bool dryRun,
+        string? input,
+        string? output,
+        List<PrepStep>? steps,
+        List<string>? errors,
+        int? rowsBefore,
+        int? rowsAfter,
+        bool jsonOutput)
+    {
+        if (!jsonOutput)
+            return;
+
+        var payload = new
+        {
+            Model = modelName,
+            DryRun = dryRun,
+            Input = input,
+            Output = output,
+            Steps = steps,
+            Errors = errors,
+            RowsBefore = rowsBefore,
+            RowsAfter = rowsAfter
+        };
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        }));
     }
 
     internal static string GetStepDetails(PrepStep step)
