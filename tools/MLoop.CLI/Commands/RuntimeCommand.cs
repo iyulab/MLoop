@@ -49,8 +49,8 @@ public static class RuntimeCommand
             table.AddColumn("Size");
             table.AddColumn("Tasks");
 
-            // Collect statuses once so the human table and --json consume the same data (BD-7:
-            // evaluate/validate/status pattern), rather than computing GetStatus twice.
+            // Collect statuses once so the human table and --json consume the same data, rather
+            // than computing GetStatus twice.
             var statuses = RuntimeRegistry.All
                 .Select(runtime => (Runtime: runtime, Status: manager.GetStatus(runtime)))
                 .ToList();

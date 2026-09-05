@@ -4,7 +4,7 @@ using Spectre.Console;
 namespace MLoop.Tests.Commands;
 
 /// <summary>
-/// BD-7: <c>runtime list</c> already collects <c>RuntimeStatus</c> per runtime before rendering
+/// <c>runtime list</c> already collects <c>RuntimeStatus</c> per runtime before rendering
 /// (no project context needed — it reads <c>RuntimeRegistry.All</c> directly), so a
 /// <c>--json</c> branch serializes the same statuses instead of re-deriving them. Exercises the
 /// real command tree (<see cref="Program.BuildRootCommand"/>), same approach as

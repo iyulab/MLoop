@@ -114,7 +114,7 @@ public static class StatusCommand
             var predictionsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "predictions");
 
             // Collect model rows first so the same data feeds both the human table and --json —
-            // one computation path (BD-7: evaluate/validate pattern), no separate JSON re-derivation.
+            // one computation path, no separate JSON re-derivation.
             var modelRows = new List<ModelStatusRow>();
             foreach (var modelName in modelNames)
             {

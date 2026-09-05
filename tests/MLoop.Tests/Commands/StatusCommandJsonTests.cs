@@ -8,7 +8,7 @@ using Spectre.Console;
 namespace MLoop.Tests.Commands;
 
 /// <summary>
-/// BD-7: <c>status</c> now collects <c>ModelStatusRow</c>/<c>DataFileRow</c> once before rendering
+/// <c>status</c> now collects <c>ModelStatusRow</c>/<c>DataFileRow</c> once before rendering
 /// (mirroring the <c>validate</c>/<c>evaluate --json</c> pattern) — a <c>--json</c> branch serializes
 /// the same rows instead of re-deriving them. Exercises the real command tree
 /// (<see cref="Program.BuildRootCommand"/>), same approach as <c>ListCommandTrialsTests</c>.

@@ -5,7 +5,7 @@ using Spectre.Console;
 namespace MLoop.Tests.Commands;
 
 /// <summary>
-/// BD-7: <c>validate</c> collects its findings as <c>List&lt;ValidationError/Warning&gt;</c> before
+/// <c>validate</c> collects its findings as <c>List&lt;ValidationError/Warning&gt;</c> before
 /// rendering them, so a <c>--json</c> branch just serializes the same data instead of the human
 /// report — no separate computation path to drift from it. Exercises the real command tree
 /// (<see cref="Program.BuildRootCommand"/>), same approach as <c>ListCommandTrialsTests</c>.

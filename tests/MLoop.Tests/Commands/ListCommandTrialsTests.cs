@@ -8,7 +8,7 @@ using Spectre.Console;
 namespace MLoop.Tests.Commands;
 
 /// <summary>
-/// BD-4: <c>leaderboard.json</c> (a search's ranked trial history) has existed since 0.30.0 with no
+/// <c>leaderboard.json</c> (a search's ranked trial history) has existed since 0.30.0 with no
 /// CLI surface — a consumer had to read the file directly. These exercise <c>mloop list --trials</c>
 /// through the real command tree (<see cref="Program.BuildRootCommand"/>), the same path an end-to-end
 /// smoke test (`mloop train --task clustering` then `mloop list --trials exp-001`) verified manually.
