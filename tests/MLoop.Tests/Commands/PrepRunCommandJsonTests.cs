@@ -5,7 +5,7 @@ using Spectre.Console;
 namespace MLoop.Tests.Commands;
 
 /// <summary>
-/// BD-7: <c>prep run</c> already has its own <c>PrepStep</c> list from <c>mloop.yaml</c> — a
+/// <c>prep run</c> already has its own <c>PrepStep</c> list from <c>mloop.yaml</c> — a
 /// <c>--json</c> branch serializes that list directly (no separate view model) plus the resolved
 /// paths and row counts. Exercises the real command tree (<see cref="Program.BuildRootCommand"/>),
 /// same approach as the other <c>--json</c> command tests.

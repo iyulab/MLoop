@@ -1,7 +1,7 @@
 using Xunit;
 
-// ISSUE-mloop-20260905-json-test-console-capture-race: System.Console.Out and
-// Spectre.Console.AnsiConsole.Console are process-wide statics. `[Collection("FileSystem")]`
+// System.Console.Out and Spectre.Console.AnsiConsole.Console are process-wide statics.
+// `[Collection("FileSystem")]`
 // only guarantees no two tests *within* that collection run concurrently — it does nothing to
 // stop an unrelated test in a different (default) collection from calling into production code
 // that writes to AnsiConsole/Console mid-await, corrupting whichever StringWriter a

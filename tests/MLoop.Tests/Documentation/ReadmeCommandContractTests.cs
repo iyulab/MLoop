@@ -10,21 +10,21 @@ namespace MLoop.Tests.Documentation;
 /// </summary>
 /// <remarks>
 /// <para>
-/// BD-2: a new user's first quickstart command used to fail outright — README's representative
-/// train example used a positional label argument the CLI had never accepted (README 6 sites,
-/// docs/GUIDE.md 12 sites — `ISSUE-mloop-20260721-readme-quickstart-contract-broken`, fixed
-/// cycle-186). The fix was document-only, and while fixing it a *newly added* example reproduced
-/// the same defect immediately — proving a one-time correction doesn't stay correct. This is the
-/// mechanical device the issue's own resolution asked for: every example in both files is
-/// re-checked against the actual argument grammar on every build, not just re-read by a human once.
+/// A new user's first quickstart command used to fail outright — README's representative train
+/// example used a positional label argument the CLI had never accepted, across multiple sites in
+/// both README.md and docs/GUIDE.md. The fix was document-only, and a *newly added* example
+/// reproduced the same defect immediately afterward — proving a one-time correction doesn't stay
+/// correct. This test is the mechanical safeguard that gap called for: every example in both files
+/// is re-checked against the actual argument grammar on every build, not just re-read by a human
+/// once.
 /// </para>
 /// <para>
 /// This checks the <b>syntax contract</b> only — that System.CommandLine accepts the tokens
 /// (right option names, right arity, valid enum-like choices where the parser itself validates
 /// them). It cannot check that a referenced file exists or that training actually succeeds; that
-/// is what the quickstart's own re-run (recorded in the issue) verifies by hand. Catching "this
-/// option doesn't exist" / "this used to be positional and no longer is" automatically is the gap
-/// that mattered — the original defect was exactly that class, not a missing-file error.
+/// still requires running the quickstart by hand. Catching "this option doesn't exist" / "this used
+/// to be positional and no longer is" automatically is the gap that mattered — the original defect
+/// was exactly that class, not a missing-file error.
 /// </para>
 /// <para>
 /// Lines that are usage-grammar summaries rather than literal examples — the CLI Commands
@@ -66,12 +66,11 @@ public class ReadmeCommandContractTests
     [Fact]
     public void The_check_actually_catches_a_broken_example()
     {
-        // Self-check: the original defect (ISSUE-mloop-20260721-readme-quickstart-contract-broken)
-        // was README showing `mloop train datasets/train.csv price --time 15` — a second
-        // positional token where --label is the only way to pass a label. If this ever parses
-        // clean, Example_parses_without_error above would rubber-stamp any doc regardless of what
-        // it says, so this pins the check has teeth against the exact class of bug it exists to
-        // catch.
+        // Self-check: the original defect was README showing
+        // `mloop train datasets/train.csv price --time 15` — a second positional token where
+        // --label is the only way to pass a label. If this ever parses clean, Example_parses_
+        // without_error above would rubber-stamp any doc regardless of what it says, so this pins
+        // the check has teeth against the exact class of bug it exists to catch.
         var args = Tokenize("mloop train datasets/train.csv price --time 15").Skip(1).ToArray();
         var result = Program.BuildRootCommand().Parse(args);
 

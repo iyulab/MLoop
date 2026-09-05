@@ -422,7 +422,7 @@ public class ModelRegistryTests : IDisposable
     [Fact]
     public async Task ShouldPromoteAsync_RSquaredExactlyZero_ReturnsFalse()
     {
-        // BD-15: the gate compared with a strict `<`, so R² == 0.0 — exactly as good as always
+        // The gate used to compare with a strict `<`, so R² == 0.0 — exactly as good as always
         // predicting the mean, i.e. a model that learned nothing — sat exactly on the floor and
         // was treated as passing it. "Must be better than mean prediction" (MetricPolicy's own
         // comment on this threshold) means strictly better, so equality must be rejected too.
