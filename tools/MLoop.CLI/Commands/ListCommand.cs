@@ -75,9 +75,12 @@ public static class ListCommand
 
             if (!ctx.ExperimentStore.ExperimentExists(resolvedModelName, experimentId))
             {
-                ErrorConsole.Error(
-                    $"Experiment not found: {resolvedModelName}/{experimentId}",
-                    "Run mloop list --name " + resolvedModelName + " to see available experiment IDs.");
+                var tip = "Run mloop list --name " + resolvedModelName + " to see available experiment IDs.";
+                ErrorConsole.Error($"Experiment not found: {resolvedModelName}/{experimentId}", tip);
+                // An error exit is still an exit point: under --json the consumer gets a payload to
+                // parse rather than an empty stdout, which fails JSON.parse exactly as prose would.
+                if (jsonOutput)
+                    JsonError.EmitMarkup($"Experiment not found: {resolvedModelName}/{experimentId}", tip);
                 return 1;
             }
 
@@ -86,10 +89,11 @@ public static class ListCommand
 
             if (!ctx.FileSystem.FileExists(leaderboardPath))
             {
-                ErrorConsole.Error(
-                    $"No trial leaderboard for experiment '{experimentId}'.",
-                    "Only tasks AutoML searches over (e.g. binary/multiclass/regression, or a hand-rolled " +
-                    "sweep like clustering's K) produce one; a single fixed-pipeline run has nothing to rank.");
+                var tip = "Only tasks AutoML searches over (e.g. binary/multiclass/regression, or a hand-rolled " +
+                          "sweep like clustering's K) produce one; a single fixed-pipeline run has nothing to rank.";
+                ErrorConsole.Error($"No trial leaderboard for experiment '{experimentId}'.", tip);
+                if (jsonOutput)
+                    JsonError.EmitMarkup($"No trial leaderboard for experiment '{experimentId}'.", tip);
                 return 1;
             }
 
