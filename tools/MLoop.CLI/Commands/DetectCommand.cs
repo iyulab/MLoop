@@ -298,7 +298,7 @@ public static class DetectCommand
         // interpolated as markup: it carries user data (file paths, column names) that may contain
         // brackets Spectre would otherwise try to parse.
         if (jsonOutput)
-            Console.WriteLine(JsonSerializer.Serialize(new { error = message }));
+            JsonError.Emit(message);
 
         ErrorConsole.Error(Markup.Escape(message));
     }

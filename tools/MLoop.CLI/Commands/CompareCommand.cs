@@ -86,6 +86,14 @@ public static class CompareCommand
         if (metricsFile != null)
             return await ExecuteProvidedStateAsync(metricsFile, sortMetric);
 
+        // In --json mode stdout must be pure JSON, so route human-facing Spectre output to stderr —
+        // the same reassignment the other structured-output commands use.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             var ctx = CommandContext.TryCreate();
@@ -93,6 +101,11 @@ public static class CompareCommand
 
             // Determine which experiments to compare
             List<ExperimentData> experimentsToCompare;
+
+            // Requested IDs that failed to load. The human path says so in a warning line; the JSON
+            // path reports them as `excluded` entries, so a consumer can tell "this one lost" from
+            // "this one was never in the running".
+            var notFound = new List<string>();
 
             // Support comma-separated experiment IDs (e.g., "exp-001,exp-002")
             experimentIds = experimentIds
@@ -115,6 +128,7 @@ public static class CompareCommand
                     }
                     catch (FileNotFoundException)
                     {
+                        notFound.Add(expId);
                         AnsiConsole.MarkupLine($"[yellow]Warning:[/] Experiment '{expId}' not found for model '{resolvedModelName}'");
                     }
                 }
@@ -124,9 +138,11 @@ public static class CompareCommand
                 // Compare all experiments for the model
                 if (string.IsNullOrWhiteSpace(modelName))
                 {
-                    ErrorConsole.Error(
-                        "Model name is required when not specifying experiment IDs.",
-                        "Usage: mloop compare exp-001 exp-002, or mloop compare --name <model>");
+                    const string cause = "Model name is required when not specifying experiment IDs.";
+                    const string tip = "Usage: mloop compare exp-001 exp-002, or mloop compare --name <model>";
+                    ErrorConsole.Error(cause, tip);
+                    if (jsonOutput)
+                        JsonError.EmitMarkup(cause, tip);
                     return 1;
                 }
 
@@ -149,6 +165,16 @@ public static class CompareCommand
                     var exp = await ctx.ExperimentStore.LoadAsync(resolvedModelName, summary.ExperimentId, CancellationToken.None);
                     experimentsToCompare.Add(exp);
                 }
+            }
+
+            if (jsonOutput)
+            {
+                var production = await ctx.ModelRegistry.ListAsync(null, CancellationToken.None);
+                return EmitLocalComparisonJson(
+                    experimentsToCompare,
+                    notFound,
+                    production.ToDictionary(m => m.ModelName, m => m.ExperimentId),
+                    sortMetric);
             }
 
             if (experimentsToCompare.Count == 0)
@@ -341,8 +367,118 @@ public static class CompareCommand
         catch (Exception ex)
         {
             ErrorSuggestions.DisplayError(ex, "compare");
+            if (jsonOutput)
+                JsonError.Emit(ex.Message);
             return 1;
         }
+    }
+
+    /// <summary>
+    /// The <c>--json</c> rendering of a local-state comparison.
+    /// <para>
+    /// The decision half — which metric, which direction, who won, was it a tie, who was left out —
+    /// carries the <b>same keys as <see cref="ProvidedCompareResult"/></b> and is computed by the same
+    /// function, so a consumer that already reads <c>--metrics-file</c> output reads this without
+    /// branching on which mode produced it. What local state adds is enrichment (<c>experiments</c>:
+    /// task, status, timestamp, config, every metric, production pointer), not a second vocabulary for
+    /// the same decision.
+    /// </para>
+    /// <para>
+    /// The two count guards the human path stops at ("no experiments", "need at least 2") are not
+    /// error states, so this reports them as data rather than repeating the prose: zero experiments
+    /// yields an empty ranking with a null winner, and one yields a ranking of one — the reading
+    /// <see cref="CompareProvidedMetrics"/> already gives a single candidate. Exit code is unchanged
+    /// from the human path in both cases.
+    /// </para>
+    /// </summary>
+    private static int EmitLocalComparisonJson(
+        List<ExperimentData> experiments,
+        IReadOnlyList<string> notFound,
+        Dictionary<string, string> productionByModel,
+        string? sortMetric)
+    {
+        var excluded = notFound
+            .Select(id => new ProvidedExcludedEntry(id, "not-found"))
+            .ToList();
+
+        var allMetricNames = experiments
+            .Where(e => e.Metrics != null)
+            .SelectMany(e => e.Metrics!.Keys)
+            .Distinct()
+            .OrderBy(m => m)
+            .ToList();
+
+        string? metric = null;
+        string? direction = null;
+        string? directionSource = null;
+        string? best = null;
+        var tie = false;
+        IReadOnlyList<ProvidedRankEntry> ranking = [];
+
+        if (experiments.Count > 0 && allMetricNames.Count > 0)
+        {
+            // Resolve the primary metric exactly as the human path does (--metric, else the metric the
+            // search optimized, else the first available) and hand it over explicitly: passing a
+            // resolved key keeps the provided-state default policy — which requires one metric common
+            // to every candidate — out of a local comparison, where a partially-populated metric set
+            // is ordinary.
+            var requested = !string.IsNullOrEmpty(sortMetric)
+                ? sortMetric
+                : experiments
+                    .Select(e => e.Config.Metric)
+                    .FirstOrDefault(m => !string.IsNullOrEmpty(m));
+
+            var primaryMetric = (requested != null
+                    ? MetricPolicy.ResolveMetricKey(requested, allMetricNames)
+                    : null)
+                ?? allMetricNames.First();
+
+            var decision = CompareProvidedMetrics(
+                experiments
+                    .Select(e => new ProvidedCandidate(e.ExperimentId, e.Metrics ?? []))
+                    .ToList(),
+                primaryMetric);
+
+            metric = decision.Metric;
+            direction = decision.Direction;
+            directionSource = decision.DirectionSource;
+            best = decision.Best;
+            tie = decision.Tie;
+            ranking = decision.Ranking;
+            // An experiment that loaded but never recorded the primary metric is excluded for a
+            // different reason than one that never loaded — both are named, neither vanishes.
+            excluded.AddRange(decision.Excluded);
+        }
+
+        var payload = new
+        {
+            metric,
+            direction,
+            directionSource,
+            best,
+            tie,
+            ranking,
+            excluded,
+            experiments = experiments
+                .Select(e => new
+                {
+                    id = e.ExperimentId,
+                    model = e.ModelName,
+                    task = e.Task,
+                    status = e.Status,
+                    timestamp = e.Timestamp,
+                    timeLimitSeconds = e.Config.TimeLimitSeconds,
+                    labelColumn = e.Config.LabelColumn,
+                    bestTrainer = e.Result?.BestTrainer,
+                    isProduction = productionByModel.TryGetValue(e.ModelName, out var prodExpId)
+                        && prodExpId == e.ExperimentId,
+                    metrics = e.Metrics ?? []
+                })
+                .ToList()
+        };
+
+        Console.WriteLine(JsonSerializer.Serialize(payload, ProvidedJsonOptions));
+        return 0;
     }
 
     // ---- Provided-state comparison (no local .mloop/) ----
@@ -474,7 +610,7 @@ public static class CompareCommand
             }
             else
             {
-                Console.WriteLine(JsonSerializer.Serialize(new { error = $"Metrics file not found: {metricsFile}" }));
+                JsonError.Emit($"Metrics file not found: {metricsFile}");
                 return 1;
             }
 
@@ -484,7 +620,7 @@ public static class CompareCommand
         }
         catch (Exception ex) when (ex is ArgumentException or JsonException or IOException)
         {
-            Console.WriteLine(JsonSerializer.Serialize(new { error = ex.Message }));
+            JsonError.Emit(ex.Message);
             return 1;
         }
     }
