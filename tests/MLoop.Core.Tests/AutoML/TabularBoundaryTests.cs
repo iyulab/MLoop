@@ -7,7 +7,7 @@ using Xunit;
 namespace MLoop.Core.Tests.AutoML;
 
 /// <summary>
-/// Durable regression guard for upstream-007 stage 2 (tabular/DL assembly split): asserts
+/// Durable regression guard for the tabular/DL assembly split: asserts
 /// <c>MLoop.Core</c>'s compile-time referenced assemblies never re-include the Torch/Vision
 /// deep-learning packages. If someone re-adds a
 /// <c>&lt;PackageReference Include="Microsoft.ML.TorchSharp" /&gt;</c> (or Vision) to

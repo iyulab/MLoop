@@ -7,12 +7,18 @@ using MLoop.Core.Models;
 namespace MLoop.Core.Tests.AutoML;
 
 /// <summary>
-/// Covers the two actionable-throw paths added in upstream-007 stage 2 (commit 716bae2) for
-/// when a deep-learning task is requested but <see cref="DeepLearningRegistry"/> has no module
-/// registered. <c>MLoop.Core.Tests</c> deliberately never calls <c>DeepLearningRegistry.Register</c>
-/// (see <see cref="DeepLearningRegistryTests"/>'s isolation note), so <c>DeepLearningRegistry.Current</c>
-/// is null for the whole assembly and both throws below reflect real, unmodified process state.
+/// Covers the two actionable-throw paths taken when a deep-learning task is requested but
+/// <see cref="DeepLearningRegistry"/> has no module registered.
+/// <para>
+/// This file's own doc used to claim the assembly never registers a module, and to rest the
+/// isolation on that claim — while the tests below register one and restore it in a finally. The
+/// claim was therefore false, and with the runner executing test classes in parallel the restore
+/// could land between another class's register and its assertion. Both classes now share
+/// <see cref="DeepLearningRegistryTests.RegistryCollection"/>, which orders them; the restore in
+/// each finally is what the next test then depends on.
+/// </para>
 /// </summary>
+[Collection(DeepLearningRegistryTests.RegistryCollection)]
 public class DeepLearningThrowPathTests
 {
     // ---- DataLoaderFactory.Create -------------------------------------------------------

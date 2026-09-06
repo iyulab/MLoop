@@ -38,6 +38,7 @@ public class ReadmeCommandContractTests
 {
     private static readonly string RepoRoot = FindRepoRoot();
     private static readonly string[] DocFiles = { "README.md", "docs/GUIDE.md" };
+    private const string CommandTableHeading = "### Every command";
 
     public static IEnumerable<object[]> ConcreteExampleCommands() =>
         DocFiles
@@ -95,7 +96,17 @@ public class ReadmeCommandContractTests
     /// <summary>
     /// A line is a literal, runnable example iff it starts a line with <c>mloop </c> and contains
     /// neither <c>&lt;</c> nor <c>[</c> — the two markers these docs use for placeholder/optional
-    /// notation in their grammar-summary sections. Trailing <c># comment</c> text is stripped.
+    /// notation in their grammar-summary sections. Trailing <c># comment</c> text is stripped, as is
+    /// any shell redirection or pipe: <c>mloop list --json &gt; result.json</c> shows a reader how
+    /// the output is meant to be consumed, and the part after the redirection belongs to the shell,
+    /// not to this CLI's grammar.
+    /// <para>
+    /// An example whose comment opens with <c>Error:</c> is <b>documenting a failure</b> — what the
+    /// CLI rejects and what it says — so it is excluded rather than asserted to parse. The check
+    /// exists to keep a doc's promises true, and for these lines the promise is that they fail; a
+    /// reader copying one is meant to see the error. Excluding them is what lets the docs show an
+    /// error contract at all instead of only the happy path.
+    /// </para>
     /// </summary>
     internal static List<string> ExtractCommands(IEnumerable<string> lines)
     {
@@ -103,10 +114,10 @@ public class ReadmeCommandContractTests
         foreach (var raw in lines)
         {
             var line = raw.Trim();
-            if (!line.StartsWith("mloop "))
+            if (!line.StartsWith("mloop ") || DocumentsAFailure(line))
                 continue;
 
-            var withoutComment = StripTrailingComment(line);
+            var withoutComment = StripShellPlumbing(StripTrailingComment(line));
             if (withoutComment.Contains('<') || withoutComment.Contains('['))
                 continue;
 
@@ -115,10 +126,41 @@ public class ReadmeCommandContractTests
         return commands;
     }
 
+    private static bool DocumentsAFailure(string line)
+    {
+        var hashIndex = line.IndexOf('#');
+        return hashIndex >= 0
+            && line[(hashIndex + 1)..].TrimStart().StartsWith("Error:", StringComparison.Ordinal);
+    }
+
     private static string StripTrailingComment(string line)
     {
         var hashIndex = line.IndexOf('#');
         return (hashIndex < 0 ? line : line[..hashIndex]).TrimEnd();
+    }
+
+    /// <summary>
+    /// Cuts the line at the first shell redirection or pipe. Checked outside quotes so a value that
+    /// legitimately contains one of these characters is left intact.
+    /// </summary>
+    private static string StripShellPlumbing(string line)
+    {
+        char? quote = null;
+        for (var i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+
+            if (quote is char q)
+            {
+                if (c == q) quote = null;
+                continue;
+            }
+
+            if (c is '\'' or '"') { quote = c; continue; }
+            if (c is '>' or '|') return line[..i].TrimEnd();
+        }
+
+        return line;
     }
 
     /// <summary>
@@ -165,6 +207,40 @@ public class ReadmeCommandContractTests
             tokens.Add(current.ToString());
 
         return tokens;
+    }
+
+    [Fact]
+    public void The_command_table_lists_exactly_the_commands_that_exist()
+    {
+        // Eight commands were absent from every user-facing doc — among them `status` and `logs`,
+        // which the CLI's own release notes advertise as machine-readable. A reader had no way to
+        // learn they exist. A hand-kept list drifts the moment a command is added, which is how the
+        // gap opened, so the list is pinned to the tree that actually answers `mloop --help`.
+        // Bounded to the table's own section: README has other tables whose first cell is also
+        // backticked, and a scan wide enough to catch them would report exit codes as commands.
+        var documented = File.ReadAllLines(Path.Combine(RepoRoot, "README.md"))
+            .SkipWhile(line => !line.StartsWith(CommandTableHeading, StringComparison.Ordinal))
+            .Skip(1)
+            .TakeWhile(line => !line.StartsWith("#", StringComparison.Ordinal))
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("| `", StringComparison.Ordinal))
+            .Select(line => line[3..line.IndexOf('`', 3)])
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.True(documented.Count > 0, $"No command table found under \"{CommandTableHeading}\" in README.md.");
+
+        var actual = Program.BuildRootCommand().Subcommands
+            .Select(c => c.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missing = actual.Except(documented).Order().ToList();
+        var stale = documented.Except(actual).Order().ToList();
+
+        Assert.True(
+            missing.Count == 0 && stale.Count == 0,
+            $"README's command table is out of step with the command tree.{Environment.NewLine}" +
+            $"  Undocumented: {(missing.Count == 0 ? "(none)" : string.Join(", ", missing))}{Environment.NewLine}" +
+            $"  Documented but gone: {(stale.Count == 0 ? "(none)" : string.Join(", ", stale))}");
     }
 
     private static string FindRepoRoot()

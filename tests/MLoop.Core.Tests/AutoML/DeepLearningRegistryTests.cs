@@ -4,13 +4,22 @@ using Xunit;
 
 namespace MLoop.Core.Tests.AutoML;
 
+/// <summary>
+/// The registry is process-wide mutable state, so every test that touches it has to be serialized
+/// against every other one. xUnit runs distinct test classes in parallel by default, and this
+/// assembly does not turn that off, so sharing a collection name is what actually orders them —
+/// the isolation cannot live in a convention that each new test is expected to remember.
+/// </summary>
+[Collection(RegistryCollection)]
 public class DeepLearningRegistryTests
 {
+    internal const string RegistryCollection = "DeepLearningRegistry";
+
     [Fact]
     public void IsRegistered_false_before_any_registration()
     {
-        // 주의: static 상태이므로 이 테스트는 Register가 호출되지 않은 프로세스에서만 유효.
-        // Register를 호출하는 테스트와 같은 어셈블리에 두지 않는다(Core.Tests는 미등록 유지).
+        // Holds only because every test in this collection restores the registry to unregistered
+        // when it finishes; the collection is what keeps that true under a parallel runner.
         Assert.False(DeepLearningRegistry.IsRegistered);
     }
 

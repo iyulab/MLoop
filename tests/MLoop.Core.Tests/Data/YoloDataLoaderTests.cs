@@ -159,8 +159,8 @@ public class YoloDataLoaderTests : IDisposable
     }
 
     // DataLoaderFactory_ReturnsObjectDetectionLoaderAndDispatchesYolo moved to
-    // MLoop.Core.DeepLearning.Tests/Data/ObjectDetectionDataLoaderTests.cs (upstream-007 stage 2
-    // t3) — see the note in CocoDataLoaderTests for why.
+    // MLoop.Core.DeepLearning.Tests/Data/ObjectDetectionDataLoaderTests.cs — see the note in
+    // CocoDataLoaderTests for why.
 
     [Fact]
     public void SplitData_ProducesTrainAndTestSets()

@@ -317,6 +317,72 @@ models/
     └── staging/exp-001/
 ```
 
+### Every command
+
+The section above shows the ones a first project uses. This is the whole surface — `mloop <command>
+--help` has the options for any of them.
+
+| Command | What it does |
+|---------|--------------|
+| `init` | Initialize a new ML project with multi-model support |
+| `train` | Train a model using AutoML |
+| `predict` | Make predictions with a trained model |
+| `evaluate` | Evaluate model performance on test data |
+| `promote` | Promote an experiment to production |
+| `list` | List all experiments |
+| `compare` | Compare experiments side by side |
+| `status` | Show project status at a glance |
+| `info` | Display dataset profiling information |
+| `analyze` | Read-only EDA aspects: profile, correlation, importance, outliers, distribution |
+| `detect` | One-shot time-series anomaly detection, no training required |
+| `preprocess` | Run the preprocessing scripts in `.mloop/scripts/preprocess/`, or the rule-discovery workflow |
+| `prep` | Data preprocessing tools |
+| `features` | Feature selection policy, written to `mloop.yaml` |
+| `validate` | Validate project configuration |
+| `logs` | View prediction logs |
+| `feedback` | Manage prediction feedback for model monitoring |
+| `sample` | Sample data from CSV files or prediction logs |
+| `trigger` | Evaluate retraining triggers for models |
+| `serve` | Start the REST API server for model serving |
+| `token` | Issue a JWT bearer token for the local serve API |
+| `docker` | Generate Docker configuration for model deployment |
+| `pipeline` | Execute an ML workflow from a YAML pipeline definition |
+| `extensions` | List all discovered extensibility scripts |
+| `new` | Generate new project components (hooks, metrics, scripts) |
+| `runtime` | Manage on-demand ML runtime downloads |
+| `update` | Check for and install CLI updates |
+
+## Scripting MLoop
+
+Every command that produces a result worth consuming programmatically accepts `--json`. Two rules
+hold across all of them, so a script never has to special-case a command:
+
+**stdout carries the answer, stderr carries everything else.** In `--json` mode, progress, tables and
+diagnostics go to stderr; stdout receives exactly one document (or, for `mloop train --json`, one
+newline-delimited JSON event per line). This holds at *every* exit, including the ones that fail:
+
+```bash
+mloop list --json > result.json          # a document, even when there are no experiments
+mloop list --bogus --json > result.json  # Error: unrecognized option — stdout still gets {"error": "..."}, usage goes to stderr
+```
+
+An unrecognized option is reported as one, rather than being read as a value. Pass a value that
+really does begin with two dashes after a bare `--`:
+
+```bash
+mloop promote --lastest        # Error: '--lastest' is not an option of 'promote'
+mloop promote -- --lastest     # '--lastest' is the experiment id
+```
+
+**Exit codes.**
+
+| Code | Meaning |
+|------|---------|
+| `0` | The command did what was asked. Also returned for a **reported skip** — `mloop evaluate` with no production model writes the reason to stderr, emits its usual document with nothing measured, and exits `0`, because having nothing to evaluate is an outcome rather than a failure. Detect it structurally: `experimentId` is `null`. |
+| `1` | The command could not do what was asked: a rejected command line, a missing model or file, a failed validation, an unusable schema. `--json` consumers get the reason on stdout as `{"error": "..."}` unless the command emits a richer document that already describes the failure. |
+
+`--help` and `--version` are answers, not failures: they print to stdout and exit `0`.
+
 ## Documentation
 
 ### Getting Started

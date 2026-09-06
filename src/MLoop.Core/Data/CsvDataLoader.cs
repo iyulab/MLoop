@@ -21,7 +21,7 @@ public class CsvDataLoader : DataProviderBase
     /// Merged-vector-to-source-names mapping from the most recent <see cref="LoadData"/> call
     /// (see <see cref="Contracts.IDataProvider.GetMergedColumnGroups"/>). InferColumns merges
     /// adjacent same-kind CSV columns into one ranged vector column; the loaded IDataView
-    /// loses the source names, so schema capture recovers them here (upstream-008).
+    /// loses the source names, so schema capture recovers them here.
     /// </summary>
     public override IReadOnlyDictionary<string, string[]>? GetMergedColumnGroups() => _mergedColumnGroups;
 
@@ -206,7 +206,7 @@ public class CsvDataLoader : DataProviderBase
 
         // Record which source columns each merged range spans — the loaded IDataView
         // carries no slot names, so this mapping is what lets schema capture expand the
-        // merged vector back into named columns (upstream-008).
+        // merged vector back into named columns.
         _mergedColumnGroups = ComputeMergedColumnGroups(
             columnInference.TextLoaderOptions, ReadCsvHeaders(mlnetCompatiblePath));
 

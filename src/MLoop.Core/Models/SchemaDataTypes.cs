@@ -4,7 +4,7 @@ namespace MLoop.Core.Models;
 
 /// <summary>
 /// Single-source authority for the <see cref="ColumnSchema.DataType"/> vocabulary
-/// (upstream-008). Producers (CLI TrainingEngine's schema capture, Core
+/// Producers (CLI TrainingEngine's schema capture, Core
 /// AutoMLRunner.CaptureInputSchema) and consumers (PredictionService, CsvDataLoader,
 /// CategoricalMapper) must all speak these names — before this authority existed the
 /// two producers drifted (raw .NET type names vs semantic names), so a schema captured
