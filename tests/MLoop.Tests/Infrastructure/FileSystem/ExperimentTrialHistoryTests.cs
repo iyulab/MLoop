@@ -141,7 +141,7 @@ public class ExperimentTrialHistoryTests : IDisposable
     [Fact]
     public async Task Leaderboard_inverts_the_order_for_a_lower_is_better_metric()
     {
-        // The F-27 failure was exactly this: a local lower-is-better test that missed a metric ranked
+        // The direction failure was exactly this: a local lower-is-better test that missed a metric ranked
         // the worst model first. The direction comes from the MetricDirection authority instead.
         var path = await SaveAsync([
             Trial(1, "A", "rmse", 12.0),
@@ -198,7 +198,7 @@ public class ExperimentTrialHistoryTests : IDisposable
         // The paths with no metric to report (object detection, QA) record no trials, so there is
         // nothing to write. An empty leaderboard would claim a search happened and turned up
         // nothing. Note this is no longer "single pipeline": a task that fits one pipeline and
-        // measures it does record that one candidate (cycle-190).
+        // measures it does record that one candidate.
         var path = await SaveAsync([], rankingMetric: null, task: "anomaly-detection");
 
         Assert.False(File.Exists(Path.Combine(path, "trials.ndjson")));

@@ -3,7 +3,7 @@ namespace MLoop.Core.Prediction;
 /// <summary>
 /// Single authority for the normalized per-row prediction confidence ∈ [0,1]. Which output field carries
 /// the uncertainty signal for a task family — and how it maps to a scalar confidence — is MLoop domain
-/// knowledge, so MLoop owns it here rather than each consumer (U-Vision, HoneAI, mloop-mcp) re-deriving it
+/// knowledge, so MLoop owns it here rather than each consumer re-deriving it
 /// from raw <c>probabilities</c>/<c>score</c> and drifting apart. <see cref="PredictionService"/> fills
 /// <see cref="PredictionRow.Confidence"/> with this; the raw signals stay on the row so callers that want a
 /// different mapping still can.
@@ -22,7 +22,7 @@ namespace MLoop.Core.Prediction;
 /// <item><b>Ranking / recommendation</b> → null. Their Score is a relative ranking score /
 /// predicted rating on the label's own scale — clamping it into [0,1] fabricated a constant
 /// "fully confident" 1.0 for every recommendation row (a 1–5 rating always clamps to 1) and an
-/// arbitrary value for ranking (D25). Honest null until a real order-uncertainty signal
+/// arbitrary value for ranking. Honest null until a real order-uncertainty signal
 /// (top-k score margin) is designed and measured.</item>
 /// </list>
 /// </summary>
@@ -30,14 +30,14 @@ namespace MLoop.Core.Prediction;
 /// <b>Usage boundary — this confidence measures MAGNITUDE uncertainty, not decision-boundary risk.</b>
 /// For regression, a row's band width (and hence this scalar confidence) is empirically correlated with
 /// the prediction's <i>distance from any fixed decision threshold</i> T, not its <i>proximity</i> to it —
-/// on a live KAMP anodizing-thickness set the Pearson correlation between band width and |score − T| was
+/// on a live anodizing-thickness set the Pearson correlation between band width and |score − T| was
 /// ≈ +0.88 (heteroscedastic variance scales with magnitude, and large-magnitude rows sit far from a mid-range T).
 /// So do <b>not</b> rank rows by lowest confidence / widest band to escalate a pass/fail (threshold) decision:
 /// that routes confidently-far-from-line rows and misses the near-boundary rows where decision errors live.
 /// The correct decision-escalation signal is whether the prediction <i>band straddles the decision threshold</i>
 /// T (lower bound &lt; T &lt; upper bound), which requires the domain threshold T as input and is not derivable
 /// from this scalar. Use this confidence for triaging <i>how uncertain the value is</i>; use band-straddles-T
-/// for <i>which side of a decision line</i>. (Measured: honeai-sim R-7 M-17, cycle-140.)
+/// for <i>which side of a decision line</i>.
 /// </remarks>
 public static class ConfidencePolicy
 {
@@ -83,7 +83,7 @@ public static class ConfidencePolicy
         // No other task family exposes a usable [0,1] confidence signal. Ranking/recommendation
         // scores in particular are NOT confidences: a predicted rating (1-5) clamps to a constant
         // 1.0 and a ranking score to an arbitrary value — a fabricated "fully confident" signal
-        // for trust-loop consumers (D25). Null is the honest answer until the order-uncertainty
+        // for trust-loop consumers. Null is the honest answer until the order-uncertainty
         // signal (top-k score margin) is designed and measured.
         return null;
     }

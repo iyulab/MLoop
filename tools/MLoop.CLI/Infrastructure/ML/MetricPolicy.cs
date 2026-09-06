@@ -24,7 +24,7 @@ public static class MetricPolicy
     /// canonical key actually present among <paramref name="availableKeys"/> (e.g.
     /// "f1_score", "r_squared", "log_loss"). The EvaluationEngine stores canonical keys,
     /// while the CLI accepts aliases — without this mapping a raw lookup silently misses
-    /// (the root cause of BUG-45's blocked auto-promotion and Compare's ignored --sort).
+    /// (the root cause of blocked auto-promotion and of Compare's ignored --sort).
     /// Returns the matching canonical key, or null if no known variant is present.
     /// </summary>
     public static string? ResolveMetricKey(string metricName, IEnumerable<string> availableKeys)
@@ -71,7 +71,7 @@ public static class MetricPolicy
     /// default metric when <paramref name="metricName"/> is the deferred "auto" (or otherwise
     /// unresolvable). <see cref="ResolveMetricKey"/> handles explicit metrics and aliases;
     /// this adds task-awareness so directory-based tasks — which init leaves as "auto" — still
-    /// engage the gate instead of silently skipping it (BUG-46). Returns null when neither the
+    /// engage the gate instead of silently skipping it. Returns null when neither the
     /// requested metric nor the task default is present (e.g. object detection's mAP has no
     /// universal threshold).
     /// </summary>
@@ -86,7 +86,7 @@ public static class MetricPolicy
         }
 
         // Task→primary-metric mapping lives in the shared TaskMetadata source of truth so the
-        // promotion gate evaluates the same metric init writes and AutoML optimizes (TD-06).
+        // promotion gate evaluates the same metric init writes and AutoML optimizes.
         var taskDefault = TaskMetadata.PrimaryMetric(task);
         return taskDefault != null ? ResolveMetricKey(taskDefault, keys) : null;
     }
@@ -158,13 +158,13 @@ public static class MetricPolicy
     /// Detects degenerate classification models that achieve high accuracy by only
     /// predicting one class. Returns true if accuracy > 0.5 but F1 ≈ 0 (always-negative
     /// degenerate), or, symmetrically, if the model never predicts the negative class at
-    /// all (always-positive degenerate — D16). The F1 check alone only catches the first
+    /// all (always-positive degenerate). The F1 check alone only catches the first
     /// case: F1 is computed against the *positive* class, so it is ≈0 when the model
     /// always predicts negative, but stays high (F1 ≈ 2·prevalence/(1+prevalence)) when
     /// the model always predicts positive — which is the common real-world convention for
     /// binary QC/pass-fail data (majority "OK"/pass mapped to the positive label). That
     /// combination (recall ≈ 1, negative_recall ≈ 0) is undetectable from accuracy/F1/AUC
-    /// alone and slipped past this gate in a live KAMP SEQ006 run (accuracy 0.747, F1
+    /// alone and slipped past this gate in a live run (accuracy 0.747, F1
     /// 0.855, AUC 0.772 — all "healthy" — while negative_recall was exactly 0, i.e. the
     /// promoted model never once predicted the minority "NG" class).
     /// </summary>
@@ -178,7 +178,7 @@ public static class MetricPolicy
                 return true;
         }
 
-        // Check binary: accuracy > 0.5 but negative_recall == 0 (always predicts positive — D16)
+        // Check binary: accuracy > 0.5 but negative_recall == 0 (always predicts positive)
         if (metrics.TryGetValue("negative_recall", out var negRecall) &&
             metrics.TryGetValue("accuracy", out var accForNegRecall))
         {

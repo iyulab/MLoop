@@ -51,7 +51,7 @@ internal sealed class ModelCachePreloader : IHostedService
 
             try
             {
-                // DL tasks need their native runtime loaded before deserializing the model (BUG-40).
+                // DL tasks need their native runtime loaded before deserializing the model.
                 var production = await _registry.GetProductionAsync(trimmed, cancellationToken);
                 if (production?.Task is { } task)
                     MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(task);

@@ -750,7 +750,7 @@ public static class TrainCommand
             }
 
             // Apply class balancing if requested (only for classification tasks)
-            // HD-02 fix: split BEFORE balancing to prevent data leakage
+            // Split BEFORE balancing to prevent data leakage
             string? balancedFilePath = null;
             if (!string.IsNullOrEmpty(balance) && isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
             {
@@ -1118,7 +1118,7 @@ public static class TrainCommand
 
                 // Display the threshold the gate actually applied: resolve "auto"/aliases to the
                 // canonical key first (matches ShouldPromoteAsync), so image tasks show their 1/N
-                // floor instead of a blank (BUG-46).
+                // floor instead of a blank.
                 var displayMetricKey = result.Metrics != null
                     ? MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, trainingConfig.Task, result.Metrics.Keys)
                     : null;

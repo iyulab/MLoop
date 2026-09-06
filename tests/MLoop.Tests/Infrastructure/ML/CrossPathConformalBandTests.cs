@@ -9,14 +9,14 @@ using MLoop.Core.Storage;
 namespace MLoop.Tests.Infrastructure.ML;
 
 /// <summary>
-/// PRED-1 drift guard: the two predict paths must produce the SAME regression conformal band.
+/// Drift guard: the two predict paths must produce the SAME regression conformal band.
 ///
 /// <para><see cref="PredictionEngine"/> (CLI <c>mloop predict</c>, CSV→CSV) and
 /// <see cref="PredictionService"/> (serve <c>/predict</c> + CLI <c>--json</c>, rows→structured) build the
 /// heteroscedastic band through separate code — the engine via a CustomMapping, the service via
 /// <see cref="RegressionInterval.WidthFor"/> in ExtractRegressionRows. Both must resolve the per-row
 /// half-width to <c>q·(max(σ,0)+β)</c>; if one re-inlines a divergent formula the CSV and the JSON would
-/// silently disagree on the band while every other test still passes — exactly the F-33/F-27 cross-path
+/// silently disagree on the band while every other test still passes — exactly the cross-path
 /// drift class. Both paths route through <see cref="RegressionInterval.WidthFor"/>; this test pins that
 /// they keep producing an identical band for the same model + input.</para>
 /// </summary>
@@ -136,7 +136,7 @@ public class CrossPathConformalBandTests : IDisposable
 
         // Diagnostic readout of the aux σ-model itself: on a failure this tells apart "the σ-model fit
         // degenerated to a constant" from "both paths fell back to the constant-width band"
-        // (the macOS-arm64 CI failure class — see ISSUE-mloop-20260705-macos-predictionservice-test-failures).
+        // (the macOS-arm64 CI failure class).
         var probe = ml.Data.LoadFromEnumerable(xs.Select(x => new SimpleReg { X = x }));
         var probeSigmas = norm.AuxModel.Transform(mainModel.Transform(probe)).GetColumn<float>("Score").ToArray();
 

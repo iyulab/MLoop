@@ -9,8 +9,8 @@ namespace MLoop.Core.Models;
 /// CategoricalMapper) must all speak these names — before this authority existed the
 /// two producers drifted (raw .NET type names vs semantic names), so a schema captured
 /// in-process resolved every numeric feature to <see cref="DataKind.String"/> and
-/// model.Transform threw. Same drift class as ExperimentLayout (F-33) and
-/// MetricDirection (F-27); see CLAUDE.md "Single-Source Authorities".
+/// model.Transform threw. Same drift class as ExperimentLayout and
+/// MetricDirection; see CLAUDE.md "Single-Source Authorities".
 /// </summary>
 public static class SchemaDataTypes
 {
@@ -56,7 +56,7 @@ public static class SchemaDataTypes
     /// Consumer-side mapping: a persisted <see cref="ColumnSchema.DataType"/> name to the
     /// <see cref="DataKind"/> a TextLoader must load that column as. Tolerates the raw .NET
     /// type names that schemas captured before the vocabulary was unified persisted
-    /// ("String" tolerance predates this — BUG-42). Unknown names return
+    /// ("String" tolerance predates this). Unknown names return
     /// <paramref name="fallback"/> so callers keep their inferred kind.
     /// </summary>
     public static DataKind ToDataKind(string dataType, DataKind fallback) => dataType switch

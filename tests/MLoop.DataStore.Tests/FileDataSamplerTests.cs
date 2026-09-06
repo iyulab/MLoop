@@ -169,7 +169,7 @@ public class FileDataSamplerTests : IDisposable
     {
         // Feedback can be recorded more than once for the same prediction (RecordFeedbackAsync just
         // appends — a user correcting a label). Sampling must not crash, and should use the most
-        // recently recorded value (F-34).
+        // recently recorded value.
         var id = await CreatePredictionAndGetId("test-model", "predicted");
         await _feedbackCollector.RecordFeedbackAsync(id, "first");
         await _feedbackCollector.RecordFeedbackAsync(id, "corrected");

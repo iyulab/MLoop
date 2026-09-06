@@ -145,7 +145,7 @@ public static class CompareCommand
 
                 var resolvedModelName = CommandContext.ResolveModelName(modelName);
                 var summaries = await ctx.ExperimentStore.ListAsync(resolvedModelName, CancellationToken.None);
-                // F-28: rank best-first by metric direction (not unconditionally descending), so
+                // rank best-first by metric direction (not unconditionally descending), so
                 // lower-is-better tasks aren't ordered worst-first.
                 var completedSummaries = ExperimentRanking.OrderByQuality(
                         summaries.Where(s => s.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)))

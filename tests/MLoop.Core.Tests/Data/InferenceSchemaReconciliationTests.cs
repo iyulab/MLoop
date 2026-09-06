@@ -8,9 +8,9 @@ namespace MLoop.Core.Tests.Data;
 
 /// <summary>
 /// EVAL-1: pins the shared inference schema-reconciliation contract that predict and evaluate both
-/// run after InferColumns. Centralizing it closed the BUG-42 ("String" trained-type) and BUG-16
+/// run after InferColumns. Centralizing it closed the "String" trained-type and quoted-field
 /// (AllowQuoting) gaps that had been fixed on the predict path but silently missing from evaluate —
-/// the F-23/F-26 family of "fix one inference path, the other drifts" defects.
+/// the family of "fix one inference path, the other drifts" defects.
 /// </summary>
 public class InferenceSchemaReconciliationTests : IDisposable
 {
@@ -35,7 +35,7 @@ public class InferenceSchemaReconciliationTests : IDisposable
     [Fact]
     public void ReconcileInferredSchema_TrainedSchemaStringType_OverridesInferredKind()
     {
-        // BUG-42: a feature training saw as String can be re-inferred as a numeric kind when the
+        // a feature training saw as String can be re-inferred as a numeric kind when the
         // inference data is sparse. The trained schema's raw "String" type name must win — this was
         // present in PredictionEngine but missing from EvaluationEngine (only "Categorical"/"Text"
         // mapped to String there), so evaluate could not reproduce the trained feature type.
@@ -59,7 +59,7 @@ public class InferenceSchemaReconciliationTests : IDisposable
     [Fact]
     public void ReconcileInferredSchema_EnablesRfc4180Quoting()
     {
-        // BUG-16: quoted fields containing commas (bbox "[1, 2, 3]", attribute dicts) must load as a
+        // quoted fields containing commas (bbox "[1, 2, 3]", attribute dicts) must load as a
         // single column. PredictionEngine set AllowQuoting=true; EvaluationEngine did not, so evaluate
         // mis-split such rows and the feature vector width drifted from training.
         var csvPath = WriteCsv("quoting.csv", "a,Label\n1,2\n");
@@ -94,7 +94,7 @@ public class InferenceSchemaReconciliationTests : IDisposable
     [Fact]
     public void ReconcileInferredSchema_PreservesGroupColumn_SplitsOutOfMergedRange()
     {
-        // F-23/F-26: a numeric group/user/item column adjacent to features gets merged into the
+        // a numeric group/user/item column adjacent to features gets merged into the
         // Features range by InferColumns. Reconcile must split it back out so a model's key transform
         // can address it. This pins that reconcile threads preserveColumns into ApplyColumnPreservation.
         var csvPath = WriteCsv("preserve.csv", "QueryId,F1,F2,Label\n0,0.1,0.2,1\n0,0.3,0.4,2\n1,0.5,0.6,3\n");

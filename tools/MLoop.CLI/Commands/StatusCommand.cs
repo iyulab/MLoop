@@ -124,7 +124,7 @@ public static class StatusCommand
 
                 var hasProduction = productionDict.TryGetValue(modelName, out var prodExpId);
 
-                // F-28: honor metric direction so lower-is-better metrics (clustering/forecasting/
+                // honor metric direction so lower-is-better metrics (clustering/forecasting/
                 // recommendation) don't report the worst experiment as best.
                 var bestMetric = ExperimentRanking.SelectBest(modelExperiments)?.BestMetric;
 

@@ -201,9 +201,8 @@ public sealed class RuleApplier : IRuleApplier
 
     // ===== Rule Application Strategies =====
     //
-    // Each strategy returns a StrategyOutcome. Until the Rule Application Engine is built
-    // (see claudedocs/plans/2026-06-19-rule-application-engine.md and
-    // ISSUE-mloop-20260619-ruleapplier-noop-apply), every strategy returns NotImplemented so
+    // Each strategy returns a StrategyOutcome. Until the Rule Application Engine is built,
+    // every strategy returns NotImplemented so
     // the caller cannot mistake an untouched DataFrame for a successful transform. As each
     // strategy is implemented, return StrategyOutcome.Applied(rowsAffected) instead.
 

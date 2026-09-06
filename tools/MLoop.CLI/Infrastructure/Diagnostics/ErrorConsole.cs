@@ -6,7 +6,7 @@ namespace MLoop.CLI.Infrastructure.Diagnostics;
 /// The stderr sink for failure diagnostics — the single place that owns the
 /// "<c>exit != 0</c> ⇒ stderr is not empty" contract.
 /// <para>
-/// mloop already established this rule for the update notice (D19: machine-readable stdout such as
+/// mloop already established this rule for the update notice (machine-readable stdout such as
 /// <c>mloop token -q</c> or <c>predict --json</c> must never be polluted by diagnostics), but the
 /// rule had only ever been applied to that one notice and to <c>predict --json</c>. Every *domain*
 /// error still went to stdout via the default <see cref="AnsiConsole"/>, so a subprocess consumer

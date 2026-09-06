@@ -164,7 +164,7 @@ public class MetricPolicyTests
     }
 
     [Theory]
-    // TD-06: after converging on the shared TaskMetadata source of truth, the gate resolves a
+    // After converging on the shared TaskMetadata source of truth, the gate resolves a
     // canonical metric for tasks the old DefaultMetricForTask switch left as null (clustering,
     // forecasting, ranking, recommendation, time-series-anomaly). Blocking is unaffected (these
     // are error/threshold-less metrics) but production comparison now uses the right metric.
@@ -272,11 +272,11 @@ public class MetricPolicyTests
     [Fact]
     public void IsClassificationDegenerateModel_BinaryAlwaysPositiveZeroNegativeRecall_ReturnsTrue()
     {
-        // D16: model always predicts the (majority) positive class — recall=1, F1 stays
+        // model always predicts the (majority) positive class — recall=1, F1 stays
         // high (2*prevalence/(1+prevalence)) since F1 is computed on the positive class,
         // so accuracy/f1_score/auc alone look healthy. negative_recall=0 is the only
         // signal that the model never once predicted the negative class. Reproduces the
-        // live KAMP SEQ006 case: accuracy=0.747, f1_score=0.855, negative_recall=0.
+        // A live case: accuracy=0.747, f1_score=0.855, negative_recall=0.
         var metrics = new Dictionary<string, double>
         {
             ["accuracy"] = 0.7468,

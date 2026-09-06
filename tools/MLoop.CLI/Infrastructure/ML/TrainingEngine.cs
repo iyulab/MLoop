@@ -98,7 +98,7 @@ public class TrainingEngine : ITrainingEngine
                 }
 
                 // For image classification the class count is the number of class subfolders;
-                // it feeds the promotion quality gate's 1/N threshold (BUG-46). Object detection's
+                // it feeds the promotion quality gate's 1/N threshold. Object detection's
                 // classes live in annotations, not folders, so leave it unknown there.
                 int? classCount = string.Equals(config.Task, "image-classification", StringComparison.OrdinalIgnoreCase)
                     ? ImageDirectoryLoader.CountClasses(dataFilePath)
@@ -672,7 +672,7 @@ public class TrainingEngine : ITrainingEngine
         // Use MLoop's canonical dataType vocabulary (Numeric/Categorical/Text/Boolean), not the raw
         // .NET type name "String" — predict-time consumers map these to ML.NET DataKinds and a
         // classification label MUST resolve to String so the model's MapValueToKey accepts it.
-        // ImagePath is a text feature; the class label is categorical. (BUG-42)
+        // ImagePath is a text feature; the class label is categorical.
         var columns = new List<ColumnSchema>
         {
             new ColumnSchema
@@ -688,7 +688,7 @@ public class TrainingEngine : ITrainingEngine
                 Purpose = "Label",
                 // Class count (folder count) feeds the promotion quality gate's 1/N threshold
                 // for image classification. Null when unknown (e.g. object detection, whose
-                // classes come from annotations rather than subfolders). (BUG-46)
+                // classes come from annotations rather than subfolders).
                 UniqueValueCount = classCount
             }
         };
@@ -755,7 +755,7 @@ public class TrainingEngine : ITrainingEngine
                     separatorChar: ',');
                 columnInfo = columnInference?.ColumnInformation;
 
-                // BUG-15: Track label column's inferred DataKind.
+                // Track label column's inferred DataKind.
                 // CsvDataLoader converts Boolean labels -> String for MapValueToKey compatibility.
                 // Schema must reflect this so PredictionEngine uses the correct type.
                 if (columnInference?.TextLoaderOptions?.Columns != null)
@@ -785,10 +785,10 @@ public class TrainingEngine : ITrainingEngine
                 var (dataType, categoricalValues, uniqueCount) = InferColumnTypeFromData(
                     colName, colIndex, dataLines, columnInfo);
 
-                // BUG-15: If label column was inferred as Boolean by InferColumns,
+                // If label column was inferred as Boolean by InferColumns,
                 // CsvDataLoader converts it to String (for MapValueToKey compatibility).
                 // Record as "Categorical" so PredictionEngine overrides to String type.
-                // BUG-23: Skip this for regression — Boolean labels become Single (numeric),
+                // Skip this for regression — Boolean labels become Single (numeric),
                 // so schema should remain "Numeric" for regression tasks.
                 var isRegressionCapture = string.Equals(taskType, "regression", StringComparison.OrdinalIgnoreCase)
                                        || string.Equals(taskType, "Regression", StringComparison.OrdinalIgnoreCase);
@@ -798,7 +798,7 @@ public class TrainingEngine : ITrainingEngine
                     dataType = SchemaDataTypes.Categorical;
                 }
 
-                // BUG-25: If InferColumns classified a text column as Ignored,
+                // If InferColumns classified a text column as Ignored,
                 // but InferColumnTypeFromData detected it as Text, override purpose to Feature.
                 // This aligns schema metadata with AutoMLRunner's BuildColumnInformation behavior.
                 if (purpose == "Ignore" && dataType == SchemaDataTypes.Text)

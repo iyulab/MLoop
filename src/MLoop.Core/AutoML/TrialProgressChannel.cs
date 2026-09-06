@@ -11,11 +11,11 @@ namespace MLoop.Core.AutoML;
 /// <remarks>
 /// <para>
 /// Both fields were being hardcoded to zero before this type existed: the six non-AutoML task paths
-/// and the BUG-36 manual fallback each built a <see cref="TrainingProgress"/> inline with
+/// and the manual fallback each built a <see cref="TrainingProgress"/> inline with
 /// <c>ElapsedSeconds = 0</c>, and four of them also reported <em>before</em> fitting with
 /// <c>Metric = 0</c>. Downstream that renders as <c>Trial 1: RandomizedPca - detection_rate=0.0000</c>
 /// on a bar frozen at 0% — the percentage in the CLI is computed from
-/// <see cref="TrainingProgress.ElapsedSeconds"/> — which is the same symptom cycle-177 removed from
+/// <see cref="TrainingProgress.ElapsedSeconds"/> — which is the same symptom already removed from
 /// the tabular paths, reintroduced as a fabricated value instead of a silence.
 /// </para>
 /// <para>

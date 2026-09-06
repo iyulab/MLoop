@@ -9,7 +9,7 @@ namespace MLoop.DataStore.Services;
 /// its own copy and they drifted: the collector's handled the runtime reality that feedback values
 /// round-trip through JSON as <see cref="JsonElement"/>, while the CLI's naive copy compared the raw
 /// <c>JsonElement</c> structs (never equal across documents), so the list always showed ✗ even when
-/// the metrics command reported 100% accuracy (F-29).
+/// the metrics command reported 100% accuracy.
 /// </summary>
 public static class FeedbackValueComparer
 {
@@ -37,7 +37,7 @@ public static class FeedbackValueComparer
         // Numeric comparison whenever both sides represent a number — including the common cross-type
         // case where the prediction was logged as a JSON number but the CLI-supplied actual is its
         // string form (e.g. predicted 1 vs actual "1", or 3.14 vs "3.14"). Without this, accuracy was
-        // always 0 for regression and numeric-label models (F-30).
+        // always 0 for regression and numeric-label models.
         if (TryAsDouble(predicted, out var predictedNum) && TryAsDouble(actual, out var actualNum))
             return Math.Abs(predictedNum - actualNum) < 0.0001;
 

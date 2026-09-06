@@ -76,7 +76,7 @@ public class StatusCommandJsonTests : IDisposable
     }
 
     // Same AnsiConsole.Console rebinding as ListCommandTrialsTests.RunAsync — Console.SetOut alone
-    // doesn't reach Spectre's ambient renderer (cycle-199/202's discovery).
+    // doesn't reach Spectre's ambient renderer.
     private static async Task<(int ExitCode, string Stdout)> RunAsync(params string[] args)
     {
         var originalOut = Console.Out;

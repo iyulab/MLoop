@@ -56,9 +56,9 @@ public class InitCommandTests
     [Theory]
     [InlineData("binary-classification", "accuracy")]
     [InlineData("multiclass-classification", "macro_accuracy")]
-    [InlineData("image-classification", "micro_accuracy")]   // BUG-46: was "auto" → gate skipped
+    [InlineData("image-classification", "micro_accuracy")]   // was "auto" → gate skipped
     [InlineData("regression", "r_squared")]
-    [InlineData("text-classification", "micro_accuracy")]  // TD-06: was "auto" → BUG-46 family
+    [InlineData("text-classification", "micro_accuracy")]  // was "auto" → the skipped-gate family
     [InlineData("anomaly-detection", "auc")]
     [InlineData("forecasting", "mae")]
     [InlineData("object-detection", "auto")]               // no canonical metric → defers

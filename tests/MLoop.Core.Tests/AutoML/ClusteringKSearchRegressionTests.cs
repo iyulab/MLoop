@@ -8,7 +8,7 @@ using MLoop.Tests.Common;
 namespace MLoop.Core.Tests.AutoML;
 
 /// <summary>
-/// F-22 regression guard: clustering's K-search uses the Davies-Bouldin Index to pick the natural
+/// Regression guard: clustering's K-search uses the Davies-Bouldin Index to pick the natural
 /// number of clusters. ML.NET only computes DBI when <c>featureColumnName</c> is passed to
 /// <c>Clustering.Evaluate</c>; without it DBI came back 0, so the "use DBI" branch was never taken
 /// and the search silently fell back to average_distance (which monotonically decreases with K) and
@@ -112,12 +112,12 @@ public class ClusteringKSearchRegressionTests : IDisposable
         Assert.NotNull(result);
         Assert.NotEmpty(result.Metrics);
 
-        // F-22 core: DBI is actually computed (was a constant 0 before featureColumnName was passed).
+        // The core assertion: DBI is actually computed (was a constant 0 before featureColumnName was passed).
         Assert.True(result.Metrics.TryGetValue("davies_bouldin_index", out var dbi),
             $"Expected davies_bouldin_index. Keys: [{string.Join(", ", result.Metrics.Keys)}]");
         Assert.True(dbi > 0, $"Davies-Bouldin Index should be a real positive value, got {dbi}");
 
-        // F-22 consequence: the DBI-driven search finds the natural K=3, not the search ceiling.
+        // The consequence: the DBI-driven search finds the natural K=3, not the search ceiling.
         Assert.Equal(3, (int)result.Metrics["num_clusters"]);
     }
 }

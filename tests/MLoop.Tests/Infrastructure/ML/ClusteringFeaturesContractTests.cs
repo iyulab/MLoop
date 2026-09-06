@@ -9,7 +9,7 @@ using MLoop.Core.Prediction;
 namespace MLoop.Tests.Infrastructure.ML;
 
 /// <summary>
-/// D24 (cycle-154, honeai-sim clustering live dogfooding): label-less clustering's structured predict
+/// Label-less clustering's structured predict
 /// surfaces (serve <c>/predict</c>, <c>mloop predict --json</c>) hard-failed with a Features dimension
 /// mismatch ("expected Vector&lt;Single, 3&gt;, got Vector&lt;Single, 4&gt;"), while the CLI CSV path
 /// worked by incidental shape-matching.
@@ -25,7 +25,7 @@ namespace MLoop.Tests.Infrastructure.ML;
 /// one of ITS two inputs, alongside the still-present dummyLabel scalar, producing 1+3=4 instead of the
 /// 3 KMeans was fit on.</para>
 ///
-/// <para>Fix (D24-A, train-side contract normalization): <c>RunClusteringAsync</c> now pre-featurizes
+/// <para>Fix (train-side contract normalization): <c>RunClusteringAsync</c> now pre-featurizes
 /// (materializes "Features" from every real feature column, matching what EnsureFeaturesColumn will
 /// build) and fits ONLY the trainer on the result — the saved model embeds no Concatenate at all, so
 /// there is nothing left to re-collide with EnsureFeaturesColumn's output. The CLI CSV path
@@ -92,7 +92,7 @@ public class ClusteringFeaturesContractTests : IDisposable
         var modelPath = Path.Combine(dir, "model.zip");
         ctx.Model.Save(result.Model, null, modelPath);
 
-        // --- Path A (D24's primary repro): PredictionService row-based predict ---
+        // --- Path A (the primary repro): PredictionService row-based predict ---
         var rows = new[]
         {
             new Dictionary<string, object> { ["pH"] = 5.1f, ["Temp"] = 20.2f, ["Current"] = 3.6f },

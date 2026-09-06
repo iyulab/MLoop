@@ -111,7 +111,7 @@ public class TabularTrialProgressTests : IDisposable
     public async Task Binary_classification_reports_every_completed_trial()
     {
         // 400 rows, not the 150 the other fixtures use: measured, AutoML's internal AUC computation
-        // fails on this fixture at 150 rows and the run diverts to the BUG-36 manual SDCA pipeline,
+        // fails on this fixture at 150 rows and the run diverts to the manual SDCA pipeline,
         // so a smaller fixture stops covering the AutoML path this test exists for. The trainer-name
         // assertion below is what keeps that substitution from happening silently again.
         var csv = await WriteCsvAsync("binary.csv", BinaryFixture(rows: 400));
@@ -126,7 +126,7 @@ public class TabularTrialProgressTests : IDisposable
     [Fact]
     public async Task Manual_fallback_reports_the_metric_it_actually_measured()
     {
-        // The path taken when AutoML's AUC computation fails (BUG-36). It used to announce itself
+        // The path taken when AutoML's AUC computation fails. It used to announce itself
         // before fitting with accuracy=0 and elapsed=0 — a trial line reading "accuracy=0.0000" and
         // a progress bar pinned at 0%, since the CLI derives its percentage from ElapsedSeconds.
         // 150 rows is the size measured to divert here.

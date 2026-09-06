@@ -10,7 +10,7 @@ namespace MLoop.Tests.Infrastructure.FileSystem;
 /// has ONE authority — <c>production/metadata.json</c> (via <see cref="ProductionMetadata"/>). Previously
 /// it was duplicated in <c>registry.json</c>, and three readers (<see cref="ModelRegistry"/>,
 /// <see cref="ModelNameResolver"/>, Ops <c>FilePromotionManager</c>) split across the two artifacts —
-/// two of the same fact that could silently disagree (the BUG-48 cross-artifact class). This pins that
+/// two of the same fact that could silently disagree (the cross-artifact class). This pins that
 /// after a promote the CLI readers agree on the pointer and that the removed <c>registry.json</c> write
 /// path stays removed. (FilePromotionManager's metadata.json read is pinned in MLoop.Ops.Tests.)
 /// </summary>

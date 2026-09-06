@@ -7,7 +7,7 @@ namespace MLoop.Core.Tests.Data;
 /// <summary>
 /// Unit tests for <see cref="InferenceDataPreprocessor"/> — the single, shared CSV preprocessing
 /// sequence that predict and evaluate apply at inference time. These tests pin the convergence that
-/// resolved BUG-43/44: encoding (CP949), multiline flattening, index removal, and schema-driven /
+/// resolved: encoding (CP949), multiline flattening, index removal, and schema-driven /
 /// fallback column exclusion must all match what training did, so the model's feature width lines up.
 /// </summary>
 public class InferenceDataPreprocessorTests : IDisposable
@@ -32,7 +32,7 @@ public class InferenceDataPreprocessorTests : IDisposable
     [Fact]
     public void Prepare_Cp949WithKoreanHeader_PreservesKoreanColumns()
     {
-        // BUG-43 class for predict: a CP949 file read as UTF-8 garbles the Korean header.
+        // The encoding class for predict: a CP949 file read as UTF-8 garbles the Korean header.
         var path = Path.Combine(_testDir, "cp949.csv");
         File.WriteAllText(path, "입력값,출력값\n1,2\n3,4\n", Encoding.GetEncoding(949));
 

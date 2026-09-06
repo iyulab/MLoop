@@ -385,7 +385,7 @@ public static class EvaluateCommand
         Dictionary<string, double> trainingMetrics,
         Dictionary<string, double> testMetrics)
     {
-        // F-25: the task is stored as the CLI-canonical string ("binary-classification",
+        // the task is stored as the CLI-canonical string ("binary-classification",
         // "multiclass-classification", "regression"), and each task's primary metric key differs
         // (regression=r_squared, binary=accuracy, multiclass=macro_accuracy). The previous code
         // matched only the literal "classification" with the "accuracy" key, so overfitting

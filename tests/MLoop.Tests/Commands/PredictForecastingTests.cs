@@ -7,7 +7,7 @@ using MLoop.Core.Prediction;
 namespace MLoop.Tests.Commands;
 
 /// <summary>
-/// D21 CLI-side coverage: the forecasting predict path is horizon-based (stateful SSA replaying
+/// CLI-side coverage: the forecasting predict path is horizon-based (stateful SSA replaying
 /// the training series). These tests pin the extracted computation helper and the --json row
 /// mapping so the structured output contract (PredictionRow reuse, native band, coverage level)
 /// cannot silently drift from the CSV path.
@@ -151,10 +151,10 @@ public class PredictForecastingTests : IDisposable
         Assert.Contains("training data", error, StringComparison.OrdinalIgnoreCase);
     }
 
-    // D21-A: serve POST /predict accepts an optional {"horizon":N} body. The saved SSA model's
+    // Serve POST /predict accepts an optional {"horizon":N} body. The saved SSA model's
     // horizon is fixed at train time (variableHorizon is not enabled), so a mismatched override
     // must fail fast with an actionable message rather than silently ignoring the request or
-    // truncating/padding the result — the same "no silent GIGO" discipline as D20/D21/D22.
+    // truncating/padding the result — the same "no silent GIGO" discipline as the guards above.
     [Fact]
     public async Task ComputeForecastAsync_RequestedHorizonMatchesTrained_Succeeds()
     {
@@ -212,7 +212,7 @@ public class PredictForecastingTests : IDisposable
         Assert.Null(rows[0].Confidence);
     }
 
-    // D23: for time-series tasks the config "label" is the monitored series value column — it must
+    // for time-series tasks the config "label" is the monitored series value column — it must
     // NOT be stripped from the structured-predict input rows (stripping defaulted the series to zero
     // and the detector fabricated an all-normal answer). Tabular tasks keep the exclusion (leakage).
     [Theory]

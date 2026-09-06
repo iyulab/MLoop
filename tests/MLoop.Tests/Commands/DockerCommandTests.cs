@@ -44,7 +44,7 @@ public class DockerCommandTests
     public void GenerateDockerfile_DoesNotUseUnquotedVersionWildcard()
     {
         // `--version *` is invalid: in a Dockerfile RUN the shell glob-expands the bare `*` to the
-        // working-directory file list, breaking `docker build` (F-35). Omit it to install latest.
+        // working-directory file list, breaking `docker build`. Omit it to install latest.
         var result = DockerCommand.GenerateDockerfile("default", 5000);
 
         Assert.DoesNotContain("--version *", result);

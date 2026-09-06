@@ -100,7 +100,7 @@ public class ValidateCommandTests
     [InlineData("time-series-anomaly")]
     public void ValidateModel_DoesNotRequireLabelForUnsupervisedTasks(string task)
     {
-        // F-19: ConfigMerger/InitCommand/TrainCommand/CsvDataLoader all treat these as label-optional
+        // ConfigMerger/InitCommand/TrainCommand/CsvDataLoader all treat these as label-optional
         // (a dummy label is loaded), so requiring one in validate contradicted what `train` accepts.
         var model = new ModelDefinition { Task = task, Label = "" };
         var (errors, _) = RunValidateModel("test", model);
@@ -108,7 +108,7 @@ public class ValidateCommandTests
         Assert.DoesNotContain(errors, e => e.Path.Contains(".label"));
     }
 
-    // F-20: task-specific required fields ported from the removed parallel ConfigValidator. These
+    // task-specific required fields ported from the removed parallel ConfigValidator. These
     // are mandatory at train time, so validate must catch them (validate↔train parity).
 
     [Fact]
@@ -348,7 +348,7 @@ public class ValidateCommandTests
     [InlineData("auc")]
     [InlineData("r2")]
     [InlineData("rmse")]
-    // F-17: canonical task-specific metrics that `mloop init` writes and AutoML/promotion use
+    // canonical task-specific metrics that `mloop init` writes and AutoML/promotion use
     // (ModelRegistry.DefaultMetricForTask) must validate cleanly — they were flagged "Unknown".
     [InlineData("macro_accuracy")]   // multiclass-classification default
     [InlineData("micro_accuracy")]   // image/text-classification default

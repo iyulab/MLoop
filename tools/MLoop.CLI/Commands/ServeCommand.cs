@@ -189,7 +189,7 @@ public class ServeCommand : Command
         {
             // Same directory as CLI (for bundled deployments). The packed `mloop`
             // dotnet tool bundles MLoop.API here via MLoop.CLI.csproj's
-            // BundleApiIntoTool target (D11), so installed-tool serve works out-of-box.
+            // BundleApiIntoTool target, so installed-tool serve works out-of-box.
             Path.Combine(AppContext.BaseDirectory, "MLoop.API.dll"),
             // Relative paths from CLI location
             Path.Combine(AppContext.BaseDirectory, "..", "MLoop.API", "MLoop.API.dll"),
@@ -244,7 +244,7 @@ public class ServeCommand : Command
 
         // D9: among dev builds, prefer the most recently built — a fresh Release build must win
         // over a stale Debug one. The old "first existing, Debug before Release" order loaded the
-        // stale Debug assembly, hiding fixes built into Release (cycle-104 forced MLOOP_API_PATH).
+        // stale Debug assembly, hiding fixes built into Release, which is why MLOOP_API_PATH exists.
         return NewestExisting(devCandidates, File.Exists, File.GetLastWriteTimeUtc);
     }
 

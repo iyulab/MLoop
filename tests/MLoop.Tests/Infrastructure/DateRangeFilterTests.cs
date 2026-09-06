@@ -4,7 +4,7 @@ namespace MLoop.Tests.Infrastructure;
 
 /// <summary>
 /// Pins that user-supplied date filters are interpreted as the local calendar day, matching the
-/// CLI's local-time display (F-31). The prior code forced UTC midnight, shifting the window by the
+/// CLI's local-time display. The prior code forced UTC midnight, shifting the window by the
 /// machine's UTC offset. Assertions compare against the machine's own local offset so they hold in
 /// any timezone (including a UTC build agent).
 /// </summary>

@@ -39,7 +39,7 @@ public class EvaluationEngine
             List<string> tempFiles = new();
             try
             {
-                // DL tasks need their native runtime loaded before deserializing the model (BUG-40).
+                // DL tasks need their native runtime loaded before deserializing the model.
                 MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
 
                 // Load the trained model
@@ -62,9 +62,9 @@ public class EvaluationEngine
                     return MetricSanitizer.SanitizeAndReturn(EvaluateMulticlassClassification(dirScored, "Label"));
                 }
 
-                // F-26: ranking/recommendation models reference the group/user/item columns
+                // ranking/recommendation models reference the group/user/item columns
                 // individually (MapValueToKey), so they must stay addressable at evaluate time — the
-                // same preservation the train and predict paths apply (F-23). Without it InferColumns
+                // same preservation the train and predict paths apply. Without it InferColumns
                 // merges them into the Features range and model.Transform crashes outright.
                 var preserveColumns = new[] { groupColumn, userColumn, itemColumn }
                     .Where(c => !string.IsNullOrWhiteSpace(c))
@@ -157,7 +157,7 @@ public class EvaluationEngine
             }
             finally
             {
-                // BUG-13: Clean up temp files AFTER all lazy data consumption is complete
+                // Clean up temp files AFTER all lazy data consumption is complete
                 foreach (var tempFile in tempFiles)
                 {
                     if (File.Exists(tempFile))
@@ -174,7 +174,7 @@ public class EvaluationEngine
         // Apply the single shared inference preprocessing sequence (encoding → flatten → index →
         // schema-based exclude / data-dependent fallback). This is the same path predict uses, which
         // is what makes the test feature vector reproduce the model's training-time width. Converging
-        // here fixed BUG-43 (CP949 encoding) and BUG-44 (index/exclude columns left in) and closed the
+        // here fixed CP949 encoding and index/excluded columns left in place, and closed the
         // flatten/constant gaps that the previous per-engine reimplementation hid.
         string loadPath = InferenceDataPreprocessor.Prepare(testDataPath, labelColumn, trainedSchema, out tempFiles);
 
@@ -185,14 +185,14 @@ public class EvaluationEngine
             separatorChar: ',');
 
         // EVAL-1: shared non-label reconciliation — overrides feature types from the trained schema
-        // (BUG-12, including the "String" raw-type-name case BUG-42 that predict had but evaluate
-        // lacked), enables RFC 4180 quoting (BUG-16, likewise predict-only before), and splits
-        // preserved group/user/item columns out of any merged Features range (F-26, the evaluate twin
-        // of F-23). BUG-18: the label is deliberately left to InferColumns + the task-specific handling
+        // (including the "String" raw-type-name case that predict had but evaluate
+        // lacked), enables RFC 4180 quoting (likewise predict-only before), and splits
+        // preserved group/user/item columns out of any merged Features range (the evaluate twin
+        // of predict's). The label is deliberately left to InferColumns + the task-specific handling
         // below, so the helper does not touch it.
         CsvDataLoader.ReconcileInferredSchemaForInference(columnInference, trainedSchema, labelColumn, loadPath, preserveColumns);
 
-        // BUG-15/BUG-25b: Multiclass classification — InferColumns may detect label as Boolean
+        // Multiclass classification: InferColumns may detect the label as Boolean
         // when values are 0/1/2 etc. CsvDataLoader converts Boolean→String for multiclass
         // during training. Override BEFORE loading so TextLoader can parse all values.
         bool isMulticlass = taskType.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase);
@@ -217,7 +217,7 @@ public class EvaluationEngine
         // Load the data
         var dataView = textLoader.Load(loadPath);
 
-        // BUG-19: Binary classification with string labels (OK/NG, Yes/No, etc.)
+        // Binary classification with string labels (OK/NG, Yes/No, etc.)
         // CsvDataLoader converts string labels to Boolean during training, but
         // EvaluationEngine loads raw CSV where labels are still strings.
         // Apply the same conversion here to match the model's expected input type.
@@ -487,8 +487,8 @@ public class EvaluationEngine
         var metricsDict = new Dictionary<string, double>();
 
         // ML.NET built-in clustering evaluation.
-        // F-24: featureColumnName is REQUIRED for ML.NET to compute the Davies-Bouldin Index — without
-        // it DBI comes back 0 (the evaluate-path twin of F-22, fixed identically in AutoMLRunner's
+        // featureColumnName is REQUIRED for ML.NET to compute the Davies-Bouldin Index — without
+        // it DBI comes back 0 (the evaluate-path twin, fixed identically in AutoMLRunner's
         // K-search). The clustering pipeline concatenates features into "Features", same as training.
         try
         {

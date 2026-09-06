@@ -250,7 +250,7 @@ public class AutoMLRunnerTests
 
     #endregion
 
-    #region EnsureCalibratedModel Tests (D15 — BUG-24 follow-through)
+    #region EnsureCalibratedModel Tests
 
     [Fact]
     public void EnsureCalibratedModel_AlreadyCalibrated_ReturnsSameModel()
@@ -273,10 +273,10 @@ public class AutoMLRunnerTests
     [Fact]
     public void EnsureCalibratedModel_UncalibratedTrainer_AppendsPlattCalibratorRestoringProbability()
     {
-        // D15: reproduces the KAMP SEQ089 live finding — FastForestBinary (AutoML's chosen "best
-        // trainer") emits Score but no Probability. Uncalibrated, HoneAI's ConfidenceOf reads no
-        // probabilities/score signal and falls back to 0 for every row (100% escalation, observed
-        // live via honeai-sim). The saved model must carry a calibrated Probability so downstream
+        // Reproduces a live finding: a forest binary trainer (AutoML's chosen "best trainer")
+        // emits Score but no Probability. Uncalibrated, a confidence-gated caller reads no
+        // probabilities/score signal and falls back to 0 for every row, escalating all of them.
+        // The saved model must carry a calibrated Probability so downstream
         // predict/serve consumers get a real confidence signal.
         var data = _mlContext.Data.LoadFromEnumerable(Enumerable.Range(0, 40).Select(i => new NumericData
         {
@@ -463,7 +463,7 @@ public class AutoMLRunnerTests
     [Fact]
     public void ComputeNormalizedConformal_HeteroscedasticData_WidthRanksLargeErrorRows()
     {
-        // The M-13 defect: a constant-width band cannot rank the review-worthy (large-error) rows —
+        // The defect: a constant-width band cannot rank the review-worthy (large-error) rows —
         // its recall equals random. The per-row band must rank them well above random.
         var data = _mlContext.Data.LoadFromEnumerable(HeteroData(200));
 

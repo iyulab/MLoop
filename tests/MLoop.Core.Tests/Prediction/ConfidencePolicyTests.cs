@@ -38,7 +38,7 @@ public class ConfidencePolicyTests
         Assert.Equal(expected, ConfidencePolicy.Compute(row, "anomaly-detection")!.Value, 3);
     }
 
-    // D22 guard: a time-series-anomaly row carries the detector's RAW score (SrCnn spectral residual /
+    // Guard: a time-series-anomaly row carries the detector's RAW score (SrCnn spectral residual /
     // SSA raw score), not a [0,1] probability with a 0.5 boundary — applying the anomaly boundary rule
     // to it would fabricate a confidence. TS-anomaly stays null until its signal mapping lands (P3-3).
     [Fact]
@@ -84,7 +84,7 @@ public class ConfidencePolicyTests
         Assert.Null(ConfidencePolicy.Compute(row, "regression"));
     }
 
-    // D25: ranking/recommendation Scores are relative ranking scores / predicted ratings on the
+    // ranking/recommendation Scores are relative ranking scores / predicted ratings on the
     // label's own scale, not [0,1] confidences — clamping fabricated a constant 1.0 for every
     // recommendation row (rating 1-5 always clamps to 1). Honest null until the top-k score-margin
     // signal is designed.

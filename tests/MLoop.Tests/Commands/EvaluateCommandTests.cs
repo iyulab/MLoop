@@ -12,7 +12,7 @@ public class EvaluateCommandTests
     [InlineData("mse", true)]
     [InlineData("log-loss", true)]
     [InlineData("RMSE", true)]
-    [InlineData("root_mean_squared_error", true)]  // contains "error" → lower-better (F-27: now matches ModelRegistry/promotion)
+    [InlineData("root_mean_squared_error", true)]  // contains "error" → lower-better (now matches ModelRegistry/promotion)
     [InlineData("accuracy", false)]
     [InlineData("auc", false)]
     [InlineData("r_squared", false)]
@@ -77,7 +77,7 @@ public class EvaluateCommandTests
     [Fact]
     public void IsLowerBetterMetric_ClusteringAndErrorMetrics_ReturnsTrue()
     {
-        // F-27: average_distance and davies_bouldin_index are lower-is-better (clustering's canonical
+        // average_distance and davies_bouldin_index are lower-is-better (clustering's canonical
         // metric is average_distance), and mape is an error metric — but the local check only knew
         // rmse/mae/mse/loss. So evaluate's diff coloring and compare's sort treated a worse clustering
         // model (higher average_distance) as "best". ModelRegistry already knew these; the direction
@@ -139,7 +139,7 @@ public class EvaluateCommandTests
     [Fact]
     public void DetectOverfitting_BinaryClassification_LargeAccDiff_ReturnsTrue()
     {
-        // F-25: the task is stored as "binary-classification" (CLI-canonical), not "classification";
+        // the task is stored as "binary-classification" (CLI-canonical), not "classification";
         // the old code only matched "classification", so overfitting detection was dead for every
         // real binary model.
         var train = new Dictionary<string, double> { { "accuracy", 0.98 } };
@@ -151,7 +151,7 @@ public class EvaluateCommandTests
     [Fact]
     public void DetectOverfitting_MulticlassClassification_LargeMacroAccDiff_ReturnsTrue()
     {
-        // F-25: multiclass is stored as "multiclass-classification" and its primary metric key is
+        // multiclass is stored as "multiclass-classification" and its primary metric key is
         // "macro_accuracy" (not "accuracy") — so the old "classification"+"accuracy" check was
         // doubly wrong and dead for every multiclass model.
         var train = new Dictionary<string, double> { { "macro_accuracy", 0.97 } };

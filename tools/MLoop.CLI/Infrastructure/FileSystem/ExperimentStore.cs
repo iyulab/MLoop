@@ -13,7 +13,7 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 public class ExperimentStore : IExperimentStore
 {
     // Layout names delegate to the single ExperimentLayout authority in MLoop.Core so this
-    // writer and the MLoop.Ops readers cannot drift apart (F-33). Local aliases keep call sites
+    // writer and the MLoop.Ops readers cannot drift apart. Local aliases keep call sites
     // readable; the values have exactly one definition.
     private const string ModelsDirectory = ExperimentLayout.ModelsDirectory;
     private const string StagingDirectory = ExperimentLayout.StagingDirectory;
@@ -153,7 +153,7 @@ public class ExperimentStore : IExperimentStore
     /// <remarks>
     /// The ranking direction comes from <see cref="MetricDirection"/> rather than a local
     /// lower-is-better test, because that knowledge had already drifted across four sites once and
-    /// ranked the worst clustering model first (F-27). When the metric is one this authority does not
+    /// ranked the worst clustering model first. When the metric is one this authority does not
     /// recognize, the leaderboard records the trials unranked and says so — sorting by a guessed
     /// direction would silently present the worst trial as the best.
     /// </remarks>
@@ -397,7 +397,7 @@ public class ExperimentStore : IExperimentStore
             Timestamp = experiment.Timestamp,
             Status = experiment.Status,
             // Canonical primary-metric value (matches MetricName), not the insertion-order-dependent
-            // first dictionary entry — so ranking sorts by the metric the experiment optimized (F-28).
+            // first dictionary entry — so ranking sorts by the metric the experiment optimized.
             BestMetric = TaskMetadata.ResolvePrimaryMetricValue(
                 experiment.Metrics, experiment.Config.Metric, experiment.Task),
             LabelColumn = experiment.Config.LabelColumn,

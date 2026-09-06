@@ -127,7 +127,7 @@ public class RuleApplierTests
     public async Task ApplyRuleAsync_AllRuleTypes_NotImplemented_DoNotReportSilentSuccess(PreprocessingRuleType ruleType)
     {
         // No application strategy is implemented yet; every type must surface NotImplemented
-        // rather than silently succeeding. See ISSUE-mloop-20260619-ruleapplier-noop-apply.
+        // rather than silently succeeding.
         var df = CreateTestDataFrame();
         var rule = CreateRule(type: ruleType);
 

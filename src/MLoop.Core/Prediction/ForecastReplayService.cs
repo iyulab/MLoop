@@ -6,10 +6,10 @@ using MLoop.Core.Storage;
 namespace MLoop.Core.Prediction;
 
 /// <summary>
-/// D21: single source for replaying an SSA forecasting model's training series and extracting its
+/// single source for replaying an SSA forecasting model's training series and extracting its
 /// horizon forecast — shared by the CLI (<c>mloop predict</c>/<c>--json</c>) and the API
 /// (<c>POST /predict</c>) so the two surfaces can never drift on how the forecast is computed
-/// (the same lesson as PRED-1/D-series). SSA forecasting is stateful (it forecasts a fixed horizon
+///. SSA forecasting is stateful (it forecasts a fixed horizon
 /// ahead of its training series), so — unlike every other task — a row-based <c>Transform</c> extracts
 /// nothing; this class replays the original training series read from the experiment's config
 /// (<c>dataFile</c>) and reads the model's native forecast/confidence-band columns instead.
@@ -30,7 +30,7 @@ public static class ForecastReplayService
     /// instead (e.g. a promoted model's own <c>production/config.json</c>).
     /// </param>
     /// <param name="requestedHorizon">
-    /// Optional horizon override (D21-A, <c>POST /predict</c> body <c>{"horizon":N}</c>). The saved
+    /// Optional horizon override (<c>POST /predict</c> body <c>{"horizon":N}</c>). The saved
     /// SSA model's horizon is fixed at train time (<c>variableHorizon</c> is not enabled), so a
     /// mismatched override cannot be honored — it fails fast with an actionable error naming the
     /// trained horizon rather than silently ignoring the request or truncating/padding the result.

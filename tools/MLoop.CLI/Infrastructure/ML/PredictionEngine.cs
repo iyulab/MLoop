@@ -123,7 +123,7 @@ public class PredictionEngine : IPredictionEngine
 
             // Apply the single shared inference preprocessing sequence (encoding → flatten → index →
             // schema-based exclude / data-dependent fallback) — identical to evaluate. This replaces
-            // predict's hand-rolled UTF-8 BOM check (which read CP949 as UTF-8, BUG-43) and the
+            // predict's hand-rolled UTF-8 BOM check (which read CP949 as UTF-8) and the
             // per-engine index/exclude reimplementation, and adds the previously-missing flatten and
             // constant-column steps that the divergence had silently dropped.
             mlnetCompatiblePath = InferenceDataPreprocessor.Prepare(processedDataPath, labelColumn, trainedSchema, out tempFiles);
@@ -189,15 +189,15 @@ public class PredictionEngine : IPredictionEngine
             }
 
             // EVAL-1: shared non-label reconciliation — overrides feature types from the trained
-            // schema (BUG-11, incl. the "String" raw type name BUG-42), enables RFC 4180 quoting
-            // (BUG-16), and splits preserved group/user/item columns out of any merged Features range
-            // (F-23). The label is reconciled separately below because predict and evaluate handle it
+            // schema (including the "String" raw type name), enables RFC 4180 quoting
+            // and splits preserved group/user/item columns out of any merged Features range
+            // . The label is reconciled separately below because predict and evaluate handle it
             // differently — a legitimate divergence the helper deliberately leaves alone.
             CsvDataLoader.ReconcileInferredSchemaForInference(columnInference, trainedSchema, labelColumn, mlnetCompatiblePath, preserveColumns);
 
-            // BUG-11 (label): predict aligns the label column's type to the trained schema too. The
+            // The label: predict aligns the label column's type to the trained schema too. The
             // label value is ignored at predict time, but its type must satisfy the model's input
-            // schema (e.g. MapValueToKey). evaluate deliberately skips this (BUG-18), so the shared
+            // schema (e.g. MapValueToKey). evaluate deliberately skips this, so the shared
             // helper leaves the label untouched; predict applies it here via the same type table.
             if (trainedSchema != null && labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
             {
@@ -213,8 +213,8 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
 
-            // BUG-15: If the label column is (still) Boolean, convert to String for MapValueToKey
-            // compatibility — same as CsvDataLoader's BUG-15 training fix.
+            // If the label column is (still) Boolean, convert to String for MapValueToKey
+            // compatibility — the same as CsvDataLoader's training-side fix.
             if (labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
             {
                 foreach (var col in columnInference.TextLoaderOptions.Columns)
@@ -237,7 +237,7 @@ public class PredictionEngine : IPredictionEngine
             // The label values are ignored during prediction.
             IDataView processedData = inputData;
 
-            // D24: clustering's saved model now expects a single "Features" vector built from every
+            // clustering's saved model now expects a single "Features" vector built from every
             // feature column (train-side fix, AutoMLRunner.RunClusteringAsync) — including the CSV's
             // first column, which InferColumns always treats as *some* label (there being no real one
             // for label-less clustering) and therefore excludes from its own "Features" merge above.
@@ -394,7 +394,7 @@ public class PredictionEngine : IPredictionEngine
                 _mlContext.Data.SaveAsText(outputData, fileStream, separatorChar: ',', headerRow: true, schema: false);
             }
 
-            // BUG-14: Fix empty headers for vector columns (e.g., multiclass Score)
+            // Fix empty headers for vector columns (e.g., multiclass Score)
             // SaveAsText outputs empty column names for VBuffer columns
             FixVectorColumnHeaders(outputPath, outputData.Schema);
 
@@ -648,7 +648,7 @@ public class PredictionEngine : IPredictionEngine
                         {
                             // Single source for the per-row half-width: q·(max(σ,0)+β) lives only in
                             // RegressionInterval.WidthFor, shared with PredictionService's regression path
-                            // so the CSV and the serve JSON can't drift on the band (PRED-1). input.Score
+                            // so the CSV and the serve JSON can't drift on the band. input.Score
                             // here is the σ-model's raw residual estimate.
                             double half = interval.WidthFor(input.Score);
                             output.ScoreLowerBound = (float)(input.PointScore - half);

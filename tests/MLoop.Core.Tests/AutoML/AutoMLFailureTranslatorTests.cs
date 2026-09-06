@@ -3,7 +3,7 @@ using MLoop.Core.AutoML;
 namespace MLoop.Core.Tests.AutoML;
 
 /// <summary>
-/// Pins the terminal-exception shapes measured against Microsoft.ML.AutoML 0.23.0 (cycle-173):
+/// Pins the terminal-exception shapes measured against Microsoft.ML.AutoML 0.23.0:
 /// AutoML wraps its own failures in an <see cref="AggregateException"/>, and the "no trial completed"
 /// case arrives as an inner <see cref="TimeoutException"/> — identifiable by type, not by its
 /// (ML.NET-owned, localizable) message text.
@@ -63,7 +63,7 @@ public class AutoMLFailureTranslatorTests
     [Fact]
     public void TryTranslate_AucUndefinedFailure_IsLeftAlone()
     {
-        // BUG-22/24/36: AutoMLRunner recovers from this by falling back to another metric. Translating
+        // AutoMLRunner recovers from this by falling back to another metric. Translating
         // it would break that recovery, so the translator must not claim it.
         var auc = new AggregateException(
             new ArgumentOutOfRangeException("PosSample", "AUC is not defined when there is no positive class in the data"));

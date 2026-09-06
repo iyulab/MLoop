@@ -205,11 +205,11 @@ public class ModelRegistryTests : IDisposable
     [Fact]
     public async Task ShouldPromoteAsync_ForecastingAutoMetric_WorseModelRejected()
     {
-        // TD-06 convergence: before centralizing on TaskMetadata, ModelRegistry.DefaultMetricForTask
+        // Convergence: before centralizing on TaskMetadata, ModelRegistry.DefaultMetricForTask
         // returned null for forecasting, so the gate resolved no metricKey and *always* promoted the
         // new model. Now forecasting resolves its canonical "mae" (an error metric), so a worse model
         // (higher mae) is correctly rejected — while the metric is threshold-less, so the gate never
-        // falsely blocks (the BUG-46-inverse for the newly-covered tasks).
+        // falsely blocks (the inverse defect, for the newly-covered tasks).
         var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001",
             new Dictionary<string, double> { ["mae"] = 10.0 }, task: "forecasting", metricConfig: "auto");
         await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
@@ -605,7 +605,7 @@ public class ModelRegistryTests : IDisposable
     [Fact]
     public async Task ShouldPromoteAsync_ImageAutoMetric_NonConverged_ReturnsFalse()
     {
-        // BUG-46: a non-converged image-classification model (micro_accuracy below the 1/N
+        // a non-converged image-classification model (micro_accuracy below the 1/N
         // random baseline) must be blocked even though the project metric is the deferred
         // "auto" (init leaves image tasks as auto). Binary image task → classCount=2 → 1/2=0.5.
         var experimentId = await CreateDummyExperimentAsync(

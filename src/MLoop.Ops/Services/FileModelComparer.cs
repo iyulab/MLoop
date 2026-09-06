@@ -135,7 +135,7 @@ public sealed class FileModelComparer : IModelComparer
     {
         // Experiments live under "staging" (the layout ExperimentStore writes), not "experiments" —
         // the old path never existed on a real project, so model comparison (and the REST /compare
-        // endpoint) failed to find any metrics (F-33).
+        // endpoint) failed to find any metrics.
         return Path.Combine(GetModelPath(modelName), ExperimentLayout.StagingDirectory);
     }
 

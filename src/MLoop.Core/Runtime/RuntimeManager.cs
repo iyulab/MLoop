@@ -215,7 +215,7 @@ public class RuntimeManager
     /// <c>MLContext.Model.Load</c> that deserializes native model parameters — both the training
     /// path and every inference/evaluation/serving path. Skipping it on the load side surfaces as a
     /// <see cref="DllNotFoundException"/> ("Unable to load DLL 'tensorflow'/...") at deserialization
-    /// time, since ML.NET resolves the native library while reconstructing the model. (BUG-40)
+    /// time, since ML.NET resolves the native library while reconstructing the model.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// The task requires a runtime that is not yet installed (includes an install hint).

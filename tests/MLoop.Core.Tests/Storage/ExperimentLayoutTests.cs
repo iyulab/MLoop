@@ -4,7 +4,7 @@ namespace MLoop.Core.Tests.Storage;
 
 /// <summary>
 /// Pins the canonical experiment-staging layout values. These constants are the single authority
-/// shared by MLoop.CLI's ExperimentStore (writer) and MLoop.Ops services (readers); F-32/F-33 were
+/// shared by MLoop.CLI's ExperimentStore (writer) and MLoop.Ops services (readers); two such drifts were
 /// caused by an independent Ops copy drifting to a non-existent "experiments" directory. Locking the
 /// values here makes any future drift a failing test rather than a silently broken read path.
 /// </summary>

@@ -45,7 +45,7 @@ public sealed class FileDataSampler : IDataSampler
         // Join predictions with feedback. Feedback can be recorded more than once for the same
         // prediction (RecordFeedbackAsync appends — e.g. a user correcting a label), so group by
         // prediction id and keep the most recent value rather than ToDictionary-ing (which threw
-        // "same key already added" and crashed sampling on any duplicate — F-34).
+        // "same key already added" and crashed sampling on any duplicate).
         var feedbackDict = feedback
             .GroupBy(f => f.PredictionId)
             .ToDictionary(g => g.Key, g => g.OrderBy(f => f.Timestamp).Last().ActualValue);

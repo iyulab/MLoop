@@ -3,7 +3,7 @@ using MLoop.CLI.Infrastructure.FileSystem;
 namespace MLoop.Tests.Infrastructure.FileSystem;
 
 /// <summary>
-/// F-28 guard: best-experiment selection must honor metric direction. Before the fix, Status/Compare/
+/// Guard: best-experiment selection must honor metric direction. Before the fix, Status/Compare/
 /// API sorted BestMetric descending unconditionally, ranking the worst clustering/forecasting/
 /// recommendation model (highest average_distance/mae/rmse) as "best".
 /// </summary>

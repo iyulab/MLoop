@@ -8,12 +8,12 @@ namespace MLoop.Core.AutoML;
 /// <remarks>
 /// A dedicated type exists because the wrapped message is an <b>ML.NET</b> string, not ours: matching it
 /// textually would break on localization or an ML.NET wording change, exactly the fragility that made
-/// keyword-matching "bad allocation" the wrong fix for this failure class (cycle-173). Callers that need
+/// keyword-matching "bad allocation" the wrong fix for this failure class. Callers that need
 /// to recognise the condition — the CLI's suggestion layer above all — test the type instead.
 /// <para>
 /// The message deliberately names <b>two</b> possible causes. In this code path MLoop genuinely cannot
 /// tell them apart: when no trial completes, AutoML's <c>progressHandler</c> reports nothing at all
-/// (measured, cycle-173), so a budget that was merely too small and trials that all died on resources
+/// (measured), so a budget that was merely too small and trials that all died on resources
 /// look identical from here. Naming only one would be a guess presented as a diagnosis.
 /// </para>
 /// Derives from <see cref="InvalidOperationException"/> so existing handlers keep working — the same

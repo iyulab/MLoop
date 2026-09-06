@@ -83,7 +83,7 @@ public class ConfigMerger
         // an explicit `training.metric` in mloop.yaml, i.e. models registered by
         // `train --name <new>` rather than `init` (which resolves via PrimaryMetricOrAuto itself).
         // That mislabels the score and makes direction lookups treat it as an unknown metric.
-        // Same family as BUG-46 — TaskMetadata is the authority (TD-06); ConfigMerger was the one
+        // The same family — TaskMetadata is the authority; ConfigMerger was the one
         // consumer still missing from it.
         // Tasks with no canonical primary (object detection, unknown) keep "auto": that deferred
         // case is intentional and PrimaryMetricOrAuto preserves it.

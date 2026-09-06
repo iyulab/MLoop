@@ -95,7 +95,7 @@ public static class AnalyzeJson
             if (isConstant) flags.Add($"constant-column: {name}");
             else if (missingPct > 30) flags.Add($"high-null: {name} ({missingPct:F1}%)");
 
-            // F-16: strictly-increasing integer columns are likely ID/index — using them as
+            // strictly-increasing integer columns are likely ID/index — using them as
             // features causes leakage/overfitting. train already warns (CsvDataLoader.DetectMonotonicColumns);
             // surface the same signal here so the agent's FE loop can drop them (decision rule "ID/index").
             if (monotonicSet?.Contains(name) == true)
@@ -266,7 +266,7 @@ public static class AnalyzeJson
     /// A "highly-skewed" flag is only actionable for continuous columns. A low-cardinality column
     /// (e.g. a binary 1/2 rectifier id) has a mathematically-defined skewness that is really just its
     /// class balance — flagging it as skewed misleads a downstream agent into proposing a meaningless
-    /// transform (F-02, observed in a live agent run). When per-column cardinality is supplied, the
+    /// transform (observed in a live agent run). When per-column cardinality is supplied, the
     /// skew flag is suppressed at/below this distinct-value count.
     /// </summary>
     private const int SkewFlagMinCardinality = 3;
