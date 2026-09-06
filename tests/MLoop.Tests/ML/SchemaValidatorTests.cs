@@ -35,26 +35,32 @@ public class SchemaValidatorTests : IDisposable
     public async Task ValidateAsync_EmptyInputFile_ReturnsResult()
     {
         var validator = new SchemaValidator(_fileSystem, _projectDiscovery);
-        var modelPath = Path.Combine(_tempDir, "model.zip");
         var inputPath = CreateCsv("empty.csv", "");
 
-        var result = await validator.ValidateAsync(modelPath, inputPath, "default");
+        var result = await validator.ValidateAsync(inputPath, "default");
 
         // Should handle gracefully without crashing
         Assert.NotNull(result);
     }
 
     [Fact]
-    public async Task ValidateAsync_NoModelNoSchema_ReturnsResult()
+    public async Task ValidateAsync_NoSavedSchema_SkipsAndSaysSo_RatherThanInventingAFinding()
     {
+        // An experiment with no recorded input schema is not a data problem, and there is nothing to
+        // compare the columns against. Reporting "missing columns" here would name a defect in data
+        // that is fine — which is what comparing against the model artifact's own schema did: that
+        // schema describes a featurized view, where the feature columns are folded into a single
+        // vector and a label is present by construction, so present columns read as missing and
+        // prediction data is asked for a label it is not supposed to carry.
         var validator = new SchemaValidator(_fileSystem, _projectDiscovery);
-        var modelPath = Path.Combine(_tempDir, "nonexistent_model.zip");
         var inputPath = CreateCsv("data.csv", "Feature1,Feature2,Label\n1,2,A\n3,4,B\n");
 
-        var result = await validator.ValidateAsync(modelPath, inputPath, "default");
+        var result = await validator.ValidateAsync(inputPath, "default");
 
-        // Without model or experiment, should not crash
-        Assert.NotNull(result);
+        Assert.True(result.IsValid);
+        Assert.Empty(result.MissingColumns);
+        Assert.Contains("skipped", result.ErrorMessageEn, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(result.Suggestions);
     }
 
     [Fact]

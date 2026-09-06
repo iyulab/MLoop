@@ -1,6 +1,3 @@
-using Microsoft.ML;
-using Microsoft.ML.AutoML;
-using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Data;
@@ -14,26 +11,24 @@ namespace MLoop.CLI.Infrastructure.ML;
 /// </summary>
 public class SchemaValidator
 {
-    private readonly MLContext _mlContext;
     private readonly IFileSystemManager _fileSystem;
     private readonly IProjectDiscovery _projectDiscovery;
 
     public SchemaValidator(IFileSystemManager fileSystem, IProjectDiscovery projectDiscovery)
     {
-        _mlContext = new MLContext(seed: 42);
         _fileSystem = fileSystem;
         _projectDiscovery = projectDiscovery;
     }
 
     /// <summary>
-    /// Validates that the prediction data schema matches the model's expected input schema
+    /// Checks the prediction data's columns against the input schema recorded when the model was
+    /// trained. The model artifact itself is deliberately not consulted — the schema it would expose
+    /// describes a featurized view, not the columns a caller supplies.
     /// </summary>
-    /// <param name="modelPath">Path to the model file</param>
     /// <param name="inputDataPath">Path to the prediction data file</param>
     /// <param name="modelName">Model name for loading experiment data</param>
     /// <param name="experimentId">Experiment ID for loading schema</param>
     public async Task<SchemaValidationResult> ValidateAsync(
-        string modelPath,
         string inputDataPath,
         string modelName,
         string? experimentId = null)
@@ -70,151 +65,21 @@ public class SchemaValidator
                 return ValidateWithSavedSchema(savedSchema, readPath);
             }
 
-            // Otherwise, fall back to model-based validation (which is limited)
-            var trainedModel = _mlContext.Model.Load(modelPath, out DataViewSchema modelSchema);
-
-            int schemaColumnCount = 0;
-            try
-            {
-                schemaColumnCount = modelSchema.Count;
-            }
-            catch
-            {
-                // Ignore if we can't get the count
-            }
-
-            if (modelSchema == null || schemaColumnCount == 0)
-            {
-                // ML.NET models don't store input schema in an accessible way
-                // Skip validation and let prediction proceed (it will fail with ML.NET's own error if mismatch)
-                result.IsValid = true;  // Allow prediction to proceed
-                result.ErrorMessage = "스키마 검증 불가 (저장된 스키마 정보 없음)";
-                result.ErrorMessageEn = "Schema validation skipped (no saved schema information)";
-                result.Suggestions.Add("Note: This model was trained without schema capture");
-                result.Suggestions.Add("Retrain to enable schema validation");
-                result.Suggestions.Add("Prediction will proceed - if schema mismatches, ML.NET will report error");
-                return result;
-            }
-
-            // Load input data to infer schema (readPath is already UTF-8 via EncodingDetector)
-            string? firstLine;
-            using (var reader = new StreamReader(readPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
-            {
-                firstLine = reader.ReadLine();
-            }
-
-            if (string.IsNullOrEmpty(firstLine))
-            {
-                result.IsValid = false;
-                result.ErrorMessage = "입력 파일이 비어있습니다.";
-                result.ErrorMessageEn = "Input file is empty";
-                return result;
-            }
-
-            var columns = CsvFieldParser.ParseFields(firstLine);
-            var dummyLabel = columns.Length > 0 ? columns[0] : "dummy";
-
-            var columnInference = _mlContext.Auto().InferColumns(
-                readPath,
-                labelColumnName: dummyLabel,
-                separatorChar: ',');
-
-            if (columnInference == null || columnInference.TextLoaderOptions == null)
-            {
-                result.IsValid = false;
-                result.ErrorMessage = "컬럼 정보 추론 실패";
-                result.ErrorMessageEn = "Failed to infer column information";
-                return result;
-            }
-
-            var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
-            var inputData = textLoader.Load(readPath);
-            var inputSchema = inputData.Schema;
-
-            // Get model input columns (exclude Label and Features special columns)
-            var modelInputColumns = new List<(string Name, DataViewType Type)>();
-            foreach (var column in modelSchema)
-            {
-                // Skip internal ML.NET columns
-                if (column.Name == "Label" || column.Name == "Features" ||
-                    column.Name == "Score" || column.Name == "PredictedLabel")
-                    continue;
-
-                modelInputColumns.Add((column.Name, column.Type));
-            }
-
-            // Get input data columns
-            var inputColumns = new List<(string Name, DataViewType Type)>();
-            foreach (var column in inputSchema)
-            {
-                inputColumns.Add((column.Name, column.Type));
-            }
-
-            // Find missing columns
-            var missingColumns = new List<string>();
-            var typeMismatchColumns = new List<(string Name, string Expected, string Actual)>();
-
-            foreach (var (modelColName, modelColType) in modelInputColumns)
-            {
-                var inputCol = inputColumns.FirstOrDefault(c =>
-                    c.Name != null && c.Name.Equals(modelColName, StringComparison.OrdinalIgnoreCase));
-
-                if (inputCol.Name == null)
-                {
-                    // Column might be in input but not matched - check more carefully
-                    var exactMatch = inputColumns.Any(c => c.Name != null && c.Name == modelColName);
-                    if (!exactMatch)
-                    {
-                        missingColumns.Add(modelColName);
-                    }
-                }
-                else if (inputCol.Type != null && modelColType != null)
-                {
-                    // Check type compatibility (simplified - actual check is more complex)
-                    if (!AreTypesCompatible(modelColType, inputCol.Type))
-                    {
-                        typeMismatchColumns.Add((
-                            modelColName,
-                            modelColType.ToString() ?? "unknown",
-                            inputCol.Type.ToString() ?? "unknown"));
-                    }
-                }
-            }
-
-            // Build error message if validation failed
-            if (missingColumns.Any() || typeMismatchColumns.Any())
-            {
-                result.IsValid = false;
-                result.MissingColumns = missingColumns;
-                result.TypeMismatchColumns = typeMismatchColumns;
-
-                var errorParts = new List<string>();
-
-                if (missingColumns.Any())
-                {
-                    errorParts.Add($"누락된 컬럼: {string.Join(", ", missingColumns)}");
-                    result.ErrorMessageEn = $"Missing columns: {string.Join(", ", missingColumns)}";
-                }
-
-                if (typeMismatchColumns.Any())
-                {
-                    var mismatchDesc = string.Join(", ", typeMismatchColumns.Select(
-                        t => $"{t.Name} (expected: {t.Expected}, got: {t.Actual})"));
-                    errorParts.Add($"타입 불일치: {mismatchDesc}");
-
-                    if (string.IsNullOrEmpty(result.ErrorMessageEn))
-                    {
-                        result.ErrorMessageEn = $"Type mismatch: {mismatchDesc}";
-                    }
-                }
-
-                result.ErrorMessage = string.Join("; ", errorParts);
-
-                // Add helpful suggestions
-                result.Suggestions.Add("예측 데이터가 학습 데이터와 동일한 컬럼을 포함하는지 확인하세요.");
-                result.Suggestions.Add("Check that prediction data contains the same columns as training data.");
-            }
-
+            // No saved schema: the only honest answer is that nothing was checked.
+            //
+            // This is reachable only for an experiment whose metadata predates the schema field —
+            // training records it unconditionally, on both the tabular and the directory-based path,
+            // so nothing this tool produces today arrives here. The alternative once tried, comparing
+            // against the model artifact's own schema, cannot work and should not be reintroduced:
+            // models are saved without one, and even given one the comparison is against a featurized
+            // view where the feature columns have already been folded into a single vector, so present
+            // columns read as missing and a label absent by design in prediction data reads as
+            // required. Two authorities for the input schema, one of them wrong.
+            result.IsValid = true;
+            result.ErrorMessage = "스키마 검증 건너뜀 (이 실험에 저장된 입력 스키마가 없습니다).";
+            result.ErrorMessageEn = "Schema validation skipped: this experiment has no saved input schema.";
+            result.Suggestions.Add("Retrain the model to record the input schema and enable validation.");
+            result.Suggestions.Add("Prediction proceeds unchecked — a column mismatch surfaces as a runtime error instead.");
             return result;
         }
         catch (Exception ex)
@@ -228,12 +93,6 @@ public class SchemaValidator
         }
     }
 
-    private bool AreTypesCompatible(DataViewType expected, DataViewType actual)
-    {
-        // For vectors, we need to check dimensions carefully
-        // This is simplified - in practice categorical encoding causes dimension issues
-        return expected.RawType == actual.RawType;
-    }
 
     /// <summary>
     /// Validates using saved schema information from training
@@ -408,6 +267,5 @@ public class SchemaValidationResult
     public string? ErrorMessage { get; set; }
     public string? ErrorMessageEn { get; set; }
     public List<string> MissingColumns { get; set; } = new();
-    public List<(string Name, string Expected, string Actual)> TypeMismatchColumns { get; set; } = new();
     public List<string> Suggestions { get; set; } = new();
 }

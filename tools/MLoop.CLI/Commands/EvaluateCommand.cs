@@ -249,7 +249,7 @@ public static class EvaluateCommand
             if (!isDirectoryBased)
             {
                 var validator = new SchemaValidator(fileSystem, projectDiscovery);
-                var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedTestDataFile, resolvedModelName, resolvedExperimentId);
+                var validationResult = await validator.ValidateAsync(resolvedTestDataFile, resolvedModelName, resolvedExperimentId);
 
                 if (!validationResult.IsValid)
                 {
