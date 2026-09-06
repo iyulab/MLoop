@@ -70,6 +70,14 @@ public static class LogsCommand
         DateTime? to,
         bool jsonOutput)
     {
+        // In --json mode stdout must be pure JSON, so route human-facing Spectre output to stderr —
+        // the same reassignment status/validate/evaluate --json already use.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             // Initialize components
@@ -106,7 +114,10 @@ public static class LogsCommand
                 toOffset,
                 limit);
 
-            if (!logs.Any())
+            // "no logs yet" is an ordinary state, not a failure — but under --json it still has to
+            // come back as an empty payload rather than prose, so the hint is human-only and the
+            // JSON path falls through to emit an empty array.
+            if (!logs.Any() && !jsonOutput)
             {
                 if (resolvedModelName != null)
                 {

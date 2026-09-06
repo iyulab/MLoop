@@ -73,6 +73,14 @@ public static class TriggerCommand
         int? feedbackThreshold,
         bool jsonOutput)
     {
+        // In --json mode stdout must be pure JSON, so route human-facing Spectre output to stderr —
+        // the same reassignment status/validate/evaluate --json already use.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             var projectRoot = FindProjectRoot();
