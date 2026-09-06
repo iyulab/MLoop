@@ -64,6 +64,11 @@ public static class ListCommand
     /// </summary>
     private static async Task<int> ExecuteTrialsAsync(string? modelName, string experimentId, bool jsonOutput)
     {
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
+
         try
         {
             var ctx = CommandContext.TryCreate();
@@ -172,6 +177,11 @@ public static class ListCommand
 
     private static async Task<int> ExecuteAsync(string? modelName, bool showAll, bool jsonOutput = false)
     {
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
+
         try
         {
             var ctx = CommandContext.TryCreate();

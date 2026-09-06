@@ -46,6 +46,11 @@ public sealed class FeaturesCommand : Command
 
     private static async Task<int> ExecuteAsync(string? dropCsv, string? keepCsv, bool reset, string modelName, bool json)
     {
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = json ? new JsonOutputScope() : null;
+
         try
         {
             var ctx = CommandContext.TryCreate();

@@ -99,6 +99,11 @@ public static class PromoteCommand
         bool jsonOutput,
         bool decideOnly)
     {
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
+
         try
         {
             // Exactly one selector: an explicit ID, --latest, or --best.
