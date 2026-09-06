@@ -234,6 +234,14 @@ public static class SampleCommand
 
     private static async Task<int> ExecuteStatsAsync(string modelName, bool jsonOutput)
     {
+        // In --json mode stdout must be pure JSON, so route human-facing Spectre output to stderr —
+        // the same reassignment status/validate/evaluate --json already use.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             var projectRoot = FindProjectRoot();
@@ -242,7 +250,9 @@ public static class SampleCommand
             var sampler = new FileDataSampler(projectRoot);
             var stats = await sampler.GetStatisticsAsync(modelName.ToLowerInvariant());
 
-            if (stats.TotalPredictions == 0)
+            // Same as logs: an empty history is an ordinary state, and --json must still report it
+            // as a payload (all-zero stats) instead of prose on stdout.
+            if (stats.TotalPredictions == 0 && !jsonOutput)
             {
                 AnsiConsole.MarkupLine($"[yellow]No predictions found for model '[cyan]{modelName}[/]'.[/]");
                 AnsiConsole.MarkupLine("[grey]Log predictions using [blue]mloop predict --log[/] first.[/]");

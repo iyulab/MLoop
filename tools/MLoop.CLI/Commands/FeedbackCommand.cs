@@ -183,7 +183,7 @@ public static class FeedbackCommand
         {
             // The tip used to render via a bare AnsiConsole.MarkupLine after ErrorConsole.Error —
             // stdout, not stderr, so a --json consumer got the cause and lost the remedy (the same
-            // channel defect ErrorConsole.Error(cause, tip) exists to close; see cycle-188).
+            // channel defect ErrorConsole.Error(cause, tip) exists to close).
             ErrorConsole.Error(ex.Message, "Make sure the prediction was logged with --log.");
             return 1;
         }
@@ -201,6 +201,14 @@ public static class FeedbackCommand
         DateTime? to,
         bool jsonOutput)
     {
+        // In --json mode stdout must be pure JSON, so route human-facing Spectre output to stderr —
+        // the same reassignment status/validate/evaluate --json already use.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             var projectRoot = FindProjectRoot();
@@ -216,7 +224,8 @@ public static class FeedbackCommand
                 toOffset,
                 limit);
 
-            if (!feedback.Any())
+            // Empty is an ordinary state; --json still owes the caller a payload, not prose.
+            if (!feedback.Any() && !jsonOutput)
             {
                 AnsiConsole.MarkupLine($"[yellow]No feedback found for model '[cyan]{modelName}[/]'.[/]");
                 AnsiConsole.MarkupLine("[grey]Use [blue]mloop feedback add[/] to record feedback.[/]");
@@ -247,6 +256,14 @@ public static class FeedbackCommand
         DateTime? to,
         bool jsonOutput)
     {
+        // In --json mode stdout must be pure JSON, so route human-facing Spectre output to stderr —
+        // the same reassignment status/validate/evaluate --json already use.
+        if (jsonOutput)
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+
         try
         {
             var projectRoot = FindProjectRoot();
@@ -261,7 +278,8 @@ public static class FeedbackCommand
                 fromOffset,
                 toOffset);
 
-            if (metrics.TotalFeedback == 0)
+            // Empty is an ordinary state; --json still owes the caller a payload, not prose.
+            if (metrics.TotalFeedback == 0 && !jsonOutput)
             {
                 AnsiConsole.MarkupLine($"[yellow]No feedback data found for model '[cyan]{modelName}[/]'.[/]");
                 AnsiConsole.MarkupLine("[grey]Record feedback using [blue]mloop feedback add[/] first.[/]");
