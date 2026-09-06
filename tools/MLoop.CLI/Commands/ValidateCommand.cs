@@ -113,14 +113,10 @@ public static class ValidateCommand
 
     private static async Task<int> ExecuteAsync(bool verbose, bool jsonOutput = false)
     {
-        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
-        // stderr — the same reassignment predict/evaluate --json use, which keeps every existing
-        // AnsiConsole call site in this method unchanged.
-        if (jsonOutput)
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(Console.Error)
-            });
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
 
         try
         {
@@ -693,7 +689,13 @@ public static class ValidateCommand
             AnsiConsole.MarkupLine($"[red bold]Errors ({errors.Count}):[/]");
             foreach (var error in errors)
             {
-                AnsiConsole.MarkupLine($"  [red]✗[/] [cyan]{error.Path}[/]: {error.Message}");
+                // A finding's path and message are data, not markup — and both routinely contain
+                // brackets: an indexed path reads "models.default.prep[0]", and a note is prefixed
+                // with a literal "[info] ". Interpolated raw, Spectre parses those as style tags and
+                // throws, so the command whose whole job is to list configuration problems died while
+                // listing them instead.
+                AnsiConsole.MarkupLine(
+                    $"  [red]✗[/] [cyan]{Markup.Escape(error.Path)}[/]: {Markup.Escape(error.Message)}");
             }
             AnsiConsole.WriteLine();
         }
@@ -703,7 +705,8 @@ public static class ValidateCommand
             AnsiConsole.MarkupLine($"[yellow bold]Warnings ({warnings.Count}):[/]");
             foreach (var warning in warnings)
             {
-                AnsiConsole.MarkupLine($"  [yellow]⚠[/] [cyan]{warning.Path}[/]: {warning.Message}");
+                AnsiConsole.MarkupLine(
+                    $"  [yellow]⚠[/] [cyan]{Markup.Escape(warning.Path)}[/]: {Markup.Escape(warning.Message)}");
             }
             AnsiConsole.WriteLine();
         }

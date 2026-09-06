@@ -33,13 +33,10 @@ public static class RuntimeCommand
         {
             var jsonOutput = parseResult.GetValue(jsonOption);
 
-            // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
-            // stderr — the same reassignment predict/evaluate/validate/status --json use.
-            if (jsonOutput)
-                AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-                {
-                    Out = new AnsiConsoleOutput(Console.Error)
-                });
+            // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+            // duration — and the scope guarantees stdout still carries a document on an exit
+            // that skips this command's own emitter.
+            using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
 
             var manager = new RuntimeManager();
             var table = new Table();

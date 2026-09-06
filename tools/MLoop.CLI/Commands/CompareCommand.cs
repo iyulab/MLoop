@@ -86,13 +86,10 @@ public static class CompareCommand
         if (metricsFile != null)
             return await ExecuteProvidedStateAsync(metricsFile, sortMetric);
 
-        // In --json mode stdout must be pure JSON, so route human-facing Spectre output to stderr —
-        // the same reassignment the other structured-output commands use.
-        if (jsonOutput)
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(Console.Error)
-            });
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
 
         try
         {

@@ -41,14 +41,10 @@ public static class StatusCommand
 
     private static async Task<int> ExecuteAsync(bool verbose, bool jsonOutput = false)
     {
-        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
-        // stderr — the same reassignment predict/evaluate/validate --json use, which keeps every
-        // existing AnsiConsole call site in this method unchanged.
-        if (jsonOutput)
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(Console.Error)
-            });
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
 
         try
         {

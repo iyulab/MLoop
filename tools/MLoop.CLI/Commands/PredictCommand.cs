@@ -122,13 +122,10 @@ public static class PredictCommand
         bool includeFeatures,
         bool json = false)
     {
-        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to stderr.
-        // Reassigning the global console keeps the ~40 existing AnsiConsole call sites unchanged.
-        if (json)
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(Console.Error)
-            });
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = json ? new JsonOutputScope() : null;
 
         try
         {
