@@ -70,13 +70,10 @@ public static class LogsCommand
         DateTime? to,
         bool jsonOutput)
     {
-        // In --json mode stdout must be pure JSON, so route human-facing Spectre output to stderr —
-        // the same reassignment status/validate/evaluate --json already use.
-        if (jsonOutput)
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(Console.Error)
-            });
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
 
         try
         {

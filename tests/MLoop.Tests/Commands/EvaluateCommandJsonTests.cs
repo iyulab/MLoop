@@ -185,14 +185,21 @@ public class EvaluateCommandJsonTests : IDisposable
     }
 
     [Fact]
-    public async Task Evaluate_Json_UnknownExperiment_ReportsErrorOnStderr()
+    public async Task Evaluate_Json_UnknownExperiment_EmitsErrorPayload()
     {
         Directory.CreateDirectory(Path.Combine(_testProjectRoot, "models", "default", "staging"));
 
         var (exitCode, stdout, stderr) = await RunAsync("evaluate", "exp-999", "nope.csv", "--json");
 
         Assert.Equal(1, exitCode);
-        Assert.Equal("", stdout); // nothing valid to emit on stdout; --json still keeps it pure
+
+        // This assertion used to read `Assert.Equal("", stdout)`, on the reasoning that an error exit
+        // has nothing valid to say and so keeps stdout pure. That was the defect, not the contract: an
+        // empty stdout fails JSON.parse exactly as prose does, and a consumer cannot tell it apart from
+        // a crash. An error exit owes the same thing every other exit owes — a document.
+        var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("error").GetString()));
+        Assert.NotEqual("", stderr);
     }
 
     [Fact]

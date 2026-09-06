@@ -80,14 +80,10 @@ public static class InfoCommand
         string dataFile, string? labelOption, string modelName,
         bool analyze, int sampleSize, bool jsonOutput = false)
     {
-        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
-        // stderr — the same reassignment status/validate/prep run --json use, which keeps every
-        // existing AnsiConsole call site in this command unchanged.
-        if (jsonOutput)
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(Console.Error)
-            });
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
 
         try
         {

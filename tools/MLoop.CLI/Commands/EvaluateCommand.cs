@@ -57,20 +57,46 @@ public static class EvaluateCommand
         return command;
     }
 
+    /// <summary>
+    /// The one place this command's <c>--json</c> document is shaped, so the evaluated and the
+    /// nothing-to-evaluate exits cannot describe themselves with different keys.
+    /// </summary>
+    private static void EmitJson(
+        string model,
+        string? experimentId,
+        string? testDataFile,
+        object? trainingMetrics,
+        object? testMetrics,
+        bool? possibleOverfitting)
+    {
+        var payload = new
+        {
+            Model = model,
+            ExperimentId = experimentId,
+            TestDataFile = testDataFile,
+            TrainingMetrics = trainingMetrics,
+            TestMetrics = testMetrics,
+            PossibleOverfitting = possibleOverfitting
+        };
+
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload,
+            new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+            }));
+    }
+
     private static async Task<int> ExecuteAsync(
         string? experimentId,
         string? testDataFile,
         string? modelName,
         bool jsonOutput = false)
     {
-        // In --json mode stdout must be pure JSON, so route all human-facing Spectre output to
-        // stderr — the same reassignment predict --json uses, which keeps every existing
-        // AnsiConsole call site in this method unchanged.
-        if (jsonOutput)
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(Console.Error)
-            });
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
 
         try
         {
@@ -114,6 +140,12 @@ public static class EvaluateCommand
                 {
                     AnsiConsole.MarkupLine($"[yellow]>[/] No production model found for '[cyan]{resolvedModelName}[/]'. Skipping evaluation.");
                     AnsiConsole.MarkupLine($"[grey]Tip:[/] Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
+
+                    // Skipping is a reported outcome, not a failure — the exit code stays 0 — but it is
+                    // still an exit, so a --json consumer gets the same document shape with nothing
+                    // measured rather than an empty stdout it cannot parse.
+                    if (jsonOutput)
+                        EmitJson(resolvedModelName, null, null, null, null, null);
                     return 0;
                 }
 
@@ -317,22 +349,8 @@ public static class EvaluateCommand
             AnsiConsole.WriteLine();
 
             if (jsonOutput)
-            {
-                var payload = new
-                {
-                    Model = resolvedModelName,
-                    ExperimentId = resolvedExperimentId,
-                    TestDataFile = resolvedTestDataFile,
-                    TrainingMetrics = trainingMetrics,
-                    TestMetrics = testMetrics,
-                    PossibleOverfitting = overfitting
-                };
-                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
-                }));
-            }
+                EmitJson(resolvedModelName, resolvedExperimentId, resolvedTestDataFile,
+                    trainingMetrics, testMetrics, overfitting);
 
             return 0;
         }

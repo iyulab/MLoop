@@ -191,6 +191,19 @@ public class CompareJsonContractTests : IDisposable
     }
 
     [Fact]
+    public async Task List_WithJsonAndNoExperiments_EmitsEmptyPayload()
+    {
+        // The path this covers is why the audit was re-counted: ListCommand looked covered because
+        // its --trials path had tests, while plain `list --json` — the state a fresh project is in —
+        // had never been driven through the command tree at all.
+        var (exitCode, stdout, stderr) = await RunAsync("list", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = ParseStdout(stdout, stderr);
+        Assert.Equal(0, doc.RootElement.GetProperty("experiments").GetArrayLength());
+    }
+
+    [Fact]
     public async Task ListTrials_WithJsonAndUnknownExperiment_EmitsErrorPayload()
     {
         var (exitCode, stdout, stderr) = await RunAsync("list", "--trials", "exp-999", "--json");
