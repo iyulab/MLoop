@@ -1,6 +1,7 @@
 using System.CommandLine;
 using DotNetEnv;
 using MLoop.CLI.Commands;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.Update;
 using Spectre.Console;
 
@@ -40,8 +41,7 @@ internal class Program
             DisplayBanner();
         }
 
-        var parseResult = rootCommand.Parse(args);
-        var exitCode = parseResult.Invoke();
+        var exitCode = Execute(rootCommand, args);
 
         // Lazy update check (skip for update command itself)
         var firstArg = args.Length > 0 ? args[0] : null;
@@ -75,6 +75,27 @@ internal class Program
         }
 
         return exitCode;
+    }
+
+    /// <summary>
+    /// Parses and dispatches, factored out for the same reason <see cref="BuildRootCommand"/> is:
+    /// a test that reached for <c>Parse(args).Invoke()</c> directly would be exercising a
+    /// hand-rolled copy of this dispatch, and the exit that only exists here — a command line that
+    /// fails to parse, where no command action ever runs — would be the half the copy omits.
+    /// </summary>
+    internal static int Execute(RootCommand rootCommand, string[] args)
+    {
+        var parseResult = rootCommand.Parse(args);
+
+        if (parseResult.Errors.Count > 0)
+            return ParseFailureReport.Report(parseResult, args);
+
+        // A line can parse cleanly and still say something the caller did not write.
+        var optionLike = OptionLikeArgumentCheck.Find(parseResult);
+        if (optionLike is not null)
+            return OptionLikeArgumentCheck.Report(parseResult, args, optionLike);
+
+        return parseResult.Invoke();
     }
 
     /// <summary>

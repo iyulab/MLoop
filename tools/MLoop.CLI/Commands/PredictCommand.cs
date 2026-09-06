@@ -374,7 +374,7 @@ public static class PredictCommand
 
             // Validate schema before prediction
             var validator = new SchemaValidator(fileSystem, projectDiscovery);
-            var validationResult = await validator.ValidateAsync(resolvedModelPath, resolvedDataFile, resolvedModelName, experimentId);
+            var validationResult = await validator.ValidateAsync(resolvedDataFile, resolvedModelName, experimentId);
 
             if (!validationResult.IsValid)
             {
@@ -393,16 +393,6 @@ public static class PredictCommand
                     foreach (var col in validationResult.MissingColumns)
                     {
                         AnsiConsole.MarkupLine($"  [grey]-[/] {col}");
-                    }
-                    AnsiConsole.WriteLine();
-                }
-
-                if (validationResult.TypeMismatchColumns.Any())
-                {
-                    AnsiConsole.MarkupLine("[red]Column type mismatches:[/]");
-                    foreach (var (name, expected, actual) in validationResult.TypeMismatchColumns)
-                    {
-                        AnsiConsole.MarkupLine($"  [grey]-[/] {name}: expected {expected}, got {actual}");
                     }
                     AnsiConsole.WriteLine();
                 }

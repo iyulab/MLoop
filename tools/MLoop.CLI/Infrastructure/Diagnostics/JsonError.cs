@@ -24,6 +24,28 @@ namespace MLoop.CLI.Infrastructure.Diagnostics;
 public static class JsonError
 {
     /// <summary>
+    /// Whether the caller asked for structured output, answered from the raw arguments rather than a
+    /// parse result.
+    /// <para>
+    /// For the guards that run before any command action, where the parse result cannot answer it: a
+    /// line that failed to parse may never have bound the option, and when the unrecognized token is
+    /// the command name itself there is no command whose options could be consulted. Every command
+    /// spells this the same way and none declares a short alias, so an exact token match is exact
+    /// rather than approximate.
+    /// </para>
+    /// </summary>
+    public static bool WasRequested(IReadOnlyList<string> args)
+    {
+        for (var i = 0; i < args.Count; i++)
+        {
+            if (string.Equals(args[i], "--json", StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Writes <c>{"error": "&lt;message&gt;"}</c> to stdout, verbatim.
     /// <para>
     /// The message is <b>plain text</b>, not markup: whatever is passed reaches the consumer
