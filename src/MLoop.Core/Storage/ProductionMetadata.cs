@@ -13,8 +13,8 @@ namespace MLoop.Core.Storage;
 /// This supersedes the parallel <c>registry.json</c> <c>production</c> entry, which duplicated exactly
 /// this record (same experimentId/promotedAt/task/bestTrainer/labelColumn/metrics) and was written by the
 /// same promote call. Two artifacts holding one fact is the cross-artifact drift class the Single-Source
-/// Authorities doctrine exists to prevent (BUG-48 was rooted in reading the wrong one); the <c>registry.json</c>
-/// write path was removed the same way the obsolete <c>model-registry.json</c> read path was (cycle-93).
+/// Authorities doctrine exists to prevent (a promotion defect was rooted in reading the wrong one); the <c>registry.json</c>
+/// write path was removed the same way the obsolete <c>model-registry.json</c> read path was.
 /// Pre-existing on-disk <c>registry.json</c> files are harmless stale sidecars — no reader consults them.
 /// </remarks>
 public sealed record ProductionMetadata

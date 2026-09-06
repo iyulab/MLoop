@@ -58,7 +58,7 @@ internal class Program
                         // Diagnostics must never pollute stdout: machine-readable outputs
                         // (`mloop token -q`, `mloop predict --json`) are consumed via stdout capture
                         // (e.g. the documented `export MLOOP_TOKEN=$(mloop token -q)`), and an update
-                        // notice appended there corrupts the token/JSON (D19). Route to stderr.
+                        // notice appended there corrupts the token/JSON. Route to stderr.
                         var stderr = AnsiConsole.Create(new AnsiConsoleSettings
                         {
                             Out = new AnsiConsoleOutput(Console.Error)

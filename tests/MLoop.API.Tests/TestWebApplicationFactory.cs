@@ -54,7 +54,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
             // delete the directory another factory's Program startup was using as its working
             // directory, so the entry point died before ever building an IHost. Latent while
             // ApiIntegrationTests was the only factory consumer; exposed when ForecastingApiTests
-            // added a second one (D21-A).
+            // added a second one.
             services.AddSingleton<IProjectDiscovery>(new FixedRootProjectDiscovery(_testProjectRoot));
 
             // Override Ops/DataStore services to use test directory

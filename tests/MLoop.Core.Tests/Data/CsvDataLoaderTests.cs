@@ -265,7 +265,7 @@ public class CsvDataLoaderTests : IDisposable
     [Fact]
     public void LoadData_RegressionWithBooleanLabel_InfersAsSingle()
     {
-        // BUG-23: When --task regression is specified and label has 0/1 values,
+        // When --task regression is specified and label has 0/1 values,
         // InferColumns detects Boolean but regression needs Single, not String.
         var csvPath = CreateTestCsv(new[]
         {
@@ -290,7 +290,7 @@ public class CsvDataLoaderTests : IDisposable
     [Fact]
     public void LoadData_MulticlassWithBooleanLabel_InfersAsString()
     {
-        // BUG-15/17: Multiclass should still convert Boolean label to String
+        // Multiclass should still convert Boolean label to String
         var csvPath = CreateTestCsv(new[]
         {
             "feature1,feature2,Label",
@@ -589,7 +589,7 @@ public class CsvDataLoaderTests : IDisposable
 
     #endregion
 
-    #region RemoveExcludedColumns (BUG-44)
+    #region RemoveExcludedColumns
 
     [Fact]
     public void RemoveExcludedColumns_NoExclusions_ReturnsOriginalPath()
@@ -608,7 +608,7 @@ public class CsvDataLoaderTests : IDisposable
     public void RemoveExcludedColumns_RemovesNamedColumns_KeepsRest()
     {
         // Mirrors training marking DateTime/constant columns as "Exclude": evaluate must drop the
-        // same columns so the feature vector width matches the model. (BUG-44)
+        // same columns so the feature vector width matches the model.
         var csv = "F1,SPC_DATETIME,Const,Label\n1,2024-01-01,9,A\n3,2024-01-02,9,B\n";
         var csvPath = Path.Combine(_tempDirectory, "excl.csv");
         File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
@@ -952,7 +952,7 @@ public class CsvDataLoaderTests : IDisposable
     [Fact]
     public void RemoveDateTimeColumns_DtSuffixWithDateValues_RemovesColumn()
     {
-        // _DT suffix (KAMP pattern) with DateTime values should be removed
+        // A _DT-suffixed column with DateTime values should be removed
         var csv = "STD_DT,MFG_DT,Feature1,Label\n2024-01-15,2024-01-15,1,A\n2024-02-20,2024-02-20,2,B\n2024-03-25,2024-03-25,3,C\n";
         var csvPath = Path.Combine(_tempDirectory, "kamp_dt.csv");
         File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);

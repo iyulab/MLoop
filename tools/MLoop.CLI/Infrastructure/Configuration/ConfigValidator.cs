@@ -10,9 +10,9 @@ namespace MLoop.CLI.Infrastructure.Configuration;
 /// validator "extracted for testability", but the production path (<c>mloop validate</c>) never called
 /// it — <see cref="MLoop.CLI.Commands.ValidateCommand"/> is the live, filesystem-aware validator. The
 /// orphaned copy had drifted (its task list lost the three NLP tasks; its unsupervised set lost
-/// time-series-anomaly) and carried the same F-17/F-19 bugs since fixed in the live path. Its only
+/// time-series-anomaly) and carried the same bugs since fixed in the live path. Its only
 /// unique coverage — required-field checks for forecasting/ranking/recommendation — was ported into
-/// <c>ValidateCommand</c> (F-20), and the dead methods + their tests were removed (Cycle 51). Only the
+/// <c>ValidateCommand</c>, and the dead methods + their tests were removed (Cycle 51). Only the
 /// genuinely live <see cref="ValidatePrepSteps"/> remains here.
 /// </remarks>
 public static class ConfigValidator

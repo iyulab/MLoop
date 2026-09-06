@@ -131,7 +131,7 @@ public class ExperimentConfig
     public InputSchemaInfo? InputSchema { get; init; }
     public string? GroupColumn { get; init; }
     // Recommendation user/item columns — persisted so predict can keep them individually
-    // addressable for the model's key transforms (F-23, same as GroupColumn for ranking).
+    // addressable for the model's key transforms (the same as GroupColumn for ranking).
     public string? UserColumn { get; init; }
     public string? ItemColumn { get; init; }
 }

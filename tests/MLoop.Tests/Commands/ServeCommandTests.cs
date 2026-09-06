@@ -8,7 +8,7 @@ namespace MLoop.Tests.Commands;
 /// <summary>
 /// D9: dev-build API assembly resolution must prefer the most recently built DLL so a fresh
 /// Release build wins over a stale Debug one. The old "first existing, Debug before Release"
-/// order loaded the stale Debug assembly and hid Release-only fixes (cycle-104 had to set
+/// order loaded the stale Debug assembly and hid Release-only fixes (which is why this has to set
 /// MLOOP_API_PATH=Release to work around it).
 /// </summary>
 public class ServeCommandTests

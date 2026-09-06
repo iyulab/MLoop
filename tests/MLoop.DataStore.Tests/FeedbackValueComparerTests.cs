@@ -4,7 +4,7 @@ using MLoop.DataStore.Services;
 namespace MLoop.DataStore.Tests;
 
 /// <summary>
-/// Pins the single feedback predicted-vs-actual matching rule (F-29). The CLI's "Match" column and
+/// Pins the single feedback predicted-vs-actual matching rule. The CLI's "Match" column and
 /// the accuracy calculation previously had separate copies that drifted — the CLI's naive copy
 /// compared raw <see cref="JsonElement"/> structs, so the list always showed a mismatch even when
 /// the metrics command reported a match. These tests exercise the JSON-sourced types that actually
@@ -47,7 +47,7 @@ public class FeedbackValueComparerTests
     [Fact]
     public void EqualDoubles_ReturnsTrue() => Assert.True(FeedbackValueComparer.ValuesMatch(3.14, 3.14));
 
-    // --- F-29 regression: the runtime JsonElement cases the old naive CLI copy got wrong ---
+    // --- Regression: the runtime JsonElement cases the old naive CLI copy got wrong ---
 
     [Fact]
     public void JsonElementEqualStrings_ReturnsTrue()
@@ -73,7 +73,7 @@ public class FeedbackValueComparerTests
     public void JsonElementDifferentNumbers_ReturnsFalse()
         => Assert.False(FeedbackValueComparer.ValuesMatch(Json("42"), Json("43")));
 
-    // --- F-30: numeric prediction vs string actual (the CLI actual is always a string) ---
+    // --- Numeric prediction vs string actual (the CLI actual is always a string) ---
 
     [Fact]
     public void JsonNumberPredicted_StringActual_SameValue_ReturnsTrue()

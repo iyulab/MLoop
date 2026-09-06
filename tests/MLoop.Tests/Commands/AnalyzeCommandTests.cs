@@ -97,7 +97,7 @@ public class AnalyzeCommandTests
     [Fact]
     public void MapProfile_FlagsMonotonicIndexColumn()
     {
-        // F-16: train warns about strictly-increasing ID/index columns (CsvDataLoader.DetectMonotonicColumns)
+        // train warns about strictly-increasing ID/index columns (CsvDataLoader.DetectMonotonicColumns)
         // but analyze profile was silent — the agent could not surface index leakage. profile must flag it.
         var stats = new Dictionary<string, (long MissingCount, int UniqueCount)>
         {
@@ -148,7 +148,7 @@ public class AnalyzeCommandTests
     [Fact]
     public void MapImportance_PrefersPermutation_AndExcludesLabel()
     {
-        // F-01: a target-aware command (--label) must surface predictive importance
+        // a target-aware command (--label) must surface predictive importance
         // (permutation), not target-agnostic structural variance, and must never rank
         // the label against itself. SEQ026 ground truth: KWh ranks high structurally
         // but is predictively weak; only permutation reflects that.
@@ -271,7 +271,7 @@ public class AnalyzeCommandTests
     [Fact]
     public void MapDistribution_SuppressesSkewFlag_ForLowCardinalityColumn()
     {
-        // F-02: skewness on a binary/categorical column (e.g. a 1/2 rectifier id) is the class
+        // skewness on a binary/categorical column (e.g. a 1/2 rectifier id) is the class
         // balance, not an actionable distribution shape — flagging it "highly-skewed" misleads a
         // downstream agent into proposing a meaningless transform (observed in C04 live run).
         var desc = new DescriptiveReport
@@ -330,7 +330,7 @@ public class AnalyzeCommandTests
 }
 
 /// <summary>
-/// cwd-dependent resolution tests for `mloop analyze` data-file defaulting (F-03/F-13):
+/// cwd-dependent resolution tests for `mloop analyze` data-file defaulting:
 /// when the data-file argument is omitted, resolve from the project's configured train data.
 /// Mirrors CompareCommandTests' FileSystem collection + cwd setup/restore.
 /// </summary>

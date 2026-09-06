@@ -46,7 +46,7 @@ public class PredictionService
             };
         }
 
-        // DL tasks need their native runtime loaded before deserializing the model (BUG-40).
+        // DL tasks need their native runtime loaded before deserializing the model.
         RuntimeManager.EnsureRuntimeForTask(taskType);
 
         var model = _mlContext.Model.Load(modelPath, out _);
@@ -150,7 +150,7 @@ public class PredictionService
             try { perRowSigma = ComputeResidualSigma(residualModel, predictions); }
             catch (Exception ex)
             {
-                // Graceful degradation, but not silent (P-svc1 lesson): the caller should know the
+                // Graceful degradation, but not silent: the caller should know the
                 // band fell back to constant width instead of assuming per-row σ was applied.
                 perRowSigma = null;
                 warnings.Add($"Residual σ-model scoring failed; using constant-width interval instead: {ex.Message}");
@@ -242,20 +242,20 @@ public class PredictionService
 
     /// <summary>
     /// Resolves the ML.NET DataKind for a column, applying task-specific label type rules.
-    /// BUG-11/12: Use schema dataType, NOT InferColumns.
-    /// BUG-15/17/23: Label type depends on task type.
+    /// Use schema dataType, NOT InferColumns.
+    /// Label type depends on task type.
     /// </summary>
     /// <summary>
     /// Throws when the input rows contain none of the trained schema's non-label input columns —
     /// with zero overlap every column defaults and the model returns a fabricated all-zero-score
-    /// prediction with 200/no-warning (silent garbage-in-garbage-out, D20). Partial overlap is
+    /// prediction with 200/no-warning (silent garbage-in-garbage-out). Partial overlap is
     /// legitimate (missing values default) and stays untouched.
     /// </summary>
     /// <summary>
     /// Throws for forecasting models: the SSA forecaster is stateful (it forecasts a fixed horizon
     /// ahead of its training series), so a stateless per-row Transform extracts nothing — every
-    /// output field comes back null while the response still reports success (silent no-op, D21 —
-    /// same silent-failure family as the D20 zero-overlap guard). Fail fast with the working path
+    /// output field comes back null while the response still reports success (silent no-op —
+    /// the same silent-failure family as the zero-overlap guard). Fail fast with the working path
     /// instead of fabricating an all-null 200.
     /// </summary>
     private static void RejectRowBasedForecasting(string taskType)
@@ -302,7 +302,7 @@ public class PredictionService
                     "Boolean" => DataKind.Boolean,
                     _ => DataKind.String
                 },
-                // D14: a multiclass label can be numeric-looking (e.g. KAMP class ids "0"/"1"/"2"), in
+                // a multiclass label can be numeric-looking (e.g. class ids "0"/"1"/"2"), in
                 // which case train-time schema inference records DataType=Numeric and AutoML's fitted
                 // pipeline embeds MapValueToKey over a Single-typed column, not String. Forcing String
                 // unconditionally mismatched that trained schema and made model.Transform throw
@@ -311,7 +311,7 @@ public class PredictionService
                     => MapDataTypeToDataKind(col.DataType),
                 "regression" or "forecasting" => col.DataType switch
                 {
-                    "Boolean" => DataKind.Single, // BUG-23
+                    "Boolean" => DataKind.Single,
                     _ => DataKind.Single
                 },
                 _ => MapDataTypeToDataKind(col.DataType)
@@ -399,7 +399,7 @@ public class PredictionService
     /// This is the seam the CLI CSV writer uses before <c>SaveAsText</c>: that path serializes the raw
     /// IDataView (never a <see cref="PredictionResult"/>), so without this call an all-NaN-scoring
     /// degenerate model wrote a CSV of literal '?' values with exit 0 — silent data pollution in the
-    /// user's ledger, the same D20~D26 silent-failure family the guard exists to stop. Throws
+    /// user's ledger, the same silent-failure family the guard exists to stop. Throws
     /// <see cref="InvalidOperationException"/> when EVERY row's defining output is null/non-finite;
     /// a partially-degenerate result passes through untouched.
     /// </summary>
@@ -446,12 +446,12 @@ public class PredictionService
     }
 
     /// <summary>
-    /// P-svc1 (cycle-159): generalizes D20~D26 — each task-specific extractor above reads the scored
+    /// Generalizes that family — each task-specific extractor above reads the scored
     /// schema for that task's defining output column(s), but a schema/taskType mismatch (a renamed
     /// column, a model trained for a different task than the caller declared, an unhandled model shape)
     /// leaves every row's defining field null while the extractor still returns a row per input and the
     /// caller still gets 200/success. That silent all-null result is indistinguishable from "nothing to
-    /// report" and is exactly the D20 (zero column overlap)/D21 (stateless forecast)/D22 (unread TS-anomaly
+    /// report" and is exactly the zero-column-overlap / stateless-forecast / unread TS-anomaly
     /// vector) failure shape, generalized to a single backstop instead of one bespoke guard per bug. Only
     /// trips when EVERY row is degenerate — a genuine "no anomalies"/"cluster 0 for everyone" result has
     /// non-null (if boring) values and passes through untouched.
@@ -478,7 +478,7 @@ public class PredictionService
             "type expects (a missing, renamed, or differently-shaped column — likely a task/model " +
             "mismatch), or the model scored a non-finite value (NaN/Infinity) for every row — a " +
             "degenerate model, typically one trained on too little data. Returning this as a successful " +
-            "result would silently fabricate an empty-looking 'nothing to report' answer (the D20~D26 " +
+            "result would silently fabricate an empty-looking 'nothing to report' answer (the silent-" +
             "failure family). Verify the model was trained for task '" + taskType + "' with enough data " +
             "and that its saved schema matches.");
     }
@@ -499,10 +499,10 @@ public class PredictionService
 
         // PredictedLabel type varies by classification family: multiclass/text/image map their Key back
         // to the type MapValueToKey was originally fit on (String for categorical labels, but Single for
-        // a numeric-looking label like KAMP class ids "0"/"1"/"2" — D14), while binary-classification
+        // a numeric-looking label like class ids "0"/"1"/"2"), while binary-classification
         // outputs a raw Boolean (True=positive). Reading a column with the wrong getter throws
         // "Invalid TValue: <actual>, expected <requested>" — the crash that made serve /predict fail for
-        // every binary model (D13) and every numeric-labeled multiclass model (D14); the CLI predict path
+        // every binary model and every numeric-labeled multiclass model; the CLI predict path
         // renders the label itself and so never hit this. Pick the getter by the actual column type.
         if (predictedLabelCol.HasValue)
         {
@@ -783,8 +783,8 @@ public class PredictionService
     /// <summary>
     /// Time-series anomaly models emit a single vector column (<c>Prediction</c> = [alert, raw score,
     /// detector-specific third slot]) instead of PredictedLabel/Score — the generic score-based
-    /// extraction read none of it and returned all-null rows with a 200/exit-0 (silent no-op, D22,
-    /// same family as D20/D21). Map the authoritative slots onto the anomaly row fields.
+    /// extraction read none of it and returned all-null rows with a 200/exit-0 (silent no-op,
+    /// the same family as the guards above). Map the authoritative slots onto the anomaly row fields.
     /// </summary>
     private static List<PredictionRow> ExtractTimeSeriesAnomalyRows(
         DataViewRowCursor cursor, DataViewSchema schema)
@@ -834,7 +834,7 @@ public class PredictionService
     /// (binary/multiclass/regression), whose <c>InferColumns</c> loads all numeric features into one
     /// <c>Features</c> vector at train time — so the fitted model's first transform reads <c>Features</c>,
     /// not the individual columns. The CLI predict path gets <c>Features</c> for free from
-    /// <c>InferColumns</c>; serve loads named scalar columns and so must build it (D12 — otherwise binary
+    /// <c>InferColumns</c>; serve loads named scalar columns and so must build it (otherwise binary
     /// serve <c>/predict</c> throws "Could not find input column 'Features'"). The
     /// <see cref="EnsureFeaturesColumn"/> guard no-ops when a <c>Features</c> column already exists, so
     /// models that instead featurize named columns internally are unaffected.

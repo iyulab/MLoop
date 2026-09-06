@@ -12,7 +12,7 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 public class ModelRegistry : IModelRegistry
 {
     // Layout names delegate to the single ExperimentLayout authority so this writer/reader cannot drift
-    // from the layout constants (cycle-93/95).
+    // from the layout constants.
     private const string ModelsDirectory = ExperimentLayout.ModelsDirectory;
     private const string ProductionDirectory = ExperimentLayout.ProductionDirectory;
     private const string ModelFileName = ExperimentLayout.ModelFileName;
@@ -214,10 +214,10 @@ public class ModelRegistry : IModelRegistry
         // User-facing metric aliases (e.g. "f1") differ from the canonical keys the
         // EvaluationEngine stores (e.g. "f1_score"). Resolve to the stored key so the
         // quality gate and production comparison operate on the right value instead of
-        // silently failing the lookup (which blocked first-model auto-promotion — BUG-45).
+        // silently failing the lookup (which blocked first-model auto-promotion).
         // When the project metric is the deferred "auto" (init leaves image/OD tasks as auto),
         // fall back to the task's canonical metric so the gate still engages instead of being
-        // silently skipped (BUG-46).
+        // silently skipped.
         var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
 
         // Extract the label's shape from the schema for the dynamic thresholds: how many classes
@@ -251,7 +251,7 @@ public class ModelRegistry : IModelRegistry
         // Check minimum metric threshold (quality gate) — only when the metric is present.
         // Threshold and error-direction are computed from the RESOLVED canonical key, not the
         // raw user/project metric: "auto" and aliases ("f1", "r2") have no entry in the
-        // threshold table, so using the raw value silently skipped the gate (BUG-45/46 root).
+        // threshold table, so using the raw value silently skipped the gate — the root of both.
         if (metricKey != null && !MetricPolicy.IsErrorMetric(metricKey))
         {
             // <=, not <: every threshold here is a "must be better than the trivial baseline"
@@ -268,7 +268,7 @@ public class ModelRegistry : IModelRegistry
         }
 
         // Degenerate model detection: high accuracy but the model only ever predicts one
-        // class (zero F1 on the positive class, or zero recall on the negative class — D16)
+        // class (zero F1 on the positive class, or zero recall on the negative class)
         if (MetricPolicy.IsClassificationDegenerateModel(experiment.Metrics))
         {
             return false; // Block promotion for degenerate models

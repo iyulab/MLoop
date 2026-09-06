@@ -124,7 +124,7 @@ public class ExperimentStoreTests : IDisposable
     public async Task SaveAsync_RecordsActualMLoopVersion_NotHardcoded()
     {
         // metadata.json must record the real mloop version for reproducibility — it previously
-        // hardcoded "0.2.0", so every experiment claimed a stale version (F-11).
+        // hardcoded "0.2.0", so every experiment claimed a stale version.
         var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
         var experimentData = CreateExperimentData(experimentId);
         await _experimentStore.SaveAsync(DefaultModelName, experimentData, CancellationToken.None);
@@ -280,7 +280,7 @@ public class ExperimentStoreTests : IDisposable
     [Fact]
     public async Task ListAsync_BestMetric_IsCanonicalPrimary_NotInsertionOrder()
     {
-        // F-28 residual: BestMetric used Metrics.Values.FirstOrDefault(), so it captured whatever
+        // The residual: BestMetric used Metrics.Values.FirstOrDefault(), so it captured whatever
         // metric happened to be first in the dictionary — not the one the experiment optimized.
         // Here the canonical clustering primary (average_distance) is deliberately NOT first, so the
         // old behavior would have reported davies_bouldin_index (0.9) and disagreed with MetricName.

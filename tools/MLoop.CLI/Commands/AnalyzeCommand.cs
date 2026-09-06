@@ -59,7 +59,7 @@ public static class AnalyzeCommand
     /// when omitted, it defaults to the project's configured train data via the same resolver
     /// as <c>mloop train</c> (<see cref="TrainDataValidator.ResolveDataFileAsync"/>:
     /// <c>data.train</c> → <c>datasets/train.csv</c> discovery). This keeps CLI and the MCP
-    /// bridge consistent so an agent need not guess the data path (F-03/F-13).
+    /// bridge consistent so an agent need not guess the data path.
     /// </para>
     /// Label: <c>--label</c> → mloop.yaml model → null. Prints an error and returns null if no
     /// data file can be resolved. Read-only: never mutates the data file or mloop.yaml.
@@ -168,7 +168,7 @@ public static class AnalyzeCommand
             // Column stats (missing/unique) come from MLoop's own scan, matching `info`.
             var (rowCount, stats) = ComputeColumnStats(ctx.Value.DataFile);
 
-            // F-16: surface strictly-increasing ID/index columns (same detector train uses) as a profile
+            // surface strictly-increasing ID/index columns (same detector train uses) as a profile
             // flag, so the agent's FE loop can drop them. analyze was silent while train warned (inconsistency).
             var (convertedForScan, _) = EncodingDetector.ConvertToUtf8WithBom(ctx.Value.DataFile);
             var monotonic = CsvDataLoader.DetectMonotonicColumns(convertedForScan, ctx.Value.Label);
@@ -467,7 +467,7 @@ public static class AnalyzeCommand
             });
 
             // Per-column cardinality (MLoop's own scan, same as `profile`) lets MapDistribution
-            // suppress non-actionable skew flags on low-cardinality/categorical columns (F-02).
+            // suppress non-actionable skew flags on low-cardinality/categorical columns.
             var (_, stats) = ComputeColumnStats(ctx.Value.DataFile);
 
             var env = AnalyzeJson.MapDistribution(result?.Descriptive, result?.Distribution, stats);

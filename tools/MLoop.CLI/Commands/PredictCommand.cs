@@ -162,7 +162,7 @@ public static class PredictCommand
             InputSchemaInfo? trainedSchema = null;
             string? configLabelColumn = null;
             string? taskType = null;
-            // F-23: group/user/item columns must stay individually addressable at predict time so the
+            // group/user/item columns must stay individually addressable at predict time so the
             // ranking/recommendation model's key transforms can find them (see ApplyColumnPreservation).
             List<string>? preserveColumns = null;
             // ② regression wave: the stored conformal band, surfaced as [ScoreLowerBound, ScoreUpperBound]
@@ -247,7 +247,7 @@ public static class PredictCommand
 
             // Forecasting: generate future predictions without input data. The forecast is horizon-based
             // (stateful SSA replaying the training series), so it exits here before the row-oriented
-            // paths — including the --json PredictionService route, which would silently no-op (D21).
+            // paths — including the --json PredictionService route, which would silently no-op.
             if (taskType != null && taskType.Equals("forecasting", StringComparison.OrdinalIgnoreCase))
             {
                 if (json)
@@ -262,7 +262,7 @@ public static class PredictCommand
             // DL tasks (image-classification, object-detection, NLP) need their native runtime
             // loaded before any Model.Load deserializes native parameters. Guard at the CLI boundary
             // so every downstream load (schema validation, PredictionEngine, PredictionService) is
-            // covered with one call where the task type is known. No-op for tabular tasks. (BUG-40)
+            // covered with one call where the task type is known. No-op for tabular tasks.
             if (taskType != null)
             {
                 try
@@ -562,7 +562,7 @@ public static class PredictCommand
     /// Columns the predict-time loader must keep individually addressable (not merged into the
     /// Features vector) because the trained model's per-column transforms reference them by name —
     /// the ranking group column and the recommendation user/item columns. Returns null when none
-    /// apply. (F-23.)
+    /// apply.
     /// </summary>
     private static List<string>? BuildPreserveColumns(ExperimentConfig? config)
     {
@@ -823,7 +823,7 @@ public static class PredictCommand
     /// the unknown-to-predict and any stale values in the input CSV must not leak into the features.
     /// For time-series tasks the "label" IS the monitored series value column — stripping it defaulted
     /// the whole series to zero and the detector silently returned an all-normal fabrication
-    /// (isAnomaly=false, rawScore=0 on every row) with exit 0 (D23, D20 silent-GIGO family).
+    /// (isAnomaly=false, rawScore=0 on every row) with exit 0 (the silent-GIGO family).
     /// </summary>
     internal static string? LabelColumnToExcludeFromRows(string? taskType, string? configLabelColumn)
         => AutoMLRunner.IsTimeSeriesTask(taskType) ? null : configLabelColumn;
@@ -831,7 +831,7 @@ public static class PredictCommand
     /// <summary>
     /// --json presenter for forecasting: emits the horizon forecast to stdout in the same payload
     /// shape as the tabular --json path, so structured consumers (mloop-mcp) get the forecast and
-    /// its bounds instead of a silently ignored flag (D21's CLI-side gap).
+    /// its bounds instead of a silently ignored flag — the CLI-side half of that gap.
     /// </summary>
     private static async Task<int> PredictForecastingJsonAsync(
         string modelPath, string modelName, string? experimentId)

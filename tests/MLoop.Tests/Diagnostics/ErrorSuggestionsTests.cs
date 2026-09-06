@@ -159,7 +159,7 @@ public class ErrorSuggestionsTests
         Assert.False(ErrorSuggestions.AddsInformation("Something failed.", inner));
     }
 
-    // --- Resource / no-trial failures (issue: OOM diagnostic contract, cycle-174) ---
+    // --- Resource / no-trial failures (OOM diagnostic contract) ---
     //
     // TrainingEngine rethrows as "Training failed for experiment {id}: {inner.Message}", so every
     // suggestion rule sees the *wrapper*. Anything keyed on the exception type therefore has to walk

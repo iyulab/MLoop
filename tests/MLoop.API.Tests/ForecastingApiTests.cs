@@ -9,7 +9,7 @@ using MLoop.Core.AutoML;
 namespace MLoop.API.Tests;
 
 /// <summary>
-/// D21-A: <c>POST /predict</c> for a forecasting model is horizon-based (stateful SSA replaying its
+/// <c>POST /predict</c> for a forecasting model is horizon-based (stateful SSA replaying its
 /// training series), not row-based — accepts an optional <c>{"horizon":N}</c> body (omitted/no body
 /// uses the model's trained horizon) and returns the forecast on the same <c>PredictionRow</c> schema
 /// every other task uses, so structured consumers never see two different response shapes.

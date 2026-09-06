@@ -54,9 +54,9 @@ public static class ValidateCommand
             "log_loss", "f1_score"
         };
 
-        // F-17 root fix: union the canonical per-task primary metrics from the shared
+        // Root fix: union the canonical per-task primary metrics from the shared
         // TaskMetadata source of truth, so a newly added task's metric can never again drift
-        // out of this allowlist and be falsely flagged "Unknown" (TD-06).
+        // out of this allowlist and be falsely flagged "Unknown".
         metrics.UnionWith(TaskMetadata.AllPrimaryMetrics);
         return metrics;
     }
@@ -280,7 +280,7 @@ public static class ValidateCommand
 
         // Validate label — only for supervised tasks. The unsupervised tasks (anomaly-detection /
         // clustering / time-series-anomaly) are label-optional: merge/train/init/CsvDataLoader all
-        // accept a missing label (a dummy is loaded), so requiring one here contradicted train (F-19).
+        // accept a missing label (a dummy is loaded), so requiring one here contradicted train.
         if (AutoMLRunner.RequiresLabel(model.Task) && string.IsNullOrWhiteSpace(model.Label))
         {
             errors.Add(new ValidationError($"{prefix}.label", "Label column is required"));
@@ -288,7 +288,7 @@ public static class ValidateCommand
 
         // Validate task-specific required fields. These are mandatory at train time (AutoMLRunner
         // throws without them), so validate must catch their absence rather than let `mloop train`
-        // fail later — the same validate↔train parity F-17/F-19 restored. `init` writes defaults for
+        // fail later — the same validate↔train parity restored. `init` writes defaults for
         // each (horizon: 10, group_column, user_column/item_column), so a fresh project still passes.
         var taskName = model.Task?.Trim() ?? "";
         if (taskName.Equals("forecasting", StringComparison.OrdinalIgnoreCase) && (model.Horizon ?? 0) <= 0)

@@ -40,7 +40,7 @@ public class SchemaValidator
             // Read the input through the same encoding detection every other CSV reader uses
             // (CsvDataLoader/CsvHelper/Predict/Train). Forcing UTF-8 here garbles CP949/EUC-KR
             // headers, producing false "missing column" / "not UTF-8" errors on files that
-            // train & predict accept. (BUG-43)
+            // train & predict accept.
             var (readPath, _) = EncodingDetector.ConvertToUtf8WithBom(inputDataPath);
 
             // Try to load saved schema from experiment metadata
@@ -103,7 +103,7 @@ public class SchemaValidator
 
         try
         {
-            // inputDataPath is already UTF-8 (caller ran EncodingDetector.ConvertToUtf8WithBom) — BUG-43
+            // inputDataPath is already UTF-8 (caller ran EncodingDetector.ConvertToUtf8WithBom)
             string? firstLine;
             using (var reader = new StreamReader(inputDataPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {

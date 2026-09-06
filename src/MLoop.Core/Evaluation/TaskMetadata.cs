@@ -5,10 +5,10 @@ namespace MLoop.Core.Evaluation;
 /// mapping that previously drifted across separate switch statements
 /// (<c>ModelRegistry.DefaultMetricForTask</c>, <c>InitCommand</c>'s yaml template, and
 /// <c>TrainingEngine.GetPrimaryMetricValue</c>), plus the <c>ValidateCommand</c> metric
-/// allowlist. That duplication produced BUG-46 (init wrote "auto" for a task that has a
-/// canonical metric, so the promotion gate silently skipped) and F-17 (validate's allowlist
-/// fell out of sync and flagged init's own metrics as "Unknown"). Add a task here once and
-/// every consumer stays consistent (TD-06 / D4).
+/// allowlist. That duplication produced two defects: init wrote "auto" for a task that has a
+/// canonical metric, so the promotion gate silently skipped it; and validate's allowlist fell
+/// out of sync and flagged init's own metrics as "Unknown". Add a task here once and every
+/// consumer stays consistent.
 /// <para>
 /// <c>ConfigMerger</c> joined the consumer list late: it filled the metric default from
 /// <c>ConfigDefaults.DefaultMetric</c> ("auto") without consulting this map even though it had
@@ -62,7 +62,7 @@ public static class TaskMetadata
 
     /// <summary>
     /// All distinct canonical primary metrics across tasks. Metric allowlists (e.g. validate)
-    /// union this so adding a task can never again leave them out of sync — the F-17 drift.
+    /// union this so adding a task can never again leave them out of sync.
     /// </summary>
     public static IEnumerable<string> AllPrimaryMetrics => PrimaryMetrics.Values.Distinct();
 
@@ -76,7 +76,7 @@ public static class TaskMetadata
     /// <para>
     /// Bypassing this (e.g. <c>Metrics.Values.FirstOrDefault()</c>) makes the reported score depend
     /// on dictionary insertion order rather than the metric the experiment actually optimized — the
-    /// F-28 residual that left <c>ExperimentSummary.BestMetric</c> disagreeing with its own
+    /// The residual that left <c>ExperimentSummary.BestMetric</c> disagreeing with its own
     /// <c>MetricName</c>, so ranking compared apples to oranges.
     /// </para>
     /// </summary>

@@ -407,7 +407,7 @@ public class TrainingEngineTests : IDisposable
     [Fact]
     public void BuildDirectoryInputSchema_ImageClassification_UsesCanonicalVocabulary()
     {
-        // BUG-42: the directory schema must use MLoop's canonical dataType vocabulary
+        // the directory schema must use MLoop's canonical dataType vocabulary
         // (Categorical/Text/Numeric/Boolean), NOT the raw .NET "String". A classification label
         // typed "String" falls through PredictionEngine's type-override default and is read as
         // Single, which then breaks the model's MapValueToKey at predict time. The label must be
@@ -427,7 +427,7 @@ public class TrainingEngineTests : IDisposable
     [Fact]
     public void BuildDirectoryInputSchema_WithClassCount_PopulatesLabelUniqueValueCount()
     {
-        // BUG-46: the promotion quality gate derives its 1/N threshold from the label's
+        // the promotion quality gate derives its 1/N threshold from the label's
         // UniqueValueCount. Directory-based tasks must populate it (folder count) so the gate
         // can reject non-converged image models (micro_accuracy < 1/N) instead of silently
         // promoting them.
@@ -685,7 +685,7 @@ public class TrainingEngineTests : IDisposable
     {
         // Two positives in 150 rows: AUC needs both classes present in whatever holdout AutoML
         // validates against, and at this ratio it cannot count on that — the run raises
-        // AUC-undefined for both AUC and F1Score and diverts to the BUG-36 manual SDCA pipeline.
+        // AUC-undefined for both AUC and F1Score and diverts to the manual SDCA pipeline.
         // Constructed from that property rather than a magic row count, so it stays the fallback
         // path. The trainer-name assertion below fails loudly if it ever stops diverting, rather
         // than passing on the AutoML path by accident.

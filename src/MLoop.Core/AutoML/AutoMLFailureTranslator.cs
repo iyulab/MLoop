@@ -7,7 +7,7 @@ namespace MLoop.Core.AutoML;
 /// AutoML runs trials on its own threads, so whatever ended the experiment reaches us wrapped in an
 /// <see cref="AggregateException"/> — and a wrapper is opaque to every rule that inspects an exception:
 /// its <see cref="Exception.Message"/> reads "One or more errors occurred. (…)" and its type says nothing.
-/// Two real causes were hiding behind it (cycle-173, measured against Microsoft.ML.AutoML 0.23.0):
+/// Two real causes were hiding behind it (measured against Microsoft.ML.AutoML 0.23.0):
 /// <list type="bullet">
 /// <item><description><see cref="TimeoutException"/> — no trial completed. Promoted to
 /// <see cref="NoSuccessfulTrialException"/> so callers can recognise it without matching ML.NET's
@@ -16,7 +16,7 @@ namespace MLoop.Core.AutoML;
 /// existed downstream and only ever needed to *see* the exception.</description></item>
 /// </list>
 /// Everything else is deliberately left untouched: <c>AutoMLRunner</c> recovers from the AUC-undefined
-/// family (BUG-22/24/36) by matching the aggregate itself, and translating it would break that recovery.
+/// family by matching the aggregate itself, and translating it would break that recovery.
 /// This is the single place AutoML terminal failures are interpreted — adding a second interpretation
 /// site is how metric/layout knowledge drifted across assemblies before (see CLAUDE.md,
 /// Single-Source Authorities).

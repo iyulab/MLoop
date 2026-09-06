@@ -46,7 +46,7 @@ public record PredictionRow
 /// <item><b>Heteroscedastic</b> (normalized conformal, <c>norm_interval_q_{pct}</c> + <c>interval_beta</c>
 /// plus a saved <c>residual-model.zip</c>): the width varies per row as
 /// <c>q · (max(σ(x), 0) + β)</c> — wide where the σ-model predicts a large residual — so the band width
-/// is itself the regression escalate signal (cycle-134 M-13). Falls back to constant-width when no
+/// is itself the regression escalate signal. Falls back to constant-width when no
 /// residual model is available for a row.</item>
 /// </list>
 /// </summary>

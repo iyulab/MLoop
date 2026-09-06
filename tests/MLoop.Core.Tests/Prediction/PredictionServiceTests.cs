@@ -83,7 +83,7 @@ public class PredictionServiceTests : IDisposable
     [Fact]
     public void Predict_Regression_BooleanLabel_ConvertedToSingle()
     {
-        // BUG-23: Boolean label (0/1) should be treated as Single for regression
+        // Boolean label (0/1) should be treated as Single for regression
         var data = _mlContext.Data.LoadFromEnumerable(new[]
         {
             new SimpleRegression { X = 1.0f, Y = 0.0f },
@@ -221,7 +221,7 @@ public class PredictionServiceTests : IDisposable
 
         // Diagnostic readout of the aux σ-model itself: on a failure this tells apart "the σ-model fit
         // degenerated to a constant" from "the service path fell back to the constant-width band"
-        // (the macOS-arm64 CI failure class — see ISSUE-mloop-20260705-macos-predictionservice-test-failures).
+        // (the macOS-arm64 CI failure class).
         var probe = ml.Data.LoadFromEnumerable(new[]
         {
             new SimpleRegression { X = 1.0f },
@@ -354,7 +354,7 @@ public class PredictionServiceTests : IDisposable
         Assert.Contains(result.Warnings, w => w.Contains("No input rows"));
     }
 
-    // D20 (cycle-146, serve image dogfooding): rows sharing NO column with the trained schema
+    // Rows sharing NO column with the trained schema
     // (e.g. an envelope like {"rows":[...]} posted to /predict) used to default every column and
     // return 200 with a fabricated all-zero-score label and no warning. Zero overlap must fail fast.
     [Fact]
@@ -389,9 +389,9 @@ public class PredictionServiceTests : IDisposable
         Assert.Contains("X", ex.Message);   // actionable: names the expected columns
     }
 
-    // D21 (cycle-150, forecasting serve dogfooding): posting rows to a forecasting model used to
+    // Posting rows to a forecasting model used to
     // return 200 with every output field null (the stateful SSA forecaster extracts nothing from a
-    // stateless per-row Transform — silent no-op, same family as D20). Must fail fast instead,
+    // stateless per-row Transform — silent no-op, the same family as the guard above). Must fail fast instead,
     // pointing the caller at the horizon-based CLI path. Fires before the model file is touched.
     [Fact]
     public void Predict_Forecasting_RowBased_ThrowsActionableArgumentException()
@@ -449,7 +449,7 @@ public class PredictionServiceTests : IDisposable
         Assert.Contains("row-based prediction", ex.Message);
     }
 
-    // Partial overlap stays legitimate — missing columns default as before (no regression from D20).
+    // Partial overlap stays legitimate — missing columns default as before (no regression from the zero-overlap guard).
     [Fact]
     public void Predict_RowsWithPartialSchemaOverlap_StillPredicts()
     {
@@ -712,7 +712,7 @@ public class PredictionServiceTests : IDisposable
     [Fact]
     public void BuildTextLoaderOptions_MulticlassNumericLabel_IsSingle()
     {
-        // D14: when a multiclass label happens to be numeric-looking (e.g. KAMP SEQ001 class ids
+        // when a multiclass label happens to be numeric-looking (e.g. class ids
         // "0"/"1"/"2"), train-time schema inference records DataType=Numeric and AutoML's fitted
         // pipeline embeds a MapValueToKey over a Single-typed column, not String. Forcing String
         // here (pre-D14 behavior) mismatches the model's own trained schema — serve /predict throws
@@ -756,14 +756,14 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
-    #region HasKeyValues (F-21 — clustering predict crash)
+    #region HasKeyValues (clustering predict crash)
 
     [Fact]
     public void HasKeyValues_KeyColumnWithoutAnnotation_ReturnsFalse()
     {
         // Clustering's KMeans emits PredictedLabel as a bare key (the cluster id) with no KeyValues
-        // mapping. Applying MapKeyToValue to it throws "Metadata KeyValues does not exist" — the F-21
-        // crash. A key created straight from a [KeyType] field carries no KeyValues annotation.
+        // mapping. Applying MapKeyToValue to it throws "Metadata KeyValues does not exist".
+        // A key created straight from a [KeyType] field carries no KeyValues annotation.
         var dv = _mlContext.Data.LoadFromEnumerable(new[]
         {
             new KeyOnlyRow { PredictedLabel = 1 },
@@ -838,10 +838,10 @@ public class PredictionServiceTests : IDisposable
         Assert.NotNull(result.Rows[0].AnomalyScore);
     }
 
-    // D22 (cycle-152, TS-anomaly live dogfooding): time-series-anomaly models emit a single vector
+    // Time-series-anomaly models emit a single vector
     // column (Prediction = [alert, raw score, ...]) instead of PredictedLabel/Score, so the generic
     // extraction read none of it — serve /predict and mloop predict --json returned rows of all-null
-    // fields with 200/exit-0 (observed live: 5000 × {} on a KAMP sensor series). The dedicated
+    // fields with 200/exit-0 (observed live: 5000 × {} on a sensor series). The dedicated
     // extractor must surface the alert and the raw score.
     /// <summary>
     /// SrCnn's spectral-residual FFT goes through MKL (Microsoft.ML.Transforms.TimeSeries.FftUtils →
@@ -929,7 +929,7 @@ public class PredictionServiceTests : IDisposable
         Assert.All(result.Rows, r => Assert.Null(r.Confidence));
     }
 
-    // D26 (cycle-155, ranking live dogfooding): ranking was missing from RequiresFeaturesVectorInput,
+    // Ranking was missing from RequiresFeaturesVectorInput,
     // so the loaded named columns never got a "Features" vector and every structured ranking predict
     // (serve /predict, mloop predict --json) failed with "Could not find input column 'Features'"
     // while the CSV path worked. Mirrors the RunRankingAsync model shape: embedded ConvertType +
@@ -986,18 +986,18 @@ public class PredictionServiceTests : IDisposable
         Assert.All(result.Rows, r => Assert.NotNull(r.Score));
         // Higher-feature row must outrank the lower one (sanity: the score is a real ranking score).
         Assert.True(result.Rows[0].Score > result.Rows[1].Score);
-        // D25: a ranking score is not a [0,1] confidence — nothing may be fabricated from it.
+        // a ranking score is not a [0,1] confidence — nothing may be fabricated from it.
         Assert.All(result.Rows, r => Assert.Null(r.Confidence));
     }
 
     #endregion
 
-    // P-svc1 (cycle-159): generalizes D20~D26 — a task/model mismatch (a model trained for one task
+    // Generalizes that family — a task/model mismatch (a model trained for one task
     // used with a different declared taskType) can leave every row's defining output field null while
     // extraction still returns a row per input and the caller still gets 200/success. That silent
     // all-null result is indistinguishable from "nothing to report". These tests force the mismatch
     // directly (rather than reproducing a specific historical bug) to pin the generalized backstop.
-    #region P-svc1 (output-contract validation — task/model mismatch)
+    #region Output-contract validation (task/model mismatch)
 
     [Fact]
     public void Predict_RegressionModelDeclaredAsMulticlass_ThrowsActionableException()
@@ -1134,14 +1134,14 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
-    #region Binary classification (D12/D13 — serve /predict Features vector + Boolean PredictedLabel)
+    #region Binary classification (serve /predict Features vector + Boolean PredictedLabel)
 
     [Fact]
     public void Predict_Binary_BuildsFeaturesAndReadsBooleanLabel()
     {
-        // Reproduces the serve /predict binary failures (honeai-sim campaign): AutoML-style binary
-        // models expect a single "Features" vector input (D12) and output PredictedLabel as a raw
-        // Boolean (D13). PredictionService loads named scalar columns, so it must (a) build "Features"
+        // Reproduces the serve /predict binary failures: AutoML-style binary
+        // models expect a single "Features" vector input and output PredictedLabel as a raw
+        // Boolean. PredictionService loads named scalar columns, so it must (a) build "Features"
         // for classification, and (b) read the Boolean PredictedLabel — otherwise ExtractClassificationRows
         // throws "Invalid TValue: ReadOnlyMemory<Char>, expected Boolean" on every binary model.
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -1199,15 +1199,15 @@ public class PredictionServiceTests : IDisposable
 
     #endregion
 
-    #region Multiclass classification (D14 — serve /predict numeric-looking class label)
+    #region Multiclass classification (serve /predict numeric-looking class label)
 
     [Fact]
     public void Predict_Multiclass_NumericLabel_MatchesTrainedSingleSchema()
     {
-        // Reproduces the live serve /predict crash found dogfooding KAMP SEQ001 (honeai-sim Wave 3,
-        // multiclass label values "0"/"1"/"2"): train-time schema inference records DataType=Numeric
-        // for the label, so AutoML's fitted pipeline maps a Single-typed column into a key internally.
-        // The pre-D14 serve path always loaded the label as String, so model.Transform threw
+        // Reproduces a live serve /predict crash on a multiclass model whose label values are
+        // "0"/"1"/"2": train-time schema inference records DataType=Numeric for the label, so
+        // AutoML's fitted pipeline maps a Single-typed column into a key internally.
+        // The serve path used to load the label as String unconditionally, so model.Transform threw
         // "Could not apply a map over type 'Single' to column 'Label' since it has type 'String'".
         var data = _mlContext.Data.LoadFromEnumerable(new[]
         {
@@ -1316,7 +1316,7 @@ public class PredictionServiceTests : IDisposable
     [Fact]
     public void ComputeRowConfidences_DegenerateView_ReturnsNullsWithoutThrowing()
     {
-        // ExtractResults throws RequireNonDegenerateOutput on an all-null scored view (D20~D26 guard).
+        // ExtractResults throws RequireNonDegenerateOutput on an all-null scored view (the silent-failure guard).
         // ComputeRowConfidences is a read-only enrichment over a view the caller already writes, so it must
         // NOT throw — it returns null confidence per row and lets the caller omit the column.
         var data = _mlContext.Data.LoadFromEnumerable(new[]

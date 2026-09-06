@@ -4,7 +4,7 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 
 /// <summary>
 /// Ranks experiment summaries by metric quality, honoring each metric's optimization direction
-/// (F-28). Status, Compare, and the REST API all previously sorted <see cref="ExperimentSummary.BestMetric"/>
+/// . Status, Compare, and the REST API all previously sorted <see cref="ExperimentSummary.BestMetric"/>
 /// descending unconditionally — so for lower-is-better metrics (clustering's <c>average_distance</c>,
 /// forecasting's <c>mae</c>, recommendation's <c>rmse</c>) they ranked the <i>worst</i> experiment as
 /// "best", contradicting the promotion gate. Uses the experiment's own <see cref="ExperimentSummary.MetricName"/>

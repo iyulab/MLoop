@@ -55,7 +55,7 @@ public class SchemaDataTypesTests
     [InlineData("Double", DataKind.Double)]
     [InlineData("Int32", DataKind.Int32)]
     [InlineData("Int64", DataKind.Int64)]
-    [InlineData("String", DataKind.String)] // BUG-42 tolerance
+    [InlineData("String", DataKind.String)] // raw-type-name tolerance
     public void ToDataKind_tolerates_legacy_raw_dotnet_names(string dataType, DataKind expected)
     {
         // Schemas captured before the vocabulary was unified persisted raw .NET

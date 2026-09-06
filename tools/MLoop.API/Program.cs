@@ -419,8 +419,8 @@ app.MapPost("/predict", async (
 
         var taskType = productionModel.Task ?? "regression";
 
-        // D21-A: forecasting is horizon-based (stateful SSA replaying its training series), not
-        // row-based — PredictionService.Predict rejects it outright (D21). Body is an optional
+        // Forecasting is horizon-based (stateful SSA replaying its training series), not
+        // row-based — PredictionService.Predict rejects it outright. Body is an optional
         // {"horizon":N}; omitted (or a non-object/no body) uses the model's trained horizon.
         // Bypasses InputSchema/row-parsing entirely — neither applies to a horizon replay.
         if (string.Equals(taskType, "forecasting", StringComparison.OrdinalIgnoreCase))
@@ -489,7 +489,7 @@ app.MapPost("/predict", async (
         logger.LogDebug("Running prediction for '{ModelName}' with task '{TaskType}', label '{LabelColumn}'",
             modelName, taskType, labelColumn);
 
-        // DL tasks need their native runtime loaded before the cache deserializes the model (BUG-40).
+        // DL tasks need their native runtime loaded before the cache deserializes the model.
         MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
 
         var transformer = modelCache.GetOrLoad(modelPath);
@@ -526,7 +526,7 @@ app.MapPost("/predict", async (
     }
     catch (ArgumentException ex)
     {
-        // Caller error (e.g. rows share no column with the trained schema — D20 silent-GIGO guard):
+        // Caller error (e.g. rows share no column with the trained schema — the silent-GIGO guard):
         // 400 with the actionable message, not a 500.
         logger.LogWarning(ex, "Prediction rejected for '{ModelName}': invalid input rows", modelName);
         return Results.Problem(
@@ -791,7 +791,7 @@ app.MapGet("/status", async (
 
             productionDict.TryGetValue(modelName, out var prodModel);
 
-            // F-28: honor metric direction so lower-is-better metrics aren't ranked worst-first.
+            // honor metric direction so lower-is-better metrics aren't ranked worst-first.
             var bestMetric = MLoop.CLI.Infrastructure.FileSystem.ExperimentRanking
                 .SelectBest(modelExps)?.BestMetric;
 

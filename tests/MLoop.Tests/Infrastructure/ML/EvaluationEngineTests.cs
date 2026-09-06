@@ -194,7 +194,7 @@ public class EvaluationEngineTests : IDisposable
     [Fact]
     public async Task EvaluateAsync_Regression_Cp949TestData_KoreanLabel_FindsLabelAndReturnsMetrics()
     {
-        // BUG-43: evaluate must run the test CSV through EncodingDetector (like train/predict),
+        // evaluate must run the test CSV through EncodingDetector (like train/predict),
         // not force UTF-8. A CP949-encoded file with a Korean label column (e.g. '출력값') was
         // garbled into mojibake, so the label column "could not be found" even though training
         // accepted the same data. Guards both LoadTestData and the schema read against regression.
@@ -238,9 +238,9 @@ public class EvaluationEngineTests : IDisposable
     [Fact]
     public async Task EvaluateAsync_Clustering_ComputesNonZeroDaviesBouldinIndex()
     {
-        // F-24: EvaluateClustering must pass featureColumnName to Clustering.Evaluate, else ML.NET
+        // EvaluateClustering must pass featureColumnName to Clustering.Evaluate, else ML.NET
         // cannot compute the Davies-Bouldin Index and reports it as 0 — the exact evaluate-path twin
-        // of F-22 (which fixed the same omission in AutoMLRunner's K-search). Three well-separated
+        // of the K-search fix (the same omission, in AutoMLRunner). Three well-separated
         // clusters must yield a finite, positive DBI plus the cluster-distribution metrics.
         var (modelPath, testDataPath) = TrainSimpleClusteringModel();
 
@@ -257,11 +257,11 @@ public class EvaluationEngineTests : IDisposable
     [Fact]
     public async Task EvaluateAsync_Ranking_PreservesGroupColumn_ReturnsNdcg()
     {
-        // F-26: the evaluate path (LoadTestData) did not apply ApplyColumnPreservation — the F-23 fix
+        // the evaluate path (LoadTestData) did not apply ApplyColumnPreservation — the predict-side fix
         // that keeps a ranking model's group column individually addressable so the GroupId key
         // transform can find it. InferColumns merged the numeric group column into the Features range,
         // so model.Transform threw "Could not find input column", which EvaluateRanking's catch{}
-        // silently swallowed into an empty metric dict — the silent evaluate twin of F-23.
+        // silently swallowed into an empty metric dict — the silent evaluate twin of that.
         var (modelPath, testDataPath) = TrainSimpleRankingModel();
 
         var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "ranking",
@@ -274,7 +274,7 @@ public class EvaluationEngineTests : IDisposable
     [Fact]
     public async Task EvaluateAsync_Recommendation_PreservesUserItemColumns_ReturnsMetrics()
     {
-        // F-26 (user/item half): a recommendation model maps the user and item columns to keys
+        // The user/item half: a recommendation model maps the user and item columns to keys
         // individually (MapValueToKey), so evaluate must keep them addressable — the same root cause
         // and fix as the ranking group column. This pins that EvaluateAsync threads user/item through
         // to ApplyColumnPreservation so MatrixFactorization evaluation works end-to-end.
@@ -291,7 +291,7 @@ public class EvaluationEngineTests : IDisposable
     public async Task EvaluateAsync_AnomalyDetection_ReturnsCountMetrics()
     {
         // Anomaly detection (RandomizedPca, unsupervised) has no group/user/item columns, so it is
-        // immune to the F-26 column-merge crash — this pins that the evaluate path returns its
+        // immune to the column-merge crash — this pins that the evaluate path returns its
         // manual-count metrics (the AnomalyDetection.Evaluate AUC path falls back to counting when the
         // label isn't a bool, which is the common unsupervised case). Guards the evaluate slice's
         // last tabular task family against regression.
@@ -441,7 +441,7 @@ public class EvaluationEngineTests : IDisposable
     {
         // Ranking: a numeric query_id (group) + 2 features + a 0-4 relevance label. The group column
         // is numeric and adjacent to the features, so InferColumns merges it into the Features range
-        // unless preserved — the exact F-23 shape, now on the evaluate path (F-26). We build the model
+        // unless preserved — the exact predict-side shape, now on the evaluate path. We build the model
         // on data loaded through CsvDataLoader (same InferColumns + group-preservation as evaluate),
         // so the model's feature columns line up with what EvaluationEngine.LoadTestData produces.
         var rng = new Random(42);
@@ -481,7 +481,7 @@ public class EvaluationEngineTests : IDisposable
     {
         // UserId, ItemId (mapped to keys) + a 1-5 rating. user/item are numeric and adjacent, so
         // InferColumns merges them into the Features range unless preserved — the user/item half of
-        // F-26. Built on CsvDataLoader-loaded data so the column structure matches evaluate's.
+        // The same, built on CsvDataLoader-loaded data so the column structure matches evaluate's.
         var rng = new Random(42);
         var dataRows = new List<string>();
         for (int u = 0; u < 15; u++)

@@ -49,7 +49,7 @@ public class FilePromotionManagerTests : IDisposable
         // ModelRegistry.PromoteAsync writes), NOT the obsolete model-registry.json. The
         // backup must trigger off the directory's presence — reading a separate registry
         // file used to make this silently skip the backup, risking loss of the previous
-        // production model on the next promote (BUG-48).
+        // production model on the next promote.
         CreateProduction("test-model", experimentId: "exp-001");
 
         var backupPath = await _manager.BackupProductionAsync("test-model");

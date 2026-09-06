@@ -12,7 +12,7 @@ namespace MLoop.Core.Storage;
 /// share one declaration without an inverted CLI←Ops dependency. Before this, CLI's ExperimentStore
 /// and Ops's <c>OpsStorage</c> each hardcoded the layout independently, and three Ops services had
 /// drifted to a non-existent <c>experiments</c> directory — so the time-based trigger and model
-/// comparison read paths that never exist on a real project (F-32 / F-33).
+/// comparison read paths that never exist on a real project.
 /// </para>
 /// </summary>
 public static class ExperimentLayout

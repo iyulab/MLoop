@@ -4,7 +4,7 @@ namespace MLoop.Core.Tests.Runtime;
 
 /// <summary>
 /// Tests for <see cref="RuntimeManager.EnsureRuntimeForTask"/> — the shared guard that loads a
-/// task's native runtime before any model load deserializes native parameters (BUG-40). The guard
+/// task's native runtime before any model load deserializes native parameters. The guard
 /// must be a no-op for tabular tasks (so it can be called unconditionally on every load path) and
 /// must fail loudly with an install hint for an uninstalled DL runtime.
 /// </summary>

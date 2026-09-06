@@ -121,7 +121,7 @@ public class PromoteCommandTests : IDisposable
         // carrying model.zip and its own metadata.json (the authoritative experiment-id source).
         // The backup must trigger off the directory's presence — driving it from a separate
         // registry file used to silently skip the backup, risking loss of the previous
-        // production model on the next promote (BUG-48).
+        // production model on the next promote.
         var modelDir = Path.Combine(_tempDir, "models", "default");
         var productionDir = Path.Combine(modelDir, "production");
         Directory.CreateDirectory(productionDir);

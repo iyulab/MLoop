@@ -40,7 +40,7 @@ public class ValidateCommandJsonTests : IDisposable
         File.WriteAllText(Path.Combine(_testProjectRoot, "mloop.yaml"), content);
 
     // Same AnsiConsole.Console rebinding as ListCommandTrialsTests.RunAsync — Console.SetOut alone
-    // doesn't reach Spectre's ambient renderer (cycle-199/202's discovery).
+    // doesn't reach Spectre's ambient renderer.
     private static async Task<(int ExitCode, string Stdout)> RunAsync(params string[] args)
     {
         var originalOut = Console.Out;

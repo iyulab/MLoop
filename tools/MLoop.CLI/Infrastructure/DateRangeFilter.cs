@@ -7,7 +7,7 @@ namespace MLoop.CLI.Infrastructure;
 /// <c>new DateTimeOffset(date, TimeSpan.Zero)</c>) in three separate call sites — <c>logs</c>,
 /// <c>feedback list</c>, <c>feedback metrics</c> — so a <c>--from</c> filter was off by the machine's
 /// UTC offset (e.g. 9 hours in KST: the first 9 hours of the requested local day were excluded and
-/// the tail of the previous day leaked in), contradicting the local-time display (F-31). Centralized
+/// the tail of the previous day leaked in), contradicting the local-time display. Centralized
 /// here so the three cannot drift again.
 /// </summary>
 internal static class DateRangeFilter

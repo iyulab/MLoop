@@ -78,7 +78,7 @@ public partial class AutoMLRunner
     /// a feature. This set was duplicated as inline HashSets in <c>ConfigMerger</c>, <c>InitCommand</c>
     /// and <c>TrainCommand</c> — and had already drifted (TrainCommand omitted time-series-anomaly,
     /// and ValidateCommand was missing the concept entirely, so it errored "Label required" on a valid
-    /// unsupervised project that <c>train</c> accepts). All four now read this (TD-06-shaped fix).
+    /// unsupervised project that <c>train</c> accepts). All four now read this.
     /// Unknown tasks return <c>true</c> (require a label) — the conservative default.
     /// </summary>
     public static bool RequiresLabel(string? task)
@@ -448,8 +448,8 @@ public partial class AutoMLRunner
         }
         catch (Exception ex) when (IsAucUndefinedException(ex))
         {
-            // BUG-22: AUC requires both positive and negative samples in the test set.
-            // BUG-24: AutoML internally computes AUC regardless of the user's requested metric,
+            // AUC requires both positive and negative samples in the test set.
+            // AutoML internally computes AUC regardless of the user's requested metric,
             // so this error can occur even with --metric accuracy or other non-AUC metrics.
             // Fall back to F1Score which is more robust for imbalanced data.
             if (optimizingMetric == BinaryClassificationMetric.F1Score)
@@ -472,7 +472,7 @@ public partial class AutoMLRunner
             }
             catch (Exception fallbackEx) when (IsAucUndefinedException(fallbackEx))
             {
-                // BUG-36: AutoML failed with both metrics — fall back to manual pipeline training.
+                // AutoML failed with both metrics — fall back to manual pipeline training.
                 _logger.Warning("AutoML failed with both metrics. Falling back to direct pipeline training (SDCA).");
                 return await RunManualBinaryClassificationAsync(
                     trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false);
@@ -498,7 +498,7 @@ public partial class AutoMLRunner
 
         var experiment = _mlContext.Auto().CreateBinaryClassificationExperiment(settings);
 
-        // BUG-25: Build explicit ColumnInformation to ensure text columns get
+        // Build explicit ColumnInformation to ensure text columns get
         // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
@@ -514,7 +514,7 @@ public partial class AutoMLRunner
         // Evaluate on test set
         var predictions = experimentResult.BestRun.Model.Transform(testSet);
 
-        // BUG-24: Some AutoML pipelines (non-calibrated models) don't produce a Probability column.
+        // Some AutoML pipelines (non-calibrated models) don't produce a Probability column.
         // Use EvaluateNonCalibrated when Probability column is missing.
         var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
 
@@ -565,13 +565,13 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
-    /// D15 (BUG-24 follow-through): AutoML can select a binary trainer (e.g. FastForest/FastTree)
+    /// AutoML can select a binary trainer (e.g. FastForest/FastTree)
     /// whose output has no "Probability" column. Training already falls back to
     /// <see cref="BinaryClassificationCatalog.EvaluateNonCalibrated"/> so metrics still compute, but
     /// the *saved* model stayed uncalibrated — every downstream consumer (mloop predict, mloop serve
-    /// /predict, HoneAI's confidence-gated dual-check) then reads a permanently-null Probability, and
-    /// confidence collapses to 0 for every prediction (observed: 100% escalation in the honeai-sim
-    /// live loop on KAMP SEQ089, `FastForestBinary`). Appending a Platt calibrator — fit on the
+    /// /predict, any confidence-gated caller) then reads a permanently-null Probability, and
+    /// confidence collapses to 0 for every prediction: measured live, a forest binary trainer sent
+    /// 100% of rows to escalation. Appending a Platt calibrator — fit on the
     /// already-computed test predictions, which carry the raw Score the calibrator needs — restores a
     /// real Probability column on the exact model that gets persisted and served.
     /// </summary>
@@ -592,7 +592,7 @@ public partial class AutoMLRunner
     /// <c>|Label - Score|</c> over the holdout, so the interval <c>[Score - q, Score + q]</c> carries
     /// a distribution-free marginal-coverage guarantee (P(|y - ŷ| ≤ q) ≥ level) that is
     /// <b>model-agnostic</b> — it works with whatever trainer AutoML selects, unlike ML.NET's
-    /// trainer-locked quantile-regression forests which would break the free trainer sweep D15/D16
+    /// trainer-locked quantile-regression forests which would break the free trainer sweep
     /// depend on. Returns one scalar per level (<c>interval_half_width_{pct}</c>) plus
     /// <c>residual_std</c> (RMS of residuals, diagnostic), ready to merge into the regression metrics
     /// dict — they persist flat in metrics.json with no schema change. Homoscedastic (constant-width)
@@ -696,7 +696,7 @@ public partial class AutoMLRunner
     /// ② regression wave (heteroscedastic): normalized split-conformal prediction intervals. Where
     /// <see cref="ComputeConformalIntervals"/> gives one constant half-width for every row (valid
     /// coverage but no per-row triage signal — live-measured recall of the large-error rows equals
-    /// random, cycle-134 M-13), this fits an auxiliary regressor σ(x) that predicts the *magnitude*
+    /// random), this fits an auxiliary regressor σ(x) that predicts the *magnitude*
     /// of the residual from the features, so the band <c>[ŷ - q·σ(x), ŷ + q·σ(x)]</c> is wide exactly
     /// where the model is uncertain. The band width itself becomes the regression escalate signal.
     /// <para>
@@ -886,7 +886,7 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
-    /// BUG-36: Manual pipeline fallback for small datasets where AutoML's internal AUC
+    /// Manual pipeline fallback for small datasets where AutoML's internal AUC
     /// computation fails. Builds an explicit ML.NET pipeline with SDCA trainer, bypassing
     /// AutoML's cross-validation entirely.
     /// </summary>
@@ -1044,7 +1044,7 @@ public partial class AutoMLRunner
 
         var experiment = _mlContext.Auto().CreateMulticlassClassificationExperiment(settings);
 
-        // BUG-25: Explicit ColumnInformation for text column featurization
+        // Explicit ColumnInformation for text column featurization
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
         var trialReporter = CreateTrialReporter(progress, DescribeMulticlassMetric(optimizingMetric));
@@ -1117,7 +1117,7 @@ public partial class AutoMLRunner
 
         var experiment = _mlContext.Auto().CreateRegressionExperiment(settings);
 
-        // BUG-25: Explicit ColumnInformation for text column featurization
+        // Explicit ColumnInformation for text column featurization
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
         var trialReporter = CreateTrialReporter(progress, DescribeRegressionMetric(optimizingMetric));
@@ -1323,7 +1323,7 @@ public partial class AutoMLRunner
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for clustering.");
 
-            // D24: featurize BEFORE fitting and fit only the trainer on the result, instead of
+            // featurize BEFORE fitting and fit only the trainer on the result, instead of
             // embedding Concatenate inside the saved pipeline. The embedded shape used to be
             // fragile because CsvDataLoader picks a "dummy label" column for InferColumns on
             // label-less data (clustering has none), so trainSet's schema mixed a leftover scalar
@@ -1333,8 +1333,8 @@ public partial class AutoMLRunner
             // independently builds its own "Features" from every non-excluded named column
             // (including the erstwhile dummy label, since predict-time has no concept of it) and
             // the model's embedded Concatenate then re-consumed that already-built "Features" as
-            // one of *its* inputs, double-counting a dimension ("expected Vector<3>, got Vector<4>",
-            // cycle-154). Pre-featurizing here and fitting the trainer alone means the saved model's
+            // one of *its* inputs, double-counting a dimension ("expected Vector<3>, got Vector<4>").
+            // Pre-featurizing here and fitting the trainer alone means the saved model's
             // only input contract is "Features" — exactly what EnsureFeaturesColumn builds, once,
             // with no re-concatenation to collide with it.
             var featurizer = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray()).Fit(trainSet);
@@ -2002,7 +2002,7 @@ public partial class AutoMLRunner
     //
     // Keyed on the ML.NET enum rather than on config.Metric, because the two can diverge: binary
     // classification switches the optimizing metric to F1Score mid-run when AUC turns out to be
-    // undefined (BUG-22/24, see RunBinaryClassificationAsync). The enum is what the experiment ranks
+    // undefined (see RunBinaryClassificationAsync). The enum is what the experiment ranks
     // by, so it is the honest source for what to display.
     //
     // Names use MLoop's own metric vocabulary (the keys of AutoMLResult.Metrics) so a trial line and
@@ -2135,7 +2135,7 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
-    /// BUG-22/24: Check if exception is an AUC undefined error, handling both direct
+    /// Check if exception is an AUC undefined error, handling both direct
     /// InvalidOperationException and AggregateException wrappers from AutoML's internal threading.
     /// Matches errors like "AUC is not defined when there is no positive class" and
     /// "AUC is not defined when there is no negative class".
@@ -2162,7 +2162,7 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
-    /// BUG-25: Builds explicit ColumnInformation when text columns are present.
+    /// Builds explicit ColumnInformation when text columns are present.
     /// ML.NET's InferColumns may classify text columns as Ignored (especially in text-only datasets),
     /// causing AutoML to generate an empty __Features__ pipeline and crash.
     /// Returns null if no text columns are found (existing behavior sufficient).

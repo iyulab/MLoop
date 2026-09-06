@@ -119,7 +119,7 @@ public static class InitCommand
                 // being one of IsValidModelName's reserved words (e.g. "staging") was told a rule
                 // it already satisfied. It also bypassed ErrorConsole entirely — stdout, not
                 // stderr, and never reported to MachineOutputScope, so a --json consumer got no
-                // signal at all for this failure (worse than the wrong-channel class cycle-197
+                // signal at all for this failure (worse than the wrong-channel class the
                 // fixed, which at least reported the cause).
                 ErrorConsole.Error(
                     $"Invalid model name '{modelName}'.",
@@ -633,7 +633,7 @@ See: docs/EXTENSIBILITY.md for more information
     internal static string GetYamlTemplate(string projectName, string task, string modelName, string labelColumn)
     {
         // Task→primary-metric mapping lives in the shared TaskMetadata source of truth so the
-        // yaml example, the promotion gate, and AutoML all agree (TD-06). Tasks without a
+        // yaml example, the promotion gate, and AutoML all agree. Tasks without a
         // canonical metric (object detection, unknown) defer to "auto".
         var metricExample = TaskMetadata.PrimaryMetricOrAuto(task);
 

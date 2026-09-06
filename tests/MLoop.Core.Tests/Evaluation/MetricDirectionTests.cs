@@ -3,7 +3,7 @@ using MLoop.Core.Evaluation;
 namespace MLoop.Core.Tests.Evaluation;
 
 /// <summary>
-/// F-27 guard: metric optimization direction (lower-is-better vs higher-is-better) is a single source
+/// Guard: metric optimization direction (lower-is-better vs higher-is-better) is a single source
 /// of truth in <see cref="MetricDirection"/>. It previously drifted across four sites, with three of
 /// them missing clustering's average_distance/davies_bouldin_index and mape — so compare/evaluate
 /// ranked a worse clustering model as "best". These cases pin the converged behavior.

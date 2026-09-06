@@ -8,8 +8,8 @@ namespace MLoop.Core.Data;
 /// fallback) so the inference feature vector reproduces exactly what the model was fitted on.
 ///
 /// This centralizes logic that previously diverged across <c>PredictionEngine</c> and
-/// <c>EvaluationEngine</c> — the root cause of BUG-43 (CP949 encoding garbled in predict's manual BOM
-/// check) and BUG-44 (index/exclude columns left in, widening the feature vector), plus the silent
+/// <c>EvaluationEngine</c> — the root cause of CP949 text garbled by predict's own BOM check, and of
+/// index and excluded columns left in place, widening the feature vector; plus the silent
 /// gaps that divergence hid: multiline flattening and constant-column removal were missing from both
 /// inference paths.
 ///
@@ -39,7 +39,7 @@ public static class InferenceDataPreprocessor
         string current = inputPath;
 
         // 1. Encoding: CP949/EUC-KR → UTF-8 with BOM (same detector CsvDataLoader.EnsureUtf8Bom uses).
-        //    Replaces predict's hand-rolled BOM check, which read non-UTF-8 files as UTF-8 (BUG-43).
+        //    Replaces predict's hand-rolled BOM check, which read non-UTF-8 files as UTF-8.
         var (utf8Path, detection) = EncodingDetector.ConvertToUtf8WithBom(current);
         if (detection.WasConverted)
         {
@@ -52,7 +52,7 @@ public static class InferenceDataPreprocessor
         current = Step(CsvDataLoader.FlattenMultiLineQuotedFields(current, log), current, tempFiles);
         current = Step(CsvDataLoader.FlattenMultiLineHeaders(current), current, tempFiles);
 
-        // 3. Index columns (pandas index / "Unnamed: N"). Data-independent, safe at any size (BUG-44).
+        // 3. Index columns (pandas index / "Unnamed: N"). Data-independent, safe at any size.
         current = Step(CsvDataLoader.RemoveIndexColumns(current, log), current, tempFiles);
 
         // 4. Column exclusion. With a trained schema this is deterministic — applying the DateTime /

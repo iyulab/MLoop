@@ -38,12 +38,12 @@ public class TokenCommandTests
     [Fact]
     public void IssuedReadOnlyToken_ValidatesAsAuthenticatedNonAdmin()
     {
-        var token = TokenCommand.IssueToken(DevJwtDefaults.Key, "honeai-sim", role: null, TimeSpan.FromHours(1));
+        var token = TokenCommand.IssueToken(DevJwtDefaults.Key, "test-subject", role: null, TimeSpan.FromHours(1));
 
         var principal = Validate(token, DevJwtDefaults.Key);
 
         Assert.True(principal.Identity?.IsAuthenticated);
-        Assert.Equal("honeai-sim", principal.Identity?.Name); // NameClaimType = "sub"
+        Assert.Equal("test-subject", principal.Identity?.Name); // NameClaimType = "sub"
         Assert.False(principal.IsInRole("admin"));
     }
 

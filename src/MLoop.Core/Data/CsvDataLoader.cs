@@ -148,13 +148,13 @@ public class CsvDataLoader : DataProviderBase
                 "Double quotes inside a field must be escaped as \"\" (two double quotes).", ex);
         }
 
-        // BUG-15: Fix InferColumns misdetecting multiclass label as Boolean.
+        // Fix InferColumns misdetecting multiclass label as Boolean.
         // When label column only has 0/1 in early rows, InferColumns infers Boolean,
         // but fails when encountering values like 2. Override Boolean label to String
         // so MapValueToKey can handle any discrete class values.
-        // BUG-17: Skip this conversion for binary-classification — ML.NET binary
+        // Skip this conversion for binary-classification — ML.NET binary
         // classification pipeline expects Boolean labels and will fail with String.
-        // BUG-23: Skip this conversion for regression — regression pipeline expects
+        // Skip this conversion for regression — regression pipeline expects
         // numeric (Single) labels. Boolean 0/1 should become Single, not String.
         var isBinaryTask = string.Equals(taskType, "binary-classification", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(taskType, "BinaryClassification", StringComparison.OrdinalIgnoreCase);
@@ -174,7 +174,7 @@ public class CsvDataLoader : DataProviderBase
             }
         }
 
-        // BUG-23: For regression, override Boolean label to Single.
+        // For regression, override Boolean label to Single.
         // InferColumns may detect 0/1 numeric labels as Boolean, but regression needs Single.
         if (isRegressionTask && !string.IsNullOrEmpty(labelColumn) && columnInference.TextLoaderOptions.Columns != null)
         {
@@ -262,15 +262,15 @@ public class CsvDataLoader : DataProviderBase
     /// EVAL-1: the single inference schema-reconciliation step that predict and evaluate both run
     /// after <c>InferColumns</c>. It (1) overrides each non-label column's inferred <c>DataKind</c> to
     /// the type training fitted on — <c>InferColumns</c> can misdetect types when the inference data is
-    /// sparse — including the raw "String" type name (BUG-42); (2) enables RFC 4180 quoting so fields
-    /// containing commas load as one column (BUG-16); and (3) splits preserved group/user/item columns
-    /// out of any merged Features range via <see cref="ApplyColumnPreservation"/> (F-23/F-26).
+    /// sparse — including the raw "String" type name; (2) enables RFC 4180 quoting so fields
+    /// containing commas load as one column; and (3) splits preserved group/user/item columns
+    /// out of any merged Features range via <see cref="ApplyColumnPreservation"/>.
     ///
     /// The label column is intentionally left untouched: predict (dummy-label injection, Boolean→String)
     /// and evaluate (task-specific multiclass→String / regression→Single / binary string→bool) each
     /// apply their own label handling afterward. That divergence is legitimate; the non-label
     /// reconciliation above is what must stay identical, which is why it lives here rather than being
-    /// reimplemented per engine (the root of the BUG-42/BUG-16 drift).
+    /// reimplemented per engine, which is where that drift came from.
     /// </summary>
     public static void ReconcileInferredSchemaForInference(
         ColumnInferenceResults columnInference,
@@ -303,11 +303,11 @@ public class CsvDataLoader : DataProviderBase
             }
         }
 
-        // 2. BUG-16: enable RFC 4180 quoting so fields containing commas (bbox "[1, 2, 3]", attribute
+        // 2. Enable RFC 4180 quoting so fields containing commas (bbox "[1, 2, 3]", attribute
         //    dicts) load as a single column rather than splitting the row.
         options.AllowQuoting = true;
 
-        // 3. F-23/F-26: split preserved group/user/item columns back out of any merged Features range.
+        // 3. Split preserved group/user/item columns back out of any merged Features range.
         ApplyColumnPreservation(columnInference, csvPath, preserveColumns);
     }
 
@@ -315,7 +315,7 @@ public class CsvDataLoader : DataProviderBase
     /// Maps a trained-schema <c>DataType</c> name to the <c>TextLoader</c> <see cref="DataKind"/>
     /// inference must load it as. Shared by the non-label reconciliation in
     /// <see cref="ReconcileInferredSchemaForInference"/> and predict's label-type alignment so the two
-    /// type tables cannot drift (the predict-only "String" case BUG-42 was exactly such a drift).
+    /// type tables cannot drift (the predict-only "String" case was exactly such a drift).
     /// Returns <paramref name="fallback"/> for unknown type names so the inferred kind is kept.
     /// </summary>
     public static DataKind MapTrainedTypeToDataKind(string dataType, DataKind fallback) =>
@@ -1058,7 +1058,7 @@ public class CsvDataLoader : DataProviderBase
     /// Removes columns the trained schema marked as "Exclude" (DateTime / constant / sparse) from a
     /// prediction or evaluation CSV. Deterministic — driven by the training-time analysis passed in
     /// <paramref name="excludedColumnNames"/>, not by the current file's data — so predict and evaluate
-    /// reproduce the same feature set the model was fitted on (avoids the BUG-21 dimension-mismatch class).
+    /// reproduce the same feature set the model was fitted on (avoids the dimension-mismatch class).
     /// Returns the original path when nothing is excluded, otherwise a UTF-8 BOM temp file.
     /// </summary>
     public static string RemoveExcludedColumns(string filePath, IEnumerable<string> excludedColumnNames, Action<string>? log = null)
