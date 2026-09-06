@@ -8,7 +8,7 @@ using MLoop.Tests.Common;
 namespace MLoop.Core.Tests.AutoML;
 
 /// <summary>
-/// upstream-008 round-trip guards: the InputSchemaInfo that RunAsync captures
+/// Round-trip guards: the InputSchemaInfo that RunAsync captures
 /// (CaptureInputSchema) must be directly consumable by PredictionService — the
 /// natural in-process path `RunAsync → result.Schema → Predict(rows, schema, …)`.
 ///

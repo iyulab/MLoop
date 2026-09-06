@@ -87,15 +87,37 @@ internal class Program
     {
         var parseResult = rootCommand.Parse(args);
 
+        return ReportIfUnrunnable(parseResult, args) ?? parseResult.Invoke();
+    }
+
+    /// <summary>
+    /// The awaiting form of <see cref="Execute"/>. Both exist because <c>Main</c> is synchronous
+    /// while a test that drives a command wants to await it; the decision they share is factored
+    /// into <see cref="ReportIfUnrunnable"/> rather than written twice, since a difference between
+    /// the two would be a difference between what tests exercise and what users run.
+    /// </summary>
+    internal static async Task<int> ExecuteAsync(RootCommand rootCommand, string[] args)
+    {
+        var parseResult = rootCommand.Parse(args);
+
+        return ReportIfUnrunnable(parseResult, args) ?? await parseResult.InvokeAsync();
+    }
+
+    /// <summary>
+    /// The exits decided before any command action starts: a line the parser rejected, and a line
+    /// it accepted that says something the caller did not write. Returns the exit code for those,
+    /// or null when the command line is the one the caller meant and should simply run.
+    /// </summary>
+    private static int? ReportIfUnrunnable(ParseResult parseResult, string[] args)
+    {
         if (parseResult.Errors.Count > 0)
             return ParseFailureReport.Report(parseResult, args);
 
-        // A line can parse cleanly and still say something the caller did not write.
         var optionLike = OptionLikeArgumentCheck.Find(parseResult);
-        if (optionLike is not null)
-            return OptionLikeArgumentCheck.Report(parseResult, args, optionLike);
 
-        return parseResult.Invoke();
+        return optionLike is null
+            ? null
+            : OptionLikeArgumentCheck.Report(parseResult, args, optionLike);
     }
 
     /// <summary>

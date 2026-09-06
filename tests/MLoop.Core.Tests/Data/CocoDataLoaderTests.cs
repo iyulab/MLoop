@@ -247,8 +247,8 @@ public class CocoDataLoaderTests : IDisposable
 
     // DataLoaderFactory_ReturnsObjectDetectionLoaderForObjectDetection and
     // ObjectDetectionLoader_DispatchesToCocoForJsonAnnotations moved to
-    // MLoop.Core.DeepLearning.Tests/Data/ObjectDetectionDataLoaderTests.cs (upstream-007 stage 2
-    // t3): ObjectDetectionDataLoader now lives in MLoop.Core.DeepLearning, which MLoop.Core.Tests
+    // MLoop.Core.DeepLearning.Tests/Data/ObjectDetectionDataLoaderTests.cs:
+    // ObjectDetectionDataLoader now lives in MLoop.Core.DeepLearning, which MLoop.Core.Tests
     // does not (and should not) reference — DeepLearningRegistry.Current is null here, so
     // DataLoaderFactory.Create("object-detection", ...) throws rather than dispatching.
 

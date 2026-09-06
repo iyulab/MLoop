@@ -10,7 +10,7 @@ namespace MLoop.Core.DeepLearning;
 /// Deep-learning task handlers (TensorFlow/TorchSharp-backed): image-classification,
 /// text-classification, sentence-similarity, ner, object-detection, question-answering.
 ///
-/// Moved out of <c>MLoop.Core.AutoML.AutoMLRunner</c> (upstream-007 stage 2, task 3) into this
+/// Moved out of <c>MLoop.Core.AutoML.AutoMLRunner</c> into this
 /// optional <c>MLoop.Core.DeepLearning</c> assembly, so the Microsoft.ML.TorchSharp /
 /// Microsoft.ML.Vision usings — and their heavy native runtime dependencies — no longer live in
 /// MLoop.Core. Invoked via <see cref="DeepLearningModule"/>, which is registered with

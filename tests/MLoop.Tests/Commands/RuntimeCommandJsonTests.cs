@@ -28,8 +28,7 @@ public class RuntimeCommandJsonTests
                 Out = new AnsiConsoleOutput(buffer)
             });
 
-            var result = Program.BuildRootCommand().Parse(args);
-            var exitCode = await result.InvokeAsync();
+            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
             return (exitCode, buffer.ToString());
         }
         finally

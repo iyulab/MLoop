@@ -83,7 +83,7 @@ public class CompareJsonContractTests : IDisposable
             Console.SetError(errorBuffer);
             AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(buffer) });
 
-            var exitCode = await Program.BuildRootCommand().Parse(args).InvokeAsync();
+            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
             return (exitCode, buffer.ToString(), errorBuffer.ToString());
         }
         finally

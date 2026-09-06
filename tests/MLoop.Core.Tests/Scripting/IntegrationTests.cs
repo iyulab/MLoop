@@ -165,15 +165,25 @@ public class Metric2 : IMLoopMetric
     }
 
     /// <summary>
-    /// Simple test logger implementation.
+    /// Collects what a script logs, in memory.
     /// </summary>
+    /// <remarks>
+    /// It used to write to <see cref="Console"/>. Nothing asserted on that, but another test class
+    /// in this assembly captures <see cref="Console.Out"/> to check the exclusion notices, and the
+    /// runner executes distinct test classes in parallel — so these lines could land in that buffer
+    /// while the lines that belonged there went missing from wherever they were meant to be read.
+    /// Writing to a process-global stream to say something no one is listening for is a cost with no
+    /// benefit; the messages stay reachable here for a test that ever does want them.
+    /// </remarks>
     private class TestLogger : ILogger
     {
-        public void Info(string message) => Console.WriteLine($"[INFO] {message}");
-        public void Warning(string message) => Console.WriteLine($"[WARN] {message}");
-        public void Error(string message) => Console.WriteLine($"[ERROR] {message}");
-        public void Error(string message, Exception exception) => Console.WriteLine($"[ERROR] {message}{Environment.NewLine}{exception}");
-        public void Debug(string message) => Console.WriteLine($"[DEBUG] {message}");
+        public List<string> Messages { get; } = [];
+
+        public void Info(string message) => Messages.Add($"[INFO] {message}");
+        public void Warning(string message) => Messages.Add($"[WARN] {message}");
+        public void Error(string message) => Messages.Add($"[ERROR] {message}");
+        public void Error(string message, Exception exception) => Messages.Add($"[ERROR] {message}{Environment.NewLine}{exception}");
+        public void Debug(string message) => Messages.Add($"[DEBUG] {message}");
     }
 
     /// <summary>

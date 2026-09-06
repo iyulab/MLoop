@@ -296,7 +296,7 @@ public partial class AutoMLRunner
     /// Dispatches deep-learning tasks (image-classification, text-classification,
     /// sentence-similarity, ner, object-detection, question-answering) to the optional
     /// <see cref="DeepLearningRegistry.Current"/> module. MLoop.Core no longer references the
-    /// TorchSharp/Vision-backed handlers directly (upstream-007 stage 2) — they live in
+    /// TorchSharp/Vision-backed handlers directly — they live in
     /// MLoop.Core.DeepLearning, and consumers register the module at startup. If no module is
     /// registered (or it doesn't recognize the task), this throws an actionable error rather
     /// than silently failing.
@@ -319,8 +319,8 @@ public partial class AutoMLRunner
     /// <summary>
     /// Captures the input schema from the training IDataView for later use in prediction.
     /// Emits the <see cref="SchemaDataTypes"/> semantic vocabulary — the same names the CLI
-    /// schema writer produces and PredictionService/CsvDataLoader consume (upstream-008;
-    /// raw .NET type names made every numeric feature fall through to DataKind.String).
+    /// schema writer produces and PredictionService/CsvDataLoader consume
+    /// (raw .NET type names made every numeric feature fall through to DataKind.String).
     /// </summary>
     private InputSchemaInfo CaptureInputSchema(
         IDataView trainSet,

@@ -9,7 +9,7 @@ namespace MLoop.Core.DeepLearning.Tests.Data;
 /// <summary>
 /// Covers <see cref="ObjectDetectionDataLoader"/> and its wiring through
 /// <see cref="DataLoaderFactory"/> + <see cref="DeepLearningRegistry"/>. Split out of
-/// MLoop.Core.Tests's CocoDataLoaderTests/YoloDataLoaderTests (upstream-007 stage 2 t3):
+/// MLoop.Core.Tests's CocoDataLoaderTests/YoloDataLoaderTests:
 /// <see cref="ObjectDetectionDataLoader"/> moved to MLoop.Core.DeepLearning, which
 /// MLoop.Core.Tests does not reference. Registering <see cref="DeepLearningModule"/> here mirrors
 /// what MLoop.CLI/MLoop.API do at startup (Task 5).

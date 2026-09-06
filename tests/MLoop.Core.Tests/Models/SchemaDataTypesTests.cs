@@ -4,7 +4,7 @@ using MLoop.Core.Models;
 namespace MLoop.Core.Tests.Models;
 
 /// <summary>
-/// Pins the single-source DataType vocabulary (upstream-008): producers
+/// Pins the single-source DataType vocabulary: producers
 /// (CLI TrainingEngine, Core CaptureInputSchema) and consumers
 /// (PredictionService, CsvDataLoader, CategoricalMapper) must share one table.
 /// </summary>
