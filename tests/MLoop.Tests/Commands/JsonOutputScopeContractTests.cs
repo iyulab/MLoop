@@ -112,6 +112,55 @@ public class JsonOutputScopeContractTests : IDisposable
     }
 
     [Fact]
+    public async Task UnexpectedException_WithJson_EmitsErrorPayload()
+    {
+        // The path every command's outermost catch funnels through. It announces the failure from
+        // ErrorSuggestions rather than ErrorConsole, and when the scope was wired into only one of
+        // those two the most ordinary failure a command has — an unexpected exception — still exited
+        // with an empty stdout. Both now report through one place.
+        var experiment = Path.Combine(_testProjectRoot, "models", "default", "staging", "exp-001");
+        Directory.CreateDirectory(experiment);
+        File.WriteAllText(Path.Combine(experiment, "metadata.json"), "{not json");
+        File.WriteAllText(Path.Combine(_testProjectRoot, "tiny.csv"), "X,Y" + Environment.NewLine + "1,2" + Environment.NewLine + "2,4" + Environment.NewLine);
+
+        var (exitCode, stdout, stderr) = await RunAsync("evaluate", "exp-001", "tiny.csv", "--json");
+
+        Assert.Equal(1, exitCode);
+        using var doc = ParseStdout(stdout, stderr);
+        Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("error").GetString()));
+    }
+
+    [Theory]
+    [InlineData("list")]
+    [InlineData("promote", "--best")]
+    [InlineData("prep", "plan")]
+    [InlineData("features", "select")]
+    public async Task DeclaredJsonCommand_OutsideAProject_EmitsErrorPayload(params string[] command)
+    {
+        // The scope reached the commands that had a stderr-rebind block to replace; these had none and
+        // so were left behind — including `list`, which is the command whose partly-covered state
+        // started this audit in the first place.
+        var outsideAnyProject = Path.Combine(Path.GetTempPath(), "mloop-not-a-project-" + Guid.NewGuid());
+        Directory.CreateDirectory(outsideAnyProject);
+        Directory.SetCurrentDirectory(outsideAnyProject);
+        try
+        {
+            var args = command.Append("--json").ToArray();
+            var (exitCode, stdout, stderr) = await RunAsync(args);
+
+            Assert.Equal(1, exitCode);
+            using var doc = ParseStdout(stdout, stderr);
+            Assert.Contains("project", doc.RootElement.GetProperty("error").GetString()!,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(_testProjectRoot);
+            try { Directory.Delete(outsideAnyProject, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void Scope_WhenCommandWroteItsOwnPayload_AddsNothing()
     {
         var buffer = new StringWriter();

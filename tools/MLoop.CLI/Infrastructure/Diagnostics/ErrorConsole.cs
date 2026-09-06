@@ -46,10 +46,9 @@ public static class ErrorConsole
     {
         Out.MarkupLine($"[red]Error:[/] {markup}");
 
-        // A command in machine-readable mode reports the same cause as an event, so a consumer
-        // reading only the event stream is not left with an empty stdout and a non-zero exit.
-        MachineOutputScope.ReportError(markup);
-        JsonOutputScope.ReportError(markup);
+        // A command in machine-readable mode reports the same cause on its own stream, so a consumer
+        // reading only that stream is not left with an empty stdout and a non-zero exit.
+        FailureReport.Report(markup);
     }
 
     /// <summary>
@@ -69,8 +68,7 @@ public static class ErrorConsole
         console.MarkupLine($"[red]Error:[/] {markup}");
         console.MarkupLine($"[yellow]Tip:[/] {tip}");
 
-        MachineOutputScope.ReportError($"{markup} {tip}");
-        JsonOutputScope.ReportError($"{markup} {tip}");
+        FailureReport.Report($"{markup} {tip}");
     }
 
     /// <summary>

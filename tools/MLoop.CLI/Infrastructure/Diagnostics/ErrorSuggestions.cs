@@ -46,13 +46,12 @@ public static class ErrorSuggestions
             {
                 err.MarkupLine($"  [blue]>[/] {suggestion}");
             }
-            // Suggestion text carries markup (e.g. "[cyan]mloop analyze[/]") for the terminal;
-            // MachineOutputScope.Report strips it before reaching the event stream, same as
-            // every other markup-bearing string reported through it.
+            // Suggestion text carries markup (e.g. "[cyan]mloop analyze[/]") for the terminal; each
+            // machine stream strips it before reporting, same as every other markup-bearing string.
             machineParts.Add("Suggestions: " + string.Join("; ", suggestions));
         }
 
-        MachineOutputScope.ReportError(string.Join(" ", machineParts));
+        FailureReport.Report(string.Join(" ", machineParts));
 
         // Always show version for diagnostics
         err.WriteLine();
@@ -397,7 +396,7 @@ public static class ErrorSuggestions
             machineParts.Add("Suggestions: " + string.Join("; ", suggestions));
         }
 
-        MachineOutputScope.ReportError(string.Join(" ", machineParts));
+        FailureReport.Report(string.Join(" ", machineParts));
 
         // Quick diagnostic commands
         err.WriteLine();

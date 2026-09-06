@@ -45,6 +45,11 @@ public static class PrepPlanCommand
 
     private static async Task<int> ExecuteAsync(string? set, string? remove, string? columnsCsv, bool list, string modelName, bool json)
     {
+        // In --json mode stdout must be pure JSON, so narration routes to stderr for the
+        // duration — and the scope guarantees stdout still carries a document on an exit
+        // that skips this command's own emitter.
+        using var machineOutput = json ? new JsonOutputScope() : null;
+
         try
         {
             var ctx = CommandContext.TryCreate();
