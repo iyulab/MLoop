@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using MLoop.API;
 using MLoop.API.Caching;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
@@ -220,6 +221,10 @@ builder.Services.AddCors(options =>
 // Register MLoop services
 builder.Services.AddSingleton<IFileSystemManager, FileSystemManager>();
 builder.Services.AddSingleton<IProjectDiscovery, ProjectDiscovery>();
+// The project root is one fact for the life of the process. Register the answer, not the question,
+// so it is resolved once — and so a deployment that cannot find its project fails at startup.
+builder.Services.AddSingleton(sp =>
+    new ProjectRootPath(sp.GetRequiredService<IProjectDiscovery>().FindRoot()));
 builder.Services.AddSingleton<ConfigLoader>();
 builder.Services.AddSingleton<IModelNameResolver, ModelNameResolver>();
 builder.Services.AddSingleton<IExperimentStore, ExperimentStore>();
@@ -234,7 +239,7 @@ builder.Services.AddSingleton<MLoop.CLI.Infrastructure.ML.ITrainingEngine>(sp =>
 {
     var fileSystem = sp.GetRequiredService<IFileSystemManager>();
     var experimentStore = sp.GetRequiredService<IExperimentStore>();
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
+    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
     return new TrainingEngine(fileSystem, experimentStore, projectRoot);
 });
 builder.Services.AddSingleton<TrainingJobRunner>();
@@ -243,29 +248,29 @@ builder.Services.AddHostedService<TrainingJobRunner>(sp => sp.GetRequiredService
 // Register MLoop.Ops services
 builder.Services.AddSingleton<IModelComparer>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
+    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
     return new FileModelComparer(projectRoot);
 });
 builder.Services.AddSingleton<IPromotionManager>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
+    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
     return new FilePromotionManager(projectRoot);
 });
 builder.Services.AddSingleton<IRetrainingTrigger>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
+    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
     return new TimeBasedTrigger(projectRoot);
 });
 
 // Register MLoop.DataStore services
 builder.Services.AddSingleton<IPredictionLogger>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
+    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
     return new FilePredictionLogger(projectRoot);
 });
 builder.Services.AddSingleton<IFeedbackCollector>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
+    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
     return new FileFeedbackCollector(projectRoot);
 });
 
@@ -279,7 +284,7 @@ var app = builder.Build();
 // while an operator is still watching the log.
 app.Logger.LogInformation(
     "Project root: {ProjectRoot}",
-    app.Services.GetRequiredService<IProjectDiscovery>().FindRoot());
+    app.Services.GetRequiredService<ProjectRootPath>().Value);
 
 // Add request logging middleware
 app.UseSerilogRequestLogging(options =>
@@ -759,7 +764,7 @@ app.MapGet("/experiments/{id}", async (
 app.MapGet("/status", async (
     IModelRegistry registry,
     IExperimentStore experimentStore,
-    IProjectDiscovery projectDiscovery,
+    ProjectRootPath projectRootPath,
     ConfigLoader configLoader,
     ILogger<Program> logger,
     CancellationToken ct) =>
@@ -770,7 +775,7 @@ app.MapGet("/status", async (
     {
         logger.LogInformation("Retrieving project status");
 
-        var projectRoot = projectDiscovery.FindRoot();
+        var projectRoot = projectRootPath.Value;
         var projectName = Path.GetFileName(projectRoot);
 
         // Get all experiments and production models
@@ -1041,7 +1046,7 @@ app.MapPost("/evaluate", async (
     [FromBody] EvaluateRequest request,
     IExperimentStore experimentStore,
     IModelRegistry registry,
-    IProjectDiscovery projectDiscovery,
+    ProjectRootPath projectRootPath,
     EvaluationEngine evaluationEngine,
     ILogger<Program> logger,
     CancellationToken ct) =>
@@ -1087,7 +1092,7 @@ app.MapPost("/evaluate", async (
         if (string.IsNullOrWhiteSpace(testDataPath))
             return Results.BadRequest(new { error = "testDataPath is required." });
 
-        var evalProjectRoot = projectDiscovery.FindRoot();
+        var evalProjectRoot = projectRootPath.Value;
         var resolvedTestPath = Path.GetFullPath(testDataPath);
         if (!resolvedTestPath.StartsWith(Path.GetFullPath(evalProjectRoot), StringComparison.OrdinalIgnoreCase))
             return Results.BadRequest(new { error = "Test data file must be within the project directory." });
@@ -1346,11 +1351,11 @@ app.MapPost("/train", (
     [FromBody] TrainingJobRequest request,
     TrainingJobStore jobStore,
     TrainingJobRunner jobRunner,
-    IProjectDiscovery projectDiscovery,
+    ProjectRootPath projectRootPath,
     ILogger<Program> logger) =>
 {
     // Validate data file exists and is within project root
-    var trainProjectRoot = projectDiscovery.FindRoot();
+    var trainProjectRoot = projectRootPath.Value;
     var resolvedDataFile = Path.GetFullPath(request.DataFile);
     if (!resolvedDataFile.StartsWith(Path.GetFullPath(trainProjectRoot), StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Data file must be within the project directory." });
