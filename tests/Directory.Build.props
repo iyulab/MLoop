@@ -1,0 +1,17 @@
+<Project>
+
+  <!-- Chain to the repository-wide properties; a Directory.Build.props here would otherwise
+       shadow them for every test project. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <ItemGroup>
+    <!-- Every test assembly pins the same output culture the product pins, so a suite asserts
+         what a user actually sees rather than what this machine's locale happens to render.
+         Linked from one file: a per-project copy is how the pin drifts between assemblies.
+         Test assemblies only — the shared helper library is not one, and a library has no business
+         pinning process-wide culture. -->
+    <Compile Include="$(MSBuildThisFileDirectory)TestOutputCulture.cs" Link="TestOutputCulture.cs"
+             Condition="$(MSBuildProjectName.EndsWith('.Tests'))" />
+  </ItemGroup>
+
+</Project>
