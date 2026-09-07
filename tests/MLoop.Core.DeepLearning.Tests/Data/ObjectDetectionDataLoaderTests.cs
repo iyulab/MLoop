@@ -19,12 +19,6 @@ public sealed class ObjectDetectionDataLoaderTests : IDisposable
     private readonly string _tempDirectory;
     private readonly MLContext _mlContext;
 
-    static ObjectDetectionDataLoaderTests()
-    {
-        // Idempotent: DeepLearningRegistry is process-wide, so register once per test run.
-        DeepLearningRegistry.Register(new DeepLearningModule());
-    }
-
     public ObjectDetectionDataLoaderTests()
     {
         _tempDirectory = Path.Combine(Path.GetTempPath(), $"MLoopObjectDetectionLoaderTests_{Guid.NewGuid()}");

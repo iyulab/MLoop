@@ -97,6 +97,7 @@ public class PerformanceTests
     }
 
     [Fact(Skip = "Long-running test - run manually for performance validation")]
+    [Trait("Category", "Slow")]
     public async Task RandomSampling_1MRows_CompletesWithin5Seconds()
     {
         // Arrange
@@ -115,6 +116,7 @@ public class PerformanceTests
     }
 
     [Fact(Skip = "Long-running test - run manually for performance validation")]
+    [Trait("Category", "Slow")]
     public async Task StratifiedSampling_1MRows_CompletesWithin10Seconds()
     {
         // Arrange
@@ -134,6 +136,7 @@ public class PerformanceTests
     }
 
     [Fact(Skip = "Long-running test - run manually for performance validation")]
+    [Trait("Category", "Slow")]
     public async Task FullPipeline_1MRows_CompletesWithin15Seconds()
     {
         // Arrange
