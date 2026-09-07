@@ -37,16 +37,12 @@ public class DispatchSeamContractTests
     [Fact]
     public void NoTestDrivesACommandThroughItsOwnDispatch()
     {
-        var testRoot = Path.Combine(FindRepoRoot(), "tests");
-
         var offenders =
-            (from file in Directory.EnumerateFiles(testRoot, "*.cs", SearchOption.AllDirectories)
-             where !file.Contains(Path.Combine("bin", ""), StringComparison.Ordinal)
-                && !file.Contains(Path.Combine("obj", ""), StringComparison.Ordinal)
-                && !file.EndsWith(nameof(DispatchSeamContractTests) + ".cs", StringComparison.Ordinal)
+            (from file in TestSourceTree.SourceFiles(
+                 excludingFileNamed: nameof(DispatchSeamContractTests))
              from line in File.ReadAllLines(file)
              where HandRolledDispatch.Any(form => line.Contains(form, StringComparison.Ordinal))
-             select $"{Path.GetRelativePath(testRoot, file)}: {line.Trim()}")
+             select $"{TestSourceTree.Relative(file)}: {line.Trim()}")
             .ToList();
 
         Assert.True(
@@ -55,19 +51,5 @@ public class DispatchSeamContractTests
             $"{nameof(Program)}.{nameof(Program.ExecuteAsync)}, so they cannot reach the exits that " +
             "happen before a command action starts:" + Environment.NewLine +
             string.Join(Environment.NewLine, offenders));
-    }
-
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MLoop.slnx")))
-            dir = dir.Parent;
-
-        if (dir == null)
-            throw new InvalidOperationException(
-                $"Could not locate MLoop.slnx by walking up from {AppContext.BaseDirectory} — " +
-                $"{nameof(DispatchSeamContractTests)} assumes it runs from within the repo's build output tree.");
-
-        return dir.FullName;
     }
 }

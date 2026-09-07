@@ -36,7 +36,7 @@ namespace MLoop.Tests.Documentation;
 /// </remarks>
 public class ReadmeCommandContractTests
 {
-    private static readonly string RepoRoot = FindRepoRoot();
+    private static string RepoRoot => TestSourceTree.RepoRoot;
     private static readonly string[] DocFiles = { "README.md", "docs/GUIDE.md" };
     private const string CommandTableHeading = "### Every command";
 
@@ -243,17 +243,4 @@ public class ReadmeCommandContractTests
             $"  Documented but gone: {(stale.Count == 0 ? "(none)" : string.Join(", ", stale))}");
     }
 
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MLoop.slnx")))
-            dir = dir.Parent;
-
-        if (dir == null)
-            throw new InvalidOperationException(
-                $"Could not locate MLoop.slnx by walking up from {AppContext.BaseDirectory} — " +
-                "ReadmeCommandContractTests assumes it runs from within the repo's build output tree.");
-
-        return dir.FullName;
-    }
 }
