@@ -33,10 +33,30 @@ public static class ErrorConsole
     /// cost never lands on a hot path.
     /// </para>
     /// </summary>
-    public static IAnsiConsole Out => AnsiConsole.Create(new AnsiConsoleSettings
+    public static IAnsiConsole Out
     {
-        Out = new AnsiConsoleOutput(Console.Error)
-    });
+        get
+        {
+            var console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(Console.Error)
+            });
+            console.Profile.Width = DiagnosticLineWidth;
+            return console;
+        }
+    }
+
+    /// <summary>
+    /// Width this console lays lines out against. Spectre assumes 80 columns when the stream is not
+    /// a terminal, and folds a long line at that point — inside a token if the line has no space
+    /// there. A diagnostic that names a command to run (<c>Run 'mloop train --name default' first.</c>)
+    /// then splits the command across two lines in a log or a captured stream, and a user who copies
+    /// it gets a broken command. Nothing written here is a table or a panel that needs a width to lay
+    /// out — only lines and exception traces — so the console gets a width no line reaches. A real
+    /// terminal still wraps visually at its own edge; the text itself stays one line. Large but
+    /// finite: Spectre does arithmetic on the width, and <see cref="int.MaxValue"/> would overflow it.
+    /// </summary>
+    private const int DiagnosticLineWidth = 4096;
 
     /// <summary>
     /// Writes an <c>Error:</c> line to stderr. <paramref name="markup"/> is Spectre markup — escape

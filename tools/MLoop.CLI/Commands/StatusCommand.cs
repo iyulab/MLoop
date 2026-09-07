@@ -325,14 +325,17 @@ public static class StatusCommand
 
             foreach (var (name, model) in config.Models)
             {
-                var timeLimit = model.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds;
+                // An unset budget is auto-estimated from the data at train time (the generated
+                // mloop.yaml says so); rendering the legacy default here stated a number the file
+                // does not contain and training does not use.
+                var timeLimit = model.Training?.TimeLimitSeconds is { } seconds ? $"{seconds}s" : "auto";
                 var metric = model.Training?.Metric ?? ConfigDefaults.DefaultMetric;
 
                 configTable.AddRow(
                     $"[cyan]{name}[/]",
                     model.Task,
                     model.Label,
-                    $"{timeLimit}s",
+                    timeLimit,
                     metric);
             }
 

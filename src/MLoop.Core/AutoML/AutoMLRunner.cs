@@ -903,14 +903,7 @@ public partial class AutoMLRunner
 
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
 
-        // Build feature pipeline based on column types
-        var featurePipeline = BuildFeaturePipeline(trainSet, config.LabelColumn, columnInfo);
-
-        // Append SDCA trainer (robust general-purpose linear classifier)
-        var trainingPipeline = featurePipeline
-            .Append(_mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
-                labelColumnName: config.LabelColumn,
-                featureColumnName: "Features"));
+        var trainingPipeline = BuildManualBinaryPipeline(_mlContext, trainSet, config.LabelColumn, columnInfo);
 
         var model = await Task.Run(
             () => trainingPipeline.Fit(trainSet),
@@ -968,11 +961,37 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
+    /// The manual binary pipeline: featurization → <b>cache checkpoint</b> → SDCA logistic regression.
+    /// </summary>
+    /// <remarks>
+    /// The checkpoint is the load-bearing part. ML.NET evaluates a pipeline lazily, and SDCA makes
+    /// many passes over its input — without a checkpoint every pass re-runs the whole featurization
+    /// chain (tokenize, n-gram, normalize, one-hot, concatenate) from the source rows. On the
+    /// repository's own 50-row example with twelve text columns that put a 29-second probe at
+    /// <b>five and a half minutes</b>, stuck in <c>SdcaTrainerBase.TrainCore</c> re-opening the
+    /// shuffled cursor, with no time budget able to stop it. Caching the featurized rows once is
+    /// what ML.NET documents for every iterative trainer ("add a cache checkpoint before the
+    /// trainer"); the fallback exists for small data, which is exactly where the cache fits in memory.
+    /// Public so the shape can be pinned by test without training end-to-end.
+    /// </remarks>
+    public static IEstimator<ITransformer> BuildManualBinaryPipeline(
+        MLContext mlContext, IDataView trainSet, string labelColumn, ColumnInformation? columnInfo)
+    {
+        var featurePipeline = BuildFeaturePipeline(mlContext, trainSet, labelColumn, columnInfo);
+
+        return featurePipeline
+            .AppendCacheCheckpoint(mlContext)
+            .Append(mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
+                labelColumnName: labelColumn,
+                featureColumnName: "Features"));
+    }
+
+    /// <summary>
     /// Builds a feature engineering pipeline based on column types.
     /// Used by manual training fallback when AutoML is unavailable.
     /// </summary>
-    private IEstimator<ITransformer> BuildFeaturePipeline(
-        IDataView data, string labelColumn, ColumnInformation? columnInfo)
+    private static IEstimator<ITransformer> BuildFeaturePipeline(
+        MLContext mlContext, IDataView data, string labelColumn, ColumnInformation? columnInfo)
     {
         var featureColumns = new List<string>();
         IEstimator<ITransformer>? pipeline = null;
@@ -983,7 +1002,7 @@ public partial class AutoMLRunner
             foreach (var textCol in columnInfo.TextColumnNames)
             {
                 var outputCol = $"_Text_{textCol}";
-                var textEstimator = _mlContext.Transforms.Text.FeaturizeText(outputCol, textCol);
+                var textEstimator = mlContext.Transforms.Text.FeaturizeText(outputCol, textCol);
                 pipeline = pipeline == null
                     ? (IEstimator<ITransformer>)textEstimator
                     : pipeline.Append(textEstimator);
@@ -1000,7 +1019,7 @@ public partial class AutoMLRunner
             foreach (var catCol in columnInfo.CategoricalColumnNames)
             {
                 var outputCol = $"_Cat_{catCol}";
-                var catEstimator = _mlContext.Transforms.Categorical.OneHotEncoding(outputCol, catCol);
+                var catEstimator = mlContext.Transforms.Categorical.OneHotEncoding(outputCol, catCol);
                 pipeline = pipeline == null
                     ? (IEstimator<ITransformer>)catEstimator
                     : pipeline.Append(catEstimator);
@@ -1019,7 +1038,7 @@ public partial class AutoMLRunner
         }
 
         // Concatenate all features into a single "Features" column
-        var concatEstimator = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray());
+        var concatEstimator = mlContext.Transforms.Concatenate("Features", featureColumns.ToArray());
         pipeline = pipeline == null
             ? (IEstimator<ITransformer>)concatEstimator
             : pipeline.Append(concatEstimator);
@@ -2249,9 +2268,9 @@ public partial class AutoMLRunner
 
         var write = log ?? Console.WriteLine;
         if (textColumns.Count > 0)
-            write($"ℹ️  [Info] Text column(s): {string.Join(", ", textColumns)} — applying text featurization (TF-IDF, n-gram)");
+            write($"[Info] Text column(s): {string.Join(", ", textColumns)} — applying text featurization (TF-IDF, n-gram)");
         if (categoricalColumns.Count > 0)
-            write($"ℹ️  [Info] Categorical column(s) (override): {string.Join(", ", categoricalColumns)}");
+            write($"[Info] Categorical column(s) (override): {string.Join(", ", categoricalColumns)}");
         if (ignoredColumns.Count > 0)
             write($"[Info] Ignored column(s) (override): {string.Join(", ", ignoredColumns)}");
 

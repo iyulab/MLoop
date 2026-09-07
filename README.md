@@ -399,6 +399,7 @@ mloop promote -- --lastest     # '--lastest' is the experiment id
 - **[Architecture](docs/ARCHITECTURE.md)** - System design and technical decisions
 - **[Embedding MLoop.Core](docs/EMBEDDING.md)** - In-process consumers: DL-weight pruning recipe & security floor
 - **[Contributing](CONTRIBUTING.md)** - Contribution guidelines and development workflow
+- **[Releasing](docs/RELEASING.md)** - Maintainer procedure: walk the new-user path on the built binary, run suites serially, confirm CI on the pushed commit, then publish
 
 ## Why MLoop?
 

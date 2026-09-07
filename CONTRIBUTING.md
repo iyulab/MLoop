@@ -291,6 +291,9 @@ Before/after screenshots for UI changes
 - [ ] CHANGELOG.md updated
 ```
 
+Maintainers cutting a release follow [docs/RELEASING.md](docs/RELEASING.md) — the new-user walk on the
+built binary comes before anything is pushed.
+
 ---
 
 ## Code Review Guidelines

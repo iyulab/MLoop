@@ -52,6 +52,21 @@ public class ErrorConsoleTests
     }
 
     [Fact]
+    public void Error_LongLineIsNotFoldedMidToken()
+    {
+        // Spectre lays a redirected stream out at 80 columns and folds a long line there — inside a
+        // token when the line has no space at that point. A guidance line names a command to copy,
+        // so it must survive capture as one line: a user who copies a folded command gets a broken one.
+        var command = "mloop train --name a-model-name-long-enough-to-cross-the-eightieth-column --time 60";
+        var output = CaptureStdErr(() => ErrorConsole.Error(
+            $"No completed experiments found for model 'default'. Run '{command}' first."));
+
+        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Single(lines);
+        Assert.Contains(command, output);
+    }
+
+    [Fact]
     public void Tip_WritesToStdErr()
     {
         // Tips are part of the cause a machine consumer persists, so they share the error channel.
