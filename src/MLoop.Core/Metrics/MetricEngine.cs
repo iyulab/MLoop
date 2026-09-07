@@ -27,7 +27,7 @@ public class MetricEngine
     {
         _projectRoot = projectRoot;
         _logger = logger;
-        _scriptLoader = scriptLoader ?? new ScriptLoader();
+        _scriptLoader = scriptLoader ?? new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot));
     }
 
     /// <summary>

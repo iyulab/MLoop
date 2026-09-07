@@ -50,7 +50,7 @@ public class HookEngine
         {
             lock (_scriptLoaderLock)
             {
-                _scriptLoader ??= new ScriptLoader();
+                _scriptLoader ??= new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot));
             }
         }
         return _scriptLoader;

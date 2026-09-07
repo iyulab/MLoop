@@ -24,7 +24,7 @@ public class ScriptDiscovery
     public ScriptDiscovery(string? projectRoot = null, ScriptLoader? scriptLoader = null, Action<string>? log = null)
     {
         _projectRoot = projectRoot ?? Directory.GetCurrentDirectory();
-        _scriptLoader = scriptLoader ?? new ScriptLoader();
+        _scriptLoader = scriptLoader ?? new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot));
         _log = log ?? Console.WriteLine;
     }
 
