@@ -716,6 +716,11 @@ public class CsvDataLoaderTests : IDisposable
 
     #region Sparse Column Exclusion Tests
 
+    // The exclusion notices below are read from the sink the loader is given, not from a captured
+    // Console.Out. The loader stopped writing to the process console (a library owns no output
+    // stream), so a capture would read an empty string — and the two DoesNotContain assertions here
+    // would then hold no matter what the loader did. Asserting on the injected sink is also what a
+    // consumer actually observes.
     [Fact]
     public void LoadData_WithSparseColumns_ExcludesFromFeatures()
     {
@@ -730,10 +735,9 @@ public class CsvDataLoaderTests : IDisposable
         File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
 
         // Act
-        var output = CaptureConsoleOutput(() =>
-        {
-            _loader.LoadData(csvPath, "Label");
-        });
+        var messages = new List<string>();
+        new CsvDataLoader(_mlContext, messages.Add).LoadData(csvPath, "Label");
+        var output = string.Join(Environment.NewLine, messages);
 
         // Assert: SparseCol should be excluded
         Assert.Contains("Sparse column 'SparseCol' excluded", output);
@@ -752,10 +756,9 @@ public class CsvDataLoaderTests : IDisposable
         File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
 
         // Act
-        var output = CaptureConsoleOutput(() =>
-        {
-            _loader.LoadData(csvPath, "Label");
-        });
+        var messages = new List<string>();
+        new CsvDataLoader(_mlContext, messages.Add).LoadData(csvPath, "Label");
+        var output = string.Join(Environment.NewLine, messages);
 
         // Assert: No sparse exclusion warnings
         Assert.DoesNotContain("Sparse column", output);
@@ -775,32 +778,15 @@ public class CsvDataLoaderTests : IDisposable
         File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
 
         // Act
-        var output = CaptureConsoleOutput(() =>
-        {
-            _loader.LoadData(csvPath, "Label");
-        });
+        var messages = new List<string>();
+        new CsvDataLoader(_mlContext, messages.Add).LoadData(csvPath, "Label");
+        var output = string.Join(Environment.NewLine, messages);
 
         // Assert: Label should NOT be excluded
         Assert.DoesNotContain("Sparse column 'Label' excluded", output);
     }
 
 
-
-    private static string CaptureConsoleOutput(Action action)
-    {
-        var originalOut = Console.Out;
-        using var writer = new StringWriter();
-        Console.SetOut(writer);
-        try
-        {
-            action();
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-        }
-        return writer.ToString();
-    }
 
     #endregion
 
@@ -1000,10 +986,9 @@ public class CsvDataLoaderTests : IDisposable
         var csvPath = Path.Combine(_tempDirectory, "log_dt.csv");
         File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
 
-        var output = CaptureConsoleOutput(() =>
-        {
-            CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label");
-        });
+        var messages = new List<string>();
+        CsvDataLoader.RemoveDateTimeColumns(csvPath, "Label", messages.Add);
+        var output = string.Join(Environment.NewLine, messages);
 
         Assert.Contains("DateTime column 'datetime' excluded from features", output);
     }
@@ -1101,10 +1086,9 @@ public class CsvDataLoaderTests : IDisposable
         var csvPath = Path.Combine(_tempDirectory, "logconst.csv");
         File.WriteAllText(csvPath, csv, System.Text.Encoding.UTF8);
 
-        var output = CaptureConsoleOutput(() =>
-        {
-            CsvDataLoader.RemoveConstantColumns(csvPath, "Label");
-        });
+        var messages = new List<string>();
+        CsvDataLoader.RemoveConstantColumns(csvPath, "Label", messages.Add);
+        var output = string.Join(Environment.NewLine, messages);
 
         Assert.Contains("Constant column 'AlwaysZero' excluded", output);
     }
@@ -1284,10 +1268,9 @@ public class CsvDataLoaderTests : IDisposable
         var csvPath = Path.Combine(_tempDirectory, "sparse_log.csv");
         File.WriteAllText(csvPath, string.Join("\n", lines), System.Text.Encoding.UTF8);
 
-        var output = CaptureConsoleOutput(() =>
-        {
-            CsvDataLoader.RemoveSparseColumns(csvPath, "Label");
-        });
+        var messages = new List<string>();
+        CsvDataLoader.RemoveSparseColumns(csvPath, "Label", log: messages.Add);
+        var output = string.Join(Environment.NewLine, messages);
 
         Assert.Contains("Sparse column 'SparseCol' excluded", output);
     }

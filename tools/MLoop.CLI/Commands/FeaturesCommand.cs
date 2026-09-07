@@ -169,7 +169,7 @@ public sealed class FeaturesCommand : Command
     internal static IReadOnlyList<string> ReadHeaderColumns(string csvPath)
     {
         var (converted, _) = EncodingDetector.ConvertToUtf8WithBom(csvPath);
-        var flattened = CsvDataLoader.FlattenMultiLineHeaders(converted);
+        var flattened = CsvDataLoader.FlattenMultiLineHeaders(converted, CoreNarration.Sink);
         try
         {
             using var reader = new StreamReader(flattened, System.Text.Encoding.UTF8, true);

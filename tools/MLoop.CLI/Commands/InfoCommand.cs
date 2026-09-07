@@ -191,14 +191,14 @@ public static class InfoCommand
         dataFile = convertedPath;
 
         // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
-        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile);
+        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile, CoreNarration.Sink);
 
         // Flatten multi-line quoted headers (ML.NET doesn't support them)
-        dataFile = CsvDataLoader.FlattenMultiLineHeaders(dataFile);
+        dataFile = CsvDataLoader.FlattenMultiLineHeaders(dataFile, CoreNarration.Sink);
 
         // Remove unnamed/pandas index columns (matches CsvDataLoader.LoadData behavior)
         var preIndexPath = dataFile;
-        dataFile = CsvDataLoader.RemoveIndexColumns(dataFile);
+        dataFile = CsvDataLoader.RemoveIndexColumns(dataFile, CoreNarration.Sink);
         if (dataFile != preIndexPath)
         {
             AnsiConsole.MarkupLine("[green]Info:[/] Removed unnamed index column(s) (pandas artifact)");

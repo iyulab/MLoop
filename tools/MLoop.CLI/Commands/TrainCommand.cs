@@ -553,7 +553,7 @@ public static class TrainCommand
             if (!isDirectoryBased)
             {
             // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
-            resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile);
+            resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink);
 
             // Auto-sampling for large datasets (--max-rows)
             if (maxRows.HasValue && maxRows.Value > 0)

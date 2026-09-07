@@ -1,4 +1,5 @@
 using System.Text;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
 using MLoop.Core.Prediction;
 
@@ -47,7 +48,7 @@ public class CsvSplitter
         string? outputDirectory = null)
     {
         // Flatten multiline quoted fields before line-by-line processing
-        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile);
+        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile, CoreNarration.Sink);
 
         var allLines = File.ReadAllLines(dataFile, Encoding.UTF8);
         if (allLines.Length < 2)

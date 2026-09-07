@@ -20,13 +20,13 @@ public abstract class DataProviderBase : IDataProvider
     /// <summary>ML.NET context shared with the trainer pipeline.</summary>
     protected readonly MLContext _mlContext;
 
-    /// <summary>Diagnostic sink; defaults to <see cref="Console.WriteLine(string)"/>.</summary>
+    /// <summary>Diagnostic sink; discards when the host supplied none (<see cref="CsvDataLoader.NoLog"/>).</summary>
     protected readonly Action<string> _log;
 
     protected DataProviderBase(MLContext mlContext, Action<string>? log = null)
     {
         _mlContext = mlContext ?? throw new ArgumentNullException(nameof(mlContext));
-        _log = log ?? Console.WriteLine;
+        _log = log ?? CsvDataLoader.NoLog;
     }
 
     /// <inheritdoc />

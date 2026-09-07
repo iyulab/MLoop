@@ -113,6 +113,22 @@ public static class AnalyzeCommand
         return new AnalyzeContext(resolved, label);
     }
 
+    /// <summary>
+    /// Runs one <c>analyze</c> sub-command with the stdout guarantee its <c>--json</c> flag promises.
+    /// </summary>
+    /// <remarks>
+    /// Every sub-command here declares <c>--json</c> and none of them opened a scope, so narration —
+    /// the loader's <c>[Info] Removed index column(s): …</c> among it — went to the same stdout as
+    /// the document, and an error exit left that stdout empty. Five handlers would need five copies
+    /// of the fix and a sixth sub-command would ship without one; routing them all through here makes
+    /// the scope a property of running an analysis rather than something each handler remembers.
+    /// </remarks>
+    private static async Task<int> WithJsonContract(bool json, Func<Task<int>> run)
+    {
+        using var scope = json ? new JsonOutputScope() : null;
+        return await run().ConfigureAwait(false);
+    }
+
     /// <summary>Emits an envelope as JSON (machine) or via the console renderer (human).</summary>
     internal static void Emit(AnalyzeEnvelope env, bool json, Action<AnalyzeEnvelope> renderConsole)
     {
@@ -141,7 +157,7 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteProfileAsync(dataFile, label, modelName, json);
+            return WithJsonContract(json, () => ExecuteProfileAsync(dataFile, label, modelName, json));
         });
 
         return cmd;
@@ -189,9 +205,9 @@ public static class AnalyzeCommand
         ComputeColumnStats(string csvPath)
     {
         var (converted, _) = EncodingDetector.ConvertToUtf8WithBom(csvPath);
-        var flattened = CsvDataLoader.FlattenMultiLineQuotedFields(converted);
-        flattened = CsvDataLoader.FlattenMultiLineHeaders(flattened);
-        flattened = CsvDataLoader.RemoveIndexColumns(flattened);
+        var flattened = CsvDataLoader.FlattenMultiLineQuotedFields(converted, CoreNarration.Sink);
+        flattened = CsvDataLoader.FlattenMultiLineHeaders(flattened, CoreNarration.Sink);
+        flattened = CsvDataLoader.RemoveIndexColumns(flattened, CoreNarration.Sink);
 
         using var reader = new StreamReader(flattened, System.Text.Encoding.UTF8, true);
         var header = reader.ReadLine();
@@ -255,7 +271,7 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteCorrelationAsync(dataFile, label, modelName, json);
+            return WithJsonContract(json, () => ExecuteCorrelationAsync(dataFile, label, modelName, json));
         });
         return cmd;
     }
@@ -312,7 +328,7 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteImportanceAsync(dataFile, label, modelName, json);
+            return WithJsonContract(json, () => ExecuteImportanceAsync(dataFile, label, modelName, json));
         });
         return cmd;
     }
@@ -386,7 +402,7 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteOutliersAsync(dataFile, label, modelName, json);
+            return WithJsonContract(json, () => ExecuteOutliersAsync(dataFile, label, modelName, json));
         });
         return cmd;
     }
@@ -443,7 +459,7 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteDistributionAsync(dataFile, label, modelName, json);
+            return WithJsonContract(json, () => ExecuteDistributionAsync(dataFile, label, modelName, json));
         });
         return cmd;
     }

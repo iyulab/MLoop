@@ -81,7 +81,7 @@ public static class InferenceDataPreprocessor
 
             if (ReadHeaderCount(current) != before)
             {
-                (log ?? Console.WriteLine)(
+                (log ?? CsvDataLoader.NoLog)(
                     "[Warning] This model has no recorded feature-exclusion schema, so the excluded columns " +
                     "were re-derived from the inference data. If the result disagrees with what training " +
                     "dropped, the model will report a feature-vector size mismatch — retrain to record the " +

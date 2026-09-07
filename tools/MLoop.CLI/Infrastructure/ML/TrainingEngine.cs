@@ -43,14 +43,15 @@ public class TrainingEngine : ITrainingEngine
 
         // Initialize ML.NET components
         _mlContext = new MLContext(seed: 42);
-        _dataLoader = new CsvDataLoader(_mlContext);
+        _dataLoader = new CsvDataLoader(_mlContext, CoreNarration.Sink);
         // The runner's warnings go through this CLI's warning seam rather than being narrated by
         // Core: that is what makes them a `Warning:` line for a human and a `warning` event for a
         // consumer. Without it the AUC-fallback chain and the hook failures were console-only, and a
         // --json run never heard about them.
         _autoMLRunner = new AutoMLRunner(
             _mlContext, _dataLoader,
-            warningSink: message => WarningConsole.Warn(Markup.Escape(message)));
+            warningSink: message => WarningConsole.Warn(Markup.Escape(message)),
+            narrationSink: CoreNarration.Sink);
 
         // Initialize HookEngine if project root provided
         if (!string.IsNullOrEmpty(projectRoot) && logger != null)
@@ -120,10 +121,10 @@ public class TrainingEngine : ITrainingEngine
                 }
 
                 // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
-                dataFilePath = CsvDataLoader.FlattenMultiLineQuotedFields(dataFilePath);
+                dataFilePath = CsvDataLoader.FlattenMultiLineQuotedFields(dataFilePath, CoreNarration.Sink);
 
                 // Flatten multi-line quoted headers (ML.NET doesn't support them)
-                dataFilePath = CsvDataLoader.FlattenMultiLineHeaders(dataFilePath);
+                dataFilePath = CsvDataLoader.FlattenMultiLineHeaders(dataFilePath, CoreNarration.Sink);
 
                 // Update config DataFile so AutoMLRunner uses the processed file
                 if (dataFilePath != config.DataFile)
@@ -182,7 +183,7 @@ public class TrainingEngine : ITrainingEngine
                 // The full dataset is the deciding slice, matching the schema capture below: a column
                 // is dropped because it carries no signal in the data as a whole, not because one
                 // random partition happened to flatten it.
-                var featureExclusions = CsvDataLoader.DetermineExcludedColumns(dataFilePath, config.LabelColumn);
+                var featureExclusions = CsvDataLoader.DetermineExcludedColumns(dataFilePath, config.LabelColumn, CoreNarration.Sink);
                 config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
 
                 // Say which columns the model will not see, and why. The removal chain narrates this

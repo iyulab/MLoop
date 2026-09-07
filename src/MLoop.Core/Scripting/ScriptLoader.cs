@@ -41,11 +41,11 @@ public class ScriptLoader
     /// directory — correct only for a caller that has no project root of its own; one that does
     /// should pass it.
     /// </param>
-    /// <param name="log">Optional logging callback (default: Console.WriteLine)</param>
+    /// <param name="log">Optional logging callback; discarded when omitted (a library owns no output stream).</param>
     public ScriptLoader(string? cacheDirectory = null, Action<string>? log = null)
     {
         _cacheDirectory = cacheDirectory ?? CacheDirectoryFor(Directory.GetCurrentDirectory());
-        _log = log ?? Console.WriteLine;
+        _log = log ?? Data.CsvDataLoader.NoLog;
     }
 
     /// <summary>

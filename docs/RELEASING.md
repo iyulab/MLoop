@@ -50,6 +50,7 @@ walk was done:
 | stderr on success | non-empty (`$M train 2>err.txt; test -s err.txt` should fail); consumers read stderr as the failure channel |
 | Repeated prefixes or icons on a line | `ℹ️  ℹ️`, `Warning: Warning:` — two layers each adding the same decoration |
 | `status` vs. `mloop.yaml` | the table states a value the file does not contain (a default rendered as if configured) |
+| `--json` on a command that reads data (`info`, `analyze …`) | stdout does not parse — narration from a layer below the command can land ahead of the document, and the exit code still says 0 |
 
 Write down what you saw. If something is wrong, it is fixed **before** the release, not noted for
 the next one — the point of the walk is that this binary is the one users get.

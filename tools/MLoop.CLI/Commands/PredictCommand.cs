@@ -365,10 +365,10 @@ public static class PredictCommand
             }
 
             // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
-            resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile);
+            resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink);
 
             // Flatten multi-line quoted headers (same as training)
-            resolvedDataFile = CsvDataLoader.FlattenMultiLineHeaders(resolvedDataFile);
+            resolvedDataFile = CsvDataLoader.FlattenMultiLineHeaders(resolvedDataFile, CoreNarration.Sink);
 
             AnsiConsole.WriteLine();
 

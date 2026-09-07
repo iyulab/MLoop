@@ -1,4 +1,5 @@
 using System.Text;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
 using MLoop.Core.Prediction;
 
@@ -53,7 +54,7 @@ public class DataBalancer
         }
 
         // Flatten multiline quoted fields before line-by-line processing
-        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile);
+        dataFile = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile, CoreNarration.Sink);
 
         // Read data file
         var allLines = File.ReadAllLines(dataFile, Encoding.UTF8);
