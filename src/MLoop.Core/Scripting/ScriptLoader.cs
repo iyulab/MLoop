@@ -20,13 +20,31 @@ public class ScriptLoader
     private readonly Action<string> _log;
 
     /// <summary>
+    /// Where a project keeps its compiled scripts — the one place that spells this layout.
+    /// </summary>
+    /// <remarks>
+    /// The cache belongs to the project whose scripts were compiled, not to the directory a command
+    /// happened to be invoked from. Every caller here already holds a project root and used to drop
+    /// it, leaving a relative path that resolved against the shell's working directory: a run from a
+    /// subdirectory wrote the cache there, left it behind, and recompiled the same scripts the next
+    /// time it was run from anywhere else.
+    /// </remarks>
+    /// <param name="projectRoot">The project whose scripts are being compiled.</param>
+    public static string CacheDirectoryFor(string projectRoot) =>
+        Path.Combine(projectRoot, ".mloop", ".cache", "scripts");
+
+    /// <summary>
     /// Initializes a new instance of ScriptLoader.
     /// </summary>
-    /// <param name="cacheDirectory">Directory for cached DLL storage (default: .mloop/.cache/scripts/)</param>
+    /// <param name="cacheDirectory">
+    /// Directory for cached DLL storage. Defaults to <see cref="CacheDirectoryFor"/> the current
+    /// directory — correct only for a caller that has no project root of its own; one that does
+    /// should pass it.
+    /// </param>
     /// <param name="log">Optional logging callback (default: Console.WriteLine)</param>
     public ScriptLoader(string? cacheDirectory = null, Action<string>? log = null)
     {
-        _cacheDirectory = cacheDirectory ?? Path.Combine(".mloop", ".cache", "scripts");
+        _cacheDirectory = cacheDirectory ?? CacheDirectoryFor(Directory.GetCurrentDirectory());
         _log = log ?? Console.WriteLine;
     }
 
