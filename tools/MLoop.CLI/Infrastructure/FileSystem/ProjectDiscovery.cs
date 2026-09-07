@@ -30,10 +30,35 @@ public class ProjectDiscovery : IProjectDiscovery
         _runtimeCacheRoot = string.IsNullOrEmpty(cacheRoot) ? null : cacheRoot; // empty (rare) → no exclusion
     }
 
+    /// <summary>
+    /// The environment variable that names the project explicitly, taking precedence over walking up
+    /// from the working directory.
+    /// </summary>
+    /// <remarks>
+    /// A server or a container has no meaningful "current directory" — it has a deployment. Both
+    /// <c>mloop serve</c> and the Dockerfile <c>mloop docker</c> generates already set this variable;
+    /// until now nothing read it, so a container worked only because its WORKDIR happened to be the
+    /// project, and moving the entry point would have broken it silently.
+    /// </remarks>
+    public const string ProjectRootVariable = "MLOOP_PROJECT_ROOT";
+
     public string FindRoot()
     {
-        var currentDirectory = Directory.GetCurrentDirectory();
-        return FindRoot(currentDirectory);
+        var configured = Environment.GetEnvironmentVariable(ProjectRootVariable);
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            var root = Path.GetFullPath(configured.Trim());
+            if (!IsProjectRoot(root))
+                throw new InvalidOperationException(
+                    $"{ProjectRootVariable} is set to '{root}', which is not a MLoop project "
+                    + $"(no {MLoopDirectoryName} directory there). {NotInsideProjectGuidance}");
+
+            // Deliberately not falling back to the search: a deployment that names its project and
+            // names it wrongly should say so, not quietly serve whatever directory it started in.
+            return root;
+        }
+
+        return FindRoot(Directory.GetCurrentDirectory());
     }
 
     public string FindRoot(string startingDirectory)
