@@ -6,6 +6,7 @@ using MLoop.Core.DataQuality;
 using MLoop.Core.Prediction;
 using MLoop.Core.Diagnostics;
 using MLoop.Core.Models;
+using MLoop.Core.Storage;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -160,7 +161,7 @@ internal static class TrainPresenter
         AnsiConsole.Write(metricsTable);
         AnsiConsole.WriteLine();
 
-        AnsiConsole.MarkupLine($"[grey]Model saved to:[/] {result.ModelPath}");
+        AnsiConsole.MarkupLine($"[grey]Model saved to:[/] {Markup.Escape(WhereItLandedInTheProject(result.ModelPath))}");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
         AnsiConsole.MarkupLine($"  mloop list --name {modelName}");
@@ -172,6 +173,24 @@ internal static class TrainPresenter
     /// <summary>
     /// Displays performance diagnostics warnings and suggestions.
     /// </summary>
+    /// <summary>
+    /// The saved model's path as it reads from inside the project.
+    /// </summary>
+    /// <remarks>
+    /// The absolute path is long enough that a redirected stdout (80 columns) folds it mid-token,
+    /// splitting <c>model.zip</c> across two lines — a path a user copies out and finds broken, the
+    /// same way an over-long summary value once read as missing. From the <c>models</c> directory
+    /// down is the part that identifies the artifact, it is what every command that takes an
+    /// experiment already speaks in, and it fits. A path that does not run through this project's
+    /// layout is left whole rather than guessed at.
+    /// </remarks>
+    internal static string WhereItLandedInTheProject(string modelPath)
+    {
+        var marker = Path.DirectorySeparatorChar + ExperimentLayout.ModelsDirectory + Path.DirectorySeparatorChar;
+        var at = modelPath.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        return at < 0 ? modelPath : modelPath[(at + 1)..];
+    }
+
     public static void DisplayDiagnostics(PerformanceDiagnosticResult diagnosticResult)
     {
         if (!diagnosticResult.NeedsAttention) return;
