@@ -325,7 +325,26 @@ public class TestDiscoveryDetector : IPatternDetector
         Assert.Equal(PatternType.BusinessRule, detectors[0].PatternType);
     }
 
+    /// <summary>
+    /// A project with no scripts directory discovers nothing — the half of "zero overhead when
+    /// not used" that holds on any machine, at any load, and so is the half that runs everywhere.
+    /// </summary>
     [Fact]
+    public async Task DiscoverHooksAsync_NoDirectory_DiscoversNothing()
+    {
+        Assert.Empty(await _discovery.DiscoverHooksAsync());
+        // Repeated: a probe that found nothing must not have left something behind for the next one.
+        Assert.Empty(await _discovery.DiscoverHooksAsync());
+    }
+
+    /// <summary>
+    /// The timing half of the same guarantee. A wall-clock upper bound measures the machine as much
+    /// as the code, so it carries the category that keeps it out of CI — every other timing bound in
+    /// this suite already does, and this one's omission is what put a shared runner's scheduling
+    /// jitter on the path of a release.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Slow")]
     public async Task DiscoverHooksAsync_Performance_FastWhenNoDirectory()
     {
         // Warmup: JIT compile the code path
