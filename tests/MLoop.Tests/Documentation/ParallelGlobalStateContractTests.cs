@@ -43,21 +43,21 @@ public class ParallelGlobalStateContractTests
     [Fact]
     public void AnAssemblyThatTouchesProcessGlobalStateIsSerialized()
     {
-        var files = TestSourceTree.SourceFiles(
+        var files = RepoSourceTree.SourceFiles(
             excludingFileNamed: nameof(ParallelGlobalStateContractTests)).ToList();
 
         var serialized = files
             .Where(f => SerializationDeclared.IsMatch(File.ReadAllText(f)))
-            .Select(TestSourceTree.AssemblyOf)
+            .Select(RepoSourceTree.AssemblyOf)
             .ToHashSet(StringComparer.Ordinal);
 
         var offenders =
             (from file in files
-             where !serialized.Contains(TestSourceTree.AssemblyOf(file))
+             where !serialized.Contains(RepoSourceTree.AssemblyOf(file))
              from line in File.ReadAllLines(file).Select((Text, Number) => (Text, Number))
              from mutation in ProcessGlobalMutations
              where line.Text.Contains(mutation.Token, StringComparison.Ordinal)
-             select $"{TestSourceTree.Relative(file)}:{line.Number + 1} — "
+             select $"{RepoSourceTree.Relative(file)}:{line.Number + 1} — "
                   + $"{mutation.Token} {mutation.What}")
             .ToList();
 
@@ -75,9 +75,9 @@ public class ParallelGlobalStateContractTests
     {
         // Negative control for the exemption itself: if the declaration were never recognised, the
         // assertion above would pass vacuously by finding no serialized assembly and no offender.
-        var serialized = TestSourceTree.SourceFiles()
+        var serialized = RepoSourceTree.SourceFiles()
             .Where(f => SerializationDeclared.IsMatch(File.ReadAllText(f)))
-            .Select(TestSourceTree.AssemblyOf)
+            .Select(RepoSourceTree.AssemblyOf)
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("MLoop.Tests", serialized);

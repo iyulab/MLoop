@@ -39,7 +39,7 @@ public class TimingAssertionContractTests
     {
         var offenders = new List<string>();
 
-        foreach (var file in TestSourceTree.SourceFiles(
+        foreach (var file in RepoSourceTree.SourceFiles(
                      excludingFileNamed: nameof(TimingAssertionContractTests)))
         {
             var lines = File.ReadAllLines(file);
@@ -49,7 +49,7 @@ public class TimingAssertionContractTests
                     continue;
 
                 if (!EnclosingTestIsSlow(lines, i))
-                    offenders.Add($"{TestSourceTree.Relative(file)}:{i + 1} — {lines[i].Trim()}");
+                    offenders.Add($"{RepoSourceTree.Relative(file)}:{i + 1} — {lines[i].Trim()}");
             }
         }
 
