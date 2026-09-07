@@ -1,4 +1,4 @@
-﻿using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
@@ -270,7 +270,28 @@ internal static class TrainPresenter
         if (promoted)
         {
             AnsiConsole.MarkupLine("[green]Model promoted to production![/]");
-            AnsiConsole.WriteLine($"   Better {primaryMetric} than current production model");
+
+            // The reason has to be true of the run that just happened. On a project's first
+            // training there is no production model, so "better than current production" states a
+            // comparison that was never made — and that is the very first thing a new user is told.
+            // The comparison is available whenever it did happen, so it is shown rather than
+            // asserted: both numbers travel, the way every other threshold message here reports.
+            var previous = production?.Metrics is { } m && m.TryGetValue(primaryMetric, out var p)
+                ? p
+                : (double?)null;
+            var current = result.Metrics != null
+                && result.Metrics.TryGetValue(primaryMetric, out var c)
+                ? c
+                : (double?)null;
+
+            if (production is null)
+                AnsiConsole.WriteLine("   First model for this project — nothing to compare against yet");
+            else if (previous.HasValue && current.HasValue)
+                AnsiConsole.WriteLine(
+                    $"   Better {primaryMetric} than {production.ExperimentId}: "
+                    + $"{previous.Value:F4} -> {current.Value:F4}");
+            else
+                AnsiConsole.WriteLine($"   Better {primaryMetric} than {production.ExperimentId}");
         }
         else
         {
