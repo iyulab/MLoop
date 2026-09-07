@@ -77,11 +77,11 @@ public class ServeCommand : Command
                 AnsiConsole.MarkupLine("[red]❌ MLoop.API assembly not found.[/]");
                 AnsiConsole.WriteLine();
                 AnsiConsole.MarkupLine("[yellow]Options:[/]");
-                AnsiConsole.MarkupLine("[grey]  1. Set MLOOP_API_PATH environment variable:[/]");
-                AnsiConsole.MarkupLine("[grey]     set MLOOP_API_PATH=D:\\path\\to\\MLoop.API.dll[/]");
+                AnsiConsole.MarkupLine("[grey]  1. Point MLOOP_API_PATH at the built assembly:[/]");
+                AnsiConsole.MarkupLine("[grey]     MLOOP_API_PATH=<path>/MLoop.API.dll[/]");
                 AnsiConsole.WriteLine();
                 AnsiConsole.MarkupLine("[grey]  2. Build from source:[/]");
-                AnsiConsole.MarkupLine("[grey]     dotnet build src/MLoop.sln[/]");
+                AnsiConsole.MarkupLine("[grey]     dotnet build MLoop.slnx[/]");
                 AnsiConsole.MarkupLine("[grey]     dotnet run --project tools/MLoop.API[/]");
                 return;
             }

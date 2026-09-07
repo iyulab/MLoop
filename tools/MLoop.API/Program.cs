@@ -1,4 +1,4 @@
-﻿using Microsoft.ML;
+using Microsoft.ML;
 using MLoop.API.Caching;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
@@ -39,6 +39,9 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     Log.Information("Starting MLoop.API application");
+
+// Numbers in responses and logs must not change shape with the host locale.
+MLoop.Core.Globalization.OutputCulture.Pin();
 
 var builder = WebApplication.CreateBuilder(args);
 

@@ -14,6 +14,11 @@ internal class Program
 {
     static int Main(string[] args)
     {
+        // Numbers in messages and in --json are read by scripts and compared across machines.
+        // Pin the formatting culture before anything is produced, so the host's locale is not
+        // part of the output contract.
+        MLoop.Core.Globalization.OutputCulture.Pin();
+
         // Register the DeepLearning module for object-detection etc. tasks.
         // Production wiring: only apps that reference + register MLoop.Core.DeepLearning
         // get DL support; tabular-only consumers never pull it in.
@@ -22,7 +27,7 @@ internal class Program
         // Cleanup .old binary from previous standalone update (Windows only)
         UpdateChecker.CleanupOldBinary();
 
-        // Load .env file from project root (D:\data\MLoop\.env)
+        // Load .env file from the project root, when one is present.
         var projectRoot = FindProjectRoot();
         if (projectRoot != null)
         {
