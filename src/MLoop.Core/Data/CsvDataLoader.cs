@@ -10,6 +10,21 @@ namespace MLoop.Core.Data;
 /// </summary>
 public class CsvDataLoader : DataProviderBase
 {
+    /// <summary>
+    /// Where a diagnostic goes when the caller supplied no sink: nowhere.
+    /// </summary>
+    /// <remarks>
+    /// A library does not own the process's output streams. This used to default to
+    /// <see cref="Console.WriteLine(string)"/>, which put these messages on <b>stdout</b> from
+    /// underneath every channel the host had established — so <c>mloop info --json</c> emitted
+    /// <c>[Info] Removed index column(s): …</c> ahead of its document and exited 0, handing a
+    /// consumer prose where a parseable document was promised. The host's own scope could not
+    /// prevent it: it governs the console it owns, not this one. A host that wants these messages
+    /// passes a sink and decides where they land; a host that passes none has decided they land
+    /// nowhere.
+    /// </remarks>
+    internal static readonly Action<string> NoLog = _ => { };
+
     private IReadOnlyDictionary<string, string[]>? _mergedColumnGroups;
 
     public CsvDataLoader(MLContext mlContext, Action<string>? log = null)
@@ -42,10 +57,10 @@ public class CsvDataLoader : DataProviderBase
         mlnetCompatiblePath = FlattenMultiLineQuotedFields(mlnetCompatiblePath, _log);
 
         // Flatten multi-line quoted headers (ML.NET doesn't support them)
-        mlnetCompatiblePath = FlattenMultiLineHeaders(mlnetCompatiblePath);
+        mlnetCompatiblePath = FlattenMultiLineHeaders(mlnetCompatiblePath, _log);
 
         // Remove unnamed/index columns (e.g., pandas default index, "Unnamed: 0")
-        mlnetCompatiblePath = RemoveIndexColumns(mlnetCompatiblePath);
+        mlnetCompatiblePath = RemoveIndexColumns(mlnetCompatiblePath, _log);
 
         // Warn if CSV appears to have no header row
         WarnIfHeaderless(mlnetCompatiblePath);
@@ -66,21 +81,21 @@ public class CsvDataLoader : DataProviderBase
             // ML.NET treats datetime strings as text and applies FeaturizeText,
             // creating tens of thousands of character n-gram features.
             // Removing from CSV ensures InferColumns never sees them.
-            mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn);
+            mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn, _log);
 
             // Pre-InferColumns: Remove sparse columns (>90% missing) from CSV.
             // ML.NET may combine sparse columns into a "Features" vector, preventing
             // post-InferColumns detection. Pre-removing prevents OOM from FeaturizeText.
-            mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn);
+            mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn, log: _log);
 
             // Pre-InferColumns: Remove constant columns (all identical values) from CSV.
             // Constant columns provide zero predictive signal and waste compute resources.
-            mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn);
+            mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn, _log);
         }
 
         // Pre-InferColumns: Warn about mixed-type columns (mostly numeric with some text).
         // InferColumns may classify these as Text, causing TF-IDF featurization and schema mismatches.
-        WarnMixedTypeColumns(mlnetCompatiblePath, labelColumn);
+        WarnMixedTypeColumns(mlnetCompatiblePath, labelColumn, _log);
 
         // Handle single-column CSV (e.g., univariate time series)
         // InferColumns cannot determine delimiter for single-column files
@@ -438,7 +453,7 @@ public class CsvDataLoader : DataProviderBase
         string? labelColumn,
         Action<string>? log = null)
     {
-        var write = log ?? Console.WriteLine;
+        var write = log ?? NoLog;
         try
         {
             string? headerLine;
@@ -535,7 +550,7 @@ public class CsvDataLoader : DataProviderBase
         double threshold = 0.90,
         Action<string>? log = null)
     {
-        var write = log ?? Console.WriteLine;
+        var write = log ?? NoLog;
         try
         {
             const int sampleRows = 200;
@@ -633,7 +648,7 @@ public class CsvDataLoader : DataProviderBase
     /// </summary>
     public static string RemoveConstantColumns(string filePath, string? labelColumn, Action<string>? log = null)
     {
-        var write = log ?? Console.WriteLine;
+        var write = log ?? NoLog;
         try
         {
             const int sampleRows = 200;
@@ -777,7 +792,7 @@ public class CsvDataLoader : DataProviderBase
 
             if (totalCount < 10) return mixedColumns;
 
-            var write = log ?? Console.WriteLine;
+            var write = log ?? NoLog;
 
             for (int i = 0; i < headers.Length; i++)
             {
@@ -1001,7 +1016,7 @@ public class CsvDataLoader : DataProviderBase
 
     public static string RemoveIndexColumns(string filePath, Action<string>? log = null)
     {
-        var write = log ?? Console.WriteLine;
+        var write = log ?? NoLog;
         try
         {
             string? firstLine;
@@ -1066,7 +1081,7 @@ public class CsvDataLoader : DataProviderBase
         var excluded = new HashSet<string>(excludedColumnNames, StringComparer.OrdinalIgnoreCase);
         if (excluded.Count == 0) return filePath;
 
-        var write = log ?? Console.WriteLine;
+        var write = log ?? NoLog;
         try
         {
             string? firstLine;
@@ -1276,7 +1291,7 @@ public class CsvDataLoader : DataProviderBase
     /// </summary>
     public static string FlattenMultiLineQuotedFields(string filePath, Action<string>? log = null)
     {
-        var write = log ?? Console.WriteLine;
+        var write = log ?? NoLog;
 
         // Quick check: scan for any line with unbalanced quotes.
         // If every physical line has balanced quotes, there are no multiline quoted fields.
@@ -1373,7 +1388,7 @@ public class CsvDataLoader : DataProviderBase
     /// </summary>
     public static string FlattenMultiLineHeaders(string filePath, Action<string>? log = null)
     {
-        var write = log ?? Console.WriteLine;
+        var write = log ?? NoLog;
         // Quick check: read first line and see if quotes are unbalanced
         string? firstLine;
         using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))

@@ -20,7 +20,7 @@ public partial class AutoMLRunner
     private readonly IDataProvider _dataLoader;
     private readonly string? _projectRoot;
     private readonly ScriptDiscovery _scriptDiscovery;
-    private readonly ConsoleLogger _logger;
+    private readonly SinkLogger _logger;
 
     /// <param name="mlContext">ML.NET context shared with the loader and the fitted pipelines.</param>
     /// <param name="dataLoader">Format-specific loader for the task's data.</param>
@@ -28,27 +28,33 @@ public partial class AutoMLRunner
     /// <param name="warningSink">
     /// Where this runner's warnings go. Supplied by a host that has a warning channel of its own —
     /// the CLI routes them through its warning seam, which renders a <c>Warning:</c> line and, in
-    /// machine mode, emits a <c>warning</c> event. Omitted, warnings are narrated to the console.
+    /// machine mode, emits a <c>warning</c> event.
+    /// </param>
+    /// <param name="narrationSink">
+    /// Where this runner's info and debug lines go. The CLI points this at its own console, so the
+    /// scope a <c>--json</c> command installs governs them like every other line it writes.
     /// </param>
     /// <remarks>
-    /// Only the warning channel is injectable, not the whole logger. Info and debug output is
-    /// narration that machine mode deliberately discards (a <c>--json</c> run's stdout carries
-    /// nothing but events), so there is no host channel for it to reach; warnings are the one level
-    /// with somewhere to go. Before this parameter existed the runner built its own console logger,
-    /// so every warning it raised — the AUC-fallback chain, the post-train hook failures, the
-    /// undefined-metric notice — was narration and nothing else, however the host was listening.
+    /// Both channels are injected and neither has a console default. An earlier version injected only
+    /// the warning channel, on the stated ground that narration "has no host channel to reach because
+    /// machine mode discards it" — which was true of <c>train</c>'s event stream and of nothing else:
+    /// the scope the <c>--json</c> commands install redirects the console it owns and forwards
+    /// stdout, so a library writing to <see cref="Console"/> lands <i>ahead of the document</i>
+    /// rather than being discarded. Measured: <c>mloop info --json</c> emitting
+    /// <c>[Info] Removed index column(s): …</c> on stdout, exit 0, unparseable.
     /// </remarks>
     public AutoMLRunner(
         MLContext mlContext,
         IDataProvider dataLoader,
         string? projectRoot = null,
-        Action<string>? warningSink = null)
+        Action<string>? warningSink = null,
+        Action<string>? narrationSink = null)
     {
         _mlContext = mlContext ?? throw new ArgumentNullException(nameof(mlContext));
         _dataLoader = dataLoader ?? throw new ArgumentNullException(nameof(dataLoader));
         _projectRoot = projectRoot ?? Directory.GetCurrentDirectory();
         _scriptDiscovery = new ScriptDiscovery(_projectRoot);
-        _logger = new ConsoleLogger(warningSink);
+        _logger = new SinkLogger(warningSink, narrationSink);
     }
 
     /// <summary>
@@ -2266,7 +2272,7 @@ public partial class AutoMLRunner
         foreach (var ic in ignoredColumns)
             columnInfo.IgnoredColumnNames.Add(ic);
 
-        var write = log ?? Console.WriteLine;
+        var write = log ?? Data.CsvDataLoader.NoLog;
         if (textColumns.Count > 0)
             write($"[Info] Text column(s): {string.Join(", ", textColumns)} — applying text featurization (TF-IDF, n-gram)");
         if (categoricalColumns.Count > 0)
@@ -2424,24 +2430,26 @@ internal sealed class ConformalResidual
 }
 
 /// <summary>
-/// Simple console logger implementation for preprocessing scripts
+/// Routes the runner's diagnostics to the sinks its host supplied, and discards what has no sink.
 /// </summary>
-internal class ConsoleLogger(Action<string>? warningSink = null) : ILogger
+/// <remarks>
+/// Each level is a separate channel because a host distinguishes them: the CLI renders a warning as
+/// a <c>Warning:</c> line <i>and</i> reports it as a machine event, while narration is a line it may
+/// route elsewhere or suppress entirely. Nothing here writes to <see cref="Console"/> — a library
+/// that does reaches around whatever the host has established, which is how narration ended up on
+/// the stdout that <c>--json</c> reserves for its document.
+/// </remarks>
+internal sealed class SinkLogger(Action<string>? warningSink = null, Action<string>? narrationSink = null) : ILogger
 {
-    // Errors go to stderr so a non-zero exit always carries its cause there (the CLI's ErrorConsole
-    // owns the same contract on its side). Info/Debug remain narration on stdout.
-    public void Info(string message) => Console.WriteLine($"ℹ️  {message}");
+    private readonly Action<string> _warning = warningSink ?? Data.CsvDataLoader.NoLog;
+    private readonly Action<string> _narration = narrationSink ?? Data.CsvDataLoader.NoLog;
 
-    // A host that owns a warning channel takes them; otherwise they are narration like the rest.
-    public void Warning(string message)
-    {
-        if (warningSink is not null)
-            warningSink(message);
-        else
-            Console.WriteLine($"⚠️  {message}");
-    }
+    public void Info(string message) => _narration(message);
+    public void Warning(string message) => _warning(message);
+    public void Debug(string message) => _narration(message);
 
-    public void Error(string message) => Console.Error.WriteLine($"❌ {message}");
-    public void Error(string message, Exception exception) => Console.Error.WriteLine($"❌ {message}{Environment.NewLine}{exception}");
-    public void Debug(string message) => Console.WriteLine($"🔍 {message}");
+    // An error a host does not take is still an error: it reaches the caller as a thrown exception
+    // from the operation that raised it, so dropping the line here loses nothing but a duplicate.
+    public void Error(string message) => _narration(message);
+    public void Error(string message, Exception exception) => _narration($"{message}{Environment.NewLine}{exception}");
 }

@@ -20,12 +20,12 @@ public class ScriptDiscovery
     /// </summary>
     /// <param name="projectRoot">Project root directory (default: current directory)</param>
     /// <param name="scriptLoader">Optional ScriptLoader instance (default: new instance)</param>
-    /// <param name="log">Optional logging callback (default: Console.WriteLine)</param>
+    /// <param name="log">Optional logging callback; discarded when omitted (a library owns no output stream).</param>
     public ScriptDiscovery(string? projectRoot = null, ScriptLoader? scriptLoader = null, Action<string>? log = null)
     {
         _projectRoot = projectRoot ?? Directory.GetCurrentDirectory();
         _scriptLoader = scriptLoader ?? new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot));
-        _log = log ?? Console.WriteLine;
+        _log = log ?? Data.CsvDataLoader.NoLog;
     }
 
     /// <summary>
