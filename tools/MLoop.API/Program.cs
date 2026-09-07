@@ -243,38 +243,43 @@ builder.Services.AddHostedService<TrainingJobRunner>(sp => sp.GetRequiredService
 // Register MLoop.Ops services
 builder.Services.AddSingleton<IModelComparer>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot()
-        ?? Directory.GetCurrentDirectory();
+    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
     return new FileModelComparer(projectRoot);
 });
 builder.Services.AddSingleton<IPromotionManager>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot()
-        ?? Directory.GetCurrentDirectory();
+    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
     return new FilePromotionManager(projectRoot);
 });
 builder.Services.AddSingleton<IRetrainingTrigger>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot()
-        ?? Directory.GetCurrentDirectory();
+    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
     return new TimeBasedTrigger(projectRoot);
 });
 
 // Register MLoop.DataStore services
 builder.Services.AddSingleton<IPredictionLogger>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot()
-        ?? Directory.GetCurrentDirectory();
+    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
     return new FilePredictionLogger(projectRoot);
 });
 builder.Services.AddSingleton<IFeedbackCollector>(sp =>
 {
-    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot()
-        ?? Directory.GetCurrentDirectory();
+    var projectRoot = sp.GetRequiredService<IProjectDiscovery>().FindRoot();
     return new FileFeedbackCollector(projectRoot);
 });
 
 var app = builder.Build();
+
+// Resolve the project once, here, at startup. Eight service registrations and three endpoints used
+// to each resolve it themselves, and each of those carried a `?? Directory.GetCurrentDirectory()`
+// that could never run — FindRoot throws rather than returning null. So a deployment that could not
+// find its project did not fall back to anything: it started cleanly and then failed with a 500 on
+// whichever request first touched a service that needed the root. Failing here says the same thing
+// while an operator is still watching the log.
+app.Logger.LogInformation(
+    "Project root: {ProjectRoot}",
+    app.Services.GetRequiredService<IProjectDiscovery>().FindRoot());
 
 // Add request logging middleware
 app.UseSerilogRequestLogging(options =>
@@ -765,7 +770,7 @@ app.MapGet("/status", async (
     {
         logger.LogInformation("Retrieving project status");
 
-        var projectRoot = projectDiscovery.FindRoot() ?? Directory.GetCurrentDirectory();
+        var projectRoot = projectDiscovery.FindRoot();
         var projectName = Path.GetFileName(projectRoot);
 
         // Get all experiments and production models
@@ -1082,7 +1087,7 @@ app.MapPost("/evaluate", async (
         if (string.IsNullOrWhiteSpace(testDataPath))
             return Results.BadRequest(new { error = "testDataPath is required." });
 
-        var evalProjectRoot = projectDiscovery.FindRoot() ?? Directory.GetCurrentDirectory();
+        var evalProjectRoot = projectDiscovery.FindRoot();
         var resolvedTestPath = Path.GetFullPath(testDataPath);
         if (!resolvedTestPath.StartsWith(Path.GetFullPath(evalProjectRoot), StringComparison.OrdinalIgnoreCase))
             return Results.BadRequest(new { error = "Test data file must be within the project directory." });
@@ -1345,7 +1350,7 @@ app.MapPost("/train", (
     ILogger<Program> logger) =>
 {
     // Validate data file exists and is within project root
-    var trainProjectRoot = projectDiscovery.FindRoot() ?? Directory.GetCurrentDirectory();
+    var trainProjectRoot = projectDiscovery.FindRoot();
     var resolvedDataFile = Path.GetFullPath(request.DataFile);
     if (!resolvedDataFile.StartsWith(Path.GetFullPath(trainProjectRoot), StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Data file must be within the project directory." });

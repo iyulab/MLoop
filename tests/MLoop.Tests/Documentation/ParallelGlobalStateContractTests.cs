@@ -32,6 +32,7 @@ public class ParallelGlobalStateContractTests
         ("Console.SetIn", "redirects the process's standard input"),
         ("AnsiConsole.Console =", "replaces the ambient Spectre console"),
         ("Directory.SetCurrentDirectory", "moves the process's working directory"),
+        ("Environment.SetEnvironmentVariable", "changes a variable the whole process reads"),
         ("DeepLearningRegistry.Register", "mutates a registry every loader resolution reads"),
     ];
 
