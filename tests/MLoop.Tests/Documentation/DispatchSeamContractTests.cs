@@ -38,11 +38,11 @@ public class DispatchSeamContractTests
     public void NoTestDrivesACommandThroughItsOwnDispatch()
     {
         var offenders =
-            (from file in TestSourceTree.SourceFiles(
+            (from file in RepoSourceTree.SourceFiles(
                  excludingFileNamed: nameof(DispatchSeamContractTests))
              from line in File.ReadAllLines(file)
              where HandRolledDispatch.Any(form => line.Contains(form, StringComparison.Ordinal))
-             select $"{TestSourceTree.Relative(file)}: {line.Trim()}")
+             select $"{RepoSourceTree.Relative(file)}: {line.Trim()}")
             .ToList();
 
         Assert.True(

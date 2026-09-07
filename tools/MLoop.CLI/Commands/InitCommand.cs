@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.Reflection;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
@@ -16,6 +16,23 @@ namespace MLoop.CLI.Commands;
 /// </summary>
 public static class InitCommand
 {
+
+    /// <summary>
+    /// The task types a new project can be scaffolded for.
+    /// </summary>
+    /// <remarks>
+    /// Named rather than inline so the round-trip test asserts against the same array this command
+    /// judges by: a task added here enters that test automatically, and if the validator does not
+    /// know it, the scaffolded project fails validation there rather than in a user's first project.
+    /// </remarks>
+    internal static readonly string[] ValidTasks =
+    [
+        "binary-classification", "multiclass-classification", "regression",
+        "anomaly-detection", "clustering", "ranking", "forecasting",
+        "time-series-anomaly", "recommendation", "image-classification",
+        "object-detection", "text-classification", "sentence-similarity",
+        "ner", "question-answering",
+    ];
     public static Command Create()
     {
         var projectNameArg = new Argument<string>("project-name")
@@ -98,17 +115,9 @@ public static class InitCommand
             }
 
             // Validate task
-            var validTasks = new[]
+            if (!ValidTasks.Contains(task))
             {
-                "binary-classification", "multiclass-classification", "regression",
-                "anomaly-detection", "clustering", "ranking", "forecasting",
-                "time-series-anomaly", "recommendation", "image-classification",
-                "object-detection", "text-classification", "sentence-similarity",
-                "ner", "question-answering"
-            };
-            if (!validTasks.Contains(task))
-            {
-                ErrorConsole.Error($"Invalid task type. Valid options: {string.Join(", ", validTasks)}");
+                ErrorConsole.Error($"Invalid task type. Valid options: {string.Join(", ", ValidTasks)}");
                 return 1;
             }
 

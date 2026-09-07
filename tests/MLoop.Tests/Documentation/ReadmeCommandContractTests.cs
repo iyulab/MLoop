@@ -36,7 +36,7 @@ namespace MLoop.Tests.Documentation;
 /// </remarks>
 public class ReadmeCommandContractTests
 {
-    private static string RepoRoot => TestSourceTree.RepoRoot;
+    private static string RepoRoot => RepoSourceTree.RepoRoot;
     private static readonly string[] DocFiles = { "README.md", "docs/GUIDE.md" };
     private const string CommandTableHeading = "### Every command";
 
