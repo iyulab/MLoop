@@ -378,6 +378,19 @@ public class PredictionEngine : IPredictionEngine
                 }
             }
 
+            // A Boolean PredictedLabel is what binary classification produces, and the text writer
+            // renders it as 0/1 — digits the user never wrote, and not what the row-based path
+            // renders for the same prediction. The label the model was trained on is in the saved
+            // schema, so both paths now answer with it; without a recorded vocabulary they still
+            // agree, on True/False. Applied last, after the confidence and degeneracy passes: those
+            // read the scored view through the same extractor the JSON path uses, which reads a
+            // binary result by its Boolean column — rendering earlier cost the CSV its Confidence
+            // column.
+            if (outputData.Schema.GetColumnOrNull("PredictedLabel") is { Type: BooleanDataViewType })
+            {
+                outputData = RenderBooleanLabel(outputData, BinaryLabelVocabulary.Of(trainedSchema));
+            }
+
             // Save predictions to CSV (without schema metadata for cleaner output)
             await using (var fileStream = File.Create(outputPath))
             {
@@ -444,6 +457,34 @@ public class PredictionEngine : IPredictionEngine
                 : string.Empty);
         }
         File.WriteAllLines(filePath, lines, new System.Text.UTF8Encoding(true));
+    }
+
+    /// <summary>
+    /// Replaces a Boolean <c>PredictedLabel</c> with the class name it stands for, so the CSV says
+    /// what the user's data said rather than what ML.NET's Boolean happens to print as.
+    /// </summary>
+    private IDataView RenderBooleanLabel(
+        IDataView predictions, (string Negative, string Positive)? vocabulary)
+    {
+        var negative = BinaryLabelVocabulary.Render(false, vocabulary);
+        var positive = BinaryLabelVocabulary.Render(true, vocabulary);
+
+        return _mlContext.Transforms.CustomMapping(
+            (BooleanLabel input, RenderedLabel output) =>
+                output.PredictedLabel = input.PredictedLabel ? positive : negative,
+            contractName: null)
+            .Fit(predictions)
+            .Transform(predictions);
+    }
+
+    private sealed class BooleanLabel
+    {
+        public bool PredictedLabel { get; set; }
+    }
+
+    private sealed class RenderedLabel
+    {
+        public string PredictedLabel { get; set; } = "";
     }
 
     /// <summary>
