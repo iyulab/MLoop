@@ -188,7 +188,7 @@ public class PredictionEngine : IPredictionEngine
                 columnInference.ColumnInformation.TextColumnNames.Remove(labelColumn);
             }
 
-            // EVAL-1: shared non-label reconciliation — overrides feature types from the trained
+            // Shared non-label reconciliation — overrides feature types from the trained
             // schema (including the "String" raw type name), enables RFC 4180 quoting
             // and splits preserved group/user/item columns out of any merged Features range
             // . The label is reconciled separately below because predict and evaluate handle it

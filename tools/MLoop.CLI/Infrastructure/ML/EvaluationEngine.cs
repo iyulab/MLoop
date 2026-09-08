@@ -184,7 +184,7 @@ public class EvaluationEngine
             labelColumnName: labelColumn,
             separatorChar: ',');
 
-        // EVAL-1: shared non-label reconciliation — overrides feature types from the trained schema
+        // Shared non-label reconciliation — overrides feature types from the trained schema
         // (including the "String" raw-type-name case that predict had but evaluate
         // lacked), enables RFC 4180 quoting (likewise predict-only before), and splits
         // preserved group/user/item columns out of any merged Features range (the evaluate twin

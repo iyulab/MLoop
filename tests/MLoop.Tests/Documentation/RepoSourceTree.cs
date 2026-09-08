@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace MLoop.Tests.Documentation;
 
 /// <summary>
@@ -42,6 +44,59 @@ internal static class RepoSourceTree
             .Where(f => NotBuildOutput(f)
                      && (excludingFileNamed is null
                          || !Path.GetFileName(f).Equals(excludingFileNamed + ".cs", StringComparison.Ordinal)));
+
+    /// <summary>
+    /// Every Markdown and C# file this repository actually publishes, as absolute paths.
+    /// </summary>
+    /// <remarks>
+    /// "Publishes" is asked of git rather than of the file system, because those two answers
+    /// differ: the working tree also holds ignored tooling state that no reader of this repository
+    /// ever sees, and a guard that walked the directory would report on scratch files as if they
+    /// had been shipped. Tracked-or-not is the same authority the repository already uses to decide
+    /// what goes out, so the guard reuses it instead of keeping a second opinion.
+    /// </remarks>
+    /// <summary>
+    /// Every Markdown and C# file this repository actually publishes, as absolute paths.
+    /// </summary>
+    /// <remarks>
+    /// "Publishes" is asked of git rather than of the file system, because those two answers
+    /// differ: the working tree also holds ignored tooling state that no reader of this repository
+    /// ever sees, and a guard that walked the directory would report on scratch files as if they
+    /// had been shipped. Tracked-or-not is the same authority the repository already uses to decide
+    /// what goes out, so the guard reuses it instead of keeping a second opinion.
+    /// </remarks>
+    internal static IEnumerable<string> PublishedTextFiles()
+    {
+        var git = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = RepoRoot,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+        };
+        foreach (var argument in new[] { "-C", RepoRoot, "ls-files", "--", "*.md", "*.cs" })
+            git.ArgumentList.Add(argument);
+
+        using var process = Process.Start(git)
+            ?? throw new InvalidOperationException(
+                "Could not run git to list tracked files — this guard asks git what the repository publishes.");
+
+        var tracked = new List<string>();
+        while (process.StandardOutput.ReadLine() is { } line)
+        {
+            if (line.Length == 0)
+                continue;
+            tracked.Add(Path.Combine(RepoRoot, line.Replace('/', Path.DirectorySeparatorChar)));
+        }
+
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException($"git ls-files failed with exit code {process.ExitCode}.");
+
+        return tracked.Where(f => NotBuildOutput(f) && File.Exists(f));
+    }
+
+    /// <summary>The path of <paramref name="file"/> relative to <see cref="RepoRoot"/>.</summary>
+    internal static string RelativeToRoot(string file) => Path.GetRelativePath(RepoRoot, file);
 
     private static bool NotBuildOutput(string file) =>
         !file.Contains(Path.Combine("bin", ""), StringComparison.Ordinal)
