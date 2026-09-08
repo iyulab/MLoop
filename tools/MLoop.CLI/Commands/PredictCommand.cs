@@ -410,6 +410,13 @@ public static class PredictCommand
                 return 1;
             }
 
+            // Warnings survive a passing validation, deliberately: a column that changed type is
+            // not a missing column, and the failure it causes downstream names a feature vector's
+            // width rather than the column. WarningConsole so a --json consumer gets the same
+            // finding as a `warning` event, not only the human at the terminal.
+            foreach (var warning in validationResult.Warnings)
+                WarningConsole.Warn(Markup.Escape(warning));
+
             AnsiConsole.MarkupLine("[green]>[/] Schema validation passed");
             AnsiConsole.WriteLine();
 

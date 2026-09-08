@@ -215,6 +215,9 @@ public class SchemaValidator
                 }
             }
 
+            result.Warnings.AddRange(ColumnsWhoseValuesNoLongerReadAsTheirTrainedType(
+                savedSchema, inputColumns, inputDataPath));
+
             return result;
         }
         catch (Exception ex)
@@ -224,6 +227,77 @@ public class SchemaValidator
             result.ErrorMessageEn = $"Error during schema validation: {ex.Message}";
             return result;
         }
+    }
+
+    /// <summary>
+    /// How many data rows the type check reads. Enough to catch a column that changed type without
+    /// making validation proportional to file size — a mistyped column is a property of how the
+    /// file was produced, so it shows up at the top or not at all.
+    /// </summary>
+    private const int TypeCheckSampleRows = 200;
+
+    /// <summary>
+    /// Feature columns the saved schema records as a type their values in this file no longer read
+    /// as, described one per line.
+    /// </summary>
+    /// <remarks>
+    /// The validator has always read the header and never a value, so a column whose contents
+    /// changed type passed and the run failed later inside the pipeline — with a message about a
+    /// feature vector being <c>Vector&lt;Single, 2&gt;</c> where <c>Vector&lt;Single, 3&gt;</c> was
+    /// expected. The saved schema knows which column it was the whole time. This is a warning, not
+    /// a rejection: the loader coerces to the trained type and the run may still be what the user
+    /// wants, so the decision stays theirs — they just get to make it knowing.
+    /// </remarks>
+    internal static List<string> ColumnsWhoseValuesNoLongerReadAsTheirTrainedType(
+        InputSchemaInfo savedSchema, string[] inputColumns, string inputDataPath)
+    {
+        var checkable = savedSchema.Columns
+            .Where(c => c.Purpose == "Feature")
+            .Select(c => (Column: c, Index: Array.FindIndex(inputColumns,
+                ic => ic.Equals(c.Name, StringComparison.OrdinalIgnoreCase))))
+            .Where(x => x.Index >= 0)
+            .ToArray();
+
+        if (checkable.Length == 0)
+            return [];
+
+        var disagreements = checkable.ToDictionary(x => x.Column.Name, _ => (Count: 0, Sample: (string?)null));
+        var rowsRead = 0;
+
+        using (var reader = new StreamReader(inputDataPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        {
+            reader.ReadLine(); // header
+
+            while (rowsRead < TypeCheckSampleRows && reader.ReadLine() is { } line)
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                rowsRead++;
+                var fields = CsvFieldParser.ParseFields(line);
+
+                foreach (var (column, index) in checkable)
+                {
+                    if (index >= fields.Length)
+                        continue;
+
+                    var value = fields[index];
+                    if (SchemaDataTypes.ValueReadsAs(column.DataType, value))
+                        continue;
+
+                    var (count, sample) = disagreements[column.Name];
+                    disagreements[column.Name] = (count + 1, sample ?? value);
+                }
+            }
+        }
+
+        return
+            [.. from entry in disagreements
+                where entry.Value.Count > 0
+                let column = checkable.First(c => c.Column.Name == entry.Key).Column
+                select $"Column '{entry.Key}' was trained as {column.DataType}, but "
+                     + $"{entry.Value.Count} of the first {rowsRead} rows do not read as that "
+                     + $"(e.g. '{entry.Value.Sample}'). Those values load as missing."];
     }
 
     /// <summary>
@@ -268,4 +342,17 @@ public class SchemaValidationResult
     public string? ErrorMessageEn { get; set; }
     public List<string> MissingColumns { get; set; } = new();
     public List<string> Suggestions { get; set; } = new();
+
+    /// <summary>
+    /// Findings that do not make the data unusable but that the caller should say out loud —
+    /// today, a column whose values no longer read as the type training fitted on.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Suggestions"/> because those are only rendered when validation
+    /// fails, and the whole point of this list is that validation passes. A column that changed
+    /// type is not a missing column: the run continues, the loader coerces, and what the user needs
+    /// is to be told which column it was — before the failure downstream, which names a feature
+    /// vector's width rather than a column.
+    /// </remarks>
+    public List<string> Warnings { get; set; } = new();
 }

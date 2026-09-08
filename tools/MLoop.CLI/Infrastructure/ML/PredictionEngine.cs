@@ -237,22 +237,12 @@ public class PredictionEngine : IPredictionEngine
             // The label values are ignored during prediction.
             IDataView processedData = inputData;
 
-            // clustering's saved model now expects a single "Features" vector built from every
-            // feature column (train-side fix, AutoMLRunner.RunClusteringAsync) — including the CSV's
-            // first column, which InferColumns always treats as *some* label (there being no real one
-            // for label-less clustering) and therefore excludes from its own "Features" merge above.
-            // Left alone, this predict path's "Features" would carry one fewer dimension than the
-            // model expects. Re-concatenate the placeholder label back in — but only when it truly is
-            // a placeholder (labelColumn is null, i.e. no schema column actually carries Purpose=Label);
-            // a real declared label must stay excluded, matching the train-time featurizer.
-            if (string.Equals(taskType, "clustering", StringComparison.OrdinalIgnoreCase)
-                && labelColumn is null
-                && processedData.Schema.GetColumnOrNull("Features") is not null)
-            {
-                processedData = _mlContext.Transforms.Concatenate("Features", dummyLabel, "Features")
-                    .Fit(processedData)
-                    .Transform(processedData);
-            }
+            // The dimension InferColumns splits off — the CSV's first column, which it treats as
+            // *some* label when the data has no real one — is put back by CsvDataLoader's
+            // reconciliation, which rebuilds the merged range from the saved schema for every task
+            // rather than for clustering alone. This path used to re-concatenate it here; with both
+            // in place the same column was counted twice and the model saw
+            // Vector<Single, 4> against the Vector<Single, 3> it was fit on.
 
             // Make predictions
             IDataView predictions;
