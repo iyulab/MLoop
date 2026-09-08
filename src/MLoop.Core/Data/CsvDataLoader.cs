@@ -318,6 +318,16 @@ public class CsvDataLoader : DataProviderBase
             }
         }
 
+        // 1b. Put back into the merged feature range any column inference pulled out of it.
+        //     Overriding a column's DataKind (step 1) does not move it back: InferColumns groups
+        //     the columns it reads as numeric into one vector and leaves the rest as their own
+        //     columns, so a numeric feature that arrives as text in this file becomes a separate
+        //     String column and the vector loses a slot. The model then rejects the load with a
+        //     width it cannot explain — Vector<Single, 3> expected, Vector<Single, 2> got — while
+        //     the saved schema knew all along which column left. What the vector spans is a
+        //     property of training, not of this file.
+        RestoreTrainedFeatureRange(options, trainedSchema, labelColumn, csvPath);
+
         // 2. Enable RFC 4180 quoting so fields containing commas (bbox "[1, 2, 3]", attribute
         //    dicts) load as a single column rather than splitting the row.
         options.AllowQuoting = true;
@@ -325,6 +335,130 @@ public class CsvDataLoader : DataProviderBase
         // 3. Split preserved group/user/item columns back out of any merged Features range.
         ApplyColumnPreservation(columnInference, csvPath, preserveColumns);
     }
+
+    /// <summary>
+    /// Rebuilds the merged numeric feature range so it spans the columns training merged, rather
+    /// than the ones this file happens to read as numeric.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Measured: training a three-feature set produced one <c>Features</c> column over source
+    /// <c>0..2</c>. Re-inferring on a prediction file where one of those three carried text
+    /// produced <c>Features</c> over <c>0..0, 2..2</c> plus a separate <c>String</c> column — the
+    /// vector two slots wide instead of three. The run then failed inside the pipeline naming a
+    /// vector width, which tells the user nothing about which column changed, while the same
+    /// command with <c>--json</c> took the row-based path and succeeded: one command, two answers,
+    /// depending on an output flag.
+    /// </para>
+    /// <para>
+    /// Only the repairable case is touched — a saved feature column that training loaded as a
+    /// number, that this file has, and that inference left outside the range. Files that already
+    /// agree are untouched, and a task whose training never merged anything has no range to
+    /// restore. The label keeps its own column: each engine applies its own label handling after
+    /// this.
+    /// </para>
+    /// <para>
+    /// A column the range now covers keeps its own definition as well. Overlapping sources are
+    /// what a <c>TextLoader</c> is for — the same field read twice under two names — and at least
+    /// one path depends on it: label-less clustering builds its feature vector by concatenating the
+    /// named columns, so dropping them made the loaded view unable to answer for <c>pH</c> at all
+    /// (measured — <c>Could not find input column 'pH'</c> from the model's concatenator, in place
+    /// of a working predict). Widening the range is the repair; removing anything was an
+    /// assumption about who reads the view, and this authority is not in a position to make it.
+    /// </para>
+    /// </remarks>
+    private static void RestoreTrainedFeatureRange(
+        TextLoader.Options options,
+        InputSchemaInfo? trainedSchema,
+        string? labelColumn,
+        string csvPath)
+    {
+        if (trainedSchema == null || options.Columns == null)
+            return;
+
+        // One such column, not several: measured, non-contiguous numeric columns come back as a
+        // single column carrying two ranges (0..0, 2..2) rather than as two columns.
+        var merged = options.Columns.FirstOrDefault(c => c.Source is { Length: > 0 }
+                                                      && c.DataKind == DataKind.Single
+                                                      && SpansMoreThanOneSource(c));
+        if (merged == null)
+            return;
+
+        var headers = ReadCsvHeaders(csvPath);
+        if (headers.Length == 0)
+            return;
+
+        var trainedNumericFeatures = trainedSchema.Columns
+            .Where(c => c.Purpose == "Feature"
+                     && SchemaDataTypes.ToDataKind(c.DataType, DataKind.String) == DataKind.Single)
+            .Select(c => Array.FindIndex(headers,
+                h => h.Equals(c.Name, StringComparison.OrdinalIgnoreCase)))
+            .Where(i => i >= 0)
+            .Where(i => labelColumn == null
+                     || !headers[i].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+            .Order()
+            .ToArray();
+
+        if (trainedNumericFeatures.Length == 0)
+            return;
+
+        var desired = ToRanges(trainedNumericFeatures);
+        if (SameRanges(merged.Source!, desired))
+            return;
+
+        merged.Source = desired;
+
+        // Narrowing the range can leave a column with nothing to read it: a feature training loaded
+        // as text, arriving here as digits, is inside the range inference built and outside the one
+        // training used. Give it its own column back, at the type the schema records.
+        foreach (var column in trainedSchema.Columns.Where(c => c.Purpose == "Feature"))
+        {
+            var kind = SchemaDataTypes.ToDataKind(column.DataType, DataKind.String);
+            if (kind == DataKind.Single)
+                continue;
+
+            var index = Array.FindIndex(headers,
+                h => h.Equals(column.Name, StringComparison.OrdinalIgnoreCase));
+            if (index < 0)
+                continue;
+
+            if (options.Columns.Any(c => c.Source is { Length: 1 } own
+                                      && own[0].Min == index && own[0].Max == index))
+                continue;
+
+            options.Columns = [.. options.Columns, new TextLoader.Column(column.Name, kind, index)];
+        }
+    }
+
+    private static bool SpansMoreThanOneSource(TextLoader.Column column) =>
+        column.Source!.Length > 1 || column.Source[0].Min != column.Source[0].Max;
+
+    /// <summary>Contiguous indices collapse into one range, the way InferColumns writes them.</summary>
+    private static TextLoader.Range[] ToRanges(int[] sortedIndices)
+    {
+        var ranges = new List<TextLoader.Range>();
+        var start = sortedIndices[0];
+        var previous = start;
+
+        foreach (var index in sortedIndices.Skip(1))
+        {
+            if (index != previous + 1)
+            {
+                ranges.Add(new TextLoader.Range(start, previous));
+                start = index;
+            }
+
+            previous = index;
+        }
+
+        ranges.Add(new TextLoader.Range(start, previous));
+        return [.. ranges];
+    }
+
+    private static bool SameRanges(TextLoader.Range[] left, TextLoader.Range[] right) =>
+        left.Length == right.Length
+        && left.Zip(right).All(pair => pair.First.Min == pair.Second.Min
+                                    && pair.First.Max == pair.Second.Max);
 
     /// <summary>
     /// Maps a trained-schema <c>DataType</c> name to the <c>TextLoader</c> <see cref="DataKind"/>

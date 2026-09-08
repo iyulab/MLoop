@@ -53,6 +53,40 @@ public static class SchemaDataTypes
     }
 
     /// <summary>
+    /// Whether <paramref name="value"/> reads as <paramref name="dataType"/> — the same question
+    /// the loader answers when it coerces a column to the kind training fitted on, asked here
+    /// before the coercion so a caller can say which column disagreed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only <see cref="Numeric"/> and <see cref="Boolean"/> can disagree with a value: every other
+    /// name in this vocabulary loads as text, which any field satisfies. An empty field is not a
+    /// disagreement — a missing value is a missing value, and the loader has its own handling for
+    /// it.
+    /// </para>
+    /// <para>
+    /// Culture-invariant, deliberately. The value is being read the way <c>TextLoader</c> will read
+    /// it, and that parse does not follow the operator's locale; judging it by a locale that
+    /// accepts a comma decimal separator would report agreement where the loader will find none.
+    /// </para>
+    /// </remarks>
+    public static bool ValueReadsAs(string dataType, string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return true;
+
+        return ToDataKind(dataType, DataKind.String) switch
+        {
+            DataKind.Single or DataKind.Double =>
+                double.TryParse(value, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out _),
+            DataKind.Boolean => bool.TryParse(value, out _)
+                                || value is "0" or "1",
+            _ => true,
+        };
+    }
+
+    /// <summary>
     /// Consumer-side mapping: a persisted <see cref="ColumnSchema.DataType"/> name to the
     /// <see cref="DataKind"/> a TextLoader must load that column as. Tolerates the raw .NET
     /// type names that schemas captured before the vocabulary was unified persisted

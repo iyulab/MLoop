@@ -9,6 +9,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.31.0] - 2026-09-07
 
 ### Fixed
+- **`mloop predict` gave two different answers for the same input depending on `--json`.** Without
+  the flag it failed (`Schema mismatch for feature column '__Features__': expected
+  Vector<Single, 3>, got Vector<Single, 2>`); with it, the same file and model produced predictions
+  and exited 0. The two take different paths — one infers a loader from the file, the other reads
+  rows — and they disagreed about a file where a feature arrived as a different type than the one it
+  was trained as. Column inference groups the columns it reads as numeric into one vector and leaves
+  the rest beside it, so a numeric feature arriving as text drops out of the vector and the vector
+  loses a slot; overriding the column's type, which the code already did, cannot move it back in.
+  The reverse is the same defect: a feature trained as text arriving as digits is pulled into the
+  vector, which then comes out one slot too wide. What the vector spans is a property of training,
+  so it is now rebuilt from the saved schema rather than re-derived from the file being predicted,
+  in both directions. Both paths now load the file and agree row for row. Files that already match
+  are untouched.
+  The same repair replaces a narrower one: label-less clustering had been putting its missing
+  dimension back by re-concatenating a column in the predict path, for that one task. Rebuilding the
+  range from the saved schema covers it — and covers every other task the same way — so the
+  task-specific step is gone rather than left to double-count the column it restores.
+
+### Added
+- **Schema validation now reads values, not only the header.** It compared column names and never a
+  field, so a column whose contents had changed type — a numeric feature arriving as `not-disclosed`
+  — passed validation and the run failed later with `Schema mismatch for feature column
+  '__Features__': expected Vector<Single, 3>, got Vector<Single, 2>`, a sentence that does not
+  contain the name of the column that changed. The saved schema knew which column it was the whole
+  time. `predict` and `evaluate` now say so first, naming the column, what it was trained as, how
+  many of the sampled rows disagree and an example value. It is a warning, not a rejection: the
+  loader coerces the values to the trained type and the run may still be what you want — the point
+  is to know. Machine consumers receive it as a `warning` event like any other.
+
+### Fixed
 - **A path printed to the terminal was folded at the console width, inside the path.** `mloop
   promote` reported its backup location as `…/backups/exp-001-2` on one line and `0260908-064321`
   on the next; what a reader saw and copied was not a location that existed. Spectre lays every line

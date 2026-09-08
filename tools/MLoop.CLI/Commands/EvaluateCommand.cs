@@ -287,6 +287,11 @@ public static class EvaluateCommand
                     return 1;
                 }
 
+                // Same reason as predict: a column that changed type passes validation, and the
+                // measurement it produces is computed on values the loader turned into missing.
+                foreach (var warning in validationResult.Warnings)
+                    WarningConsole.Warn(Markup.Escape(warning));
+
                 AnsiConsole.MarkupLine("[green]>[/] Schema validation passed");
                 AnsiConsole.WriteLine();
             }
