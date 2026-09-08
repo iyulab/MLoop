@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.AutoML;
 using MLoop.Core.Evaluation;
+using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using MLoop.Core.Data;
 using Spectre.Console;
@@ -18,21 +19,12 @@ public static class InitCommand
 {
 
     /// <summary>
-    /// The task types a new project can be scaffolded for.
+    /// The task types a new project can be scaffolded for — the shared vocabulary, not a copy of
+    /// it, so a task added to <see cref="TaskTypes"/> is scaffoldable, validatable and documented
+    /// in one edit. The round-trip test reads this same list, which is what makes a new task fail
+    /// there rather than in a user's first project.
     /// </summary>
-    /// <remarks>
-    /// Named rather than inline so the round-trip test asserts against the same array this command
-    /// judges by: a task added here enters that test automatically, and if the validator does not
-    /// know it, the scaffolded project fails validation there rather than in a user's first project.
-    /// </remarks>
-    internal static readonly string[] ValidTasks =
-    [
-        "binary-classification", "multiclass-classification", "regression",
-        "anomaly-detection", "clustering", "ranking", "forecasting",
-        "time-series-anomaly", "recommendation", "image-classification",
-        "object-detection", "text-classification", "sentence-similarity",
-        "ner", "question-answering",
-    ];
+    internal static IReadOnlyList<string> ValidTasks => TaskTypes.All;
     public static Command Create()
     {
         var projectNameArg = new Argument<string>("project-name")
@@ -42,7 +34,7 @@ public static class InitCommand
 
         var taskOption = new Option<string>("--task", "-t")
         {
-            Description = "ML task type (e.g., regression, binary-classification, clustering, forecasting, recommendation)",
+            Description = $"ML task type ({TaskTypes.Listed})",
             DefaultValueFactory = _ => "binary-classification"
         };
 
@@ -115,9 +107,9 @@ public static class InitCommand
             }
 
             // Validate task
-            if (!ValidTasks.Contains(task))
+            if (!TaskTypes.IsValid(task))
             {
-                ErrorConsole.Error($"Invalid task type. Valid options: {string.Join(", ", ValidTasks)}");
+                ErrorConsole.Error($"Invalid task type. Valid options: {TaskTypes.Listed}");
                 return 1;
             }
 

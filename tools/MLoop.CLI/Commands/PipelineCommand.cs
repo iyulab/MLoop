@@ -60,7 +60,17 @@ public class PipelineCommand : Command
         });
     }
 
-    private static async Task ExecuteAsync(
+    /// <summary>
+    /// Returns the process exit code: <c>0</c> when the pipeline ran to completion, non-zero when
+    /// it could not be read, could not be parsed, or ended in a failed or partially-completed run.
+    /// </summary>
+    /// <remarks>
+    /// Every one of those failures printed a diagnostic and then exited <c>0</c> — the command's
+    /// handler returned a bare <c>Task</c>, so no path could report otherwise. A pipeline is the
+    /// command most likely to be run unattended by a scheduler, which is exactly the caller that
+    /// reads nothing but the exit code.
+    /// </remarks>
+    private static async Task<int> ExecuteAsync(
         string pipelineFile,
         string? variablesJson,
         bool dryRun,
@@ -76,8 +86,8 @@ public class PipelineCommand : Command
             // Read and parse pipeline YAML
             if (!File.Exists(pipelineFile))
             {
-                AnsiConsole.MarkupLine($"[red]❌ Pipeline file not found: {pipelineFile}[/]");
-                return;
+                ErrorConsole.Error($"Pipeline file not found: {pipelineFile}");
+                return 1;
             }
 
             var yamlContent = await File.ReadAllTextAsync(pipelineFile);
@@ -90,8 +100,10 @@ public class PipelineCommand : Command
 
             if (pipeline == null)
             {
-                AnsiConsole.MarkupLine("[red]❌ Failed to parse pipeline file[/]");
-                return;
+                ErrorConsole.Error(
+                    $"Failed to parse pipeline file: {pipelineFile}",
+                    "The file parsed as empty — check that it is a pipeline definition and not an empty document.");
+                return 1;
             }
 
             // Override variables if provided
@@ -126,7 +138,7 @@ public class PipelineCommand : Command
                 AnsiConsole.MarkupLine("[yellow]🔍 DRY RUN MODE - Pipeline validation only[/]");
                 DisplayPipelineSteps(pipeline);
                 AnsiConsole.MarkupLine("[green]✅ Pipeline validation successful[/]");
-                return;
+                return 0;
             }
 
             // Execute pipeline
@@ -149,11 +161,23 @@ public class PipelineCommand : Command
                 await File.WriteAllTextAsync(saveResultPath, resultJson);
                 AnsiConsole.MarkupLine($"\n[grey]💾 Result saved to: {saveResultPath}[/]");
             }
+
+            // A run that ended Failed or PartiallyCompleted said so in the table and then exited 0.
+            // The table is for a person watching; the exit code is for everything else.
+            if (result.Status != PipelineStatus.Completed)
+            {
+                ErrorConsole.Error(
+                    $"Pipeline '{result.PipelineName}' ended {result.Status}.",
+                    result.Error ?? "The step table above shows which step did not complete.");
+                return 1;
+            }
+
+            return 0;
         }
         catch (Exception ex)
         {
             ErrorSuggestions.DisplayError(ex, "pipeline");
-            return;
+            return 1;
         }
     }
 

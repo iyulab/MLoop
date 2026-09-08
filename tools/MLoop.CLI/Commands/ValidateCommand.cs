@@ -6,6 +6,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.AutoML;
 using MLoop.Core.Evaluation;
+using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
 using Spectre.Console;
 
@@ -16,30 +17,6 @@ namespace MLoop.CLI.Commands;
 /// </summary>
 public static class ValidateCommand
 {
-    private static readonly HashSet<string> ValidTaskTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Supervised (AutoML)
-        "regression",
-        "binary-classification",
-        "multiclass-classification",
-        // Unsupervised / Semi-supervised (direct trainer)
-        "anomaly-detection",
-        "clustering",
-        "ranking",
-        // Time Series (Microsoft.ML.TimeSeries)
-        "forecasting",
-        "time-series-anomaly",
-        // Deep Learning (Microsoft.ML.Vision / TorchSharp)
-        "image-classification",
-        "object-detection",
-        "text-classification",
-        "sentence-similarity",
-        "ner",
-        "question-answering",
-        // Collaborative Filtering (Microsoft.ML.Recommender)
-        "recommendation"
-    };
-
     private static readonly HashSet<string> ValidMetrics = BuildValidMetrics();
 
     private static HashSet<string> BuildValidMetrics()
@@ -272,10 +249,10 @@ public static class ValidateCommand
         {
             errors.Add(new ValidationError($"{prefix}.task", "Task type is required"));
         }
-        else if (!ValidTaskTypes.Contains(model.Task))
+        else if (!TaskTypes.IsValid(model.Task))
         {
             errors.Add(new ValidationError($"{prefix}.task",
-                $"Invalid task type '{model.Task}'. Valid values: {string.Join(", ", ValidTaskTypes)}"));
+                $"Invalid task type '{model.Task}'. Valid values: {TaskTypes.Listed}"));
         }
 
         // Validate label — only for supervised tasks. The unsupervised tasks (anomaly-detection /
