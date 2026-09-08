@@ -985,20 +985,21 @@ public class CsvDataLoader : DataProviderBase
             }
         }
 
-        if (uniqueValues.Count != 2)
+        // Which value becomes the positive class is read from the one place that decides it, so
+        // that predict can undo the conversion by asking the same question rather than by
+        // re-deriving the answer.
+        if (BinaryLabelVocabulary.Order(uniqueValues) is not { } vocabulary)
         {
             return dataView; // Not binary, return as-is
         }
 
-        // Sort alphabetically: first → negative (false), second → positive (true)
-        var sorted = uniqueValues.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToArray();
-        _log($"[Info] Converting label: '{sorted[0]}' → False, '{sorted[1]}' → True");
+        _log($"[Info] Converting label: '{vocabulary.Negative}' → False, '{vocabulary.Positive}' → True");
 
         // Build lookup IDataView for MapValue transform
         var lookupData = _mlContext.Data.LoadFromEnumerable(new[]
         {
-            new LabelMapping { Key = sorted[0], Value = false },
-            new LabelMapping { Key = sorted[1], Value = true }
+            new LabelMapping { Key = vocabulary.Negative, Value = false },
+            new LabelMapping { Key = vocabulary.Positive, Value = true }
         });
 
         var pipeline = _mlContext.Transforms.Conversion.MapValue(

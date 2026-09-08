@@ -9,6 +9,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.31.0] - 2026-09-07
 
 ### Fixed
+- **A binary model trained on `OK`/`NG` predicted correctly and then answered `1`/`0`.** ML.NET's
+  binary classification takes a Boolean label, so a label written as words is converted before
+  training — and nothing undid the conversion afterwards, so the class names the user wrote were
+  absent from the answer. The two prediction paths did not even agree on what to put in their
+  place: the CSV said `1`/`0` and the structured output (`--json`, `serve /predict`) said
+  `True`/`False` for the same rows. Which value becomes the positive class is now one decision read
+  from one place, by the conversion that makes it and by both paths that report it, so a prediction
+  comes back in the vocabulary the model was trained on. The two orderings involved genuinely
+  disagree — the conversion sorts case-insensitively while the schema's recorded value list sorts
+  ordinally, which inverts a vocabulary like `a`/`B` — which is why reading the recorded list's
+  first entry is not the same question and is not what happens. A model that recorded no vocabulary
+  (an older experiment, or a label already Boolean in the data) still gets one answer from both
+  paths, `True`/`False`. Binary probabilities are keyed by the same names, so a consumer can join a
+  predicted label to its probability.
+
 - **`mloop predict` gave two different answers for the same input depending on `--json`.** Without
   the flag it failed (`Schema mismatch for feature column '__Features__': expected
   Vector<Single, 3>, got Vector<Single, 2>`); with it, the same file and model produced predictions

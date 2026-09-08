@@ -159,7 +159,8 @@ public class PredictionService
 
         predictions = RestoreOriginalLabels(predictions);
 
-        var result = ExtractResults(predictions, taskType, interval, perRowSigma);
+        var result = ExtractResults(predictions, taskType, interval, perRowSigma,
+            BinaryLabelVocabulary.Of(schema));
 
         if (warnings.Count > 0)
         {
@@ -356,9 +357,9 @@ public class PredictionService
     /// <summary>
     /// Eagerly materializes all prediction rows from the IDataView using cursor iteration.
     /// </summary>
-    internal static PredictionResult ExtractResults(IDataView predictions, string taskType, RegressionInterval? interval = null, IReadOnlyList<double>? perRowSigma = null)
+    internal static PredictionResult ExtractResults(IDataView predictions, string taskType, RegressionInterval? interval = null, IReadOnlyList<double>? perRowSigma = null, (string Negative, string Positive)? labelVocabulary = null)
     {
-        var rows = ExtractRows(predictions, taskType, interval, perRowSigma);
+        var rows = ExtractRows(predictions, taskType, interval, perRowSigma, labelVocabulary);
 
         RequireNonDegenerateOutput(rows, taskType);
 
@@ -419,7 +420,7 @@ public class PredictionService
     /// materialization shared by <see cref="ExtractResults"/> (full result + degeneracy guard) and
     /// <see cref="ComputeRowConfidences"/> (confidence-only enrichment). No guard, no confidence here.
     /// </summary>
-    private static List<PredictionRow> ExtractRows(IDataView predictions, string taskType, RegressionInterval? interval, IReadOnlyList<double>? perRowSigma = null)
+    private static List<PredictionRow> ExtractRows(IDataView predictions, string taskType, RegressionInterval? interval, IReadOnlyList<double>? perRowSigma = null, (string Negative, string Positive)? labelVocabulary = null)
     {
         var schema = predictions.Schema;
 
@@ -430,7 +431,7 @@ public class PredictionService
         using var cursor = predictions.GetRowCursor(schema);
 
         if (IsClassificationTask(taskType))
-            return ExtractClassificationRows(cursor, predictedLabelCol, scoreCol, probabilityCol);
+            return ExtractClassificationRows(cursor, predictedLabelCol, scoreCol, probabilityCol, labelVocabulary);
         if (taskType is "regression" or "forecasting")
             return ExtractRegressionRows(cursor, scoreCol, interval, perRowSigma,
                 schema.GetColumnOrNull("ScoreLowerBound"), schema.GetColumnOrNull("ScoreUpperBound"));
@@ -487,7 +488,8 @@ public class PredictionService
         DataViewRowCursor cursor,
         DataViewSchema.Column? predictedLabelCol,
         DataViewSchema.Column? scoreCol,
-        DataViewSchema.Column? probabilityCol)
+        DataViewSchema.Column? probabilityCol,
+        (string Negative, string Positive)? labelVocabulary = null)
     {
         var rows = new List<PredictionRow>();
 
@@ -534,7 +536,7 @@ public class PredictionService
             {
                 bool boolValue = false;
                 boolLabelGetter(ref boolValue);
-                label = boolValue ? "True" : "False";
+                label = BinaryLabelVocabulary.Render(boolValue, labelVocabulary);
             }
             else if (singleLabelGetter != null)
             {
@@ -578,8 +580,8 @@ public class PredictionService
             {
                 probabilities = new Dictionary<string, double>
                 {
-                    ["True"] = probability.Value,
-                    ["False"] = 1.0 - probability.Value,
+                    [BinaryLabelVocabulary.Render(true, labelVocabulary)] = probability.Value,
+                    [BinaryLabelVocabulary.Render(false, labelVocabulary)] = 1.0 - probability.Value,
                 };
             }
 
