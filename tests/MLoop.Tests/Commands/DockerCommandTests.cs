@@ -1,4 +1,5 @@
 using MLoop.CLI.Commands;
+using MLoop.Core.Storage;
 
 namespace MLoop.Tests.Commands;
 
@@ -105,7 +106,9 @@ public class DockerCommandTests
     {
         var result = DockerCommand.GenerateDockerignore();
 
-        Assert.Contains("!.mloop/models/", result);
+        // This asserted "!.mloop/models/" — a path no project has, so the exception kept nothing.
+        // Models live in ExperimentLayout.ModelsDirectory, a sibling of .mloop/.
+        Assert.Contains($"!{ExperimentLayout.ModelsDirectory}/", result);
     }
 
     #endregion
@@ -150,7 +153,9 @@ public class DockerCommandTests
     {
         var result = DockerCommand.GenerateDockerCompose("default", 5000);
 
-        Assert.Contains(".mloop/models", result);
+        // This asserted ".mloop/models", which is where no model has ever been — the mount pointed
+        // at a directory docker would create empty, and the test pinned that as the contract.
+        Assert.Contains($"./{ExperimentLayout.ModelsDirectory}:/app/{ExperimentLayout.ModelsDirectory}", result);
         Assert.Contains(":ro", result);
     }
 

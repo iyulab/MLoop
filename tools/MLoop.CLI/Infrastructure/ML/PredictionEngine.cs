@@ -3,7 +3,6 @@ using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
-using MLoop.Core.Contracts;
 using MLoop.Core.Models;
 using MLoop.Core.Data;
 using MLoop.Core.Prediction;
@@ -14,7 +13,7 @@ namespace MLoop.CLI.Infrastructure.ML;
 /// <summary>
 /// ML.NET-based prediction engine for making predictions with trained models
 /// </summary>
-public class PredictionEngine : IPredictionEngine
+public class PredictionEngine
 {
     private readonly MLContext _mlContext;
     private readonly CategoricalMapper _categoricalMapper;
@@ -23,26 +22,6 @@ public class PredictionEngine : IPredictionEngine
     {
         _mlContext = new MLContext(seed: 42);
         _categoricalMapper = new CategoricalMapper();
-    }
-
-    public async Task<int> PredictAsync(
-        string modelPath,
-        string inputDataPath,
-        string outputPath,
-        CancellationToken cancellationToken = default)
-    {
-        return await PredictAsync(modelPath, inputDataPath, outputPath, null, cancellationToken);
-    }
-
-    public async Task<int> PredictAsync(
-        string modelPath,
-        string inputDataPath,
-        string outputPath,
-        InputSchemaInfo? trainedSchema,
-        CancellationToken cancellationToken = default)
-    {
-        return await PredictAsync(modelPath, inputDataPath, outputPath, trainedSchema,
-            CategoricalMapper.UnknownValueStrategy.Auto, cancellationToken);
     }
 
     public async Task<int> PredictAsync(
