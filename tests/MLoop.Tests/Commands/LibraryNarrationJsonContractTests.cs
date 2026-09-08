@@ -65,6 +65,7 @@ public class LibraryNarrationJsonContractTests : IDisposable
     [InlineData("analyze", "correlation", "datasets/train.csv", "--json")]
     [InlineData("analyze", "outliers", "datasets/train.csv", "--json")]
     [InlineData("analyze", "distribution", "datasets/train.csv", "--json")]
+    [InlineData("detect", "datasets/train.csv", "--column", "feature", "--json")]
     public async Task StdoutParsesWhenTheLoaderNarrates(params string[] args)
     {
         var (exitCode, stdout, stderr) = await RunAsync(args);
@@ -81,6 +82,66 @@ public class LibraryNarrationJsonContractTests : IDisposable
                 $"`mloop {string.Join(' ', args)}` exited 0 but stdout does not parse: {ex.Message}"
                 + $"\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
         }
+    }
+
+    /// <summary>
+    /// A <c>--json</c> command owes its consumer a parseable document at <b>every</b> exit, including
+    /// the ones it reaches by failing.
+    /// </summary>
+    /// <remarks>
+    /// The cases above all succeed, and a command can be correct on its success path while leaving
+    /// stdout empty on the twelve ways it can return non-zero — <c>JSON.parse("")</c> fails exactly
+    /// as prose does. These commands are pointed at a project with no trained model and no
+    /// experiments, so each one takes a failure exit, and each one still owes a document.
+    /// </remarks>
+    [Theory]
+    [InlineData("predict", "datasets/train.csv", "--json")]
+    [InlineData("evaluate", "--json")]
+    [InlineData("promote", "--latest", "--json")]
+    [InlineData("compare", "exp-001", "exp-002", "--json")]
+    [InlineData("status", "--json")]
+    [InlineData("list", "--json")]
+    [InlineData("validate", "--json")]
+    public async Task StdoutParsesAtEveryExitIncludingFailure(params string[] args)
+    {
+        var (exitCode, stdout, stderr) = await RunAsync(args);
+
+        try
+        {
+            using var _ = JsonDocument.Parse(stdout);
+        }
+        catch (JsonException ex)
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"`mloop {string.Join(' ', args)}` exited {exitCode} and stdout does not parse: {ex.Message}"
+                + $" | stdout: {stdout} | stderr: {stderr}");
+        }
+    }
+
+    /// <summary>
+    /// A document that parses can still fail to say what happened. <c>evaluate</c> exits 0 without a
+    /// production model — skipping is a reported outcome here, not a failure — and the human is told
+    /// so in as many words. The document must say it too.
+    /// </summary>
+    /// <remarks>
+    /// Before this, the skip serialized as every field null and exit 0, which is also what an
+    /// evaluation that ran and produced nothing would look like. The consumer had no way to tell the
+    /// two apart, while the person watching the terminal was told outright. That asymmetry — a fact
+    /// on the human channel and not on the machine one — is the same defect class as narration
+    /// landing on the document's stream, reached from the other side.
+    /// </remarks>
+    [Fact]
+    public async Task EvaluateSaysInTheDocumentThatItSkipped()
+    {
+        var (exitCode, stdout, stderr) = await RunAsync("evaluate", "--json");
+
+        Assert.Equal(0, exitCode);
+
+        using var document = JsonDocument.Parse(stdout);
+        var skipped = document.RootElement.GetProperty("skipped");
+
+        Assert.Equal(JsonValueKind.String, skipped.ValueKind);
+        Assert.Equal("no-production-model", skipped.GetString());
     }
 
     [Fact]

@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.31.0] - 2026-09-07
 
+### Fixed
+- **`mloop evaluate --json` could not say that it had skipped.** Without a production model, evaluate
+  reports that it is skipping and exits 0 — skipping is an outcome here, not a failure. The document
+  it emitted, though, was every field null, which is also what an evaluation that ran and measured
+  nothing looks like. The person watching the terminal was told which had happened and the consumer
+  reading stdout was not. The document now carries `skipped`, naming the reason when no evaluation
+  ran and `null` when one did. Human output is unchanged.
+
 ### Added
 - **Published text is checked for tokens that only mean something inside the workspace it was
   written in.** This repository is public, and its changelog carried a hundred-odd work-item ids

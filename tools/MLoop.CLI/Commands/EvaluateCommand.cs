@@ -61,17 +61,26 @@ public static class EvaluateCommand
     /// The one place this command's <c>--json</c> document is shaped, so the evaluated and the
     /// nothing-to-evaluate exits cannot describe themselves with different keys.
     /// </summary>
+    /// <param name="skipped">
+    /// Why no evaluation was performed, or <see langword="null"/> when one was. Without it the two
+    /// outcomes are the same document: a run that measured nothing and a run that never started both
+    /// serialize as all-null metrics, and the exit code is 0 in both cases because skipping is a
+    /// reported outcome rather than a failure. The human is told which happened; this is the field
+    /// that tells a consumer the same thing.
+    /// </param>
     private static void EmitJson(
         string model,
         string? experimentId,
         string? testDataFile,
         object? trainingMetrics,
         object? testMetrics,
-        bool? possibleOverfitting)
+        bool? possibleOverfitting,
+        string? skipped = null)
     {
         var payload = new
         {
             Model = model,
+            Skipped = skipped,
             ExperimentId = experimentId,
             TestDataFile = testDataFile,
             TrainingMetrics = trainingMetrics,
@@ -143,9 +152,12 @@ public static class EvaluateCommand
 
                     // Skipping is a reported outcome, not a failure — the exit code stays 0 — but it is
                     // still an exit, so a --json consumer gets the same document shape with nothing
-                    // measured rather than an empty stdout it cannot parse.
+                    // measured rather than an empty stdout it cannot parse. The document has to say
+                    // that it skipped: parseable is not the same as informative, and "no production
+                    // model" and "evaluated, metrics unavailable" are different answers.
                     if (jsonOutput)
-                        EmitJson(resolvedModelName, null, null, null, null, null);
+                        EmitJson(resolvedModelName, null, null, null, null, null,
+                            skipped: "no-production-model");
                     return 0;
                 }
 

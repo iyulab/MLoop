@@ -51,6 +51,7 @@ walk was done:
 | Repeated prefixes or icons on a line | `ℹ️  ℹ️`, `Warning: Warning:` — two layers each adding the same decoration |
 | `status` vs. `mloop.yaml` | the table states a value the file does not contain (a default rendered as if configured) |
 | `--json` on a command that reads data (`info`, `analyze …`) | stdout does not parse — narration from a layer below the command can land ahead of the document, and the exit code still says 0 |
+| `--json` on the commands a model makes reachable (`predict`, `evaluate`, `train`) | stdout does not parse, or parses but does not say what happened. These only run once something is trained, which is why they are here rather than in a test: the automated fixture reaches every command that works without a model, and stops where a real model begins. Run each on the walk above, parse stdout, and read the document — an outcome the terminal states in words (skipped, nothing measured, a fallback taken) that no field carries is the same defect as unparseable output, reached from the other side |
 
 Write down what you saw. If something is wrong, it is fixed **before** the release, not noted for
 the next one — the point of the walk is that this binary is the one users get.
