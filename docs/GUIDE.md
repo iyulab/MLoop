@@ -12,6 +12,7 @@ Complete guide for using MLoop, the ML.NET CLI tool for building and managing ma
 6. [Project Structure](#project-structure)
 7. [Best Practices](#best-practices)
 8. [Troubleshooting](#troubleshooting)
+9. [Exit Codes](#exit-codes)
 
 ---
 
@@ -804,6 +805,47 @@ mloop train datasets/train.csv --label Price  # If column is 'Price'
 1. Verify model: `mloop list` to check production model
 2. Check schema: Input file must match training schema
 3. Evaluate first: `mloop evaluate` on test data
+
+---
+
+## Exit Codes
+
+Every command reports its outcome through the process exit code, so a script never has to parse
+output to learn whether something worked.
+
+| Code | Meaning |
+|------|---------|
+| `0` | The command did what was asked. |
+| `1` | The command failed. A cause is on **stderr**. |
+| other | Only from `mloop serve` and `mloop update`, which pass through the exit code of the process they launched (the API server, `dotnet tool update`). |
+
+Two rules hold across every command:
+
+- **A non-zero exit always leaves a cause on stderr.** Reading stderr when the exit code is non-zero
+  is enough; you never need stdout to find out what went wrong.
+- **stdout carries the result, not the diagnostics.** Under `--json`, stdout is the document and
+  nothing else — progress, warnings and errors go to stderr, so `mloop … --json > out.json` yields a
+  parseable file even on the runs that print warnings.
+
+An outcome that is not a failure exits `0` even when nothing happened. `mloop evaluate` exits `0`
+and reports `skipped` when the model has no production version yet — a pipeline that evaluates
+opportunistically should not stop for that. `mloop update --check` exits `0` whether or not an
+update exists; the finding is in the output, not the code.
+
+```bash
+# Fail the build on a bad config, and show why.
+if ! mloop validate --json > validation.json 2> validation.err; then
+    cat validation.err >&2
+    exit 1
+fi
+
+# Distinguish "the server stopped cleanly" from "the server crashed".
+mloop serve --port 5000
+case $? in
+    0) echo "server stopped" ;;
+    *) echo "server failed with $?" >&2 ;;
+esac
+```
 
 ---
 

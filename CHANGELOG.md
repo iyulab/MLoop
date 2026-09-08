@@ -9,6 +9,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.31.0] - 2026-09-07
 
 ### Fixed
+- **`serve`, `pipeline` and `update` exited 0 after reporting a failure.** All three had handlers
+  that returned nothing, so no path through them could report anything but success — a pipeline file
+  that did not exist, a pipeline run that ended `Failed`, an API assembly that could not be found, an
+  API child process that crashed after starting, a self-update that did not install. Each printed a
+  clear red line and then told its caller the run was clean. These are precisely the three commands
+  written for a caller that reads nothing else: a scheduler, a supervisor, a provisioning script.
+  All three now return an exit code, failures route to stderr rather than stdout, and the child
+  API's own stderr stays stderr instead of being folded into the parent's stdout. A guard fails the
+  build if a command handler is written that cannot report failure.
+
+### Added
+- **The exit-code contract is documented** (`docs/GUIDE.md` § Exit Codes). `0` means the command did
+  what was asked — including outcomes that are not failures, like `evaluate` skipping a model with no
+  production version. Non-zero means it failed and left a cause on stderr, and `serve`/`update` pass
+  through the exit code of the process they launched. The rules were true in the code and written
+  down nowhere, so a script had to discover them by experiment. Guards now assert both halves on real
+  command lines: a failure exits non-zero with something on stderr, and under `--json` it still leaves
+  a parseable document on stdout rather than nothing.
+
+### Changed
+- **The list of task types a project may declare is written once.** `init`'s scaffolding allowlist,
+  `validate`'s config allowlist, and `train`'s `--task` help text each carried their own copy of the
+  fifteen accepted values. They agreed, which is the state that makes duplication look harmless: the
+  cost only appears at the next edit, and it appears asymmetrically — a task added to one and not the
+  other scaffolds a project that fails its own validation, or is supported and named nowhere a user
+  can find it. All three now read one list, and a guard fails the build if a fourth copy appears.
+  Adding a task is one edit.
+- **The changelog's comparison links stopped at `v0.6.1-alpha`.** Thirty releases were listed above
+  a link block that described six, so `[Unreleased]` compared against a year-old tag and most
+  headings resolved to nothing. Regenerated from the tags that actually exist; the release procedure
+  now names adding the new version's link as a step, since a version's link cannot be written before
+  its tag exists.
+
+### Fixed
+- **`mloop init --help` named five of the fifteen task types it accepts.** The option's description
+  offered a handful as examples while the command validated against the full set, so the values a
+  user could actually pass were discoverable only by guessing and reading the rejection message. Both
+  `init` and `train` now list every accepted task, and the rejection message does too.
+- **A deep-learning task with no runtime declaring it would have failed at native load rather than
+  at the install prompt.** Which tasks need a native runtime is stated in two assemblies — the module
+  that trains them and the registry that knows which runtime serves which task — with nothing
+  connecting the two. They agree today; a guard now keeps them agreeing, in both directions.
+
+### Fixed
 - **`mloop evaluate --json` could not say that it had skipped.** Without a production model, evaluate
   reports that it is skipping and exits 0 — skipping is an outcome here, not a failure. The document
   it emitted, though, was every field null, which is also what an evaluation that ran and measured
@@ -602,11 +646,42 @@ This closes the **exclusion axis** of that error signature. A second, independen
 - YAML configuration (`mloop.yaml`)
 - Filesystem-based state management
 
-[Unreleased]: https://github.com/iyulab/MLoop/compare/v0.6.1-alpha...HEAD
+[Unreleased]: https://github.com/iyulab/MLoop/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/iyulab/MLoop/compare/v0.29.1...v0.30.0
+[0.29.1]: https://github.com/iyulab/MLoop/compare/v0.29.0...v0.29.1
+[0.29.0]: https://github.com/iyulab/MLoop/compare/v0.27.1...v0.29.0
+[0.27.1]: https://github.com/iyulab/MLoop/compare/v0.27.0...v0.27.1
+[0.27.0]: https://github.com/iyulab/MLoop/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/iyulab/MLoop/compare/v0.25.0...v0.26.0
+[0.25.0]: https://github.com/iyulab/MLoop/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/iyulab/MLoop/compare/v0.23.2...v0.24.0
+[0.23.2]: https://github.com/iyulab/MLoop/compare/v0.23.0...v0.23.2
+[0.23.0]: https://github.com/iyulab/MLoop/compare/v0.22.1...v0.23.0
+[0.22.1]: https://github.com/iyulab/MLoop/compare/v0.22.0...v0.22.1
+[0.22.0]: https://github.com/iyulab/MLoop/compare/v0.21.1...v0.22.0
+[0.21.1]: https://github.com/iyulab/MLoop/compare/v0.21.0...v0.21.1
+[0.21.0]: https://github.com/iyulab/MLoop/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/iyulab/MLoop/compare/v0.19.3...v0.20.0
+[0.19.3]: https://github.com/iyulab/MLoop/compare/v0.19.2...v0.19.3
+[0.19.2]: https://github.com/iyulab/MLoop/compare/v0.19.1...v0.19.2
+[0.19.1]: https://github.com/iyulab/MLoop/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/iyulab/MLoop/compare/v0.18.4...v0.19.0
+[0.18.4]: https://github.com/iyulab/MLoop/compare/v0.18.3...v0.18.4
+[0.18.3]: https://github.com/iyulab/MLoop/compare/v0.18.2...v0.18.3
+[0.18.2]: https://github.com/iyulab/MLoop/compare/v0.18.1...v0.18.2
+[0.18.1]: https://github.com/iyulab/MLoop/compare/v0.18.0...v0.18.1
+[0.18.0]: https://github.com/iyulab/MLoop/compare/v0.17.0...v0.18.0
+[0.17.0]: https://github.com/iyulab/MLoop/compare/v0.16.3...v0.17.0
+[0.16.3]: https://github.com/iyulab/MLoop/compare/v0.16.2...v0.16.3
+[0.16.2]: https://github.com/iyulab/MLoop/compare/v0.16.1...v0.16.2
+[0.16.1]: https://github.com/iyulab/MLoop/compare/v0.16.0...v0.16.1
+[0.16.0]: https://github.com/iyulab/MLoop/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/iyulab/MLoop/compare/v0.14.2...v0.15.0
+[0.14.2]: https://github.com/iyulab/MLoop/compare/v0.14.1...v0.14.2
+[0.14.1]: https://github.com/iyulab/MLoop/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/iyulab/MLoop/compare/v0.11.0...v0.14.0
+[0.11.0]: https://github.com/iyulab/MLoop/compare/v0.6.1-alpha...v0.11.0
 [0.6.1-alpha]: https://github.com/iyulab/MLoop/compare/v0.6.0-alpha...v0.6.1-alpha
 [0.6.0-alpha]: https://github.com/iyulab/MLoop/compare/v0.5.1-alpha...v0.6.0-alpha
 [0.5.1-alpha]: https://github.com/iyulab/MLoop/compare/v0.5.0-alpha...v0.5.1-alpha
-[0.5.0-alpha]: https://github.com/iyulab/MLoop/compare/v0.4.0...v0.5.0-alpha
-[0.4.0]: https://github.com/iyulab/MLoop/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/iyulab/MLoop/compare/v0.1.0...v0.3.0
-[0.1.0]: https://github.com/iyulab/MLoop/releases/tag/v0.1.0
+[0.5.0-alpha]: https://github.com/iyulab/MLoop/releases/tag/v0.5.0-alpha

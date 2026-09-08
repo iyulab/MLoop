@@ -22,13 +22,23 @@ public static class UpdateCommand
         command.SetAction(async (parseResult) =>
         {
             var checkOnly = parseResult.GetValue(checkOption);
-            await ExecuteAsync(checkOnly);
+            return await ExecuteAsync(checkOnly);
         });
 
         return command;
     }
 
-    private static async Task ExecuteAsync(bool checkOnly)
+    /// <summary>
+    /// Returns the process exit code: <c>0</c> when the check or the update succeeded, non-zero
+    /// when the version could not be checked or the update did not install.
+    /// </summary>
+    /// <remarks>
+    /// A failed update reported "Update failed." and exited <c>0</c>. `mloop update` is the command
+    /// most often written into a provisioning script or a scheduled job, where the exit code is the
+    /// only thing read — so a self-update that silently did not happen looked identical to one that
+    /// did, and the next run kept the old binary without anyone learning why.
+    /// </remarks>
+    private static async Task<int> ExecuteAsync(bool checkOnly)
     {
         AnsiConsole.MarkupLine("[blue]Checking for updates...[/]");
 
@@ -36,8 +46,10 @@ public static class UpdateCommand
 
         if (info is null)
         {
-            AnsiConsole.MarkupLine("[red]Failed to check for updates. Please check your internet connection.[/]");
-            return;
+            ErrorConsole.Error(
+                "Failed to check for updates.",
+                "Check the network connection, then run 'mloop update' again.");
+            return 1;
         }
 
         AnsiConsole.MarkupLine($"  Current version: [grey]{info.CurrentVersion}[/]");
@@ -46,7 +58,7 @@ public static class UpdateCommand
         if (!info.UpdateAvailable)
         {
             AnsiConsole.MarkupLine("[green]You are running the latest version.[/]");
-            return;
+            return 0;
         }
 
         AnsiConsole.MarkupLine($"[yellow]A new version (v{info.LatestVersion}) is available![/]");
@@ -54,24 +66,31 @@ public static class UpdateCommand
         if (checkOnly)
         {
             AnsiConsole.MarkupLine("Run [blue]mloop update[/] to install the update.");
-            return;
+            return 0;
         }
 
         var installMethod = InstallDetector.Detect();
 
-        switch (installMethod)
+        return installMethod switch
         {
-            case InstallMethod.DotnetTool:
-                await UpdateViaDotnetToolAsync();
-                break;
-
-            case InstallMethod.StandaloneBinary:
-                await UpdateViaStandaloneBinaryAsync(info.LatestVersion);
-                break;
-        }
+            InstallMethod.DotnetTool => await UpdateViaDotnetToolAsync(),
+            InstallMethod.StandaloneBinary => await UpdateViaStandaloneBinaryAsync(info.LatestVersion),
+            // An install this build cannot update is not a success — say which, and exit non-zero
+            // so a script does not carry on as though the new version were in place.
+            _ => Unsupported(installMethod),
+        };
     }
 
-    private static async Task UpdateViaDotnetToolAsync()
+    private static int Unsupported(InstallMethod installMethod)
+    {
+        ErrorConsole.Error(
+            $"Cannot self-update an installation of type '{installMethod}'.",
+            "Reinstall with the method you originally used, or install the dotnet tool: "
+            + "dotnet tool update -g mloop");
+        return 1;
+    }
+
+    private static async Task<int> UpdateViaDotnetToolAsync()
     {
         AnsiConsole.MarkupLine("[blue]Updating via dotnet tool...[/]");
 
@@ -85,8 +104,10 @@ public static class UpdateCommand
         var process = Process.Start(psi);
         if (process is null)
         {
-            AnsiConsole.MarkupLine("[red]Failed to start dotnet tool update.[/]");
-            return;
+            ErrorConsole.Error(
+                "Failed to start 'dotnet tool update -g mloop'.",
+                "Check that the .NET SDK is on PATH.");
+            return 1;
         }
 
         var output = await process.StandardOutput.ReadToEndAsync();
@@ -98,16 +119,16 @@ public static class UpdateCommand
             AnsiConsole.MarkupLine("[green]Update completed successfully![/]");
             if (!string.IsNullOrWhiteSpace(output))
                 AnsiConsole.WriteLine(output.TrimEnd());
+            return 0;
         }
-        else
-        {
-            AnsiConsole.MarkupLine("[red]Update failed.[/]");
-            if (!string.IsNullOrWhiteSpace(error))
-                AnsiConsole.MarkupLine($"[red]{error.TrimEnd()}[/]");
-        }
+
+        ErrorConsole.Error(
+            $"Update failed (dotnet tool update exited {process.ExitCode}).",
+            string.IsNullOrWhiteSpace(error) ? null : error.TrimEnd());
+        return process.ExitCode;
     }
 
-    private static async Task UpdateViaStandaloneBinaryAsync(string version)
+    private static async Task<int> UpdateViaStandaloneBinaryAsync(string version)
     {
         var rid = InstallDetector.GetRuntimeIdentifier();
         var ext = rid.StartsWith("win") ? ".exe" : "";
@@ -137,6 +158,7 @@ public static class UpdateCommand
             UpdateChecker.ReplaceExecutable(tempPath);
             AnsiConsole.MarkupLine("[green]Update completed successfully![/]");
             AnsiConsole.MarkupLine("[grey]Please restart mloop to use the new version.[/]");
+            return 0;
         }
         catch (Exception ex)
         {
@@ -147,6 +169,8 @@ public static class UpdateCommand
             {
                 try { File.Delete(tempPath); } catch (IOException) { }
             }
+
+            return 1;
         }
     }
 }

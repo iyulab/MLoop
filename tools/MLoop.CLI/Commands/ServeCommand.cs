@@ -53,7 +53,20 @@ public class ServeCommand : Command
         });
     }
 
-    private static async Task ExecuteAsync(
+    /// <summary>
+    /// Returns the process exit code: <c>0</c> when the server ran and stopped normally, non-zero
+    /// when it could not start or the child API exited with a failure.
+    /// </summary>
+    /// <remarks>
+    /// This returned <c>Task</c> rather than <c>Task&lt;int&gt;</c>, so every failure — a missing
+    /// API assembly, an unhandled exception, a child that refused to start — printed a diagnostic
+    /// and then exited <c>0</c>. A supervisor or a CI step that starts the server and branches on
+    /// the exit code was told the server was running whenever <c>mloop serve</c> returned at all.
+    /// <c>ErrorSuggestions.DisplayError</c> already documents the CLI-wide contract it serves
+    /// ("every command's top-level catch funnels here before returning a non-zero exit code");
+    /// serve was the command that did not hold up its half.
+    /// </remarks>
+    private static async Task<int> ExecuteAsync(
         int port,
         string host,
         bool detach,
@@ -74,16 +87,14 @@ public class ServeCommand : Command
 
             if (apiAssembly == null)
             {
-                AnsiConsole.MarkupLine("[red]❌ MLoop.API assembly not found.[/]");
-                AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[yellow]Options:[/]");
-                AnsiConsole.MarkupLine("[grey]  1. Point MLOOP_API_PATH at the built assembly:[/]");
-                AnsiConsole.MarkupLine("[grey]     MLOOP_API_PATH=<path>/MLoop.API.dll[/]");
-                AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[grey]  2. Build from source:[/]");
-                AnsiConsole.MarkupLine("[grey]     dotnet build MLoop.slnx[/]");
-                AnsiConsole.MarkupLine("[grey]     dotnet run --project tools/MLoop.API[/]");
-                return;
+                // stderr, not stdout: this is why the command is about to exit non-zero, and a
+                // caller reading the failure reason reads stderr. The lines below said the same
+                // thing on the success channel, where a supervisor never looks.
+                ErrorConsole.Error(
+                    "MLoop.API assembly not found.",
+                    "Point MLOOP_API_PATH at the built assembly (MLOOP_API_PATH=<path>/MLoop.API.dll), "
+                    + "or build from source: dotnet build MLoop.slnx");
+                return 1;
             }
 
             // Set environment variable for project root
@@ -128,11 +139,14 @@ public class ServeCommand : Command
                     }
                 };
 
+                // The child's stderr stays stderr. Folding it into the parent's stdout made the
+                // API's own failure lines indistinguishable from its startup log for anything
+                // reading the streams rather than watching them.
                 process.ErrorDataReceived += (sender, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        AnsiConsole.MarkupLine($"[red]{Markup.Escape(e.Data)}[/]");
+                        ErrorConsole.Out.MarkupLine($"[red]{Markup.Escape(e.Data)}[/]");
                     }
                 };
             }
@@ -162,16 +176,30 @@ public class ServeCommand : Command
                 process.BeginErrorReadLine();
 
                 await process.WaitForExitAsync();
+
+                // The child is the server; if it failed, serve failed. Reporting 0 here would tell
+                // a supervisor the run was clean whenever the API crashed after starting.
+                if (process.ExitCode != 0)
+                {
+                    ErrorConsole.Error(
+                        $"MLoop.API exited with code {process.ExitCode}.",
+                        "The server's own output above carries the cause.");
+                    return process.ExitCode;
+                }
             }
+
+            return 0;
         }
         catch (OperationCanceledException)
         {
+            // A deliberate stop is not a failure.
             AnsiConsole.MarkupLine("\n[yellow]👋 Server stopped by user[/]");
+            return 0;
         }
         catch (Exception ex)
         {
             ErrorSuggestions.DisplayError(ex, "serve");
-            return;
+            return 1;
         }
     }
 

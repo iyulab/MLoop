@@ -81,6 +81,9 @@ internal thread pool at the first `Fit`, with every test blocked behind it and C
   breaking changes, **patch** for fixes. No prerelease suffixes.
 - `CHANGELOG.md`: turn `## [Unreleased]` into `## [x.y.z] - YYYY-MM-DD` and open a fresh
   `[Unreleased]` above it. Every user-visible change in the diff has an entry.
+- **Confirm the release heading's date is today's.** A version that is prepared and then published
+  days later keeps whatever date it was first written with, and the date is a claim about when the
+  release happened — not when its first entry was drafted.
 
 ## 5. Push, then wait for CI on that commit
 
@@ -105,3 +108,18 @@ gh run watch
 
 A published version is permanent: a bad one is **unlisted** on NuGet, never replaced. That is
 why step 2 comes before step 5.
+
+## 7. After the tag exists
+
+The changelog's comparison links at the bottom of the file are defined per released version, and a
+version's link cannot exist before its tag does. Once the release workflow has tagged `vx.y.z`, add
+the two lines that close the loop:
+
+```
+[Unreleased]: https://github.com/iyulab/MLoop/compare/vx.y.z...HEAD
+[x.y.z]: https://github.com/iyulab/MLoop/compare/v<previous>...vx.y.z
+```
+
+and repoint the previous `[Unreleased]` line. Skipping this is how the block once stopped at
+`v0.6.1-alpha` while the file listed thirty releases past it — a reader following any of those
+headings got no link at all.
