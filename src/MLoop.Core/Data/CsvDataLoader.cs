@@ -274,7 +274,7 @@ public class CsvDataLoader : DataProviderBase
     }
 
     /// <summary>
-    /// EVAL-1: the single inference schema-reconciliation step that predict and evaluate both run
+    /// The single inference schema-reconciliation step that predict and evaluate both run
     /// after <c>InferColumns</c>. It (1) overrides each non-label column's inferred <c>DataKind</c> to
     /// the type training fitted on — <c>InferColumns</c> can misdetect types when the inference data is
     /// sparse — including the raw "String" type name; (2) enables RFC 4180 quoting so fields

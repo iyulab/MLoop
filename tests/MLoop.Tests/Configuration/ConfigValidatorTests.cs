@@ -5,7 +5,7 @@ namespace MLoop.Tests.Configuration;
 
 // ConfigValidator's parallel Validate(MLoopConfig)/ValidateLabelInCsv config validator was a
 // production-orphan (only these tests called it) that had drifted from the live ValidateCommand;
-// it was removed in Cycle 51 and its unique required-field coverage (forecasting/ranking/
+// it was removed and its unique required-field coverage (forecasting/ranking/
 // recommendation) ported into ValidateCommand (see ValidateCommandTests). Only ValidatePrepSteps
 // remains live (used by PrepRunCommand), so only its tests remain here.
 public class ConfigValidatorTests

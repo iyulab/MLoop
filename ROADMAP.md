@@ -11,13 +11,11 @@ This roadmap aligns all development with MLoop's core philosophy: enabling produ
 > its internal version numbering (Phase-era `v1.x`) predates the current `v0.x` scheme. For the
 > **authoritative current state**, use:
 > - **Current version & released changes** → [`CHANGELOG.md`](CHANGELOG.md) (single source of truth for versions)
-> - **Active roadmap & remaining work** → `claudedocs/ROADMAP.md` (ecosystem) + `claudedocs/roadmap/13-honeai-middleware-roadmap.md` (HoneAI middleware)
-> - **Current session state / next tasks** → `claudedocs/HANDOFF.md`
-> - **Per-cycle execution history** → `claudedocs/cycle-logs/`
+> - **Work in progress** → the repository's issues and pull requests
 >
 > As of 2026-07-03 the actual shipped version is **v0.18.4** (staged) with **1995+ tests** — the
 > "Current Status (v0.10.0)" section below is a stale snapshot. Disposition of this archive
-> (retain vs. rewrite vs. delete) is a pending maintainer decision (HANDOFF §C).
+> (retain vs. rewrite vs. delete) is a pending maintainer decision.
 
 ---
 
@@ -558,7 +556,7 @@ Target:
 
 ### T8.5 Encoding Detection Consistency ✅
 **Problem**: CsvHelperImpl lacked encoding detection, causing garbled Korean column names in `mloop train`
-**Discovery**: Agent Simulation testing (IMP-001 finding)
+**Discovery**: Agent Simulation testing
 **Solution**: Add EncodingDetector to CsvHelperImpl.ReadAsync() and ReadHeadersAsync()
 ```
 Current: 깨진한글 (garbled due to CP949→UTF8 mismatch)
@@ -974,7 +972,7 @@ for projects, data, training, predictions, feedback, and model management.
 
 **Background**: Validate MLoop CLI E2E workflow with real manufacturing datasets.
 
-**Test Datasets** (`D:\data\MLoop\ML-Resource`):
+**Test Datasets** (a local dataset root, configured per machine):
 
 | Category | Datasets | Status |
 |----------|----------|--------|
@@ -1038,25 +1036,24 @@ Out of MLoop CLI scope (requires Image Classification support):
 ## Active: ML Task Type Expansion (v0.7.0+)
 
 **목표**: ML.NET이 지원하는 모든 ML 태스크를 MLoop에서 다룰 수 있도록 확장
-**상세 계획**: [`claudedocs/roadmap/08-mlnet-task-expansion-roadmap.md`](claudedocs/roadmap/08-mlnet-task-expansion-roadmap.md)
 
 ### 진행 현황: 15/15 태스크 (100%) — 전체 완료
 
-| ID | Task | Tier | 상태 |
-|----|------|:----:|:----:|
-| MLOOP-101 | Anomaly Detection (PCA) | 1 | ✅ 완료 |
-| MLOOP-102 | Clustering (K-Means) | 1 | ✅ 완료 |
-| MLOOP-103 | Ranking (Learning to Rank) | 1 | ✅ 완료 |
-| MLOOP-104 | Time Series Forecasting (SSA) | 2 | ✅ 완료 |
-| MLOOP-105 | Time Series Anomaly (Spike/CP) | 2 | ✅ 완료 |
-| MLOOP-106 | Recommendation (Matrix Factorization) | 3 | ✅ 완료 |
-| MLOOP-113 | `mloop runtime` 명령 (DL infra) | Infra | ✅ 완료 |
-| MLOOP-107 | Image Classification | 4a | ✅ 완료 (TF, on-demand) |
-| MLOOP-108 | Object Detection | 4b | ✅ 완료 (TorchSharp, on-demand) |
-| MLOOP-109 | Text Classification | 4b | ✅ 완료 (NAS-BERT, on-demand) |
-| MLOOP-110 | Sentence Similarity | 4b | ✅ 완료 (NAS-BERT, on-demand) |
-| MLOOP-111 | NER | 4b | ✅ 완료 (NAS-BERT, on-demand) |
-| MLOOP-112 | Question Answering | 4b | ✅ 완료 (NAS-BERT, on-demand) |
+| Task | Tier | 상태 |
+|------|:----:|:----:|
+| Anomaly Detection (PCA) | 1 | ✅ 완료 |
+| Clustering (K-Means) | 1 | ✅ 완료 |
+| Ranking (Learning to Rank) | 1 | ✅ 완료 |
+| Time Series Forecasting (SSA) | 2 | ✅ 완료 |
+| Time Series Anomaly (Spike/CP) | 2 | ✅ 완료 |
+| Recommendation (Matrix Factorization) | 3 | ✅ 완료 |
+| `mloop runtime` 명령 (DL infra) | Infra | ✅ 완료 |
+| Image Classification | 4a | ✅ 완료 (TF, on-demand) |
+| Object Detection | 4b | ✅ 완료 (TorchSharp, on-demand) |
+| Text Classification | 4b | ✅ 완료 (NAS-BERT, on-demand) |
+| Sentence Similarity | 4b | ✅ 완료 (NAS-BERT, on-demand) |
+| NER | 4b | ✅ 완료 (NAS-BERT, on-demand) |
+| Question Answering | 4b | ✅ 완료 (NAS-BERT, on-demand) |
 
 ### On-Demand Runtime 아키텍처
 

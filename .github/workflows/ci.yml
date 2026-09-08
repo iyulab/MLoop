@@ -1,17 +1,20 @@
 name: CI
 
 on:
+  # Documentation is not skipped. Two of this repository's guards assert about published text
+  # rather than about code — one checks that every command example in the README still parses,
+  # the other that no internal work-item id, machine path or private-workspace link reaches a
+  # public file. Ignoring '**.md' and 'docs/**' meant a change to exactly the files those guards
+  # watch was the one change that never ran them. Issue templates stay ignored: nothing asserts
+  # about them.
   push:
     branches: [ main, develop ]
     paths-ignore:
-      - '**.md'
-      - 'docs/**'
       - '.github/ISSUE_TEMPLATE/**'
   pull_request:
     branches: [ main, develop ]
     paths-ignore:
-      - '**.md'
-      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
 
 concurrency:
   group: ci-${{ github.ref }}

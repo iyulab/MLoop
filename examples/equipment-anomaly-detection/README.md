@@ -52,7 +52,7 @@ Demonstrate a **production-ready MLOps workflow** that combines:
 # 1. Navigate to project directory
 cd examples/equipment-anomaly-detection
 
-# 2. Configure .env file in project root (D:\data\MLoop\.env)
+# 2. Configure .env file in project root (the .env at the repository root)
 # The project automatically loads these environment variables (priority order):
 #
 # Option 1 - GPUStack (local OpenAI-compatible endpoint):
@@ -405,8 +405,8 @@ cp -r ../mloop-agents/.mloop/agents/* .mloop/agents/
 
 **Problem**: "LLM provider connection error"
 ```bash
-# Solution: Verify .env file in D:\data\MLoop\.env
-cat D:\data\MLoop\.env
+# Solution: Verify the .env file at the repository root
+cat .env
 
 # Priority order (only ONE set needed):
 # 1. GPUStack (local):

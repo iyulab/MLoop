@@ -18,7 +18,7 @@ dotnet --version
 # Expected: 10.0.x
 
 # Verify .env file configuration (required for AI agents)
-cat D:\data\MLoop\.env
+cat .env
 
 # Priority order (only ONE set needed):
 # 1. GPUStack (local - recommended for on-premise):
@@ -42,7 +42,7 @@ cat D:\data\MLoop\.env
 ### 2. Verify Project Build
 
 ```bash
-cd D:\data\MLoop
+cd <your clone of this repository>
 dotnet build src/MLoop.CLI/MLoop.CLI.csproj
 # Expected: Build succeeded (warnings acceptable)
 ```
@@ -51,7 +51,7 @@ dotnet build src/MLoop.CLI/MLoop.CLI.csproj
 
 ```bash
 # Check if ML-Resource dataset is available
-ls "D:\data\ML-Resource\014-장비이상 조기탐지\Dataset\data\5공정_180sec"
+ls "<dataset root>/equipment-anomaly/Dataset/data/5공정_180sec"
 # Expected: 33 CSV files + Error Lot list.csv
 ```
 
@@ -60,7 +60,7 @@ ls "D:\data\ML-Resource\014-장비이상 조기탐지\Dataset\data\5공정_180se
 ### Step 1.1: Run Data Preparation Script
 
 ```powershell
-cd D:\data\MLoop\examples\equipment-anomaly-detection
+cd examples/equipment-anomaly-detection
 
 # Execute data preparation script
 .\scripts\prepare-data.ps1 `
@@ -113,7 +113,7 @@ wc -l datasets/train.csv
 ### Step 2.1: Analyze Dataset with data-analyst Agent
 
 ```bash
-cd D:\data\MLoop
+cd <your clone of this repository>
 
 # Run data analysis with AI agent
 dotnet run --project src/MLoop.CLI/MLoop.CLI.csproj agent \
@@ -325,7 +325,7 @@ EXPECTED PERFORMANCE:
 ### Step 4.2: Execute Training
 
 ```bash
-cd D:\data\MLoop\examples\equipment-anomaly-detection
+cd examples/equipment-anomaly-detection
 
 # Train model with recommended configuration
 dotnet run --project ../../src/MLoop.CLI/MLoop.CLI.csproj train \

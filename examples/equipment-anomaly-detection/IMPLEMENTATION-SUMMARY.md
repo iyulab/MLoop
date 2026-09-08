@@ -361,7 +361,7 @@ Based on similar equipment anomaly detection tasks:
 
 ```bash
 # 1. Navigate to example directory
-cd D:\data\MLoop\examples\equipment-anomaly-detection
+cd examples/equipment-anomaly-detection
 
 # 2. Prepare data
 .\scripts\prepare-data.ps1

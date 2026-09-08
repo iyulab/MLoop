@@ -7,7 +7,7 @@ using MLoop.Core.Models;
 namespace MLoop.Core.Tests.Data;
 
 /// <summary>
-/// EVAL-1: pins the shared inference schema-reconciliation contract that predict and evaluate both
+/// Pins the shared inference schema-reconciliation contract that predict and evaluate both
 /// run after InferColumns. Centralizing it closed the "String" trained-type and quoted-field
 /// (AllowQuoting) gaps that had been fixed on the predict path but silently missing from evaluate —
 /// the family of "fix one inference path, the other drifts" defects.
