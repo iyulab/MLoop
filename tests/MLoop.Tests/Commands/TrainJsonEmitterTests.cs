@@ -56,6 +56,7 @@ public class TrainJsonEmitterTests
     [InlineData(TrainingPhase.ProbeStart, "probe", true, false, false, false, false)]
     [InlineData(TrainingPhase.ProbeComplete, "main", true, true, true, true, false)]
     [InlineData(TrainingPhase.ProbeConverged, "converged", true, false, true, true, false)]
+    [InlineData(TrainingPhase.ProbeFellBack, "fellback", true, false, true, true, false)]
     [InlineData(TrainingPhase.MainStart, "main", false, true, false, false, false)]
     [InlineData(TrainingPhase.Complete, "complete", false, false, true, false, true)]
     public void Phase_names_the_boundary_and_carries_only_the_facts_it_has(
@@ -238,4 +239,28 @@ public class TrainJsonEmitterTests
         Assert.Equal(200, events.Count);
         Assert.All(events, e => Assert.Equal("trial", e.GetProperty("event").GetString()));
     }
+    /// <summary>
+    /// The table above is the phase vocabulary a consumer reads, and nothing else forces a new
+    /// phase into it — a boundary added to the enum without a row here would emit whatever the
+    /// emitter's switch happens to fall through to, unasserted. This is what makes the table a
+    /// contract rather than a sample.
+    /// </summary>
+    [Fact]
+    public void Every_phase_the_engine_can_report_is_pinned_by_the_table_above()
+    {
+        var pinned = typeof(TrainJsonEmitterTests)
+            .GetMethod(nameof(Phase_names_the_boundary_and_carries_only_the_facts_it_has))!
+            .GetCustomAttributes(typeof(InlineDataAttribute), inherit: false)
+            .Cast<InlineDataAttribute>()
+            .Select(a => (TrainingPhase)a.GetData(null!).Single()[0]!)
+            .ToHashSet();
+
+        var missing = Enum.GetValues<TrainingPhase>().Where(p => !pinned.Contains(p)).ToArray();
+
+        Assert.True(
+            missing.Length == 0,
+            "These phases have no row in the table and so no asserted wire name or field set: "
+            + string.Join(", ", missing));
+    }
+
 }

@@ -58,6 +58,13 @@ the next one — the point of the walk is that this binary is the one users get.
 
 ## 3. Test suites — one project at a time
 
+Build clean first: `dotnet clean MLoop.slnx && dotnet build MLoop.slnx`. An incremental build skips a
+project it already compiled, so a warning introduced in that project stops being reported after the
+build that introduced it — a run once reported "0 Warning" for a commit that had added one, and read
+the single warning on each later first-build as noise. Only a clean build's count is a claim about
+the tree.
+
+
 ```bash
 for p in tests/MLoop.Tests tests/MLoop.Core.Tests tests/MLoop.Core.DeepLearning.Tests \
          tests/MLoop.API.Tests tests/MLoop.DataStore.Tests tests/MLoop.Ops.Tests tests/MLoop.Pipeline.Tests; do

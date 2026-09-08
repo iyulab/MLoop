@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
@@ -68,21 +68,21 @@ public static class DockerCommand
             var dockerfileContent = GenerateDockerfile(modelName, port);
             await File.WriteAllTextAsync(dockerfilePath, dockerfileContent);
 
-            AnsiConsole.MarkupLine($"[green]✓[/] Generated: [cyan]{dockerfilePath}[/]");
+            ValueLine.Write("[green]✓[/] Generated: ", dockerfilePath);
 
             // Generate .dockerignore
             var dockerignorePath = Path.Combine(projectRoot, ".dockerignore");
             var dockerignoreContent = GenerateDockerignore();
             await File.WriteAllTextAsync(dockerignorePath, dockerignoreContent);
 
-            AnsiConsole.MarkupLine($"[green]✓[/] Generated: [cyan]{dockerignorePath}[/]");
+            ValueLine.Write("[green]✓[/] Generated: ", dockerignorePath);
 
             // Generate docker-compose.yml
             var composePath = Path.Combine(projectRoot, "docker-compose.yml");
             var composeContent = GenerateDockerCompose(modelName, port);
             await File.WriteAllTextAsync(composePath, composeContent);
 
-            AnsiConsole.MarkupLine($"[green]✓[/] Generated: [cyan]{composePath}[/]");
+            ValueLine.Write("[green]✓[/] Generated: ", composePath);
 
             // Display usage instructions
             AnsiConsole.WriteLine();

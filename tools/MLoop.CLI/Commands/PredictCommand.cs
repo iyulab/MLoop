@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
 using CsvHelper;
@@ -217,7 +217,7 @@ public static class PredictCommand
                 }
 
                 AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
-                AnsiConsole.MarkupLine($"[green]>[/] Using model file: [cyan]{Path.GetRelativePath(projectRoot, resolvedModelPath)}[/]");
+                ValueLine.Write("[green]>[/] Using model file: ", Path.GetRelativePath(projectRoot, resolvedModelPath));
 
                 // Try to infer experiment ID from path
                 var modelDir = Path.GetDirectoryName(resolvedModelPath);
@@ -303,7 +303,7 @@ public static class PredictCommand
                 }
 
                 resolvedDataFile = datasets.PredictPath;
-                AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+                ValueLine.Write("[green]>[/] Auto-detected: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
             }
             else
             {
@@ -537,7 +537,7 @@ public static class PredictCommand
 
             AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
             AnsiConsole.MarkupLine($"[green]>[/] Predicted: [yellow]{predictedCount}[/] rows");
-            AnsiConsole.MarkupLine($"[green]>[/] Output saved to: [cyan]{Path.GetRelativePath(projectRoot, resolvedOutputPath)}[/]");
+            ValueLine.Write("[green]>[/] Output saved to: ", Path.GetRelativePath(projectRoot, resolvedOutputPath));
             if (logPredictions)
             {
                 AnsiConsole.MarkupLine($"[green]>[/] Logged to: [cyan].mloop/logs/{resolvedModelName}/[/]");
@@ -894,7 +894,7 @@ public static class PredictCommand
                 ctx.Status("[green]Forecast complete![/]");
 
                 AnsiConsole.MarkupLine($"[green]>[/] Forecasted: [yellow]{forecastValues.Length}[/] steps ahead");
-                AnsiConsole.MarkupLine($"[green]>[/] Output saved to: [cyan]{Markup.Escape(outputPath)}[/]");
+                ValueLine.Write("[green]>[/] Output saved to: ", outputPath);
                 AnsiConsole.WriteLine();
 
                 // Show summary table
@@ -948,7 +948,7 @@ public static class PredictCommand
                 return 1;
             }
             resolvedDataDir = odDir;
-            AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataDir)}[/]");
+            ValueLine.Write("[green]>[/] Auto-detected: ", Path.GetRelativePath(projectRoot, resolvedDataDir));
         }
         else
         {
@@ -1014,7 +1014,7 @@ public static class PredictCommand
         AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{modelName}[/]");
         AnsiConsole.MarkupLine($"[green]>[/] Images: [yellow]{detections.Count}[/]");
         AnsiConsole.MarkupLine($"[green]>[/] Detections: [yellow]{totalDetections}[/]");
-        AnsiConsole.MarkupLine($"[green]>[/] Output saved to: [cyan]{Path.GetRelativePath(projectRoot, resolvedOutputPath)}[/]");
+        ValueLine.Write("[green]>[/] Output saved to: ", Path.GetRelativePath(projectRoot, resolvedOutputPath));
         AnsiConsole.WriteLine();
 
         DisplayDetectionSummary(detections);

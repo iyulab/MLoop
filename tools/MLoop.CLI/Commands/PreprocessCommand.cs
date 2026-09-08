@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using Microsoft.Data.Analysis;
 using Microsoft.Extensions.Logging;
 using MLoop.CLI.Infrastructure.Configuration;
@@ -151,7 +151,7 @@ public static class PreprocessCommand
         if (!preprocessingEngine.HasPreprocessingScripts())
         {
             AnsiConsole.MarkupLine("[yellow]No preprocessing scripts found[/]");
-            AnsiConsole.MarkupLine($"[grey]Create scripts in: {preprocessingEngine.GetPreprocessingDirectory()}[/]");
+            ValueLine.Write("[grey]Create scripts in: [/]", preprocessingEngine.GetPreprocessingDirectory());
             AnsiConsole.MarkupLine("[grey]Scripts should be named: 01_*.cs, 02_*.cs, etc.[/]");
             return 0;
         }
@@ -175,7 +175,7 @@ public static class PreprocessCommand
             }
 
             resolvedInputFile = datasets.TrainPath;
-            AnsiConsole.MarkupLine($"[green]✓[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedInputFile)}[/]");
+            ValueLine.Write("[green]✓[/] Auto-detected: ", Path.GetRelativePath(projectRoot, resolvedInputFile));
         }
         else
         {
@@ -190,7 +190,7 @@ public static class PreprocessCommand
                 return 1;
             }
 
-            AnsiConsole.MarkupLine($"[green]✓[/] Using input file: [cyan]{Path.GetRelativePath(projectRoot, resolvedInputFile)}[/]");
+            ValueLine.Write("[green]✓[/] Using input file: ", Path.GetRelativePath(projectRoot, resolvedInputFile));
         }
 
         AnsiConsole.WriteLine();
@@ -208,7 +208,7 @@ public static class PreprocessCommand
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[green]✓[/] Preprocessing complete!");
-        AnsiConsole.MarkupLine($"[green]✓[/] Output: [cyan]{Path.GetRelativePath(projectRoot, outputPath)}[/]");
+        ValueLine.Write("[green]✓[/] Output: ", Path.GetRelativePath(projectRoot, outputPath));
 
         // Copy to specified output location if provided
         if (!string.IsNullOrEmpty(output))
@@ -224,7 +224,7 @@ public static class PreprocessCommand
             }
 
             File.Copy(outputPath, resolvedOutput, overwrite: true);
-            AnsiConsole.MarkupLine($"[green]✓[/] Copied to: [cyan]{Path.GetRelativePath(projectRoot, resolvedOutput)}[/]");
+            ValueLine.Write("[green]✓[/] Copied to: ", Path.GetRelativePath(projectRoot, resolvedOutput));
         }
 
         AnsiConsole.WriteLine();
@@ -259,7 +259,7 @@ public static class PreprocessCommand
             }
 
             resolvedInputFile = datasets.TrainPath;
-            AnsiConsole.MarkupLine($"[green]✓[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedInputFile)}[/]");
+            ValueLine.Write("[green]✓[/] Auto-detected: ", Path.GetRelativePath(projectRoot, resolvedInputFile));
         }
         else
         {
@@ -274,7 +274,7 @@ public static class PreprocessCommand
                 return 1;
             }
 
-            AnsiConsole.MarkupLine($"[green]✓[/] Using input file: [cyan]{Path.GetRelativePath(projectRoot, resolvedInputFile)}[/]");
+            ValueLine.Write("[green]✓[/] Using input file: ", Path.GetRelativePath(projectRoot, resolvedInputFile));
         }
 
         // Configure incremental workflow
@@ -328,7 +328,7 @@ public static class PreprocessCommand
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[blue]Incremental Preprocessing Workflow[/]");
-        AnsiConsole.MarkupLine($"[grey]Output: {Path.GetRelativePath(projectRoot, outputDir)}[/]");
+        ValueLine.Write("[grey]Output: [/]", Path.GetRelativePath(projectRoot, outputDir));
         AnsiConsole.WriteLine();
 
         // Execute workflow with progress display
@@ -368,7 +368,7 @@ public static class PreprocessCommand
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[green]✓[/] Incremental preprocessing complete!");
-        AnsiConsole.MarkupLine($"[green]✓[/] Cleaned data: [cyan]{Path.GetRelativePath(projectRoot, manifestCleanedPath)}[/]");
+        ValueLine.Write("[green]✓[/] Cleaned data: ", Path.GetRelativePath(projectRoot, manifestCleanedPath));
         AnsiConsole.MarkupLine($"[green]✓[/] Discovered rules: {finalState.DiscoveredRules.Count}");
         AnsiConsole.MarkupLine($"[green]✓[/] Approved rules: {finalState.ApprovedRules.Count}");
         AnsiConsole.MarkupLine($"[green]✓[/] Confidence: {finalState.ConfidenceScore:P2}");

@@ -542,6 +542,23 @@ public class TrainingEngine : ITrainingEngine
 
         var finalTime = TimeEstimator.EstimateReactive(probe, staticEstimate);
 
+        // Phase 2 buys more AutoML trials. When the probe reports that AutoML could not run on this
+        // data at all — a direct pipeline stood in for it — there are no more trials to buy: the
+        // second pass takes the identical path, fails the identical way, and prints the identical
+        // pair of fallback warnings a second time. Measured on a 50-row imbalanced set: four
+        // warnings for two passes, and a "Phase 2: Main training (130s)" line above a run that
+        // spent 10s not doing it.
+        if (AnotherSearchWouldRepeatTheSameFailure(probeAutoMLResult))
+        {
+            progress?.Report(new TrainingProgress
+            {
+                TrialNumber = probeTrialCount, TrainerName = "", Metric = bestMetric, MetricName = "", ElapsedSeconds = 0,
+                Phase = TrainingPhase.ProbeFellBack,
+                ProbeTimeSeconds = probeTime
+            });
+            return probeAutoMLResult;
+        }
+
         // Phase 2: Main Training (only if not already converged)
         if (bestMetric > 0.95)
         {
@@ -575,6 +592,19 @@ public class TrainingEngine : ITrainingEngine
 
         return probeAutoMLResult;
     }
+
+    /// <summary>
+    /// Whether running AutoML again under a larger budget would reach the same outcome the probe
+    /// already reached — true only when the probe reports that AutoML could not run on this data at
+    /// all, which is a property of the data and not of the time it was given.
+    /// </summary>
+    /// <remarks>
+    /// Named rather than inlined so the rule is stated once and can be asserted without training a
+    /// model: the engine builds its own <c>AutoMLRunner</c>, so the surrounding phase logic is only
+    /// reachable through a real search.
+    /// </remarks>
+    internal static bool AnotherSearchWouldRepeatTheSameFailure(AutoMLResult probeResult) =>
+        probeResult.Trainer.FallbackKind == TrainerFallbackKind.AutoMLUnavailable;
 
     /// <summary>
     /// Collects basic data statistics from CSV for time estimation

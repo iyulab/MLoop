@@ -161,7 +161,7 @@ internal static class TrainPresenter
         AnsiConsole.Write(metricsTable);
         AnsiConsole.WriteLine();
 
-        AnsiConsole.MarkupLine($"[grey]Model saved to:[/] {Markup.Escape(WhereItLandedInTheProject(result.ModelPath))}");
+        ValueLine.Write("[grey]Model saved to:[/] ", WhereItLandedInTheProject(result.ModelPath));
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
         AnsiConsole.MarkupLine($"  mloop list --name {modelName}");
@@ -531,5 +531,18 @@ internal static class TrainPresenter
     {
         AnsiConsole.MarkupLine(
             $"  [green]✓[/] Converged in probe phase ({probeTime}s, {bestMetric:F4}) — skipping main training");
+    }
+
+    /// <summary>
+    /// Says why main training did not run when the probe fell back to a direct pipeline. Without
+    /// this the run announces "Phase 1" and then simply ends, which reads as the phase having been
+    /// dropped rather than deliberately skipped.
+    /// </summary>
+    public static void DisplayProbeFellBack(int probeTime, double bestMetric)
+    {
+        AnsiConsole.MarkupLine(
+            $"  [yellow]![/] AutoML could not run on this data ({probeTime}s probe, {bestMetric:F4}) — "
+            + "trained a direct pipeline instead, and skipped main training since a longer search "
+            + "would fail the same way");
     }
 }

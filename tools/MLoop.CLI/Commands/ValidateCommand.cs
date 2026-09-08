@@ -119,7 +119,7 @@ public static class ValidateCommand
 
             if (verbose)
             {
-                AnsiConsole.MarkupLine($"[grey]Config file: {yamlPath}[/]");
+                ValueLine.Write("[grey]Config file: [/]", yamlPath);
                 AnsiConsole.WriteLine();
             }
 

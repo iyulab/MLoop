@@ -159,7 +159,8 @@ public class PipelineCommand : Command
                     WriteIndented = true
                 });
                 await File.WriteAllTextAsync(saveResultPath, resultJson);
-                AnsiConsole.MarkupLine($"\n[grey]💾 Result saved to: {saveResultPath}[/]");
+                AnsiConsole.WriteLine();
+                ValueLine.Write("[grey]💾 Result saved to: [/]", saveResultPath);
             }
 
             // A run that ended Failed or PartiallyCompleted said so in the table and then exited 0.

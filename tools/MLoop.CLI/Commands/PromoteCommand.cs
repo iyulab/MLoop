@@ -355,7 +355,7 @@ public static class PromoteCommand
         AnsiConsole.MarkupLine($"[green]>[/] Status: [green bold]production[/]");
         if (backupPath != null)
         {
-            AnsiConsole.MarkupLine($"[green]>[/] Backup: [grey]{backupPath}[/]");
+            ValueLine.Write("[green]>[/] Backup: ", backupPath);
         }
         AnsiConsole.WriteLine();
 

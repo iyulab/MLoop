@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -216,7 +216,7 @@ public static class EvaluateCommand
                         return 1;
                     }
                     resolvedTestDataFile = dir;
-                    AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
+                    ValueLine.Write("[green]>[/] Auto-detected: ", Path.GetRelativePath(projectRoot, resolvedTestDataFile));
                 }
                 else
                 {
@@ -233,7 +233,7 @@ public static class EvaluateCommand
                     }
 
                     resolvedTestDataFile = datasets.TestPath;
-                    AnsiConsole.MarkupLine($"[green]>[/] Auto-detected: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
+                    ValueLine.Write("[green]>[/] Auto-detected: ", Path.GetRelativePath(projectRoot, resolvedTestDataFile));
                 }
             }
             else
@@ -252,7 +252,7 @@ public static class EvaluateCommand
                     return 1;
                 }
 
-                AnsiConsole.MarkupLine($"[green]>[/] Using test data: [cyan]{Path.GetRelativePath(projectRoot, resolvedTestDataFile)}[/]");
+                ValueLine.Write("[green]>[/] Using test data: ", Path.GetRelativePath(projectRoot, resolvedTestDataFile));
             }
 
             AnsiConsole.WriteLine();
