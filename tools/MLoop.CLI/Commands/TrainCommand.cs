@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using Microsoft.ML;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
@@ -411,7 +411,7 @@ public static class TrainCommand
                 {
                     // Single file - use directly
                     resolvedDataFile = resolvedPaths[0];
-                    AnsiConsole.MarkupLine($"[green]>[/] Using external data: [cyan]{dataPaths[0]}[/]");
+                    ValueLine.Write("[green]>[/] Using external data: ", dataPaths[0]);
                 }
                 else
                 {
@@ -420,7 +420,7 @@ public static class TrainCommand
 
                     foreach (var file in resolvedPaths)
                     {
-                        AnsiConsole.MarkupLine($"    [grey]• {Path.GetFileName(file)}[/]");
+                        ValueLine.Write("    [grey]• [/]", Path.GetFileName(file));
                     }
 
                     var csvMerger = new CsvMerger(csvHelper);
@@ -487,7 +487,7 @@ public static class TrainCommand
 
                         foreach (var file in primaryGroup.FilePaths)
                         {
-                            AnsiConsole.MarkupLine($"    [grey]• {Path.GetFileName(file)}[/]");
+                            ValueLine.Write("    [grey]• [/]", Path.GetFileName(file));
                         }
 
                         // Merge to train.csv
@@ -536,7 +536,7 @@ public static class TrainCommand
                 return 1;
             }
 
-            AnsiConsole.MarkupLine($"[green]>[/] Using data: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+            ValueLine.Write("[green]>[/] Using data: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
 
             // testDataFile may be produced by stratified split below (CSV path only),
             // and is read later when building the training config — declare it here so it
@@ -615,7 +615,7 @@ public static class TrainCommand
                     if (cleanResult.Success)
                     {
                         AnsiConsole.MarkupLine($"[green]>[/] Dropped {cleanResult.DroppedRowCount} rows with missing labels");
-                        AnsiConsole.MarkupLine($"[green]>[/] Using cleaned data: [cyan]{Path.GetRelativePath(projectRoot, cleanResult.OutputPath!)}[/]");
+                        ValueLine.Write("[green]>[/] Using cleaned data: ", Path.GetRelativePath(projectRoot, cleanResult.OutputPath!));
                         resolvedDataFile = cleanResult.OutputPath!;
                         allDataFilesUsed.Add(resolvedDataFile);
                     }
@@ -713,7 +713,7 @@ public static class TrainCommand
                     allDataFilesUsed.Add(resolvedDataFile);
                     foreach (var w in prepWarnings)
                         AnsiConsole.MarkupLine($"[yellow]![/] {w}");
-                    AnsiConsole.MarkupLine($"[green]>[/] Preprocessed data: [cyan]{Path.GetRelativePath(projectRoot, resolvedDataFile)}[/]");
+                    ValueLine.Write("[green]>[/] Preprocessed data: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
                     if (preFeaturizer != null)
                         AnsiConsole.MarkupLine("[green]>[/] 통계 변환은 학습 중 fold-내 fit으로 적용됩니다(누수 안전).");
                     AnsiConsole.WriteLine();
@@ -782,8 +782,8 @@ public static class TrainCommand
                         AnsiConsole.Write(new Rule("[blue]Class Balancing (train only)[/]").LeftJustified());
                         AnsiConsole.WriteLine();
                         AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
-                        AnsiConsole.MarkupLine($"[green]>[/] Balanced train: [cyan]{Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath)}[/]");
-                        AnsiConsole.MarkupLine($"[green]>[/] Clean test: [cyan]{Path.GetRelativePath(projectRoot, splitResult.TestFile)}[/]");
+                        ValueLine.Write("[green]>[/] Balanced train: ", Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath));
+                        ValueLine.Write("[green]>[/] Clean test: ", Path.GetRelativePath(projectRoot, splitResult.TestFile));
 
                         var replicationRatio = (double)balanceResult.NewMinorityCount / balanceResult.OriginalMinorityCount;
                         if (replicationRatio > 10)
@@ -818,7 +818,7 @@ public static class TrainCommand
                         AnsiConsole.Write(new Rule("[blue]Class Balancing[/]").LeftJustified());
                         AnsiConsole.WriteLine();
                         AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
-                        AnsiConsole.MarkupLine($"[green]>[/] Using balanced data: [cyan]{Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath)}[/]");
+                        ValueLine.Write("[green]>[/] Using balanced data: ", Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath));
                         AnsiConsole.WriteLine();
 
                         resolvedDataFile = balanceResult.BalancedFilePath;
@@ -967,7 +967,8 @@ public static class TrainCommand
                             // The post-run probe summary keys off the last *probe* phase; the
                             // window boundaries (MainStart/Complete) every run now reports would
                             // otherwise overwrite it and silently drop the summary.
-                            if (p.Phase is TrainingPhase.ProbeStart or TrainingPhase.ProbeComplete or TrainingPhase.ProbeConverged)
+                            if (p.Phase is TrainingPhase.ProbeStart or TrainingPhase.ProbeComplete
+                                         or TrainingPhase.ProbeConverged or TrainingPhase.ProbeFellBack)
                                 lastAutoTimeEvent = p;
                             progressTracker.EnterPhase(p);
                             progressTask.Description = p.Phase switch
@@ -975,6 +976,7 @@ public static class TrainCommand
                                 TrainingPhase.ProbeStart => $"[cyan]Phase 1:[/] Probe ({p.ProbeTimeSeconds}s)...",
                                 TrainingPhase.ProbeComplete => $"[cyan]Phase 2:[/] Main training ({p.FinalTimeSeconds}s)...",
                                 TrainingPhase.ProbeConverged => "[green]Converged[/] in probe phase",
+                                TrainingPhase.ProbeFellBack => "[yellow]AutoML unavailable[/] for this data",
                                 TrainingPhase.Complete => $"[green]Finalizing {resolvedModelName}...[/]",
                                 _ => progressTask.Description
                             };
@@ -1008,6 +1010,13 @@ public static class TrainCommand
             else if (lastAutoTimeEvent?.Phase == TrainingPhase.ProbeConverged)
             {
                 TrainPresenter.DisplayProbeConverged(
+                    lastAutoTimeEvent.ProbeTimeSeconds,
+                    lastAutoTimeEvent.Metric);
+                AnsiConsole.WriteLine();
+            }
+            else if (lastAutoTimeEvent?.Phase == TrainingPhase.ProbeFellBack)
+            {
+                TrainPresenter.DisplayProbeFellBack(
                     lastAutoTimeEvent.ProbeTimeSeconds,
                     lastAutoTimeEvent.Metric);
                 AnsiConsole.WriteLine();

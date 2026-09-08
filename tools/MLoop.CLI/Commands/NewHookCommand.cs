@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Hooks;
@@ -106,7 +106,7 @@ public static class NewHookCommand
             AnsiConsole.MarkupLine($"[cyan]Name:[/] {name}");
             AnsiConsole.MarkupLine($"[cyan]Type:[/] {hookType}");
             AnsiConsole.MarkupLine($"[cyan]Template:[/] {templateType}");
-            AnsiConsole.MarkupLine($"[cyan]Path:[/] {filePath}");
+            ValueLine.Write("[cyan]Path:[/] ", filePath);
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
             AnsiConsole.MarkupLine("  1. Edit the hook script to implement your logic");

@@ -122,9 +122,12 @@ public static class UpdateCommand
             return 0;
         }
 
-        ErrorConsole.Error(
-            $"Update failed (dotnet tool update exited {process.ExitCode}).",
-            string.IsNullOrWhiteSpace(error) ? null : error.TrimEnd());
+        var failure = $"Update failed (dotnet tool update exited {process.ExitCode}).";
+        if (string.IsNullOrWhiteSpace(error))
+            ErrorConsole.Error(failure);
+        else
+            ErrorConsole.Error(failure, error.TrimEnd());
+
         return process.ExitCode;
     }
 

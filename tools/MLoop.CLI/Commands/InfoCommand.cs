@@ -145,7 +145,7 @@ public static class InfoCommand
                 }
             }
 
-            AnsiConsole.MarkupLine($"[blue]Analyzing:[/] [cyan]{Path.GetFileName(resolvedDataFile)}[/]");
+            ValueLine.Write("[blue]Analyzing:[/] ", Path.GetFileName(resolvedDataFile));
             if (labelSource != null)
             {
                 AnsiConsole.MarkupLine($"[blue]Label column:[/] [green]{labelColumn}[/] (from {labelSource})");

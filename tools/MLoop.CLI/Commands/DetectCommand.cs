@@ -290,7 +290,7 @@ public static class DetectCommand
 
         AnsiConsole.WriteLine();
         if (outputPath != null)
-            AnsiConsole.MarkupLine($"[green]Full per-point result written to:[/] {outputPath}");
+            ValueLine.Write("[green]Full per-point result written to:[/] ", outputPath);
         else
             AnsiConsole.MarkupLine("[grey]Use [blue]--output result.csv[/] for per-point control limits or [blue]--json[/] for machine-readable output.[/]");
     }

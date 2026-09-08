@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
@@ -333,7 +333,7 @@ public static class SampleCommand
 
         AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[green]✓[/] Dataset ready for retraining at [blue]{result.OutputPath}[/]");
+        ValueLine.Write("[green]✓[/] Dataset ready for retraining at ", result.OutputPath);
     }
 
     private static void OutputStatsAsJson(SamplingStatistics stats)

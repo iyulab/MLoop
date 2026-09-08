@@ -33,6 +33,13 @@ public enum TrainingPhase
     ProbeComplete,
     /// <summary>Probe converged early; main training skipped (auto-time only). Data: ProbeTimeSeconds, Metric (best), TrialNumber (trials).</summary>
     ProbeConverged,
+    /// <summary>
+    /// AutoML could not run on this data during the probe and a direct pipeline stood in for it, so
+    /// main training is skipped (auto-time only): the cause is a property of the data, and a second
+    /// pass under a larger budget would repeat the same failure and the same warnings.
+    /// Data: ProbeTimeSeconds, Metric (best), TrialNumber (trials).
+    /// </summary>
+    ProbeFellBack,
     /// <summary>The training window is starting under a fixed budget (no probe). Data: FinalTimeSeconds.</summary>
     MainStart,
     /// <summary>The training window ended; post-training steps (save, evaluate, promote) follow. Every successful run ends its phase stream with this. Data: TrialNumber (trials retained in the experiment — matches trials.ndjson; under auto-time, discarded probe trials are not in it), ElapsedSeconds.</summary>

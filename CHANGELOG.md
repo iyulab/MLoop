@@ -9,6 +9,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.31.0] - 2026-09-07
 
 ### Fixed
+- **A path printed to the terminal was folded at the console width, inside the path.** `mloop
+  promote` reported its backup location as `…/backups/exp-001-2` on one line and `0260908-064321`
+  on the next; what a reader saw and copied was not a location that existed. Spectre lays every line
+  out against the console width and breaks inside a token when the token has nowhere else to break —
+  and the width it assumes whenever output is redirected is 80 columns, so the failure is worst
+  exactly where output is captured and pasted from. Thirty-one call sites printed a path this way.
+  A path (and any value a reader copies) is now written whole, at any width, while its label is
+  still rendered; the value loses its colour, which is the trade: a value you have to retype is not
+  decoration. Prose is untouched — a sentence reflows without harm.
+- **Under `--auto-time`, a run that AutoML could not search was searched twice.** The probe phase
+  exists to size the main phase; when it reports that AutoML could not run on the data at all and a
+  direct pipeline stood in for it, the main phase has no more trials to buy — it takes the identical
+  path, fails the identical way, and prints the identical fallback warnings a second time. Measured
+  on a 50-row imbalanced binary set: four warnings for two passes, under a "Phase 2: Main training
+  (130s)" line above a pass that spent ten seconds not searching. Main training is now skipped in
+  that case, and the run says why instead of ending after Phase 1 with no explanation. The decision
+  reads a typed signal on the trainer rather than the wording of its fallback message, so rephrasing
+  a warning can no longer change what the engine does.
 - **`serve`, `pipeline` and `update` exited 0 after reporting a failure.** All three had handlers
   that returned nothing, so no path through them could report anything but success — a pipeline file
   that did not exist, a pipeline run that ended `Failed`, an API assembly that could not be found, an

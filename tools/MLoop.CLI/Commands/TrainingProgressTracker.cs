@@ -45,7 +45,8 @@ public sealed class TrainingProgressTracker
             case TrainingPhase.MainStart:
                 _budgetSeconds = phaseEvent.FinalTimeSeconds;
                 break;
-            // ProbeConverged and Complete end training; the budget they would switch to is never used.
+            // ProbeConverged, ProbeFellBack and Complete end training; the budget they would
+            // switch to is never used.
         }
     }
 

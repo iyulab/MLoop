@@ -556,7 +556,10 @@ public partial class AutoMLRunner
         var trainer = new TrainerDescriptor
         {
             Name = experimentResult.BestRun.TrainerName,
-            FallbackReason = metricFallbackNote is null ? null : $"metric fallback: {metricFallbackNote}"
+            FallbackReason = metricFallbackNote is null ? null : $"metric fallback: {metricFallbackNote}",
+            FallbackKind = metricFallbackNote is null
+                ? TrainerFallbackKind.None
+                : TrainerFallbackKind.MetricSubstituted
         };
 
         return new AutoMLResult
@@ -950,7 +953,8 @@ public partial class AutoMLRunner
         var trainer = new TrainerDescriptor
         {
             Name = "SdcaLogisticRegression",
-            FallbackReason = "manual fallback: AutoML AUC failure"
+            FallbackReason = "manual fallback: AutoML AUC failure",
+            FallbackKind = TrainerFallbackKind.AutoMLUnavailable
         };
 
         trialChannel.ReportCompleted(trainer, "accuracy", metricsDict["accuracy"], metricsDict);
