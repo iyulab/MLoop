@@ -270,7 +270,7 @@ public static class EvaluateCommand
 
                     if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
                     {
-                        AnsiConsole.MarkupLine($"[yellow]Warning: {validationResult.ErrorMessage}[/]");
+                        AnsiConsole.MarkupLine($"[red]Error: {validationResult.ErrorMessage}[/]");
                         AnsiConsole.WriteLine();
                     }
 

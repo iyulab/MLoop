@@ -413,6 +413,7 @@ public class ExperimentStoreTests : IDisposable
             {
                 Name = "ReplaceMissingValues=>Concatenate=>LightGbmBinary",
                 FallbackReason = "manual fallback: AutoML AUC failure",
+                Params = new Dictionary<string, string> { ["l2"] = "0.5" },
             },
             TrainingTimeSeconds = 12.5,
         });
@@ -423,6 +424,10 @@ public class ExperimentStoreTests : IDisposable
         Assert.NotNull(loaded.Result?.Trainer);
         Assert.Equal("ReplaceMissingValues=>Concatenate=>LightGbmBinary", loaded.Result!.Trainer!.Name);
         Assert.Equal("manual fallback: AutoML AUC failure", loaded.Result.Trainer.FallbackReason);
+        // The parameters are what the Trainer column keeps when it drops the chain, so losing them
+        // here would empty the column of the only thing that tells two runs of one trainer apart.
+        // The leaderboard file proves nothing about this one: different file, same options.
+        Assert.Equal("0.5", loaded.Result.Trainer.Params?["l2"]);
     }
 
     [Fact]

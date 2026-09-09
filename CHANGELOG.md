@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.31.0] - 2026-09-07
 
+### Fixed
+- **A schema validation failure called itself a warning.** `predict` and `evaluate` printed the
+  problem under a yellow `Warning:` label, directly below a red `Schema Validation Failed:` heading
+  and directly above a non-zero exit — three answers to the question of whether the run had succeeded.
+  The message now carries the severity the exit code does.
+
 ### Changed
 - **`mloop list` shows the trainer in the Trainer column, and the pipeline underneath the table.**
   What AutoML records is the whole pipeline it assembled
