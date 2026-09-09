@@ -280,9 +280,19 @@ public class ExperimentStore : IExperimentStore
             ? tt.GetDouble()
             : 0.0;
 
+        // The descriptor is written to metadata.json and was not being read back, so the field that
+        // exists precisely so that `list`, `compare` and the API do not have to take the display
+        // string apart was null on every experiment loaded from disk -- and the only way to reach
+        // its parts was the parsing it was added to prevent.
+        var trainer = resultElement.TryGetProperty("trainer", out var td)
+                      && td.ValueKind == JsonValueKind.Object
+            ? td.Deserialize<TrainerDescriptor>(TrialJsonOptions)
+            : null;
+
         return new ExperimentResult
         {
             BestTrainer = bestTrainer,
+            Trainer = trainer,
             TrainingTimeSeconds = trainingTime
         };
     }
@@ -402,6 +412,7 @@ public class ExperimentStore : IExperimentStore
                 experiment.Metrics, experiment.Config.Metric, experiment.Task),
             LabelColumn = experiment.Config.LabelColumn,
             BestTrainer = experiment.Result?.BestTrainer,
+            Trainer = experiment.Result?.Trainer,
             MetricName = experiment.Config.Metric,
             TrainingTimeSeconds = experiment.Result?.TrainingTimeSeconds
         });
