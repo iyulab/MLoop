@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.31.0] - 2026-09-07
 
 ### Changed
+- **`mloop list` shows the trainer in the Trainer column, and the pipeline underneath the table.**
+  What AutoML records is the whole pipeline it assembled
+  (`ReplaceMissingValues=>Concatenate=>FastTreeBinary`), and printing that in a narrow column wrapped
+  a single row across five lines in an eighty-column terminal, carrying every other cell of the row
+  down with it. The column now shows the trainer — the last stage — and the full pipeline, together
+  with the reason a fallback trainer stood in, is printed under the table keyed by the row it belongs
+  to, so nothing is lost. The metric's name has likewise moved from every row into the column heading
+  when all rows share one, which is what leaves the column enough width. A listing for a single model
+  now fits one line per row.
 - **A timestamp meant for a person now says which zone it is in.** Nine places rendered one in the
   reader's local time and none of them said so, while the directory and partition names written
   beside them are in UTC — so a single `promote` printed two times that differed by the length of a

@@ -195,6 +195,13 @@ public class ExperimentSummary
     public string? BestTrainer { get; init; }
 
     /// <summary>
+    /// The same trainer in parts, so a listing can show the trainer without the transforms in front
+    /// of it, and name the reason a fallback ran, without taking <see cref="BestTrainer"/> apart.
+    /// Null on experiments recorded before the descriptor existed.
+    /// </summary>
+    public TrainerDescriptor? Trainer { get; init; }
+
+    /// <summary>
     /// Optimization metric name (e.g., "MacroAccuracy", "RSquared")
     /// </summary>
     public string? MetricName { get; init; }

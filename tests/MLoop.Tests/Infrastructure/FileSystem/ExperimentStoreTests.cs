@@ -1,5 +1,6 @@
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.Core.Models;
 
 namespace MLoop.Tests.Infrastructure.FileSystem;
 
@@ -399,7 +400,51 @@ public class ExperimentStoreTests : IDisposable
         return experimentId;
     }
 
-    private ExperimentData CreateExperimentData(string experimentId, string status = "Completed", double? metric = 0.85, string? modelName = null)
+    [Fact]
+    public async Task TheTrainerDescriptorSurvivesARoundTrip()
+    {
+        // It was written to metadata.json and never read back, so the field that exists precisely so
+        // that a caller need not take the display string apart came back null on every experiment
+        // loaded from disk -- and a passing suite said nothing, because nothing asked.
+        var experiment = CreateExperimentData("exp-042", result: new ExperimentResult
+        {
+            BestTrainer = "ReplaceMissingValues=>Concatenate=>LightGbmBinary [manual fallback: AutoML AUC failure]",
+            Trainer = new TrainerDescriptor
+            {
+                Name = "ReplaceMissingValues=>Concatenate=>LightGbmBinary",
+                FallbackReason = "manual fallback: AutoML AUC failure",
+            },
+            TrainingTimeSeconds = 12.5,
+        });
+        await _experimentStore.SaveAsync(DefaultModelName, experiment, CancellationToken.None);
+
+        var loaded = await _experimentStore.LoadAsync(DefaultModelName, "exp-042", CancellationToken.None);
+
+        Assert.NotNull(loaded.Result?.Trainer);
+        Assert.Equal("ReplaceMissingValues=>Concatenate=>LightGbmBinary", loaded.Result!.Trainer!.Name);
+        Assert.Equal("manual fallback: AutoML AUC failure", loaded.Result.Trainer.FallbackReason);
+    }
+
+    [Fact]
+    public async Task AListingCarriesTheTrainerDescriptorTheRowNeeds()
+    {
+        // `list` reads summaries, not whole experiments. If the descriptor stops at that boundary the
+        // column is back to the flattened string and the only way to its parts is parsing.
+        var experiment = CreateExperimentData("exp-043", result: new ExperimentResult
+        {
+            BestTrainer = "Concatenate=>FastTreeBinary",
+            Trainer = new TrainerDescriptor { Name = "Concatenate=>FastTreeBinary" },
+            TrainingTimeSeconds = 3.0,
+        });
+        await _experimentStore.SaveAsync(DefaultModelName, experiment, CancellationToken.None);
+
+        var summary = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None))
+            .Single(e => e.ExperimentId == "exp-043");
+
+        Assert.Equal("Concatenate=>FastTreeBinary", summary.Trainer?.Name);
+    }
+
+    private ExperimentData CreateExperimentData(string experimentId, string status = "Completed", double? metric = 0.85, string? modelName = null, ExperimentResult? result = null)
     {
         return new ExperimentData
         {
@@ -419,7 +464,8 @@ public class ExperimentStoreTests : IDisposable
             Metrics = metric.HasValue ? new Dictionary<string, double>
             {
                 ["r_squared"] = metric.Value
-            } : null
+            } : null,
+            Result = result
         };
     }
 }

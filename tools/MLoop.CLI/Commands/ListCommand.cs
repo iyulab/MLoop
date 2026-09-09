@@ -138,6 +138,7 @@ public static class ListCommand
             table.AddColumn(new TableColumn("[bold]Runtime[/]").RightAligned());
 
             var rank = 0;
+            var trialNotes = new List<string>();
             foreach (var trial in leaderboard.Trials)
             {
                 rank++;
@@ -146,14 +147,19 @@ public static class ListCommand
                     : "[grey]-[/]";
                 var rankDisplay = rank == 1 ? "[green bold]1[/]" : rank.ToString();
 
+                var note = TrainerDisplay.Footnote($"[{rank}]", trial.Trainer);
+                if (note != null)
+                    trialNotes.Add(note);
+
                 table.AddRow(
                     rankDisplay,
-                    $"[cyan]{Markup.Escape(trial.Trainer.Display)}[/]",
+                    $"[cyan]{Markup.Escape(TrainerDisplay.Short(trial.Trainer))}[/]",
                     metricDisplay,
                     $"{trial.RuntimeSeconds:F1}s");
             }
 
             AnsiConsole.Write(table);
+            WriteTrainerNotes(trialNotes);
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine($"[grey]{leaderboard.TrialCount} trial(s)[/]");
             AnsiConsole.WriteLine();
@@ -254,9 +260,19 @@ public static class ListCommand
             table.AddColumn(new TableColumn("[bold]When[/]"));
             table.AddColumn(new TableColumn("[bold]Status[/]").Centered());
             table.AddColumn(new TableColumn("[bold]Trainer[/]"));
-            table.AddColumn(new TableColumn("[bold]Metric[/]").RightAligned());
+            // When every listed experiment optimized the same metric, its name belongs in the
+            // heading rather than repeated down the column. Saying it once per table instead of once
+            // per row is what leaves the Trainer column enough width to hold a trainer.
+            var sharedMetric = experimentsList
+                .Select(e => e.MetricName)
+                .Where(m => !string.IsNullOrEmpty(m))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var metricHeading = sharedMetric.Count == 1 ? $"Metric ({sharedMetric[0]})" : "Metric";
+            table.AddColumn(new TableColumn($"[bold]{Markup.Escape(metricHeading)}[/]").RightAligned());
             table.AddColumn(new TableColumn("[bold]Stage[/]").Centered());
 
+            var experimentNotes = new List<string>();
             foreach (var exp in experimentsList)
             {
                 var expModelName = exp.ModelName ?? ConfigDefaults.DefaultModelName;
@@ -274,11 +290,17 @@ public static class ListCommand
                         ? "[red]Failed[/]"
                         : $"[yellow]{exp.Status}[/]";
 
+                var note = TrainerDisplay.Footnote($"[{exp.ExperimentId}]", exp.Trainer);
+                if (note != null)
+                    experimentNotes.Add(note);
+
                 var trainer = !string.IsNullOrEmpty(exp.BestTrainer)
-                    ? $"[cyan]{Markup.Escape(exp.BestTrainer)}[/]"
+                    ? $"[cyan]{Markup.Escape(exp.Trainer is not null
+                        ? TrainerDisplay.Short(exp.Trainer)
+                        : TrainerDisplay.Short(exp.BestTrainer))}[/]"
                     : "[grey]-[/]";
 
-                var metricDisplay = FormatMetric(exp);
+                var metricDisplay = FormatMetric(exp, nameInHeading: sharedMetric.Count == 1);
 
                 var stage = isProduction
                     ? "[green bold]Production[/]"
@@ -295,6 +317,7 @@ public static class ListCommand
             }
 
             AnsiConsole.Write(table);
+            WriteTrainerNotes(experimentNotes);
             AnsiConsole.WriteLine();
 
             // Show summary
@@ -372,6 +395,19 @@ public static class ListCommand
         Console.WriteLine(JsonSerializer.Serialize(payload, options));
     }
 
+    /// <summary>
+    /// Prints what the Trainer column could not hold: the whole pipeline, and the reason a fallback
+    /// stood in. Below the table rather than inside it, because a row is one line and these are not.
+    /// </summary>
+    private static void WriteTrainerNotes(IReadOnlyList<string> notes)
+    {
+        if (notes.Count == 0)
+            return;
+
+        foreach (var note in notes)
+            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(note)}[/]");
+    }
+
     internal static string FormatRelativeTime(DateTime timestamp)
     {
         var local = TimestampDisplay.AsLocal(timestamp);
@@ -389,13 +425,18 @@ public static class ListCommand
         return $"[grey]{relative}[/]";
     }
 
-    internal static string FormatMetric(Infrastructure.FileSystem.ExperimentSummary exp)
+    /// <summary>
+    /// The metric value, and its name when the caller has not already put that in the heading.
+    /// </summary>
+    internal static string FormatMetric(Infrastructure.FileSystem.ExperimentSummary exp, bool nameInHeading = false)
     {
         if (!exp.BestMetric.HasValue)
             return "[grey]-[/]";
 
         var value = $"{exp.BestMetric.Value:F4}";
-        var name = !string.IsNullOrEmpty(exp.MetricName) ? $" [grey]({exp.MetricName})[/]" : "";
+        var name = !nameInHeading && !string.IsNullOrEmpty(exp.MetricName)
+            ? $" [grey]({exp.MetricName})[/]"
+            : "";
         return $"[yellow]{value}[/]{name}";
     }
 }
