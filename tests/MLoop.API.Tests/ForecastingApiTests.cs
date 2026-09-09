@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.AutoML;
+using MLoop.Core.Detection;
 
 namespace MLoop.API.Tests;
 
@@ -24,30 +25,6 @@ public class ForecastingApiTests : IClassFixture<TestWebApplicationFactory>
         _factory = factory;
         _client = factory.CreateClient();
     }
-
-    /// <summary>SSA (<c>ForecastBySsa</c>) needs the MKL native library — absent on some CI runners
-    /// (see <c>PredictForecastingTests.MklAvailable</c> for the same guard in the CLI test project).</summary>
-    private static readonly Lazy<bool> MklAvailable = new(() =>
-    {
-        try
-        {
-            var ml = new MLContext(seed: 0);
-            var data = ml.Data.LoadFromEnumerable(Enumerable.Range(0, 20).Select(i => new Point { Value = i }));
-            var loader = ml.Data.CreateTextLoader(new TextLoader.Options
-            {
-                Columns = [new TextLoader.Column("Value", DataKind.Single, 0)],
-                HasHeader = true,
-            });
-            var pipeline = ml.Forecasting.ForecastBySsa("Forecast", "Value", 4, 8, 20, 2);
-            pipeline.Fit(data).Transform(data);
-            return true;
-        }
-        catch (Exception ex) when (ex is DllNotFoundException or TypeInitializationException
-                                   || ex.InnerException is DllNotFoundException)
-        {
-            return false;
-        }
-    });
 
     private sealed class Point { public float Value { get; set; } }
 
@@ -116,7 +93,7 @@ public class ForecastingApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task Predict_Forecasting_EmptyBody_UsesTrainedHorizon()
     {
-        if (!MklAvailable.Value) return;
+        if (!TimeSeriesNativeSupport.IsAvailable) return;
 
         var modelName = SeedForecastingProductionModel(horizon: 5);
 
@@ -137,7 +114,7 @@ public class ForecastingApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task Predict_Forecasting_MatchingHorizon_Succeeds()
     {
-        if (!MklAvailable.Value) return;
+        if (!TimeSeriesNativeSupport.IsAvailable) return;
 
         var modelName = SeedForecastingProductionModel(horizon: 5);
 
@@ -151,7 +128,7 @@ public class ForecastingApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task Predict_Forecasting_MismatchedHorizon_ReturnsActionableBadRequest()
     {
-        if (!MklAvailable.Value) return;
+        if (!TimeSeriesNativeSupport.IsAvailable) return;
 
         var modelName = SeedForecastingProductionModel(horizon: 5);
 

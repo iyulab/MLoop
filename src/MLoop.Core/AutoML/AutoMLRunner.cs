@@ -3,6 +3,7 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
+using MLoop.Core.Detection;
 using MLoop.Core.Models;
 using MLoop.Core.Scripting;
 using MLoop.Extensibility;
@@ -1672,7 +1673,8 @@ public partial class AutoMLRunner
                 "SsaForecasting", ("window", windowSize), ("horizon", horizon));
             var trialChannel = CreateTrialChannel(progress);
 
-            var model = pipeline.Fit(trainSet);
+            // SSA is an FFT algorithm, so this is where a machine without ML.NET's MKL native fails.
+            var model = TimeSeriesNativeSupport.Guard(() => pipeline.Fit(trainSet));
 
             // Evaluate: extract actual holdout values and compare with forecasts
             var metricsDict = new Dictionary<string, double>();
@@ -1822,6 +1824,7 @@ public partial class AutoMLRunner
             string bestDetectorName = "";
             Dictionary<string, double>? bestMetrics = null;
             long bestAnomalyCount = -1;
+            Exception? missingNative = null;
             var trialChannel = CreateTrialChannel(progress);
 
             for (int i = 0; i < detectors.Count; i++)
@@ -1879,12 +1882,24 @@ public partial class AutoMLRunner
                 }
                 catch (Exception ex)
                 {
+                    // Every detector here is FFT-based, so a machine without ML.NET's MKL native
+                    // fails all of them for one reason. Remember that, or the loop reports only
+                    // "all detectors failed" and the actionable cause is lost.
+                    if (TimeSeriesNativeSupport.IsMissingNative(ex))
+                        missingNative = ex;
+
                     _logger.Info($"Time series anomaly detector '{name}' failed: {ex.Message}");
                 }
             }
 
             if (bestModel == null)
+            {
+                if (missingNative is not null)
+                    throw new PlatformNotSupportedException(
+                        TimeSeriesNativeSupport.UnavailableMessage, missingNative);
+
                 throw new InvalidOperationException("All time series anomaly detectors failed.");
+            }
 
             return new AutoMLResult
             {

@@ -150,9 +150,12 @@ public static class SrCnnOneShotDetector
         var ml = new MLContext(seed: 42);
         var dataView = ml.Data.LoadFromEnumerable(series.Select(v => new SeriesPoint { Value = v }));
 
-        // DetectSeasonality returns -1 when the series has no significant period.
+        // DetectSeasonality returns -1 when the series has no significant period. It is also the
+        // first call into the FFT native, so a machine without it fails here — as a loader error
+        // naming a type initializer, which the authority translates into something actionable.
         var period = options.Period
-            ?? Math.Max(0, ml.AnomalyDetection.DetectSeasonality(dataView, nameof(SeriesPoint.Value)));
+            ?? TimeSeriesNativeSupport.Guard(
+                () => Math.Max(0, ml.AnomalyDetection.DetectSeasonality(dataView, nameof(SeriesPoint.Value))));
 
         var srOptions = new SrCnnEntireAnomalyDetectorOptions
         {
@@ -163,19 +166,27 @@ public static class SrCnnOneShotDetector
             BatchSize = -1, // one-shot: the entire series is a single batch
         };
 
-        var output = ml.AnomalyDetection.DetectEntireAnomalyBySrCnn(
-            dataView, nameof(SrCnnPrediction.Prediction), nameof(SeriesPoint.Value), srOptions);
-
-        var raw = new List<(bool IsAnomaly, double Score, double Expected, double Upper, double Lower)>(series.Count);
-        foreach (var row in ml.Data.CreateEnumerable<SrCnnPrediction>(output, reuseRowObject: false))
+        // Spectral residual is itself an FFT, so this reaches the same native even when the caller
+        // supplied Period explicitly and skipped the detection above. The IDataView is lazy, so the
+        // guard has to span the enumeration as well as the call that builds it.
+        var raw = TimeSeriesNativeSupport.Guard(() =>
         {
-            var p = row.Prediction;
-            if (p.Length <= LowerBoundSlot)
-                throw new InvalidOperationException(
-                    $"SR-CNN AnomalyAndMargin output has {p.Length} slots (expected {LowerBoundSlot + 1}) — upstream contract changed.");
+            var output = ml.AnomalyDetection.DetectEntireAnomalyBySrCnn(
+                dataView, nameof(SrCnnPrediction.Prediction), nameof(SeriesPoint.Value), srOptions);
 
-            raw.Add((p[IsAnomalySlot] != 0, p[RawScoreSlot], p[ExpectedValueSlot], p[UpperBoundSlot], p[LowerBoundSlot]));
-        }
+            var rows = new List<(bool IsAnomaly, double Score, double Expected, double Upper, double Lower)>(series.Count);
+            foreach (var row in ml.Data.CreateEnumerable<SrCnnPrediction>(output, reuseRowObject: false))
+            {
+                var p = row.Prediction;
+                if (p.Length <= LowerBoundSlot)
+                    throw new InvalidOperationException(
+                        $"SR-CNN AnomalyAndMargin output has {p.Length} slots (expected {LowerBoundSlot + 1}) — upstream contract changed.");
+
+                rows.Add((p[IsAnomalySlot] != 0, p[RawScoreSlot], p[ExpectedValueSlot], p[UpperBoundSlot], p[LowerBoundSlot]));
+            }
+
+            return rows;
+        });
 
         // Control limits need the whole series' residual dispersion, so they can only be built once
         // every point's expected value is known.

@@ -5,24 +5,6 @@ namespace MLoop.Core.Tests.Detection;
 
 public class SrCnnOneShotDetectorTests
 {
-    /// <summary>SR-CNN's FFT needs the MKL native library — absent on some CI runners (same guard
-    /// class as PredictionServiceTests.MklAvailable, but probing the entire-series API this suite
-    /// actually exercises).</summary>
-    private static readonly Lazy<bool> MklAvailable = new(() =>
-    {
-        try
-        {
-            SrCnnOneShotDetector.Detect(
-                Enumerable.Range(0, 24).Select(i => 10.0 + (i % 3) * 0.1).ToList(),
-                new OneShotAnomalyOptions { Period = 0 });
-            return true;
-        }
-        catch (Exception ex) when (ex is DllNotFoundException or TypeInitializationException
-                                   || ex.InnerException is DllNotFoundException)
-        {
-            return false;
-        }
-    });
 
     private static List<double> SpikeSeries(int length = 60, int spikeAt = 30, double spikeValue = 100.0)
     {
@@ -62,7 +44,7 @@ public class SrCnnOneShotDetectorTests
     [Fact]
     public void Detect_ControlLimits_TrackDispersionNotMagnitude()
     {
-        if (!MklAvailable.Value)
+        if (!TimeSeriesNativeSupport.IsAvailable)
             return;
 
         // The defect this pins: the SR-CNN *margin* is scaled by CalculateBoundaryUnit, which measures
@@ -85,7 +67,7 @@ public class SrCnnOneShotDetectorTests
     [Fact]
     public void Detect_NormalPoints_LieWithinControlLimits()
     {
-        if (!MklAvailable.Value)
+        if (!TimeSeriesNativeSupport.IsAvailable)
             return;
 
         // The SPC semantic: a control chart is unusable if normal operation plots as violations.
@@ -101,7 +83,7 @@ public class SrCnnOneShotDetectorTests
     [Fact]
     public void Detect_Anomalies_LieOutsideMargin()
     {
-        if (!MklAvailable.Value)
+        if (!TimeSeriesNativeSupport.IsAvailable)
             return;
 
         // Upstream invariant, pinned so the margin band keeps explaining the verdict: SR-CNN clears
@@ -118,7 +100,7 @@ public class SrCnnOneShotDetectorTests
     [Fact]
     public void Detect_ConstantSeries_ControlBandDoesNotExcludeNormalPoints()
     {
-        if (!MklAvailable.Value)
+        if (!TimeSeriesNativeSupport.IsAvailable)
             return;
 
         // Zero dispersion ⇒ a zero-width band is the honest answer, but it must not report the
@@ -138,7 +120,7 @@ public class SrCnnOneShotDetectorTests
     [Fact]
     public void Detect_SpikeSeries_FlagsSpikeWithBounds()
     {
-        if (!MklAvailable.Value)
+        if (!TimeSeriesNativeSupport.IsAvailable)
             return; // MKL natives absent; coverage runs where MKL exists.
 
         var series = SpikeSeries();
@@ -169,7 +151,7 @@ public class SrCnnOneShotDetectorTests
     [Fact]
     public void Detect_FlatSeries_ProducesNoOrFewAnomalies()
     {
-        if (!MklAvailable.Value)
+        if (!TimeSeriesNativeSupport.IsAvailable)
             return;
 
         var series = Enumerable.Range(0, 48).Select(i => 5.0 + (i % 4) * 0.05).ToList();
@@ -183,7 +165,7 @@ public class SrCnnOneShotDetectorTests
     [Fact]
     public void Detect_IndexAndValueRoundTrip()
     {
-        if (!MklAvailable.Value)
+        if (!TimeSeriesNativeSupport.IsAvailable)
             return;
 
         var series = SpikeSeries(length: 24, spikeAt: 12);

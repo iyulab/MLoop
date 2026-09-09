@@ -142,10 +142,14 @@ public class TrainingEngine : ITrainingEngine
                 if (!qualityResult.IsValid)
                 {
                     // Data quality issue detected - fail fast with clear error
+                    // Joined rather than concatenated with fixed separators: the second field this
+                    // used to interpolate was null on most of the paths that reach here, so the
+                    // message a user saw carried a blank line where an explanation was supposed to
+                    // be. Empty parts are dropped instead of rendered.
                     throw new InvalidOperationException(
-                        $"{qualityResult.ErrorMessage}\n" +
-                        $"{qualityResult.ErrorMessageEn ?? ""}\n" +
-                        $"{string.Join("\n", qualityResult.Suggestions)}");
+                        string.Join("\n", new[] { qualityResult.ErrorMessage }
+                            .Concat(qualityResult.Suggestions)
+                            .Where(part => !string.IsNullOrWhiteSpace(part))));
                 }
 
                 // Show warnings if any. Through the warning seam, not Console directly: data-quality

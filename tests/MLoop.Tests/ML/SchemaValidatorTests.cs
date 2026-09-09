@@ -59,7 +59,7 @@ public class SchemaValidatorTests : IDisposable
 
         Assert.True(result.IsValid);
         Assert.Empty(result.MissingColumns);
-        Assert.Contains("skipped", result.ErrorMessageEn, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("skipped", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
         Assert.NotEmpty(result.Suggestions);
     }
 
