@@ -57,7 +57,10 @@ public class DockerCommandTests
         var result = DockerCommand.GenerateDockerfile("default", 5000);
 
         Assert.Contains("HEALTHCHECK", result);
-        Assert.Contains("http://localhost:5000/health", result);
+        // Port and path are the contract; the host spelling is not. The probe deliberately targets
+        // the loopback literal rather than the name `localhost`, which resolves to ::1 first and is
+        // refused on every probe because Kestrel binds IPv4 here.
+        Assert.Contains(":5000/health", result);
     }
 
     [Fact]
@@ -145,7 +148,7 @@ public class DockerCommandTests
         var result = DockerCommand.GenerateDockerCompose("default", 5000);
 
         Assert.Contains("healthcheck", result);
-        Assert.Contains("http://localhost:5000/health", result);
+        Assert.Contains(":5000/health", result);
     }
 
     [Fact]

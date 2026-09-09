@@ -32,8 +32,11 @@ public class DockerArtifactLayoutTests
         var dockerfile = DockerCommand.GenerateDockerfile("default", 5000);
 
         Assert.Contains($"COPY {ExperimentLayout.ModelsDirectory}/", dockerfile);
-        Assert.Contains($"/src/{ExperimentLayout.ModelsDirectory}", dockerfile);
         Assert.DoesNotContain(StaleModelsPath, dockerfile);
+        // What matters is that the models arrive at the authority's path. Which stage they come
+        // *through* is not the contract: the build stage no longer holds the project at all, since
+        // it exists only to acquire the tool, so the models are copied straight from the context
+        //.
     }
 
     [Fact]

@@ -314,8 +314,11 @@ app.UseIpRateLimiting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Health check endpoint
-app.MapGet("/health", (ILogger<Program> logger) =>
+// Health check endpoint. HEAD is mapped alongside GET because probes send it: wget --spider,
+// and most load balancers, issue HEAD, and a GET-only route answers those 405 while the service
+// is perfectly healthy. RFC 9110 makes HEAD identical to GET minus the body, so ASP.NET returning
+// the same result here is exactly right — it drops the body itself.
+app.MapMethods("/health", ["GET", "HEAD"], (ILogger<Program> logger) =>
 {
     logger.LogInformation("Health check requested");
     return Results.Ok(new

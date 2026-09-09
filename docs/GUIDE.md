@@ -415,26 +415,22 @@ mloop docker
 docker build -t my-ml-model .
 docker run -p 5000:5000 my-ml-model
 
-# Or use docker-compose
-docker-compose up -d
+# Or use docker-compose. It serves in the Production environment, where the API refuses to
+# start on the default signing key, so the key is required rather than defaulted:
+JWT_SIGNING_KEY=<random secret, 32+ characters> docker compose up -d
 ```
 
-**Generated Dockerfile**:
-```dockerfile
-# Multi-stage build
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-WORKDIR /app
-EXPOSE 5000
-
-# Copy model and start API
-COPY models/production/current /app/model
-ENTRYPOINT ["dotnet", "MLoop.API.dll", "--model", "/app/model"]
-```
+**How the generated image is put together**: the CLI is a dotnet tool, so the build stage exists
+only to acquire it, and the runtime stage copies the installed tool across. Nothing installs a .NET
+distribution — the `aspnet` image already carries the runtime the tool needs. Your model artifacts,
+`.mloop/` and `mloop.yaml` are copied in, so the image serves without a mounted volume; the compose
+file additionally mounts `models/` read-only so a promoted model can be picked up without rebuilding.
 
 **docker-compose.yml Features**:
-- Health checks configured
+- Health check that issues a GET (a HEAD-only probe is answered 405 by a GET route, which reads to
+  the orchestrator as a dead container even while the service is healthy)
 - Volume mounts for models
-- Environment variables for API configuration
+- Environment variables for API configuration, including the required signing key
 - Restart policy for production
 
 ### `mloop pipeline`
