@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.31.0] - 2026-09-09
+## [0.31.0] - 2026-09-10
 
 ### Fixed
 - **Time-series commands failed on Linux and macOS with a message naming a type initializer.**
@@ -29,6 +29,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The message now carries the severity the exit code does.
 
 ### Changed
+- **`predict --json` and `evaluate --json` left stdout empty when the data did not match the
+  model's schema.** The mismatch was rendered to the terminal in four parts and the command exited
+  non-zero with nothing on stdout, so a consumer parsing that got the same failure as parsing prose
+  — on the one failure these commands exist to report clearly. Both now emit the finding as a
+  document at that exit. The check sits behind a successfully loaded production model, which is why
+  the existing guard for this contract never reached it: it points its commands at a project with
+  no model at all.
 - **Schema validation printed its failure in one language and its advice in two.** The result
   carried a pair of message fields, and only one of them was ever rendered — so the sentence a user
   read was in Korean while the suggestions beneath it arrived in both Korean and English, one of
@@ -43,11 +50,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that was tested. The generated file now carries `ARG CLI_VERSION` set to the generating CLI's
   own version, overridable with `--build-arg` for anyone who wants a different one.
 - **`mloop list` marks the production row with `prod` rather than `Production`.** The whole-model
-  view still wrapped a row across two lines in an eighty-column terminal, and that word was the
-  single widest cell in it. The column is not removable: the ID cell distinguishes the production
-  experiment by colour alone, which is absent under `NO_COLOR`, in a pipe, and for a reader with a
-  colour vision deficiency — the word is that fact's only accessible channel, so it was shortened
-  instead of dropped.
+  view is tight at eighty columns and this cell spent ten of them to say one bit. The column is not
+  removable: the ID cell distinguishes the production experiment by colour alone, which is absent
+  under `NO_COLOR`, in a pipe, and for a reader with a colour vision deficiency — the word is that
+  fact's only accessible channel, so it was shortened instead of dropped. A row whose trainer name
+  is long still wraps; that width belongs to the trainer, not to this.
 - **`mloop list` shows the trainer in the Trainer column, and the pipeline underneath the table.**
   What AutoML records is the whole pipeline it assembled
   (`ReplaceMissingValues=>Concatenate=>FastTreeBinary`), and printing that in a narrow column wrapped
