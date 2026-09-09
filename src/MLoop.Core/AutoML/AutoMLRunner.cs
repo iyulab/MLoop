@@ -1791,16 +1791,18 @@ public partial class AutoMLRunner
             var detectors = new List<(string Name, Func<IEstimator<ITransformer>> Factory)>();
 
             // SR-CNN: Spectral Residual based — best general-purpose detector
-            var srCnnWindowSize = Math.Min(64, Math.Max(8, totalRows / 4));
+            // Every window derives from the row count together — see
+            // SrCnnWindowSizes for why the judgement window cannot be a literal.
+            var srCnn = SrCnnWindowSizes.ForSeries(totalRows);
             detectors.Add(("SrCnnAnomaly", () =>
                 _mlContext.Transforms.DetectAnomalyBySrCnn(
                     outputColumnName: TimeSeriesAnomalyOutput.PredictionColumnName,
                     inputColumnName: valueColumn,
-                    windowSize: srCnnWindowSize,
-                    backAddWindowSize: 5,
-                    lookaheadWindowSize: 5,
-                    averagingWindowSize: 3,
-                    judgementWindowSize: 21,
+                    windowSize: srCnn.WindowSize,
+                    backAddWindowSize: srCnn.BackAddWindowSize,
+                    lookaheadWindowSize: srCnn.LookaheadWindowSize,
+                    averagingWindowSize: srCnn.AveragingWindowSize,
+                    judgementWindowSize: srCnn.JudgementWindowSize,
                     threshold: 0.3)));
 
             // SSA Spike Detector — trainingWindowSize must be > 2 * seasonalityWindowSize
