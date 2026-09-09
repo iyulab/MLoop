@@ -149,8 +149,9 @@ public class DataQualityValidator
                     if (uniqueClasses.Count == 1)
                     {
                         result.IsValid = false;
-                        result.ErrorMessage = $"Label column '{labelColumn}' contains only one class: '{uniqueClasses[0]}'";
-                        result.ErrorMessageEn = "Cannot train classifier with only one class";
+                        result.ErrorMessage =
+                            $"Label column '{labelColumn}' contains only one class ('{uniqueClasses[0]}'), " +
+                            "so there is nothing for a classifier to tell apart.";
                         return result;
                     }
 
@@ -205,8 +206,10 @@ public class DataQualityValidator
                 if (uniqueValues.Count == 1)
                 {
                     result.IsValid = false;
-                    result.ErrorMessage = $"Label column '{labelColumn}' contains all identical values ({uniqueValues[0]})";
-                    result.ErrorMessageEn = $"Cannot train model with constant label - this indicates a data quality issue";
+                    result.ErrorMessage =
+                        $"Label column '{labelColumn}' contains all identical values ({uniqueValues[0]}), " +
+                        "so a model has nothing to predict — this usually means the data was collected " +
+                        "or preprocessed incorrectly.";
 
                     // Check specifically for all zeros
                     if (uniqueValues[0] == 0.0)
@@ -385,8 +388,7 @@ public class DataQualityValidator
                 result.ErrorMessage =
                     $"Only {viableClassCount} class has enough samples to train on: " +
                     $"{starved} {(untrainableClasses.Count > 1 ? "have" : "has")} " +
-                    $"fewer than {UNTRAINABLE_PER_CLASS} samples";
-                result.ErrorMessageEn =
+                    $"fewer than {UNTRAINABLE_PER_CLASS} samples. " +
                     "A class needs at least one row in the training set and one in the test set. With a " +
                     "single sample it can only be in one of them, so the model cannot be evaluated on it — " +
                     "and here that leaves no second class to classify against.";
@@ -571,7 +573,6 @@ public class DataQualityResult
 {
     public bool IsValid { get; set; }
     public string? ErrorMessage { get; set; }
-    public string? ErrorMessageEn { get; set; }
     public List<string> Warnings { get; set; } = new();
     public List<string> Suggestions { get; set; } = new();
 

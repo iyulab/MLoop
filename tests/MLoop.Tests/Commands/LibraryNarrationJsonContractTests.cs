@@ -1,5 +1,6 @@
 using System.Text.Json;
 using MLoop.CLI;
+using MLoop.Core.Detection;
 using Spectre.Console;
 
 namespace MLoop.Tests.Commands;
@@ -65,7 +66,6 @@ public class LibraryNarrationJsonContractTests : IDisposable
     [InlineData("analyze", "correlation", "datasets/train.csv", "--json")]
     [InlineData("analyze", "outliers", "datasets/train.csv", "--json")]
     [InlineData("analyze", "distribution", "datasets/train.csv", "--json")]
-    [InlineData("detect", "datasets/train.csv", "--column", "feature", "--json")]
     public async Task StdoutParsesWhenTheLoaderNarrates(params string[] args)
     {
         var (exitCode, stdout, stderr) = await RunAsync(args);
@@ -81,6 +81,58 @@ public class LibraryNarrationJsonContractTests : IDisposable
             throw new Xunit.Sdk.XunitException(
                 $"`mloop {string.Join(' ', args)}` exited 0 but stdout does not parse: {ex.Message}"
                 + $"\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
+        }
+    }
+
+    /// <summary>
+    /// <c>detect</c> belongs to the narration contract above but cannot share its assertion: it is
+    /// the one command here that needs a native library, and that library is not available on every
+    /// platform (see <see cref="TimeSeriesNativeSupport"/>). So this pins both outcomes rather than
+    /// skipping — stdout parses either way, and when the native is missing the command must exit
+    /// non-zero and the document must say <i>which</i> runtime is missing.
+    /// </summary>
+    /// <remarks>
+    /// Written as two branches, not a skip, because the branch that used to be untested is the one
+    /// most users of this project's CI actually take. The sibling suites guard the same condition by
+    /// returning early, which reports a pass and verifies nothing; here the degraded path is a
+    /// contract of its own. It is also what turned this into a release blocker: the case was added
+    /// to the theory above asserting exit 0, and every Linux and macOS run has failed it since.
+    /// </remarks>
+    [Fact]
+    public async Task DetectParsesWhetherOrNotTheFftNativeIsPresent()
+    {
+        string[] args = ["detect", "datasets/train.csv", "--column", "feature", "--json"];
+        var (exitCode, stdout, stderr) = await RunAsync(args);
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(stdout);
+        }
+        catch (JsonException ex)
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"`mloop {string.Join(' ', args)}` exited {exitCode} and stdout does not parse: {ex.Message}"
+                + $"\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
+        }
+
+        using (document)
+        {
+            if (TimeSeriesNativeSupport.IsAvailable)
+            {
+                Assert.Equal(0, exitCode);
+                return;
+            }
+
+            Assert.NotEqual(0, exitCode);
+
+            var error = Assert.Contains("error", document.RootElement.EnumerateObject()
+                .ToDictionary(p => p.Name, p => p.Value.ToString()));
+
+            // The loader error names only a type initializer. A user cannot act on that, so the
+            // document has to carry the runtime's name and where it comes from.
+            Assert.Contains("libiomp5", error, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("MKL", error, StringComparison.OrdinalIgnoreCase);
         }
     }
 

@@ -302,8 +302,14 @@ public static class ListCommand
 
                 var metricDisplay = FormatMetric(exp, nameInHeading: sharedMetric.Count == 1);
 
+                // Abbreviated rather than dropped. The ID column marks the production row in colour
+                // only, and colour is gone under NO_COLOR, in a pipe, and for a reader with a colour
+                // vision deficiency (WCAG 1.4.1) — so this word is that fact's only accessible
+                // channel, not a duplicate of the colour. Shortening it recovers the width an
+                // eighty-column terminal needs to keep a row on one line; removing it would trade a
+                // wrapped row for an unreadable one.
                 var stage = isProduction
-                    ? "[green bold]Production[/]"
+                    ? "[green bold]prod[/]"
                     : "[grey]-[/]";
 
                 if (resolvedModelName == null)

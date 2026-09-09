@@ -91,6 +91,20 @@ experiments/exp-001/
 2. **Check Roadmap**: Is this feature on the [ROADMAP.md](ROADMAP.md)? If not, propose it first.
 3. **Check Scope**: Start small, iterate based on feedback.
 
+### Language
+
+**User-facing output is English** — everything the CLI prints, every exception and log message, every
+suggestion, and the text of every generated artifact. So are identifiers, comments, and test names.
+
+This is written down because it was not always true. A few surfaces printed the same failure twice,
+once in English and once in Korean, and one printed its error in Korean while its suggestions came in
+both — which fit neither reader: one saw a duplicate, the other saw a sentence they could not read.
+Where a message has an audience that needs another language, that belongs in a localization layer
+this project does not yet have, not in a second field beside the first.
+
+Nothing here calls for a translation sweep of text that already exists. Bring a surface into line
+when you are already changing it.
+
 ### Development Process
 
 #### 1. Setup Development Environment

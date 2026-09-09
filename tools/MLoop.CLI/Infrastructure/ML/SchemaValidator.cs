@@ -76,8 +76,7 @@ public class SchemaValidator
             // columns read as missing and a label absent by design in prediction data reads as
             // required. Two authorities for the input schema, one of them wrong.
             result.IsValid = true;
-            result.ErrorMessage = "스키마 검증 건너뜀 (이 실험에 저장된 입력 스키마가 없습니다).";
-            result.ErrorMessageEn = "Schema validation skipped: this experiment has no saved input schema.";
+            result.ErrorMessage = "Schema validation skipped: this experiment has no saved input schema.";
             result.Suggestions.Add("Retrain the model to record the input schema and enable validation.");
             result.Suggestions.Add("Prediction proceeds unchecked — a column mismatch surfaces as a runtime error instead.");
             return result;
@@ -86,8 +85,7 @@ public class SchemaValidator
         {
             result.IsValid = false;
             var innerMsg = ex.InnerException != null ? $" Inner: {ex.InnerException.Message}" : "";
-            result.ErrorMessage = $"스키마 검증 중 오류: {ex.Message}{innerMsg}";
-            result.ErrorMessageEn = $"Error during schema validation: {ex.Message}{innerMsg}";
+            result.ErrorMessage = $"Error during schema validation: {ex.Message}{innerMsg}";
             result.Suggestions.Add($"Stack trace: {ex.StackTrace}");
             return result;
         }
@@ -113,8 +111,7 @@ public class SchemaValidator
             if (string.IsNullOrEmpty(firstLine))
             {
                 result.IsValid = false;
-                result.ErrorMessage = "입력 파일이 비어있습니다.";
-                result.ErrorMessageEn = "Input file is empty";
+                result.ErrorMessage = "Input file is empty";
                 return result;
             }
 
@@ -175,26 +172,17 @@ public class SchemaValidator
                 // Enhanced error message with encoding issue detection
                 if (potentialEncodingIssues.Any())
                 {
-                    result.ErrorMessage = $"필수 컬럼 누락: {string.Join(", ", missingColumns)}\n\n" +
-                        "⚠️ 인코딩 이슈 감지:\n" +
-                        string.Join("\n", potentialEncodingIssues.Select(p =>
-                            $"  기대: '{p.expected}' → 발견: '{p.found}'"));
-
-                    result.ErrorMessageEn = $"Missing required columns: {string.Join(", ", missingColumns)}\n\n" +
+                    result.ErrorMessage = $"Missing required columns: {string.Join(", ", missingColumns)}\n\n" +
                         "⚠️ Encoding issue detected:\n" +
                         string.Join("\n", potentialEncodingIssues.Select(p =>
                             $"  Expected: '{p.expected}' → Found: '{p.found}'"));
 
-                    result.Suggestions.Add("❌ CSV 파일이 UTF-8 인코딩이 아닙니다.");
-                    result.Suggestions.Add("✅ 해결방법: 파일을 UTF-8로 변환하거나 UTF-8 BOM을 추가하세요.");
                     result.Suggestions.Add("❌ CSV file is not UTF-8 encoded.");
                     result.Suggestions.Add("✅ Solution: Convert file to UTF-8 or add UTF-8 BOM.");
                 }
                 else
                 {
-                    result.ErrorMessage = $"필수 컬럼 누락: {string.Join(", ", missingColumns)}";
-                    result.ErrorMessageEn = $"Missing required columns: {string.Join(", ", missingColumns)}";
-                    result.Suggestions.Add("확인: 예측 데이터에 학습 시 사용된 모든 Feature 컬럼이 포함되어 있는지 확인하세요");
+                    result.ErrorMessage = $"Missing required columns: {string.Join(", ", missingColumns)}";
                     result.Suggestions.Add("Check: Ensure prediction data contains all Feature columns used during training");
                 }
             }
@@ -204,13 +192,11 @@ public class SchemaValidator
                 result.IsValid = true;
                 if (indexColumns.Any())
                 {
-                    result.Suggestions.Add($"참고: 인덱스 컬럼 감지됨 (자동 제거): {string.Join(", ", indexColumns)}");
                     result.Suggestions.Add($"Note: Index column(s) detected (auto-removed): {string.Join(", ", indexColumns)}");
-                    result.Suggestions.Add("💡 pandas에서 CSV 저장 시 index=False 옵션 사용을 권장합니다.");
+                    result.Suggestions.Add("💡 When writing a CSV from pandas, prefer index=False.");
                 }
                 if (extraColumns.Any())
                 {
-                    result.Suggestions.Add($"참고: 추가 컬럼 발견 (무시됨): {string.Join(", ", extraColumns)}");
                     result.Suggestions.Add($"Note: Extra columns found (will be ignored): {string.Join(", ", extraColumns)}");
                 }
             }
@@ -223,8 +209,7 @@ public class SchemaValidator
         catch (Exception ex)
         {
             result.IsValid = false;
-            result.ErrorMessage = $"스키마 검증 중 오류: {ex.Message}";
-            result.ErrorMessageEn = $"Error during schema validation: {ex.Message}";
+            result.ErrorMessage = $"Error during schema validation: {ex.Message}";
             return result;
         }
     }
@@ -339,7 +324,6 @@ public class SchemaValidationResult
 {
     public bool IsValid { get; set; }
     public string? ErrorMessage { get; set; }
-    public string? ErrorMessageEn { get; set; }
     public List<string> MissingColumns { get; set; } = new();
     public List<string> Suggestions { get; set; } = new();
 

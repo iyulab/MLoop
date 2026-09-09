@@ -112,6 +112,21 @@ Download from [GitHub Releases](https://github.com/iyulab/MLoop/releases) and pl
 mloop update
 ```
 
+**Time-series tasks need an OpenMP runtime on Linux.** `forecasting`, `time-series-anomaly` and
+`mloop detect` compute an FFT through ML.NET's MKL native library, which on Linux is published
+without the OpenMP runtime it links against — it expects the system to provide one. Everything else
+works with no extra setup; those three report what is missing if it is not there.
+
+```bash
+# Debian/Ubuntu — LLVM's runtime is ABI-compatible with the one MKL asks for
+sudo apt-get install -y libomp5
+sudo ln -sf /usr/lib/x86_64-linux-gnu/libomp.so.5 /usr/lib/x86_64-linux-gnu/libiomp5.so
+```
+
+On macOS running Apple silicon these three are unavailable: ML.NET publishes no `osx-arm64` build of
+that library, so there is nothing to install. The rest of MLoop is unaffected. Containers generated
+by `mloop docker` already install this for you.
+
 ### 60-Second Workflow
 
 ```bash

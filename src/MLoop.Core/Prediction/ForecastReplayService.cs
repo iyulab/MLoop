@@ -1,6 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.AutoML;
+using MLoop.Core.Detection;
 using MLoop.Core.Storage;
 
 namespace MLoop.Core.Prediction;
@@ -94,7 +95,8 @@ public static class ForecastReplayService
         var textLoader = mlContext.Data.CreateTextLoader(columnOptions);
         var trainData = textLoader.Load(trainDataPath);
 
-        var predictions = model.Transform(trainData);
+        // SSA replay runs the FFT native; without it this is where forecasting predict fails.
+        var predictions = TimeSeriesNativeSupport.Guard(() => model.Transform(trainData));
         var forecastCol = predictions.Schema.GetColumnOrNull(ForecastOutput.ForecastColumnName);
         var lowerCol = predictions.Schema.GetColumnOrNull(ForecastOutput.LowerBoundColumnName);
         var upperCol = predictions.Schema.GetColumnOrNull(ForecastOutput.UpperBoundColumnName);
@@ -104,18 +106,25 @@ public static class ForecastReplayService
             return (null, $"Model does not produce {ForecastOutput.ForecastColumnName} column.");
         }
 
-        using var cursor = predictions.GetRowCursor(predictions.Schema);
-        var forecastGetter = cursor.GetGetter<VBuffer<float>>(forecastCol.Value);
-        var lowerGetter = lowerCol.HasValue ? cursor.GetGetter<VBuffer<float>>(lowerCol.Value) : null;
-        var upperGetter = upperCol.HasValue ? cursor.GetGetter<VBuffer<float>>(upperCol.Value) : null;
-
-        VBuffer<float> forecastBuf = default, lowerBuf = default, upperBuf = default;
-        if (cursor.MoveNext())
+        // The transform above is lazy, so the FFT actually runs while this cursor is read — the
+        // guard has to span the read, not just the call that produced the view.
+        var (forecastBuf, lowerBuf, upperBuf) = TimeSeriesNativeSupport.Guard(() =>
         {
-            forecastGetter(ref forecastBuf);
-            lowerGetter?.Invoke(ref lowerBuf);
-            upperGetter?.Invoke(ref upperBuf);
-        }
+            using var cursor = predictions.GetRowCursor(predictions.Schema);
+            var forecastGetter = cursor.GetGetter<VBuffer<float>>(forecastCol.Value);
+            var lowerGetter = lowerCol.HasValue ? cursor.GetGetter<VBuffer<float>>(lowerCol.Value) : null;
+            var upperGetter = upperCol.HasValue ? cursor.GetGetter<VBuffer<float>>(upperCol.Value) : null;
+
+            VBuffer<float> f = default, l = default, u = default;
+            if (cursor.MoveNext())
+            {
+                forecastGetter(ref f);
+                lowerGetter?.Invoke(ref l);
+                upperGetter?.Invoke(ref u);
+            }
+
+            return (f, l, u);
+        });
 
         var forecast = new ForecastOutput
         {
