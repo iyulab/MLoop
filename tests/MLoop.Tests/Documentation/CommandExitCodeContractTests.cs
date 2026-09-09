@@ -59,4 +59,58 @@ public class CommandExitCodeContractTests
             "A command handler must return an exit code (int / Task<int>):"
             + Environment.NewLine + string.Join(Environment.NewLine, offenders));
     }
+
+    /// <summary>The severity a block claims and the exit code that follows it are one statement.</summary>
+    private static readonly Regex FailureBlock = new(
+        @"Schema Validation Failed[\s\S]*?return 1;", RegexOptions.Compiled);
+
+    private static readonly Regex WarningWord = new(@"\[yellow\]Warning:", RegexOptions.Compiled);
+
+    [Fact]
+    public void AMessagePrintedOnTheWayToANonZeroExitDoesNotCallItselfAWarning()
+    {
+        // Measured on the real surface: `predict` with a feature column missing printed a red
+        // "Schema Validation Failed:" heading, then a yellow "Warning: ..." line naming the actual
+        // problem, then exited 1. The word contradicted both the heading above it and the code
+        // below it, and a reader deciding whether the run had succeeded had three answers.
+        var offenders = RepoSourceTree.ProductionSourceFiles(Path.Combine("tools", "MLoop.CLI"))
+            .Where(f => FailureBlock.Matches(File.ReadAllText(f)).Any(m => WarningWord.IsMatch(m.Value)))
+            .Select(RepoSourceTree.RelativeToRoot)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "A block that ends in `return 1` states a failure; its message may not be labelled a "
+            + "warning:\n" + string.Join('\n', offenders));
+    }
+
+    [Fact]
+    public void ThatCheckSeesTheShapeItForbids()
+    {
+        // Companion: the matcher runs from the heading to the exit, and the first version bounded
+        // that span to 600 characters -- which the real blocks exceed, so it matched nothing and
+        // reported both commands clean while one of them held the exact shape it forbids. The
+        // enumeration assertion at the end of this test is what said so.
+        const string offending = """
+            AnsiConsole.MarkupLine("[red]Schema Validation Failed:[/]");
+            AnsiConsole.MarkupLine($"[yellow]Warning: {result.ErrorMessage}[/]");
+            return 1;
+            """;
+        const string corrected = """
+            AnsiConsole.MarkupLine("[red]Schema Validation Failed:[/]");
+            AnsiConsole.MarkupLine($"[red]Error: {result.ErrorMessage}[/]");
+            return 1;
+            """;
+
+        Assert.Contains(FailureBlock.Matches(offending), m => WarningWord.IsMatch(m.Value));
+        Assert.DoesNotContain(FailureBlock.Matches(corrected), m => WarningWord.IsMatch(m.Value));
+
+        // And the guard must actually reach the two commands it exists for.
+        var scanned = RepoSourceTree.ProductionSourceFiles(Path.Combine("tools", "MLoop.CLI"))
+            .Where(f => FailureBlock.IsMatch(File.ReadAllText(f)))
+            .Select(Path.GetFileName)
+            .ToList();
+        Assert.Contains("PredictCommand.cs", scanned);
+        Assert.Contains("EvaluateCommand.cs", scanned);
+    }
 }

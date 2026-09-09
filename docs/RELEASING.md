@@ -77,6 +77,19 @@ budget, and under CPU load no trial completes — a failure that describes the m
 code. The loop also keeps partial results when the whole-solution form dies under memory
 pressure.
 
+A suite that runs but takes several times its usual wall time, or dies partway with
+`Test host process crashed`, usually has an orphaned `testhost` competing with it. Interrupting a
+`dotnet test` kills the shell that started it and not the child, and the survivor holds CPU and file
+locks against every later run — one measured pair: 25 minutes then a crash at 44 of 52 tests, versus
+49 seconds for the same suite once the leftovers were gone. Before a run, and after any interrupted
+one: end any `testhost` still alive and `dotnet build-server shutdown`.
+
+Capture failing test **names**, not just the summary line. A loop that keeps only the last lines of
+each project's output records "2 failed" and loses which two, which leaves "it was load" as an
+inference from a later passing run rather than something checked against the tests that failed. Let
+the output through, or re-run the project with `--logger "console;verbosity=normal"` on failure — a
+suspected load failure is only diagnosed when the same named test passes on a quiet machine.
+
 If a suite produces **no test output at all** for minutes — no passes, no failures — suspect its
 build output before its code: `rm -rf tests/<project>/bin tests/<project>/obj` and run it again.
 A half-updated `bin/` (a test host killed mid-run, two builds overlapping) has wedged ML.NET's
