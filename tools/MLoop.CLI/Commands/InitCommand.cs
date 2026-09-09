@@ -271,14 +271,10 @@ public static class InitCommand
             }
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[grey]Folder structure:[/]");
-            if (isObjectDetection)
-                AnsiConsole.MarkupLine("  datasets/coco/              [cyan]# COCO annotations.json + images[/]");
-            else if (isDirectoryBased)
-                AnsiConsole.MarkupLine("  datasets/images/<class>/    [cyan]# Training images (folder = label)[/]");
-            else
-                AnsiConsole.MarkupLine("  datasets/                   [cyan]# Training data (train.csv)[/]");
-            AnsiConsole.MarkupLine($"  models/{modelName}/staging/    [cyan]# Experimental models[/]");
-            AnsiConsole.MarkupLine($"  models/{modelName}/production/ [cyan]# Promoted production model[/]");
+            foreach (var (path, what) in FolderStructure(modelName, isObjectDetection, isDirectoryBased))
+            {
+                AnsiConsole.MarkupLine($"  {Markup.Escape(path)}[cyan]# {Markup.Escape(what)}[/]");
+            }
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[grey]Multi-model support:[/]");
             AnsiConsole.MarkupLine("  mloop train --name churn     [cyan]# Train different model[/]");
@@ -679,6 +675,32 @@ data:
   train: datasets/train.csv
   test: datasets/test.csv
 ";
+    }
+
+    /// <summary>
+    /// The directories a new project is told about, each already padded to the column its comment
+    /// starts in.
+    /// </summary>
+    /// <remarks>
+    /// The padding is computed from the widest path rather than written into the strings. Two of
+    /// these paths carry the model's name, so a literal column only ever lines up for one name —
+    /// <c>--name churn</c> moved every comment three characters left — and the default it was
+    /// written for was one character out to begin with.
+    /// </remarks>
+    internal static (string Path, string What)[] FolderStructure(
+        string modelName, bool isObjectDetection, bool isDirectoryBased)
+    {
+        (string Path, string What)[] folders =
+        [
+            isObjectDetection ? ("datasets/coco/", "COCO annotations.json + images")
+                : isDirectoryBased ? ("datasets/images/<class>/", "Training images (folder = label)")
+                : ("datasets/", "Training data (train.csv)"),
+            ($"models/{modelName}/staging/", "Experimental models"),
+            ($"models/{modelName}/production/", "Promoted production model"),
+        ];
+
+        var column = folders.Max(f => f.Path.Length) + 1;
+        return [.. folders.Select(f => (f.Path.PadRight(column), f.What))];
     }
 
     internal static bool IsValidModelName(string name)
