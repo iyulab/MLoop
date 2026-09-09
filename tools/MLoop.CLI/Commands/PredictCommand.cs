@@ -407,6 +407,23 @@ public static class PredictCommand
                     AnsiConsole.WriteLine();
                 }
 
+                // A --json consumer owes a parseable document at every exit, this one included.
+                // The human channel above renders the same finding in parts; the document carries
+                // it as one sentence so nothing here is reachable only by reading the terminal.
+                if (json)
+                {
+                    var parts = new List<string>();
+                    if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
+                        parts.Add(validationResult.ErrorMessage);
+                    // Only when the message did not already name them: it usually does, and the
+                    // human channel above lists them separately because it has the room to.
+                    if (parts.Count == 0 && validationResult.MissingColumns.Any())
+                        parts.Add("Missing columns: " + string.Join(", ", validationResult.MissingColumns));
+                    parts.AddRange(validationResult.Suggestions);
+
+                    JsonError.Emit("Schema validation failed. " + string.Join(" ", parts));
+                }
+
                 return 1;
             }
 
