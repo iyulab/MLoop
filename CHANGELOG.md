@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.31.0] - 2026-09-07
 
+### Changed
+- **A timestamp meant for a person now says which zone it is in.** Nine places rendered one in the
+  reader's local time and none of them said so, while the directory and partition names written
+  beside them are in UTC — so a single `promote` printed two times that differed by the length of a
+  time zone, with nothing to indicate they were the same instant. Displayed timestamps now carry a
+  numeric offset (`2026-09-09 15:36:17 +09:00`); in the dense listings the offset appears once in the
+  column heading (`Timestamp (+09:00)`) rather than on every row, which keeps a row to one line in an
+  eighty-column terminal. Names of files the product writes for you to find are unchanged and remain
+  local, and storage keys remain UTC — the distinction is who reads the value, not whether it is a
+  file name.
+
 ### Fixed
 - **`mloop docker` generated a Dockerfile that could not be built.** The final stage added the
   Microsoft package feed for Debian 12 to a base image that is Ubuntu, then installed a full .NET

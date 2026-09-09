@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using Spectre.Console;
+using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 
@@ -373,8 +374,8 @@ public static class ListCommand
 
     internal static string FormatRelativeTime(DateTime timestamp)
     {
-        var local = timestamp.Kind == DateTimeKind.Utc ? timestamp.ToLocalTime() : timestamp;
-        var elapsed = DateTime.Now - local;
+        var local = TimestampDisplay.AsLocal(timestamp);
+        var elapsed = DateTimeOffset.Now - local;
 
         var relative = elapsed.TotalMinutes switch
         {

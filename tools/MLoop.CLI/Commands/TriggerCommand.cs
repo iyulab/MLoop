@@ -8,6 +8,7 @@ using MLoop.DataStore.Services;
 using MLoop.Ops.Interfaces;
 using MLoop.Ops.Services;
 using Spectre.Console;
+using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 
@@ -224,7 +225,7 @@ public static class TriggerCommand
             AnsiConsole.MarkupLine($"[grey]Recommendation:[/] {result.RecommendedAction}");
         }
 
-        AnsiConsole.MarkupLine($"[grey]Evaluated at:[/] {result.EvaluatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}");
+        AnsiConsole.MarkupLine($"[grey]Evaluated at:[/] {TimestampDisplay.Local(result.EvaluatedAt)}");
         AnsiConsole.WriteLine();
 
         // Usage hint

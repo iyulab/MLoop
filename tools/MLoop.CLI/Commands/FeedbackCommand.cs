@@ -8,6 +8,7 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using Spectre.Console;
+using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 
@@ -344,7 +345,7 @@ public static class FeedbackCommand
 
         var table = new Table();
         table.Border(TableBorder.Rounded);
-        table.AddColumn("Timestamp");
+        table.AddColumn(TimestampDisplay.ZoneHeading("Timestamp"));
         table.AddColumn("Prediction ID");
         table.AddColumn("Predicted");
         table.AddColumn("Actual");
@@ -359,7 +360,7 @@ public static class FeedbackCommand
             var matchStr = isMatch ? "[green]✓[/]" : "[red]✗[/]";
 
             table.AddRow(
-                entry.Timestamp.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                TimestampDisplay.LocalWithoutZone(entry.Timestamp),
                 entry.PredictionId.Length > 12 ? entry.PredictionId[..12] + "..." : entry.PredictionId,
                 predictedStr.Length > 20 ? predictedStr[..20] + "..." : predictedStr,
                 actualStr.Length > 20 ? actualStr[..20] + "..." : actualStr,
@@ -426,7 +427,7 @@ public static class FeedbackCommand
             grid.AddRow("[grey]Recall:[/]", $"[white]{metrics.Recall.Value:P2}[/]");
         }
 
-        grid.AddRow("[grey]Calculated At:[/]", $"[grey]{metrics.CalculatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}[/]");
+        grid.AddRow("[grey]Calculated At:[/]", $"[grey]{TimestampDisplay.Local(metrics.CalculatedAt)}[/]");
 
         AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();

@@ -1,5 +1,6 @@
 using DataLens.Models;
 using Spectre.Console;
+using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 
@@ -20,7 +21,7 @@ internal static class InfoPresenter
 
         table.AddRow("File Size", FormatFileSize(fileSize));
         table.AddRow("Rows (excluding header)", lineCount.ToString("N0"));
-        table.AddRow("Last Modified", lastModified.ToString("yyyy-MM-dd HH:mm:ss"));
+        table.AddRow("Last Modified", TimestampDisplay.Local(lastModified));
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
