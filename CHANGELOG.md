@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.31.0] - 2026-09-07
+## [0.31.0] - 2026-09-09
 
 ### Fixed
 - **A schema validation failure called itself a warning.** `predict` and `evaluate` printed the
