@@ -1211,12 +1211,15 @@ public class PredictionServiceTests : IDisposable
         // "Could not apply a map over type 'Single' to column 'Label' since it has type 'String'".
         var data = _mlContext.Data.LoadFromEnumerable(new[]
         {
+            // Class 2 occurs first on purpose: MapValueToKey assigns keys by order of occurrence, so the
+            // slot order here is 2,0,1 — not sorted. A vocabulary that happened to be sorted would pass a
+            // test whose fixture was also sorted, while pairing every name with the wrong slot.
+            new SimpleMulticlassNumericLabel { X1 = 9f, X2 = 9f, Label = 2f },
+            new SimpleMulticlassNumericLabel { X1 = 9.1f, X2 = 8.9f, Label = 2f },
             new SimpleMulticlassNumericLabel { X1 = 1f, X2 = 1f, Label = 0f },
             new SimpleMulticlassNumericLabel { X1 = 1.1f, X2 = 0.9f, Label = 0f },
             new SimpleMulticlassNumericLabel { X1 = 5f, X2 = 5f, Label = 1f },
             new SimpleMulticlassNumericLabel { X1 = 5.1f, X2 = 4.9f, Label = 1f },
-            new SimpleMulticlassNumericLabel { X1 = 9f, X2 = 9f, Label = 2f },
-            new SimpleMulticlassNumericLabel { X1 = 9.1f, X2 = 8.9f, Label = 2f },
         });
 
         var keyed = _mlContext.Transforms.Conversion.MapValueToKey("Label", "Label").Fit(data).Transform(data);
@@ -1252,6 +1255,78 @@ public class PredictionServiceTests : IDisposable
         Assert.Equal("multiclass-classification", result.TaskType);
         Assert.Equal(2, result.Rows.Count);
         Assert.All(result.Rows, r => Assert.Contains(r.PredictedLabel, new[] { "0", "1", "2" }));
+
+        // The probability keys are the class ids, not positions. A numeric-looking label is the shape
+        // that has no SlotNames annotation at all — only TrainingLabelValues, typed Single — so reading
+        // the per-slot annotation alone would have left "class_0" here while PredictedLabel read "0",
+        // and one answer would contradict itself.
+        Assert.All(result.Rows, r =>
+        {
+            Assert.NotNull(r.Probabilities);
+            Assert.Equal(new[] { "0", "1", "2" }, r.Probabilities!.Keys.OrderBy(k => k).ToArray());
+            // The names must be paired with the slots they belong to, not merely present: the winning
+            // slot is what PredictedLabel reports, so the largest probability must carry that name.
+            // Key presence alone passes under any permutation of the vocabulary.
+            Assert.Equal(r.PredictedLabel, r.Probabilities.MaxBy(kv => kv.Value).Key);
+        });
+    }
+
+    [Fact]
+    public void Predict_Multiclass_CategoricalLabel_KeysProbabilitiesByClassName()
+    {
+        // Multiclass returns a Score vector, one slot per class, and the slot order is the trainer's.
+        // Keying the returned distribution by position ("class_0") makes the consumer guess which
+        // class that was; binary already answers in class names, so the same consumer met a different
+        // rule per task type.
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleMulticlassStringLabel { X1 = 1f, X2 = 1f, Label = "cat" },
+            new SimpleMulticlassStringLabel { X1 = 1.1f, X2 = 0.9f, Label = "cat" },
+            new SimpleMulticlassStringLabel { X1 = 5f, X2 = 5f, Label = "dog" },
+            new SimpleMulticlassStringLabel { X1 = 5.1f, X2 = 4.9f, Label = "dog" },
+            new SimpleMulticlassStringLabel { X1 = 9f, X2 = 9f, Label = "bird" },
+            new SimpleMulticlassStringLabel { X1 = 9.1f, X2 = 8.9f, Label = "bird" },
+        });
+
+        var keyed = _mlContext.Transforms.Conversion.MapValueToKey("Label", "Label").Fit(data).Transform(data);
+        var featurized = _mlContext.Transforms.Concatenate("Features", "X1", "X2").Fit(keyed).Transform(keyed);
+        var trainer = _mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(
+            labelColumnName: "Label", featureColumnName: "Features");
+        var model = trainer.Fit(featurized);
+        var modelPath = SaveModel(model, featurized.Schema);
+
+        var schema = new InputSchemaInfo
+        {
+            Columns = new List<ColumnSchema>
+            {
+                new() { Name = "X1", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "X2", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "Label", DataType = "Categorical", Purpose = "Label" },
+            },
+            CapturedAt = DateTime.UtcNow
+        };
+
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["X1"] = 1.0, ["X2"] = 1.0 },
+            new Dictionary<string, object> { ["X1"] = 9.0, ["X2"] = 9.0 },
+        };
+
+        var service = new PredictionService(_mlContext);
+        var result = service.Predict(rows, schema, modelPath, "multiclass-classification", "Label");
+
+        Assert.Equal(2, result.Rows.Count);
+        foreach (var r in result.Rows)
+        {
+            Assert.NotNull(r.Probabilities);
+            Assert.Equal(new[] { "bird", "cat", "dog" }, r.Probabilities!.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+            // The winning slot is what PredictedLabel reports, so the largest probability must carry that
+            // name. This is the assertion a permuted vocabulary fails; "the label is among the keys"
+            // would not. The fixture's key order (cat, dog, bird — by occurrence) is not sorted either,
+            // so an incidentally-sorted vocabulary cannot pass by coincidence.
+            Assert.Equal(r.PredictedLabel, r.Probabilities.MaxBy(kv => kv.Value).Key);
+            Assert.InRange(r.Probabilities.Values.Sum(), 0.99, 1.01);
+        }
     }
 
     #endregion
@@ -1501,6 +1576,13 @@ public class PredictionServiceTests : IDisposable
         public float X1 { get; set; }
         public float X2 { get; set; }
         public float Label { get; set; }
+    }
+
+    private class SimpleMulticlassStringLabel
+    {
+        public float X1 { get; set; }
+        public float X2 { get; set; }
+        public string Label { get; set; } = "";
     }
 
     private class AnomalyFeaturesRow

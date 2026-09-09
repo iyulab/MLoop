@@ -24,6 +24,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   paths, `True`/`False`. Binary probabilities are keyed by the same names, so a consumer can join a
   predicted label to its probability.
 
+- **A multiclass prediction named its own classes in one field and numbered them in the next.**
+  `predictedLabel` came back as `cat`, while the probability distribution beside it was keyed
+  `class_0`/`class_1`/`class_2` — positions, whose meaning is the trainer's internal class order and
+  appears nowhere in the answer. A consumer could not join the two without guessing, and the guess
+  had no way to be checked. The scored model records which class each slot belongs to; that is now
+  what names the keys, so the distribution reads `{"cat": …, "dog": …, "bird": …}` and every row's
+  own predicted label is one of its own keys. Binary predictions were already keyed by class name,
+  so the same consumer no longer meets a different rule per task type. Two annotations carry the
+  vocabulary and both are read, because which one a model has depends on its label: a label written
+  as words leaves per-slot names, while a label written as class ids (`0`/`1`/`2`) leaves none — only
+  the training vocabulary — and reading just the first would have named the classes for one kind of
+  label and silently kept positions for the other. A model carrying neither, or one whose recorded
+  names do not cover its slots exactly and distinctly, keeps the positional keys it has always
+  produced rather than being given invented names.
+
+- **A schema that named a column's type the .NET way failed with a sentence about a different
+  column.** A saved schema records each column's type in a small vocabulary of semantic names —
+  `Numeric`, `Categorical`, `Text`, `Boolean` — and the prediction path builds a model's feature
+  vector by selecting the numeric ones. A schema saying `Single` (the .NET type name) matched
+  nothing, so no feature vector was built and the run died a step later on `Could not find feature
+  column 'Features'`, which names neither the column at fault nor the value that was wrong. The
+  failure now names them, lists the values that are recognized, and says the names are semantic
+  rather than .NET types. One schema MLoop itself wrote had this defect — an object-detection
+  model's bounding-box column — and it is corrected; models saved with it load exactly as before,
+  since both spellings resolved to the same type on the way in.
+
 - **`mloop predict` gave two different answers for the same input depending on `--json`.** Without
   the flag it failed (`Schema mismatch for feature column '__Features__': expected
   Vector<Single, 3>, got Vector<Single, 2>`); with it, the same file and model produced predictions

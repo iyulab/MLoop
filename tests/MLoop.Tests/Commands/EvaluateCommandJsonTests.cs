@@ -122,9 +122,12 @@ public class EvaluateCommandJsonTests : IDisposable
                     CapturedAt = DateTime.UtcNow,
                     Columns =
                     [
-                        new ColumnSchema { Name = "X1", DataType = "Single", Purpose = "Feature" },
-                        new ColumnSchema { Name = "X2", DataType = "Single", Purpose = "Feature" },
-                        new ColumnSchema { Name = LabelColumn, DataType = "Single", Purpose = "Label" }
+                        // The SchemaDataTypes vocabulary, not .NET type names: real capture writes
+                        // "Numeric" here, and a consumer that selects columns by this value (the
+                        // predict path's feature-vector build) matches nothing on "Single".
+                        new ColumnSchema { Name = "X1", DataType = SchemaDataTypes.Numeric, Purpose = "Feature" },
+                        new ColumnSchema { Name = "X2", DataType = SchemaDataTypes.Numeric, Purpose = "Feature" },
+                        new ColumnSchema { Name = LabelColumn, DataType = SchemaDataTypes.Numeric, Purpose = "Label" }
                     ]
                 }
             },

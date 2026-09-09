@@ -449,14 +449,20 @@ public class TrainingEngineTests : IDisposable
     [Fact]
     public void BuildDirectoryInputSchema_ObjectDetection_AddsBoundingBoxVector()
     {
-        // Object detection carries a categorical label vector plus a float bounding-box vector.
+        // Object detection carries a categorical label vector plus a numeric bounding-box vector.
         var schema = TrainingEngine.BuildDirectoryInputSchema("Label", "object-detection");
 
         var label = schema.Columns.Single(c => c.Name == "Label");
         var bbox = schema.Columns.Single(c => c.Name == "BoundingBoxes");
 
-        Assert.Equal("Categorical", label.DataType);
-        Assert.Equal("Single", bbox.DataType);
+        // Both pin the SchemaDataTypes vocabulary rather than a literal, because this is the
+        // product's own output and the producer is required to speak that vocabulary. The
+        // bounding-box assertion used to read "Single" — the .NET type name — and it passed for as
+        // long as the producer wrote the same out-of-vocabulary value, so the defect had a green
+        // test standing behind it and correcting the producer read as breaking the contract.
+        Assert.Equal(SchemaDataTypes.Categorical, label.DataType);
+        Assert.Equal(SchemaDataTypes.Numeric, bbox.DataType);
+        Assert.True(SchemaDataTypes.IsKnown(bbox.DataType));
         Assert.Equal("Label", bbox.Purpose);
     }
 

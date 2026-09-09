@@ -34,6 +34,25 @@ public static class SchemaDataTypes
     public const string ExcludedConstant = "Constant";
 
     /// <summary>
+    /// Every name this vocabulary defines, including the exclusion markers.
+    /// </summary>
+    public static IReadOnlyList<string> All { get; } =
+        [Numeric, Categorical, Text, Boolean, ExcludedDateTime, ExcludedSparse, ExcludedConstant];
+
+    /// <summary>
+    /// Whether <paramref name="dataType"/> is one of this vocabulary's names.
+    /// </summary>
+    /// <remarks>
+    /// A schema carrying a name from outside it is not rejected anywhere — consumers simply fail to
+    /// match on it, and the failure surfaces further downstream as a missing feature vector or a
+    /// column loaded as the wrong kind. Asking this question is what lets such a consumer name the
+    /// actual cause instead of reporting that symptom. Comparison is case-insensitive, the same way
+    /// every consumer compares these names.
+    /// </remarks>
+    public static bool IsKnown(string? dataType) =>
+        dataType is not null && All.Any(name => name.Equals(dataType, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
     /// Producer-side mapping: raw CLR type of a DataView column (or vector item) to the
     /// semantic vocabulary. String-typed columns map to <see cref="Text"/> — the producer
     /// upgrades to <see cref="Categorical"/> when it captures the column's distinct values.

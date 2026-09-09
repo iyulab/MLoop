@@ -731,7 +731,11 @@ public class TrainingEngine : ITrainingEngine
             columns.Add(new ColumnSchema
             {
                 Name = CocoDataLoader.BoundingBoxColumn,
-                DataType = "Single",
+                // The semantic name, like every other column this method writes. The raw .NET name
+                // was tolerated only by ToDataKind's legacy branch and matched nothing in the
+                // selections that ask "is this column numeric" — a producer speaking outside its own
+                // vocabulary while its two sibling columns spoke it.
+                DataType = SchemaDataTypes.Numeric,
                 Purpose = "Label"
             });
         }

@@ -520,6 +520,13 @@ public class PredictionService
         if (probabilityCol.HasValue)
             probGetter = cursor.GetGetter<float>(probabilityCol.Value);
 
+        // Which class each Score slot belongs to — a property of the scored schema, so it is read once
+        // here rather than per row. Null when the model carries no usable annotation, which is what
+        // keeps older models on the positional keys they have always produced.
+        var scoreSlotNames = scoreCol is { Type: VectorDataViewType scoreVector } && scoreVector.Size > 0
+            ? MulticlassScoreVocabulary.Of(scoreCol, scoreVector.Size)
+            : null;
+
         while (cursor.MoveNext())
         {
             string? label = null;
@@ -555,10 +562,17 @@ public class PredictionService
                 // partially-scrubbed dict would misrepresent the class distribution.
                 if (scores.All(float.IsFinite))
                 {
+                    // Name the slots after the classes the model was trained on, so a multiclass answer
+                    // reads in the same alphabet as its own PredictedLabel — and as a binary answer's
+                    // keys. A row whose width disagrees with the schema's falls back to positional keys
+                    // rather than pairing a name with a slot it may not belong to.
+                    var names = scoreSlotNames is not null && scoreSlotNames.Count == scores.Length
+                        ? scoreSlotNames
+                        : null;
                     probabilities = new Dictionary<string, double>();
                     for (int i = 0; i < scores.Length; i++)
                     {
-                        probabilities[$"class_{i}"] = scores[i];
+                        probabilities[MulticlassScoreVocabulary.KeyFor(names, i)] = scores[i];
                     }
                 }
             }
@@ -866,7 +880,33 @@ public class PredictionService
             .Select(c => c.Name)
             .ToArray();
 
-        if (featureColumns.Length == 0) return data;
+        if (featureColumns.Length == 0)
+        {
+            // Nothing to concatenate, and the model is about to fail on a "Features" column that was
+            // never built. Say why here, while the cause is still in hand: the selection above matches
+            // one name out of a fixed vocabulary, so a schema written with a name outside it — a .NET
+            // type name like "Single" instead of "Numeric" — selects nothing and the run dies further
+            // down with "Could not find feature column 'Features'", a sentence that names the symptom
+            // and not one of the columns responsible.
+            var unknown = schema.Columns
+                .Where(c => !SchemaDataTypes.IsKnown(c.DataType))
+                .Select(c => $"'{c.Name}' (DataType '{c.DataType}')")
+                .ToArray();
+
+            if (unknown.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    $"The saved schema names no feature column this model can read, because " +
+                    $"{unknown.Length} column(s) declare a DataType outside the recognized vocabulary: " +
+                    string.Join(", ", unknown) + ". Recognized values are " +
+                    string.Join(", ", SchemaDataTypes.All) + " — these are semantic names, not .NET " +
+                    "type names, so a column of numbers is 'Numeric' rather than 'Single' or 'Double'. " +
+                    "Fix the experiment's config.json, or retrain the model so the schema is captured " +
+                    "again.");
+            }
+
+            return data;
+        }
 
         return _mlContext.Transforms.Concatenate("Features", featureColumns).Fit(data).Transform(data);
     }
