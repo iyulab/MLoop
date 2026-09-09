@@ -118,6 +118,33 @@ submodule consumers:
   consumer automatically**. NuGet consumers received it already (via the transitive-pin in the
   resolved dependency set); this closes the `ProjectReference` gap.
 
+### The general rule, not just this package
+
+The paragraph above is about one package, and stating it that way is what let the same failure
+recur: a later transitive override was added the same way and reached no consumer either. The rule
+is about the mechanism, so it is worth stating plainly.
+
+> A central `PackageVersion` is a version decision for **this repository's own restore**. It is not
+> part of the dependency graph a project hands to whoever references it. A floor declared only there
+> is invisible to a `ProjectReference` consumer.
+
+A floor therefore has to travel one of two ways, and MLoop has used both:
+
+1. **As a direct `PackageReference`** of the library that consumers reference — the
+   `Microsoft.Bcl.Memory` route above.
+2. **By advancing the dependency that pulls the vulnerable version**, until that dependency's own
+   manifest declares the patched floor. Then the central override is redundant and is removed rather
+   than made direct — the route taken for `System.Security.Cryptography.Xml` in **v0.31.0**, once
+   `FilePrepper` 0.7.4 declared `10.0.10` itself.
+
+This is enforced rather than only documented: `SecurityFloorReachContractTests` reads
+`Directory.Packages.props`, treats every entry under a `Security:` comment as a floor, and fails the
+build unless that package is also a direct reference of a project under `src/`. An override written
+for build coherence rather than for an advisory (the Serilog pin, so two project graphs resolve one
+assembly) carries no such comment and is left alone.
+
+---
+
 **Action for consumers:** on MLoop.Core **≥ v0.23.2**, you can drop any manual
 `Microsoft.Bcl.Memory 9.0.14` pin you were carrying to work around this — the floor now
 arrives with `MLoop.Core`. Verify with `dotnet list <project> package --vulnerable

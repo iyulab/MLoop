@@ -128,7 +128,27 @@ internal static class TrainPresenter
     /// <summary>
     /// Displays training results including metrics table and next steps.
     /// </summary>
-    public static void DisplayResults(TrainingResult result, string modelName)
+    /// <summary>
+    /// What a user is told to do once training has finished.
+    /// </summary>
+    /// <remarks>
+    /// These lines are printed before auto-promotion runs, which is why the promotion step has to be
+    /// asked about rather than always offered: with promotion enabled — the default — the list told
+    /// the reader to run <c>mloop promote exp-001</c> and the very next lines reported the model as
+    /// already promoted. Read top to bottom, the command asked for something it had just done.
+    /// </remarks>
+    internal static string[] NextStepsAfterTraining(string modelName, string experimentId, bool promotionFollows)
+    {
+        string[] always = [$"mloop list --name {modelName}", $"mloop predict data.csv --name {modelName}"];
+        return promotionFollows ? always : [.. always, $"mloop promote {experimentId} --name {modelName}"];
+    }
+
+    /// <param name="promotionFollows">
+    /// Whether this command is about to promote the experiment itself. The next steps are printed
+    /// before the promotion runs, so with this false the reader is told to run a command that the
+    /// very next lines report as already done.
+    /// </param>
+    public static void DisplayResults(TrainingResult result, string modelName, bool promotionFollows = false)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[green]Training Complete![/]").LeftJustified());
@@ -164,9 +184,10 @@ internal static class TrainPresenter
         ValueLine.Write("[grey]Model saved to:[/] ", WhereItLandedInTheProject(result.ModelPath));
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
-        AnsiConsole.MarkupLine($"  mloop list --name {modelName}");
-        AnsiConsole.MarkupLine($"  mloop predict data.csv --name {modelName}");
-        AnsiConsole.MarkupLine($"  mloop promote {result.ExperimentId} --name {modelName}");
+        foreach (var step in NextStepsAfterTraining(modelName, result.ExperimentId, promotionFollows))
+        {
+            AnsiConsole.MarkupLine($"  {step}");
+        }
         AnsiConsole.WriteLine();
     }
 

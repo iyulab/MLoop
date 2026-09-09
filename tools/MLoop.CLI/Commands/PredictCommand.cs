@@ -552,7 +552,7 @@ public static class PredictCommand
             AnsiConsole.WriteLine();
 
             // Show prediction preview and distribution
-            DisplayPredictionPreview(resolvedOutputPath);
+            DisplayPredictionPreview(resolvedOutputPath, resolvedDataFile);
             DisplayPredictionDistribution(resolvedOutputPath);
 
             return 0;
@@ -736,7 +736,61 @@ public static class PredictCommand
                   .LastOrDefault() ?? string.Empty;
     }
 
-    private static void DisplayPredictionPreview(string outputPath)
+    /// <summary>
+    /// The narrowest column this preview is willing to render, borders and padding included. Below
+    /// it a cell stops being a value and becomes one character per line.
+    /// </summary>
+    private const int MinimumReadableColumnWidth = 14;
+
+    /// <summary>
+    /// Which of an output file's columns the preview shows, in file order, and how many it leaves out.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A prediction file carries the answer in its <i>trailing</i> columns, because the run appends
+    /// them to the row it was given. A table that renders every column therefore spends the width on
+    /// the user's own input and squeezes the answer to nothing: measured on this repository's churn
+    /// example at 80 columns, 24 columns each got one character, every header was elided to an
+    /// ellipsis, and the values ran vertically one letter per line. The output was the input, plus
+    /// nothing readable.
+    /// </para>
+    /// <para>
+    /// So the answer columns are kept unconditionally and the input columns fill whatever width is
+    /// left, from the front — enough to recognize which row is which. What is dropped is what the
+    /// user already has in their own file, and the count is stated rather than silently swallowed.
+    /// A column is an "answer" when the input did not have it, which is a fact about these two
+    /// files rather than a vocabulary this has to keep in step with the trainers.
+    /// </para>
+    /// </remarks>
+    internal static (string[] Shown, int Omitted) SelectPreviewColumns(
+        IReadOnlyList<string> outputHeaders,
+        IReadOnlyCollection<string> inputHeaders,
+        int consoleWidth)
+    {
+        var fromInput = new HashSet<string>(inputHeaders.Select(NormalizeHeader), StringComparer.OrdinalIgnoreCase);
+        var answers = outputHeaders.Where(h => !fromInput.Contains(NormalizeHeader(h))).ToList();
+
+        // Never fewer than the answers themselves: a preview that hides what was predicted has no
+        // reason to exist. Beyond them, as many leading input columns as the width can carry.
+        var capacity = Math.Max(consoleWidth / MinimumReadableColumnWidth, answers.Count + 1);
+        var context = outputHeaders.Where(h => fromInput.Contains(NormalizeHeader(h)))
+                                   .Take(Math.Max(0, capacity - answers.Count))
+                                   .ToHashSet(StringComparer.Ordinal);
+
+        var shown = outputHeaders.Where(h => context.Contains(h) || !fromInput.Contains(NormalizeHeader(h)))
+                                 .ToArray();
+
+        return (shown, outputHeaders.Count - shown.Length);
+    }
+
+    /// <summary>
+    /// A header as it compares across two files — a byte-order mark written into one of them is not
+    /// part of the column's name, and left in place it would make the first input column read as
+    /// something the model predicted.
+    /// </summary>
+    private static string NormalizeHeader(string header) => header.Trim().TrimStart('﻿');
+
+    private static void DisplayPredictionPreview(string outputPath, string inputPath)
     {
         try
         {
@@ -744,31 +798,57 @@ public static class PredictCommand
             if (lines.Count < 2) return;
 
             var headers = CsvFieldParser.ParseFields(lines[0]);
+            var inputHeaders = ReadHeaderOf(inputPath);
+
+            var (shown, omitted) = SelectPreviewColumns(headers, inputHeaders, AnsiConsole.Profile.Width);
+            var shownIndexes = shown.Select(h => Array.IndexOf(headers, h)).Where(i => i >= 0).ToArray();
 
             var table = new Table()
                 .Border(TableBorder.Rounded)
                 .BorderColor(Color.Grey)
                 .Title("[bold]Prediction Preview (first 5 rows)[/]");
 
-            foreach (var header in headers)
+            foreach (var index in shownIndexes)
             {
-                table.AddColumn(new TableColumn($"[bold]{Markup.Escape(header)}[/]"));
+                table.AddColumn(new TableColumn($"[bold]{Markup.Escape(NormalizeHeader(headers[index]))}[/]"));
             }
 
             for (int i = 1; i < lines.Count; i++)
             {
                 var fields = CsvFieldParser.ParseFields(lines[i]);
-                var cells = headers.Select((_, idx) =>
+                var cells = shownIndexes.Select(idx =>
                     idx < fields.Length ? Markup.Escape(fields[idx]) : "[grey]-[/]").ToArray();
                 table.AddRow(cells);
             }
 
             AnsiConsole.Write(table);
+            if (omitted > 0)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[grey]{omitted} input column(s) not shown — every column is in the saved file.[/]");
+            }
             AnsiConsole.WriteLine();
         }
         catch
         {
             // Non-critical — skip preview on error
+        }
+    }
+
+    /// <summary>
+    /// The column names of a CSV, or none when the file cannot be read — in which case every output
+    /// column reads as an answer and the preview shows them all, as it did before.
+    /// </summary>
+    private static IReadOnlyCollection<string> ReadHeaderOf(string path)
+    {
+        try
+        {
+            var header = File.ReadLines(path).FirstOrDefault();
+            return header is null ? [] : CsvFieldParser.ParseFields(header);
+        }
+        catch
+        {
+            return [];
         }
     }
 
