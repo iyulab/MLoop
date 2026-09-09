@@ -6,6 +6,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using Spectre.Console;
+using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 
@@ -259,7 +260,7 @@ public static class CompareCommand
                     ? "[green]Completed[/]"
                     : $"[yellow]{e.Status}[/]");
             AddComparisonRow(table, "Timestamp", experimentsToCompare,
-                e => e.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
+                e => TimestampDisplay.LocalToMinutes(e.Timestamp));
             AddComparisonRow(table, "Time Limit", experimentsToCompare,
                 e => $"{e.Config.TimeLimitSeconds}s");
             AddComparisonRow(table, "Label Column", experimentsToCompare,

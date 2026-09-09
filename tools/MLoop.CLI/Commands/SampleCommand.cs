@@ -8,6 +8,7 @@ using MLoop.Core.Data;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using Spectre.Console;
+using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 
@@ -329,7 +330,7 @@ public static class SampleCommand
         grid.AddRow("[grey]Samples Created:[/]", $"[green]{result.SampledCount:N0}[/]");
         grid.AddRow("[grey]Total Available:[/]", $"[white]{result.TotalAvailable:N0}[/]");
         grid.AddRow("[grey]Strategy Used:[/]", $"[yellow]{result.StrategyUsed}[/]");
-        grid.AddRow("[grey]Created At:[/]", $"[grey]{result.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}[/]");
+        grid.AddRow("[grey]Created At:[/]", $"[grey]{TimestampDisplay.Local(result.CreatedAt)}[/]");
 
         AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();

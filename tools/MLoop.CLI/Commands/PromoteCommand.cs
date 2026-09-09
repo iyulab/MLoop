@@ -7,6 +7,7 @@ using MLoop.Core.Evaluation;
 using MLoop.Ops.Interfaces;
 using MLoop.Ops.Services;
 using Spectre.Console;
+using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 
@@ -326,7 +327,7 @@ public static class PromoteCommand
         table.AddRow("Model", $"[cyan]{modelName}[/]");
         table.AddRow("Experiment ID", $"[cyan]{experiment.ExperimentId}[/]");
         table.AddRow("Task", $"[yellow]{experiment.Task}[/]");
-        table.AddRow("Timestamp", experiment.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
+        table.AddRow("Timestamp", TimestampDisplay.Local(experiment.Timestamp));
 
         if (experiment.Metrics != null && experiment.Metrics.Any())
         {

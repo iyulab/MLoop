@@ -7,6 +7,7 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using Spectre.Console;
+using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 
@@ -178,7 +179,7 @@ public static class LogsCommand
 
         var table = new Table();
         table.Border(TableBorder.Rounded);
-        table.AddColumn("Timestamp");
+        table.AddColumn(TimestampDisplay.ZoneHeading("Timestamp"));
         table.AddColumn("Model");
         table.AddColumn("Experiment");
         table.AddColumn("Input (summary)");
@@ -190,7 +191,7 @@ public static class LogsCommand
             var outputStr = log.Output?.ToString() ?? "-";
 
             table.AddRow(
-                log.Timestamp.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                TimestampDisplay.LocalWithoutZone(log.Timestamp),
                 log.ModelName,
                 log.ExperimentId.Length > 12 ? log.ExperimentId[..12] + "..." : log.ExperimentId,
                 inputSummary,
