@@ -83,6 +83,30 @@ public class InternalTokenContractTests
         new(@"\b(claudedocs|HANDOFF)\b", RegexOptions.Compiled);
 
     [Fact]
+    public void TheScanReachesAFileThatIsNotAddedYet()
+    {
+        // Companion to the scan below. The set it walks comes from git, and asking git only for
+        // tracked files would exempt the file most likely to be carrying a fresh violation: the one
+        // just written. A guard that cannot see a new file reports a clean tree in exactly the voice
+        // of a clean tree, and the omission surfaces only in the commit that ends the exemption.
+        var probe = Path.Combine(
+            Path.GetDirectoryName(typeof(InternalTokenContractTests).Assembly.Location)!,
+            "..", "..", "..", "Documentation", $"NotAddedProbe-{Guid.NewGuid():N}.md");
+        probe = Path.GetFullPath(probe);
+
+        try
+        {
+            File.WriteAllText(probe, "a file the working tree has and the index does not");
+
+            Assert.Contains(probe, RepoSourceTree.PublishedTextFiles());
+        }
+        finally
+        {
+            File.Delete(probe);
+        }
+    }
+
+    [Fact]
     public void PublishedTextCarriesNoInternalToken()
     {
         var findings = new List<string>();

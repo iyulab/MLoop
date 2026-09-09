@@ -123,6 +123,20 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task HealthEndpoint_AnswersHead_BecauseThatIsWhatProbesSend()
+    {
+        // A container HEALTHCHECK using `wget --spider`, and most load balancers, probe with HEAD.
+        // A GET-only route answers those 405 while the service is perfectly healthy, which reads to
+        // the orchestrator as a dead container. Measured: a generated compose deployment sat
+        // `unhealthy` indefinitely against this endpoint returning 200 to every GET.
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/health");
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task InfoEndpoint_WithNoProductionModel_ReturnsNotFound()
     {
         // Act

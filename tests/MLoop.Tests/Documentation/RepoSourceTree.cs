@@ -55,6 +55,17 @@ internal static class RepoSourceTree
     /// had been shipped. Tracked-or-not is the same authority the repository already uses to decide
     /// what goes out, so the guard reuses it instead of keeping a second opinion.
     /// </remarks>
+    /// <remarks>
+    /// <para>
+    /// A file that is not yet added counts as published here, which <c>ls-files</c> alone would not
+    /// say. Asking only for tracked files hides the one file most likely to be carrying a fresh
+    /// violation — the one just written — until the commit that adds it, and by then the guard's
+    /// objection arrives after the text is already in history. <c>--others --exclude-standard</c>
+    /// keeps the stated intent (ignored state stays out, because that is what is ignored) while
+    /// closing that window: it distinguishes "ignored" from "not added yet", which the tracked-only
+    /// question conflates.
+    /// </para>
+    /// </remarks>
     internal static IEnumerable<string> PublishedTextFiles()
     {
         var git = new ProcessStartInfo("git")
@@ -63,7 +74,8 @@ internal static class RepoSourceTree
             RedirectStandardOutput = true,
             UseShellExecute = false,
         };
-        foreach (var argument in new[] { "-C", RepoRoot, "ls-files", "--", "*.md", "*.cs" })
+        foreach (var argument in new[]
+                 { "-C", RepoRoot, "ls-files", "--cached", "--others", "--exclude-standard", "--", "*.md", "*.cs" })
             git.ArgumentList.Add(argument);
 
         using var process = Process.Start(git)

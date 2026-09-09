@@ -9,6 +9,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.31.0] - 2026-09-07
 
 ### Fixed
+- **`mloop docker` generated a Dockerfile that could not be built.** The final stage added the
+  Microsoft package feed for Debian 12 to a base image that is Ubuntu, then installed a full .NET
+  SDK on top of a runtime image that already carries the runtime; `apt-get` could not resolve the
+  result and the build stopped with exit code 100. The generated file now acquires the CLI in the
+  SDK stage it already had and copies the tool into the runtime image, installing no .NET
+  distribution at all. Nothing about this was visible from the generator's output — only from
+  building it.
+- **A container built from the generated files reported itself unhealthy while serving correctly.**
+  The generated health probe used `wget --spider`, which issues HEAD, against an endpoint mapped for
+  GET only — so every probe was answered 405 and the orchestrator saw a dead container, indefinitely.
+  The probe now issues a GET, and `/health` additionally answers HEAD, so external probes and load
+  balancers that use HEAD get the same answer as a browser.
+- **`docker compose up` could not start the service at all.** The generated compose file selected the
+  Production environment, where the API refuses to run on the default signing key, but supplied no
+  key — leaving a container that crash-looped under its own restart policy. Compose now requires
+  `JWT_SIGNING_KEY` and stops immediately with a message naming it, rather than starting something
+  that cannot come up. A placeholder secret was rejected as the alternative: a known key in a
+  generated file is worse than an absent one.
+- The generated compose file no longer carries the obsolete `version:` key, which current Compose
+  releases warn about.
 - **`train` told the reader to promote a model it was about to promote itself.** The next steps are printed when the experiment is recorded, which is before automatic promotion runs, and the list always offered `mloop promote <exp>` — so read top to bottom the command asked for something the following lines reported as already done. The promotion step is now offered only when the command will not be taking it, which is what `--no-promote` asks for and where naming the experiment actually makes the line runnable.
 
 - **`init` lined up its folder listing for one model name and no other.** The comment column was written into the strings, and two of the three paths carry the model's name — so `--name churn` moved every comment three characters out of line, and the default the padding was written for was one character out to begin with. The column is now computed from the widest path, which also keeps the object-detection and image-directory listings aligned.
