@@ -213,6 +213,37 @@ public class ExperimentReportTests
     }
 
     [Fact]
+    public void The_data_fingerprint_is_shown_when_recorded_and_absent_when_not()
+    {
+        var without = ExperimentReport.Render(Completed(), null, Root, Version);
+        Assert.DoesNotContain("| Data hash |", without);
+
+        var experiment = Completed();
+        var withHash = new ExperimentData
+        {
+            ModelName = experiment.ModelName,
+            ExperimentId = experiment.ExperimentId,
+            Timestamp = experiment.Timestamp,
+            Status = experiment.Status,
+            Task = experiment.Task,
+            Config = new ExperimentConfig
+            {
+                DataFile = experiment.Config.DataFile,
+                DataFileHash = "sha256:" + new string('a', 64),
+                LabelColumn = experiment.Config.LabelColumn,
+                TimeLimitSeconds = experiment.Config.TimeLimitSeconds,
+                Metric = experiment.Config.Metric,
+                TestSplit = experiment.Config.TestSplit
+            },
+            Result = experiment.Result,
+            Metrics = experiment.Metrics
+        };
+
+        var page = ExperimentReport.Render(withHash, null, Root, Version);
+        Assert.Contains($"| Data hash | sha256:{new string('a', 64)} |", page);
+    }
+
+    [Fact]
     public void A_data_file_outside_the_project_is_named_as_given()
     {
         var elsewhere = Path.Combine(Path.GetTempPath(), "shared", "train.csv");

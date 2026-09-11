@@ -124,6 +124,15 @@ public class ExperimentData
 public class ExperimentConfig
 {
     public required string DataFile { get; init; }
+
+    /// <summary>
+    /// The SHA-256 of <see cref="DataFile"/>'s content as the user had it
+    /// (<c>sha256:&lt;hex&gt;</c>, see <c>MLoop.Core.Data.DataFingerprint</c>), so the experiment
+    /// can say which data it saw rather than only where it looked. Null on experiments recorded
+    /// before the field existed and on directory-based tasks, whose input is not one file.
+    /// </summary>
+    public string? DataFileHash { get; init; }
+
     public required string LabelColumn { get; init; }
     public required int TimeLimitSeconds { get; init; }
     public required string Metric { get; init; }

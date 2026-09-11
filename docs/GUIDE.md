@@ -151,7 +151,9 @@ mloop train data.csv --label defect --task binary-classification --balance 5  # 
 
 **Output** (under `models/<name>/staging/exp-XXX/`):
 - `model.zip` — the trained model
-- `metadata.json`, `metrics.json`, `config.json` — what was trained, how it scored, how it was configured
+- `metadata.json`, `metrics.json`, `config.json` — what was trained, how it scored, how it was configured.
+  The config carries `dataFileHash`, the SHA-256 of the training file as you have it, so you can
+  check later which data an experiment actually saw
 - `trials.ndjson`, `leaderboard.json` — every trial the search completed, in completion order and ranked
 - `report.md` — the experiment as a page: result, metrics, ranked trials, and each column's role (with
   the reason for any exclusion). A rendering of the files above for reading and sharing; no command

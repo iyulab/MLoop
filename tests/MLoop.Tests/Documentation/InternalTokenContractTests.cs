@@ -32,13 +32,13 @@ public class InternalTokenContractTests
 {
     /// <summary>
     /// Prefixes that look like an internal id but are public vocabulary: character encodings and
-    /// standards bodies, this repository's own published ADR numbering, and <c>N</c> as the count
-    /// in a formula ("Vector&lt;Single, N-1&gt;"). The experiment ids MLoop mints for users
-    /// (<c>exp-001</c>) need no entry — they are lower-case, and the shape below matches only an
-    /// upper-case prefix.
+    /// standards bodies, hash algorithms (<c>SHA-256</c>), this repository's own published ADR
+    /// numbering, and <c>N</c> as the count in a formula ("Vector&lt;Single, N-1&gt;"). The
+    /// experiment ids MLoop mints for users (<c>exp-001</c>) need no entry — they are lower-case,
+    /// and the shape below matches only an upper-case prefix.
     /// </summary>
     private static readonly HashSet<string> PublicPrefixes =
-        new(StringComparer.Ordinal) { "UTF", "ISO", "CP", "CVE", "RFC", "ADR", "N" };
+        new(StringComparer.Ordinal) { "UTF", "ISO", "CP", "CVE", "RFC", "ADR", "SHA", "N" };
 
     /// <summary>
     /// An internal work-item id: a short upper-case prefix (or the literal <c>cycle</c>) and a
@@ -156,6 +156,7 @@ public class InternalTokenContractTests
     [InlineData("re-encoded as UTF-8 from CP-949", false, "encodings")]
     [InlineData("see CVE-2024-1234 and RFC-4180", false, "public identifiers")]
     [InlineData("described in ADR-001", false, "this repository's own ADR numbering")]
+    [InlineData("the SHA-256 of the training file", false, "a hash algorithm name")]
     [InlineData("expected Vector<Single, N-1>", false, "a count in a formula")]
     [InlineData("the experiment exp-001 was promoted", false, "an experiment id MLoop mints")]
     [InlineData("applying rule-1 then rule-2", false, "lower-case fixture data")]

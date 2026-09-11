@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Every experiment records the fingerprint of the data it was trained on.** `config.json` (and
+  the copy of it inside `metadata.json`) now carries `dataFileHash`, the SHA-256 of the training
+  file's content written as `sha256:<hex>`, taken over the file as you have it — before any
+  encoding conversion or split MLoop makes for its own use — so anyone holding the original can
+  confirm that `exp-007` really was trained on it, and a regenerated `datasets/train.csv` can no
+  longer pass for the one an experiment saw. The report shows it under `Data hash`, and
+  `GET /experiments/{id}` returns it in the config block. Absent on experiments recorded before
+  this version and on image-directory tasks, whose input is not one file.
 - **Every experiment now leaves a `report.md` beside its model.** Training writes one Markdown page
   into `models/<name>/staging/exp-NNN/` that says what the JSON files in that directory say, in the
   order a person asks: status and data, the winning trainer and its pipeline, the metrics, every
