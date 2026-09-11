@@ -16,6 +16,14 @@ public class TrainingResult
     public required Dictionary<string, double> Metrics { get; init; }
     public required double TrainingTimeSeconds { get; init; }
     public required string ModelPath { get; init; }
+
+    /// <summary>
+    /// The experiment's Markdown report, when one was written beside the model. Null when the
+    /// report could not be rendered — the run is still a success, and the caller says nothing
+    /// about a file that is not there.
+    /// </summary>
+    public string? ReportPath { get; init; }
+
     public long RowCount { get; init; }
     public InputSchemaInfo? Schema { get; init; }
 }

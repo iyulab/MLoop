@@ -141,7 +141,8 @@ public sealed class TrainJsonEmitter(TextWriter output)
     /// today keep working. <c>trainer</c> is the same fact in parts, for consumers that need an
     /// identifier: <c>bestTrainer</c> has never been one (it carries hyperparameters like
     /// <c>KMeans (k=3)</c> and fallback notes), so reading it as one meant parsing an unspecified,
-    /// per-task format. Absent parts are omitted, not blanked.
+    /// per-task format. Absent parts are omitted, not blanked. <c>reportPath</c> names the
+    /// experiment's Markdown report and is omitted when none could be written.
     /// </remarks>
     public void Result(TrainingResult result, string modelName) => Write(new
     {
@@ -153,6 +154,7 @@ public sealed class TrainJsonEmitter(TextWriter output)
         metrics = result.Metrics,
         trainingTimeSec = result.TrainingTimeSeconds,
         modelPath = result.ModelPath,
+        reportPath = result.ReportPath,
         ts = Now()
     });
 

@@ -197,6 +197,38 @@ public class TrainJsonEmitterTests
         Assert.False(trainer.TryGetProperty("fallbackReason", out _));
     }
 
+    /// <summary>
+    /// The report is a convenience the store may fail to write; a consumer must not be handed a
+    /// path to a file that is not there, so the field is present exactly when the file is.
+    /// </summary>
+    [Fact]
+    public void Result_names_the_report_only_when_one_was_written()
+    {
+        var (withReport, sink1) = Build();
+        withReport.Result(new TrainingResult
+        {
+            ExperimentId = "exp-006",
+            Trainer = TrainerDescriptor.Of("LightGbmBinary"),
+            Metrics = new Dictionary<string, double> { ["auc"] = 0.9 },
+            TrainingTimeSeconds = 1.0,
+            ModelPath = "/models/default/staging/exp-006/model.zip",
+            ReportPath = "/models/default/staging/exp-006/report.md"
+        }, "default");
+        Assert.Equal("/models/default/staging/exp-006/report.md",
+            Assert.Single(Events(sink1)).GetProperty("reportPath").GetString());
+
+        var (withoutReport, sink2) = Build();
+        withoutReport.Result(new TrainingResult
+        {
+            ExperimentId = "exp-006",
+            Trainer = TrainerDescriptor.Of("LightGbmBinary"),
+            Metrics = new Dictionary<string, double> { ["auc"] = 0.9 },
+            TrainingTimeSeconds = 1.0,
+            ModelPath = "/models/default/staging/exp-006/model.zip"
+        }, "default");
+        Assert.False(Assert.Single(Events(sink2)).TryGetProperty("reportPath", out _));
+    }
+
     [Fact]
     public void Every_event_is_its_own_line_so_the_stream_can_be_read_as_it_arrives()
     {
