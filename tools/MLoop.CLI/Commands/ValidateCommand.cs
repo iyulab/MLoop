@@ -17,26 +17,10 @@ namespace MLoop.CLI.Commands;
 /// </summary>
 public static class ValidateCommand
 {
-    private static readonly HashSet<string> ValidMetrics = BuildValidMetrics();
-
-    private static HashSet<string> BuildValidMetrics()
-    {
-        var metrics = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "auto",
-            // user-facing aliases
-            "accuracy", "auc", "f1", "recall", "precision", "log-loss",
-            "r2", "rmse", "mae", "mse", "rSquared",
-            // secondary metrics AutoML emits that users may target (not a task's primary metric)
-            "log_loss", "f1_score"
-        };
-
-        // Root fix: union the canonical per-task primary metrics from the shared
-        // TaskMetadata source of truth, so a newly added task's metric can never again drift
-        // out of this allowlist and be falsely flagged "Unknown".
-        metrics.UnionWith(TaskMetadata.AllPrimaryMetrics);
-        return metrics;
-    }
+    // Which metric names are known is MetricNames' knowledge (MLoop.Core.Evaluation), the same
+    // authority the optimizer reads. A local allowlist here once accepted spellings the optimizer
+    // did not (`rSquared`, `log-loss`, `recall`), so `validate` passed a config that training then
+    // silently optimized with the task default.
 
     private static readonly HashSet<string> ValidColumnTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -354,10 +338,11 @@ public static class ValidateCommand
         }
 
         // Validate metric
-        if (!string.IsNullOrWhiteSpace(training.Metric) && !ValidMetrics.Contains(training.Metric))
+        if (!string.IsNullOrWhiteSpace(training.Metric) && !MetricNames.IsKnown(training.Metric))
         {
             warnings.Add(new ValidationWarning($"{prefix}.metric",
-                $"Unknown metric '{training.Metric}'. Common values: {string.Join(", ", ValidMetrics.Take(6))}"));
+                $"Unknown metric '{training.Metric}'. Training would optimize the task default instead. " +
+                $"Known names: {MetricNames.Auto}, {string.Join(", ", MetricNames.All)}"));
         }
 
         // Validate test split

@@ -11,7 +11,7 @@ models:
     description: Equipment anomaly detection model
     training:
       time_limit_seconds: 600  # 10 minutes for better results with time-series data
-      metric: F1Score  # F1-score for imbalanced anomaly detection
+      metric: f1_score  # F1-score for imbalanced anomaly detection
       test_split: 0.3  # 30% for validation (time-series requires larger validation set)
 
 # Example: Multiple anomaly detection models

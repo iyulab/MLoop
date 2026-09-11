@@ -142,7 +142,7 @@ label_column: IsError
 
 training:
   time_limit_seconds: 600
-  metric: F1Score  # Appropriate for imbalanced data
+  metric: f1_score  # Appropriate for imbalanced data
   test_split: 0.3  # Larger validation for time-series
 
 features:

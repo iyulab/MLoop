@@ -20,13 +20,19 @@ namespace MLoop.CLI.Infrastructure.ML;
 public static class MetricPolicy
 {
     /// <summary>
-    /// Resolves a user-facing metric name/alias (e.g. "f1", "r2", "log-loss") to the
-    /// canonical key actually present among <paramref name="availableKeys"/> (e.g.
-    /// "f1_score", "r_squared", "log_loss"). The EvaluationEngine stores canonical keys,
-    /// while the CLI accepts aliases — without this mapping a raw lookup silently misses
-    /// (the root cause of blocked auto-promotion and of Compare's ignored --sort).
-    /// Returns the matching canonical key, or null if no known variant is present.
+    /// Resolves a user-facing metric name (e.g. "f1", "r2", "log-loss") to the canonical key
+    /// actually present among <paramref name="availableKeys"/> (e.g. "f1_score", "r_squared",
+    /// "log_loss"). The EvaluationEngine stores canonical keys, while the CLI accepts any
+    /// spelling — without this mapping a raw lookup silently misses (the root cause of blocked
+    /// auto-promotion and of Compare's ignored --sort). Returns the matching key, or null if no
+    /// known variant is present.
     /// </summary>
+    /// <remarks>
+    /// Spelling is <see cref="MetricNames"/>' business — this method once kept its own alias
+    /// switch, the fourth such vocabulary in the tree. What remains here is gate policy: under
+    /// which <i>stored key</i> a canonical name may be found when the task reports a family of it
+    /// (an accuracy under a multiclass task is stored as micro or macro accuracy).
+    /// </remarks>
     public static string? ResolveMetricKey(string metricName, IEnumerable<string> availableKeys)
     {
         if (string.IsNullOrWhiteSpace(metricName))
@@ -42,17 +48,15 @@ public static class MetricPolicy
             return metricName;
         }
 
-        var normalized = metricName.Trim().ToLowerInvariant().Replace("-", "_");
+        var canonical = MetricNames.Canonical(metricName)
+            ?? metricName.Trim().ToLowerInvariant().Replace("-", "_");
 
-        // Map common aliases to their canonical stored keys (most-specific first).
-        var candidates = normalized switch
+        // The stored keys a canonical name may live under, most-specific first.
+        var candidates = canonical switch
         {
-            "f1" or "f1score" => new[] { "f1_score", "macro_f1" },
-            "r2" or "rsquared" => new[] { "r_squared" },
-            "logloss" => new[] { "log_loss" },
+            "f1_score" => new[] { "f1_score", "macro_f1" },
             "accuracy" => new[] { "accuracy", "micro_accuracy", "macro_accuracy" },
-            "area_under_roc_curve" => new[] { "auc" },
-            _ => new[] { normalized }
+            _ => new[] { canonical }
         };
 
         foreach (var candidate in candidates)

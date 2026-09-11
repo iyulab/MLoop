@@ -32,6 +32,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="MLoop.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="FilePrepper" />
   </ItemGroup>
 

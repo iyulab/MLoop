@@ -105,7 +105,9 @@ mloop train <data-file> <label-column> [options]
 
 # Core Options:
 #   --time <seconds>     Training time budget (default: 60)
-#   --metric <name>      Metric to optimize (default: task-dependent)
+#   --metric <name>      Metric to optimize (default: task-dependent). Case and separators do not
+#                        matter (F1Score, f1-score and f1_score are one name); an unknown name is
+#                        reported as a warning and the task default is optimized instead
 #   --test-split <0-1>   Test split fraction (default: 0.2)
 #   --output <path>      Custom model output path
 

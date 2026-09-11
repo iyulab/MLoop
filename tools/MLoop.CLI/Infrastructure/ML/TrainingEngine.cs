@@ -387,7 +387,7 @@ public class TrainingEngine : ITrainingEngine
                     DataFile = originalDataFile, // Store original path, not converted temp file
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = config.TimeLimitSeconds,
-                    Metric = config.Metric,
+                    Metric = config.CanonicalMetric,
                     TestSplit = config.TestSplit,
                     InputSchema = inputSchema,
                     GroupColumn = config.GroupColumn,
@@ -441,7 +441,7 @@ public class TrainingEngine : ITrainingEngine
                     DataFile = originalDataFile, // Store original path, not converted temp file
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = config.TimeLimitSeconds,
-                    Metric = config.Metric,
+                    Metric = config.CanonicalMetric,
                     TestSplit = config.TestSplit,
                     GroupColumn = config.GroupColumn,
                     UserColumn = config.UserColumn,
@@ -541,7 +541,7 @@ public class TrainingEngine : ITrainingEngine
         var probeAutoMLResult = await _autoMLRunner.RunAsync(probeConfig, probeProgress, cancellationToken);
 
         // Determine best metric from probe
-        var bestMetric = GetPrimaryMetricValue(probeAutoMLResult.Metrics, config.Metric, config.Task);
+        var bestMetric = GetPrimaryMetricValue(probeAutoMLResult.Metrics, config.CanonicalMetric, config.Task);
 
         var probe = new ProbeResult
         {
@@ -594,7 +594,7 @@ public class TrainingEngine : ITrainingEngine
         var mainResult = await _autoMLRunner.RunAsync(mainConfig, progress, cancellationToken);
 
         // Pick best between probe and main
-        var mainMetric = GetPrimaryMetricValue(mainResult.Metrics, config.Metric, config.Task);
+        var mainMetric = GetPrimaryMetricValue(mainResult.Metrics, config.CanonicalMetric, config.Task);
         if (mainMetric >= bestMetric)
         {
             return mainResult;
@@ -1258,7 +1258,7 @@ public class TrainingEngine : ITrainingEngine
         if (majorityShare is not > 0)
             return;
 
-        var judgedOn = MetricPolicy.ResolveCanonicalMetricKey(config.Metric ?? string.Empty, config.Task, metrics.Keys);
+        var judgedOn = MetricPolicy.ResolveCanonicalMetricKey(config.CanonicalMetric, config.Task, metrics.Keys);
         if (judgedOn is "accuracy" or "micro_accuracy")
             return;
 

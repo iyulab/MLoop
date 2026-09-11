@@ -1089,7 +1089,7 @@ public static class TrainCommand
             {
                 AnsiConsole.WriteLine();
                 var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
-                var primaryMetric = trainingConfig.Metric;
+                var primaryMetric = trainingConfig.CanonicalMetric;
 
                 // Get current production model for comparison
                 var production = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
