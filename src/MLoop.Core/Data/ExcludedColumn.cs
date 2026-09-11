@@ -8,8 +8,9 @@ namespace MLoop.Core.Data;
 /// <param name="Name">Column name as it appears in the CSV header.</param>
 /// <param name="Reason">
 /// One of <see cref="SchemaDataTypes.ExcludedDateTime"/>, <see cref="SchemaDataTypes.ExcludedSparse"/>,
-/// or <see cref="SchemaDataTypes.ExcludedConstant"/> — the same vocabulary the saved schema records,
-/// so the decision survives into predict and evaluate unchanged.
+/// <see cref="SchemaDataTypes.ExcludedConstant"/>, or <see cref="SchemaDataTypes.ExcludedIdentifier"/> —
+/// the same vocabulary the saved schema records, so the decision survives into predict and evaluate
+/// unchanged.
 /// </param>
 /// <seealso cref="CsvDataLoader.DetermineExcludedColumns"/>
 public sealed record ExcludedColumn(string Name, string Reason);

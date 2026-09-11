@@ -91,6 +91,11 @@ public class CsvDataLoader : DataProviderBase
             // Pre-InferColumns: Remove constant columns (all identical values) from CSV.
             // Constant columns provide zero predictive signal and waste compute resources.
             mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn, _log);
+
+            // Pre-InferColumns: Remove identifier columns (a distinct value in every row) from CSV.
+            // InferColumns marks them Ignore, but BuildColumnInformation turns every text column
+            // back into a text feature, so an id column became TF-IDF noise — and a leak path.
+            mlnetCompatiblePath = RemoveIdentifierColumns(mlnetCompatiblePath, labelColumn, preserveColumns, _log);
         }
 
         // Pre-InferColumns: Warn about mixed-type columns (mostly numeric with some text).
@@ -877,6 +882,144 @@ public class CsvDataLoader : DataProviderBase
     }
 
     /// <summary>
+    /// Fewer data rows than this and identifier detection does not run: with a handful of rows every
+    /// categorical column is all-distinct, so the rule has nothing to say yet.
+    /// </summary>
+    public const int IdentifierDetectionMinimumRows = 20;
+
+    /// <summary>
+    /// Removes identifier columns from CSV before InferColumns: text columns in which every row
+    /// carries its own distinct, whitespace-free value — a customer id, an order number, a UUID.
+    /// Returns the original path when nothing qualifies.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ML.NET's own purpose inference already classifies such a column as <c>Ignore</c> (a text
+    /// column at ≥ 0.9 cardinality with no spaces), but <c>AutoMLRunner.BuildColumnInformation</c>
+    /// declares every text column a text feature, so the id was featurized as TF-IDF n-grams: pure
+    /// noise on a real dataset, and a leak path whenever the id encodes anything about the label.
+    /// Dropping it here, in the same chain as DateTime/sparse/constant, keeps the decision on the
+    /// one authority every slice consumes (<see cref="DetermineExcludedColumns"/>).
+    /// </para>
+    /// <para>
+    /// The rule is deliberately narrow. A numeric column is never an identifier here — measurements
+    /// are routinely distinct per row, and sequential integer ids are reported by the monotonic
+    /// warning instead. A value containing whitespace disqualifies the column: free text is
+    /// distinct per row too, and it is a feature. A single duplicate disqualifies it: "one row per
+    /// entity" is the property being detected, not high cardinality. And the whole file is read, not
+    /// a sample — the first 200 rows of a sorted file can be all-distinct in a column that repeats
+    /// further down.
+    /// </para>
+    /// <para>
+    /// <paramref name="protectedColumns"/> names columns the caller has claimed for a purpose of
+    /// its own — a ranking group, a recommendation user/item, a column the user typed an explicit
+    /// override for. Those are never dropped: an explicit intent outranks a heuristic.
+    /// </para>
+    /// </remarks>
+    public static string RemoveIdentifierColumns(
+        string filePath, string? labelColumn, IEnumerable<string>? protectedColumns = null, Action<string>? log = null)
+    {
+        var write = log ?? NoLog;
+        try
+        {
+            string[] headers;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                var headerLine = reader.ReadLine();
+                if (headerLine == null) return filePath;
+                headers = ParseCsvLine(headerLine);
+            }
+
+            if (headers.Length <= 1) return filePath;
+
+            var protectedSet = new HashSet<string>(protectedColumns ?? [], StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(labelColumn)) protectedSet.Add(labelColumn);
+
+            // A null entry means the column is out of the running — protected, or disqualified by a
+            // value it carried. A live entry accumulates the distinct values seen so far.
+            var distinct = new HashSet<string>?[headers.Length];
+            for (int i = 0; i < headers.Length; i++)
+            {
+                distinct[i] = protectedSet.Contains(headers[i].Trim()) ? null : new HashSet<string>(StringComparer.Ordinal);
+            }
+
+            int totalRows = 0;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                reader.ReadLine(); // skip header
+                string? line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    totalRows++;
+                    var fields = ParseCsvLine(line);
+                    for (int i = 0; i < headers.Length; i++)
+                    {
+                        var seen = distinct[i];
+                        if (seen is null) continue;
+
+                        var value = i < fields.Length ? fields[i].Trim() : string.Empty;
+                        if (value.Length == 0
+                            || value.Any(char.IsWhiteSpace)
+                            || double.TryParse(value, System.Globalization.NumberStyles.Float,
+                                               System.Globalization.CultureInfo.InvariantCulture, out _)
+                            || !seen.Add(value))
+                        {
+                            distinct[i] = null;
+                        }
+                    }
+                }
+            }
+
+            if (totalRows < IdentifierDetectionMinimumRows) return filePath;
+
+            var identifierIndices = Enumerable.Range(0, headers.Length)
+                .Where(i => distinct[i] is { } seen && seen.Count == totalRows)
+                .ToList();
+
+            if (identifierIndices.Count == 0) return filePath;
+
+            var tempPath = WriteWithoutColumns(filePath, identifierIndices, "mloop_noid_");
+
+            foreach (var idx in identifierIndices)
+            {
+                write($"[Warning] Identifier column '{headers[idx]}' excluded (distinct in every row)");
+            }
+
+            return tempPath;
+        }
+        catch
+        {
+            return filePath; // Non-critical, continue with original
+        }
+    }
+
+    /// <summary>
+    /// Writes <paramref name="filePath"/> to a fresh UTF-8 BOM temp file with the given column
+    /// indices dropped from every line, and returns that temp path.
+    /// </summary>
+    private static string WriteWithoutColumns(string filePath, IReadOnlyCollection<int> dropIndices, string tempPrefix)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), $"{tempPrefix}{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+        var headerCount = ParseCsvLine(File.ReadLines(filePath, System.Text.Encoding.UTF8).First()).Length;
+        var keepIndices = Enumerable.Range(0, headerCount).Except(dropIndices).ToArray();
+
+        var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+        using var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true));
+        foreach (var line in allLines)
+        {
+            var fields = ParseCsvLine(line);
+            var kept = keepIndices
+                .Where(idx => idx < fields.Length)
+                .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
+                    ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
+                    : fields[idx]);
+            writer.WriteLine(string.Join(",", kept));
+        }
+
+        return tempPath;
+    }
+
+    /// <summary>
     /// Detects columns where the majority of values are numeric but a minority contain text.
     /// InferColumns may classify these as Text, leading to TF-IDF featurization and schema mismatches.
     /// Emits warnings suggesting column_overrides for affected columns.
@@ -1089,7 +1232,7 @@ public class CsvDataLoader : DataProviderBase
             var colNames = string.Join(", ", monotonicCols);
             _log($"[Warning] Possible ID/index column(s) detected (strictly increasing integers): {colNames}");
             _log($"[Info] These columns may cause overfitting. Consider excluding them:");
-            _log($"[Info]   mloop train data.csv --label target --exclude {monotonicCols.First()}");
+            _log($"[Info]   mloop features select --drop {monotonicCols.First()}");
         }
     }
 
@@ -1263,8 +1406,9 @@ public class CsvDataLoader : DataProviderBase
     }
 
     /// <summary>
-    /// The single authority for "which columns does featurization drop?" — DateTime, sparse, and
-    /// constant, in the exact order and with the exact semantics <see cref="LoadData"/> applies them.
+    /// The single authority for "which columns does featurization drop?" — DateTime, sparse,
+    /// constant, and identifier, in the exact order and with the exact semantics
+    /// <see cref="LoadData"/> applies them.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1284,9 +1428,17 @@ public class CsvDataLoader : DataProviderBase
     /// drift this method exists to remove.
     /// </para>
     /// </remarks>
+    /// <param name="filePath">The full training file — the deciding slice.</param>
+    /// <param name="labelColumn">The label, which no rule ever drops.</param>
+    /// <param name="log">Where the chain narrates each drop; null discards the narration.</param>
+    /// <param name="protectedColumns">
+    /// Columns the caller has claimed for a purpose of its own (ranking group, recommendation
+    /// user/item, an explicit column override). The identifier rule is a heuristic and never
+    /// overrides such an intent; the other three rules are not affected by this set.
+    /// </param>
     /// <returns>Excluded column names paired with the reason, in removal order. Empty when nothing is dropped.</returns>
     public static IReadOnlyList<ExcludedColumn> DetermineExcludedColumns(
-        string filePath, string? labelColumn, Action<string>? log = null)
+        string filePath, string? labelColumn, Action<string>? log = null, IEnumerable<string>? protectedColumns = null)
     {
         var temps = new List<string>();
         try
@@ -1302,10 +1454,14 @@ public class CsvDataLoader : DataProviderBase
             var afterConstantPath = Track(RemoveConstantColumns(afterSparsePath, labelColumn, log));
             var afterConstant = ReadCsvHeaders(afterConstantPath);
 
+            var afterIdentifierPath = Track(RemoveIdentifierColumns(afterConstantPath, labelColumn, protectedColumns, log));
+            var afterIdentifier = ReadCsvHeaders(afterIdentifierPath);
+
             var excluded = new List<ExcludedColumn>();
             excluded.AddRange(Dropped(beforeDateTime, afterDateTime, SchemaDataTypes.ExcludedDateTime));
             excluded.AddRange(Dropped(afterDateTime, afterSparse, SchemaDataTypes.ExcludedSparse));
             excluded.AddRange(Dropped(afterSparse, afterConstant, SchemaDataTypes.ExcludedConstant));
+            excluded.AddRange(Dropped(afterConstant, afterIdentifier, SchemaDataTypes.ExcludedIdentifier));
             return excluded;
 
             string Track(string path)

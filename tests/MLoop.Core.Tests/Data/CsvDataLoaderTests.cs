@@ -1140,6 +1140,141 @@ public class CsvDataLoaderTests : IDisposable
 
     #endregion
 
+    #region RemoveIdentifierColumns
+
+    private string CreateIdentifierCsv(string fileName, int rows, Func<int, string> idValue, string extraHeader = "", Func<int, string>? extraValue = null)
+    {
+        var lines = new List<string> { $"Id,Feature1{extraHeader},Label" };
+        for (int i = 0; i < rows; i++)
+        {
+            var extra = extraValue is null ? "" : "," + extraValue(i);
+            lines.Add($"{idValue(i)},{i % 5}{extra},{(i % 2 == 0 ? "A" : "B")}");
+        }
+        var csvPath = Path.Combine(_tempDirectory, fileName);
+        File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
+        return csvPath;
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_DistinctTextInEveryRow_RemovesIt()
+    {
+        var csvPath = CreateIdentifierCsv("id.csv", 30, i => $"C{i:D4}-X");
+
+        var messages = new List<string>();
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label", null, messages.Add);
+
+        Assert.NotEqual(csvPath, result);
+        var header = File.ReadLines(result).First();
+        Assert.DoesNotContain("Id", header.Split(','));
+        Assert.Contains("Feature1", header.Split(','));
+        Assert.Contains("Identifier column 'Id' excluded", string.Join("\n", messages));
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_NumericColumn_IsNeverAnIdentifier()
+    {
+        // Measurements are routinely distinct per row; ML.NET's own Ignore rule is text-only too.
+        var csvPath = CreateIdentifierCsv("numeric.csv", 30, i => (i * 0.37 + 1.1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_ValuesWithWhitespace_AreFreeText_NotIdentifier()
+    {
+        var csvPath = CreateIdentifierCsv("text.csv", 30, i => $"review number {i} was fine");
+
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_OneDuplicate_DisqualifiesTheColumn()
+    {
+        // "One row per entity" is the property, not high cardinality: a single repeat means the
+        // column is a (very fine-grained) category, and a category is a feature.
+        var csvPath = CreateIdentifierCsv("dup.csv", 30, i => i == 29 ? "C0000-X" : $"C{i:D4}-X");
+
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_MissingValue_DisqualifiesTheColumn()
+    {
+        var csvPath = CreateIdentifierCsv("missing.csv", 30, i => i == 3 ? "" : $"C{i:D4}-X");
+
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_BelowMinimumRows_DoesNotRun()
+    {
+        // With a handful of rows every categorical column is all-distinct; the rule has no evidence.
+        var csvPath = CreateIdentifierCsv("tiny.csv", CsvDataLoader.IdentifierDetectionMinimumRows - 1, i => $"C{i:D4}-X");
+
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_DistinctLabel_KeepsLabel()
+    {
+        // A regression-like text label that happens to be distinct per row is still the label.
+        var lines = new List<string> { "Feature1,Label" };
+        for (int i = 0; i < 30; i++)
+            lines.Add($"{i % 5},L{i:D3}");
+        var csvPath = Path.Combine(_tempDirectory, "label.csv");
+        File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_ProtectedColumn_IsKept()
+    {
+        var csvPath = CreateIdentifierCsv("protected.csv", 30, i => $"U{i:D3}");
+
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label", new[] { "id" });
+
+        Assert.Equal(csvPath, result); // case-insensitive, like every column match in this loader
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_ReadsTheWholeFile_NotASample()
+    {
+        // 300 distinct values followed by a repeat: a 200-row sample would call this an identifier.
+        var csvPath = CreateIdentifierCsv("late_dup.csv", 301, i => i == 300 ? "C0000-X" : $"C{i:D4}-X");
+
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label");
+
+        Assert.Equal(csvPath, result);
+    }
+
+    [Fact]
+    public void RemoveIdentifierColumns_QuotedValuesWithCommas_SurviveRewrite()
+    {
+        // The rewrite re-quotes fields that need it, the same way the other Remove* steps do.
+        var csvPath = CreateIdentifierCsv("quoted.csv", 30, i => $"C{i:D4}-X", ",Note", i => "\"a, b\"");
+
+        var result = CsvDataLoader.RemoveIdentifierColumns(csvPath, "Label");
+
+        Assert.NotEqual(csvPath, result);
+        var second = File.ReadLines(result).Skip(1).First();
+        Assert.Contains("\"a, b\"", second);
+    }
+
+    #endregion
+
     #region RemoveSparseColumns
 
     [Fact]

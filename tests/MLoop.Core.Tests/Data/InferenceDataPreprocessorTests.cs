@@ -110,6 +110,24 @@ public class InferenceDataPreprocessorTests : IDisposable
     }
 
     [Fact]
+    public void Prepare_NoSchema_RemovesIdentifierColumns()
+    {
+        // The no-schema fallback must run the same chain training runs — identifier removal included —
+        // or a model trained without an id column meets one at inference and the widths disagree.
+        var sb = new StringBuilder("Id,Feature1,Label\n");
+        for (int i = 0; i < 30; i++)
+            sb.Append($"ID-{i:D3},{i % 5},{(i % 2 == 0 ? "A" : "B")}\n");
+        var path = CreateBomCsv("identifier.csv", sb.ToString());
+
+        var result = InferenceDataPreprocessor.Prepare(path, "Label", trainedSchema: null, out var tempFiles);
+
+        var header = ReadHeader(result);
+        Assert.DoesNotContain("Id", header);
+        Assert.Contains("Feature1", header);
+        CleanupTemps(tempFiles);
+    }
+
+    [Fact]
     public void Prepare_PredictAndEvaluatePathsProduceSameColumns()
     {
         // The whole point of the component: a single sequence means both inference callers derive an

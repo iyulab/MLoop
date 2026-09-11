@@ -34,10 +34,16 @@ public static class SchemaDataTypes
     public const string ExcludedConstant = "Constant";
 
     /// <summary>
+    /// A text column in which every row carries its own distinct, whitespace-free value — a customer
+    /// id, an order number, a UUID. See <see cref="Data.CsvDataLoader.RemoveIdentifierColumns"/>.
+    /// </summary>
+    public const string ExcludedIdentifier = "Identifier";
+
+    /// <summary>
     /// Every name this vocabulary defines, including the exclusion markers.
     /// </summary>
     public static IReadOnlyList<string> All { get; } =
-        [Numeric, Categorical, Text, Boolean, ExcludedDateTime, ExcludedSparse, ExcludedConstant];
+        [Numeric, Categorical, Text, Boolean, ExcludedDateTime, ExcludedSparse, ExcludedConstant, ExcludedIdentifier];
 
     /// <summary>
     /// Whether <paramref name="dataType"/> is one of this vocabulary's names.
