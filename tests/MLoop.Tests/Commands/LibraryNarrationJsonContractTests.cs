@@ -68,7 +68,7 @@ public class LibraryNarrationJsonContractTests : IDisposable
     [InlineData("analyze", "distribution", "datasets/train.csv", "--json")]
     public async Task StdoutParsesWhenTheLoaderNarrates(params string[] args)
     {
-        var (exitCode, stdout, stderr) = await RunAsync(args);
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync(args);
 
         Assert.Equal(0, exitCode);
 
@@ -102,7 +102,7 @@ public class LibraryNarrationJsonContractTests : IDisposable
     public async Task DetectParsesWhetherOrNotTheFftNativeIsPresent()
     {
         string[] args = ["detect", "datasets/train.csv", "--column", "feature", "--json"];
-        var (exitCode, stdout, stderr) = await RunAsync(args);
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync(args);
 
         JsonDocument document;
         try
@@ -156,7 +156,7 @@ public class LibraryNarrationJsonContractTests : IDisposable
     [InlineData("validate", "--json")]
     public async Task StdoutParsesAtEveryExitIncludingFailure(params string[] args)
     {
-        var (exitCode, stdout, stderr) = await RunAsync(args);
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync(args);
 
         try
         {
@@ -185,7 +185,7 @@ public class LibraryNarrationJsonContractTests : IDisposable
     [Fact]
     public async Task EvaluateSaysInTheDocumentThatItSkipped()
     {
-        var (exitCode, stdout, stderr) = await RunAsync("evaluate", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("evaluate", "--json");
 
         Assert.Equal(0, exitCode);
 
@@ -203,33 +203,10 @@ public class LibraryNarrationJsonContractTests : IDisposable
         // nothing and every assertion above would hold no matter where narration went. Human mode is
         // also where that line still belongs — the fix moved it off the document's stream, not away
         // from the user.
-        var (exitCode, stdout, stderr) = await RunAsync("info", "datasets/train.csv");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("info", "datasets/train.csv");
 
         Assert.Equal(0, exitCode);
         Assert.Contains("Removed index column(s)", stdout + stderr, StringComparison.Ordinal);
     }
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalError = Console.Error;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        var errorBuffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            Console.SetError(errorBuffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(buffer) });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString(), errorBuffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            Console.SetError(originalError);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
 }

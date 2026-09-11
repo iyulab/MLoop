@@ -13,35 +13,10 @@ namespace MLoop.Tests.Commands;
 [Collection("FileSystem")]
 public class RuntimeCommandJsonTests
 {
-    // Same AnsiConsole.Console rebinding as the other --json tests — Console.SetOut alone
-    // doesn't reach Spectre's ambient renderer.
-    private static async Task<(int ExitCode, string Stdout)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(buffer)
-            });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     [Fact]
     public async Task Runtime_List_Json_ListsBothKnownRuntimes()
     {
-        var (exitCode, stdout) = await RunAsync("runtime", "list", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("runtime", "list", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -57,7 +32,7 @@ public class RuntimeCommandJsonTests
         // This machine's install state varies, so assert on the invariant rather than a fixed
         // fixture: whichever runtimes report installed=false must carry a null sizeBytes (the
         // actual on-disk size is unknown until installed) alongside their approximateSizeMB estimate.
-        var (exitCode, stdout) = await RunAsync("runtime", "list", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("runtime", "list", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -78,7 +53,7 @@ public class RuntimeCommandJsonTests
     public async Task Runtime_List_Human_StillRendersTable()
     {
         // Guards against the refactor (collect-then-render) silently changing the human path.
-        var (exitCode, stdout) = await RunAsync("runtime", "list");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("runtime", "list");
 
         Assert.Equal(0, exitCode);
         Assert.Contains("TensorFlow CPU", stdout);

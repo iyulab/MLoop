@@ -38,30 +38,6 @@ public class JsonOutputScopeContractTests : IDisposable
         }
     }
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalError = Console.Error;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        var errorBuffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            Console.SetError(errorBuffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(buffer) });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString(), errorBuffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            Console.SetError(originalError);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     private static JsonDocument ParseStdout(string stdout, string stderr)
     {
         try
@@ -80,7 +56,7 @@ public class JsonOutputScopeContractTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_testProjectRoot, "tiny.csv"), "X,Y\n1,2\n2,4\n");
 
-        var (exitCode, stdout, stderr) = await RunAsync("predict", "tiny.csv", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", "tiny.csv", "--json");
 
         Assert.Equal(1, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -97,7 +73,7 @@ public class JsonOutputScopeContractTests : IDisposable
         Directory.SetCurrentDirectory(outsideAnyProject);
         try
         {
-            var (exitCode, stdout, stderr) = await RunAsync("logs", "--json");
+            var (exitCode, stdout, stderr) = await CliRunner.RunAsync("logs", "--json");
 
             Assert.Equal(1, exitCode);
             using var doc = ParseStdout(stdout, stderr);
@@ -123,7 +99,7 @@ public class JsonOutputScopeContractTests : IDisposable
         File.WriteAllText(Path.Combine(experiment, "metadata.json"), "{not json");
         File.WriteAllText(Path.Combine(_testProjectRoot, "tiny.csv"), "X,Y" + Environment.NewLine + "1,2" + Environment.NewLine + "2,4" + Environment.NewLine);
 
-        var (exitCode, stdout, stderr) = await RunAsync("evaluate", "exp-001", "tiny.csv", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("evaluate", "exp-001", "tiny.csv", "--json");
 
         Assert.Equal(1, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -146,7 +122,7 @@ public class JsonOutputScopeContractTests : IDisposable
         try
         {
             var args = command.Append("--json").ToArray();
-            var (exitCode, stdout, stderr) = await RunAsync(args);
+            var (exitCode, stdout, stderr) = await CliRunner.RunAsync(args);
 
             Assert.Equal(1, exitCode);
             using var doc = ParseStdout(stdout, stderr);
@@ -251,7 +227,7 @@ public class JsonOutputScopeContractTests : IDisposable
             "    prep:\n" +
             "    - type: no-such-step\n");
 
-        var (_, stdout, stderr) = await RunAsync("validate");
+        var (_, stdout, stderr) = await CliRunner.RunAsync("validate");
 
         var output = stdout + stderr;
         Assert.DoesNotContain("Unbalanced markup stack", output);
@@ -270,7 +246,7 @@ public class JsonOutputScopeContractTests : IDisposable
             "    prep:\n" +
             "    - type: no-such-step\n");
 
-        var (_, stdout, stderr) = await RunAsync("prep", "run", "--dry-run");
+        var (_, stdout, stderr) = await CliRunner.RunAsync("prep", "run", "--dry-run");
 
         var output = stdout + stderr;
         Assert.DoesNotContain("Unbalanced markup stack", output);

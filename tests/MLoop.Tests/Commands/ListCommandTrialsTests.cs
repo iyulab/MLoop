@@ -92,34 +92,6 @@ public class ListCommandTrialsTests : IDisposable
         await _experimentStore.SaveAsync(modelName, experiment, CancellationToken.None);
     }
 
-    private static async Task<(int ExitCode, string Stdout)> RunAsync(params string[] args)
-    {
-        // Console.SetOut alone doesn't reach Spectre's rendering: AnsiConsole.Console is a static,
-        // lazily-constructed default instance that binds to whichever Console.Out was current at
-        // its first use across the whole test run — a later Console.SetOut here doesn't retroactively
-        // redirect it. Rebinding AnsiConsole.Console explicitly is what MachineOutputScope itself
-        // does for the same reason.
-        var originalOut = Console.Out;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(buffer)
-            });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     [Fact]
     public async Task List_Trials_RanksBestFirst()
     {
@@ -128,7 +100,7 @@ public class ListCommandTrialsTests : IDisposable
         // that order rather than re-sorting (or not sorting) it.
         await CreateExperimentWithTrialsAsync(ConfigDefaults.DefaultModelName, "exp-001");
 
-        var (exitCode, stdout) = await RunAsync("list", "--trials", "exp-001");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("list", "--trials", "exp-001");
 
         Assert.Equal(0, exitCode);
         var kThreeIndex = stdout.IndexOf("KMeans (k=3)", StringComparison.Ordinal);
@@ -142,7 +114,7 @@ public class ListCommandTrialsTests : IDisposable
     {
         await CreateExperimentWithTrialsAsync(ConfigDefaults.DefaultModelName, "exp-001");
 
-        var (exitCode, stdout) = await RunAsync("list", "--trials", "exp-001", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("list", "--trials", "exp-001", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -154,7 +126,7 @@ public class ListCommandTrialsTests : IDisposable
     [Fact]
     public async Task List_Trials_UnknownExperiment_ReportsNotFound()
     {
-        var (exitCode, _) = await RunAsync("list", "--trials", "exp-999");
+        var (exitCode, _, _) = await CliRunner.RunAsync("list", "--trials", "exp-999");
 
         Assert.Equal(1, exitCode);
     }

@@ -75,35 +75,10 @@ public class StatusCommandJsonTests : IDisposable
         await _experimentStore.SaveAsync(modelName, experiment, CancellationToken.None);
     }
 
-    // Same AnsiConsole.Console rebinding as ListCommandTrialsTests.RunAsync — Console.SetOut alone
-    // doesn't reach Spectre's ambient renderer.
-    private static async Task<(int ExitCode, string Stdout)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(buffer)
-            });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     [Fact]
     public async Task Status_Json_NoModels_ReportsEmptyStructure()
     {
-        var (exitCode, stdout) = await RunAsync("status", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("status", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -118,7 +93,7 @@ public class StatusCommandJsonTests : IDisposable
         await CreateExperimentAsync(ConfigDefaults.DefaultModelName, "exp-002", "Completed", 0.92);
         await CreateExperimentAsync(ConfigDefaults.DefaultModelName, "exp-003", "Failed", null);
 
-        var (exitCode, stdout) = await RunAsync("status", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("status", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -144,7 +119,7 @@ public class StatusCommandJsonTests : IDisposable
     {
         await CreateExperimentAsync(ConfigDefaults.DefaultModelName, "exp-001", "Completed", 0.5);
 
-        var (exitCode, stdout) = await RunAsync("status", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("status", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -158,7 +133,7 @@ public class StatusCommandJsonTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_testProjectRoot, "datasets"));
         File.WriteAllText(Path.Combine(_testProjectRoot, "datasets", "train.csv"), "a,b\n1,2\n");
 
-        var (exitCode, stdout) = await RunAsync("status", "--verbose", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("status", "--verbose", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -173,7 +148,7 @@ public class StatusCommandJsonTests : IDisposable
         // Guards against the refactor (collect-then-render) silently changing the human path.
         await CreateExperimentAsync(ConfigDefaults.DefaultModelName, "exp-001", "Completed", 0.5);
 
-        var (exitCode, stdout) = await RunAsync("status");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("status");
 
         Assert.Equal(0, exitCode);
         Assert.Contains("Models Overview", stdout);

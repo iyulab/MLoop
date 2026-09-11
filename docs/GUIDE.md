@@ -145,11 +145,61 @@ mloop train data.csv --label defect --task binary-classification --balance 5  # 
 - **Schema Validation**: Same-schema files auto-detected for `--auto-merge`
 - **Label Handling**: Missing labels auto-dropped for classification tasks
 - **Data Quality Analysis**: Automatic class distribution and quality warnings
+- **Feature Exclusion**: Columns that cannot carry signal are dropped before training (see below)
 
 **Output**:
 - Model saved to `models/staging/exp-XXX/model.zip`
 - Metadata saved to `models/staging/exp-XXX/metadata.json`
 - First successful model auto-promoted to production
+
+#### Which columns training drops, and how to change that
+
+Before column inference runs, four kinds of column are removed from the feature set. Each removal is
+reported as `Excluded from features (<reason>): <columns>` — as a warning on the terminal, and as a
+`warning` event for a `--json` consumer — and recorded in the model's schema, so `predict` and
+`evaluate` drop exactly the same columns from the data you hand them later.
+
+| Reason | Rule | Why |
+|---|---|---|
+| `DateTime` | The values parse as dates or times | ML.NET would featurize the text into thousands of character n-grams; extract date features with `mloop prep` instead |
+| `Sparse` | More than 90% of the values are missing | Nothing to learn from, and a wide sparse text column can exhaust memory |
+| `Constant` | Every non-missing value is the same | Zero predictive signal |
+| `Identifier` | A **text** column in which every row carries its own distinct, whitespace-free value — a customer id, an order number, a UUID | Pure noise as a feature, and a leak path whenever the id encodes something about the label |
+
+The identifier rule is deliberately narrow. Numeric columns are never identifiers (measurements are
+distinct per row too); a value containing whitespace, a single repeated value, or a missing value
+disqualifies the column; and fewer than 20 rows is not enough evidence. A strictly increasing integer
+column is *not* removed — it is reported as a possible ID column with the command to exclude it.
+
+The decision is taken once, on the whole training file, and applied to every partition — so a
+column that happens to be constant inside one split cannot give that split a different feature width.
+
+**To exclude a column yourself**, declare it in the project (this is policy, not a data change):
+
+```bash
+mloop features select --drop customerID,notes   # excluded from features
+mloop features select --keep age,income,region  # everything else excluded
+mloop features select --reset                   # clear the policy
+```
+
+This writes column overrides into `mloop.yaml`, which you can also edit directly. An explicit type
+override is honoured over inference, and — for the identifier rule — over the heuristic: a column
+you declare as `text`, `categorical` or `numeric` is never dropped as an identifier, and neither is
+a ranking `group_column` or a recommendation `user_column`/`item_column`.
+
+```yaml
+models:
+  default:
+    task: binary-classification
+    label: Churn
+    columns:
+      customerID:
+        type: ignore          # excluded from features
+      notes:
+        type: text            # free text — TF-IDF, never dropped as an identifier
+      zip:
+        type: categorical     # one-hot, even though it looks numeric
+```
 
 ### Image Classification
 

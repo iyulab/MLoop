@@ -141,41 +141,12 @@ public class EvaluateCommandJsonTests : IDisposable
         return testCsvPath;
     }
 
-    // Same AnsiConsole.Console rebinding as the other --json tests. Stderr is captured too, so a
-    // failing run reports the actual cause (ErrorConsole writes there) instead of an bare exit code.
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalError = Console.Error;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        var errorBuffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            Console.SetError(errorBuffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(buffer)
-            });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString(), errorBuffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            Console.SetError(originalError);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     [Fact]
     public async Task Evaluate_Json_RealModel_ReportsTestMetrics()
     {
         var testCsvPath = await CreateRegressionFixtureAsync("default", "exp-001");
 
-        var (exitCode, stdout, stderr) = await RunAsync("evaluate", "exp-001", testCsvPath, "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("evaluate", "exp-001", testCsvPath, "--json");
 
         Assert.True(exitCode == 0, stdout + stderr);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -191,7 +162,7 @@ public class EvaluateCommandJsonTests : IDisposable
     {
         Directory.CreateDirectory(Path.Combine(_testProjectRoot, "models", "default", "staging"));
 
-        var (exitCode, stdout, stderr) = await RunAsync("evaluate", "exp-999", "nope.csv", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("evaluate", "exp-999", "nope.csv", "--json");
 
         Assert.Equal(1, exitCode);
 
@@ -209,7 +180,7 @@ public class EvaluateCommandJsonTests : IDisposable
     {
         var testCsvPath = await CreateRegressionFixtureAsync("default", "exp-001");
 
-        var (exitCode, stdout, stderr) = await RunAsync("evaluate", "exp-001", testCsvPath);
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("evaluate", "exp-001", testCsvPath);
 
         Assert.True(exitCode == 0, stdout + stderr);
         Assert.Contains("Evaluation Results", stdout);

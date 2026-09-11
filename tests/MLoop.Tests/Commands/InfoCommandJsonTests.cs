@@ -48,34 +48,10 @@ public class InfoCommandJsonTests : IDisposable
         return path;
     }
 
-    // Same AnsiConsole.Console rebinding as the other --json tests.
-    private static async Task<(int ExitCode, string Stdout)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(buffer)
-            });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     [Fact]
     public async Task Info_Json_FileNotFound_ReportsError()
     {
-        var (exitCode, stdout) = await RunAsync("info", "nope.csv", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", "nope.csv", "--json");
 
         Assert.Equal(1, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -88,7 +64,7 @@ public class InfoCommandJsonTests : IDisposable
     {
         var path = WriteCsv("empty.csv", "");
 
-        var (exitCode, stdout) = await RunAsync("info", path, "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--json");
 
         Assert.Equal(1, exitCode); // sibling to the file-not-found case above, not a silent success
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -101,7 +77,7 @@ public class InfoCommandJsonTests : IDisposable
     {
         var path = WriteDataCsv();
 
-        var (exitCode, stdout) = await RunAsync("info", path, "--label", "Label", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "Label", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -123,7 +99,7 @@ public class InfoCommandJsonTests : IDisposable
     {
         var path = WriteDataCsv();
 
-        var (exitCode, stdout) = await RunAsync("info", path, "--label", "Label", "--analyze", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "Label", "--analyze", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -143,7 +119,7 @@ public class InfoCommandJsonTests : IDisposable
     {
         var path = WriteDataCsv();
 
-        var (exitCode, stdout) = await RunAsync("info", path, "--label", "Label");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "Label");
 
         Assert.Equal(0, exitCode);
         Assert.Contains("Column Information", stdout);
