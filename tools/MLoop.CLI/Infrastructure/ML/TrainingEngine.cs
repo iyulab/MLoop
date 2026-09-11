@@ -76,6 +76,10 @@ public class TrainingEngine : ITrainingEngine
         string originalDataFile = config.DataFile;
         string? tempEncodingFile = null;
         string? stratifiedSplitDirectory = null;
+        // The fingerprint of the data as the user has it — taken before any conversion or split
+        // makes a temporary copy, so the record names a file the user can check, not one only
+        // this process ever saw. Null for directory-based tasks, whose input is not one file.
+        string? dataFileHash = null;
 
         try
         {
@@ -108,6 +112,8 @@ public class TrainingEngine : ITrainingEngine
             }
             else
             {
+                dataFileHash = await DataFingerprint.ComputeAsync(originalDataFile, cancellationToken);
+
                 // Handle encoding detection/conversion for non-UTF8 files (e.g., CP949/EUC-KR)
                 // This ensures Korean and other non-ASCII text is read correctly throughout training
                 var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(config.DataFile);
@@ -385,6 +391,7 @@ public class TrainingEngine : ITrainingEngine
                 Config = new ExperimentConfig
                 {
                     DataFile = originalDataFile, // Store original path, not converted temp file
+                    DataFileHash = dataFileHash,
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.CanonicalMetric,
@@ -439,6 +446,7 @@ public class TrainingEngine : ITrainingEngine
                 Config = new ExperimentConfig
                 {
                     DataFile = originalDataFile, // Store original path, not converted temp file
+                    DataFileHash = dataFileHash,
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = config.TimeLimitSeconds,
                     Metric = config.CanonicalMetric,

@@ -736,6 +736,7 @@ app.MapGet("/experiments/{id}", async (
             config = new
             {
                 dataFile = experiment.Config.DataFile,
+                dataFileHash = experiment.Config.DataFileHash,
                 labelColumn = experiment.Config.LabelColumn,
                 timeLimitSeconds = experiment.Config.TimeLimitSeconds,
                 metric = experiment.Config.Metric,

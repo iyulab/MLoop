@@ -662,6 +662,12 @@ public class TrainingEngineTests : IDisposable
         var savedConfig = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(experimentPath, "config.json"))).RootElement;
         Assert.Equal("f1_score", savedConfig.GetProperty("metric").GetString());
 
+        // Sharing this run rather than paying for another: the config also pins the fingerprint of
+        // the data as the user had it, so the experiment can say which file it saw.
+        Assert.Equal(
+            await MLoop.Core.Data.DataFingerprint.ComputeAsync(csv),
+            savedConfig.GetProperty("dataFileHash").GetString());
+
         var leaderboard = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(experimentPath, "leaderboard.json"))).RootElement;
         Assert.Equal("f1_score", leaderboard.GetProperty("metric").GetString());
 

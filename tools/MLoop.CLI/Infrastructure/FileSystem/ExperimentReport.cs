@@ -85,6 +85,8 @@ internal static class ExperimentReport
         Row(sb, "Task", experiment.Task);
         Row(sb, "Recorded at", TimestampDisplay.Local(experiment.Timestamp));
         Row(sb, "Data", InsideTheProject(config.DataFile, projectRoot));
+        if (!string.IsNullOrEmpty(config.DataFileHash))
+            Row(sb, "Data hash", config.DataFileHash);
         Row(sb, "Label", string.IsNullOrEmpty(config.LabelColumn) ? NoValue : config.LabelColumn);
         if (!string.IsNullOrEmpty(config.GroupColumn))
             Row(sb, "Group column", config.GroupColumn);
