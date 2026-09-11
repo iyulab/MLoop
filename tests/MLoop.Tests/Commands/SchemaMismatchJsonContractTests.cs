@@ -14,6 +14,12 @@ namespace MLoop.Tests.Commands;
 /// these commands exist to report clearly: the data does not match the model's schema. Before
 /// 0.31.0 both rendered the mismatch to the terminal in four parts and exited non-zero with an empty
 /// stdout, so a consumer parsing the output got the same failure as parsing prose.
+/// <para>
+/// This is also the test behind the "Errors" section of <c>docs/PREDICT-RESPONSE.md</c>: a non-zero
+/// exit carries <c>{"error": "…"}</c> on stdout and stdout is never empty. That section described the
+/// pre-0.31.0 behaviour for a whole release because nothing read it; if the sentence changes, this
+/// file is where the change has to be proven.
+/// </para>
 /// </summary>
 /// <remarks>
 /// The check sits <b>behind a successfully loaded model</b>, which is why the existing exit-contract
