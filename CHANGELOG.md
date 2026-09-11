@@ -32,6 +32,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `docs/PREDICT-RESPONSE.md` has asked for since the contract was written. A consumer that read
   `null` as "no value" is unaffected; one that reads responses from both this version and earlier
   ones should treat `null` as absent.
+- **DataLens 0.14.2** (from 0.13.5), which follows UInsight 0.15.0. DataLens now routes on the file
+  extension and refuses one it does not recognise (`.csv`, `.tsv`, `.json`, `.xlsx`, `.xls` are
+  accepted); `mloop info --analyze` and `mloop analyze` report that refusal as the analysis being
+  unavailable for that file, as they already did for any other DataLens failure, and the rest of the
+  command runs unaffected.
+- **A converted temp file keeps its extension.** When a CP949/EUC-KR file is converted to UTF-8 the
+  intermediate copy was named `.tmp`; it now carries the original extension, so anything downstream
+  that routes on it sees a `.csv`.
 - **The "possible ID column" hint named a flag that does not exist.** It suggested
   `mloop train ... --exclude <column>`; the command that declares a column excluded is
   `mloop features select --drop <column>`, and the hint now says so.
