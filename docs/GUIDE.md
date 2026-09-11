@@ -103,30 +103,42 @@ Train models using ML.NET AutoML with automatic experiment tracking.
 # Basic training
 mloop train <data-file> <label-column> [options]
 
-# Core Options:
-#   --time <seconds>     Training time budget (default: 60)
-#   --metric <name>      Metric to optimize (default: task-dependent). Case and separators do not
-#                        matter (F1Score, f1-score and f1_score are one name); an unknown name is
-#                        reported as a warning and the task default is optimized instead
-#   --test-split <0-1>   Test split fraction (default: 0.2)
-#   --output <path>      Custom model output path
+# What to train:
+#   --name, -n <model>          Model name (default: 'default')
+#   --label, -l <column>        Label column (default: from mloop.yaml)
+#   --task, -t <type>           ML task type (default: from mloop.yaml)
+#   --metric, -m <name>         Metric to optimize (default: the task's primary metric). Case and
+#                               separators do not matter (F1Score, f1-score and f1_score are one
+#                               name); an unknown name is reported as a warning and the task
+#                               default is optimized instead
+#   --test-split <0-1>          Test split fraction (default: 0.2)
 
-# Data Options (v0.4.0+):
-#   --data <files...>           External data file(s) - multiple files auto-merged
-#   --auto-merge                Auto-detect and merge same-schema CSVs in datasets/
-#   --drop-missing-labels       Drop rows with missing label values (default: auto)
+# Time budget:
+#   --time <seconds>            Fixed training time limit. Without it, the budget is estimated from
+#                               the data (auto-time) unless mloop.yaml sets time_limit_seconds
+#   --auto-time                 Force the estimate even when mloop.yaml sets time_limit_seconds
+#   --no-auto-time              Disable the estimate (falls back to 300s)
 
-# Class Balancing (v0.5.0+):
-#   --balance <strategy>        Class balancing for imbalanced datasets
-#                               'auto'  - Balance to 10:1 if ratio > 10:1
-#                               'none'  - No balancing (default)
-#                               '<n>'   - Target ratio (e.g., '5' for 5:1)
+# Data:
+#   --data, -d <files...>       Training file(s); several files with the same schema are merged
+#   --auto-merge                Merge every same-schema CSV found in datasets/
+#   --drop-missing-labels       Drop rows with a missing label (default: on for classification,
+#                               off for regression)
+#   --max-rows <n>              Cap on training rows; larger data is sampled (random for
+#                               regression/anomaly, stratified for classification)
+#   --sampling-strategy <s>     'random' or 'stratified' when --max-rows applies (alias: --sampling)
+#   --seed <n>                  Random seed for sampling (default: 42)
+#   --balance [strategy]        Class balancing: 'auto' (to 10:1 when the ratio exceeds 10:1),
+#                               'none', or a target ratio such as '5'; bare --balance means 'auto'
+#   --group-column <column>     Query/group column for the ranking task
 
-# Model Management (v0.6.1+):
+# Before and after training:
+#   --analyze-data              Analyze data quality and print preprocessing recommendations
+#                               without training
+#   --generate-script <path>    Write a preprocessing script from that analysis
 #   --no-promote                Skip automatic promotion to production
-#   --no-auto-time              Disable automatic training time estimation (use default 300s)
-#   --auto-time                 Force automatic time estimation, overriding time_limit_seconds in
-#                               mloop.yaml (reaches auto-time from the init+train project workflow)
+#   --json                      Newline-delimited JSON events (phase/trial/warning/result/error)
+#                               on stdout instead of the rich display
 
 # Examples
 mloop train datasets/train.csv --label price --time 120

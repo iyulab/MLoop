@@ -26,6 +26,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and the `--json` `result` event carries it as `reportPath` (omitted when no report was written).
 
 ### Fixed
+- **The multiclass performance diagnostic never showed a log loss.** It looked the metric up as
+  `LogLoss` while the trainer writes `log_loss`; the two never met. The diagnostic now reads every
+  metric by its canonical name under whatever spelling the dictionary carries, through the same
+  vocabulary training uses, and its private lists of alternate spellings are gone.
+- **The `mloop train` option reference in the guide named an option that does not exist
+  (`--output`), gave `--time` a default it does not have, and omitted eleven options the command
+  accepts** (`--name`, `--label`, `--task`, `--data`, `--max-rows`, `--sampling-strategy`, `--seed`,
+  `--group-column`, `--analyze-data`, `--generate-script`, `--json`). The block is rewritten from
+  the command's own option definitions.
 - **A metric name the optimizer did not recognize was replaced by the task default without a
   word, and every record kept the name you wrote.** The optimizer knew `f1_score`, `f1`, `r2`;
   `mloop validate` accepted `rSquared`, `recall`, `log-loss`; the shipped examples wrote `F1Score`.
