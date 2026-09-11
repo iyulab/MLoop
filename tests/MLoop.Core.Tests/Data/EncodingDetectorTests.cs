@@ -184,6 +184,25 @@ public class EncodingDetectorTests : IDisposable
     }
 
     [Fact]
+    public void ConvertToUtf8WithBom_ConvertedTempFile_KeepsTheOriginalExtension()
+    {
+        // Consumers downstream route on the extension — DataLens refuses one it does not know — so a
+        // converted `.csv` must not come back as `.tmp`. Every other temp the loader writes already
+        // preserves it; this used to be the one that did not.
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        var path = Path.Combine(Path.GetTempPath(), $"mloop_enc_{Guid.NewGuid():N}.csv");
+        File.WriteAllBytes(path, Encoding.GetEncoding(949).GetBytes("설비명,값\n테스트,100"));
+        _tempFiles.Add(path);
+
+        var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(path);
+        _tempFiles.Add(convertedPath);
+
+        Assert.True(detection.WasConverted);
+        Assert.NotEqual(path, convertedPath);
+        Assert.Equal(".csv", Path.GetExtension(convertedPath));
+    }
+
+    [Fact]
     public void DetectEncoding_Cp949Header_AsciiBody_DetectsKorean()
     {
         // Simulate real-world case: CP949 Korean headers + mostly numeric/ASCII body

@@ -61,9 +61,12 @@ public static class EncodingDetector
             return (filePath, detection);
         }
 
-        // Read with detected encoding, write with UTF-8 BOM.
+        // Read with detected encoding, write with UTF-8 BOM. The temp file keeps the original
+        // extension: consumers downstream route on it — DataLens 0.14+ refuses an extension it does
+        // not know, so a converted `.csv` that came back as `.tmp` lost every analysis that ran on it.
+        // Every other temp the loader writes (flatten, exclusion) already preserves it.
         var content = File.ReadAllText(filePath, detection.Encoding);
-        var tempFile = Path.GetTempFileName();
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mloop_utf8_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
         File.WriteAllText(tempFile, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
         return (tempFile, detection with { WasConverted = true });
