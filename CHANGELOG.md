@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.31.0] - 2026-09-10
+## [0.31.0] - 2026-09-11
 
 ### Fixed
 - **Time-series commands failed on Linux and macOS with a message naming a type initializer.**
