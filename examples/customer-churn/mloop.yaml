@@ -11,7 +11,7 @@ models:
     description: Customer churn prediction model
     training:
       time_limit_seconds: 300
-      metric: F1Score
+      metric: f1_score
       test_split: 0.2
 
 # Example: Adding additional models

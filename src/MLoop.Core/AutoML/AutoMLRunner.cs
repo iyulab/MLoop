@@ -4,6 +4,7 @@ using Microsoft.ML.Data;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
 using MLoop.Core.Detection;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Scripting;
 using MLoop.Extensibility;
@@ -445,7 +446,7 @@ public partial class AutoMLRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var optimizingMetric = GetBinaryMetric(config.Metric);
+        var optimizingMetric = GetBinaryMetric(config);
         string? metricFallbackNote = null;
 
         try
@@ -1064,7 +1065,7 @@ public partial class AutoMLRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var optimizingMetric = GetMulticlassMetric(config.Metric);
+        var optimizingMetric = GetMulticlassMetric(config);
         var settings = new MulticlassExperimentSettings
         {
             MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
@@ -1137,7 +1138,7 @@ public partial class AutoMLRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var optimizingMetric = GetRegressionMetric(config.Metric);
+        var optimizingMetric = GetRegressionMetric(config);
         var settings = new RegressionExperimentSettings
         {
             MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
@@ -1986,40 +1987,67 @@ public partial class AutoMLRunner
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private BinaryClassificationMetric GetBinaryMetric(string metricName)
+    // The optimizing metric for a run. The name arrives already canonical
+    // (TrainingConfig.CanonicalMetric, via MetricNames) — these switches map MLoop's vocabulary to
+    // ML.NET's enum and hold no spellings of their own. A name the switch does not know is one
+    // MetricNames does not know either; the run then optimizes the task default and says so,
+    // because the silent fall-through this replaced let `metric: F1Score` optimize accuracy for a
+    // long time while every record kept saying F1.
+    //
+    // The *Metric switches below are the inverse of the Describe*Metric switches further down
+    // (enum → name), and a round-trip test pins that they agree.
+
+    private BinaryClassificationMetric GetBinaryMetric(TrainingConfig config) =>
+        BinaryMetricFor(config.CanonicalMetric)
+        ?? FallBackToDefault(config, MetricNames.Canonical("accuracy"), BinaryClassificationMetric.Accuracy);
+
+    private MulticlassClassificationMetric GetMulticlassMetric(TrainingConfig config) =>
+        MulticlassMetricFor(config.CanonicalMetric)
+        ?? FallBackToDefault(config, MetricNames.Canonical("macro_accuracy"), MulticlassClassificationMetric.MacroAccuracy);
+
+    private RegressionMetric GetRegressionMetric(TrainingConfig config) =>
+        RegressionMetricFor(config.CanonicalMetric)
+        ?? FallBackToDefault(config, MetricNames.Canonical("r_squared"), RegressionMetric.RSquared);
+
+    private T FallBackToDefault<T>(TrainingConfig config, string? defaultName, T defaultMetric)
     {
-        return metricName.ToLowerInvariant() switch
-        {
-            "accuracy" => BinaryClassificationMetric.Accuracy,
-            "auc" => BinaryClassificationMetric.AreaUnderRocCurve,
-            "f1" or "f1_score" => BinaryClassificationMetric.F1Score,
-            "auprc" => BinaryClassificationMetric.AreaUnderPrecisionRecallCurve,
-            _ => BinaryClassificationMetric.Accuracy
-        };
+        _logger.Warning(
+            $"Unknown metric '{config.Metric}' for {config.Task} — optimizing '{defaultName}' instead. " +
+            $"Known names: {string.Join(", ", MetricNames.All)}.");
+        return defaultMetric;
     }
 
-    private MulticlassClassificationMetric GetMulticlassMetric(string metricName)
+    internal static BinaryClassificationMetric? BinaryMetricFor(string canonical) => canonical switch
     {
-        return metricName.ToLowerInvariant() switch
-        {
-            "accuracy" or "macro_accuracy" => MulticlassClassificationMetric.MacroAccuracy,
-            "micro_accuracy" => MulticlassClassificationMetric.MicroAccuracy,
-            "log_loss" => MulticlassClassificationMetric.LogLoss,
-            _ => MulticlassClassificationMetric.MacroAccuracy
-        };
-    }
+        "accuracy" => BinaryClassificationMetric.Accuracy,
+        "auc" => BinaryClassificationMetric.AreaUnderRocCurve,
+        "auprc" => BinaryClassificationMetric.AreaUnderPrecisionRecallCurve,
+        "f1_score" => BinaryClassificationMetric.F1Score,
+        "precision" => BinaryClassificationMetric.PositivePrecision,
+        "recall" => BinaryClassificationMetric.PositiveRecall,
+        "negative_precision" => BinaryClassificationMetric.NegativePrecision,
+        "negative_recall" => BinaryClassificationMetric.NegativeRecall,
+        _ => null
+    };
 
-    private RegressionMetric GetRegressionMetric(string metricName)
+    internal static MulticlassClassificationMetric? MulticlassMetricFor(string canonical) => canonical switch
     {
-        return metricName.ToLowerInvariant() switch
-        {
-            "r_squared" or "r2" => RegressionMetric.RSquared,
-            "rmse" => RegressionMetric.RootMeanSquaredError,
-            "mae" => RegressionMetric.MeanAbsoluteError,
-            "mse" => RegressionMetric.MeanSquaredError,
-            _ => RegressionMetric.RSquared
-        };
-    }
+        "macro_accuracy" => MulticlassClassificationMetric.MacroAccuracy,
+        "micro_accuracy" => MulticlassClassificationMetric.MicroAccuracy,
+        "log_loss" => MulticlassClassificationMetric.LogLoss,
+        "log_loss_reduction" => MulticlassClassificationMetric.LogLossReduction,
+        "top_k_accuracy" => MulticlassClassificationMetric.TopKAccuracy,
+        _ => null
+    };
+
+    internal static RegressionMetric? RegressionMetricFor(string canonical) => canonical switch
+    {
+        "r_squared" => RegressionMetric.RSquared,
+        "rmse" => RegressionMetric.RootMeanSquaredError,
+        "mae" => RegressionMetric.MeanAbsoluteError,
+        "mse" => RegressionMetric.MeanSquaredError,
+        _ => null
+    };
 
     /// <summary>
     /// Builds the per-trial progress adapter, or <c>null</c> when nobody is listening — ML.NET
@@ -2054,7 +2082,7 @@ public partial class AutoMLRunner
     // Names use MLoop's own metric vocabulary (the keys of AutoMLResult.Metrics) so a trial line and
     // the final results table talk about the same thing.
 
-    private static (string Name, Func<BinaryClassificationMetrics, double> Select) DescribeBinaryMetric(
+    internal static (string Name, Func<BinaryClassificationMetrics, double> Select) DescribeBinaryMetric(
         BinaryClassificationMetric metric) => metric switch
         {
             BinaryClassificationMetric.AreaUnderRocCurve => ("auc", m => m.AreaUnderRocCurve),
@@ -2067,7 +2095,7 @@ public partial class AutoMLRunner
             _ => ("accuracy", m => m.Accuracy)
         };
 
-    private static (string Name, Func<MulticlassClassificationMetrics, double> Select) DescribeMulticlassMetric(
+    internal static (string Name, Func<MulticlassClassificationMetrics, double> Select) DescribeMulticlassMetric(
         MulticlassClassificationMetric metric) => metric switch
         {
             MulticlassClassificationMetric.MicroAccuracy => ("micro_accuracy", m => m.MicroAccuracy),
@@ -2077,7 +2105,7 @@ public partial class AutoMLRunner
             _ => ("macro_accuracy", m => m.MacroAccuracy)
         };
 
-    private static (string Name, Func<RegressionMetrics, double> Select) DescribeRegressionMetric(
+    internal static (string Name, Func<RegressionMetrics, double> Select) DescribeRegressionMetric(
         RegressionMetric metric) => metric switch
         {
             RegressionMetric.RootMeanSquaredError => ("rmse", m => m.RootMeanSquaredError),

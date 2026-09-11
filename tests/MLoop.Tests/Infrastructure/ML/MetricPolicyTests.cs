@@ -17,6 +17,11 @@ public class MetricPolicyTests
     [InlineData("log-loss", "log_loss")]      // hyphen normalized
     [InlineData("accuracy", "accuracy")]      // binary keeps accuracy
     [InlineData("auc", "auc")]
+    // spellings the shipped examples and ML.NET use — read through MetricNames, the one vocabulary,
+    // rather than an alias switch of this policy's own
+    [InlineData("F1Score", "f1_score")]
+    [InlineData("RSquared", "r_squared")]
+    [InlineData("AreaUnderRocCurve", "auc")]
     public void ResolveMetricKey_MapsAliasToStoredKey(string input, string expected)
     {
         var available = new[] { "accuracy", "auc", "f1_score", "precision", "recall", "r_squared", "log_loss" };

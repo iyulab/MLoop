@@ -624,6 +624,55 @@ public class TrainingEngineTests : IDisposable
     }
 
     /// <summary>
+    /// A metric written the way the shipped examples wrote it (<c>F1Score</c>) must be optimized as
+    /// F1 and recorded as <c>f1_score</c> everywhere: the experiment config, the leaderboard's
+    /// ranking metric, and the index entry — whose score must be the F1 value, not the accuracy the
+    /// silent fall-through used to substitute while the label kept saying F1.
+    /// </summary>
+    [Fact]
+    public async Task TrainAsync_RecordsTheCanonicalMetricNameAndItsOwnValue()
+    {
+        var csv = Path.Combine(_tempDir, "vocab.csv");
+        var lines = new List<string> { "age,income,score,label" };
+        var rnd = new Random(23);
+        for (int i = 0; i < 1500; i++)
+        {
+            var age = rnd.Next(20, 70);
+            var income = rnd.Next(1000, 9000);
+            var score = rnd.NextDouble();
+            lines.Add($"{age},{income},{score:F4},{(income + age * 50 + score * 1000 > 6500 ? 1 : 0)}");
+        }
+        await File.WriteAllLinesAsync(csv, lines);
+
+        var config = new TrainingConfig
+        {
+            ModelName = "vocab",
+            DataFile = csv,
+            LabelColumn = "label",
+            Task = "binary-classification",
+            TimeLimitSeconds = 20,
+            Metric = "F1Score"
+        };
+
+        var result = await NewEngine().TrainAsync(config, progress: null, CancellationToken.None);
+
+        var modelDir = Path.Combine(_tempDir, "models", "vocab");
+        var experimentPath = Path.Combine(modelDir, "staging", result.ExperimentId);
+
+        var savedConfig = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(experimentPath, "config.json"))).RootElement;
+        Assert.Equal("f1_score", savedConfig.GetProperty("metric").GetString());
+
+        var leaderboard = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(experimentPath, "leaderboard.json"))).RootElement;
+        Assert.Equal("f1_score", leaderboard.GetProperty("metric").GetString());
+
+        var index = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(modelDir, "experiment-index.json"))).RootElement;
+        var entry = index.GetProperty("experiments").EnumerateArray()
+            .Single(e => e.GetProperty("experimentId").GetString() == result.ExperimentId);
+        Assert.Equal("f1_score", entry.GetProperty("metricName").GetString());
+        Assert.Equal(result.Metrics["f1_score"], entry.GetProperty("bestMetric").GetDouble(), precision: 6);
+    }
+
+    /// <summary>
     /// A fixed-budget run has to announce its training window the way auto-time announces its
     /// phases: MainStart before any trial, Complete after the last one. Without these a consumer
     /// capturing the event stream of a <c>--time N</c> run gets no phase at all — the gap the

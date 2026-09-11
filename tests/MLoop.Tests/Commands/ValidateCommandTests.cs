@@ -355,6 +355,15 @@ public class ValidateCommandTests
     [InlineData("r_squared")]        // regression default (canonical)
     [InlineData("log_loss")]
     [InlineData("f1_score")]
+    // spellings the shipped examples and ML.NET use for the same metrics — the optimizer accepts
+    // them through MetricNames, so validate must not call them unknown
+    [InlineData("F1Score")]
+    [InlineData("RSquared")]
+    [InlineData("MacroAccuracy")]
+    [InlineData("log-loss")]
+    [InlineData("rSquared")]
+    [InlineData("recall")]
+    [InlineData("precision")]
     public void ValidateTrainingSettings_AcceptsKnownMetrics(string metric)
     {
         var (_, warnings) = RunValidateTraining(new TrainingSettings { Metric = metric });

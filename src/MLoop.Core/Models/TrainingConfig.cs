@@ -40,9 +40,23 @@ public record TrainingConfig
     public int TimeLimitSeconds { get; init; } = 300;
 
     /// <summary>
-    /// Optimization metric
+    /// The optimization metric as it was given — the user's own spelling, kept so a message can
+    /// quote it back. What the optimizer and the records use is <see cref="CanonicalMetric"/>.
     /// </summary>
     public string Metric { get; init; } = "accuracy";
+
+    /// <summary>
+    /// <see cref="Metric"/> in MLoop's canonical vocabulary for this <see cref="Task"/>
+    /// (<c>F1Score</c> → <c>f1_score</c>, <c>auto</c> → the task's primary metric), or the given
+    /// spelling unchanged when <see cref="Evaluation.MetricNames"/> does not know it — the
+    /// optimizer then falls back to the task default and says so.
+    /// </summary>
+    /// <remarks>
+    /// Derived here, at the one gate every producer of a config passes through (both CLI paths and
+    /// the API's job runner), so the experiment config, the index and the report all record the
+    /// name of the metric that was actually optimized instead of whatever was typed.
+    /// </remarks>
+    public string CanonicalMetric => Evaluation.MetricNames.Canonical(Task, Metric) ?? Metric;
 
     /// <summary>
     /// Test data split ratio

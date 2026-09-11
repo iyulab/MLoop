@@ -17,6 +17,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a warning rather than the experiment. The training summary prints its path under `Model saved to:`,
   and the `--json` `result` event carries it as `reportPath` (omitted when no report was written).
 
+### Fixed
+- **A metric name the optimizer did not recognize was replaced by the task default without a
+  word, and every record kept the name you wrote.** The optimizer knew `f1_score`, `f1`, `r2`;
+  `mloop validate` accepted `rSquared`, `recall`, `log-loss`; the shipped examples wrote `F1Score`.
+  Any spelling outside the optimizer's own short list fell through to accuracy (or macro accuracy,
+  or R²) silently, so `metric: F1Score` — the churn example's own configuration — trained for
+  accuracy while `config.json`, the experiment index and `mloop list` all said F1, and the index
+  paired that label with the accuracy value. There is now one vocabulary (`MetricNames`), read the
+  same way by training, `validate`, and the records: spelling, case and separators do not matter
+  (`F1Score`, `f1-score` and `f1_score` are one name), the ML.NET enum names and the usual short
+  forms are accepted, `auto` resolves to the task's primary metric, and a name that is still
+  unknown produces a warning naming the default that will be optimized instead — on the terminal
+  and as a `--json` `warning` event. The experiment config, the leaderboard and the index now
+  record the canonical name of the metric that was actually optimized, so the index's score is the
+  value of the metric it is labelled with. Index entries written by earlier versions are left as
+  they are: their score was the metric that really was optimized, only the label was wrong, and
+  rewriting them would pair old accuracy values with new F1 ones under one name. The examples now
+  spell the metric `f1_score`.
+
 ### Changed
 - **Identifier columns are no longer trained on.** A text column in which every row carries its
   own distinct, whitespace-free value — a customer id, an order number, a UUID — was being
