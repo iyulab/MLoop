@@ -229,6 +229,45 @@ public class PerformanceDiagnosticsTests
         Assert.DoesNotContain(result.Warnings, w => w.Contains("majority class"));
     }
 
+    /// <summary>
+    /// The trainer writes <c>log_loss</c>; the diagnostic looked it up as <c>LogLoss</c> and so had
+    /// never shown a multiclass log loss. Metrics are read by canonical name now, under whatever
+    /// spelling the dictionary carries.
+    /// </summary>
+    [Theory]
+    [InlineData("log_loss")]
+    [InlineData("LogLoss")]
+    [InlineData("log-loss")]
+    public void Analyze_Multiclass_ShowsLogLossUnderAnySpelling(string key)
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["macro_accuracy"] = 0.85,
+            [key] = 0.42
+        };
+
+        var result = _diagnostics.Analyze("multiclass-classification", metrics);
+
+        Assert.Equal(0.42, result.SecondaryMetrics["LogLoss"]);
+    }
+
+    /// <summary>A diagnostic-only key that is not a metric name is still read by its exact name.</summary>
+    [Fact]
+    public void Analyze_AnomalyDetection_StillReadsDiagnosticOnlyKeysExactly()
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["detection_rate"] = 0.05,
+            ["anomaly_count"] = 5,
+            ["total_count"] = 100
+        };
+
+        var result = _diagnostics.Analyze("anomaly-detection", metrics);
+
+        Assert.Equal("Detection Rate", result.PrimaryMetric);
+        Assert.Equal(0.05, result.PrimaryMetricValue);
+    }
+
     #endregion
 
     #region Anomaly Detection

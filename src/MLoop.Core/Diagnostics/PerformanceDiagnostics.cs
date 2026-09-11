@@ -1,3 +1,5 @@
+using MLoop.Core.Evaluation;
+
 namespace MLoop.Core.Diagnostics;
 
 /// <summary>
@@ -82,14 +84,38 @@ public class PerformanceDiagnostics
         return result;
     }
 
+    /// <summary>
+    /// The value of the metric named <paramref name="canonical"/>, under whatever spelling the
+    /// dictionary carries it — <c>r_squared</c>, <c>RSquared</c> and <c>R2</c> are one key here.
+    /// </summary>
+    /// <remarks>
+    /// The spellings are <see cref="MetricNames"/>' knowledge. This class once looked each metric
+    /// up under two or three literals of its own, and the literals had drifted from what the
+    /// trainer writes: the multiclass log loss was looked up as <c>LogLoss</c> and never found.
+    /// Keys the vocabulary does not know (diagnostic-only counts such as <c>anomaly_count</c>) are
+    /// still read by their exact name; they are not metric names a user would write.
+    /// </remarks>
+    private static bool TryMetric(IReadOnlyDictionary<string, double> metrics, string canonical, out double value)
+    {
+        foreach (var (key, v) in metrics)
+        {
+            if (key == canonical || MetricNames.Canonical(key) == canonical)
+            {
+                value = v;
+                return true;
+            }
+        }
+
+        value = 0;
+        return false;
+    }
+
     private void AnalyzeRegression(PerformanceDiagnosticResult result)
     {
         var metrics = result.Metrics;
 
         // Check R-Squared (primary metric)
-        if (metrics.TryGetValue("RSquared", out var rSquared) ||
-            metrics.TryGetValue("R2", out rSquared) ||
-            metrics.TryGetValue("r_squared", out rSquared))
+        if (TryMetric(metrics, "r_squared", out var rSquared))
         {
             result.PrimaryMetric = "R²";
             result.PrimaryMetricValue = rSquared;
@@ -132,14 +158,12 @@ public class PerformanceDiagnostics
         }
 
         // Check RMSE/MAE for additional context
-        if (metrics.TryGetValue("RootMeanSquaredError", out var rmse) ||
-            metrics.TryGetValue("RMSE", out rmse))
+        if (TryMetric(metrics, "rmse", out var rmse))
         {
             result.SecondaryMetrics["RMSE"] = rmse;
         }
 
-        if (metrics.TryGetValue("MeanAbsoluteError", out var mae) ||
-            metrics.TryGetValue("MAE", out mae))
+        if (TryMetric(metrics, "mae", out var mae))
         {
             result.SecondaryMetrics["MAE"] = mae;
         }
@@ -150,9 +174,7 @@ public class PerformanceDiagnostics
         var metrics = result.Metrics;
 
         // Check AUC (primary metric for binary classification)
-        if (metrics.TryGetValue("AreaUnderRocCurve", out var auc) ||
-            metrics.TryGetValue("AUC", out auc) ||
-            metrics.TryGetValue("auc", out auc))
+        if (TryMetric(metrics, "auc", out var auc))
         {
             result.PrimaryMetric = "AUC";
             result.PrimaryMetricValue = auc;
@@ -192,8 +214,7 @@ public class PerformanceDiagnostics
         }
 
         // Also check accuracy for context
-        if (metrics.TryGetValue("Accuracy", out var accuracy) ||
-            metrics.TryGetValue("accuracy", out accuracy))
+        if (TryMetric(metrics, "accuracy", out var accuracy))
         {
             result.SecondaryMetrics["Accuracy"] = accuracy;
 
@@ -205,9 +226,7 @@ public class PerformanceDiagnostics
         }
 
         // Check F1 Score
-        if (metrics.TryGetValue("F1Score", out var f1) ||
-            metrics.TryGetValue("F1", out f1) ||
-            metrics.TryGetValue("f1_score", out f1))
+        if (TryMetric(metrics, "f1_score", out var f1))
         {
             result.SecondaryMetrics["F1"] = f1;
 
@@ -231,17 +250,17 @@ public class PerformanceDiagnostics
         double? primaryMetricValue = null;
         string primaryMetricName = "";
 
-        if (metrics.TryGetValue("macro_accuracy", out var macroAcc) || metrics.TryGetValue("MacroAccuracy", out macroAcc))
+        if (TryMetric(metrics, "macro_accuracy", out var macroAcc))
         {
             primaryMetricValue = macroAcc;
             primaryMetricName = "Macro Accuracy";
         }
-        else if (metrics.TryGetValue("micro_accuracy", out var microAcc) || metrics.TryGetValue("MicroAccuracy", out microAcc))
+        else if (TryMetric(metrics, "micro_accuracy", out var microAcc))
         {
             primaryMetricValue = microAcc;
             primaryMetricName = "Micro Accuracy";
         }
-        else if (metrics.TryGetValue("accuracy", out var acc) || metrics.TryGetValue("Accuracy", out acc))
+        else if (TryMetric(metrics, "accuracy", out var acc))
         {
             primaryMetricValue = acc;
             primaryMetricName = "Accuracy";
@@ -302,8 +321,10 @@ public class PerformanceDiagnostics
             }
         }
 
-        // Check Log Loss for additional context
-        if (metrics.TryGetValue("LogLoss", out var logLoss))
+        // Check Log Loss for additional context. Looked up by canonical name: the literal this
+        // once used ("LogLoss") never matched the key the trainer writes ("log_loss"), so the
+        // multiclass diagnostic had never shown a log loss.
+        if (TryMetric(metrics, "log_loss", out var logLoss))
         {
             result.SecondaryMetrics["LogLoss"] = logLoss;
         }
