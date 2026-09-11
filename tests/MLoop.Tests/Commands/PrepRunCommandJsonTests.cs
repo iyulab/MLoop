@@ -44,30 +44,6 @@ public class PrepRunCommandJsonTests : IDisposable
         File.WriteAllText(Path.Combine(_testProjectRoot, "datasets", "train.csv"),
             "a,b,Label\n1,,0\n2,4,1\n,6,0\n");
 
-    // Same AnsiConsole.Console rebinding as the other --json tests.
-    private static async Task<(int ExitCode, string Stdout)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(buffer)
-            });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     [Fact]
     public async Task PrepRun_Json_UnknownModel_ReportsError()
     {
@@ -79,7 +55,7 @@ public class PrepRunCommandJsonTests : IDisposable
                 label: b
             """);
 
-        var (exitCode, stdout) = await RunAsync("prep", "run", "--name", "nope", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("prep", "run", "--name", "nope", "--json");
 
         Assert.Equal(1, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -98,7 +74,7 @@ public class PrepRunCommandJsonTests : IDisposable
                 label: b
             """);
 
-        var (exitCode, stdout) = await RunAsync("prep", "run", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("prep", "run", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -121,7 +97,7 @@ public class PrepRunCommandJsonTests : IDisposable
             """);
         WriteTrainCsv();
 
-        var (exitCode, stdout) = await RunAsync("prep", "run", "--dry-run", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("prep", "run", "--dry-run", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -148,7 +124,7 @@ public class PrepRunCommandJsonTests : IDisposable
             """);
         WriteTrainCsv();
 
-        var (exitCode, stdout) = await RunAsync("prep", "run", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("prep", "run", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -175,7 +151,7 @@ public class PrepRunCommandJsonTests : IDisposable
             """);
         WriteTrainCsv();
 
-        var (exitCode, stdout) = await RunAsync("prep", "run", "--dry-run");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("prep", "run", "--dry-run");
 
         Assert.Equal(0, exitCode);
         Assert.DoesNotContain("[grey]", stdout);

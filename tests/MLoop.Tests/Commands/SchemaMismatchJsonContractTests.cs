@@ -65,29 +65,6 @@ public class SchemaMismatchJsonContractTests : IDisposable
         }
     }
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalError = Console.Error;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        var errorBuffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            Console.SetError(errorBuffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(buffer) });
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString(), errorBuffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            Console.SetError(originalError);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     /// <summary>
     /// The document is the last stdout line that parses as JSON. In <c>--json</c> mode narration is
     /// routed to stderr, so on a well-formed exit this is also the only line — but the contract is
@@ -166,7 +143,7 @@ public class SchemaMismatchJsonContractTests : IDisposable
             Metrics = new Dictionary<string, double> { ["r_squared"] = 0.99 },
         }, CancellationToken.None);
 
-        var (promoteExit, promoteOut, promoteErr) = await RunAsync("promote", "exp-001");
+        var (promoteExit, promoteOut, promoteErr) = await CliRunner.RunAsync("promote", "exp-001");
         Assert.True(promoteExit == 0, promoteOut + promoteErr);
     }
 
@@ -177,7 +154,7 @@ public class SchemaMismatchJsonContractTests : IDisposable
         var mismatched = Path.Combine(_testProjectRoot, "predict-missing-x2.csv");
         WriteLinearCsv(mismatched, rowCount: 5, seed: 7, includeX2: false);
 
-        var (exitCode, stdout, stderr) = await RunAsync("predict", mismatched, "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", mismatched, "--json");
 
         Assert.Equal(1, exitCode);
         var payload = ParsePayload(stdout);
@@ -199,7 +176,7 @@ public class SchemaMismatchJsonContractTests : IDisposable
         var mismatched = Path.Combine(_testProjectRoot, "test-missing-x2.csv");
         WriteLinearCsv(mismatched, rowCount: 5, seed: 7, includeX2: false);
 
-        var (exitCode, stdout, stderr) = await RunAsync("evaluate", "exp-001", mismatched, "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("evaluate", "exp-001", mismatched, "--json");
 
         Assert.Equal(1, exitCode);
         var payload = ParsePayload(stdout);
@@ -223,7 +200,7 @@ public class SchemaMismatchJsonContractTests : IDisposable
         var matching = Path.Combine(_testProjectRoot, "predict-ok.csv");
         WriteLinearCsv(matching, rowCount: 5, seed: 7);
 
-        var (exitCode, stdout, stderr) = await RunAsync("predict", matching, "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", matching, "--json");
 
         Assert.True(exitCode == 0, stdout + stderr);
         var payload = ParsePayload(stdout);

@@ -52,29 +52,6 @@ public class PredictJsonContractTests : IDisposable
         }
     }
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalError = Console.Error;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        var errorBuffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            Console.SetError(errorBuffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(buffer) });
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString(), errorBuffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            Console.SetError(originalError);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     /// <summary>The `--json` payload is the last line of stdout; the command narrates above it.</summary>
     private static JsonElement ParsePayload(string stdout)
     {
@@ -161,10 +138,10 @@ public class PredictJsonContractTests : IDisposable
     public async Task Predict_Json_Multiclass_MatchesTheDocumentedRow()
     {
         var predictCsv = await SeedMulticlassAsync();
-        var (promoteExit, promoteOut, promoteErr) = await RunAsync("promote", "exp-001");
+        var (promoteExit, promoteOut, promoteErr) = await CliRunner.RunAsync("promote", "exp-001");
         Assert.True(promoteExit == 0, promoteOut + promoteErr);
 
-        var (exitCode, stdout, stderr) = await RunAsync("predict", predictCsv, "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", predictCsv, "--json");
         Assert.True(exitCode == 0, stdout + stderr);
 
         var payload = ParsePayload(stdout);
@@ -239,10 +216,10 @@ public class PredictJsonContractTests : IDisposable
         var predictCsv = Path.Combine(_testProjectRoot, "predict.csv");
         File.WriteAllLines(predictCsv, ["X1,X2", "1.0,1.0", "5.0,5.0"]);
 
-        var (promoteExit, promoteOut, promoteErr) = await RunAsync("promote", "exp-001");
+        var (promoteExit, promoteOut, promoteErr) = await CliRunner.RunAsync("promote", "exp-001");
         Assert.True(promoteExit == 0, promoteOut + promoteErr);
 
-        var (exitCode, stdout, stderr) = await RunAsync("predict", predictCsv, "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", predictCsv, "--json");
         Assert.True(exitCode == 0, stdout + stderr);
 
         var payload = ParsePayload(stdout);
@@ -320,10 +297,10 @@ public class PredictJsonContractTests : IDisposable
         var predictCsv = Path.Combine(_testProjectRoot, "predict.csv");
         File.WriteAllLines(predictCsv, ["X1,X2", "1.0,1.0", "9.0,9.0"]);
 
-        var (promoteExit, promoteOut, promoteErr) = await RunAsync("promote", "exp-001");
+        var (promoteExit, promoteOut, promoteErr) = await CliRunner.RunAsync("promote", "exp-001");
         Assert.True(promoteExit == 0, promoteOut + promoteErr);
 
-        var (exitCode, stdout, stderr) = await RunAsync("predict", predictCsv, "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", predictCsv, "--json");
         Assert.True(exitCode == 0, stdout + stderr);
 
         var payload = ParsePayload(stdout);
@@ -371,10 +348,10 @@ public class PredictJsonContractTests : IDisposable
         var predictCsv = Path.Combine(_testProjectRoot, "predict.csv");
         File.WriteAllLines(predictCsv, ["X1,X2", "1.0,1.0", "50.0,-30.0"]);
 
-        var (promoteExit, promoteOut, promoteErr) = await RunAsync("promote", "exp-001");
+        var (promoteExit, promoteOut, promoteErr) = await CliRunner.RunAsync("promote", "exp-001");
         Assert.True(promoteExit == 0, promoteOut + promoteErr);
 
-        var (exitCode, stdout, stderr) = await RunAsync("predict", predictCsv, "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", predictCsv, "--json");
         Assert.True(exitCode == 0, stdout + stderr);
 
         var payload = ParsePayload(stdout);

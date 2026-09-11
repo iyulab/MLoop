@@ -70,30 +70,6 @@ public class CompareJsonContractTests : IDisposable
             "}\n");
     }
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalError = Console.Error;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        var errorBuffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            Console.SetError(errorBuffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(buffer) });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString(), errorBuffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            Console.SetError(originalError);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     private static JsonDocument ParseStdout(string stdout, string stderr)
     {
         try
@@ -113,7 +89,7 @@ public class CompareJsonContractTests : IDisposable
         WriteExperiment("exp-001", rSquared: 0.71, meanAbsoluteError: 0.42);
         WriteExperiment("exp-002", rSquared: 0.88, meanAbsoluteError: 0.19);
 
-        var (exitCode, stdout, stderr) = await RunAsync("compare", "exp-001", "exp-002", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("compare", "exp-001", "exp-002", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -138,7 +114,7 @@ public class CompareJsonContractTests : IDisposable
         WriteExperiment("exp-001", rSquared: 0.71, meanAbsoluteError: 0.42);
         WriteExperiment("exp-002", rSquared: 0.88, meanAbsoluteError: 0.19);
 
-        var (_, stdout, stderr) = await RunAsync(
+        var (_, stdout, stderr) = await CliRunner.RunAsync(
             "compare", "exp-001", "exp-002", "--metric", "mean_absolute_error", "--json");
 
         using var doc = ParseStdout(stdout, stderr);
@@ -151,7 +127,7 @@ public class CompareJsonContractTests : IDisposable
     {
         WriteExperiment("exp-001", rSquared: 0.71, meanAbsoluteError: 0.42);
 
-        var (exitCode, stdout, stderr) = await RunAsync("compare", "exp-001", "exp-999", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("compare", "exp-001", "exp-999", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -168,7 +144,7 @@ public class CompareJsonContractTests : IDisposable
     [Fact]
     public async Task Compare_WithJsonAndNoExperimentsFound_EmitsEmptyResultNotProse()
     {
-        var (exitCode, stdout, stderr) = await RunAsync("compare", "exp-998", "exp-999", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("compare", "exp-998", "exp-999", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -183,7 +159,7 @@ public class CompareJsonContractTests : IDisposable
     [Fact]
     public async Task Compare_WithJsonAndNoModelName_EmitsErrorPayload()
     {
-        var (exitCode, stdout, stderr) = await RunAsync("compare", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("compare", "--json");
 
         Assert.Equal(1, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -196,7 +172,7 @@ public class CompareJsonContractTests : IDisposable
         // The path this covers is why the audit was re-counted: ListCommand looked covered because
         // its --trials path had tests, while plain `list --json` — the state a fresh project is in —
         // had never been driven through the command tree at all.
-        var (exitCode, stdout, stderr) = await RunAsync("list", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("list", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -206,7 +182,7 @@ public class CompareJsonContractTests : IDisposable
     [Fact]
     public async Task ListTrials_WithJsonAndUnknownExperiment_EmitsErrorPayload()
     {
-        var (exitCode, stdout, stderr) = await RunAsync("list", "--trials", "exp-999", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("list", "--trials", "exp-999", "--json");
 
         Assert.Equal(1, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -218,7 +194,7 @@ public class CompareJsonContractTests : IDisposable
     {
         WriteExperiment("exp-001", rSquared: 0.71, meanAbsoluteError: 0.42);
 
-        var (exitCode, stdout, stderr) = await RunAsync("list", "--trials", "exp-001", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("list", "--trials", "exp-001", "--json");
 
         Assert.Equal(1, exitCode);
         using var doc = ParseStdout(stdout, stderr);

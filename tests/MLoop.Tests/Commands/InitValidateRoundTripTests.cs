@@ -55,11 +55,11 @@ public class InitValidateRoundTripTests : IDisposable
     {
         var project = "p" + task.Replace("-", "", StringComparison.Ordinal);
 
-        var (initExit, initOutput) = await RunAsync("init", project, "--task", task);
+        var (initExit, initOutput, _) = await CliRunner.RunAsync("init", project, "--task", task);
         Assert.True(initExit == 0, $"init --task {task} exited {initExit}: {initOutput}");
 
         Directory.SetCurrentDirectory(Path.Combine(_workspace, project));
-        var (validateExit, validateOutput) = await RunAsync("validate");
+        var (validateExit, validateOutput, _) = await CliRunner.RunAsync("validate");
 
         Assert.True(
             validateExit == 0,
@@ -73,7 +73,7 @@ public class InitValidateRoundTripTests : IDisposable
         // Negative control: the round trip has to be able to fail. A task init rejects never reaches
         // validate, and a config naming a task validate rejects must be reported — otherwise a green
         // run above would say nothing about whether the two lists agree.
-        var (initExit, _) = await RunAsync("init", "pbogus", "--task", "not-a-real-task");
+        var (initExit, _, _) = await CliRunner.RunAsync("init", "pbogus", "--task", "not-a-real-task");
         Assert.Equal(1, initExit);
 
         Directory.CreateDirectory(Path.Combine(_workspace, "pmanual", ".mloop"));
@@ -88,31 +88,8 @@ public class InitValidateRoundTripTests : IDisposable
             """);
 
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "pmanual"));
-        var (validateExit, _) = await RunAsync("validate");
+        var (validateExit, _, _) = await CliRunner.RunAsync("validate");
         Assert.Equal(1, validateExit);
     }
 
-    // Console.SetOut alone does not reach Spectre's ambient renderer, so both are rebound — the same
-    // pairing every command-driving test in this assembly uses.
-    private static async Task<(int ExitCode, string Output)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(buffer)
-            });
-
-            return (await Program.ExecuteAsync(Program.BuildRootCommand(), args), buffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
 }

@@ -39,31 +39,6 @@ public class ValidateCommandJsonTests : IDisposable
     private void WriteYaml(string content) =>
         File.WriteAllText(Path.Combine(_testProjectRoot, "mloop.yaml"), content);
 
-    // Same AnsiConsole.Console rebinding as ListCommandTrialsTests.RunAsync — Console.SetOut alone
-    // doesn't reach Spectre's ambient renderer.
-    private static async Task<(int ExitCode, string Stdout)> RunAsync(params string[] args)
-    {
-        var originalOut = Console.Out;
-        var originalAnsiConsole = AnsiConsole.Console;
-        var buffer = new StringWriter();
-        try
-        {
-            Console.SetOut(buffer);
-            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
-            {
-                Out = new AnsiConsoleOutput(buffer)
-            });
-
-            var exitCode = await Program.ExecuteAsync(Program.BuildRootCommand(), args);
-            return (exitCode, buffer.ToString());
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-            AnsiConsole.Console = originalAnsiConsole;
-        }
-    }
-
     [Fact]
     public async Task Validate_Json_ValidConfig_ReportsValidTrue()
     {
@@ -75,7 +50,7 @@ public class ValidateCommandJsonTests : IDisposable
                 label: target
             """);
 
-        var (exitCode, stdout) = await RunAsync("validate", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("validate", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -94,7 +69,7 @@ public class ValidateCommandJsonTests : IDisposable
                 label: target
             """);
 
-        var (exitCode, stdout) = await RunAsync("validate", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("validate", "--json");
 
         Assert.Equal(1, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
@@ -107,7 +82,7 @@ public class ValidateCommandJsonTests : IDisposable
     [Fact]
     public async Task Validate_Json_MissingConfigFile_ReportsError()
     {
-        var (exitCode, stdout) = await RunAsync("validate", "--json");
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("validate", "--json");
 
         Assert.Equal(1, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
