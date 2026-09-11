@@ -58,6 +58,12 @@ builder.Host.UseSerilog();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
+    // A field without a value is absent, on every endpoint — the same rule every `--json` emitter in
+    // the CLI applies. Until 0.32.0 the server wrote such fields as null, so the one response a
+    // consumer might read from both surfaces (a prediction row) had two shapes and the response
+    // contract had to spend a paragraph telling readers to treat "absent" and "null" as the same
+    // thing. One rule per product, not one per surface. See docs/PREDICT-RESPONSE.md.
+    options.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
 });
 
 // Add Swagger services
