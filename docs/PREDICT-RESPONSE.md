@@ -29,27 +29,25 @@ envelope around the rows.
   "task": "multiclass-classification",
   "count": 3,
   "predictions": [ /* rows */ ],
-  "warnings": null
+  "warnings": ["…"]
 }
 ```
 
-Two differences worth knowing before you write a parser:
+One difference worth knowing before you write a parser: the model's name is `model` on the CLI and
+`modelName` over HTTP, and only the HTTP response names the experiment the prediction came from.
 
-- The model's name is `model` on the CLI and `modelName` over HTTP; only the HTTP response names the
-  experiment the prediction came from.
-- 🔴 **The CLI omits null fields; the server writes them.** This applies to the envelope *and to
-  every field of every row*. The same multiclass row is `{"predictedLabel":"cat","probabilities":
-  {…},"confidence":0.5}` from the CLI and `{"predictedLabel":"cat","probabilities":{…},"score":null,
-  "clusterId":null,"distances":null,…,"confidence":0.5}` over HTTP. **Absent and `null` mean the same
-  thing** — read a field as "has a value" or "does not", never as "the key is there".
+🔴 **A field without a value is absent — on both surfaces, in the envelope and in every row.** The
+same multiclass row is `{"predictedLabel":"cat","probabilities":{…},"confidence":0.5}` whichever way
+you asked; `warnings` is there only when there is something to warn about. Read a field as "has a
+value" or "does not", never as "the key is there". (Before 0.32.0 the server wrote such fields as
+`null`; a consumer that also has to read those responses should treat `null` as absent.)
 
 `count` is `predictions.length`. It is there so a consumer can check a truncated read.
 
 ## Rows
 
-A row carries values only for the fields its task produces. Which fields have a **non-null** value is
-therefore information about the task; which keys are *present* is not, because that depends on which
-of the two surfaces you asked (see above). A field without a value is absent or null — never zero.
+A row carries values only for the fields its task produces — so which fields a row *has* is
+information about the task. A field without a value is absent, never zero and never `null`.
 
 | Field | Type | Carries a value for |
 |---|---|---|
@@ -127,8 +125,11 @@ Both bounds are absent for a model trained before conformal bands, or for any no
 
 ## Errors
 
-`mloop predict --json` exits non-zero and writes the reason to stderr; stdout stays empty. Never
-parse stdout without checking the exit code first.
+`mloop predict --json` exits non-zero and writes one document to stdout — `{"error": "…"}` — with
+the same reason rendered for a person on stderr. A schema mismatch reads
+`{"error": "Schema validation failed. Missing required columns: …"}`. Check the exit code first, then
+parse: a zero exit carries the envelope above, a non-zero exit carries the error document, and stdout
+is never empty in either case.
 
 `POST /predict` returns `400` for a caller error (for example, input rows sharing no column with the
 trained schema) and `500` otherwise, both as a problem document.

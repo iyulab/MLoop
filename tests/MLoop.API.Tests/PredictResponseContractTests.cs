@@ -141,10 +141,12 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
         body.GetProperty("task").GetString().Should().Be("multiclass-classification");
         body.GetProperty("count").GetInt32().Should().Be(2);
 
-        // The server writes nulls rather than omitting them, which is the half of the shape that
-        // differs from the CLI's; the document tells consumers to treat the two as the same.
-        body.TryGetProperty("warnings", out var warnings).Should().BeTrue();
-        warnings.ValueKind.Should().Be(JsonValueKind.Null);
+        // A field without a value is absent, here as on the CLI. The server used to write it as
+        // null, which gave the same row two shapes depending on the surface asked; the document now
+        // promises one shape, and this is the sentence that would break first if the server's
+        // serializer options were ever reset to the framework default.
+        if (body.TryGetProperty("warnings", out var warnings))
+            warnings.ValueKind.Should().NotBe(JsonValueKind.Null, "an empty warnings field is omitted, never written as null");
 
         var predictions = body.GetProperty("predictions");
         predictions.GetArrayLength().Should().Be(2);
@@ -166,12 +168,12 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
 
             row.GetProperty("confidence").GetDouble().Should().BeInRange(0.0, 1.0);
 
-            // Multiclass carries no scalar `score` — but over HTTP the key is still *there*, holding
-            // null, because the server writes nulls where the CLI omits them. This is the distinction
-            // the document has to state precisely: a consumer testing key presence would conclude this
-            // multiclass row has a score, and a consumer testing for a value would not.
-            row.GetProperty("score").ValueKind.Should().Be(JsonValueKind.Null);
-            row.GetProperty("clusterId").ValueKind.Should().Be(JsonValueKind.Null);
+            // Multiclass carries no scalar `score`, so the key is not there — the same row the CLI
+            // returns. Before 0.32.0 the key was present and null over HTTP, and a consumer testing
+            // key presence concluded a multiclass row had a score.
+            row.TryGetProperty("score", out _).Should().BeFalse("a field without a value is absent, not null");
+            row.TryGetProperty("clusterId", out _).Should().BeFalse("a field without a value is absent, not null");
+            row.TryGetProperty("distances", out _).Should().BeFalse("a field without a value is absent, not null");
         }
     }
 }

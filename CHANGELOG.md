@@ -21,6 +21,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   A model trained on this version therefore has one fewer feature than the same data produced
   before; **models trained on earlier versions keep working**, because they replay their own
   recorded schema at prediction time — retrain when you want the id column gone from them.
+- **`mloop serve` no longer writes fields that have no value.** Every response from the server —
+  `POST /predict` rows and envelope included — now omits a field whose value would be `null`, the
+  same rule every `--json` command in the CLI already applies. Until now the same prediction row had
+  two shapes depending on which surface you asked: `{"predictedLabel":"cat",…,"confidence":0.5}`
+  from the CLI and `{"predictedLabel":"cat",…,"score":null,"clusterId":null,"distances":null,…}`
+  over HTTP, and the response contract had to tell readers to treat absent and `null` as the same
+  thing. Now there is one shape. **Migration**: a consumer that tested a key's *presence* to decide
+  whether a row carries a score, a cluster id or a band must test for the *value* instead — which
+  `docs/PREDICT-RESPONSE.md` has asked for since the contract was written. A consumer that read
+  `null` as "no value" is unaffected; one that reads responses from both this version and earlier
+  ones should treat `null` as absent.
 - **The "possible ID column" hint named a flag that does not exist.** It suggested
   `mloop train ... --exclude <column>`; the command that declares a column excluded is
   `mloop features select --drop <column>`, and the hint now says so.
