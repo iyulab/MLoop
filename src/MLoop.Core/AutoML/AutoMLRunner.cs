@@ -148,7 +148,7 @@ public partial class AutoMLRunner
             if (featureExclusions is null && !DataLoaderFactory.IsDirectoryBased(config.Task))
             {
                 featureExclusions = CsvDataLoader
-                    .DetermineExcludedColumns(config.DataFile, config.LabelColumn, _logger.Info)
+                    .DetermineExcludedColumns(config.DataFile, config.LabelColumn, _logger.Info, config.ClaimedColumns)
                     .Select(c => c.Name).ToList();
             }
 

@@ -5,7 +5,7 @@ using MLoop.Core.Models;
 namespace MLoop.Core.Tests.Data;
 
 /// <summary>
-/// The featurization-exclusion decision (DateTime / sparse / constant) is data-dependent, so it has
+/// The featurization-exclusion decision (DateTime / sparse / constant / identifier) is data-dependent, so it has
 /// exactly one authority — <see cref="CsvDataLoader.DetermineExcludedColumns"/> — and every slice of
 /// a run consumes that one decision.
 /// </summary>
@@ -44,12 +44,12 @@ public class FeatureExclusionAuthorityTests : IDisposable
     [Fact]
     public void DetermineExcludedColumns_ReportsEachReason()
     {
-        var lines = new List<string> { "keep,constant_col,sparse_col,event_date,label" };
+        var lines = new List<string> { "keep,constant_col,sparse_col,event_date,customer_id,label" };
         for (int i = 0; i < 40; i++)
         {
             // sparse_col carries a value in 1 of 40 rows (97.5% missing → over the 90% threshold)
             var sparse = i == 0 ? "7" : "";
-            lines.Add($"{i},SAME,{sparse},2024-01-{(i % 28) + 1:D2},{i % 2}");
+            lines.Add($"{i},SAME,{sparse},2024-01-{(i % 28) + 1:D2},C{i:D4}-X,{i % 2}");
         }
         var csvPath = CreateCsv("reasons.csv", lines);
 
@@ -58,8 +58,52 @@ public class FeatureExclusionAuthorityTests : IDisposable
         Assert.Equal(SchemaDataTypes.ExcludedDateTime, ReasonFor(excluded, "event_date"));
         Assert.Equal(SchemaDataTypes.ExcludedSparse, ReasonFor(excluded, "sparse_col"));
         Assert.Equal(SchemaDataTypes.ExcludedConstant, ReasonFor(excluded, "constant_col"));
+        Assert.Equal(SchemaDataTypes.ExcludedIdentifier, ReasonFor(excluded, "customer_id"));
         Assert.DoesNotContain(excluded, c => c.Name == "keep");
         Assert.DoesNotContain(excluded, c => c.Name == "label");
+    }
+
+    [Fact]
+    public void DetermineExcludedColumns_ProtectedColumn_IsNeverAnIdentifier()
+    {
+        // A recommendation's user column is one-row-per-user in a small file — exactly the shape the
+        // identifier rule detects — and dropping it would remove the column the task is built on.
+        var lines = new List<string> { "user,score,label" };
+        for (int i = 0; i < 40; i++)
+            lines.Add($"U{i:D3},{i * 1.5},{i % 2}");
+        var csvPath = CreateCsv("protected.csv", lines);
+
+        var unprotected = CsvDataLoader.DetermineExcludedColumns(csvPath, "label", _ => { });
+        var protectedRun = CsvDataLoader.DetermineExcludedColumns(csvPath, "label", _ => { }, new[] { "user" });
+
+        Assert.Equal(SchemaDataTypes.ExcludedIdentifier, ReasonFor(unprotected, "user"));
+        Assert.Empty(protectedRun);
+    }
+
+    [Fact]
+    public void LoadData_WithSharedExclusions_DropsTheIdentifierFromEveryPartition()
+    {
+        // The identifier rule is data-dependent like the other three, so it goes through the same
+        // authority: the decision is taken once on the full file and both partitions apply it —
+        // neither partition re-runs the rule on its own (smaller) slice.
+        var header = "customer_id,f1,label";
+        var full = new List<string> { header };
+        for (int i = 0; i < 60; i++)
+            full.Add($"C{i:D4}-X,{i % 7},{i % 2}");
+        var fullPath = CreateCsv("id_full.csv", full);
+        var trainPath = CreateCsv("id_train.csv", full.Take(41));
+        var testPath = CreateCsv("id_test.csv", new[] { header }.Concat(full.Skip(41)));
+
+        var exclusions = CsvDataLoader.DetermineExcludedColumns(fullPath, "label", _ => { })
+            .Select(c => c.Name).ToList();
+
+        var train = _loader.LoadData(trainPath, "label", "binary-classification", null, exclusions);
+        var test = _loader.LoadData(testPath, "label", "binary-classification", null, exclusions);
+
+        Assert.Contains("customer_id", exclusions);
+        Assert.DoesNotContain("customer_id", ColumnNames(train));
+        Assert.DoesNotContain("customer_id", ColumnNames(test));
+        Assert.Equal(ColumnNames(train), ColumnNames(test));
     }
 
     [Fact]

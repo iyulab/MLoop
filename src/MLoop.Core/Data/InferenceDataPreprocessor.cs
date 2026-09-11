@@ -14,7 +14,7 @@ namespace MLoop.Core.Data;
 /// inference paths.
 ///
 /// Training (<see cref="CsvDataLoader.LoadData"/>) remains the source of truth: it *discovers*
-/// DateTime/sparse/constant columns from the data and records them as "Exclude" in the captured
+/// DateTime/sparse/constant/identifier columns from the data and records them as "Exclude" in the captured
 /// schema. Inference is the *applier* — when a trained schema is supplied, exclusion is deterministic
 /// (driven by that record, not the inference data); without a schema it falls back to the same
 /// data-dependent removals training would have run.
@@ -56,7 +56,7 @@ public static class InferenceDataPreprocessor
         current = Step(CsvDataLoader.RemoveIndexColumns(current, log), current, tempFiles);
 
         // 4. Column exclusion. With a trained schema this is deterministic — applying the DateTime /
-        //    constant / sparse columns training marked "Exclude". Without one, fall back to the same
+        //    sparse / constant / identifier columns training marked "Exclude". Without one, fall back to the same
         //    data-dependent removals training runs, so predict and evaluate stay identical.
         if (trainedSchema != null)
         {
@@ -78,6 +78,7 @@ public static class InferenceDataPreprocessor
             current = Step(CsvDataLoader.RemoveDateTimeColumns(current, labelColumn, log), current, tempFiles);
             current = Step(CsvDataLoader.RemoveSparseColumns(current, labelColumn, log: log), current, tempFiles);
             current = Step(CsvDataLoader.RemoveConstantColumns(current, labelColumn, log), current, tempFiles);
+            current = Step(CsvDataLoader.RemoveIdentifierColumns(current, labelColumn, null, log), current, tempFiles);
 
             if (ReadHeaderCount(current) != before)
             {

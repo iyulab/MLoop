@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Identifier columns are no longer trained on.** A text column in which every row carries its
+  own distinct, whitespace-free value — a customer id, an order number, a UUID — was being
+  featurized as TF-IDF n-grams: ML.NET's column inference marked it as ignorable, and the training
+  path then turned every text column back into a text feature, so the id column reached the
+  trainer as noise, and as a leak path wherever the id encodes anything about the label. It now
+  joins the DateTime, sparse and constant columns that training drops, is reported under
+  `Excluded from features (Identifier)`, and is recorded in the model's schema so `predict` and
+  `evaluate` drop it the same way. Numeric columns are never treated as identifiers (measurements
+  are distinct per row too), a value with whitespace or a single repeated value disqualifies the
+  column, fewer than 20 rows is not enough evidence, and a column you named as a ranking group,
+  a recommendation user or item, or gave an explicit type in `mloop.yaml` is never dropped.
+  A model trained on this version therefore has one fewer feature than the same data produced
+  before; **models trained on earlier versions keep working**, because they replay their own
+  recorded schema at prediction time — retrain when you want the id column gone from them.
+- **The "possible ID column" hint named a flag that does not exist.** It suggested
+  `mloop train ... --exclude <column>`; the command that declares a column excluded is
+  `mloop features select --drop <column>`, and the hint now says so.
+
 ## [0.31.0] - 2026-09-11
 
 ### Fixed

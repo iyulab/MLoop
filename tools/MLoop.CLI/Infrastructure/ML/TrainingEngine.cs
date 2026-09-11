@@ -187,7 +187,8 @@ public class TrainingEngine : ITrainingEngine
                 // The full dataset is the deciding slice, matching the schema capture below: a column
                 // is dropped because it carries no signal in the data as a whole, not because one
                 // random partition happened to flatten it.
-                var featureExclusions = CsvDataLoader.DetermineExcludedColumns(dataFilePath, config.LabelColumn, CoreNarration.Sink);
+                var featureExclusions = CsvDataLoader.DetermineExcludedColumns(
+                    dataFilePath, config.LabelColumn, CoreNarration.Sink, config.ClaimedColumns);
                 config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
 
                 // Say which columns the model will not see, and why. The removal chain narrates this
@@ -840,7 +841,11 @@ public class TrainingEngine : ITrainingEngine
                 // If InferColumns classified a text column as Ignored,
                 // but InferColumnTypeFromData detected it as Text, override purpose to Feature.
                 // This aligns schema metadata with AutoMLRunner's BuildColumnInformation behavior.
-                if (purpose == "Ignore" && dataType == SchemaDataTypes.Text)
+                // Not for a column the exclusion decision already dropped: MarkColumnsAsExcluded
+                // below records it as "Exclude", and announcing "→ Text Feature" first would tell
+                // the user two contradictory things about the same column.
+                if (purpose == "Ignore" && dataType == SchemaDataTypes.Text
+                    && featureExclusions?.Any(e => e.Name.Equals(colName, StringComparison.OrdinalIgnoreCase)) != true)
                 {
                     purpose = "Feature";
                     Console.WriteLine($"[Info] Column '{colName}' reclassified: Ignored → Text Feature");
@@ -889,7 +894,7 @@ public class TrainingEngine : ITrainingEngine
                 });
             }
 
-            // Mark the columns featurization drops (DateTime / sparse / constant) as "Exclude", so
+            // Mark the columns featurization drops (DateTime / sparse / constant / identifier) as "Exclude", so
             // the saved schema describes exactly the feature set the model was fitted on — predict
             // and evaluate replay it through CsvDataLoader.RemoveExcludedColumns.
             //

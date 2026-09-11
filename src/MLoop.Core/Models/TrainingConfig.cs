@@ -80,7 +80,7 @@ public record TrainingConfig
     public List<string>? PreFeaturizerColumns { get; init; }
 
     /// <summary>
-    /// Columns featurization drops (DateTime / sparse / constant), decided once for the whole run by
+    /// Columns featurization drops (DateTime / sparse / constant / identifier), decided once for the whole run by
     /// <see cref="Data.CsvDataLoader.DetermineExcludedColumns"/> and applied to every slice — the
     /// train partition, the test partition, and the saved input schema that predict and evaluate
     /// replay. Null means the decision has not been made upstream, in which case the loader falls
@@ -127,4 +127,31 @@ public record TrainingConfig
     /// Item column name for recommendation task
     /// </summary>
     public string? ItemColumn { get; init; }
+
+    /// <summary>
+    /// Columns this run has claimed for a purpose of its own — the ranking group, the recommendation
+    /// user and item, pre-featurizer inputs, and every column the user gave an explicit type
+    /// override other than <c>ignore</c>. The identifier exclusion heuristic never drops one of
+    /// these: a stated intent outranks a guess about the data. Handed to
+    /// <see cref="Data.CsvDataLoader.DetermineExcludedColumns"/> as its protected set, from one
+    /// place so the runner and the CLI cannot derive two different sets.
+    /// </summary>
+    public IReadOnlyList<string> ClaimedColumns
+    {
+        get
+        {
+            var claimed = new List<string>();
+            if (!string.IsNullOrEmpty(GroupColumn)) claimed.Add(GroupColumn);
+            if (!string.IsNullOrEmpty(UserColumn)) claimed.Add(UserColumn);
+            if (!string.IsNullOrEmpty(ItemColumn)) claimed.Add(ItemColumn);
+            if (PreFeaturizerColumns is { Count: > 0 }) claimed.AddRange(PreFeaturizerColumns);
+            if (ColumnOverrides is not null)
+            {
+                claimed.AddRange(ColumnOverrides
+                    .Where(kv => !string.Equals(kv.Value?.Trim(), "ignore", StringComparison.OrdinalIgnoreCase))
+                    .Select(kv => kv.Key));
+            }
+            return claimed;
+        }
+    }
 }
