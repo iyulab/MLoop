@@ -182,6 +182,8 @@ internal static class TrainPresenter
         AnsiConsole.WriteLine();
 
         ValueLine.Write("[grey]Model saved to:[/] ", WhereItLandedInTheProject(result.ModelPath));
+        if (result.ReportPath is not null)
+            ValueLine.Write("[grey]Report:[/]         ", WhereItLandedInTheProject(result.ReportPath));
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
         foreach (var step in NextStepsAfterTraining(modelName, result.ExperimentId, promotionFollows))

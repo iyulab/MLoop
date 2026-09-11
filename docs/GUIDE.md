@@ -147,9 +147,13 @@ mloop train data.csv --label defect --task binary-classification --balance 5  # 
 - **Data Quality Analysis**: Automatic class distribution and quality warnings
 - **Feature Exclusion**: Columns that cannot carry signal are dropped before training (see below)
 
-**Output**:
-- Model saved to `models/staging/exp-XXX/model.zip`
-- Metadata saved to `models/staging/exp-XXX/metadata.json`
+**Output** (under `models/<name>/staging/exp-XXX/`):
+- `model.zip` — the trained model
+- `metadata.json`, `metrics.json`, `config.json` — what was trained, how it scored, how it was configured
+- `trials.ndjson`, `leaderboard.json` — every trial the search completed, in completion order and ranked
+- `report.md` — the experiment as a page: result, metrics, ranked trials, and each column's role (with
+  the reason for any exclusion). A rendering of the files above for reading and sharing; no command
+  reads it back
 - First successful model auto-promoted to production
 
 #### Which columns training drops, and how to change that
@@ -739,7 +743,8 @@ my-ml-project/
 │   ├── staging/              # All trained experiments
 │   │   ├── exp-001/
 │   │   │   ├── model.zip     # Trained model
-│   │   │   └── metadata.json # Metrics and config
+│   │   │   ├── metadata.json # Metrics and config
+│   │   │   └── report.md     # The experiment as a readable page
 │   │   └── exp-002/
 │   └── production/           # Promoted production model
 │       └── current -> ../staging/exp-003/  # Symlink

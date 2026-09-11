@@ -1,8 +1,10 @@
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
+using Spectre.Console;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
 
@@ -23,6 +25,7 @@ public class ExperimentStore : IExperimentStore
     private const string ConfigFileName = ExperimentLayout.ConfigFileName;
     private const string TrialsFileName = ExperimentLayout.TrialsFileName;
     private const string LeaderboardFileName = ExperimentLayout.LeaderboardFileName;
+    private const string ReportFileName = ExperimentLayout.ReportFileName;
 
     private readonly IFileSystemManager _fileSystem;
     private readonly IProjectDiscovery _projectDiscovery;
@@ -139,11 +142,47 @@ public class ExperimentStore : IExperimentStore
         // count drift apart. Nothing is written only when nothing was tried — the tasks with no
         // metric to report (object detection, QA) record no trials and so leave no file, rather
         // than an empty leaderboard claiming a search found nothing.
+        // Ranked once, here, so the leaderboard and the report cannot disagree about which trial
+        // came first — a second ordering would be a second implementation of the same rule.
+        var rankedTrials = experiment.RankingMetric is { } rankingMetric && MetricDirection.IsKnown(rankingMetric)
+            ? Rank(experiment.Trials, rankingMetric)
+            : null;
+
         if (experiment.Trials.Count > 0)
-            await SaveTrialsAsync(experimentPath, experiment, cancellationToken);
+            await SaveTrialsAsync(experimentPath, experiment, rankedTrials, cancellationToken);
+
+        await SaveReportAsync(experimentPath, experiment, rankedTrials, cancellationToken);
 
         // Update experiment index
         await UpdateIndexWithExperimentAsync(resolvedName, experiment, cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes <c>report.md</c> — the experiment as a person reads it. Written for failed experiments
+    /// too: the record of what was attempted is worth as much when nothing came of it.
+    /// </summary>
+    /// <remarks>
+    /// The write is contained. The failure path calls <see cref="SaveAsync"/> from a catch block
+    /// and then rethrows the training error; an exception escaping from here would replace that
+    /// error with a rendering error, and the user would see why the report failed instead of why
+    /// training did. The report is a convenience over files already on disk, so a failed write
+    /// costs a warning and nothing else.
+    /// </remarks>
+    private async Task SaveReportAsync(
+        string experimentPath, ExperimentData experiment, IReadOnlyList<TrialRecord>? rankedTrials,
+        CancellationToken cancellationToken)
+    {
+        var reportPath = _fileSystem.CombinePath(experimentPath, ReportFileName);
+        try
+        {
+            var report = ExperimentReport.Render(
+                experiment, rankedTrials, _projectRoot, Update.UpdateChecker.GetCurrentVersion());
+            await _fileSystem.WriteTextAsync(reportPath, report, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            WarningConsole.Warn($"Could not write {ReportFileName}: {Markup.Escape(ex.Message)}");
+        }
     }
 
     /// <summary>
@@ -158,16 +197,14 @@ public class ExperimentStore : IExperimentStore
     /// direction would silently present the worst trial as the best.
     /// </remarks>
     private async Task SaveTrialsAsync(
-        string experimentPath, ExperimentData experiment, CancellationToken cancellationToken)
+        string experimentPath, ExperimentData experiment, IReadOnlyList<TrialRecord>? ranked,
+        CancellationToken cancellationToken)
     {
         var lines = experiment.Trials.Select(t => JsonSerializer.Serialize(t, TrialJsonOptions));
         var trialsPath = _fileSystem.CombinePath(experimentPath, TrialsFileName);
         await _fileSystem.WriteTextAsync(trialsPath, string.Join(Environment.NewLine, lines), cancellationToken);
 
         var metric = experiment.RankingMetric;
-        var ranked = metric is not null && MetricDirection.IsKnown(metric)
-            ? Rank(experiment.Trials, metric)
-            : null;
 
         var leaderboardPath = _fileSystem.CombinePath(experimentPath, LeaderboardFileName);
         await _fileSystem.WriteJsonAsync(leaderboardPath, new

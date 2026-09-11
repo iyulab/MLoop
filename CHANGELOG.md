@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Every experiment now leaves a `report.md` beside its model.** Training writes one Markdown page
+  into `models/<name>/staging/exp-NNN/` that says what the JSON files in that directory say, in the
+  order a person asks: status and data, the winning trainer and its pipeline, the metrics, every
+  trial ranked as the leaderboard ranks it, and each input column with its role — including the
+  reason a column was excluded. It renders in any Markdown viewer, including the repository host a
+  project is pushed to. The page is written for failed experiments too, and it is only a rendering:
+  no command reads it, so a missing or stale report breaks nothing, and a failure to write it costs
+  a warning rather than the experiment. The training summary prints its path under `Model saved to:`,
+  and the `--json` `result` event carries it as `reportPath` (omitted when no report was written).
+
 ### Changed
 - **Identifier columns are no longer trained on.** A text column in which every row carries its
   own distinct, whitespace-free value — a customer id, an order number, a UUID — was being

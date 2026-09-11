@@ -408,6 +408,10 @@ public class TrainingEngine : ITrainingEngine
             // Save experiment metadata
             await _experimentStore.SaveAsync(modelName, experimentData, cancellationToken);
 
+            // The store contains a failed report write behind a warning, so the only way to know
+            // whether there is a report to point at is to look.
+            var reportPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.ReportFileName);
+
             return new TrainingResult
             {
                 ExperimentId = experimentId,
@@ -415,6 +419,7 @@ public class TrainingEngine : ITrainingEngine
                 Metrics = autoMLResult.Metrics,
                 TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds,
                 ModelPath = modelPath,
+                ReportPath = _fileSystem.FileExists(reportPath) ? reportPath : null,
                 Schema = inputSchema ?? autoMLResult.Schema,
                 RowCount = autoMLResult.RowCount
             };

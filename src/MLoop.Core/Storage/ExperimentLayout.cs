@@ -4,8 +4,9 @@ namespace MLoop.Core.Storage;
 /// Canonical on-disk layout constants for MLoop experiments — the single authority both the
 /// writer (<c>MLoop.CLI.ExperimentStore</c>) and the readers (<c>MLoop.Ops</c> services, the
 /// REST API) converge on, so the experiment-staging layout cannot drift across the assembly
-/// boundary. Layout: <c>models/{model}/staging/{expId}/{metadata.json, metrics.json, config.json}</c>
-/// with the per-model experiment counter at <c>staging</c>'s sibling index file.
+/// boundary. Layout: <c>models/{model}/staging/{expId}/{model.zip, metadata.json, metrics.json,
+/// config.json, trials.ndjson, leaderboard.json, report.md}</c> with the per-model experiment
+/// counter at <c>staging</c>'s sibling index file.
 /// <para>
 /// Lives in <c>MLoop.Core</c> because that is the common ancestor of <c>MLoop.CLI</c> (which
 /// references Ops) and <c>MLoop.Ops</c> (which references Core) — the only home that lets both
@@ -62,6 +63,15 @@ public static class ExperimentLayout
     /// raw trials file should not have to re-derive.
     /// </summary>
     public const string LeaderboardFileName = "leaderboard.json";
+
+    /// <summary>
+    /// The experiment as a person reads it — one Markdown page inside <c>staging/{expId}/</c>
+    /// rendering what <see cref="MetadataFileName"/>, <see cref="MetricsFileName"/>,
+    /// <see cref="LeaderboardFileName"/> and the recorded input schema already say. Written for
+    /// every experiment, failed ones included; never read back by any command, so a stale or
+    /// missing report breaks nothing.
+    /// </summary>
+    public const string ReportFileName = "report.md";
 
     // The per-model production pointer + snapshot lives in production/metadata.json (the
     // ProductionMetadata authority), co-located with model.zip. The parallel registry.json that used to

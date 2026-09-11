@@ -1,6 +1,7 @@
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.Core.Models;
+using MLoop.Core.Storage;
 
 namespace MLoop.Tests.Infrastructure.FileSystem;
 
@@ -119,6 +120,52 @@ public class ExperimentStoreTests : IDisposable
 
         // Assert
         Assert.True(_experimentStore.ExperimentExists(DefaultModelName, experimentId));
+    }
+
+    [Fact]
+    public async Task SaveAsync_WritesAReportBesideTheOtherArtifacts()
+    {
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        var experimentData = CreateExperimentData(experimentId, result: new ExperimentResult
+        {
+            BestTrainer = "FastForestRegression",
+            Trainer = TrainerDescriptor.Of("FastForestRegression"),
+            TrainingTimeSeconds = 3.0
+        });
+
+        await _experimentStore.SaveAsync(DefaultModelName, experimentData, CancellationToken.None);
+
+        // Generated output is asserted against the layout authority, not a literal of our own.
+        var reportPath = Path.Combine(
+            _experimentStore.GetExperimentPath(DefaultModelName, experimentId), ExperimentLayout.ReportFileName);
+        Assert.True(File.Exists(reportPath));
+        var report = await File.ReadAllTextAsync(reportPath);
+        Assert.Contains($"# {experimentId} — {DefaultModelName}", report);
+        Assert.Contains("| r_squared | 0.8500 |", report);
+        Assert.Contains("| Best trainer | FastForestRegression |", report);
+    }
+
+    /// <summary>
+    /// The failure record — no trainer, no metrics, no trials, no schema — is saved from a catch
+    /// block. It gets a report too, and writing it must not throw over the training error.
+    /// </summary>
+    [Fact]
+    public async Task SaveAsync_WritesAReportForAFailedExperimentToo()
+    {
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        var failed = CreateExperimentData(experimentId, status: "failed", metric: null, result: new ExperimentResult
+        {
+            BestTrainer = "none",
+            TrainingTimeSeconds = 15.0
+        });
+
+        await _experimentStore.SaveAsync(DefaultModelName, failed, CancellationToken.None);
+
+        var reportPath = Path.Combine(
+            _experimentStore.GetExperimentPath(DefaultModelName, experimentId), ExperimentLayout.ReportFileName);
+        var report = await File.ReadAllTextAsync(reportPath);
+        Assert.Contains("| Status | failed |", report);
+        Assert.Contains("Training did not produce a model.", report);
     }
 
     [Fact]
