@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`f1_score (accuracy was asked)`), rather than repeating the configuration.
 
 ### Fixed
+- **The small-data fallback trainer gives the same model on every run.** When AutoML cannot run
+  on a binary-classification dataset, MLoop trains an SDCA logistic regression directly. ML.NET runs
+  that solver on several threads by default, and on the small data this fallback exists for it does
+  not converge and its result varies between runs of the same seed. It now trains on one thread.
 - **An auto-time run recorded a time limit it never ran under.** When the budget was left to
   auto-time — the default — the experiment's `config.json` and its `report.md` stated the
   configured default of 300 seconds, while the run was granted a short probe and, when it helped, a
