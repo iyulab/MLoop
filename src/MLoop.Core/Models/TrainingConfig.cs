@@ -42,14 +42,18 @@ public record TrainingConfig
     /// <summary>
     /// The optimization metric as it was given — the user's own spelling, kept so a message can
     /// quote it back. What the optimizer and the records use is <see cref="CanonicalMetric"/>.
+    /// Defaults to <c>auto</c> — the task's primary metric — because a config does not know its task
+    /// when this initializer runs, and the old default (<c>accuracy</c>) was a binary-classification
+    /// name that every regression config built without a metric silently carried.
     /// </summary>
-    public string Metric { get; init; } = "accuracy";
+    public string Metric { get; init; } = Evaluation.MetricNames.Auto;
 
     /// <summary>
     /// <see cref="Metric"/> in MLoop's canonical vocabulary for this <see cref="Task"/>
     /// (<c>F1Score</c> → <c>f1_score</c>, <c>auto</c> → the task's primary metric), or the given
-    /// spelling unchanged when <see cref="Evaluation.MetricNames"/> does not know it — the
-    /// optimizer then falls back to the task default and says so.
+    /// spelling unchanged when <see cref="Evaluation.MetricNames"/> does not know it. Such a name
+    /// never reaches training: <see cref="Evaluation.MetricNames.Rejection"/> refuses it at every
+    /// producer, and the optimizer refuses it again rather than substituting the task default.
     /// </summary>
     /// <remarks>
     /// Derived here, at the one gate every producer of a config passes through (both CLI paths and

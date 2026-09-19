@@ -66,9 +66,34 @@ public class MetricVocabularyRoundTripTests
                         || AutoMLRunner.MulticlassMetricFor(name).HasValue
                         || AutoMLRunner.RegressionMetricFor(name).HasValue
                         || TaskMetadata.AllPrimaryMetrics.Contains(name)
-                        || name == "davies_bouldin_index"; // clustering's second metric: reported, never optimized
+                        || name == "davies_bouldin_index" // clustering's second metric: reported, never optimized
+                        || name == "mape";                // forecasting's second metric: reported, never optimized
             Assert.True(accepted, $"'{name}' is in the vocabulary but no optimizer accepts it");
         }
+    }
+
+    /// <summary>
+    /// What <see cref="MetricNames.OptimizableFor"/> says a task can take is exactly what that
+    /// task's optimizer switch accepts — otherwise <c>validate</c> and the producers would refuse a
+    /// name training takes, or pass one it throws on.
+    /// </summary>
+    [Theory]
+    [InlineData("binary-classification")]
+    [InlineData("multiclass-classification")]
+    [InlineData("regression")]
+    public void OptimizableFor_matches_the_optimizer_switch(string task)
+    {
+        Func<string, bool> accepts = task switch
+        {
+            "binary-classification" => n => AutoMLRunner.BinaryMetricFor(n).HasValue,
+            "multiclass-classification" => n => AutoMLRunner.MulticlassMetricFor(n).HasValue,
+            _ => n => AutoMLRunner.RegressionMetricFor(n).HasValue
+        };
+        var declared = MetricNames.OptimizableFor(task);
+        Assert.NotNull(declared);
+        foreach (var name in MetricNames.All)
+            Assert.True(accepts(name) == declared!.Contains(name),
+                $"'{name}': optimizer accepts = {accepts(name)}, OptimizableFor lists it = {declared.Contains(name)}");
     }
 
     /// <summary>The spelling that shipped in the examples for months, read the way it was meant.</summary>

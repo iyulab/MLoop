@@ -109,8 +109,8 @@ mloop train <data-file> <label-column> [options]
 #   --task, -t <type>           ML task type (default: from mloop.yaml)
 #   --metric, -m <name>         Metric to optimize (default: the task's primary metric). Case and
 #                               separators do not matter (F1Score, f1-score and f1_score are one
-#                               name); an unknown name is reported as a warning and the task
-#                               default is optimized instead
+#                               name); an unknown name, or one the task cannot optimize, is
+#                               refused before training starts
 #   --test-split <0-1>          Test split fraction (default: 0.2)
 
 # Time budget:

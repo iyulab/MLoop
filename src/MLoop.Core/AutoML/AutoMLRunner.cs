@@ -1989,33 +1989,27 @@ public partial class AutoMLRunner
 
     // The optimizing metric for a run. The name arrives already canonical
     // (TrainingConfig.CanonicalMetric, via MetricNames) — these switches map MLoop's vocabulary to
-    // ML.NET's enum and hold no spellings of their own. A name the switch does not know is one
-    // MetricNames does not know either; the run then optimizes the task default and says so,
-    // because the silent fall-through this replaced let `metric: F1Score` optimize accuracy for a
-    // long time while every record kept saying F1.
+    // ML.NET's enum and hold no spellings of their own. A name the switch cannot take is refused
+    // (MetricNames.Rejection), never replaced by the task default: a substitute would be optimized
+    // while every record kept the name that was given, which is how `metric: F1Score` optimized
+    // accuracy for a long time. Producers (CLI train, API /train) refuse the same names before any
+    // work starts; this is the backstop for a caller that skipped them.
     //
     // The *Metric switches below are the inverse of the Describe*Metric switches further down
     // (enum → name), and a round-trip test pins that they agree.
 
     private BinaryClassificationMetric GetBinaryMetric(TrainingConfig config) =>
-        BinaryMetricFor(config.CanonicalMetric)
-        ?? FallBackToDefault(config, MetricNames.Canonical("accuracy"), BinaryClassificationMetric.Accuracy);
+        BinaryMetricFor(config.CanonicalMetric) ?? throw Refuse(config);
 
     private MulticlassClassificationMetric GetMulticlassMetric(TrainingConfig config) =>
-        MulticlassMetricFor(config.CanonicalMetric)
-        ?? FallBackToDefault(config, MetricNames.Canonical("macro_accuracy"), MulticlassClassificationMetric.MacroAccuracy);
+        MulticlassMetricFor(config.CanonicalMetric) ?? throw Refuse(config);
 
     private RegressionMetric GetRegressionMetric(TrainingConfig config) =>
-        RegressionMetricFor(config.CanonicalMetric)
-        ?? FallBackToDefault(config, MetricNames.Canonical("r_squared"), RegressionMetric.RSquared);
+        RegressionMetricFor(config.CanonicalMetric) ?? throw Refuse(config);
 
-    private T FallBackToDefault<T>(TrainingConfig config, string? defaultName, T defaultMetric)
-    {
-        _logger.Warning(
-            $"Unknown metric '{config.Metric}' for {config.Task} — optimizing '{defaultName}' instead. " +
-            $"Known names: {string.Join(", ", MetricNames.All)}.");
-        return defaultMetric;
-    }
+    private static ArgumentException Refuse(TrainingConfig config) =>
+        new(MetricNames.Rejection(config.Task, config.Metric)
+            ?? $"Metric '{config.Metric}' cannot be optimized for {config.Task}.", nameof(config));
 
     internal static BinaryClassificationMetric? BinaryMetricFor(string canonical) => canonical switch
     {

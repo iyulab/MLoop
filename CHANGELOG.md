@@ -44,9 +44,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   paired that label with the accuracy value. There is now one vocabulary (`MetricNames`), read the
   same way by training, `validate`, and the records: spelling, case and separators do not matter
   (`F1Score`, `f1-score` and `f1_score` are one name), the ML.NET enum names and the usual short
-  forms are accepted, `auto` resolves to the task's primary metric, and a name that is still
-  unknown produces a warning naming the default that will be optimized instead — on the terminal
-  and as a `--json` `warning` event. The experiment config, the leaderboard and the index now
+  forms are accepted, and `auto` resolves to the task's primary metric. **A name that is still
+  unknown, or one the task cannot optimize (`auc` for regression), is refused before training
+  starts** — by `mloop train` (exit 1, with the names the task accepts and a "did you mean" for a
+  likely typo), by `POST /train` (400), and by `mloop validate` (an error, no longer a warning).
+  Substituting the task default would have repeated the original defect for every typo: the run
+  optimizes one metric while its records name another. `mape` joins the vocabulary, since
+  forecasting reports it. The experiment config, the leaderboard and the index now
   record the canonical name of the metric that was actually optimized, so the index's score is the
   value of the metric it is labelled with. Index entries written by earlier versions are left as
   they are: their score was the metric that really was optimized, only the label was wrong, and

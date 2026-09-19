@@ -8,6 +8,7 @@ using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
 using MLoop.Core.Diagnostics;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Hooks;
 using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
@@ -338,6 +339,16 @@ public static class TrainCommand
                 (effectiveDefinition.Horizon ?? 0) <= 0)
             {
                 ErrorConsole.Error("Forecasting task requires horizon > 0. Set 'horizon' in mloop.yaml");
+                return 1;
+            }
+
+            // Refuse a metric the task's optimizer cannot take before any work starts — the run would
+            // otherwise train for minutes on the task default while recording the name given here.
+            var metricRejection = MetricNames.Rejection(
+                effectiveDefinition.Task, effectiveDefinition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
+            if (metricRejection != null)
+            {
+                ErrorConsole.Error(Markup.Escape(metricRejection), "Set 'metric' in mloop.yaml or pass --metric with one of the names above.");
                 return 1;
             }
 

@@ -560,6 +560,24 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task TrainEndpoint_WithUnknownMetric_ReturnsBadRequestNamingIt()
+    {
+        var request = new
+        {
+            dataFile = "/nonexistent/train.csv",
+            labelColumn = "target",
+            task = "binary-classification",
+            metric = "F1Scoer"
+        };
+
+        var response = await _client.PostAsJsonAsync("/train", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Unknown metric 'F1Scoer'").And.Contain("f1_score");
+    }
+
+    [Fact]
     public async Task JobsEndpoint_ReturnsEmptyListInitially()
     {
         // Act

@@ -94,4 +94,55 @@ public class MetricNamesTests
             Assert.Equal(name, MetricNames.Canonical(name));
         Assert.Equal(MetricNames.All.Count, MetricNames.All.Distinct().Count());
     }
+
+    [Theory]
+    [InlineData("binary-classification", null)]
+    [InlineData("binary-classification", "")]
+    [InlineData("binary-classification", "auto")]
+    [InlineData("binary-classification", "F1Score")]
+    [InlineData("multiclass-classification", "accuracy")]
+    [InlineData("regression", "r2")]
+    [InlineData("clustering", "auc")]          // recorded, not optimized — any known name
+    [InlineData("forecasting", "mape")]
+    [InlineData("object-detection", "auto")]
+    public void Rejection_is_null_for_a_name_the_task_can_take(string task, string? name)
+    {
+        Assert.Null(MetricNames.Rejection(task, name));
+    }
+
+    [Fact]
+    public void Rejection_refuses_a_typo_and_suggests_the_name_it_resembles()
+    {
+        var message = MetricNames.Rejection("binary-classification", "F1Scoer");
+        Assert.NotNull(message);
+        Assert.Contains("Unknown metric 'F1Scoer'", message);
+        Assert.Contains("Did you mean 'f1_score'?", message);
+        Assert.Contains("for binary-classification", message);
+    }
+
+    [Fact]
+    public void Rejection_does_not_invent_a_suggestion_for_a_name_resembling_nothing()
+    {
+        var message = MetricNames.Rejection("regression", "throughput");
+        Assert.NotNull(message);
+        Assert.DoesNotContain("Did you mean", message);
+    }
+
+    [Fact]
+    public void Rejection_refuses_a_known_name_the_tasks_optimizer_cannot_take()
+    {
+        // The case that used to record `auc` while optimizing r_squared.
+        var message = MetricNames.Rejection("regression", "auc");
+        Assert.NotNull(message);
+        Assert.Contains("does not apply to regression", message);
+        Assert.Contains("r_squared", message);
+    }
+
+    [Fact]
+    public void Rejection_refuses_an_unknown_name_even_for_a_task_that_optimizes_nothing()
+    {
+        // The name is still recorded as the run's metric; a record of a name nobody knows is a lie
+        // in waiting.
+        Assert.NotNull(MetricNames.Rejection("clustering", "nonexistent"));
+    }
 }
