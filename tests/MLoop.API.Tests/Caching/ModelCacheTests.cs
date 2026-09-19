@@ -28,7 +28,7 @@ public sealed class ModelCacheTests : IDisposable
             new Sample { X = 5f, Y = 10f },
         });
         var pipeline = ml.Transforms.Concatenate("Features", "X")
-            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(ml.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         return (pipeline.Fit(data), data.Schema);
     });
 

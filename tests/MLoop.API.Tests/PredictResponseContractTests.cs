@@ -61,7 +61,7 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
         var keyed = ml.Transforms.Conversion.MapValueToKey("Label", "Label").Fit(data).Transform(data);
         var featurized = ml.Transforms.Concatenate("Features", "X1", "X2").Fit(keyed).Transform(keyed);
         var model = ml.MulticlassClassification.Trainers
-            .SdcaMaximumEntropy(labelColumnName: "Label", featureColumnName: "Features")
+            .SingleThreadSdcaMaximumEntropy(labelColumnName: "Label", featureColumnName: "Features")
             .Fit(featurized);
 
         ml.Model.Save(model, featurized.Schema, Path.Combine(productionDir, "model.zip"));

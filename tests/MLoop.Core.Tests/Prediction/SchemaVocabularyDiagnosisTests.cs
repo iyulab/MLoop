@@ -40,7 +40,7 @@ public class SchemaVocabularyDiagnosisTests : IDisposable
             Y = 2 * i + 3 * (i * 0.5f) + 1,
         }));
         var featurized = _ml.Transforms.Concatenate("Features", "X1", "X2").Fit(data).Transform(data);
-        var model = _ml.Regression.Trainers.Sdca("Y", featureColumnName: "Features").Fit(featurized);
+        var model = _ml.Regression.Trainers.SingleThreadSdca("Y", featureColumnName: "Features").Fit(featurized);
 
         var path = Path.GetTempFileName();
         _tempFiles.Add(path);

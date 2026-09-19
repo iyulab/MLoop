@@ -12,6 +12,9 @@
          pinning process-wide culture. -->
     <Compile Include="$(MSBuildThisFileDirectory)TestOutputCulture.cs" Link="TestOutputCulture.cs"
              Condition="$(MSBuildProjectName.EndsWith('.Tests'))" />
+    <!-- SDCA pinned to one thread for model fixtures: see the file. Same linking reason. -->
+    <Compile Include="$(MSBuildThisFileDirectory)DeterministicTrainers.cs" Link="DeterministicTrainers.cs"
+             Condition="$(MSBuildProjectName.EndsWith('.Tests'))" />
   </ItemGroup>
 
 </Project>

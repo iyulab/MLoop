@@ -54,7 +54,7 @@ public class PredictConfidenceColumnTests : IDisposable
         var data = ml.Data.LoadFromEnumerable(Enumerable.Range(1, 20)
             .Select(i => new SimpleReg { X = i, Y = 2f * i }));
         var model = ml.Transforms.Concatenate("Features", "X")
-            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Y")).Fit(data);
+            .Append(ml.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y")).Fit(data);
 
         var dir = NewDir();
         var modelPath = Path.Combine(dir, ExperimentLayout.ModelFileName);
@@ -115,7 +115,7 @@ public class PredictConfidenceColumnTests : IDisposable
         var data = ml.Data.LoadFromEnumerable(Enumerable.Range(1, 20)
             .Select(i => new SimpleReg { X = i, Y = 2f * i }));
         var model = ml.Transforms.Concatenate("Features", "X")
-            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Y")).Fit(data);
+            .Append(ml.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y")).Fit(data);
 
         var dir = NewDir();
         var modelPath = Path.Combine(dir, ExperimentLayout.ModelFileName);
@@ -163,7 +163,7 @@ public class PredictConfidenceColumnTests : IDisposable
         // merges the numeric feature columns into "Features" at load time (an embedded Concatenate over the
         // individual X1/X2 would instead expect them un-merged and clash with InferColumns' featurization).
         var featurized = ml.Transforms.Concatenate("Features", "X1", "X2").Fit(data).Transform(data);
-        var model = ml.BinaryClassification.Trainers.SdcaLogisticRegression(
+        var model = ml.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression(
             labelColumnName: "Label", featureColumnName: "Features").Fit(featurized);
 
         var dir = NewDir();

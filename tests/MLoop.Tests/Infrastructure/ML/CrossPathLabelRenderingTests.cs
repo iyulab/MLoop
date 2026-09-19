@@ -84,7 +84,7 @@ public class CrossPathLabelRenderingTests : IDisposable
 
         var data = ml.Data.LoadFromEnumerable(training);
         var featurized = ml.Transforms.Concatenate("Features", "Temp", "Press").Fit(data).Transform(data);
-        var model = ml.BinaryClassification.Trainers.SdcaLogisticRegression(
+        var model = ml.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression(
                 labelColumnName: "Result", featureColumnName: "Features")
             .Fit(featurized);
 

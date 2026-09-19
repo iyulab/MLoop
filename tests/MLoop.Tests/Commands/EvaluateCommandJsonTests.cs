@@ -91,7 +91,7 @@ public class EvaluateCommandJsonTests : IDisposable
         var trainData = mlContext.Data.CreateTextLoader(inference.TextLoaderOptions).Load(trainCsvPath);
 
         var model = mlContext.Regression.Trainers
-            .Sdca(labelColumnName: LabelColumn, featureColumnName: "Features")
+            .SingleThreadSdca(labelColumnName: LabelColumn, featureColumnName: "Features")
             .Fit(trainData);
 
         var experimentPath = _experimentStore.GetExperimentPath(modelName, experimentId);

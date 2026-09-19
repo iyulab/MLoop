@@ -115,7 +115,7 @@ public class PredictJsonContractTests : IDisposable
         var inference = ml.Auto().InferColumns(trainCsv, labelColumnName: "Species", separatorChar: ',');
         var data = ml.Data.CreateTextLoader(inference.TextLoaderOptions).Load(trainCsv);
         var pipeline = ml.Transforms.Conversion.MapValueToKey("Species", "Species")
-            .Append(ml.MulticlassClassification.Trainers.SdcaMaximumEntropy("Species", featureColumnName: "Features"))
+            .Append(ml.MulticlassClassification.Trainers.SingleThreadSdcaMaximumEntropy("Species", featureColumnName: "Features"))
             .Append(ml.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
         var model = pipeline.Fit(data);
 
@@ -197,7 +197,7 @@ public class PredictJsonContractTests : IDisposable
         var ml = new MLContext(seed: 42);
         var inference = ml.Auto().InferColumns(trainCsv, labelColumnName: "Y", separatorChar: ',');
         var data = ml.Data.CreateTextLoader(inference.TextLoaderOptions).Load(trainCsv);
-        var model = ml.Regression.Trainers.Sdca("Y", featureColumnName: "Features").Fit(data);
+        var model = ml.Regression.Trainers.SingleThreadSdca("Y", featureColumnName: "Features").Fit(data);
         var modelPath = Path.Combine(_testProjectRoot, "reg.zip");
         ml.Model.Save(model, null, modelPath);
 

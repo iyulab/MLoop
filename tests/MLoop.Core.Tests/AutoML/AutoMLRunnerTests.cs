@@ -262,7 +262,7 @@ public class AutoMLRunnerTests
         });
         var featurized = _mlContext.Transforms.Concatenate("Features", "Feature1", "Feature2").Fit(data).Transform(data);
         var model = _mlContext.BinaryClassification.Trainers
-            .SdcaLogisticRegression(labelColumnName: "Label", featureColumnName: "Features").Fit(featurized);
+            .SingleThreadSdcaLogisticRegression(labelColumnName: "Label", featureColumnName: "Features").Fit(featurized);
         var predictions = model.Transform(featurized);
 
         var result = AutoMLRunner.EnsureCalibratedModel(_mlContext, model, predictions, "Label", hasProbability: true);
@@ -532,7 +532,7 @@ public class AutoMLRunnerTests
         var data = _mlContext.Data.LoadFromEnumerable(rows);
         var split = _mlContext.Data.TrainTestSplit(data, 0.3, seed: 1);
         var pipeline = _mlContext.Transforms.Concatenate("Features", "F1", "F2")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "MX", featureColumnName: "Features"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "MX", featureColumnName: "Features"));
         var model = pipeline.Fit(split.TrainSet);
         var scored = model.Transform(split.TestSet);
 

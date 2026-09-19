@@ -50,7 +50,7 @@ public class PredictionServiceTests : IDisposable
         });
 
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
         var modelPath = SaveModel(model, data.Schema);
 
@@ -95,7 +95,7 @@ public class PredictionServiceTests : IDisposable
         });
 
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
         var modelPath = SaveModel(model, data.Schema);
 
@@ -133,7 +133,7 @@ public class PredictionServiceTests : IDisposable
             new SimpleRegression { X = 5.0f, Y = 10.0f },
         });
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
         var modelPath = SaveModel(model, data.Schema);
 
@@ -181,7 +181,7 @@ public class PredictionServiceTests : IDisposable
         }).ToList();
         var data = ml.Data.LoadFromEnumerable(rows);
         var mainModel = ml.Transforms.Concatenate("Features", "X")
-            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Y")).Fit(data);
+            .Append(ml.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y")).Fit(data);
         var scored = mainModel.Transform(data);
 
         var norm = AutoMLRunner.ComputeNormalizedConformal(ml, scored, "Y", new[] { "Features" });
@@ -245,7 +245,7 @@ public class PredictionServiceTests : IDisposable
             new SimpleRegression { X = 3.0f, Y = 6.0f },
         });
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
         var modelPath = SaveModel(model, data.Schema);
 
@@ -368,7 +368,7 @@ public class PredictionServiceTests : IDisposable
             new SimpleRegression { X = 3.0f, Y = 6.0f },
         });
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
 
         var schema = new InputSchemaInfo
@@ -430,7 +430,7 @@ public class PredictionServiceTests : IDisposable
             new SimpleRegression { X = 3.0f, Y = 6.0f },
         });
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
 
         var schema = new InputSchemaInfo
@@ -461,7 +461,7 @@ public class PredictionServiceTests : IDisposable
             new TwoFeatureRegression { X = 3.0f, Z = 1.0f, Y = 6.0f },
         });
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X", "Z")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
 
         var schema = new InputSchemaInfo
@@ -497,7 +497,7 @@ public class PredictionServiceTests : IDisposable
         });
 
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
         var modelPath = SaveModel(model, data.Schema);
 
@@ -544,7 +544,7 @@ public class PredictionServiceTests : IDisposable
         });
 
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
         var modelPath = SaveModel(model, data.Schema);
 
@@ -971,7 +971,7 @@ public class PredictionServiceTests : IDisposable
             new SimpleRegression { X = 3.0f, Y = 6.0f },
         });
         var pipeline = _mlContext.Transforms.Concatenate("Features", "X")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
 
         var schema = new InputSchemaInfo
@@ -1118,7 +1118,7 @@ public class PredictionServiceTests : IDisposable
         // vector input WITHOUT an embedded Concatenate — matching how AutoML's InferColumns loads features
         // (the exact shape that made serve, which loads named columns, fail).
         var featurized = _mlContext.Transforms.Concatenate("Features", "X1", "X2").Fit(data).Transform(data);
-        var trainer = _mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
+        var trainer = _mlContext.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression(
             labelColumnName: "Label", featureColumnName: "Features");
         var model = trainer.Fit(featurized);
         var modelPath = SaveModel(model, featurized.Schema);
@@ -1187,7 +1187,7 @@ public class PredictionServiceTests : IDisposable
         // SdcaMaximumEntropy, not LightGbm: the pinned regression is the serve path's label *loading*
         // (String vs Single before the model's MapValueToKey), so any multiclass trainer reproduces it —
         // and lib_lightgbm ships no osx-arm64 native, which made this test DllNotFound on macOS CI.
-        var trainer = _mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(
+        var trainer = _mlContext.MulticlassClassification.Trainers.SingleThreadSdcaMaximumEntropy(
             labelColumnName: "Label", featureColumnName: "Features");
         var model = trainer.Fit(featurized);
         var modelPath = SaveModel(model, featurized.Schema);
@@ -1250,7 +1250,7 @@ public class PredictionServiceTests : IDisposable
 
         var keyed = _mlContext.Transforms.Conversion.MapValueToKey("Label", "Label").Fit(data).Transform(data);
         var featurized = _mlContext.Transforms.Concatenate("Features", "X1", "X2").Fit(keyed).Transform(keyed);
-        var trainer = _mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(
+        var trainer = _mlContext.MulticlassClassification.Trainers.SingleThreadSdcaMaximumEntropy(
             labelColumnName: "Label", featureColumnName: "Features");
         var model = trainer.Fit(featurized);
         var modelPath = SaveModel(model, featurized.Schema);
@@ -1332,7 +1332,7 @@ public class PredictionServiceTests : IDisposable
             new SimpleBinary { X1 = 4.9f, X2 = 5.1f, Label = false },
         });
         var model = _mlContext.Transforms.Concatenate("Features", "X1", "X2")
-            .Append(_mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
+            .Append(_mlContext.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression(
                 labelColumnName: "Label", featureColumnName: "Features"))
             .Fit(data);
         var scored = model.Transform(data);
