@@ -26,6 +26,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and the `--json` `result` event carries it as `reportPath` (omitted when no report was written).
 
 ### Fixed
+- **A training job started through `POST /train` was promoted on the wrong metric.** The job
+  passed the first metric in its result to the promotion check — for binary classification that is
+  always accuracy — so a job trained for AUC or F1 replaced production (or did not) by comparing
+  accuracy. It now compares on the metric the job optimized, as `mloop train` does.
 - **The multiclass performance diagnostic never showed a log loss.** It looked the metric up as
   `LogLoss` while the trainer writes `log_loss`; the two never met. The diagnostic now reads every
   metric by its canonical name under whatever spelling the dictionary carries, through the same
