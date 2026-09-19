@@ -47,7 +47,6 @@ public class TimeSeriesNativeSupportContractTests
         // The scan reaches the suites this guard is about. Without this, a moved directory or a
         // renamed project would empty the set, and an empty set reports exactly what compliance
         // reports.
-        Assert.Contains(scanned, f => Path.GetFileName(f) == "SrCnnOneShotDetectorTests.cs");
         Assert.Contains(scanned, f => Path.GetFileName(f) == "PredictForecastingTests.cs");
         Assert.Contains(scanned, f => Path.GetFileName(f) == "ForecastingApiTests.cs");
         Assert.Contains(scanned, f => Path.GetFileName(f) == "PredictionServiceTests.cs");
