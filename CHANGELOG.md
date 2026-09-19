@@ -24,6 +24,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   no command reads it, so a missing or stale report breaks nothing, and a failure to write it costs
   a warning rather than the experiment. The training summary prints its path under `Model saved to:`,
   and the `--json` `result` event carries it as `reportPath` (omitted when no report was written).
+  When binary classification had to optimize F1 because AUC was undefined on the data, the page's
+  "Optimized for" line names the metric the search actually used and the one that was asked
+  (`f1_score (accuracy was asked)`), rather than repeating the configuration.
 
 ### Fixed
 - **An auto-time run recorded a time limit it never ran under.** When the budget was left to

@@ -97,7 +97,7 @@ internal static class ExperimentReport
         Row(sb, "Test split", Percent(config.TestSplit));
         var seconds = $"{config.TimeLimitSeconds.ToString(CultureInfo.InvariantCulture)} s";
         Row(sb, "Time limit", config.AutoTime == true ? $"auto — {seconds} granted" : seconds);
-        Row(sb, "Optimized for", string.IsNullOrEmpty(config.Metric) ? NoValue : config.Metric);
+        Row(sb, "Optimized for", OptimizedFor(config.Metric, experiment.RankingMetric, experiment.Task));
         sb.AppendLine();
     }
 
@@ -184,10 +184,8 @@ internal static class ExperimentReport
             sb.AppendLine($"{count} trial(s) in completion order.");
         }
 
-        // The configured metric is in the user's spelling (`F1Score`) and the ranking metric in the
-        // canonical one (`f1_score`); nothing in the core says whether two such names are one metric,
-        // so the page states both — "Optimized for" above, "ranked by" here — and does not claim
-        // that they differ.
+        // "Optimized for" above already reconciles the asked and ranking metrics through
+        // MetricNames (see OptimizedFor); this line names the one the table is sorted by.
         sb.AppendLine();
 
         var metricHeader = metric ?? "Metric";
@@ -254,6 +252,27 @@ internal static class ExperimentReport
             sb.AppendLine($"| {Escape(column.Name)} | {Escape(type)} | {Escape(role)} |");
         }
         sb.AppendLine();
+    }
+
+    /// <summary>
+    /// The metric the search actually ranked trials by, with the one that was asked when they are
+    /// different metrics. Binary classification switches to F1 when AUC is undefined on the data
+    /// (a class missing from a fold); the config keeps the metric that was asked, so the page would
+    /// otherwise say "optimized for accuracy" above a leaderboard ranked by F1. Two spellings of one
+    /// metric (<c>F1Score</c> in an older record, <c>f1_score</c>) are the same metric and get no note.
+    /// </summary>
+    private static string OptimizedFor(string? asked, string? ranked, string? task)
+    {
+        if (string.IsNullOrEmpty(asked))
+            return string.IsNullOrEmpty(ranked) ? NoValue : ranked;
+        if (string.IsNullOrEmpty(ranked))
+            return asked;
+
+        var askedCanonical = MetricNames.Canonical(task, asked);
+        var rankedCanonical = MetricNames.Canonical(task, ranked);
+        return askedCanonical is not null && rankedCanonical is not null && askedCanonical != rankedCanonical
+            ? $"{ranked} ({asked} was asked)"
+            : asked;
     }
 
     private static void Row(StringBuilder sb, string label, string value) =>
