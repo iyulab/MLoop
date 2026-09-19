@@ -54,6 +54,19 @@ public class TrainingJobRunner : BackgroundService
         _logger.LogInformation("Training job runner stopped");
     }
 
+    /// <summary>
+    /// Promotes the job's experiment when it beats production on the metric the job optimized —
+    /// the same comparison <c>mloop train</c> makes. This used to pass the first key of the result's
+    /// metric dictionary, which for binary classification is always <c>accuracy</c>, so a job
+    /// trained for AUC was promoted (or not) on accuracy.
+    /// </summary>
+    public static Task<bool> PromoteIfBetterAsync(
+        IModelRegistry registry,
+        TrainingConfig config,
+        TrainingResult result,
+        CancellationToken cancellationToken)
+        => registry.AutoPromoteAsync(config.ModelName, result.ExperimentId, config.CanonicalMetric, cancellationToken);
+
     private async Task ProcessJobAsync(TrainingJob job, CancellationToken stoppingToken)
     {
         try
@@ -85,9 +98,7 @@ public class TrainingJobRunner : BackgroundService
             _jobStore.UpdateStatus(job.JobId, JobStatus.Completed,
                 $"Training completed: {result.BestTrainer} ({result.TrainingTimeSeconds:F1}s)");
 
-            // Auto-promote if applicable
-            var primaryMetric = result.Metrics.Keys.FirstOrDefault() ?? "auto";
-            await registry.AutoPromoteAsync(job.ModelName, result.ExperimentId, primaryMetric, stoppingToken);
+            await PromoteIfBetterAsync(registry, config, result, stoppingToken);
 
             _logger.LogInformation("Training job '{JobId}' completed: {BestTrainer}, exp={ExperimentId}",
                 job.JobId, result.BestTrainer, result.ExperimentId);
