@@ -1,3 +1,5 @@
+using System.Globalization;
+using Spectre.Console;
 using MLoop.Core.Models;
 
 namespace MLoop.CLI.Commands;
@@ -77,4 +79,30 @@ public sealed class TrainingProgressTracker
         var parts = trainerName.Split("=>", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return parts.Length > 0 ? parts[^1] : trainerName;
     }
+
+    // The progress bar's descriptions are Spectre markup, rendered on the progress refresh thread.
+    // Every value that comes from data or a trainer is escaped here: a fallback trainer is named
+    // "SdcaLogisticRegression [manual fallback: …]", and read as markup that bracket is an unknown
+    // style — an exception on a background thread, which ends the process. Whether a refresh caught
+    // that description before training finished was a race, so it crashed only on slow machines.
+
+    /// <summary>The progress description when training starts.</summary>
+    public static string StartDescription(string modelName) =>
+        $"[green]Training {Markup.Escape(modelName)}...[/]";
+
+    /// <summary>The progress description for a phase boundary, or <c>null</c> to keep the current one.</summary>
+    public static string? PhaseDescription(TrainingProgress p, string modelName) => p.Phase switch
+    {
+        TrainingPhase.ProbeStart => $"[cyan]Phase 1:[/] Probe ({p.ProbeTimeSeconds}s)...",
+        TrainingPhase.ProbeComplete => $"[cyan]Phase 2:[/] Main training ({p.FinalTimeSeconds}s)...",
+        TrainingPhase.ProbeConverged => "[green]Converged[/] in probe phase",
+        TrainingPhase.ProbeFellBack => "[yellow]AutoML unavailable[/] for this data",
+        TrainingPhase.Complete => $"[green]Finalizing {Markup.Escape(modelName)}...[/]",
+        _ => null
+    };
+
+    /// <summary>The progress description for a completed trial.</summary>
+    public static string TrialDescription(TrainingProgress p) =>
+        $"[green]Trial {p.TrialNumber}:[/] {Markup.Escape(ShortTrainerName(p.TrainerName))} - "
+        + $"{Markup.Escape(p.MetricName ?? "")}={p.Metric.ToString("F4", CultureInfo.InvariantCulture)}";
 }

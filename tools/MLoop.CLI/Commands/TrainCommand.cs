@@ -966,7 +966,7 @@ public static class TrainCommand
                     new ElapsedTimeColumn())
                 .StartAsync(async ctx =>
                 {
-                    var progressTask = ctx.AddTask($"[green]Training {resolvedModelName}...[/]", maxValue: 100);
+                    var progressTask = ctx.AddTask(TrainingProgressTracker.StartDescription(resolvedModelName), maxValue: 100);
 
                     var progressTracker = new TrainingProgressTracker(trainingConfig.TimeLimitSeconds);
 
@@ -982,22 +982,14 @@ public static class TrainCommand
                                          or TrainingPhase.ProbeConverged or TrainingPhase.ProbeFellBack)
                                 lastAutoTimeEvent = p;
                             progressTracker.EnterPhase(p);
-                            progressTask.Description = p.Phase switch
-                            {
-                                TrainingPhase.ProbeStart => $"[cyan]Phase 1:[/] Probe ({p.ProbeTimeSeconds}s)...",
-                                TrainingPhase.ProbeComplete => $"[cyan]Phase 2:[/] Main training ({p.FinalTimeSeconds}s)...",
-                                TrainingPhase.ProbeConverged => "[green]Converged[/] in probe phase",
-                                TrainingPhase.ProbeFellBack => "[yellow]AutoML unavailable[/] for this data",
-                                TrainingPhase.Complete => $"[green]Finalizing {resolvedModelName}...[/]",
-                                _ => progressTask.Description
-                            };
+                            progressTask.Description =
+                                TrainingProgressTracker.PhaseDescription(p, resolvedModelName) ?? progressTask.Description;
                             return;
                         }
 
                         events?.Trial(p);
 
-                        var trainer = TrainingProgressTracker.ShortTrainerName(p.TrainerName);
-                        progressTask.Description = $"[green]Trial {p.TrialNumber}:[/] {trainer} - {p.MetricName}={p.Metric:F4}";
+                        progressTask.Description = TrainingProgressTracker.TrialDescription(p);
 
                         if (progressTracker.PercentFor(p) is { } percent)
                             progressTask.Value = percent;
