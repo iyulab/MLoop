@@ -57,7 +57,7 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
             new Row { X = 5f, Y = 10f }
         });
         var pipe = ml.Transforms.Concatenate("Features", "X")
-            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Y"));
+            .Append(ml.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipe.Fit(data);
         var tmpPath = Path.Combine(Path.GetTempPath(), $"warm-test-{Guid.NewGuid():N}.zip");
         try

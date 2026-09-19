@@ -109,7 +109,7 @@ public class SchemaMismatchJsonContractTests : IDisposable
         var ml = new MLContext(seed: 42);
         var inference = ml.Auto().InferColumns(trainCsv, labelColumnName: LabelColumn, separatorChar: ',');
         var data = ml.Data.CreateTextLoader(inference.TextLoaderOptions).Load(trainCsv);
-        var model = ml.Regression.Trainers.Sdca(labelColumnName: LabelColumn, featureColumnName: "Features").Fit(data);
+        var model = ml.Regression.Trainers.SingleThreadSdca(labelColumnName: LabelColumn, featureColumnName: "Features").Fit(data);
 
         var experimentPath = _experimentStore.GetExperimentPath("default", "exp-001");
         Directory.CreateDirectory(experimentPath);

@@ -991,11 +991,17 @@ public partial class AutoMLRunner
     {
         var featurePipeline = BuildFeaturePipeline(mlContext, trainSet, labelColumn, columnInfo);
 
+        // One thread: this fallback runs on small data, where multi-threaded SDCA does not converge
+        // — it runs to its iteration limit and its model differs between runs of the same seed.
         return featurePipeline
             .AppendCacheCheckpoint(mlContext)
             .Append(mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
-                labelColumnName: labelColumn,
-                featureColumnName: "Features"));
+                new Microsoft.ML.Trainers.SdcaLogisticRegressionBinaryTrainer.Options
+                {
+                    LabelColumnName = labelColumn,
+                    FeatureColumnName = "Features",
+                    NumberOfThreads = 1
+                }));
     }
 
     /// <summary>

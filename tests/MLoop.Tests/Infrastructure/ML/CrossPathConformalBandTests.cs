@@ -57,7 +57,7 @@ public class CrossPathConformalBandTests : IDisposable
         }).ToList();
         var data = ml.Data.LoadFromEnumerable(trainRows);
         var mainModel = ml.Transforms.Concatenate("Features", "X")
-            .Append(ml.Regression.Trainers.Sdca(labelColumnName: "Y")).Fit(data);
+            .Append(ml.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y")).Fit(data);
         var scored = mainModel.Transform(data);
 
         var norm = AutoMLRunner.ComputeNormalizedConformal(ml, scored, "Y", new[] { "Features" });

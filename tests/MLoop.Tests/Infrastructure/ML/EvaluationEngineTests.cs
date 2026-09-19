@@ -217,7 +217,7 @@ public class EvaluationEngineTests : IDisposable
         };
         var trainData = _mlContext.Data.CreateTextLoader(loaderColumns, hasHeader: true, separatorChar: ',').Load(trainCsv);
         var pipeline = _mlContext.Transforms.Concatenate("Features", korFeature)
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: korLabel, featureColumnName: "Features"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: korLabel, featureColumnName: "Features"));
         var model = pipeline.Fit(trainData);
         var modelPath = Path.Combine(_testDir, "regression_kor.zip");
         _mlContext.Model.Save(model, trainData.Schema, modelPath);
@@ -327,7 +327,7 @@ public class EvaluationEngineTests : IDisposable
 
         var trainData = _mlContext.Data.LoadFromEnumerable(data);
         var pipeline = _mlContext.Transforms.Concatenate("Features", "Feature1")
-            .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: "Label", featureColumnName: "Features"));
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Label", featureColumnName: "Features"));
 
         var model = pipeline.Fit(trainData);
 
@@ -354,7 +354,7 @@ public class EvaluationEngineTests : IDisposable
 
         var trainData = _mlContext.Data.LoadFromEnumerable(data);
         var pipeline = _mlContext.Transforms.Concatenate("Features", "Feature1")
-            .Append(_mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
+            .Append(_mlContext.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression(
                 labelColumnName: "Label", featureColumnName: "Features"));
 
         var model = pipeline.Fit(trainData);
@@ -384,7 +384,7 @@ public class EvaluationEngineTests : IDisposable
         var trainData = _mlContext.Data.LoadFromEnumerable(data);
         var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("Label")
             .Append(_mlContext.Transforms.Concatenate("Features", "Feature1"))
-            .Append(_mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(
+            .Append(_mlContext.MulticlassClassification.Trainers.SingleThreadSdcaMaximumEntropy(
                 labelColumnName: "Label", featureColumnName: "Features"))
             .Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
