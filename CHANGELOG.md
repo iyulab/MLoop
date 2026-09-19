@@ -79,11 +79,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `docs/PREDICT-RESPONSE.md` has asked for since the contract was written. A consumer that read
   `null` as "no value" is unaffected; one that reads responses from both this version and earlier
   ones should treat `null` as absent.
-- **DataLens 0.14.2** (from 0.13.5), which follows UInsight 0.15.0. DataLens now routes on the file
+- **DataLens 0.14.3** (from 0.13.5), which follows UInsight 0.20.1. DataLens now routes on the file
   extension and refuses one it does not recognise (`.csv`, `.tsv`, `.json`, `.xlsx`, `.xls` are
   accepted); `mloop info --analyze` and `mloop analyze` report that refusal as the analysis being
   unavailable for that file, as they already did for any other DataLens failure, and the rest of the
   command runs unaffected.
+- **The Jarque-Bera normality test now reports correct numbers.** It was computed from bias-adjusted
+  skewness and kurtosis where the test uses the plain moment ratios, and its p-value lost the tail
+  beyond a statistic of about 74. The corrected statistic and p-value appear in the distribution
+  section of `mloop info --analyze` and in `mloop analyze distribution`; because a column is called
+  normal only when no test rejects, a column near the significance level can now be reported with a
+  different normality verdict and shape than before.
 - **A converted temp file keeps its extension.** When a CP949/EUC-KR file is converted to UTF-8 the
   intermediate copy was named `.tmp`; it now carries the original extension, so anything downstream
   that routes on it sees a `.csv`.
