@@ -224,16 +224,51 @@ public class ExperimentReportTests
     /// sentence saying they did fired on an ordinary run (measured).
     /// </summary>
     [Fact]
-    public void The_configured_and_ranking_metrics_are_both_named_without_a_claim_that_they_differ()
+    public void Two_spellings_of_one_metric_make_no_claim_of_a_substitution()
     {
+        // An older record kept the user's spelling; the ranking metric is canonical.
+        var trials = new[] { Trial(1, TrainerDescriptor.Of("A"), "auc", 0.7) };
+        var experiment = Completed(trials, rankingMetric: "auc");
+        var page = ExperimentReport.Render(WithMetric(experiment, "AreaUnderRocCurve"), trials, Root, Version);
+
+        Assert.Contains("| Optimized for | AreaUnderRocCurve |", page);
+        Assert.DoesNotContain("was asked", page);
+    }
+
+    [Fact]
+    public void A_substituted_optimizing_metric_is_stated_with_the_one_that_was_asked()
+    {
+        // Binary classification falls back to F1 when AUC is undefined on the data; the config
+        // keeps the metric that was asked.
         var trials = new[] { Trial(1, TrainerDescriptor.Of("A"), "f1_score", 0.7) };
 
         var page = ExperimentReport.Render(Completed(trials, rankingMetric: "f1_score"), trials, Root, Version);
 
-        Assert.Contains("| Optimized for | auc |", page);
+        Assert.Contains("| Optimized for | f1_score (auc was asked) |", page);
         Assert.Contains("best first by `f1_score`", page);
-        Assert.DoesNotContain("instead", page);
     }
+
+    private static ExperimentData WithMetric(ExperimentData e, string metric) => new()
+    {
+        ModelName = e.ModelName,
+        ExperimentId = e.ExperimentId,
+        Timestamp = e.Timestamp,
+        Status = e.Status,
+        Task = e.Task,
+        Config = new ExperimentConfig
+        {
+            DataFile = e.Config.DataFile,
+            LabelColumn = e.Config.LabelColumn,
+            TimeLimitSeconds = e.Config.TimeLimitSeconds,
+            Metric = metric,
+            TestSplit = e.Config.TestSplit,
+            InputSchema = e.Config.InputSchema
+        },
+        Result = e.Result,
+        Metrics = e.Metrics,
+        Trials = e.Trials,
+        RankingMetric = e.RankingMetric
+    };
 
     [Fact]
     public void A_fallback_trainer_names_its_reason()
