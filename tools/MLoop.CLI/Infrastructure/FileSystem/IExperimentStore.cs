@@ -134,7 +134,19 @@ public class ExperimentConfig
     public string? DataFileHash { get; init; }
 
     public required string LabelColumn { get; init; }
+    /// <summary>
+    /// The training budget, in seconds, the run was granted. For an auto-time run
+    /// (<see cref="AutoTime"/>) this is the sum of the budgets it chose — the probe, plus the main
+    /// pass when one ran — not the configured limit auto-time replaced.
+    /// </summary>
     public required int TimeLimitSeconds { get; init; }
+
+    /// <summary>
+    /// True when auto-time chose the budget. Null for a fixed budget and on experiments recorded
+    /// before the field existed, which stored the configured limit even when auto-time ran.
+    /// </summary>
+    public bool? AutoTime { get; init; }
+
     public required string Metric { get; init; }
     public required double TestSplit { get; init; }
     public InputSchemaInfo? InputSchema { get; init; }

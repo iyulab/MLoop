@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
@@ -80,6 +81,11 @@ public class TrainingEngine : ITrainingEngine
         // makes a temporary copy, so the record names a file the user can check, not one only
         // this process ever saw. Null for directory-based tasks, whose input is not one file.
         string? dataFileHash = null;
+        // The budget training was actually granted. A fixed run is granted what it asked for;
+        // auto-time replaces the configured value with the budgets it chose (probe, then main when
+        // it runs), so the record states what ran rather than a default nobody used.
+        var grantedSeconds = new StrongBox<int>(config.TimeLimitSeconds);
+        var autoTimed = config.UseAutoTime && !DataLoaderFactory.IsDirectoryBased(config.Task);
 
         try
         {
@@ -300,9 +306,9 @@ public class TrainingEngine : ITrainingEngine
             // directories — image classification always uses the single-pass path.
             AutoMLResult autoMLResult;
 
-            if (config.UseAutoTime && !DataLoaderFactory.IsDirectoryBased(config.Task))
+            if (autoTimed)
             {
-                autoMLResult = await RunAutoTimeTrainingAsync(config, dataFilePath, progress, cancellationToken);
+                autoMLResult = await RunAutoTimeTrainingAsync(config, dataFilePath, grantedSeconds, progress, cancellationToken);
             }
             else
             {
@@ -393,7 +399,8 @@ public class TrainingEngine : ITrainingEngine
                     DataFile = originalDataFile, // Store original path, not converted temp file
                     DataFileHash = dataFileHash,
                     LabelColumn = config.LabelColumn,
-                    TimeLimitSeconds = config.TimeLimitSeconds,
+                    TimeLimitSeconds = grantedSeconds.Value,
+                    AutoTime = autoTimed ? true : null,
                     Metric = config.CanonicalMetric,
                     TestSplit = config.TestSplit,
                     InputSchema = inputSchema,
@@ -448,7 +455,8 @@ public class TrainingEngine : ITrainingEngine
                     DataFile = originalDataFile, // Store original path, not converted temp file
                     DataFileHash = dataFileHash,
                     LabelColumn = config.LabelColumn,
-                    TimeLimitSeconds = config.TimeLimitSeconds,
+                    TimeLimitSeconds = grantedSeconds.Value,
+                    AutoTime = autoTimed ? true : null,
                     Metric = config.CanonicalMetric,
                     TestSplit = config.TestSplit,
                     GroupColumn = config.GroupColumn,
@@ -510,6 +518,7 @@ public class TrainingEngine : ITrainingEngine
     private async Task<AutoMLResult> RunAutoTimeTrainingAsync(
         TrainingConfig config,
         string dataFilePath,
+        StrongBox<int> grantedSeconds,
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -526,6 +535,7 @@ public class TrainingEngine : ITrainingEngine
         // TestDataFile and the pre-featurizer fields, so auto-time (the default when --time is not
         // given) silently discarded any pre-split test set and the prep pre-featurizer.
         var probeConfig = config with { TimeLimitSeconds = probeTime, UseAutoTime = false };
+        grantedSeconds.Value = probeTime;
 
         var probeTrialCount = 0;
         progress?.Report(new TrainingProgress
@@ -598,6 +608,7 @@ public class TrainingEngine : ITrainingEngine
         });
 
         var mainConfig = config with { TimeLimitSeconds = finalTime, UseAutoTime = false };
+        grantedSeconds.Value = probeTime + finalTime;
 
         var mainResult = await _autoMLRunner.RunAsync(mainConfig, progress, cancellationToken);
 

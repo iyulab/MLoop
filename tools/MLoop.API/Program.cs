@@ -739,6 +739,7 @@ app.MapGet("/experiments/{id}", async (
                 dataFileHash = experiment.Config.DataFileHash,
                 labelColumn = experiment.Config.LabelColumn,
                 timeLimitSeconds = experiment.Config.TimeLimitSeconds,
+                autoTime = experiment.Config.AutoTime,
                 metric = experiment.Config.Metric,
                 testSplit = experiment.Config.TestSplit,
                 groupColumn = experiment.Config.GroupColumn,

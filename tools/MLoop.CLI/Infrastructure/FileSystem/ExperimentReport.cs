@@ -95,7 +95,8 @@ internal static class ExperimentReport
         if (!string.IsNullOrEmpty(config.ItemColumn))
             Row(sb, "Item column", config.ItemColumn);
         Row(sb, "Test split", Percent(config.TestSplit));
-        Row(sb, "Time limit", $"{config.TimeLimitSeconds.ToString(CultureInfo.InvariantCulture)} s");
+        var seconds = $"{config.TimeLimitSeconds.ToString(CultureInfo.InvariantCulture)} s";
+        Row(sb, "Time limit", config.AutoTime == true ? $"auto — {seconds} granted" : seconds);
         Row(sb, "Optimized for", string.IsNullOrEmpty(config.Metric) ? NoValue : config.Metric);
         sb.AppendLine();
     }

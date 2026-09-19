@@ -26,6 +26,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and the `--json` `result` event carries it as `reportPath` (omitted when no report was written).
 
 ### Fixed
+- **An auto-time run recorded a time limit it never ran under.** When the budget was left to
+  auto-time — the default — the experiment's `config.json` and its `report.md` stated the
+  configured default of 300 seconds, while the run was granted a short probe and, when it helped, a
+  main pass. The record now holds the budget the run was actually granted (probe plus main) and
+  says it was chosen automatically (`autoTime: true`; the report reads `auto — 77 s granted`). The
+  flag also appears in `GET /experiments/{id}` and `mloop compare --json`. Experiments recorded by
+  earlier versions keep the value they stored.
+- **`mloop evaluate` echoed the test file with mixed separators** (`…\demo\datasets/train.csv`)
+  when given a relative path; the resolved path is now normalized.
 - **A training job started through `POST /train` was promoted on the wrong metric.** The job
   passed the first metric in its result to the promotion check — for binary classification that is
   always accuracy — so a job trained for AUC or F1 replaced production (or did not) by comparing

@@ -466,6 +466,7 @@ public static class CompareCommand
                     status = e.Status,
                     timestamp = e.Timestamp,
                     timeLimitSeconds = e.Config.TimeLimitSeconds,
+                    autoTime = e.Config.AutoTime,
                     labelColumn = e.Config.LabelColumn,
                     bestTrainer = e.Result?.BestTrainer,
                     isProduction = productionByModel.TryGetValue(e.ModelName, out var prodExpId)

@@ -238,9 +238,11 @@ public static class EvaluateCommand
             }
             else
             {
-                resolvedTestDataFile = Path.IsPathRooted(testDataFile)
+                // GetFullPath normalizes separators and dot segments: the resolved path is echoed
+                // to the user and into --json, where `…\demo\datasets/train.csv` read as two paths.
+                resolvedTestDataFile = Path.GetFullPath(Path.IsPathRooted(testDataFile)
                     ? testDataFile
-                    : Path.Combine(projectRoot, testDataFile);
+                    : Path.Combine(projectRoot, testDataFile));
 
                 // Directory-based tasks accept a directory (or a direct COCO .json); CSV tasks need a file.
                 bool exists = isDirectoryBased

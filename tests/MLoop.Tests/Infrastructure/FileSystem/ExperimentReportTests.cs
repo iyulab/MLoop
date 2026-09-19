@@ -76,6 +76,45 @@ public class ExperimentReportTests
         };
 
     [Fact]
+    public void A_fixed_budget_is_reported_as_the_seconds_it_was()
+    {
+        var report = ExperimentReport.Render(Completed(), [], Root, Version);
+        Assert.Contains("| Time limit | 90 s |", report);
+    }
+
+    [Fact]
+    public void An_auto_time_budget_says_it_was_chosen_and_what_it_granted()
+    {
+        // An auto-time run used to record the configured default (300 s) it never ran under.
+        var experiment = Completed();
+        var auto = new ExperimentData
+        {
+            ModelName = experiment.ModelName,
+            ExperimentId = experiment.ExperimentId,
+            Timestamp = experiment.Timestamp,
+            Status = experiment.Status,
+            Task = experiment.Task,
+            Config = new ExperimentConfig
+            {
+                DataFile = experiment.Config.DataFile,
+                LabelColumn = experiment.Config.LabelColumn,
+                TimeLimitSeconds = 29,
+                AutoTime = true,
+                Metric = experiment.Config.Metric,
+                TestSplit = experiment.Config.TestSplit
+            },
+            Result = experiment.Result,
+            Metrics = experiment.Metrics,
+            Trials = experiment.Trials,
+            RankingMetric = experiment.RankingMetric
+        };
+
+        var report = ExperimentReport.Render(auto, [], Root, Version);
+
+        Assert.Contains("| Time limit | auto — 29 s granted |", report);
+    }
+
+    [Fact]
     public void A_completed_experiment_reads_top_down_from_result_to_columns()
     {
         var schema = new InputSchemaInfo
