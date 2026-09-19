@@ -119,4 +119,43 @@ public class TrainingProgressTrackerTests
     {
         Assert.Equal(expected, TrainingProgressTracker.ShortTrainerName(full));
     }
+
+    [Fact]
+    public void A_fallback_trainer_name_renders_as_text_not_markup()
+    {
+        // The manual fallback names itself with a bracketed note; unescaped, Spectre read
+        // "[manual fallback: …]" as a style and threw on the progress refresh thread.
+        var p = new MLoop.Core.Models.TrainingProgress
+        {
+            TrialNumber = 1,
+            TrainerName = "SdcaLogisticRegression [manual fallback: AutoML AUC failure]",
+            Metric = 0.8,
+            MetricName = "accuracy",
+            ElapsedSeconds = 1
+        };
+
+        var description = TrainingProgressTracker.TrialDescription(p);
+        _ = new Spectre.Console.Markup(description); // parses — this constructor is where it threw
+        var text = Spectre.Console.Markup.Remove(description);
+
+        Assert.Contains("[manual fallback: AutoML AUC failure]", text);
+        Assert.Contains("accuracy=0.8000", text);
+    }
+
+    [Theory]
+    [InlineData("my[model]")]
+    [InlineData("plain")]
+    public void A_model_name_renders_as_text_in_start_and_finalize_descriptions(string name)
+    {
+        var start = new Spectre.Console.Markup(TrainingProgressTracker.StartDescription(name));
+        var finalize = TrainingProgressTracker.PhaseDescription(
+            new MLoop.Core.Models.TrainingProgress
+            {
+                TrialNumber = 0, TrainerName = "", Metric = 0, MetricName = "", ElapsedSeconds = 0,
+                Phase = MLoop.Core.Models.TrainingPhase.Complete
+            }, name);
+
+        Assert.NotNull(start);
+        Assert.NotNull(new Spectre.Console.Markup(finalize!));
+    }
 }
