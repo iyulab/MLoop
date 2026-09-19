@@ -69,6 +69,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   found.
 
 ### Changed
+- **`mloop detect` runs on every platform, and finds what it used to miss.** Detection moved
+  from ML.NET's SR-CNN to spectral residual scoring in the statistics engine MLoop already uses for
+  analysis (through DataLens 0.15.0). The old path needed ML.NET's FFT native — absent on Apple
+  silicon, and dependent on a system OpenMP runtime on Linux — so `detect` did not run there at all.
+  It also scored poorly: on a period-7 sawtooth with one spike it flagged fifteen points around the
+  spike, it missed a spike on a noisy sine and a level shift entirely, and given the true period of
+  a seasonal series it reported 191 of 300 points as anomalies. On the same series the new path
+  flags the one sawtooth spike, the sine spike, the shift, and exactly the four injected points.
+  **Breaking for `detect` options and output**: `--threshold` is now the score a point must exceed,
+  greater than 0 with a default of 3 (it was a value in [0, 1], default 0.3, on a different scale);
+  `--sensitivity` is the coverage of the control limits in percent, default 99.73 (3 sigma);
+  `--period` is removed — the score assumes no period, so a supplied one could not change the
+  result, and passing it now explains that instead of failing to parse. The series' own period is
+  reported (`period`, `null` when it has none). Each point carries `score`, `expectedValue` and
+  `controlLower`/`controlUpper`; `marginLower`/`marginUpper` and `residualSigma` are gone — the
+  margin was the old detector's decision gate and has no counterpart, and the control limits are now
+  the engine's band at the requested coverage, the same robust residual scale MLoop used to compute
+  itself.
 - **`mloop list` and `mloop status` agree about how old something is.** Each had its own version:
   they switched from "9d ago" to a calendar date at different ages (a week against a month), only
   one of them said "just now", and — the one that made them contradict each other — one rendered its

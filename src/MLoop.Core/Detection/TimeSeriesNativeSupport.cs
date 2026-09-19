@@ -50,7 +50,7 @@ public static class TimeSeriesNativeSupport
     /// that supplies it, because the underlying loader error names only a type initializer.
     /// </summary>
     public const string UnavailableMessage =
-        "Time-series algorithms (forecasting, time-series anomaly detection, detect) need ML.NET's "
+        "Time-series algorithms (forecasting, time-series anomaly detection) need ML.NET's "
         + "MKL native library, and it could not be loaded here. On Linux that library expects an "
         + "Intel-ABI OpenMP runtime to be installed on the system — ML.NET deliberately does not "
         + "bundle one — so install it and expose it under the name it looks for: "
@@ -88,15 +88,17 @@ public static class TimeSeriesNativeSupport
 
     private static readonly Lazy<bool> s_available = new(Probe);
 
+    private const int ProbePoints = 12;
+
     private static bool Probe()
     {
         try
         {
             // The shortest path into FftUtils: DetectSeasonality computes a forward FFT and nothing
-            // else native. A series of MinimumPoints is enough to reach it.
+            // else native. A dozen points is enough to reach it.
             var ml = new MLContext(seed: 0);
             var data = ml.Data.LoadFromEnumerable(
-                Enumerable.Range(0, SrCnnOneShotDetector.MinimumPoints)
+                Enumerable.Range(0, ProbePoints)
                           .Select(i => new ProbePoint { Value = i % 3 }));
             ml.AnomalyDetection.DetectSeasonality(data, nameof(ProbePoint.Value));
             return true;

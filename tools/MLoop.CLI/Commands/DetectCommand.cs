@@ -1,21 +1,59 @@
 using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
+using DataLens.Analyzers;
+using DataLens.Models;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
-using MLoop.Core.Detection;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
 
 /// <summary>
 /// mloop detect - One-shot time-series anomaly detection over an entire series (no train/predict
-/// split, no model artifact). SR-CNN AnomalyAndMargin mode: every point gets an anomaly verdict,
-/// score, an expected value, control limits (chart these) and the detection margin that produced the
-/// verdict. Works on any CSV — does not require an MLoop project.
+/// split, no model artifact), by spectral residual saliency. Every point gets an anomaly verdict, a
+/// score, an expected value and control limits (chart these); the series' dominant period is
+/// reported. Works on any CSV — does not require an MLoop project.
 /// </summary>
+/// <remarks>
+/// The statistics come from DataLens' <see cref="TimeSeriesAnalyzer"/>, which runs on UInsight's own
+/// transform and so works on every platform UInsight ships for. The earlier implementation ran on
+/// ML.NET's SR-CNN, whose FFT native is missing on Apple silicon and assumes a system OpenMP on
+/// Linux, and which on a seasonal series flagged a whole cycle around one spike while missing
+/// spikes on a sine and level shifts entirely.
+/// </remarks>
 public static class DetectCommand
 {
+    /// <summary>The paper's threshold (Ren et al. 2019).</summary>
+    internal const double DefaultThreshold = 3.0;
+
+    /// <summary>Shewhart 3-sigma: the control limits a control chart draws by default.</summary>
+    internal const double DefaultSensitivity = 99.73;
+
+    /// <summary>A detection pass: the per-point scores and the series' period.</summary>
+    internal sealed record Detection(SeriesAnomalyReport Report, SeriesPeriod Period)
+    {
+        public int AnomalyCount => Report.Anomalies.Count;
+    }
+
+    /// <summary>
+    /// Scores <paramref name="values"/> and estimates its period. The control limits are the
+    /// library's band at <paramref name="sensitivity"/> percent coverage — the same robust residual
+    /// scale this command used to compute itself (residual MAD × 1.4826), so there is one
+    /// implementation of it.
+    /// </summary>
+    /// <exception cref="ArgumentException">Series too short, a non-finite value, or an option out of
+    /// range — the message names which.</exception>
+    internal static Detection Detect(IReadOnlyList<double> values, double threshold, double sensitivity)
+    {
+        var report = TimeSeriesAnalyzer.SpectralResidual(values, new SpectralResidualOptions
+        {
+            Threshold = threshold,
+            Sensitivity = sensitivity
+        });
+        return new Detection(report, TimeSeriesAnalyzer.EstimatePeriod(values));
+    }
+
     public static Command Create()
     {
         var dataFileArg = new Argument<string>("data-file")
@@ -30,21 +68,21 @@ public static class DetectCommand
 
         var thresholdOption = new Option<double>("--threshold")
         {
-            Description = "Anomaly decision threshold in [0, 1]",
-            DefaultValueFactory = _ => 0.3
+            Description = "Score above which a point is an anomaly (> 0; the score is a point's saliency "
+                          + "relative to the points before it)",
+            DefaultValueFactory = _ => DefaultThreshold
         };
 
         var sensitivityOption = new Option<double>("--sensitivity")
         {
-            Description = "Detection margin sensitivity in [0, 100] — larger = tighter margin, more anomalies kept "
-                          + "(does not affect control limits)",
-            DefaultValueFactory = _ => 99.0
+            Description = "Coverage of the control limits in percent (0-100, exclusive; 99.73 = 3 sigma)",
+            DefaultValueFactory = _ => DefaultSensitivity
         };
 
-        var periodOption = new Option<int?>("--period")
-        {
-            Description = "Seasonality period in points (default: auto-detect; 0 = non-seasonal)"
-        };
+        // Removed: the score assumes no period, so a supplied one could not change the result. Kept
+        // hidden so a script that still passes it is told why instead of getting a parser error
+        // about a stray argument.
+        var removedPeriodOption = new Option<string?>("--period") { Hidden = true };
 
         var outputOption = new Option<string?>("--output", "-o")
         {
@@ -56,12 +94,12 @@ public static class DetectCommand
             Description = "Output the full result as JSON (machine-readable)"
         };
 
-        var command = new Command("detect", "One-shot time-series anomaly detection (SR-CNN, no training required)");
+        var command = new Command("detect", "One-shot time-series anomaly detection (spectral residual, no training required)");
         command.Arguments.Add(dataFileArg);
         command.Options.Add(columnOption);
         command.Options.Add(thresholdOption);
         command.Options.Add(sensitivityOption);
-        command.Options.Add(periodOption);
+        command.Options.Add(removedPeriodOption);
         command.Options.Add(outputOption);
         command.Options.Add(jsonOption);
 
@@ -71,10 +109,16 @@ public static class DetectCommand
             var column = parseResult.GetValue(columnOption);
             var threshold = parseResult.GetValue(thresholdOption);
             var sensitivity = parseResult.GetValue(sensitivityOption);
-            var period = parseResult.GetValue(periodOption);
             var output = parseResult.GetValue(outputOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(dataFile, column, threshold, sensitivity, period, output, json);
+            if (parseResult.GetResult(removedPeriodOption) is not null)
+            {
+                using var _ = json ? new JsonOutputScope() : null;
+                WriteError("--period was removed: detection no longer takes a period, so one could not change "
+                           + "the result. The series' own period is reported instead (\"period\" in --json).", json);
+                return Task.FromResult(1);
+            }
+            return ExecuteAsync(dataFile, column, threshold, sensitivity, output, json);
         });
 
         return command;
@@ -85,7 +129,6 @@ public static class DetectCommand
         string? column,
         double threshold,
         double sensitivity,
-        int? period,
         string? outputPath,
         bool jsonOutput)
     {
@@ -96,6 +139,21 @@ public static class DetectCommand
 
         try
         {
+            // Checked here, in the command's own terms, so the message names the flag rather than
+            // the library property it becomes.
+            if (!(threshold > 0) || !double.IsFinite(threshold))
+            {
+                WriteError(string.Create(CultureInfo.InvariantCulture,
+                    $"--threshold must be greater than 0 (got {threshold})."), jsonOutput);
+                return 1;
+            }
+            if (!(sensitivity > 0 && sensitivity < 100))
+            {
+                WriteError(string.Create(CultureInfo.InvariantCulture,
+                    $"--sensitivity must be between 0 and 100, exclusive (got {sensitivity})."), jsonOutput);
+                return 1;
+            }
+
             if (!File.Exists(dataFile))
             {
                 WriteError($"Data file not found: {dataFile}", jsonOutput);
@@ -108,12 +166,7 @@ public static class DetectCommand
 
             var (values, resolvedColumn) = series.Value;
 
-            var result = SrCnnOneShotDetector.Detect(values, new OneShotAnomalyOptions
-            {
-                Threshold = threshold,
-                Sensitivity = sensitivity,
-                Period = period,
-            });
+            var result = Detect(values, threshold, sensitivity);
 
             if (outputPath != null)
                 await WriteCsvAsync(outputPath, result);
@@ -127,7 +180,10 @@ public static class DetectCommand
         }
         catch (ArgumentException ex)
         {
-            WriteError(ex.Message, jsonOutput);
+            // The parameter-name suffix .NET appends ("(Parameter 'series')") names a variable in
+            // library code, not anything the user typed.
+            var message = ex.ParamName is { } name ? ex.Message.Replace($" (Parameter '{name}')", "") : ex.Message;
+            WriteError(message, jsonOutput);
             return 1;
         }
         catch (Exception ex)
@@ -183,8 +239,8 @@ public static class DetectCommand
             var raw = rows[i].GetValueOrDefault(resolved);
             if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
             {
-                // Row numbering: +2 = 1-based + header line. SR-CNN needs a contiguous numeric series,
-                // so a gap is an input error, not something to silently skip.
+                // Row numbering: +2 = 1-based + header line. The transform needs a contiguous numeric
+                // series, so a gap is an input error, not something to silently skip.
                 WriteError($"Column '{resolved}' has a non-numeric value '{raw}' at data row {i + 2} — " +
                            "the series must be fully numeric with no gaps.", jsonOutput);
                 return null;
@@ -195,24 +251,21 @@ public static class DetectCommand
         return (values, resolved);
     }
 
-    /// <summary>Per-point output columns. Margin = the gate behind IsAnomaly; Control = the band to
-    /// chart. See <see cref="OneShotAnomalyPoint"/> for why they are separate.</summary>
-    internal const string CsvHeader =
-        "Index,Value,IsAnomaly,Score,ExpectedValue,ControlLower,ControlUpper,MarginLower,MarginUpper";
+    /// <summary>Per-point output columns. Control = the band to chart.</summary>
+    internal const string CsvHeader = "Index,Value,IsAnomaly,Score,ExpectedValue,ControlLower,ControlUpper";
 
-    internal static async Task WriteCsvAsync(string outputPath, OneShotAnomalyResult result)
+    internal static async Task WriteCsvAsync(string outputPath, Detection result)
     {
-        var lines = new List<string>(result.Points.Count + 1) { CsvHeader };
-        foreach (var p in result.Points)
+        var lines = new List<string>(result.Report.Points.Count + 1) { CsvHeader };
+        foreach (var p in result.Report.Points)
         {
             lines.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{p.Index},{p.Value},{(p.IsAnomaly ? 1 : 0)},{p.Score},{p.ExpectedValue}," +
-                $"{p.ControlLower},{p.ControlUpper},{p.MarginLower},{p.MarginUpper}"));
+                $"{p.Index},{p.Value},{(p.IsAnomaly ? 1 : 0)},{p.Score},{p.Expected},{p.Lower},{p.Upper}"));
         }
         await File.WriteAllLinesAsync(outputPath, lines);
     }
 
-    private static void OutputAsJson(string column, OneShotAnomalyResult result, string? outputPath)
+    private static void OutputAsJson(string column, Detection result, string? outputPath)
     {
         var options = new JsonSerializerOptions
         {
@@ -223,36 +276,33 @@ public static class DetectCommand
         var payload = new
         {
             Column = column,
-            TotalPoints = result.Points.Count,
+            TotalPoints = result.Report.Points.Count,
             result.AnomalyCount,
-            result.Period,
-            result.ResidualSigma,
+            // null = the series has no dominant period — a finding, not a failure
+            result.Period.Period,
             OutputFile = outputPath,
-            Points = result.Points.Select(p => new
+            Points = result.Report.Points.Select(p => new
             {
                 p.Index,
                 p.Value,
                 p.IsAnomaly,
                 p.Score,
-                p.ExpectedValue,
-                p.ControlLower,
-                p.ControlUpper,
-                p.MarginLower,
-                p.MarginUpper
+                ExpectedValue = p.Expected,
+                ControlLower = p.Lower,
+                ControlUpper = p.Upper
             })
         };
 
         Console.WriteLine(JsonSerializer.Serialize(payload, options));
     }
 
-    private static void OutputAsTable(string dataFile, string column, OneShotAnomalyResult result, string? outputPath)
+    private static void OutputAsTable(string dataFile, string column, Detection result, string? outputPath)
     {
-        AnsiConsole.Write(new Rule($"[cyan]One-Shot Anomaly Detection - {Path.GetFileName(dataFile)}[/]").LeftJustified());
+        AnsiConsole.Write(new Rule($"[cyan]One-Shot Anomaly Detection - {Markup.Escape(Path.GetFileName(dataFile))}[/]").LeftJustified());
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"Column: [cyan]{column}[/]  Points: [cyan]{result.Points.Count}[/]  " +
+        AnsiConsole.MarkupLine($"Column: [cyan]{Markup.Escape(column)}[/]  Points: [cyan]{result.Report.Points.Count}[/]  " +
                                $"Anomalies: [{(result.AnomalyCount > 0 ? "red" : "green")}]{result.AnomalyCount}[/]  " +
-                               $"Period: [cyan]{(result.Period > 0 ? result.Period.ToString() : "none")}[/]  " +
-                               $"Sigma: [cyan]{result.ResidualSigma.ToString("G4", CultureInfo.InvariantCulture)}[/]");
+                               $"Period: [cyan]{result.Period.Period?.ToString(CultureInfo.InvariantCulture) ?? "none"}[/]");
         AnsiConsole.WriteLine();
 
         if (result.AnomalyCount == 0)
@@ -271,15 +321,15 @@ public static class DetectCommand
             table.AddColumn("Control Upper");
 
             const int maxRows = 50;
-            foreach (var p in result.Points.Where(p => p.IsAnomaly).Take(maxRows))
+            foreach (var p in result.Report.Points.Where(p => p.IsAnomaly).Take(maxRows))
             {
                 table.AddRow(
-                    p.Index.ToString(),
+                    p.Index.ToString(CultureInfo.InvariantCulture),
                     p.Value.ToString("G6", CultureInfo.InvariantCulture),
                     p.Score.ToString("F3", CultureInfo.InvariantCulture),
-                    p.ExpectedValue.ToString("G6", CultureInfo.InvariantCulture),
-                    p.ControlLower.ToString("G6", CultureInfo.InvariantCulture),
-                    p.ControlUpper.ToString("G6", CultureInfo.InvariantCulture));
+                    p.Expected.ToString("G6", CultureInfo.InvariantCulture),
+                    p.Lower.ToString("G6", CultureInfo.InvariantCulture),
+                    p.Upper.ToString("G6", CultureInfo.InvariantCulture));
             }
 
             AnsiConsole.Write(table);
