@@ -337,13 +337,11 @@ public static class ValidateCommand
             }
         }
 
-        // Validate metric
-        if (!string.IsNullOrWhiteSpace(training.Metric) && !MetricNames.IsKnown(training.Metric))
-        {
-            warnings.Add(new ValidationWarning($"{prefix}.metric",
-                $"Unknown metric '{training.Metric}'. Training would optimize the task default instead. " +
-                $"Known names: {MetricNames.Auto}, {string.Join(", ", MetricNames.All)}"));
-        }
+        // Validate metric — the same refusal `mloop train` makes, so validate never passes a config
+        // that training then rejects.
+        var metricRejection = MetricNames.Rejection(task, training.Metric);
+        if (metricRejection != null)
+            errors.Add(new ValidationError($"{prefix}.metric", metricRejection));
 
         // Validate test split
         if (training.TestSplit.HasValue)

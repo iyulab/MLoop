@@ -1364,6 +1364,12 @@ app.MapPost("/train", (
     ProjectRootPath projectRootPath,
     ILogger<Program> logger) =>
 {
+    // Refuse a metric the task cannot optimize now, not minutes later inside the job — the job
+    // would otherwise fail (or, before this, quietly optimize the task default).
+    var metricRejection = MLoop.Core.Evaluation.MetricNames.Rejection(request.Task, request.Metric);
+    if (metricRejection != null)
+        return Results.BadRequest(new { error = metricRejection });
+
     // Validate data file exists and is within project root
     var trainProjectRoot = projectRootPath.Value;
     var resolvedDataFile = Path.GetFullPath(request.DataFile);

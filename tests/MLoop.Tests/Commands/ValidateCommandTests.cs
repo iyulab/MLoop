@@ -336,38 +336,49 @@ public class ValidateCommandTests
     }
 
     [Fact]
-    public void ValidateTrainingSettings_WarnsOnUnknownMetric()
+    public void ValidateTrainingSettings_RejectsUnknownMetric()
     {
-        var (_, warnings) = RunValidateTraining(new TrainingSettings { Metric = "nonexistent" });
-        Assert.Contains(warnings, w => w.Message.Contains("Unknown metric"));
+        // An error, not a warning: `mloop train` refuses the same name, so a config validate passes
+        // must be one training accepts.
+        var (errors, warnings) = RunValidateTraining(new TrainingSettings { Metric = "nonexistent" });
+        Assert.Contains(errors, e => e.Message.Contains("Unknown metric"));
+        Assert.DoesNotContain(warnings, w => w.Message.Contains("metric", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ValidateTrainingSettings_RejectsAMetricTheTaskCannotOptimize()
+    {
+        var (errors, _) = RunValidateTraining(new TrainingSettings { Metric = "auc" }, "regression");
+        Assert.Contains(errors, e => e.Message.Contains("does not apply to regression"));
     }
 
     [Theory]
-    [InlineData("auto")]
-    [InlineData("accuracy")]
-    [InlineData("auc")]
-    [InlineData("r2")]
-    [InlineData("rmse")]
-    // canonical task-specific metrics that `mloop init` writes and AutoML/promotion use
-    // (ModelRegistry.DefaultMetricForTask) must validate cleanly — they were flagged "Unknown".
-    [InlineData("macro_accuracy")]   // multiclass-classification default
-    [InlineData("micro_accuracy")]   // image/text-classification default
-    [InlineData("r_squared")]        // regression default (canonical)
-    [InlineData("log_loss")]
-    [InlineData("f1_score")]
-    // spellings the shipped examples and ML.NET use for the same metrics — the optimizer accepts
-    // them through MetricNames, so validate must not call them unknown
-    [InlineData("F1Score")]
-    [InlineData("RSquared")]
-    [InlineData("MacroAccuracy")]
-    [InlineData("log-loss")]
-    [InlineData("rSquared")]
-    [InlineData("recall")]
-    [InlineData("precision")]
-    public void ValidateTrainingSettings_AcceptsKnownMetrics(string metric)
+    [InlineData("regression", "auto")]
+    [InlineData("regression", "r2")]
+    [InlineData("regression", "rmse")]
+    [InlineData("regression", "r_squared")]
+    [InlineData("regression", "RSquared")]
+    [InlineData("regression", "rSquared")]
+    [InlineData("binary-classification", "accuracy")]
+    [InlineData("binary-classification", "auc")]
+    [InlineData("binary-classification", "f1_score")]
+    [InlineData("binary-classification", "F1Score")]
+    [InlineData("binary-classification", "recall")]
+    [InlineData("binary-classification", "precision")]
+    [InlineData("multiclass-classification", "accuracy")]      // read as macro_accuracy
+    [InlineData("multiclass-classification", "macro_accuracy")]
+    [InlineData("multiclass-classification", "MacroAccuracy")]
+    [InlineData("multiclass-classification", "micro_accuracy")]
+    [InlineData("multiclass-classification", "log_loss")]
+    [InlineData("multiclass-classification", "log-loss")]
+    // tasks whose trainer takes no metric choice accept any name MLoop knows
+    [InlineData("image-classification", "micro_accuracy")]
+    [InlineData("anomaly-detection", "f1_score")]
+    [InlineData("forecasting", "mape")]
+    public void ValidateTrainingSettings_AcceptsMetricsTheTaskCanTake(string task, string metric)
     {
-        var (_, warnings) = RunValidateTraining(new TrainingSettings { Metric = metric });
-        Assert.DoesNotContain(warnings, w => w.Message.Contains("Unknown metric"));
+        var (errors, _) = RunValidateTraining(new TrainingSettings { Metric = metric }, task);
+        Assert.DoesNotContain(errors, e => e.Path.EndsWith(".metric"));
     }
 
     #endregion
