@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **A header with a quoted comma, or in a legacy Korean encoding, no longer loses a column from the
+  feature set.** The reader that supplies column names to the exclusion logic split on every comma
+  and read every file as UTF-8. So `"Last, First",Age` became three names where ML.NET and every
+  other reader in MLoop see two, and a CP949 header came back mojibake. That does not surface as a
+  wrong list: the exclusion decision is computed by comparing these names before and after each
+  removal step, and a name that does not match the real schema is skipped in silence by the code
+  that applies exclusions — leaving training and prediction disagreeing about which columns are
+  features. It now uses the same RFC 4180 parser the rest of the product uses, and detects the
+  file's encoding the way the loader does. The removal chain's own second parser is gone with it.
 - **A text classifier is now protected like the other classifiers.** Two different questions were
   being asked under one name — "does this model predict a class", and "can I count its classes in a
   column of the training file" — and the answers had drifted apart on `text-classification`. It
