@@ -56,11 +56,72 @@ public static class TaskTypes
     private static readonly HashSet<string> Lookup = new(All, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Whether <paramref name="task"/> names an accepted task. Trimmed and matched
-    /// case-insensitively, the same tolerance a hand-edited yaml field needs.
+    /// Spellings that are not the canonical name but mean one of them, mapped to the name they
+    /// mean. Aliases are accepted, never advertised — <see cref="All"/> and <see cref="Listed"/>
+    /// stay the vocabulary a user is shown.
     /// </summary>
-    public static bool IsValid(string? task) =>
-        task != null && Lookup.Contains(task.Trim());
+    /// <remarks>
+    /// Two families, both already honoured somewhere in the product before this map existed.
+    /// <c>classification</c> is the pre-multi-class spelling of binary classification, which
+    /// training, sampling and evaluation all still accept. The run-together forms come from a
+    /// diagnostics path that normalized by deleting hyphens and spaces, which made it the only
+    /// place in the product where <c>binary classification</c> worked.
+    /// </remarks>
+    private static readonly IReadOnlyDictionary<string, string> Aliases =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["classification"] = "binary-classification",
+            ["binaryclassification"] = "binary-classification",
+            ["multiclassclassification"] = "multiclass-classification",
+            ["anomalydetection"] = "anomaly-detection",
+            ["timeseriesanomaly"] = "time-series-anomaly",
+            ["imageclassification"] = "image-classification",
+            ["objectdetection"] = "object-detection",
+            ["textclassification"] = "text-classification",
+            ["sentencesimilarity"] = "sentence-similarity",
+            ["questionanswering"] = "question-answering",
+        };
+
+    /// <summary>
+    /// The canonical name for <paramref name="task"/>, or <c>null</c> when it names no task MLoop
+    /// knows. Tolerates surrounding space, any casing, and underscores or run-together words where
+    /// the canonical name has hyphens.
+    /// </summary>
+    /// <remarks>
+    /// <para>This is the answer to a question that had four different answers. Every predicate that
+    /// asked "which task is this" normalized the string itself, and the four forms in use were:
+    /// nothing at all (an ordinal <c>is</c> pattern, so <c>Binary-Classification</c> failed),
+    /// <c>ToLowerInvariant()</c>, <c>OrdinalIgnoreCase</c>, and lowercase-with-hyphens-and-spaces
+    /// deleted. The two authorities that already existed disagreed with each other: this type's
+    /// <see cref="IsValid"/> trimmed but did not fold underscores, while
+    /// <c>AutoMLRunner.RequiresLabel</c> folded underscores but did not trim.</para>
+    /// <para>It reached users. <c>task: classification</c> was rejected by <c>mloop validate</c>
+    /// and accepted as binary by <c>train</c> and <c>evaluate</c>; <c>task: binary_classification</c>
+    /// split the other way.</para>
+    /// <para>Unknown returns <c>null</c> rather than an invented default — the same contract
+    /// <c>MetricNames.Canonical</c> holds, so a caller decides what to do about not knowing
+    /// instead of being handed a guess.</para>
+    /// </remarks>
+    public static string? Canonical(string? task)
+    {
+        if (string.IsNullOrWhiteSpace(task))
+            return null;
+
+        var folded = task.Trim().ToLowerInvariant().Replace('_', '-');
+
+        if (Lookup.TryGetValue(folded, out var exact))
+            return exact;
+
+        // Run-together and spaced forms: `binary classification`, `BinaryClassification`.
+        var collapsed = folded.Replace("-", string.Empty).Replace(" ", string.Empty);
+        return Aliases.TryGetValue(collapsed, out var aliased) ? aliased : null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="task"/> names an accepted task, in any spelling
+    /// <see cref="Canonical"/> accepts.
+    /// </summary>
+    public static bool IsValid(string? task) => Canonical(task) != null;
 
     /// <summary>
     /// The vocabulary as one comma-separated line, for help text and error messages that have to

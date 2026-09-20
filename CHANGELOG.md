@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **One reading of the `task` field, instead of four.** Every part of MLoop that asks which task a
+  model is normalized the string itself, and the normalizations disagreed: one accepted
+  `binary_classification` and rejected a stray space, another did the reverse, a third accepted
+  `BinaryClassification`, and a fourth compared without folding case at all. The visible result was
+  a configuration that half the product accepted: `task: classification` — the spelling that
+  predates `binary-classification` — was rejected by `mloop validate` while `train` and `evaluate`
+  ran it as binary classification, and `task: binary_classification` split the other way. A task
+  name is now folded in one place, tolerating surrounding space, any casing, underscores in place of
+  hyphens, and the run-together spellings (`BinaryClassification`, `binary classification`). Those
+  spellings are accepted, not advertised: the vocabulary shown in help and error messages is
+  unchanged.
+- **`mloop train` checks the task name.** It never had: `TaskTypes` was consulted there only for the
+  `--task` help text, so `--task regresion` reached each predicate in turn, was answered "no" by all
+  of them, and trained something nobody asked for. `init` and `validate` have always checked.
 - **`mloop status` sees every kind of prediction, not just tabular ones.** Three commands write into
   `predictions/` — scored rows, per-image detections for object detection, and a forecast — and
   status looked for the first convention alone, so a project whose model does object detection or

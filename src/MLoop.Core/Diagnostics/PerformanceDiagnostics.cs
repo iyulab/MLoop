@@ -31,20 +31,23 @@ public class PerformanceDiagnostics
         };
 
         // Analyze based on task type
-        var normalizedTask = taskType.ToLowerInvariant().Replace(" ", "").Replace("-", "");
+        // Was a fourth normalization form of its own (lowercase with spaces and hyphens deleted),
+        // which is where the run-together spellings the alias map now carries came from. The
+        // canonical name is hyphenated, so the switch below reads the vocabulary as written.
+        var normalizedTask = Models.TaskTypes.Canonical(taskType);
 
         switch (normalizedTask)
         {
             case "regression":
                 AnalyzeRegression(result);
                 break;
-            case "binaryclassification":
+            case "binary-classification":
                 AnalyzeBinaryClassification(result);
                 break;
-            case "multiclassclassification":
+            case "multiclass-classification":
                 AnalyzeMulticlassClassification(result);
                 break;
-            case "anomalydetection":
+            case "anomaly-detection":
                 AnalyzeAnomalyDetection(result);
                 break;
             case "clustering":
@@ -56,20 +59,20 @@ public class PerformanceDiagnostics
             case "forecasting":
                 AnalyzeForecasting(result);
                 break;
-            case "timeseriesanomaly":
+            case "time-series-anomaly":
                 AnalyzeTimeSeriesAnomaly(result);
                 break;
             case "recommendation":
                 AnalyzeRecommendation(result);
                 break;
-            case "imageclassification":
-            case "textclassification":
-            case "objectdetection":
+            case "image-classification":
+            case "text-classification":
+            case "object-detection":
             case "ner":
-            case "questionanswering":
+            case "question-answering":
                 AnalyzeMulticlassClassification(result);
                 break;
-            case "sentencesimilarity":
+            case "sentence-similarity":
                 AnalyzeRegression(result);
                 break;
             default:

@@ -142,4 +142,73 @@ public class TaskVocabularyContractTests
 
         return [.. fromCollections.Concat(fromStrings).Distinct().Order()];
     }
+
+    /// <summary>
+    /// A task string is folded to its canonical spelling in one place. Four different foldings were
+    /// in use — none at all, <c>ToLowerInvariant()</c>, <c>OrdinalIgnoreCase</c>, and lowercase with
+    /// hyphens and spaces deleted — and the two authorities that existed disagreed about trimming
+    /// and underscores, so <c>task: classification</c> was rejected by <c>validate</c> and accepted
+    /// by <c>train</c>.
+    /// </summary>
+    /// <remarks>
+    /// The two shapes scanned for are the distinctive ones: folding an underscore into a hyphen and
+    /// deleting hyphens. Lowercasing is not scanned — it is too common to attribute to a task
+    /// string, and on its own it is not the divergence that hurt.
+    /// </remarks>
+    private static readonly Regex UnderscoreFold =
+        new(@"Replace\(\s*'_'\s*,\s*'-'\s*\)", RegexOptions.Compiled);
+
+    private static readonly Regex HyphenDelete =
+        new(@"Replace\(\s*""-""\s*,\s*(?:""""|string\.Empty)\s*\)", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Whether this line folds a <i>task</i> spelling. Subject matters: the same two shapes
+    /// legitimately fold prep-step type and method names in five other files, and a guard that
+    /// cannot tell the difference is one a maintainer switches off.
+    /// </summary>
+    private static bool FoldsATaskSpelling(string line) =>
+        line.Contains("task", StringComparison.OrdinalIgnoreCase)
+        && (UnderscoreFold.IsMatch(line) || HyphenDelete.IsMatch(line));
+
+    [Fact]
+    public void NoProductionFileFoldsATaskStringItself()
+    {
+        var authority = Path.GetFullPath(
+            Path.Combine(RepoSourceTree.RepoRoot, "src", "MLoop.Core", "Models", "TaskTypes.cs"));
+
+        var scanned = RepoSourceTree.ProductionSourceFiles("src", "tools")
+            .Where(f => !Path.GetFullPath(f).Equals(authority, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // The scan reaches the two files that used to do this.
+        Assert.Contains(scanned, f => Path.GetFileName(f) == "AutoMLRunner.cs");
+        Assert.Contains(scanned, f => Path.GetFileName(f) == "PerformanceDiagnostics.cs");
+
+        var offenders = scanned
+            .Where(f => File.ReadAllLines(f).Any(FoldsATaskSpelling))
+            .Select(f => Path.GetRelativePath(RepoSourceTree.RepoRoot, f))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "A task spelling is folded by " + nameof(TaskTypes) + "." + nameof(TaskTypes.Canonical)
+            + ", so every predicate that asks 'which task is this' gets the same answer:\n"
+            + string.Join('\n', offenders));
+    }
+
+    /// <summary>Companion: a pattern that no longer matches reports a clean tree.</summary>
+    [Fact]
+    public void TheFoldingScanSeesTheShapesItForbidsAndSparespTheOnesItDoesNot()
+    {
+        // The two lines this guard exists because of.
+        Assert.True(FoldsATaskSpelling("        var normalized = (task ?? string.Empty).ToLowerInvariant().Replace('_', '-');"));
+        Assert.True(FoldsATaskSpelling("        var normalizedTask = taskType.ToLowerInvariant().Replace(\" \", \"\").Replace(\"-\", \"\");"));
+
+        // Same shapes, different subject — prep step types and methods fold this way on purpose.
+        Assert.False(FoldsATaskSpelling("        var type = step.Type.ToLowerInvariant().Replace('_', '-');"));
+        Assert.False(FoldsATaskSpelling("    private static string Norm(string s) => s.ToLowerInvariant().Replace('_', '-');"));
+
+        // The subject alone is not an offence.
+        Assert.False(FoldsATaskSpelling("        var c = TaskTypes.Canonical(task);"));
+    }
 }
