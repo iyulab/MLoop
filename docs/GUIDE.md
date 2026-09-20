@@ -502,6 +502,86 @@ mloop info datasets/train.csv --name fraud-detector
 - Converts to UTF-8 with BOM for ML.NET compatibility
 - Korean text displayed correctly (e.g., 설비명, 공정번호)
 
+### `mloop detect`
+
+One-shot anomaly detection over a time series. No model, no training: hand it a CSV and it scores
+every point, estimates the series' own period, and puts control limits around what it expected.
+
+```bash
+mloop detect data.csv                      # single-column CSV: the column is picked for you
+mloop detect data.csv --column value       # name the column to monitor
+mloop detect data.csv -c value --threshold 5      # only the sharper anomalies
+mloop detect data.csv -c value --sensitivity 95   # wider band than 3 sigma
+mloop detect data.csv -c value -o result.csv      # every point, with its limits
+mloop detect data.csv -c value --json
+```
+
+| Argument / Option | Short | Default | Description |
+|-------------------|-------|---------|-------------|
+| `<data-file>` | | | Path to the CSV file containing the time series |
+| `--column` | `-c` | | Value column to monitor (auto-selected when the CSV has a single column) |
+| `--threshold` | | `3` | Score above which a point is an anomaly (> 0) |
+| `--sensitivity` | | `99.73` | Coverage of the control limits in percent (0–100 exclusive; 99.73 = 3 sigma) |
+| `--output` | `-o` | | Write the full per-point result to this CSV file |
+| `--json` | | | Output the full result as JSON |
+
+```
+── One-Shot Anomaly Detection - series.csv ─────────────────────────────────────
+
+Column: value  Points: 200  Anomalies: 2  Period: 24
+
+╭───────┬─────────┬────────┬──────────┬───────────────┬───────────────╮
+│ Index │ Value   │ Score  │ Expected │ Control Lower │ Control Upper │
+├───────┼─────────┼────────┼──────────┼───────────────┼───────────────┤
+│ 60    │ 37.1846 │ 15.565 │ 24.6774  │ 24.2309       │ 25.124        │
+│ 140   │ 34.9938 │ 12.310 │ 23.2817  │ 22.8352       │ 23.7283       │
+╰───────┴─────────┴────────┴──────────┴───────────────┴───────────────╯
+```
+
+**`Score`** is the point's saliency — how far it stands out from the spectral residual of the
+series — and `--threshold` is compared against it directly. **`Control Lower`/`Control Upper`** are
+the band the series itself implies at the requested coverage, so a point outside them is unusual
+for *this* series rather than unusual in the abstract. **`Period`** is estimated, not supplied, and
+is `null` when the series has none.
+
+The table lists only the anomalies. `--output` writes every point with its score, expected value
+and limits — that is the file to chart. `--json` carries the same thing:
+
+```json
+{
+  "column": "value",
+  "totalPoints": 200,
+  "anomalyCount": 2,
+  "period": 24,
+  "outputFile": null,
+  "points": [
+    {
+      "index": 60,
+      "value": 37.1846,
+      "isAnomaly": true,
+      "score": 15.565493686292202,
+      "expectedValue": 24.677441826232204,
+      "controlLower": 24.230905650284555,
+      "controlUpper": 25.123978002179854
+    }
+  ]
+}
+```
+
+**Runs everywhere.** Detection is computed by the statistics engine MLoop already uses for
+analysis, not by ML.NET's FFT native — so unlike `forecasting` and `time-series-anomaly` *training*
+it needs no OpenMP runtime on Linux and works on Apple silicon.
+
+> **Changed in the version after 0.32.0.** `--threshold` is now the score a point must exceed
+> (greater than 0, default 3); it used to be a value in [0, 1] with a default of 0.3, on a
+> different scale. `--sensitivity` is now the coverage of the control limits in percent. `--period`
+> was removed — the score assumes no period, so supplying one could not change the result; passing
+> it now explains that instead of failing to parse. Each point carries `score`, `expectedValue` and
+> `controlLower`/`controlUpper`, where it used to carry `marginLower`/`marginUpper` and
+> `residualSigma`.
+
+---
+
 ### `mloop evaluate`
 
 Evaluate model performance on test data.

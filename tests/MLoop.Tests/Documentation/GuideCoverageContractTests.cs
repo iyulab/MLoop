@@ -27,8 +27,6 @@ public class GuideCoverageContractTests
     /// </summary>
     private static readonly HashSet<string> Undocumented = new(StringComparer.Ordinal)
     {
-        "detect",     // deliberately last of the three in flight: an unmerged branch changes its
-                      // options, and documenting the current ones would be stale on merge
         "feedback",
         "sample",
         "trigger",
