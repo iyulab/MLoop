@@ -324,6 +324,140 @@ mloop promote --latest             # Auto-select the most recent experiment
 mloop promote --best               # Auto-select the best-scoring experiment
 ```
 
+### `mloop status`
+
+Everything the project currently holds, on one screen: the configuration each model was defined
+with, how many experiments it has, which one is in production, and when it last predicted.
+
+```bash
+mloop status                       # the overview
+mloop status --verbose             # adds the per-file data section
+mloop status --json                # machine-readable, on stdout
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--verbose` | `-v` | Show detailed status information |
+| `--json` | | Output structured JSON instead of a console table |
+
+```
+── MLoop Project: demo ─────────────────────────────────────────────────────────
+
+              Configuration (mloop.yaml)
+╭─────────┬────────────┬───────┬────────────┬────────╮
+│ Model   │ Task       │ Label │ Time Limit │ Metric │
+├─────────┼────────────┼───────┼────────────┼────────┤
+│ default │ regression │ Label │       auto │  rmse  │
+╰─────────┴────────────┴───────┴────────────┴────────╯
+
+                                Models Overview
+╭─────────┬─────────────┬───────────┬────────────┬─────────────┬───────────────╮
+│ Model   │ Experiments │ Completed │ Production │ Best Metric │  Last         │
+│         │             │           │            │             │   Prediction  │
+├─────────┼─────────────┼───────────┼────────────┼─────────────┼───────────────┤
+│ default │      2      │     2     │ ✓ exp-001  │      0.9564 │      15m ago  │
+╰─────────┴─────────────┴───────────┴────────────┴─────────────┴───────────────╯
+
+── Summary ─────────────────────────────────────────────────────────────────────
+
+Models: 1  Experiments: 2  Completed: 2  Production: 1
+```
+
+**`Last Prediction`** counts every kind of prediction output — scored rows, object-detection
+results and forecasts alike — and is written as an age (`15m ago`, `3d ago`, `4mo ago`) rather
+than a timestamp. The exact instant is in `--json`.
+
+Under `--json` the document goes to **stdout** and the tables above go to stderr, so
+`mloop status --json > status.json` gives a parseable file while you still see the summary:
+
+```json
+{
+  "projectRoot": "/path/to/demo",
+  "models": [
+    {
+      "modelName": "default",
+      "totalExperiments": 2,
+      "completedExperiments": 2,
+      "hasProduction": true,
+      "productionExperimentId": "exp-001",
+      "bestMetric": 0.956375203955669,
+      "lastPredictionAt": null
+    }
+  ],
+  "dataFiles": null,
+  "summary": {
+    "modelsCount": 1,
+    "totalExperiments": 2,
+    "completedExperiments": 2,
+    "failedExperiments": 0,
+    "productionCount": 1
+  }
+}
+```
+
+`dataFiles` is populated only with `--verbose`, where it lists each conventional data file and
+whether it is present:
+
+```json
+"dataFiles": [
+  { "type": "Train",   "path": "datasets/train.csv",   "exists": true },
+  { "type": "Test",    "path": "datasets/test.csv",    "exists": true },
+  { "type": "Predict", "path": "datasets/predict.csv", "exists": true }
+]
+```
+
+---
+
+### `mloop analyze`
+
+Exploratory data analysis, one aspect per subcommand, so you ask for the answer you want rather
+than reading a whole report. `mloop info --analyze` runs the lot; these are the parts.
+
+```bash
+mloop analyze profile datasets/train.csv        # per-column statistics
+mloop analyze correlation datasets/train.csv    # pairwise correlation
+mloop analyze importance datasets/train.csv     # feature importance against the label
+mloop analyze outliers datasets/train.csv       # outlier detection
+mloop analyze distribution datasets/train.csv   # distribution shape per column
+```
+
+| Subcommand | What it reports |
+|------------|-----------------|
+| `profile` | Per column: missing count and rate, approximate unique values, type, and mean/stddev/min/max |
+| `correlation` | The full pairwise correlation matrix, label included |
+| `importance` | Permutation importance of each feature against the label |
+| `outliers` | Isolation Forest: how many rows are outliers, and the score threshold used |
+| `distribution` | Median, quartiles, IQR, skewness and kurtosis per column |
+
+Every subcommand takes the same arguments:
+
+| Argument / Option | Short | Description |
+|-------------------|-------|-------------|
+| `<data-file>` | | Path to the CSV dataset to analyze (defaults to the project's `data.train` if omitted) |
+| `--label` | `-l` | Label/target column name (overrides `mloop.yaml`) |
+| `--name` | `-n` | Model name to read label configuration from `mloop.yaml` |
+| `--json` | | Output structured JSON instead of a console table |
+
+```
+Profile: 3 column(s); 0 constant, 0 high-null, 0 likely-index.
+
+── Data Statistics ─────────────────────────────────────────────────────────────
+
+╭────────┬─────────┬─────────┬──────────┬──────┬─────────┬────────┬────────┬────────╮
+│ Column │ Missing │ Missing │ Unique   │ Type │    Mean │ StdDev │    Min │    Max │
+│        │         │       % │ (sample) │      │         │        │        │        │
+├────────┼─────────┼─────────┼──────────┼──────┼─────────┼────────┼────────┼────────┤
+│ x1     │       0 │   0.00% │     ~297 │ Num  │  5.2371 │ 2.8823 │ 0.0390 │ 9.9820 │
+│ x2     │       0 │   0.00% │     ~291 │ Num  │  2.5251 │ 1.4540 │ 0.0040 │ 4.9620 │
+│ Label  │       0 │   0.00% │     ~299 │ Num  │ 10.6740 │ 9.1006 │ -7.778 │ 29.602 │
+╰────────┴─────────┴─────────┴──────────┴──────┴─────────┴────────┴────────┴────────╯
+```
+
+The unique count is approximate (`~297`) because it is taken from a sample — exact cardinality on
+a large file costs a full pass for a number that is used as a hint.
+
+---
+
 ### `mloop info`
 
 Display dataset profiling information with automatic encoding detection.
