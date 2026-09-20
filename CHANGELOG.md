@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-20
+
 ### Added
 - **Every experiment records the fingerprint of the data it was trained on.** `config.json` (and
   the copy of it inside `metadata.json`) now carries `dataFileHash`, the SHA-256 of the training
