@@ -223,9 +223,12 @@ public static class ValidateCommand
             return;
         }
 
-        if (!IsValidModelName(modelName))
+        // The message names the rule that was actually broken — a generic sentence cannot explain
+        // why a well-formed name like `staging` was refused.
+        var violation = MLoop.Core.Storage.ModelName.DescribeViolation(modelName);
+        if (violation is not null)
         {
-            errors.Add(new ValidationError(prefix, "Model name must be lowercase alphanumeric with hyphens only"));
+            errors.Add(new ValidationError(prefix, violation));
         }
 
         // Validate task type
@@ -625,19 +628,10 @@ public static class ValidateCommand
         }
     }
 
-    internal static bool IsValidModelName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return false;
-
-        foreach (var c in name)
-        {
-            if (!char.IsLetterOrDigit(c) && c != '-' && c != '_')
-                return false;
-        }
-
-        return char.IsLetter(name[0]) || name[0] == '_';
-    }
+    // Was a second, laxer rule than the one init and the resolver enforce — it accepted uppercase,
+    // underscores and every reserved word, so `validate` passed configurations that `train` then
+    // refused. The rule lives in MLoop.Core.Storage.ModelName now.
+    internal static bool IsValidModelName(string name) => MLoop.Core.Storage.ModelName.IsValid(name);
 
     private static void DisplayResults(
         List<ValidationError> errors,

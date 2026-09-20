@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.Core.Storage;
 
@@ -7,7 +6,7 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// <summary>
 /// Resolves and manages model names within an MLoop project
 /// </summary>
-public partial class ModelNameResolver : IModelNameResolver
+public class ModelNameResolver : IModelNameResolver
 {
     // Shared layout names delegate to the ExperimentLayout authority so this reader cannot drift from the
     // writers. models.json (the model *index*) stays local — it is owned solely by this resolver.
@@ -15,12 +14,6 @@ public partial class ModelNameResolver : IModelNameResolver
     private const string ModelsIndexFileName = "models.json";
     private const string StagingDirectory = ExperimentLayout.StagingDirectory;
     private const string ProductionDirectory = ExperimentLayout.ProductionDirectory;
-
-    // Reserved names that cannot be used as model names
-    private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "staging", "production", "temp", "cache", "index", "registry"
-    };
 
     private readonly IFileSystemManager _fileSystem;
     private readonly IProjectDiscovery _projectDiscovery;
@@ -60,12 +53,12 @@ public partial class ModelNameResolver : IModelNameResolver
     public string Resolve(string? name)
     {
         if (!string.IsNullOrWhiteSpace(name))
-            return name.Trim().ToLowerInvariant();
+            return Core.Storage.ModelName.Normalize(name);
 
         var configured = Environment.GetEnvironmentVariable(ModelNameVariable);
         return string.IsNullOrWhiteSpace(configured)
             ? ConfigDefaults.DefaultModelName
-            : configured.Trim().ToLowerInvariant();
+            : Core.Storage.ModelName.Normalize(configured);
     }
 
     /// <inheritdoc />
@@ -148,7 +141,7 @@ public partial class ModelNameResolver : IModelNameResolver
         if (!IsValidName(resolvedName))
         {
             throw new ArgumentException($"Invalid model name: '{resolvedName}'. " +
-                "Model names must be lowercase alphanumeric with hyphens, 2-50 characters.");
+                Core.Storage.ModelName.DescribeViolation(resolvedName));
         }
 
         if (Exists(resolvedName))
@@ -223,20 +216,7 @@ public partial class ModelNameResolver : IModelNameResolver
     }
 
     /// <inheritdoc />
-    public bool IsValidName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return false;
-
-        if (name.Length < 2 || name.Length > 50)
-            return false;
-
-        if (ReservedNames.Contains(name))
-            return false;
-
-        // Must be lowercase alphanumeric with hyphens, no leading/trailing hyphens
-        return ModelNamePattern().IsMatch(name);
-    }
+    public bool IsValidName(string name) => MLoop.Core.Storage.ModelName.IsValid(name);
 
     private async Task<ModelIndex> LoadOrCreateIndexAsync(CancellationToken cancellationToken)
     {
@@ -260,6 +240,4 @@ public partial class ModelNameResolver : IModelNameResolver
         await _fileSystem.WriteJsonAsync(_indexPath, index, cancellationToken);
     }
 
-    [GeneratedRegex(@"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")]
-    private static partial Regex ModelNamePattern();
 }
