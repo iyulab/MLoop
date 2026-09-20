@@ -254,8 +254,9 @@ public static class PredictCommand
                     return await PredictForecastingJsonAsync(resolvedModelPath, resolvedModelName, experimentId);
 
                 var forecastOutputPath = fileSystem.CombinePath(
-                    projectRoot, "predictions",
-                    $"{resolvedModelName}-forecast-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
+                    projectRoot, ProjectLayout.PredictionsDirectory,
+                    ProjectLayout.PredictionFileName(
+                        resolvedModelName, ProjectLayout.PredictionKind.Forecast, DateTimeOffset.Now));
                 return await PredictForecastingAsync(resolvedModelPath, forecastOutputPath, experimentId);
             }
 
@@ -336,11 +337,13 @@ public static class PredictCommand
 
             if (string.IsNullOrEmpty(output))
             {
-                var predictionsDir = fileSystem.CombinePath(projectRoot, "predictions");
+                var predictionsDir = fileSystem.CombinePath(projectRoot, ProjectLayout.PredictionsDirectory);
                 await fileSystem.CreateDirectoryAsync(predictionsDir, CancellationToken.None);
 
-                var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-                resolvedOutputPath = fileSystem.CombinePath(predictionsDir, $"{resolvedModelName}-predictions-{timestamp}.csv");
+                resolvedOutputPath = fileSystem.CombinePath(
+                    predictionsDir,
+                    ProjectLayout.PredictionFileName(
+                        resolvedModelName, ProjectLayout.PredictionKind.Rows, DateTimeOffset.Now));
             }
             else
             {
@@ -1064,14 +1067,17 @@ public static class PredictCommand
             }
         }
 
-        // Resolve output path (Convention: predictions/{model}-detections-{timestamp}.json).
+        // Resolve output path — the convention itself lives in ProjectLayout, because `status`
+        // reads these names back and used to know only the tabular one.
         string resolvedOutputPath;
         if (string.IsNullOrEmpty(output))
         {
-            var predictionsDir = fileSystem.CombinePath(projectRoot, "predictions");
+            var predictionsDir = fileSystem.CombinePath(projectRoot, ProjectLayout.PredictionsDirectory);
             await fileSystem.CreateDirectoryAsync(predictionsDir, CancellationToken.None);
-            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            resolvedOutputPath = fileSystem.CombinePath(predictionsDir, $"{modelName}-detections-{timestamp}.json");
+            resolvedOutputPath = fileSystem.CombinePath(
+                predictionsDir,
+                ProjectLayout.PredictionFileName(
+                    modelName, ProjectLayout.PredictionKind.Detections, DateTimeOffset.Now));
         }
         else
         {

@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **`mloop status` sees every kind of prediction, not just tabular ones.** Three commands write into
+  `predictions/` — scored rows, per-image detections for object detection, and a forecast — and
+  status looked for the first convention alone, so a project whose model does object detection or
+  forecasting reported no predictions however often it had run. A second count in the same command
+  had the mirror problem: it matched any `.csv` in the directory, missing detections while counting
+  a stray file a user had left there. Both now ask one place what a prediction file is called, which
+  is also what the writers ask, so a fourth kind cannot be added without the reader hearing about
+  it. `docs/GUIDE.md` described a fifth convention, from before models were named
+  (`predictions/predictions-TIMESTAMP.csv`, no model prefix); it now matches what is written.
 - **`mloop evaluate`'s overfitting warning works for every task, and no longer fires backwards.** It
   resolved the metric to compare from a list of three tasks, so for the other eight — image and text
   classification, ranking, recommendation, clustering, anomaly detection, forecasting, time-series

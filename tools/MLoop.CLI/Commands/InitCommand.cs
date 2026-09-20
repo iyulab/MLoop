@@ -306,7 +306,7 @@ public static class InitCommand
         await fileSystem.CreateDirectoryAsync(mloopPath);
 
         // MLOps convention: datasets/ folder for training data
-        var datasetsPath = fileSystem.CombinePath(projectPath, "datasets");
+        var datasetsPath = fileSystem.CombinePath(projectPath, ProjectLayout.DatasetsDirectory);
         await fileSystem.CreateDirectoryAsync(datasetsPath);
 
         // Directory-based tasks read a directory rather than a CSV. Image classification
@@ -693,11 +693,13 @@ data:
     {
         (string Path, string What)[] folders =
         [
-            isObjectDetection ? ("datasets/coco/", "COCO annotations.json + images")
-                : isDirectoryBased ? ("datasets/images/<class>/", "Training images (folder = label)")
-                : ("datasets/", "Training data (train.csv)"),
-            ($"models/{modelName}/staging/", "Experimental models"),
-            ($"models/{modelName}/production/", "Promoted production model"),
+            isObjectDetection
+                ? ($"{ProjectLayout.DatasetsDirectory}/coco/", "COCO annotations.json + images")
+                : isDirectoryBased
+                    ? ($"{ProjectLayout.DatasetsDirectory}/images/<class>/", "Training images (folder = label)")
+                    : ($"{ProjectLayout.DatasetsDirectory}/", $"Training data ({ProjectLayout.TrainFileName})"),
+            ($"{ExperimentLayout.ModelsDirectory}/{modelName}/{ExperimentLayout.StagingDirectory}/", "Experimental models"),
+            ($"{ExperimentLayout.ModelsDirectory}/{modelName}/{ExperimentLayout.ProductionDirectory}/", "Promoted production model"),
         ];
 
         var column = folders.Max(f => f.Path.Length) + 1;

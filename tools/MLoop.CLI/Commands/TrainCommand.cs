@@ -16,6 +16,7 @@ using MLoop.Extensibility;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
+using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Commands;
 
@@ -1201,8 +1202,8 @@ public static class TrainCommand
 
         foreach (var candidate in new[]
         {
-            Path.Combine(projectRoot, "datasets", conventionDir),
-            Path.Combine(projectRoot, "datasets")
+            Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory, conventionDir),
+            Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory)
         })
         {
             if (Directory.Exists(candidate))

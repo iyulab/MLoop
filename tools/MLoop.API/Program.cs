@@ -835,12 +835,12 @@ app.MapGet("/status", async (
         }).ToList();
 
         // Check data files
-        var datasetsDir = Path.Combine(projectRoot, "datasets");
+        var datasetsDir = Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory);
         var dataFiles = new
         {
-            trainCsv = File.Exists(Path.Combine(datasetsDir, "train.csv")),
-            testCsv = File.Exists(Path.Combine(datasetsDir, "test.csv")),
-            predictCsv = File.Exists(Path.Combine(datasetsDir, "predict.csv"))
+            trainCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.TrainFileName)),
+            testCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.TestFileName)),
+            predictCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.PredictFileName))
         };
 
         // Load config if available

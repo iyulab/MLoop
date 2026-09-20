@@ -2,6 +2,7 @@ using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.Display;
+using MLoop.Core.Storage;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 
@@ -108,7 +109,7 @@ public static class StatusCommand
             modelsTable.AddColumn(new TableColumn("[bold]Best Metric[/]").RightAligned());
             modelsTable.AddColumn(new TableColumn("[bold]Last Prediction[/]").RightAligned());
 
-            var predictionsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "predictions");
+            var predictionsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, ProjectLayout.PredictionsDirectory);
 
             // Collect model rows first so the same data feeds both the human table and --json —
             // one computation path, no separate JSON re-derivation.
@@ -164,13 +165,13 @@ public static class StatusCommand
             List<DataFileRow>? dataFileRows = null;
             if (verbose)
             {
-                var datasetsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "datasets");
+                var datasetsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, ProjectLayout.DatasetsDirectory);
 
                 dataFileRows =
                 [
-                    CheckDataFile(ctx, "Train", datasetsDir, "train.csv"),
-                    CheckDataFile(ctx, "Test", datasetsDir, "test.csv"),
-                    CheckDataFile(ctx, "Predict", datasetsDir, "predict.csv"),
+                    CheckDataFile(ctx, "Train", datasetsDir, ProjectLayout.TrainFileName),
+                    CheckDataFile(ctx, "Test", datasetsDir, ProjectLayout.TestFileName),
+                    CheckDataFile(ctx, "Predict", datasetsDir, ProjectLayout.PredictFileName),
                     GetPredictionsDataFile(ctx, predictionsDir)
                 ];
 
@@ -375,10 +376,14 @@ public static class StatusCommand
         if (!Directory.Exists(predictionsDir))
             return null;
 
-        var pattern = $"{modelName}-predictions-*.csv";
-        var files = Directory.GetFiles(predictionsDir, pattern);
+        // Every kind of prediction output, not only the tabular one. This looked for
+        // `-predictions-*.csv` alone, so a model doing object detection (`-detections-*.json`) or
+        // forecasting (`-forecast-*.csv`) reported "no predictions" however often it had run.
+        var files = ProjectLayout.PredictionSearchPatterns(modelName)
+            .SelectMany(pattern => Directory.GetFiles(predictionsDir, pattern))
+            .ToList();
 
-        if (files.Length == 0)
+        if (files.Count == 0)
             return null;
 
         var latestFile = files
@@ -395,7 +400,7 @@ public static class StatusCommand
         string filename)
     {
         var filePath = ctx.FileSystem.CombinePath(directory, filename);
-        var relativePath = $"datasets/{filename}";
+        var relativePath = $"{ProjectLayout.DatasetsDirectory}/{filename}";
 
         return new DataFileRow(type, relativePath, ctx.FileSystem.FileExists(filePath));
     }
@@ -403,11 +408,15 @@ public static class StatusCommand
     private static DataFileRow GetPredictionsDataFile(CommandContext ctx, string predictionsDir)
     {
         if (!ctx.FileSystem.DirectoryExists(predictionsDir))
-            return new DataFileRow("Predictions", "predictions/", false);
+            return new DataFileRow("Predictions", $"{ProjectLayout.PredictionsDirectory}/", false);
 
-        var predFiles = Directory.GetFiles(predictionsDir, "*.csv");
+        // Every convention, not every csv: this counted a forecast but never a set of detections,
+        // and would have counted a stray csv the user left in the directory.
+        var predFiles = ProjectLayout.PredictionSearchPatterns()
+            .SelectMany(pattern => Directory.GetFiles(predictionsDir, pattern))
+            .ToArray();
         if (predFiles.Length == 0)
-            return new DataFileRow("Predictions", "predictions/", false);
+            return new DataFileRow("Predictions", $"{ProjectLayout.PredictionsDirectory}/", false);
 
         var latestPred = predFiles
             .OrderByDescending(f => File.GetLastWriteTime(f))

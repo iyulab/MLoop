@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
 using MLoop.Core.Prediction;
 using Spectre.Console;
+using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Commands;
 
@@ -197,7 +198,7 @@ public sealed class FeaturesCommand : Command
     private static string? ResolveTrainPath(CommandContext ctx, MLoopConfig config) =>
         !string.IsNullOrEmpty(config.Data?.Train)
             ? ctx.FileSystem.CombinePath(ctx.ProjectRoot, config.Data.Train)
-            : ctx.FileSystem.CombinePath(ctx.ProjectRoot, "datasets", "train.csv");
+            : ctx.FileSystem.CombinePath(ctx.ProjectRoot, ProjectLayout.DatasetsDirectory, ProjectLayout.TrainFileName);
 
     private static List<string> SplitCsv(string csv) =>
         csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();

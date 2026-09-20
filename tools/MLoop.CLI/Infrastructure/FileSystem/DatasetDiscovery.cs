@@ -1,3 +1,4 @@
+using MLoop.Core.Storage;
 namespace MLoop.CLI.Infrastructure.FileSystem;
 
 /// <summary>
@@ -6,11 +7,13 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// </summary>
 public class DatasetDiscovery : IDatasetDiscovery
 {
-    private const string DatasetsDirectoryName = "datasets";
-    private const string TrainFileName = "train.csv";
-    private const string ValidationFileName = "validation.csv";
-    private const string TestFileName = "test.csv";
-    private const string PredictFileName = "predict.csv";
+    // These were private here while the API and five commands repeated the same literals, which is
+    // how "datasets" came to exist in eight places. The names live in ProjectLayout now.
+    private const string DatasetsDirectoryName = ProjectLayout.DatasetsDirectory;
+    private const string TrainFileName = ProjectLayout.TrainFileName;
+    private const string ValidationFileName = ProjectLayout.ValidationFileName;
+    private const string TestFileName = ProjectLayout.TestFileName;
+    private const string PredictFileName = ProjectLayout.PredictFileName;
 
     private readonly IFileSystemManager _fileSystem;
 
