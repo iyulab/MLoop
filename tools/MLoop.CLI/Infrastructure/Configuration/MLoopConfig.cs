@@ -169,7 +169,8 @@ public class DataSettings
 /// </summary>
 public static class ConfigDefaults
 {
-    public const string DefaultModelName = "default";
+    // The name itself lives with the model-name rule, which Ops and the API also read.
+    public const string DefaultModelName = MLoop.Core.Storage.ModelName.Default;
     public const int DefaultTimeLimitSeconds = 300;
     public const double DefaultTestSplit = 0.2;
     public const string DefaultMetric = "auto";

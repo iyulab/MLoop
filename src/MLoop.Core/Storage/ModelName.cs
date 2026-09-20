@@ -69,6 +69,41 @@ public static partial class ModelName
         return NamePattern().IsMatch(name);
     }
 
+    /// <summary>The model a command works on when none is named.</summary>
+    public const string Default = "default";
+
+    /// <summary>
+    /// The environment variable that names the model to use when a request does not.
+    /// </summary>
+    /// <remarks>
+    /// <c>mloop docker</c> sets this in the image it generates, and its compose file repeats it —
+    /// an image built to serve one model should not need that model named on every request.
+    /// </remarks>
+    public const string EnvironmentVariable = "MLOOP_MODEL_NAME";
+
+    /// <summary>
+    /// Which model a request means: the one it names, else the one the environment names, else
+    /// <see cref="Default"/>. Always normalized.
+    /// </summary>
+    /// <remarks>
+    /// <para>This rule lived in the CLI, and the CLI is not what a generated image runs. The
+    /// Dockerfile sets <see cref="EnvironmentVariable"/> and starts the API, which resolved the
+    /// name itself in eight places, each of them "the name or the default" with no mention of the
+    /// environment. So an image built for <c>churn</c> served <c>default</c> to any request that
+    /// omitted <c>?name=</c> — the exact thing the variable was introduced to prevent, fixed on the
+    /// side that was not running.</para>
+    /// <para>In the core library rather than beside the CLI resolver that used to own it, because
+    /// the process that needs it is the API.</para>
+    /// </remarks>
+    public static string Resolve(string? requested)
+    {
+        if (!string.IsNullOrWhiteSpace(requested))
+            return Normalize(requested);
+
+        var configured = Environment.GetEnvironmentVariable(EnvironmentVariable);
+        return string.IsNullOrWhiteSpace(configured) ? Default : Normalize(configured);
+    }
+
     /// <summary>
     /// The name as it is written on disk: trimmed and lowercased. Normalizing does not make a name
     /// valid — <c>My_Model</c> normalizes to <c>my_model</c>, which <see cref="IsValid"/> still

@@ -172,7 +172,7 @@ COPY {ExperimentLayout.ModelsDirectory}/ ./{ExperimentLayout.ModelsDirectory}/
 
 ENV ASPNETCORE_URLS=http://+:{port}
 ENV MLOOP_PROJECT_ROOT=/app
-ENV MLOOP_MODEL_NAME={modelName}
+ENV {MLoop.Core.Storage.ModelName.EnvironmentVariable}={modelName}
 
 # The environment is left at its default so that `docker run` works with no further setup; the
 # API then serves on a development signing key and says so. Deploying this image for real means
@@ -242,7 +242,7 @@ services:
       - ""{port}:{port}""
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - MLOOP_MODEL_NAME={modelName}
+      - {MLoop.Core.Storage.ModelName.EnvironmentVariable}={modelName}
       # The name deliberately stays out of the MLOOP_ namespace: compose consumes this value and
       # hands it to ASP.NET as Jwt:Key — MLoop itself never reads it, and every MLOOP_ variable the
       # product mentions is one the product honours (GeneratedArtifactContractTests).

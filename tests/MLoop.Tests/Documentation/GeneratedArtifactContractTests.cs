@@ -26,6 +26,24 @@ public class GeneratedArtifactContractTests
 
     private static readonly Regex MLoopVariable = new(@"\bMLOOP_[A-Z0-9_]+\b", RegexOptions.Compiled);
 
+    /// <summary>
+    /// The variables one file writes. A name can reach the generated artifact two ways: spelled as
+    /// a literal, or interpolated from the constant that owns it — which is what
+    /// <c>MLOOP_MODEL_NAME</c> now does, so the emitter and the process that reads it cannot
+    /// disagree about the spelling. Both count as emitting it; counting only literals would let
+    /// this report a file as emitting nothing the moment it started doing the right thing.
+    /// </summary>
+    private static IEnumerable<string> VariablesIn(string file)
+    {
+        var source = File.ReadAllText(file);
+
+        foreach (Match m in MLoopVariable.Matches(source))
+            yield return m.Value;
+
+        if (source.Contains("ModelName.EnvironmentVariable", StringComparison.Ordinal))
+            yield return MLoop.Core.Storage.ModelName.EnvironmentVariable;
+    }
+
     [Fact]
     public void EveryVariableTheGeneratedDeploymentSetsIsReadSomewhere()
     {
@@ -33,14 +51,14 @@ public class GeneratedArtifactContractTests
 
         var emitted = production
             .Where(f => EmitterFiles.Contains(Path.GetFileName(f), StringComparer.Ordinal))
-            .SelectMany(f => MLoopVariable.Matches(File.ReadAllText(f)).Select(m => m.Value))
+            .SelectMany(VariablesIn)
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.NotEmpty(emitted); // the generated files still set variables at all
 
         var readSomewhereElse = production
             .Where(f => !EmitterFiles.Contains(Path.GetFileName(f), StringComparer.Ordinal))
-            .SelectMany(f => MLoopVariable.Matches(File.ReadAllText(f)).Select(m => m.Value))
+            .SelectMany(VariablesIn)
             .ToHashSet(StringComparer.Ordinal);
 
         var decoration = emitted.Except(readSomewhereElse).Order(StringComparer.Ordinal).ToList();
@@ -60,10 +78,56 @@ public class GeneratedArtifactContractTests
         // moved, or the pattern narrowed — the assertion above would pass by finding nothing emitted.
         var emitted = RepoSourceTree.ProductionSourceFiles("src", "tools")
             .Where(f => EmitterFiles.Contains(Path.GetFileName(f), StringComparer.Ordinal))
-            .SelectMany(f => MLoopVariable.Matches(File.ReadAllText(f)).Select(m => m.Value))
+            .SelectMany(VariablesIn)
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("MLOOP_PROJECT_ROOT", emitted);
         Assert.Contains("MLOOP_MODEL_NAME", emitted);
+    }
+
+    /// <summary>
+    /// The variable the generated image sets is the one the serving process reads. It was not:
+    /// `mloop docker` wrote MLOOP_MODEL_NAME, the CLI's resolver read it, and the image runs the
+    /// API — which resolved the model name in eight places of its own, none of which looked at the
+    /// environment. An image built for one model served `default`.
+    /// </summary>
+    [Fact]
+    public void TheGeneratedImageSetsTheVariableTheServerReads()
+    {
+        var emitted = MLoop.CLI.Commands.DockerCommand.GenerateDockerfile("churn", 8080);
+
+        Assert.Contains($"ENV {MLoop.Core.Storage.ModelName.EnvironmentVariable}=churn", emitted);
+    }
+
+    /// <summary>
+    /// And nothing in the serving process resolves the name on its own again. A scan, because the
+    /// failure being prevented is a ninth copy appearing, which no amount of correct behaviour in
+    /// the other eight would reveal.
+    /// </summary>
+    [Fact]
+    public void TheApiDoesNotResolveAModelNameItself()
+    {
+        var scanned = RepoSourceTree.ProductionSourceFiles(Path.Combine("tools", "MLoop.API")).ToList();
+        Assert.Contains(scanned, f => Path.GetFileName(f) == "Program.cs");
+
+        var shape = new Regex(
+            @"IsNullOrWhiteSpace[^;]{0,120}DefaultModelName", RegexOptions.Compiled | RegexOptions.Singleline);
+
+        var offenders = scanned
+            .Where(f => shape.IsMatch(File.ReadAllText(f)))
+            .Select(RepoSourceTree.RelativeToRoot)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        // The scan can see the shape it forbids.
+        Assert.Matches(shape,
+            "var m = string.IsNullOrWhiteSpace(name) ? ConfigDefaults.DefaultModelName : name.Trim();");
+        Assert.DoesNotMatch(shape, "var m = MLoop.Core.Storage.ModelName.Resolve(name);");
+
+        Assert.True(offenders.Count == 0,
+            "Which model a request means is decided by " + nameof(MLoop.Core.Storage.ModelName)
+            + ".Resolve, which is also where the environment variable a generated image sets is "
+            + "read:\n"
+            + string.Join('\n', offenders));
     }
 }

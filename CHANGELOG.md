@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **An image built by `mloop docker` for one model now serves that model.** The generated Dockerfile
+  sets `MLOOP_MODEL_NAME`, and that variable existed precisely so an image serving a single model
+  would not need it named on every request — but the only code reading it was in the CLI, and what
+  the image runs is the API. The API worked out which model a request meant in eight places of its
+  own, none of which looked at the environment, so an image built for `churn` answered any request
+  without `?name=` from `default`. Which model a request means is now decided in one place, and the
+  Dockerfile writes the variable name from that same place rather than spelling it again.
 - **A header with a quoted comma, or in a legacy Korean encoding, no longer loses a column from the
   feature set.** The reader that supplies column names to the exclusion logic split on every comma
   and read every file as UTF-8. So `"Last, First",Age` became three names where ML.NET and every

@@ -348,7 +348,7 @@ app.MapGet("/info", async (
     CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(name) ? ConfigDefaults.DefaultModelName : name.Trim().ToLowerInvariant();
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
 
     try
     {
@@ -416,7 +416,7 @@ app.MapPost("/predict", async (
     CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(name) ? ConfigDefaults.DefaultModelName : name.Trim().ToLowerInvariant();
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
     var predictionCount = input.ValueKind == JsonValueKind.Array ? input.GetArrayLength() : 1;
 
     try
@@ -709,7 +709,7 @@ app.MapGet("/experiments/{id}", async (
     CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(name) ? ConfigDefaults.DefaultModelName : name.Trim().ToLowerInvariant();
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
 
     try
     {
@@ -907,8 +907,7 @@ app.MapPost("/promote", async (
     CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(request.Name)
-        ? ConfigDefaults.DefaultModelName : request.Name.Trim().ToLowerInvariant();
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
     var experimentId = request.ExperimentId;
 
     try
@@ -997,7 +996,7 @@ app.MapGet("/compare", async (
     CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(name) ? ConfigDefaults.DefaultModelName : name.Trim().ToLowerInvariant();
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
 
     try
     {
@@ -1063,8 +1062,7 @@ app.MapPost("/evaluate", async (
     CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(request.Name)
-        ? ConfigDefaults.DefaultModelName : request.Name.Trim().ToLowerInvariant();
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
     var experimentId = request.ExperimentId;
 
     try
@@ -1217,7 +1215,7 @@ app.MapGet("/feedback", async (
     CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(name) ? ConfigDefaults.DefaultModelName : name.Trim().ToLowerInvariant();
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
 
     try
     {
@@ -1312,7 +1310,7 @@ app.MapGet("/trigger", async (
     CancellationToken ct) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(name) ? ConfigDefaults.DefaultModelName : name.Trim().ToLowerInvariant();
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
 
     try
     {
