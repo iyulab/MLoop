@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **`mloop validate` now applies the model-name rule the rest of MLoop applies.** The rule existed
+  in three places and one of them enforced almost none of it: `validate` accepted uppercase,
+  underscores, a leading underscore, any length and every reserved name — while printing "must be
+  lowercase alphanumeric with hyphens only", the rule it did not implement. A configuration naming
+  a model `MyModel_v2` passed validation and then failed at the first training run, which is the
+  one outcome validation exists to prevent. **A `mloop.yaml` that validated clean before may now
+  report an error**; the name it names is one `mloop train` would have refused. Rejections say
+  which rule was broken, so a reserved name (`staging`, `production`, `temp`, `cache`, `index`,
+  `registry`) is told it is reserved rather than told a rule it already satisfies.
+- **`mloop list` says which way its Metric column reads.** The trial leaderboard already said it;
+  the experiment table named the metric and left the direction to be guessed, so a reader meeting
+  `rmse` or `average_distance` for the first time had nothing to tell them the smallest number is
+  the best one. A note under the table now gives the direction for each metric present, and says
+  the list is ordered newest-first rather than ranked. A metric MLoop does not recognize is left
+  unclaimed rather than assumed to be maximized.
+
 ## [0.32.0] - 2026-09-20
 
 ### Added
