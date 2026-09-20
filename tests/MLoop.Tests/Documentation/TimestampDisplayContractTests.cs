@@ -29,6 +29,16 @@ public class TimestampDisplayContractTests
     private static readonly Regex InlineTimestampFormat =
         new(@"[:""]yyyy-MM-dd HH:mm", RegexOptions.Compiled);
 
+    /// <summary>
+    /// A date with no time is still a value a person reads and still depends on a zone — two
+    /// commands rendered their "older than the cutoff" fallback as a bare <c>yyyy-MM-dd</c>, one of
+    /// them straight from UTC, and the scan above walked past both because it required a time.
+    /// Matched only when the format stands alone, so <c>yyyy-MM-dd HH:mm:ss</c> is left to the
+    /// pattern that already owns it and a compact file-name stamp is not swept in.
+    /// </summary>
+    private static readonly Regex InlineDateOnlyFormat =
+        new(@"[:""]yyyy-MM-dd(?![-\w: ])", RegexOptions.Compiled);
+
     [Fact]
     public void ARenderedTimestampNamesItsZone()
     {
@@ -72,7 +82,11 @@ public class TimestampDisplayContractTests
         Assert.Contains(scanned, f => Path.GetFileName(f) == "LogsCommand.cs");
 
         var offenders = scanned
-            .Where(f => InlineTimestampFormat.IsMatch(File.ReadAllText(f)))
+            .Where(f =>
+            {
+                var source = File.ReadAllText(f);
+                return InlineTimestampFormat.IsMatch(source) || InlineDateOnlyFormat.IsMatch(source);
+            })
             .Select(RepoSourceTree.RelativeToRoot)
             .Order(StringComparer.Ordinal)
             .ToList();
@@ -84,8 +98,21 @@ public class TimestampDisplayContractTests
 
     /// <summary>A file that drops the zone from its rows has to put it back in a heading.</summary>
     private static bool DropsTheZoneWithoutNamingIt(string source) =>
-        source.Contains(nameof(TimestampDisplay.LocalWithoutZone), StringComparison.Ordinal)
-        && !source.Contains(nameof(TimestampDisplay.ZoneHeading), StringComparison.Ordinal);
+        // Relative() joins LocalWithoutZone() here: its "9d ago" values are zone-free, but past the
+        // cutoff it falls back to a local date, and a date derived from an instant is as
+        // zone-dependent as a time.
+        // Relative() is deliberately absent: an age stated as an age names no clock, so there is
+        // no zone for it to drop. LocalDate() does render a calendar date and belongs here.
+        (Calls(source, nameof(TimestampDisplay.LocalWithoutZone))
+         || Calls(source, nameof(TimestampDisplay.LocalDate)))
+        && !Calls(source, nameof(TimestampDisplay.ZoneHeading));
+
+    /// <summary>
+    /// Qualified, because a bare member name is a substring of unrelated identifiers — matching
+    /// "Relative" alone reported six files whose only sin was the word <c>RelativePath</c>.
+    /// </summary>
+    private static bool Calls(string source, string member) =>
+        source.Contains($"{nameof(TimestampDisplay)}.{member}", StringComparison.Ordinal);
 
     [Fact]
     public void ATimestampWithoutItsZoneAlwaysSitsUnderAHeadingThatNamesOne()
@@ -119,6 +146,16 @@ public class TimestampDisplayContractTests
         Assert.False(DropsTheZoneWithoutNamingIt(
             "table.AddColumn(TimestampDisplay.ZoneHeading(\"At\")); var t = TimestampDisplay.LocalWithoutZone(x);"));
         Assert.False(DropsTheZoneWithoutNamingIt("var t = TimestampDisplay.Local(x);"));
+
+        // The half added when LocalDate() joined the rule — without this the new arm could stop
+        // matching and the check would keep reporting every file compliant.
+        Assert.True(DropsTheZoneWithoutNamingIt("var d = TimestampDisplay.LocalDate(x);"));
+        // An age names no clock, so it carries no pairing obligation.
+        Assert.False(DropsTheZoneWithoutNamingIt("var t = TimestampDisplay.Relative(x);"));
+        // An unrelated identifier that merely contains a member's name is not a call.
+        Assert.False(DropsTheZoneWithoutNamingIt("var p = entry.RelativePath;"));
+        Assert.False(DropsTheZoneWithoutNamingIt(
+            "var s = TimestampDisplay.ZoneHeading(TimestampDisplay.LocalDate(x));"));
     }
 
     [Fact]
@@ -133,5 +170,19 @@ public class TimestampDisplayContractTests
 
         // And a file name is not a screen: those stay local and compact, and must not be dragged in.
         Assert.DoesNotMatch(InlineTimestampFormat, """var name = $"forecast-{DateTime.Now:yyyyMMdd-HHmmss}.csv";""");
+    }
+
+    [Fact]
+    public void TheDateOnlyScanSeesTheShapeThatEscapedTheOtherOne()
+    {
+        // The exact two lines that walked past the time-requiring pattern for as long as it existed.
+        Assert.Matches(InlineDateOnlyFormat, """_ => local.ToString("yyyy-MM-dd")""");
+        Assert.Matches(InlineDateOnlyFormat, """return $"[grey]{lastWrite.Value:yyyy-MM-dd}[/]";""");
+
+        // It must not double-report what the other pattern already owns, nor sweep in a file stamp.
+        Assert.DoesNotMatch(InlineDateOnlyFormat, """t.ToString("yyyy-MM-dd HH:mm:ss")""");
+        Assert.DoesNotMatch(InlineDateOnlyFormat, """var name = $"export-{DateTime.Now:yyyyMMdd-HHmmss}.csv";""");
+        Assert.DoesNotMatch(InlineDateOnlyFormat, """table.AddRow("At", TimestampDisplay.Relative(t));""");
+        Assert.DoesNotMatch(InlineDateOnlyFormat, """table.AddRow("At", TimestampDisplay.LocalDate(t));""");
     }
 }

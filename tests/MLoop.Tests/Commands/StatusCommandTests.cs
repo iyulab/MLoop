@@ -86,8 +86,14 @@ public class StatusCommandTests : IDisposable
         Assert.Contains("[yellow]", result);
     }
 
+    /// <summary>
+    /// An age past a month is still said as an age ("2mo ago"), not as a calendar date. This test
+    /// used to assert the date, and the same test in `mloop list` asserted a date at a different
+    /// cutoff (a week) — the two assertions were pinning a divergence rather than a contract, and
+    /// one of the two rendered its date from UTC while the other converted to the reader's zone.
+    /// </summary>
     [Fact]
-    public void GetLatestPrediction_OlderThan30Days_ShowsDate()
+    public void GetLatestPrediction_OlderThanAMonth_IsStillAnAge()
     {
         var filePath = Path.Combine(_tempDir, "default-predictions-001.csv");
         File.WriteAllText(filePath, "data");
@@ -96,7 +102,8 @@ public class StatusCommandTests : IDisposable
 
         var result = StatusCommand.GetLatestPrediction(_tempDir, "default");
 
-        Assert.Contains(oldDate.ToString("yyyy-MM-dd"), result);
+        Assert.Contains("2mo ago", result);
+        Assert.DoesNotContain(oldDate.ToString("yyyy-MM-dd"), result);
         Assert.Contains("[grey]", result);
     }
 

@@ -6,7 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **`mloop evaluate`'s overfitting warning works for every task, and no longer fires backwards.** It
+  resolved the metric to compare from a list of three tasks, so for the other eight — image and text
+  classification, ranking, recommendation, clustering, anomaly detection, forecasting, time-series
+  anomaly — it found nothing to compare and said nothing, which reads exactly like a clean model. It
+  also compared the two scores by absolute difference, so a model that did *better* on the test data
+  than on its training data was reported as possibly overfitting, which is the one thing that result
+  cannot mean. Widening it was not a substitution: the threshold it used is only meaningful for
+  metrics on a fixed scale like accuracy or R². A task scored by `rmse`, `mae` or `average_distance`
+  carries the label's own units, where a fixed gap of 0.1 says more about the unit than the model —
+  those are now compared as a proportion of the training score. The warning names the direction it
+  found.
+
 ### Changed
+- **`mloop list` and `mloop status` agree about how old something is.** Each had its own version:
+  they switched from "9d ago" to a calendar date at different ages (a week against a month), only
+  one of them said "just now", and — the one that made them contradict each other — one rendered its
+  date in the reader's zone while the other rendered it in UTC, so the same file could be shown with
+  two different dates depending on which command you asked. Ages are now rendered in one place and
+  stay ages all the way out (`4mo ago`, `2y ago`) rather than becoming a date, which is what removes
+  the zone question rather than managing it. The exact instant is still in `--json` and in the
+  experiment report. `mloop sample stats` now says which zone its date range is in.
 - **`mloop validate` now applies the model-name rule the rest of MLoop applies.** The rule existed
   in three places and one of them enforced almost none of it: `validate` accepted uppercase,
   underscores, a leading underscore, any length and every reserved name — while printing "must be

@@ -386,7 +386,9 @@ public static class SampleCommand
         if (stats.OldestEntry != DateTimeOffset.MinValue)
         {
             grid.AddRow("[grey]Date Range:[/]",
-                $"[grey]{stats.OldestEntry.LocalDateTime:yyyy-MM-dd}[/] to [grey]{stats.NewestEntry.LocalDateTime:yyyy-MM-dd}[/]");
+                // Two dates, one zone: said once at the end rather than twice inline, the same
+                // trade the column headings make.
+                $"[grey]{TimestampDisplay.ZoneHeading($"{TimestampDisplay.LocalDate(stats.OldestEntry)} to {TimestampDisplay.LocalDate(stats.NewestEntry)}")}[/]");
         }
 
         AnsiConsole.Write(grid);

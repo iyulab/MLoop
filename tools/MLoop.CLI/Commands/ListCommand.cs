@@ -465,21 +465,7 @@ public static class ListCommand
     }
 
     internal static string FormatRelativeTime(DateTime timestamp)
-    {
-        var local = TimestampDisplay.AsLocal(timestamp);
-        var elapsed = DateTimeOffset.Now - local;
-
-        var relative = elapsed.TotalMinutes switch
-        {
-            < 1 => "just now",
-            < 60 => $"{(int)elapsed.TotalMinutes}m ago",
-            < 1440 => $"{(int)elapsed.TotalHours}h ago",
-            < 10080 => $"{(int)elapsed.TotalDays}d ago",
-            _ => local.ToString("yyyy-MM-dd")
-        };
-
-        return $"[grey]{relative}[/]";
-    }
+        => $"[grey]{TimestampDisplay.Relative(timestamp)}[/]";
 
     /// <summary>
     /// The metric value, and its name when the caller has not already put that in the heading.
