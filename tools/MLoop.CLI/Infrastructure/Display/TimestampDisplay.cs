@@ -90,6 +90,63 @@ internal static class TimestampDisplay
     internal static string LocalWithoutZone(DateTimeOffset value) =>
         value.ToLocalTime().ToString(WithoutZone);
 
+    /// <summary>How old this instant is, in words — <c>just now</c>, <c>12m ago</c>, <c>3h ago</c>,
+    /// <c>9d ago</c>, <c>4mo ago</c>, <c>2y ago</c>.</summary>
+    /// <remarks>
+    /// <para>Two commands had grown their own version and the two disagreed on four things: the
+    /// cutoff to an absolute date (7 days against 30), whether a value under a minute reads "just
+    /// now" or "0m ago", what colour it takes, and — the one that made them contradict each other —
+    /// the zone. One took its fallback date through <see cref="AsLocal"/>, the other formatted the
+    /// raw UTC value, so <c>mloop list</c> and <c>mloop status</c> could print different calendar
+    /// dates for the same file.</para>
+    /// <para><b>There is no date fallback, and that is the point.</b> An age stated as an age has no
+    /// zone to get wrong, so the disagreement that motivated this cannot come back in a new form.
+    /// The first version of this method did fall back to a local date past a month, which put both
+    /// columns under the <see cref="ZoneHeading"/> pairing — and on the narrower of the two that
+    /// heading wrapped to three lines, spending a permanent column of width on a branch almost no
+    /// row takes. The exact instant is still one command away: <c>--json</c> carries it, and so does
+    /// the experiment report.</para>
+    /// <para>Colour is deliberately not decided here: how urgent an age looks belongs to the table
+    /// showing it, while what the age <i>is</i> does not.</para>
+    /// </remarks>
+    internal static string Relative(DateTime value) => Relative(AsLocal(value));
+
+    /// <inheritdoc cref="Relative(DateTime)"/>
+    internal static string Relative(DateTimeOffset value)
+    {
+        var elapsed = DateTimeOffset.Now - value.ToLocalTime();
+
+        // A clock skew or a file stamped slightly in the future reads as "just now" rather than as
+        // a negative age.
+        if (elapsed < TimeSpan.FromMinutes(1))
+            return "just now";
+        if (elapsed < TimeSpan.FromHours(1))
+            return $"{(int)elapsed.TotalMinutes}m ago";
+        if (elapsed < TimeSpan.FromDays(1))
+            return $"{(int)elapsed.TotalHours}h ago";
+        if (elapsed.TotalDays < DaysPerMonth)
+            return $"{(int)elapsed.TotalDays}d ago";
+        if (elapsed.TotalDays < DaysPerYear)
+            return $"{(int)(elapsed.TotalDays / DaysPerMonth)}mo ago";
+
+        return $"{(int)(elapsed.TotalDays / DaysPerYear)}y ago";
+    }
+
+    /// <summary>
+    /// Just the calendar date this instant falls on in the reader's zone, with no offset — for a
+    /// line that names the zone once for several dates at a time, the way a column heading does for
+    /// several rows.
+    /// </summary>
+    internal static string LocalDate(DateTimeOffset value) => value.ToLocalTime().ToString(DateOnly);
+
+    // Nominal lengths, for turning an elapsed span into a word. An age is an approximation by the
+    // time it is being said in months, and a reader comparing "4mo ago" against "5mo ago" is not
+    // counting calendar months.
+    private const double DaysPerMonth = 30.0;
+    private const double DaysPerYear = 365.0;
+
+    private const string DateOnly = "yyyy-MM-dd";
+
     /// <summary>
     /// A column heading that names the zone its rows are in, e.g. <c>Timestamp (+09:00)</c>.
     /// </summary>

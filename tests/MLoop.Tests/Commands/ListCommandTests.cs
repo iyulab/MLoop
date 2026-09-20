@@ -43,13 +43,18 @@ public class ListCommandTests
         Assert.Contains("3d ago", result);
     }
 
+    /// <summary>
+    /// See the note on the sibling assertion in <c>StatusCommandTests</c>: the two commands used to
+    /// switch to a calendar date at different ages, and this one switched after a week.
+    /// </summary>
     [Fact]
-    public void FormatRelativeTime_OlderThanWeek_ShowsDate()
+    public void FormatRelativeTime_OlderThanAMonth_IsStillAnAge()
     {
-        var timestamp = DateTime.Now.AddDays(-30);
+        var timestamp = DateTime.Now.AddDays(-45);
         var result = ListCommand.FormatRelativeTime(timestamp);
 
-        Assert.Contains(timestamp.ToString("yyyy-MM-dd"), result);
+        Assert.Contains("1mo ago", result);
+        Assert.DoesNotContain(timestamp.ToString("yyyy-MM-dd"), result);
     }
 
     [Fact]

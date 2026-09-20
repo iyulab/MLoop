@@ -4,6 +4,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Storage;
 using Spectre.Console;
 
@@ -375,7 +376,10 @@ public static class EvaluateCommand
             // Overfitting warning
             if (overfitting)
             {
-                AnsiConsole.MarkupLine("[yellow]Warning:[/] Large metric difference detected between training and test. Model may be overfitting.");
+                // Names the direction, because that is what the finding is. The previous sentence
+                // said "large difference", which was also what the check measured — a model doing
+                // better on test than on train got the overfitting warning.
+                AnsiConsole.MarkupLine("[yellow]Warning:[/] The model scored notably better on its training data than on this test data — it may be overfitting. The table above has both values.");
                 AnsiConsole.WriteLine();
             }
 
@@ -414,34 +418,70 @@ public static class EvaluateCommand
             : $"[red]{difference:F4}[/]";
     }
 
+    /// <summary>The gap that counts as suspicious on a metric that lives on a fixed 0..1 scale.</summary>
     internal const double OverfittingThreshold = 0.1;
 
+    /// <summary>
+    /// The same suspicion for a metric carrying the label's own units: a proportion of the training
+    /// score rather than an absolute amount. An rmse of 4.0 against 4.4 is the same story as an rmse
+    /// of 0.004 against 0.0044, and only a relative test says so.
+    /// </summary>
+    internal const double RelativeOverfittingThreshold = 0.10;
+
+    /// <summary>
+    /// True when the model scored enough better on its training data than on its test data to be
+    /// worth mentioning.
+    /// </summary>
+    /// <remarks>
+    /// <para>Two things used to make this narrower than it reads. It resolved the metric from its
+    /// own three-task switch, so for the eight remaining tasks — image and text classification,
+    /// ranking, recommendation, clustering, anomaly detection, forecasting, time-series anomaly —
+    /// it found no metric and answered "no" every time, which is indistinguishable from a clean
+    /// model. And it compared with <c>Math.Abs</c>, so a model that scored *better* on test than on
+    /// train was reported as possibly overfitting, which is the one thing that result cannot mean.
+    /// </para>
+    /// <para>Widening it is not a substitution, because the threshold was only ever valid for the
+    /// three tasks it covered: their metrics sit on a fixed scale. A task whose primary metric is
+    /// <c>rmse</c>, <c>mae</c> or <c>average_distance</c> carries the label's units, and a fixed
+    /// 0.1 there is a statement about the unit, not the model (see <see cref="MetricScale"/>).
+    /// Those get a relative test instead.</para>
+    /// </remarks>
     internal static bool DetectOverfitting(
         string task,
         Dictionary<string, double> trainingMetrics,
         Dictionary<string, double> testMetrics)
     {
-        // the task is stored as the CLI-canonical string ("binary-classification",
-        // "multiclass-classification", "regression"), and each task's primary metric key differs
-        // (regression=r_squared, binary=accuracy, multiclass=macro_accuracy). The previous code
-        // matched only the literal "classification" with the "accuracy" key, so overfitting
-        // detection was silently dead for every real classification model — doubly so for multiclass
-        // (wrong task string AND wrong metric key). "classification" is kept as a legacy binary alias.
-        var metricKey = task.ToLowerInvariant() switch
-        {
-            "regression" => "r_squared",
-            "binary-classification" or "classification" => "accuracy",
-            "multiclass-classification" => "macro_accuracy",
-            _ => null
-        };
+        // "classification" is a legacy alias for binary that predates the CLI-canonical task
+        // strings; TaskMetadata does not carry it, and dropping it here would quietly stop
+        // checking models configured before the rename.
+        var metricKey = task.Trim().Equals("classification", StringComparison.OrdinalIgnoreCase)
+            ? TaskMetadata.PrimaryMetric("binary-classification")
+            : TaskMetadata.PrimaryMetric(task);
 
-        if (metricKey != null
-            && trainingMetrics.TryGetValue(metricKey, out var trainValue)
-            && testMetrics.TryGetValue(metricKey, out var testValue))
+        if (metricKey == null
+            || !trainingMetrics.TryGetValue(metricKey, out var trainValue)
+            || !testMetrics.TryGetValue(metricKey, out var testValue))
         {
-            return Math.Abs(trainValue - testValue) > OverfittingThreshold;
+            return false;
         }
 
-        return false;
+        // How much better the training score is. Negative means test did as well or better, which
+        // is not overfitting whatever its size.
+        var advantage = MetricDirection.IsLowerBetter(metricKey)
+            ? testValue - trainValue
+            : trainValue - testValue;
+
+        if (advantage <= 0)
+            return false;
+
+        if (MetricScale.IsUnitScaled(metricKey))
+            return advantage > OverfittingThreshold;
+
+        // Relative to the training score's own magnitude. A training score of zero is a perfect fit
+        // on the training data, so any test error at all is the gap this check exists to find.
+        var magnitude = Math.Abs(trainValue);
+        return magnitude < double.Epsilon
+            ? advantage > 0
+            : advantage / magnitude > RelativeOverfittingThreshold;
     }
 }

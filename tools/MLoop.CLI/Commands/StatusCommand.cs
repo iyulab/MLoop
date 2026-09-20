@@ -1,6 +1,7 @@
 using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.CLI.Infrastructure.Display;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
 
@@ -354,16 +355,17 @@ public static class StatusCommand
         if (lastWrite == null)
             return "[grey]-[/]";
 
+        // The age itself comes from the display authority, so this column cannot disagree with
+        // `mloop list` about how old the same file is — it used to, by formatting the raw UTC value
+        // where list converted to local. Only the colour is decided here.
         var age = DateTime.UtcNow - lastWrite.Value;
+        var text = TimestampDisplay.Relative(lastWrite.Value);
 
-        if (age.TotalMinutes < 60)
-            return $"[green]{(int)age.TotalMinutes}m ago[/]";
-        if (age.TotalHours < 24)
-            return $"[green]{(int)age.TotalHours}h ago[/]";
-        if (age.TotalDays < 30)
-            return $"[yellow]{(int)age.TotalDays}d ago[/]";
+        var colour = age.TotalHours < 24 ? "green"
+            : age.TotalDays < 30 ? "yellow"
+            : "grey";
 
-        return $"[grey]{lastWrite.Value:yyyy-MM-dd}[/]";
+        return $"[{colour}]{text}[/]";
     }
 
     /// <summary>Raw fact behind <see cref="GetLatestPrediction"/>'s markup — the <c>--json</c> shape

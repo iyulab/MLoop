@@ -148,6 +148,79 @@ public class EvaluateCommandTests
         Assert.True(EvaluateCommand.DetectOverfitting("binary-classification", train, test));
     }
 
+    // --- the eight tasks the three-task switch never reached ---
+
+    [Theory]
+    [InlineData("image-classification", "micro_accuracy")]
+    [InlineData("text-classification", "micro_accuracy")]
+    [InlineData("ranking", "ndcg")]
+    [InlineData("anomaly-detection", "auc")]
+    [InlineData("time-series-anomaly", "detection_rate")]
+    public void DetectOverfitting_UnitScaledTasks_AreChecked(string task, string metric)
+    {
+        var train = new Dictionary<string, double> { { metric, 0.97 } };
+        var test = new Dictionary<string, double> { { metric, 0.78 } };
+
+        Assert.True(EvaluateCommand.DetectOverfitting(task, train, test));
+    }
+
+    /// <summary>
+    /// A metric in the label's own units cannot be judged by an absolute 0.1 — that number is a
+    /// statement about the unit. An rmse of 4.0 against 4.4 is the same story as 0.004 against
+    /// 0.0044, and both are the story this check exists to tell.
+    /// </summary>
+    [Theory]
+    [InlineData("recommendation", "rmse", 4.0, 4.4)]
+    [InlineData("recommendation", "rmse", 0.004, 0.0044)]
+    [InlineData("forecasting", "mae", 1200.0, 1500.0)]
+    [InlineData("clustering", "average_distance", 2.0, 2.5)]
+    public void DetectOverfitting_UnitCarryingMetrics_UseARelativeGap(
+        string task, string metric, double trainValue, double testValue)
+    {
+        var train = new Dictionary<string, double> { { metric, trainValue } };
+        var test = new Dictionary<string, double> { { metric, testValue } };
+
+        Assert.True(EvaluateCommand.DetectOverfitting(task, train, test));
+    }
+
+    [Theory]
+    [InlineData("recommendation", "rmse", 4.0, 4.1)]      // 2.5% — noise
+    [InlineData("forecasting", "mae", 1200.0, 1250.0)]    // 4%
+    public void DetectOverfitting_UnitCarryingMetrics_IgnoreASmallRelativeGap(
+        string task, string metric, double trainValue, double testValue)
+    {
+        var train = new Dictionary<string, double> { { metric, trainValue } };
+        var test = new Dictionary<string, double> { { metric, testValue } };
+
+        Assert.False(EvaluateCommand.DetectOverfitting(task, train, test));
+    }
+
+    /// <summary>
+    /// Scoring better on test than on train is not overfitting — it is the one thing the warning
+    /// cannot mean. The check used to compare with <c>Math.Abs</c> and report it anyway.
+    /// </summary>
+    [Theory]
+    [InlineData("regression", "r_squared", 0.80, 0.95)]        // higher is better: test ahead
+    [InlineData("recommendation", "rmse", 4.4, 2.0)]           // lower is better: test ahead
+    public void DetectOverfitting_TestScoringBetter_IsNotOverfitting(
+        string task, string metric, double trainValue, double testValue)
+    {
+        var train = new Dictionary<string, double> { { metric, trainValue } };
+        var test = new Dictionary<string, double> { { metric, testValue } };
+
+        Assert.False(EvaluateCommand.DetectOverfitting(task, train, test));
+    }
+
+    /// <summary>A task with no canonical primary metric has nothing to compare.</summary>
+    [Fact]
+    public void DetectOverfitting_TaskWithoutAPrimaryMetric_ReturnsFalse()
+    {
+        var train = new Dictionary<string, double> { { "map_50", 0.95 } };
+        var test = new Dictionary<string, double> { { "map_50", 0.50 } };
+
+        Assert.False(EvaluateCommand.DetectOverfitting("object-detection", train, test));
+    }
+
     [Fact]
     public void DetectOverfitting_MulticlassClassification_LargeMacroAccDiff_ReturnsTrue()
     {
