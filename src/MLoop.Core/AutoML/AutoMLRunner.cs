@@ -69,8 +69,7 @@ public partial class AutoMLRunner
     /// </summary>
     public static bool SupportsPreFeaturizer(string task)
     {
-        var normalized = (task ?? string.Empty).ToLowerInvariant().Replace('_', '-');
-        return normalized switch
+        return Models.TaskTypes.Canonical(task) switch
         {
             "binary-classification" => true,
             "multiclass-classification" => true,
@@ -91,8 +90,9 @@ public partial class AutoMLRunner
     /// </summary>
     public static bool RequiresLabel(string? task)
     {
-        var normalized = (task ?? string.Empty).ToLowerInvariant().Replace('_', '-');
-        return normalized is not ("anomaly-detection" or "clustering" or "time-series-anomaly");
+        // An unrecognized task canonicalizes to null, which is not in the unsupervised set, so it
+        // still requires a label — the conservative default this has always had.
+        return Models.TaskTypes.Canonical(task) is not ("anomaly-detection" or "clustering" or "time-series-anomaly");
     }
 
     /// <summary>
@@ -105,8 +105,7 @@ public partial class AutoMLRunner
     /// </summary>
     public static bool IsTimeSeriesTask(string? task)
     {
-        var normalized = (task ?? string.Empty).ToLowerInvariant().Replace('_', '-');
-        return normalized is "forecasting" or "time-series-anomaly";
+        return Models.TaskTypes.Canonical(task) is "forecasting" or "time-series-anomaly";
     }
 
     public async Task<AutoMLResult> RunAsync(

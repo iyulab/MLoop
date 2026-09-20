@@ -317,6 +317,21 @@ public static class TrainCommand
                 return 1;
             }
 
+            // `train` had never checked the task against the vocabulary — `TaskTypes` was consulted
+            // here only for the --task help text, so a misspelled task reached whichever predicate
+            // asked about it first and was answered "no" by all of them, producing a run that
+            // trained something nobody had asked for. `init` and `validate` have always checked.
+            // The spelling is already canonical by now (ConfigMerger), so a name that fails here is
+            // one no spelling of any known task produces.
+            if (!TaskTypes.IsValid(effectiveDefinition.Task))
+            {
+                ErrorConsole.Error(
+                    $"Invalid task type '{effectiveDefinition.Task}'.",
+                    $"Valid options: {TaskTypes.Listed}");
+                return 1;
+            }
+
+
             // Ranking requires group column
             if (effectiveDefinition.Task.Equals("ranking", StringComparison.OrdinalIgnoreCase) &&
                 string.IsNullOrEmpty(effectiveDefinition.GroupColumn))

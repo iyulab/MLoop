@@ -1,5 +1,6 @@
 using MLoop.Core.AutoML;
 using MLoop.Core.Evaluation;
+using MLoop.Core.Models;
 
 namespace MLoop.CLI.Infrastructure.Configuration;
 
@@ -62,6 +63,12 @@ public class ConfigMerger
         var task = cliTask
             ?? baseDefinition?.Task
             ?? throw new InvalidOperationException($"Task not specified for model '{modelName}'. Use --task or define in mloop.yaml");
+
+        // Canonicalize once, here — the same reason the metric sentinel is resolved below: this is
+        // the one place in the merge chain where the task is known, and everything downstream used
+        // to normalize it again, differently. An unrecognized spelling is kept verbatim so the
+        // caller's error message can quote what the user actually wrote.
+        task = TaskTypes.Canonical(task) ?? task;
 
         // Label is optional for unsupervised tasks (AutoMLRunner.RequiresLabel — single source).
         var label = cliLabel
