@@ -509,8 +509,11 @@ public class TrainingEngine : ITrainingEngine
         config.TestSplit > 0
         && string.IsNullOrEmpty(config.TestDataFile)
         && !string.IsNullOrEmpty(config.LabelColumn)
+        // "Can I stratify on a class column" — classification, minus the tasks whose labels are
+        // directory names. text-classification reads a CSV like the other two and had been left
+        // out, so a text classifier got the uniform split this exists to avoid.
         && !DataLoaderFactory.IsDirectoryBased(config.Task)
-        && config.Task.ToLowerInvariant() is "binary-classification" or "multiclass-classification";
+        && AutoMLRunner.IsClassification(config.Task);
 
     /// <summary>
     /// Two-phase auto-time training: static estimate -> probe run -> reactive estimate -> main run
@@ -693,12 +696,10 @@ public class TrainingEngine : ITrainingEngine
             }
         }
 
-        var isClassification = task.ToLowerInvariant() switch
-        {
-            "binary-classification" => true,
-            "multiclass-classification" => true,
-            _ => false
-        };
+        // Same composed question as the split above: a class count only means something when the
+        // classes are values in a column.
+        var isClassification =
+            AutoMLRunner.IsClassification(task) && !DataLoaderFactory.IsDirectoryBased(task);
 
         int classCount = isClassification ? labelValues.Count : 0;
 

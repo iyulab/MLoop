@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **A text classifier is now protected like the other classifiers.** Two different questions were
+  being asked under one name — "does this model predict a class", and "can I count its classes in a
+  column of the training file" — and the answers had drifted apart on `text-classification`. It
+  counted as a classification task everywhere the first question was asked and nowhere the second
+  was, so a text-classification run got an unsupervised split instead of a stratified one (a rare
+  class can land entirely outside the test set, and every metric that needs it is then undefined),
+  was described to the time estimator as having no classes, was sampled uniformly under
+  `--max-rows`, and skipped the per-class minimum-sample check that rejects a provably untrainable
+  set. It now gets all four. Tasks whose labels are directory names — image classification — still
+  answer the first question and not the second, which is what they are.
 - **One reading of the `task` field, instead of four.** Every part of MLoop that asks which task a
   model is normalized the string itself, and the normalizations disagreed: one accepted
   `binary_classification` and rejected a stray space, another did the reverse, a third accepted

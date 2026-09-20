@@ -1,6 +1,8 @@
 using Microsoft.ML;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.Core.AutoML;
 using MLoop.Core.Data;
+using MLoop.Core.Models;
 using MLoop.Core.Prediction;
 
 namespace MLoop.CLI.Infrastructure.ML;
@@ -86,26 +88,13 @@ public class DataQualityValidator
                 return result;
             }
 
-            // Determine if this is a classification task (text labels allowed)
-            var isClassificationTask = taskType?.ToLowerInvariant() switch
-            {
-                "binary-classification" => true,
-                "multiclass-classification" => true,
-                "text-classification" => true,
-                "image-classification" => true,
-                _ => false
-            };
+            // "Does this model predict a class" — the question that decides whether a text label
+            // column is legitimate here.
+            var isClassificationTask = AutoMLRunner.IsClassification(taskType);
 
-            // Unsupervised tasks don't require label validation
-            var isUnsupervisedTask = taskType?.ToLowerInvariant() switch
-            {
-                "anomaly-detection" => true,
-                "clustering" => true,
-                "time-series-anomaly" => true,
-                _ => false
-            };
-
-            if (isUnsupervisedTask)
+            // And the inverse of "does this task need a label at all", which has its own authority
+            // rather than a second list of the unsupervised tasks to keep in step with it.
+            if (!AutoMLRunner.RequiresLabel(taskType))
             {
                 // Skip label-related warnings for unsupervised tasks
                 return result;
@@ -156,7 +145,10 @@ public class DataQualityValidator
                     }
 
                     // Check 2: Binary classification with more than 2 classes
-                    if (taskType == "binary-classification" && uniqueClasses.Count > 2)
+                    // Folded, not compared raw: this sat inside a block already gated on the
+                    // lowercased form, so `Binary-Classification` reached here and skipped the
+                    // warning that names the task it should have been.
+                    if (TaskTypes.Canonical(taskType) == "binary-classification" && uniqueClasses.Count > 2)
                     {
                         result.Warnings.Add($"⚠ Found {uniqueClasses.Count} classes but task is binary-classification");
                         result.Suggestions.Add("💡 Consider using --task multiclass-classification");
@@ -338,9 +330,12 @@ public class DataQualityValidator
     private static void CheckPerClassMinimumSamples(
         List<string> labelValues, List<string> uniqueClasses, string? taskType, DataQualityResult result)
     {
-        var isClassification = taskType?.ToLowerInvariant()
-            is "binary-classification" or "multiclass-classification";
-        if (!isClassification || uniqueClasses.Count < 2)
+        // "Can I count classes in a CSV column" — the composed question. A classification task
+        // whose labels are directory names has no column to count; one that reads a CSV does,
+        // which is why text-classification belongs here and had been left out.
+        var countsClassesInAColumn =
+            AutoMLRunner.IsClassification(taskType) && !DataLoaderFactory.IsDirectoryBased(taskType);
+        if (!countsClassesInAColumn || uniqueClasses.Count < 2)
             return;
 
         var classCounts = uniqueClasses

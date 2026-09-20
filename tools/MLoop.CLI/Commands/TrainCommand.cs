@@ -599,15 +599,13 @@ public static class TrainCommand
 
             // Handle missing label values (T4.2)
             // Default behavior: drop missing labels for classification tasks
-            var isClassificationTask = effectiveDefinition.Task.ToLowerInvariant() switch
-            {
-                "binary-classification" => true,
-                "multiclass-classification" => true,
-                "binaryclassification" => true,  // Legacy format
-                "multiclassclassification" => true,  // Legacy format
-                "classification" => true,
-                _ => false
-            };
+            // The legacy spellings this used to list are folded before they get here
+            // (TaskTypes.Canonical, applied in the config merge), so the question left is the
+            // composed one: classes that live in a column, which is what dropping rows with a
+            // missing label and balancing both act on.
+            var isClassificationTask =
+                AutoMLRunner.IsClassification(effectiveDefinition.Task)
+                && !DataLoaderFactory.IsDirectoryBased(effectiveDefinition.Task);
 
             // Use explicit parameter if provided, otherwise default to true for classification
             var shouldDropMissingLabels = dropMissingLabels ?? isClassificationTask;
