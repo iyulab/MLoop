@@ -38,28 +38,11 @@ public class ModelNameResolver : IModelNameResolver
             ModelsIndexFileName);
     }
 
-    /// <summary>
-    /// The environment variable that names the model to use when a command does not.
-    /// </summary>
-    /// <remarks>
-    /// The Dockerfile <c>mloop docker</c> generates sets this from the model the image was built
-    /// for, and its compose file repeats it — an image serving one model should not need the model
-    /// named again on every request. Nothing read it until now, so those images silently served
-    /// <c>default</c> whatever they were built for.
-    /// </remarks>
-    public const string ModelNameVariable = "MLOOP_MODEL_NAME";
+    /// <inheritdoc cref="Core.Storage.ModelName.EnvironmentVariable"/>
+    public const string ModelNameVariable = Core.Storage.ModelName.EnvironmentVariable;
 
     /// <inheritdoc />
-    public string Resolve(string? name)
-    {
-        if (!string.IsNullOrWhiteSpace(name))
-            return Core.Storage.ModelName.Normalize(name);
-
-        var configured = Environment.GetEnvironmentVariable(ModelNameVariable);
-        return string.IsNullOrWhiteSpace(configured)
-            ? ConfigDefaults.DefaultModelName
-            : Core.Storage.ModelName.Normalize(configured);
-    }
+    public string Resolve(string? name) => Core.Storage.ModelName.Resolve(name);
 
     /// <inheritdoc />
     public bool Exists(string name)
