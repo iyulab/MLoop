@@ -270,12 +270,31 @@ public class CsvDataLoader : DataProviderBase
         return data.Schema.Select(col => col.Name);
     }
 
+    /// <summary>
+    /// The column names on a CSV file's first line.
+    /// </summary>
+    /// <remarks>
+    /// <para>Two things here were wrong in the same way — both assumed a simpler file than the
+    /// product accepts, and both failed silently.</para>
+    /// <para>It split on every comma, so a header like <c>"Last, First",Age</c> gave three names
+    /// where every other reader in the product and ML.NET itself give two. That matters more than
+    /// a wrong list: <see cref="DetermineExcludedColumns"/> computes its whole answer by diffing
+    /// the output of this method across the removal chain, and an exclusion named from a
+    /// mis-split header does not match the real schema, so the caller that applies exclusions
+    /// skips it without a word and training and prediction disagree about the feature set.</para>
+    /// <para>And it read the bytes as UTF-8 whatever they were. Most callers hand over a file the
+    /// encoding conversion has already produced, but the exclusion fallback in
+    /// <c>AutoMLRunner</c> passes the user's own file — where a CP949 header, the case this
+    /// product converts for everywhere else, would come back mojibake and produce exclusion names
+    /// that match nothing.</para>
+    /// </remarks>
     private static string[] ReadCsvHeaders(string filePath)
     {
-        using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8);
+        var encoding = EncodingDetector.DetectEncoding(filePath).Encoding;
+        using var reader = new StreamReader(filePath, encoding, detectEncodingFromByteOrderMarks: true);
         var headerLine = reader.ReadLine();
         if (string.IsNullOrEmpty(headerLine)) return [];
-        return headerLine.Split(',').Select(h => h.Trim().Trim('"')).ToArray();
+        return Prediction.CsvFieldParser.ParseFields(headerLine);
     }
 
     /// <summary>
@@ -1161,40 +1180,13 @@ public class CsvDataLoader : DataProviderBase
         public bool Value { get; set; }
     }
 
-    private static string[] ParseCsvLine(string line)
-    {
-        var fields = new List<string>();
-        bool inQuote = false;
-        var current = new System.Text.StringBuilder();
-
-        for (int i = 0; i < line.Length; i++)
-        {
-            char c = line[i];
-            if (c == '"')
-            {
-                if (inQuote && i + 1 < line.Length && line[i + 1] == '"')
-                {
-                    current.Append('"');
-                    i++;
-                }
-                else
-                {
-                    inQuote = !inQuote;
-                }
-            }
-            else if (c == ',' && !inQuote)
-            {
-                fields.Add(current.ToString().Trim());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(c);
-            }
-        }
-        fields.Add(current.ToString().Trim());
-        return fields.ToArray();
-    }
+    /// <summary>
+    /// One CSV line's fields. Delegates to <see cref="Prediction.CsvFieldParser"/> so the removal
+    /// chain reads a row exactly the way the rest of the product does — this was a second
+    /// quote-aware parser, agreeing with the first on every well-formed line and differing only on
+    /// a stray mid-field quote, which is the kind of difference nobody finds until it matters.
+    /// </summary>
+    private static string[] ParseCsvLine(string line) => Prediction.CsvFieldParser.ParseFields(line);
 
     /// <summary>
     /// Ensures the CSV file has UTF-8 BOM for ML.NET compatibility.
