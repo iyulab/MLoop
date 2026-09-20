@@ -60,7 +60,7 @@ mloop train datasets/train.csv --label price --time 60
 # 3. Make predictions
 mloop predict
 # Auto-uses production model + datasets/predict.csv
-# Output: predictions/predictions-20241110-143022.csv
+# Output: predictions/default-predictions-20241110-143022.csv
 ```
 
 ---
@@ -271,7 +271,10 @@ mloop predict <model-path> <data-file> [options]
 #   --json                       Emit pure JSON to stdout (progress on stderr) — use this for
 #                                machine/automation consumption. The default output mixes a
 #                                human-readable summary into stdout.
-#   --output <path>              Output file path (default: predictions/predictions-TIMESTAMP.csv)
+#   --output <path>              Output file path
+#                                (default: predictions/<model>-predictions-TIMESTAMP.csv;
+#                                 object detection writes <model>-detections-TIMESTAMP.json and
+#                                 forecasting writes <model>-forecast-TIMESTAMP.csv)
 #   --unknown-strategy <mode>    Handle unknown categorical values (v0.6.1+):
 #                                'auto'               - Auto-select based on ratio (default)
 #                                'error'              - Fail on unknown values
@@ -766,7 +769,7 @@ my-ml-project/
 │       └── current -> ../staging/exp-003/  # Symlink
 │
 └── predictions/              # Prediction outputs
-    └── predictions-20241110-143022.csv
+    └── default-predictions-20241110-143022.csv
 ```
 
 ### Auto-Discovery

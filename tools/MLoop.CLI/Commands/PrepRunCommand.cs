@@ -4,6 +4,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Preprocessing;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
+using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Commands;
 
@@ -136,7 +137,7 @@ public static class PrepRunCommand
                 }
                 else
                 {
-                    resolvedInput = ctx.FileSystem.CombinePath(ctx.ProjectRoot, "datasets", "train.csv");
+                    resolvedInput = ctx.FileSystem.CombinePath(ctx.ProjectRoot, ProjectLayout.DatasetsDirectory, ProjectLayout.TrainFileName);
                 }
             }
 
