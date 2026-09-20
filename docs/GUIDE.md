@@ -605,6 +605,138 @@ curl -X POST http://localhost:5000/predict \
 - JSON request/response format
 - CORS enabled for web clients
 
+### `mloop token`
+
+Every endpoint of the served API except `/health` needs a bearer token, and the write endpoints
+need one carrying the `admin` role. This issues one.
+
+```bash
+mloop token                                  # a caller token, 24h
+mloop token --role admin --subject ci        # for promote/train/evaluate
+mloop token --expires-hours 1                # short-lived
+export MLOOP_TOKEN=$(mloop token -q)         # just the token, for scripts
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--role` | `-r` | Role claim — use `admin` for the write endpoints |
+| `--subject` | `-s` | Subject (`sub`) claim identifying the caller |
+| `--expires-hours` | | Token lifetime in hours |
+| `--key` | | Override signing key (must match the server's `Jwt:Key`, ≥32 chars) |
+| `--quiet` | `-q` | Print only the raw token |
+
+```
+JWT issued (subject=ci, role=admin, expires in 24h)
+
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjaSIsInJvbGUiOiJhZG1pbiIsIm5iZiI6...
+
+Use it as a bearer token:
+  curl -H "Authorization: Bearer <token>" http://localhost:5000/info
+  export MLOOP_TOKEN=$(mloop token -q)   # for clients reading MLOOP_TOKEN
+```
+
+The signing key must be the one the server uses. In development that is the default key, so a
+token issued here works against a locally started `mloop serve` with no further setup; in
+production, where `Jwt:Key` is set, pass the same value with `--key` or the server will reject the
+token it did not sign.
+
+---
+
+### `mloop compare`
+
+Puts experiments side by side — every metric they recorded, plus the configuration that produced
+them — and says which one wins on the metric the training actually optimized.
+
+```bash
+mloop compare exp-001 exp-002      # two named experiments
+mloop compare --name churn --best 3  # the top three for a model
+mloop compare --name churn -m rmse   # ranked by a metric you choose
+```
+
+| Argument / Option | Short | Description |
+|-------------------|-------|-------------|
+| `experiments` | | Experiment IDs to compare (e.g. `exp-001 exp-002`) |
+| `--name` | `-n` | Model name (required when comparing all experiments) |
+| `--best` | `-b` | Compare the top N experiments by metric (default: all completed) |
+| `--metric` | `-m` | Sort by a specific metric (default: the metric the experiments optimized) |
+| `--metrics-file` | | Rank and select from a JSON file of supplied metrics, with no local project |
+| `--json` | | Output the result as JSON |
+
+```
+── Experiment Comparison ───────────────────────────────────────────────────────
+
+╭────────────────────────┬─────────────────────────┬─────────────────────────╮
+│ Metric                 │         exp-001         │         exp-002         │
+│                        │      (Production)       │                         │
+├────────────────────────┼─────────────────────────┼─────────────────────────┤
+│ Model                  │         default         │         default         │
+│ Task                   │       regression        │       regression        │
+│ Status                 │        Completed        │        Completed        │
+│ Timestamp              │ 2026-09-20 12:11 +09:00 │ 2026-09-20 12:12 +09:00 │
+│ Label Column           │          Label          │          Label          │
+│                        │                         │                         │
+│ mae                    │         1.4643          │         1.4643          │
+│ r_squared              │         0.9564          │         0.9564          │
+│ rmse                   │         1.8352          │         1.8352          │
+╰────────────────────────┴─────────────────────────┴─────────────────────────╯
+
+Compared 2 experiments
+Best experiment exp-001 is already in production (r_squared: 0.9564)
+```
+
+Which direction counts as better comes from the metric, not from the order of the columns — a
+lower `rmse` wins and a higher `r_squared` wins, and the closing line names the metric it decided
+on.
+
+**`--metrics-file`** is for callers that hold the metrics themselves — a distributed run, or a
+system of record outside this project. It ranks what it is given and reports the winner without
+reading `.mloop/` at all, which is why it pairs with `--json`.
+
+---
+
+### `mloop logs`
+
+What the served and local models have actually been predicting. Entries are written by
+`mloop predict --log` and by the API.
+
+```bash
+mloop logs                          # most recent entries
+mloop logs --limit 3                # fewer
+mloop logs --from 2026-09-01 --to 2026-09-20
+mloop logs --json
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--limit` | `-l` | Maximum number of entries to show |
+| `--from` | | Start date filter (`yyyy-MM-dd`) |
+| `--to` | | End date filter (`yyyy-MM-dd`) |
+| `--json` | | Output in JSON format |
+
+```
+── Prediction Logs ─────────────────────────────────────────────────────────────
+
+╭─────────────────────┬─────────┬────────────┬────────────────────┬────────────╮
+│ Timestamp (+09:00)  │ Model   │ Experiment │ Input (summary)    │ Output     │
+├─────────────────────┼─────────┼────────────┼────────────────────┼────────────┤
+│ 2026-09-20 15:27:17 │ default │ exp-001    │ x1=6.229 (+2 more) │ 11.75718   │
+│ 2026-09-20 15:27:17 │ default │ exp-001    │ x1=7.399 (+2 more) │ 15.946222  │
+│ 2026-09-20 15:27:17 │ default │ exp-001    │ x1=0.290 (+2 more) │ -2.1653776 │
+╰─────────────────────┴─────────┴────────────┴────────────────────┴────────────╯
+
+Showing 3 entries
+```
+
+The timestamps are in your own zone, named once in the column heading rather than repeated on
+every row. With nothing logged yet the command says so and exits 0:
+
+```
+No prediction logs found.
+Use mloop predict --log to log predictions.
+```
+
+---
+
 ### `mloop docker` (v0.4.0+)
 
 Generate Docker configuration files for containerized deployment.

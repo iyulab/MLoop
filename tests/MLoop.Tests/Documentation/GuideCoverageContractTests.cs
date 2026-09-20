@@ -29,8 +29,6 @@ public class GuideCoverageContractTests
     {
         "detect",     // deliberately last of the three in flight: an unmerged branch changes its
                       // options, and documenting the current ones would be stale on merge
-        "compare",
-        "logs",
         "feedback",
         "sample",
         "trigger",
@@ -39,14 +37,12 @@ public class GuideCoverageContractTests
         "runtime",
         "update",
 
-        // Found by this guard on its first run — the count that motivated it ("twelve of
-        // twenty-four") came from grepping command constructors, which also caught subcommands and
-        // missed these three.
+        // Found by this guard on its first run: the count that motivated it came from grepping
+        // command constructors, which swept in subcommands and missed these. (`token`, the third,
+        // is documented now.)
         "new",          // scaffolds hooks/metrics/scripts; the Extensibility section shows the
                         // files it writes but never names the command that writes them
         "preprocess",   // runs preprocessing scripts; distinct from `prep`, which is the pipeline
-        "token",        // issues a JWT bearer token for the local serve API — the Deployment
-                        // section documents that /predict needs one and not how to get it
     };
 
     private static readonly Regex GuideSection = new(@"^### `mloop ([a-z-]+)`", RegexOptions.Multiline);
