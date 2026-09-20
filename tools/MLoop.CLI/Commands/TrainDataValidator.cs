@@ -6,6 +6,7 @@ using FilePrepper.Pipeline;
 using Spectre.Console;
 using System.Text;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.Core.AutoML;
 
 namespace MLoop.CLI.Commands;
 
@@ -146,14 +147,13 @@ internal static class TrainDataValidator
         var strategy = explicitStrategy?.ToLowerInvariant();
         if (string.IsNullOrEmpty(strategy))
         {
-            // Task-aware default: classification → stratified, others → random
-            strategy = taskType.ToLowerInvariant() switch
-            {
-                "binary-classification" or "multiclass-classification"
-                    or "binaryclassification" or "multiclassclassification"
-                    or "classification" => "stratified",
-                _ => "random"
-            };
+            // Task-aware default: stratified sampling needs classes it can count in the label
+            // column — the same composed question the stratified split asks. The legacy spellings
+            // this used to list are folded before they reach here (TaskTypes.Canonical).
+            strategy =
+                AutoMLRunner.IsClassification(taskType) && !DataLoaderFactory.IsDirectoryBased(taskType)
+                    ? "stratified"
+                    : "random";
         }
 
         // Stratified requires a label column; fall back to random if unavailable

@@ -261,7 +261,7 @@ public class PredictionService
     /// </summary>
     private static void RejectRowBasedForecasting(string taskType)
     {
-        if (string.Equals(taskType, "forecasting", StringComparison.OrdinalIgnoreCase))
+        if (Models.TaskTypes.Canonical(taskType) == "forecasting")
         {
             throw new ArgumentException(
                 "Forecasting models do not support row-based prediction: the SSA forecaster is stateful and " +
@@ -296,7 +296,10 @@ public class PredictionService
 
         if (isLabel)
         {
-            return taskType switch
+            // Folded, because the task recorded in an experiment's config predates the merge-time
+            // canonicalization for anything trained before it — and an unrecognized spelling here
+            // falls to the default arm and silently picks the wrong label DataKind.
+            return Models.TaskTypes.Canonical(taskType) switch
             {
                 "binary-classification" => col.DataType switch
                 {
@@ -432,14 +435,15 @@ public class PredictionService
 
         if (IsClassificationTask(taskType))
             return ExtractClassificationRows(cursor, predictedLabelCol, scoreCol, probabilityCol, labelVocabulary);
-        if (taskType is "regression" or "forecasting")
+        var task = Models.TaskTypes.Canonical(taskType);
+        if (task is "regression" or "forecasting")
             return ExtractRegressionRows(cursor, scoreCol, interval, perRowSigma,
                 schema.GetColumnOrNull("ScoreLowerBound"), schema.GetColumnOrNull("ScoreUpperBound"));
-        if (taskType == "clustering")
+        if (task == "clustering")
             return ExtractClusteringRows(cursor, predictedLabelCol, scoreCol);
-        if (taskType == "anomaly-detection")
+        if (task == "anomaly-detection")
             return ExtractAnomalyRows(cursor, predictedLabelCol, scoreCol);
-        if (taskType == "time-series-anomaly")
+        if (task == "time-series-anomaly")
             return ExtractTimeSeriesAnomalyRows(cursor, schema);
 
         // ranking, recommendation, etc. — just score (no conformal band; interval is regression-only)
@@ -461,7 +465,7 @@ public class PredictionService
     {
         if (rows.Count == 0) return;
 
-        bool allDegenerate = taskType switch
+        bool allDegenerate = Models.TaskTypes.Canonical(taskType) switch
         {
             _ when IsClassificationTask(taskType) => rows.All(r => r.PredictedLabel is null),
             "regression" or "forecasting" => rows.All(r => r.Score is null),
@@ -835,9 +839,12 @@ public class PredictionService
         return rows;
     }
 
+    // The rule lives in AutoMLRunner.IsClassification, beside RequiresLabel. This copy compared
+    // ordinally against un-folded literals, so a task string that had not been through the config
+    // merge — `Binary-Classification`, say — answered "not a classification task" and the rows
+    // were read as if the model had produced a regression score.
     private static bool IsClassificationTask(string taskType) =>
-        taskType is "binary-classification" or "multiclass-classification"
-            or "text-classification" or "image-classification";
+        AutoML.AutoMLRunner.IsClassification(taskType);
 
     private static bool IsLabelRequiredForTransform(string taskType) =>
         IsClassificationTask(taskType) || taskType == "ranking";
@@ -856,8 +863,9 @@ public class PredictionService
     /// models that instead featurize named columns internally are unaffected.
     /// </summary>
     private static bool RequiresFeaturesVectorInput(string taskType) =>
-        taskType is "anomaly-detection" or "clustering" or "time-series-anomaly"
-                 or "regression" or "forecasting" or "ranking"
+        Models.TaskTypes.Canonical(taskType)
+            is "anomaly-detection" or "clustering" or "time-series-anomaly"
+            or "regression" or "forecasting" or "ranking"
         || IsClassificationTask(taskType);
 
     /// <summary>

@@ -79,6 +79,34 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
+    /// Single source of truth for whether a task predicts a discrete class.
+    /// </summary>
+    /// <remarks>
+    /// <para>This question had seven inline answers and they fell into two groups, because two
+    /// different questions were being asked under one name. One group meant "does this model
+    /// predict a class" — that is what decides whether a text label column is legitimate, whether
+    /// a dummy label has to be injected for the saved transform, and which extractor reads the
+    /// prediction rows. The other meant "can I count and stratify on a class column in a CSV",
+    /// which is what the stratified split, the class-count time estimate, the per-class minimum
+    /// sample check and <c>--balance</c> need.</para>
+    /// <para>The second question is this one composed with
+    /// <c>DataLoaderFactory.IsDirectoryBased</c>, which already owns "where does the label come
+    /// from": a classification task whose labels are directory names has no column to count. So
+    /// there is one new predicate here rather than two, and each call site says which question it
+    /// is asking by whether it composes.</para>
+    /// <para>The groups had drifted apart on <c>text-classification</c>, which reads a CSV with a
+    /// label column like any other: it was in the first group everywhere and in the second group
+    /// nowhere, so a text classifier got an unstratified split, no class-count estimate and no
+    /// per-class minimum check.</para>
+    /// </remarks>
+    public static bool IsClassification(string? task) =>
+        Models.TaskTypes.Canonical(task)
+            is "binary-classification"
+            or "multiclass-classification"
+            or "text-classification"
+            or "image-classification";
+
+    /// <summary>
     /// Single source of truth for whether a task requires a label column. The unsupervised tasks
     /// (anomaly-detection, clustering, time-series-anomaly) are label-optional: when no label is
     /// configured, <see cref="Data.CsvDataLoader"/> loads a dummy label and treats every column as
