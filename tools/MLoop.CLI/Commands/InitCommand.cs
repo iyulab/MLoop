@@ -124,7 +124,8 @@ public static class InitCommand
                 // fixed, which at least reported the cause).
                 ErrorConsole.Error(
                     $"Invalid model name '{modelName}'.",
-                    "Model names must be 2-50 characters, lowercase alphanumeric with hyphens (e.g. my-model), and not a reserved name: staging, production, temp, cache, index, registry.");
+                    MLoop.Core.Storage.ModelName.DescribeViolation(modelName)
+                        ?? "Model name rejected.");
                 return 1;
             }
 
@@ -703,22 +704,9 @@ data:
         return [.. folders.Select(f => (f.Path.PadRight(column), f.What))];
     }
 
-    internal static bool IsValidModelName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return false;
-
-        if (name.Length < 2 || name.Length > 50)
-            return false;
-
-        // Reserved names
-        var reserved = new[] { "staging", "production", "temp", "cache", "index", "registry" };
-        if (reserved.Contains(name, StringComparer.OrdinalIgnoreCase))
-            return false;
-
-        // Must be lowercase alphanumeric with hyphens
-        return System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-z][a-z0-9]*(-[a-z0-9]+)*$");
-    }
+    // The rule itself lives in MLoop.Core.Storage.ModelName — a model name is a directory name, so
+    // Ops and the API need the same answer and cannot reach into the CLI.
+    internal static bool IsValidModelName(string name) => MLoop.Core.Storage.ModelName.IsValid(name);
 
     private static void CopyDirectory(string sourceDir, string destDir)
         => MLoop.Ops.Services.FilePromotionManager.CopyDirectory(sourceDir, destDir);

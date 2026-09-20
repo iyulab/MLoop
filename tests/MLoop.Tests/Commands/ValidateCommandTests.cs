@@ -8,14 +8,23 @@ public class ValidateCommandTests
 {
     #region IsValidModelName
 
+    // These assertions used to be laxer than the rule init and the resolver enforce — `my_model`,
+    // `_private` and `a` were asserted valid here and rejected there, so the suite was pinning the
+    // divergence rather than catching it. `validate` exists to fail before a training run does; a
+    // name it passes and `train` refuses is the one outcome it must not produce.
     [Theory]
     [InlineData("default", true)]
     [InlineData("my-model", true)]
-    [InlineData("my_model", true)]
-    [InlineData("_private", true)]
-    [InlineData("a", true)]
     [InlineData("model123", true)]
-    [InlineData("123model", false)]    // starts with digit
+    [InlineData("my_model", false)]     // underscore — not a hyphen
+    [InlineData("_private", false)]     // leading underscore
+    [InlineData("MyModel", false)]      // uppercase
+    [InlineData("a", false)]            // shorter than the 2-character minimum
+    [InlineData("staging", false)]      // reserved by the layout
+    [InlineData("production", false)]   // reserved by the layout
+    [InlineData("a--b", false)]         // double hyphen
+    [InlineData("a-", false)]           // trailing hyphen
+    [InlineData("123model", false)]     // starts with digit
     [InlineData("-model", false)]       // starts with hyphen
     [InlineData("my model", false)]     // contains space
     [InlineData("my.model", false)]     // contains dot
@@ -24,6 +33,27 @@ public class ValidateCommandTests
     public void IsValidModelName_ValidatesCorrectly(string name, bool expected)
     {
         Assert.Equal(expected, ValidateCommand.IsValidModelName(name));
+    }
+
+    /// <summary>
+    /// The rule has one home, so the three entry points cannot answer differently. Behavioural
+    /// rather than a source scan: a scan reports "no offenders" both when the sites delegate and
+    /// when its pattern stopped matching, while this fails the moment any of them re-grows a rule
+    /// of its own.
+    /// </summary>
+    [Theory]
+    [InlineData("my-model")]
+    [InlineData("MyModel_v2")]
+    [InlineData("staging")]
+    [InlineData("a")]
+    [InlineData("a--b")]
+    [InlineData("default")]
+    public void ModelNameRule_IsTheSameEverywhere(string name)
+    {
+        var authority = MLoop.Core.Storage.ModelName.IsValid(name);
+
+        Assert.Equal(authority, ValidateCommand.IsValidModelName(name));
+        Assert.Equal(authority, InitCommand.IsValidModelName(name));
     }
 
     #endregion
@@ -499,7 +529,10 @@ public class ValidateCommandTests
         var model = new ModelDefinition { Task = "regression", Label = "Y" };
         var (errors, _) = RunValidateModel("123invalid", model);
 
-        Assert.Contains(errors, e => e.Message.Contains("Model name must be"));
+        // Asserts what the message has to convey, not the sentence it used to be: the old wording
+        // ("Model name must be lowercase alphanumeric with hyphens only") was printed for every
+        // rejection including reserved names, which already satisfy it.
+        Assert.Contains(errors, e => e.Message.Contains("lowercase", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

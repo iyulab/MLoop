@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using Spectre.Console;
@@ -263,12 +264,12 @@ public static class ListCommand
             // When every listed experiment optimized the same metric, its name belongs in the
             // heading rather than repeated down the column. Saying it once per table instead of once
             // per row is what leaves the Trainer column enough width to hold a trainer.
-            var sharedMetric = experimentsList
+            var distinctMetrics = experimentsList
                 .Select(e => e.MetricName)
                 .Where(m => !string.IsNullOrEmpty(m))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            var metricHeading = sharedMetric.Count == 1 ? $"Metric ({sharedMetric[0]})" : "Metric";
+            var metricHeading = distinctMetrics.Count == 1 ? $"Metric ({distinctMetrics[0]})" : "Metric";
             table.AddColumn(new TableColumn($"[bold]{Markup.Escape(metricHeading)}[/]").RightAligned());
             table.AddColumn(new TableColumn("[bold]Stage[/]").Centered());
 
@@ -300,7 +301,7 @@ public static class ListCommand
                         : TrainerDisplay.Short(exp.BestTrainer))}[/]"
                     : "[grey]-[/]";
 
-                var metricDisplay = FormatMetric(exp, nameInHeading: sharedMetric.Count == 1);
+                var metricDisplay = FormatMetric(exp, nameInHeading: distinctMetrics.Count == 1);
 
                 // Abbreviated rather than dropped. The ID column marks the production row in colour
                 // only, and colour is gone under NO_COLOR, in a pipe, and for a reader with a colour
@@ -324,6 +325,7 @@ public static class ListCommand
 
             AnsiConsole.Write(table);
             WriteTrainerNotes(experimentNotes);
+            WriteMetricDirectionNote(distinctMetrics);
             AnsiConsole.WriteLine();
 
             // Show summary
@@ -412,6 +414,54 @@ public static class ListCommand
 
         foreach (var note in notes)
             AnsiConsole.MarkupLine($"[grey]{Markup.Escape(note)}[/]");
+    }
+
+    /// <summary>
+    /// Says which way the Metric column reads. The heading names the metric but not its direction,
+    /// so a reader meeting <c>rmse</c> or <c>average_distance</c> for the first time has nothing to
+    /// tell them that the smallest number is the best one — the trial leaderboard above already
+    /// says it for its own ranking (<c>Ranked by … (↓ lower is better)</c>) and this table did not.
+    /// </summary>
+    /// <remarks>
+    /// <para>Written as a note under the table rather than an arrow in the heading: in a table
+    /// header an arrow reads as the sort direction, and this table is sorted by time, not by the
+    /// metric. The note says that too, so "newest first" is not mistaken for "best first".</para>
+    /// <para>Every distinct metric present gets its direction, not just the single shared one. A
+    /// list whose rows optimized different metrics is where the confusion actually bites — an
+    /// <c>rmse</c> of 1.83 sits directly above an <c>r_squared</c> of 0.96, and the row that looks
+    /// larger is the worse one. Restricting the note to the single-metric case would have skipped
+    /// exactly that reader.</para>
+    /// <para>Direction comes from <see cref="MetricDirection"/>, the same authority the leaderboard
+    /// writer resolves before storing its own direction. An unrecognized metric gets no claim —
+    /// <see cref="MetricDirection.IsLowerBetter"/> answers <c>false</c> both for "higher is better"
+    /// and for "never heard of it", and only <see cref="MetricDirection.IsKnown"/> tells them
+    /// apart.</para>
+    /// </remarks>
+    private static void WriteMetricDirectionNote(IReadOnlyList<string?> distinctMetrics)
+    {
+        var note = MetricDirectionNote(distinctMetrics);
+        if (note != null)
+            AnsiConsole.MarkupLine(note);
+    }
+
+    /// <summary>The note's text, or <c>null</c> when there is nothing it could truthfully say.
+    /// Separated from the writing so the sentence can be asserted without a console.</summary>
+    internal static string? MetricDirectionNote(IReadOnlyList<string?> distinctMetrics)
+    {
+        // Past a handful the note would out-length the table it annotates, and a list mixing that
+        // many metrics is not being read row-against-row anyway.
+        const int MaxNamedMetrics = 3;
+
+        var described = distinctMetrics
+            .Where(m => !string.IsNullOrWhiteSpace(m) && MetricDirection.IsKnown(m))
+            .Select(m => $"[cyan]{Markup.Escape(m!)}[/] ({(MetricDirection.IsLowerBetter(m!) ? "↓ lower is better" : "↑ higher is better")})")
+            .ToList();
+
+        if (described.Count == 0 || described.Count > MaxNamedMetrics)
+            return null;
+
+        var subject = described.Count == 1 ? "Metric is" : "Metrics:";
+        return $"[grey]{subject} {string.Join(", ", described)} — listed newest first, not ranked.[/]";
     }
 
     internal static string FormatRelativeTime(DateTime timestamp)
