@@ -31,6 +31,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every point.
 
 ### Fixed
+- **A NER model that tags every word `O` is no longer promoted.** NER's label cell holds a sentence of
+  tags, and the quality gate counted the cells as classes: N was the number of distinct sentences, its
+  1/N floor effectively zero, and on real data a model scoring the share of `O` (0.85 of words, 0.12
+  averaged over tags) went to production. The label schema now records the tags as the classes, the
+  gate's floors apply per tag, and NER's primary metric is the tag average (`macro_accuracy`).
+- **Deep-learning training no longer runs twice under auto-time.** The probe phase is a short trial
+  run for AutoML; a deep-learning fit ignores its budget, so the probe was a whole training thrown
+  away before the real one (NER: 1,050 s → 719 s on the same data). These tasks now skip it.
+- **Metric names say what they measure.** The image, text and NER trainers stored the class-averaged
+  accuracy as `accuracy`; it is `macro_accuracy`, as it is for multiclass classification.
 - **Error suggestions name commands that exist.** A failed `train` suggested `mloop experiments list`
   and `mloop experiments promote` (there is no such group — `mloop list`, `mloop promote`),
   `mloop analyze` without the aspect it requires, and `mloop init` without a project name; its

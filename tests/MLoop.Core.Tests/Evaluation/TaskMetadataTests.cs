@@ -17,7 +17,7 @@ public class TaskMetadataTests
     [InlineData("image-classification", "micro_accuracy")]
     [InlineData("text-classification", "micro_accuracy")]
     [InlineData("sentence-similarity", "r_squared")]
-    [InlineData("ner", "micro_accuracy")]
+    [InlineData("ner", "macro_accuracy")]
     [InlineData("regression", "r_squared")]
     [InlineData("anomaly-detection", "auc")]
     [InlineData("clustering", "average_distance")]

@@ -85,7 +85,11 @@ public class TrainingEngine : ITrainingEngine
         // auto-time replaces the configured value with the budgets it chose (probe, then main when
         // it runs), so the record states what ran rather than a default nobody used.
         var grantedSeconds = new StrongBox<int>(config.TimeLimitSeconds);
-        var autoTimed = config.UseAutoTime && !DataLoaderFactory.IsDirectoryBased(config.Task);
+        // A deep-learning fit runs a fixed number of epochs and ignores its budget, so a probe would
+        // be a whole second training whose result is thrown away — measured: NER ran twice, 1,050 s.
+        var autoTimed = config.UseAutoTime
+                        && !DataLoaderFactory.IsDirectoryBased(config.Task)
+                        && DeepLearningRegistry.Current?.CanHandleTask(config.Task) != true;
 
         try
         {
@@ -935,6 +939,10 @@ public class TrainingEngine : ITrainingEngine
             // For ordered data, the sample may miss categorical values that appear later.
             CollectCompleteCategoricalValues(dataFile, columns, columnNames);
 
+            // A NER label cell is a sentence's worth of tags; its classes are the tags, not the cells.
+            if (TaskTypes.Canonical(taskType) == "ner")
+                CountLabelTags(dataFile, columns, columnNames, labelColumn);
+
             return new InputSchemaInfo
             {
                 Columns = columns,
@@ -1200,6 +1208,44 @@ public class TrainingEngine : ITrainingEngine
                 };
             }
         }
+    }
+
+    /// <summary>
+    /// Records a NER label's tags as its classes: the tag vocabulary, how many tags there are, and
+    /// the share of words carrying the most common one. The quality gate reads these as it reads a
+    /// class column's — a cell of tags counted as one class made N the number of distinct
+    /// sentences, the 1/N floor effectively zero, and a model that answers O everywhere promotable.
+    /// </summary>
+    internal static void CountLabelTags(string dataFile, List<ColumnSchema> columns, string[] columnNames, string labelColumn)
+    {
+        var labelIndex = Array.FindIndex(columnNames, n => n.Equals(labelColumn, StringComparison.OrdinalIgnoreCase));
+        var listIndex = columns.FindIndex(c => c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase));
+        if (labelIndex < 0 || listIndex < 0)
+            return;
+
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        using var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        reader.ReadLine(); // header
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var fields = CsvFieldParser.ParseFields(line);
+            if (labelIndex >= fields.Length)
+                continue;
+            foreach (var tag in TagSequence.Split(fields[labelIndex]))
+                counts[tag] = counts.GetValueOrDefault(tag) + 1;
+        }
+
+        var label = columns[listIndex];
+        columns[listIndex] = new ColumnSchema
+        {
+            Name = label.Name,
+            DataType = label.DataType,
+            Purpose = label.Purpose,
+            CategoricalValues = counts.Keys.OrderBy(v => v, StringComparer.Ordinal).ToList(),
+            UniqueValueCount = counts.Count,
+            MajorityClassRatio = MajorityShare(counts)
+        };
     }
 
     /// <summary>

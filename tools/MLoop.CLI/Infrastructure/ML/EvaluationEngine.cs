@@ -144,7 +144,7 @@ public class EvaluationEngine
                     // One tag per word: the multiclass evaluator reads one class per row and looked
                     // for a Score column NER does not have. Scored the way training scored it.
                     var (micro, macro) = NerTagAccuracy.Measure(_mlContext, predictions, labelColumn);
-                    metrics = new Dictionary<string, double> { ["micro_accuracy"] = micro, ["accuracy"] = macro };
+                    metrics = new Dictionary<string, double> { ["macro_accuracy"] = macro, ["micro_accuracy"] = micro };
                 }
                 else if (taskType.Equals("question-answering", StringComparison.OrdinalIgnoreCase))
                 {

@@ -18,7 +18,7 @@ public static class NerTagAccuracy
     public static (double Micro, double Macro) Measure(MLContext mlContext, IDataView scored, string labelColumn)
     {
         const string expectedTags = "__NerExpectedTags";
-        var withTags = mlContext.Transforms.Text.TokenizeIntoWords(expectedTags, labelColumn, [' '])
+        var withTags = mlContext.Transforms.Text.TokenizeIntoWords(expectedTags, labelColumn, [Prediction.TagSequence.Separator])
             .Fit(scored)
             .Transform(scored);
         return Measure(withTags, expectedTags, "PredictedLabel");

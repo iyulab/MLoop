@@ -294,9 +294,11 @@ mloop evaluate exp-001 datasets/test.csv
 
 A sentence and its tags must have the same number of words. The model's answer is written the same
 way the label is read — `O B-DATE B-TIME I-TIME O` — so a prediction file can be compared with, or
-fed back as, a training file. `micro_accuracy` is the share of words tagged correctly; `accuracy`
-averages that over the tags that occur, so tagging everything `O` does not score well on text where
-most words are `O`.
+fed back as, a training file. `macro_accuracy` — the primary metric — averages the share of words
+tagged correctly over the tags that occur, so tagging everything `O` scores 1/N; `micro_accuracy` is
+the plain share of words tagged correctly, which on most text is dominated by `O`. The quality gate
+reads the label's classes as its tags, so a model that does no better than answering `O` stays in
+staging.
 
 ### `mloop predict`
 

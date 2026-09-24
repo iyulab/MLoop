@@ -41,7 +41,7 @@ public static class TaskMetadata
             // here "auto" stayed unresolved, the quality gate had nothing to test, and a
             // sentence-similarity model with R² below zero replaced a production model at 0.73.
             ["sentence-similarity"] = "r_squared",
-            ["ner"] = "micro_accuracy",
+            ["ner"] = "macro_accuracy",
             ["regression"] = "r_squared",
             ["anomaly-detection"] = "auc",
             ["clustering"] = "average_distance",

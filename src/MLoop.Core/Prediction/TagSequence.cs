@@ -15,9 +15,16 @@ public static class TagSequence
     /// <summary>The tag of a word outside every entity.</summary>
     public const string Outside = "O";
 
+    /// <summary>What separates the tags of one sentence — and the words they tag.</summary>
+    public const char Separator = ' ';
+
+    /// <summary>The tags of one label cell.</summary>
+    public static string[] Split(string label) =>
+        label.Split(Separator, StringSplitOptions.RemoveEmptyEntries);
+
     /// <summary>A predicted tag as it is written: a missing one is <see cref="Outside"/>.</summary>
     public static string Tag(string predicted) => string.IsNullOrEmpty(predicted) ? Outside : predicted;
 
     /// <summary>The tags of one sentence as one cell.</summary>
-    public static string Render(IEnumerable<string> tags) => string.Join(' ', tags.Select(Tag));
+    public static string Render(IEnumerable<string> tags) => string.Join(Separator, tags.Select(Tag));
 }
