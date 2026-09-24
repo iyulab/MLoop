@@ -32,6 +32,24 @@ public class DeepLearningRegistryTests
         DeepLearningRegistry.Register(null!); // 정리(테스트 격리)
     }
 
+    [Fact]
+    public void Handles_names_the_tasks_the_module_trains_and_nothing_when_none_is_registered()
+    {
+        Assert.False(DeepLearningRegistry.Handles("ner"));
+
+        DeepLearningRegistry.Register(new FakeModule());
+        try
+        {
+            Assert.True(DeepLearningRegistry.Handles(" ner "));
+            Assert.False(DeepLearningRegistry.Handles("regression"));
+            Assert.False(DeepLearningRegistry.Handles(null));
+        }
+        finally
+        {
+            DeepLearningRegistry.Register(null!); // 정리(테스트 격리)
+        }
+    }
+
     private sealed class FakeModule : IDeepLearningModule
     {
         public bool CanHandleTask(string task) => task == "ner";

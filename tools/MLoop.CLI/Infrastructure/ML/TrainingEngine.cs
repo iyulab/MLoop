@@ -89,7 +89,7 @@ public class TrainingEngine : ITrainingEngine
         // be a whole second training whose result is thrown away — measured: NER ran twice, 1,050 s.
         var autoTimed = config.UseAutoTime
                         && !DataLoaderFactory.IsDirectoryBased(config.Task)
-                        && DeepLearningRegistry.Current?.CanHandleTask(config.Task) != true;
+                        && !DeepLearningRegistry.Handles(config.Task);
 
         try
         {
