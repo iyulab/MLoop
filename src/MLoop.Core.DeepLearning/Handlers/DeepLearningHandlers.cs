@@ -46,7 +46,7 @@ internal static class DeepLearningHandlers
 
             var metricsDict = new Dictionary<string, double>
             {
-                ["accuracy"] = metrics.MacroAccuracy,
+                ["macro_accuracy"] = metrics.MacroAccuracy,
                 ["micro_accuracy"] = metrics.MicroAccuracy,
                 ["log_loss"] = metrics.LogLoss
             };
@@ -93,7 +93,7 @@ internal static class DeepLearningHandlers
 
             var metricsDict = new Dictionary<string, double>
             {
-                ["accuracy"] = metrics.MacroAccuracy,
+                ["macro_accuracy"] = metrics.MacroAccuracy,
                 ["micro_accuracy"] = metrics.MicroAccuracy,
                 ["log_loss"] = metrics.LogLoss
             };
@@ -179,7 +179,7 @@ internal static class DeepLearningHandlers
             // out of the saved model, which would otherwise demand a label column at prediction.
             const string tags = "__NerTags";
             const string tagKeys = "__NerTagKeys";
-            var labelPrep = mlContext.Transforms.Text.TokenizeIntoWords(tags, config.LabelColumn, [' '])
+            var labelPrep = mlContext.Transforms.Text.TokenizeIntoWords(tags, config.LabelColumn, [MLoop.Core.Prediction.TagSequence.Separator])
                 .Append(mlContext.Transforms.Conversion.MapValueToKey(tagKeys, tags))
                 .Fit(trainSet);
             var preparedTrain = labelPrep.Transform(trainSet);
@@ -196,13 +196,15 @@ internal static class DeepLearningHandlers
                 model = pipeline.Fit(preparedTrain);
 
             var (micro, macro) = NerTagAccuracy.Measure(mlContext, model.Transform(testSet), config.LabelColumn);
+            // Named as multiclass names them, and for the same reason: the tag average is what a model
+            // that answers O everywhere cannot fake, and the gate's 1/N floor applies to it as-is.
             var metricsDict = new Dictionary<string, double>
             {
-                ["accuracy"] = macro,
+                ["macro_accuracy"] = macro,
                 ["micro_accuracy"] = micro
             };
 
-            trialChannel.ReportCompleted(TrainerDescriptor.Of("NER (NAS-BERT)"), "micro_accuracy", micro, metricsDict);
+            trialChannel.ReportCompleted(TrainerDescriptor.Of("NER (NAS-BERT)"), "macro_accuracy", macro, metricsDict);
 
             return new AutoMLResult
             {
