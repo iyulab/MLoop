@@ -209,10 +209,9 @@ public class DetectCommandTests : IDisposable
 
         Assert.Equal([50, 120, 200, 250], result.Report.Anomalies);
 
-        // 300 points hold 4.8 cycles of 63, so the estimate lands near rather than on it (60 at the
-        // time of writing); the former detector found no period at all in this series.
-        Assert.NotNull(result.Period.Period);
-        Assert.InRange(result.Period.Period!.Value, 60, 66);
+        // 300 points hold 4.8 cycles of 63 — not a whole number, which once pulled the estimate
+        // short (to 60); the former detector found no period at all in this series.
+        Assert.Equal(63, result.Period.Period);
     }
 
     [Fact]
@@ -249,8 +248,8 @@ public class DetectCommandTests : IDisposable
 
     [Theory]
     [InlineData(11, 3.0, 99.73, "12")]              // too short
-    [InlineData(48, 0.0, 99.73, "Threshold")]       // threshold must be > 0
-    [InlineData(48, 3.0, 100.0, "Sensitivity")]     // coverage must be < 100
+    [InlineData(48, 0.0, 99.73, "threshold")]       // threshold must be > 0
+    [InlineData(48, 3.0, 100.0, "sensitivity")]     // coverage must be < 100
     public void Detect_RefusesInputItCannotScore_AndSaysWhy(int length, double threshold, double sensitivity, string named)
     {
         var ex = Assert.Throws<ArgumentException>(() =>
