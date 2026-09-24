@@ -445,6 +445,8 @@ public class PredictionService
             return ExtractAnomalyRows(cursor, predictedLabelCol, scoreCol);
         if (task == "time-series-anomaly")
             return ExtractTimeSeriesAnomalyRows(cursor, schema);
+        if (task == "ner")
+            return ExtractTagSequenceRows(cursor, predictedLabelCol);
 
         // ranking, recommendation, etc. — just score (no conformal band; interval is regression-only)
         return ExtractRegressionRows(cursor, scoreCol);
@@ -472,6 +474,7 @@ public class PredictionService
             "clustering" => rows.All(r => r.ClusterId is null),
             "anomaly-detection" or "time-series-anomaly" =>
                 rows.All(r => r.IsAnomaly is null && r.AnomalyScore is null),
+            "ner" => rows.All(r => r.PredictedLabel is null),
             _ => rows.All(r => r.Score is null), // ranking, recommendation, etc.
         };
 
@@ -714,6 +717,36 @@ public class PredictionService
             sigmas.Add(v);
         }
         return sigmas;
+    }
+
+    /// <summary>
+    /// NER predicts one tag per word. The answer is written the way the label is read at training
+    /// — the tags joined by spaces, one per word of the sentence — so a prediction file can be
+    /// compared with, or fed back as, a training file. Without this the vector fell through to the
+    /// score extractor, which found no score, and every prediction was refused as degenerate.
+    /// </summary>
+    private static List<PredictionRow> ExtractTagSequenceRows(
+        DataViewRowCursor cursor, DataViewSchema.Column? predictedLabelCol)
+    {
+        var rows = new List<PredictionRow>();
+        ValueGetter<VBuffer<ReadOnlyMemory<char>>>? tagsGetter =
+            predictedLabelCol is { Type: VectorDataViewType { ItemType: TextDataViewType } } column
+                ? cursor.GetGetter<VBuffer<ReadOnlyMemory<char>>>(column)
+                : null;
+
+        VBuffer<ReadOnlyMemory<char>> tags = default;
+        while (cursor.MoveNext())
+        {
+            string? label = null;
+            if (tagsGetter != null)
+            {
+                tagsGetter(ref tags);
+                label = TagSequence.Render(tags.DenseValues().Select(t => t.ToString()));
+            }
+            rows.Add(new PredictionRow { PredictedLabel = label });
+        }
+
+        return rows;
     }
 
     private static List<PredictionRow> ExtractClusteringRows(

@@ -274,6 +274,30 @@ Notes:
 - CSV-only steps (encoding conversion, sampling, balancing, multi-line flattening) are skipped for image
   directories. The loader warns about empty class folders, single-class datasets, and severe class imbalance.
 
+### Named Entity Recognition (NER)
+
+NER tags every word of a sentence. The data is two columns: the sentence, and its tags — one per
+word, separated by spaces, in the order the words appear. Words outside every entity are tagged `O`.
+
+```csv
+Sentence,Label
+우리는 내일 오후 7시에 만나요,O B-DATE B-TIME I-TIME O
+Alice lives in Paris,B-PER O O B-LOC
+```
+
+```bash
+mloop init tagger --task ner
+mloop train datasets/train.csv --label Label
+mloop predict datasets/predict.csv      # a Sentence column; the answer is a Label-shaped tag string
+mloop evaluate exp-001 datasets/test.csv
+```
+
+A sentence and its tags must have the same number of words. The model's answer is written the same
+way the label is read — `O B-DATE B-TIME I-TIME O` — so a prediction file can be compared with, or
+fed back as, a training file. `micro_accuracy` is the share of words tagged correctly; `accuracy`
+averages that over the tags that occur, so tagging everything `O` does not score well on text where
+most words are `O`.
+
 ### `mloop predict`
 
 Run predictions with trained models.

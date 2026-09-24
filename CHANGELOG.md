@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **NER works end to end.** No NER model could be trained: the data check refused a text label for
+  any task that was not classification, and past it the trainer received one key per sentence where it
+  needs one per word; prediction then rejected every answer as degenerate, and `evaluate` looked for a
+  score column NER does not have. The label is now read as space-separated tags, one per word; the
+  answer is written the same way (with the trainer's "no entity" answer written `O`); and training and
+  `evaluate` score word by word with one shared rule. The data format is in the guide.
 - **Deep-learning training shows how far along it is.** Text classification, NER, sentence
   similarity, question answering and object detection train for a fixed number of epochs in one
   call, and the progress bar sat at 0% for the whole of it — over four minutes on eleven thousand

@@ -2,6 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.TorchSharp;
 using MLoop.Core.AutoML;
 using MLoop.Core.Data;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 
 namespace MLoop.Core.DeepLearning;
@@ -171,28 +172,37 @@ internal static class DeepLearningHandlers
             var textCol = TextColumnFinder.FindFirst(trainSet, config.LabelColumn, config.ColumnOverrides, log)
                 ?? throw new InvalidOperationException("No text column found for NER.");
 
-            log($"NER: text='{textCol}', label='{config.LabelColumn}'");
+            log($"NER: text='{textCol}', label='{config.LabelColumn}' (one tag per word, space-separated)");
 
-            var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
-                .Append(mlContext.MulticlassClassification.Trainers.NamedEntityRecognition(
-                    labelColumnName: "Label", sentence1ColumnName: textCol, maxEpochs: EpochProgress.MaxEpochs))
+            // The trainer wants a vector of tag keys per sentence; a CSV cell holds the tags as one
+            // string. The split is fitted here and applied to the training and test data only — kept
+            // out of the saved model, which would otherwise demand a label column at prediction.
+            const string tags = "__NerTags";
+            const string tagKeys = "__NerTagKeys";
+            var labelPrep = mlContext.Transforms.Text.TokenizeIntoWords(tags, config.LabelColumn, [' '])
+                .Append(mlContext.Transforms.Conversion.MapValueToKey(tagKeys, tags))
+                .Fit(trainSet);
+            var preparedTrain = labelPrep.Transform(trainSet);
+
+            var pipeline = mlContext.MulticlassClassification.Trainers.NamedEntityRecognition(
+                    labelColumnName: tagKeys, outputColumnName: "PredictedLabel",
+                    sentence1ColumnName: textCol, maxEpochs: EpochProgress.MaxEpochs)
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             var trialChannel = new TrialProgressChannel(progress);
 
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "NER (NAS-BERT)", log))
-                model = pipeline.Fit(trainSet);
-            var predictions = model.Transform(testSet);
-            var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
+                model = pipeline.Fit(preparedTrain);
 
+            var (micro, macro) = NerTagAccuracy.Measure(mlContext, model.Transform(testSet), config.LabelColumn);
             var metricsDict = new Dictionary<string, double>
             {
-                ["accuracy"] = metrics.MacroAccuracy,
-                ["micro_accuracy"] = metrics.MicroAccuracy
+                ["accuracy"] = macro,
+                ["micro_accuracy"] = micro
             };
 
-            trialChannel.ReportCompleted(TrainerDescriptor.Of("NER (NAS-BERT)"), "accuracy", metrics.MacroAccuracy, metricsDict);
+            trialChannel.ReportCompleted(TrainerDescriptor.Of("NER (NAS-BERT)"), "micro_accuracy", micro, metricsDict);
 
             return new AutoMLResult
             {
