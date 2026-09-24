@@ -224,6 +224,47 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task ShouldPromoteAsync_SentenceSimilarityAutoMetric_BelowZeroRejected()
+    {
+        // Measured on a real sentence-similarity run: "auto" did not resolve for this task, so a
+        // model at R² -0.30 replaced production at 0.73 with the message "Better auto than exp-002".
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001",
+            new Dictionary<string, double> { ["r_squared"] = 0.73, ["rmse"] = 0.73 },
+            task: "sentence-similarity", metricConfig: "auto");
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
+
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002",
+            new Dictionary<string, double> { ["r_squared"] = -0.30, ["rmse"] = 1.60 },
+            task: "sentence-similarity", metricConfig: "auto");
+
+        Assert.False(await _modelRegistry.ShouldPromoteAsync(DefaultModelName, exp2, "auto", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ShouldPromoteAsync_NoMetricToJudgeBy_KeepsExistingProduction()
+    {
+        // A task with no primary metric (object detection's mAP has no universal floor) cannot be
+        // gated or compared, so it must not silently replace a production model.
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001",
+            new Dictionary<string, double> { ["map_50"] = 0.8 }, task: "object-detection", metricConfig: "auto");
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
+
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002",
+            new Dictionary<string, double> { ["map_50"] = 0.1 }, task: "object-detection", metricConfig: "auto");
+
+        Assert.False(await _modelRegistry.ShouldPromoteAsync(DefaultModelName, exp2, "auto", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ShouldPromoteAsync_NoMetricToJudgeBy_FirstModelStillPromoted()
+    {
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001",
+            new Dictionary<string, double> { ["map_50"] = 0.8 }, task: "object-detection", metricConfig: "auto");
+
+        Assert.True(await _modelRegistry.ShouldPromoteAsync(DefaultModelName, exp1, "auto", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task AutoPromoteAsync_WhenShouldPromote_PromotesAndReturnsTrue()
     {
         // Arrange

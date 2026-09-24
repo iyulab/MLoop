@@ -37,6 +37,11 @@ public static class TaskMetadata
             ["multiclass-classification"] = "macro_accuracy",
             ["image-classification"] = "micro_accuracy",
             ["text-classification"] = "micro_accuracy",
+            // The two text tasks below report these keys (DeepLearningHandlers); without an entry
+            // here "auto" stayed unresolved, the quality gate had nothing to test, and a
+            // sentence-similarity model with R² below zero replaced a production model at 0.73.
+            ["sentence-similarity"] = "r_squared",
+            ["ner"] = "micro_accuracy",
             ["regression"] = "r_squared",
             ["anomaly-detection"] = "auc",
             ["clustering"] = "average_distance",
