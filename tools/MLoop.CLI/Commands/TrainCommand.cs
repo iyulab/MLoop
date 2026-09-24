@@ -565,6 +565,10 @@ public static class TrainCommand
 
             ValueLine.Write("[green]>[/] Using data: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
 
+            // Every step below may swap resolvedDataFile for a converted, flattened or split copy;
+            // what the user is told they trained on is still the file they named.
+            var sourceDataFile = resolvedDataFile;
+
             // testDataFile may be produced by stratified split below (CSV path only),
             // and is read later when building the training config — declare it here so it
             // survives the directory-based bypass. allDataFilesUsed is consumed by the
@@ -579,6 +583,9 @@ public static class TrainCommand
             // a directory and skips this entire block.
             if (!isDirectoryBased)
             {
+            // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
+            resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile);
+
             // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
             resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink);
 
@@ -864,7 +871,7 @@ public static class TrainCommand
 
             // Display data summary (CSV row/column counts — not applicable to an image directory)
             if (!isDirectoryBased)
-                TrainPresenter.DisplayDataSummary(resolvedDataFile, effectiveDefinition.Label);
+                TrainPresenter.DisplayDataSummary(resolvedDataFile, effectiveDefinition.Label, sourceDataFile);
 
             // Determine auto-time eligibility:
             // - If --auto-time was explicitly specified, force auto-time even when mloop.yaml
@@ -879,7 +886,7 @@ public static class TrainCommand
 
             // Display training configuration (auto-time shows an "auto" limit, not the yaml/default seconds,
             // so the summary matches what the engine actually does — honest record vs. actual)
-            TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition, testDataFile, useAutoTime);
+            TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition, testDataFile, useAutoTime, sourceDataFile);
 
             // Validate label column exists (skip for unsupervised and directory-based tasks)
             if (requiresLabel && !isDirectoryBased)

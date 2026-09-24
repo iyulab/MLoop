@@ -110,7 +110,8 @@ public static class AnalyzeCommand
             label = def.Label;
         }
 
-        return new AnalyzeContext(resolved, label);
+        // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
+        return new AnalyzeContext(await TabularDataFile.AsCsvAsync(resolved), label);
     }
 
     /// <summary>

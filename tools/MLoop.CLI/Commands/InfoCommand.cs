@@ -177,6 +177,9 @@ public static class InfoCommand
         var reportedDataFile = dataFile;
         var mlContext = new MLContext(seed: 42);
 
+        // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
+        dataFile = await TabularDataFile.AsCsvAsync(dataFile);
+
         // Keep original path for DataLens (which requires .csv extension via CsvBridge)
         var originalDataFile = dataFile;
 
@@ -204,8 +207,9 @@ public static class InfoCommand
             AnsiConsole.MarkupLine("[green]Info:[/] Removed unnamed index column(s) (pandas artifact)");
         }
 
-        // Read file info and count lines in a single pass
-        var fileInfo = new FileInfo(dataFile);
+        // Size and modification time describe the file the user named; the rows are counted in the
+        // table MLoop reads, which may be a converted or flattened copy of it.
+        var fileInfo = new FileInfo(reportedDataFile);
 
         int lineCount = 0;
         string? firstLine = null;
@@ -228,7 +232,7 @@ public static class InfoCommand
 
         // 1. File Information
         InfoPresenter.DisplayFileInfo(
-            Path.GetFileName(dataFile), fileInfo.Length, lineCount, fileInfo.LastWriteTime);
+            Path.GetFileName(reportedDataFile), fileInfo.Length, lineCount, fileInfo.LastWriteTime);
 
         var columns = CsvFieldParser.ParseFields(firstLine);
 
@@ -352,7 +356,7 @@ public static class InfoCommand
 
         EmitJson(
             reportedDataFile, labelColumn, labelSource, analyze,
-            new FileInfoRow(Path.GetFileName(dataFile), fileInfo.Length, lineCount, fileInfo.LastWriteTime),
+            new FileInfoRow(Path.GetFileName(reportedDataFile), fileInfo.Length, lineCount, fileInfo.LastWriteTime),
             columnRows, labelDistribution, profile, analysisResult, null, jsonOutput);
 
         return 0;

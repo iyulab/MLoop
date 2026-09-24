@@ -359,6 +359,9 @@ public static class PredictCommand
                 }
             }
 
+            // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
+            resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile);
+
             // Ensure UTF-8 encoding for prediction data (same as training)
             var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(resolvedDataFile);
             if (detection.WasConverted && detection.EncodingName != "UTF-8")

@@ -160,7 +160,8 @@ public static class DetectCommand
                 return 1;
             }
 
-            var series = await LoadSeriesAsync(dataFile, column, jsonOutput);
+            // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
+            var series = await LoadSeriesAsync(await TabularDataFile.AsCsvAsync(dataFile), column, jsonOutput);
             if (series == null)
                 return 1;
 
