@@ -158,4 +158,47 @@ public class TrainingProgressTrackerTests
         Assert.NotNull(start);
         Assert.NotNull(new Spectre.Console.Markup(finalize!));
     }
+
+    private static TrainingProgress Epoch(int epoch, int max, double elapsed) => new()
+    {
+        TrialNumber = 0, TrainerName = "NER (NAS-BERT)", Metric = 0, MetricName = "", ElapsedSeconds = elapsed,
+        Phase = TrainingPhase.Epoch, Epoch = epoch, MaxEpochs = max
+    };
+
+    [Fact]
+    public void An_epoch_moves_the_bar_by_epochs_done_not_time_spent()
+    {
+        Assert.Equal(30, TrainingProgressTracker.EpochPercent(Epoch(3, 10, elapsed: 5000)));
+        // The last epoch is not the end: evaluation and saving follow.
+        Assert.Equal(99, TrainingProgressTracker.EpochPercent(Epoch(10, 10, elapsed: 100)));
+        Assert.Null(TrainingProgressTracker.EpochPercent(Trial(10)));
+    }
+
+    [Fact]
+    public void An_epoch_says_how_far_along_and_about_how_long_is_left()
+    {
+        // Three epochs in four minutes: seven more take about nine minutes and a third.
+        var text = TrainingProgressTracker.PhaseDescription(Epoch(3, 10, elapsed: 240), "default")!;
+
+        Assert.Contains("Epoch 3/10", text);
+        Assert.Contains("about 9m left", text);
+        Assert.NotNull(new Spectre.Console.Markup(text));
+    }
+
+    [Fact]
+    public void The_last_epoch_promises_no_remaining_time()
+    {
+        var text = TrainingProgressTracker.PhaseDescription(Epoch(10, 10, elapsed: 800), "default")!;
+
+        Assert.Contains("Epoch 10/10", text);
+        Assert.DoesNotContain("left", text);
+    }
+
+    [Theory]
+    [InlineData(0.2, "1s")]
+    [InlineData(40, "40s")]
+    [InlineData(720, "12m")]
+    [InlineData(3900, "1h 05m")]
+    public void A_duration_reads_as_a_person_would_say_it(double seconds, string expected) =>
+        Assert.Equal(expected, TrainingProgressTracker.FormatDuration(TimeSpan.FromSeconds(seconds)));
 }

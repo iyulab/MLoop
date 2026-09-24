@@ -118,6 +118,10 @@ mloop train <data-file> <label-column> [options]
 #                               the data (auto-time) unless mloop.yaml sets time_limit_seconds
 #   --auto-time                 Force the estimate even when mloop.yaml sets time_limit_seconds
 #   --no-auto-time              Disable the estimate (falls back to 300s)
+#                               Deep-learning tasks (text classification, NER, sentence similarity,
+#                               question answering, object detection) run 10 epochs whatever the
+#                               budget — a fit cannot stop early and keep a model. Their progress
+#                               bar counts epochs and estimates the time left after the first one.
 
 # Data:
 #   --data, -d <files...>       Training file(s); several files with the same schema are merged

@@ -79,12 +79,14 @@ internal static class DeepLearningHandlers
 
             var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
                 .Append(mlContext.MulticlassClassification.Trainers.TextClassification(
-                    labelColumnName: "Label", sentence1ColumnName: textCol))
+                    labelColumnName: "Label", sentence1ColumnName: textCol, maxEpochs: EpochProgress.MaxEpochs))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             var trialChannel = new TrialProgressChannel(progress);
 
-            var model = pipeline.Fit(trainSet);
+            ITransformer model;
+            using (EpochProgress.Attach(mlContext, progress, "Text classification (NAS-BERT)", log))
+                model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
@@ -126,11 +128,14 @@ internal static class DeepLearningHandlers
             var pipeline = mlContext.Regression.Trainers.SentenceSimilarity(
                 labelColumnName: config.LabelColumn,
                 sentence1ColumnName: textCols[0],
-                sentence2ColumnName: textCols[1]);
+                sentence2ColumnName: textCols[1],
+                maxEpochs: EpochProgress.MaxEpochs);
 
             var trialChannel = new TrialProgressChannel(progress);
 
-            var model = pipeline.Fit(trainSet);
+            ITransformer model;
+            using (EpochProgress.Attach(mlContext, progress, "Sentence similarity (NAS-BERT)", log))
+                model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
 
@@ -170,12 +175,14 @@ internal static class DeepLearningHandlers
 
             var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
                 .Append(mlContext.MulticlassClassification.Trainers.NamedEntityRecognition(
-                    labelColumnName: "Label", sentence1ColumnName: textCol))
+                    labelColumnName: "Label", sentence1ColumnName: textCol, maxEpochs: EpochProgress.MaxEpochs))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             var trialChannel = new TrialProgressChannel(progress);
 
-            var model = pipeline.Fit(trainSet);
+            ITransformer model;
+            using (EpochProgress.Attach(mlContext, progress, "NER (NAS-BERT)", log))
+                model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
@@ -225,7 +232,8 @@ internal static class DeepLearningHandlers
                 .Append(mlContext.MulticlassClassification.Trainers.ObjectDetection(
                     labelColumnName: "LabelKey",
                     boundingBoxColumnName: CocoDataLoader.BoundingBoxColumn,
-                    imageColumnName: "Image"))
+                    imageColumnName: "Image",
+                    maxEpoch: EpochProgress.MaxEpochs))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue(
                     outputColumnName: "PredictedLabel", inputColumnName: "PredictedLabel"));
 
@@ -242,7 +250,9 @@ internal static class DeepLearningHandlers
             // No trial is reported: this handler computes no metrics (see the empty Metrics below),
             // and the progress channel carries a metric value by construction — the previous
             // report said accuracy=0, which for a detector reads as "found nothing".
-            var model = pipeline.Fit(trainSet);
+            ITransformer model;
+            using (EpochProgress.Attach(mlContext, progress, "Object detection (AutoFormerV2)", log))
+                model = pipeline.Fit(trainSet);
             var predictions = model.Transform(testSet);
 
             return new AutoMLResult
@@ -270,10 +280,13 @@ internal static class DeepLearningHandlers
 
             var pipeline = mlContext.MulticlassClassification.Trainers.QuestionAnswer(
                 contextColumnName: contextCol,
-                questionColumnName: questionCol);
+                questionColumnName: questionCol,
+                maxEpochs: EpochProgress.MaxEpochs);
 
             // No trial is reported — this handler computes no metrics, same as object detection above.
-            var model = pipeline.Fit(trainSet);
+            ITransformer model;
+            using (EpochProgress.Attach(mlContext, progress, "Question answering", log))
+                model = pipeline.Fit(trainSet);
 
             return new AutoMLResult
             {
