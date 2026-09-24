@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.DataQuality;
 using MLoop.Core.Prediction;
 using MLoop.Core.Diagnostics;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using Spectre.Console;
@@ -359,6 +360,16 @@ internal static class TrainPresenter
                     $"Model {primaryMetric} ({metricValue:F4}) is below minimum threshold ({minThreshold.Value:F4}) " +
                     $"— saved to staging, not promoted. The threshold is what a model that learned nothing would score: " +
                     $"{beatenBy}. Check data quality, feature relevance, and class balance.");
+            }
+            else if (production is not null && (result.Metrics is null || !result.Metrics.ContainsKey(primaryMetric)))
+            {
+                var what = primaryMetric == MetricNames.Auto
+                    ? "this task has no primary metric"
+                    : $"it reports no {primaryMetric}";
+                WarningConsole.Warn(
+                    $"Nothing to compare this model with {production.ExperimentId} on — {what} — so it was saved to " +
+                    $"staging and production is unchanged. Promote it explicitly if it is the one you want: " +
+                    $"mloop promote {result.ExperimentId}");
             }
             else if (production?.Metrics != null && result.Metrics != null && production.Metrics.ContainsKey(primaryMetric))
             {

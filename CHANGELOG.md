@@ -19,6 +19,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every point.
 
 ### Fixed
+- **A text model reads the text, not the first string columns.** Text classification, NER,
+  sentence similarity and question answering took the first string columns in the file. On a
+  sentence-similarity set whose first column was a source tag, the model was trained on the tag and
+  one sentence, never saw the second — and, the tag correlating with the label, scored well enough to
+  be promoted. Columns declared `type: text` in `mloop.yaml` are now read first, in order; otherwise
+  string columns that read as language are chosen over short codes, and a fallback pick is reported
+  as a warning with how to declare it. The rule that decides "reads as language" is the one that
+  already decided text featurization and `info`'s column purposes, now in one place.
+- **A model with no metric to judge it by no longer replaces production.** Sentence similarity and
+  NER had no primary metric, so `metric: auto` stayed unresolved; the quality gate had nothing to
+  test and the production comparison nothing to compare, and promotion went ahead anyway — a model at
+  R² −0.30 replaced one at 0.73, reported as "Better auto than exp-002". Both tasks now have a
+  primary metric (R² and micro-accuracy), and any task still without one keeps its production model
+  and says to promote explicitly. The first model of a project is still promoted.
 - **`train` and `info` describe the file you named.** The file name and size in `train`'s data
   summary and configuration, and the size and modification time in `info`, came from whichever copy
   MLoop was reading at that moment — a UTF-8 conversion of a CP949 file, a flattened or split copy —

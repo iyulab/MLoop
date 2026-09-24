@@ -1073,61 +1073,24 @@ public class TrainingEngine : ITrainingEngine
     }
 
     /// <summary>
-    /// Determines whether a column's values look like natural text rather than categorical codes.
-    /// Uses multiple heuristics: unique ratio, average token count, and average string length.
-    /// This prevents log messages, descriptions, and other free-text from being treated as
-    /// categorical features (which would use OneHotEncoding instead of FeaturizeText).
+    /// Whether column <paramref name="colIndex"/> of <paramref name="dataLines"/> reads as natural
+    /// text rather than categorical codes — <see cref="TextLikeness"/> decides; this only pulls the
+    /// column's values out of CSV lines.
     /// </summary>
     internal static bool LooksLikeText(int colIndex, string[] dataLines, int uniqueCount)
     {
-        if (dataLines.Length == 0)
-            return false;
-
-        // Criterion 1: High unique ratio (original heuristic)
-        double uniqueRatio = (double)uniqueCount / dataLines.Length;
-        if (uniqueRatio > 0.5)
-            return true;
-
-        // Sample values for text-likeness analysis
-        int sampleSize = Math.Min(dataLines.Length, 200);
-        int totalTokens = 0;
-        int totalLength = 0;
-        int validCount = 0;
-
-        for (int i = 0; i < sampleSize; i++)
+        var sample = new List<string>();
+        foreach (var line in dataLines.Take(TextLikeness.SampleSize))
         {
-            var fields = CsvFieldParser.ParseFields(dataLines[i]);
+            var fields = CsvFieldParser.ParseFields(line);
             if (colIndex >= fields.Length)
                 continue;
-
             var value = fields[colIndex].Trim();
-            if (string.IsNullOrEmpty(value))
-                continue;
-
-            validCount++;
-            totalLength += value.Length;
-            totalTokens += value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+            if (!string.IsNullOrEmpty(value))
+                sample.Add(value);
         }
 
-        if (validCount == 0)
-            return false;
-
-        double avgTokens = (double)totalTokens / validCount;
-        double avgLength = (double)totalLength / validCount;
-
-        // Criterion 2: Average 3+ tokens (words) per value → natural language text
-        if (avgTokens >= 3)
-            return true;
-
-        // Criterion 3: Average length > 30 chars → long strings, likely text
-        if (avgLength > 30)
-            return true;
-
-        // Criterion 4: High cardinality (200+) with moderate unique ratio (10%+)
-        if (uniqueCount > 200 && uniqueRatio > 0.1)
-            return true;
-
-        return false;
+        return TextLikeness.LooksLikeText(sample, uniqueCount, dataLines.Length);
     }
 
     /// <summary>

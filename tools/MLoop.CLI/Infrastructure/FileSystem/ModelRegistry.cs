@@ -282,10 +282,19 @@ public class ModelRegistry : IModelRegistry
             return true; // No production model yet (or it has no metrics), promote first model
         }
 
-        // Compare against production using the resolved metric key. If either side is
-        // missing the metric, fall back to promoting the new (quality-gated) model.
-        if (metricKey == null ||
-            !experiment.Metrics.TryGetValue(metricKey, out var newMetricValue) ||
+        // No metric to judge by means no judgement was made: neither the quality gate above nor a
+        // comparison can run. Replacing a production model on that basis is a decision nobody took
+        // — it once let a model scoring below zero replace one at 0.73 because the metric name was
+        // the unresolved "auto". The first model still goes in (there is nothing to protect); after
+        // that, promotion without a metric is left to an explicit `mloop promote`.
+        if (metricKey == null)
+        {
+            return false;
+        }
+
+        // Production predates this metric (an older experiment): the new model passed the gate on
+        // it, and there is nothing to compare against, so it goes in.
+        if (!experiment.Metrics.TryGetValue(metricKey, out var newMetricValue) ||
             !currentProduction.Metrics.TryGetValue(metricKey, out var currentMetricValue))
         {
             return true;

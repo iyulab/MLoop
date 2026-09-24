@@ -174,7 +174,9 @@ mloop train data.csv --label defect --task binary-classification --balance 5  # 
 - `report.md` — the experiment as a page: result, metrics, ranked trials, and each column's role (with
   the reason for any exclusion). A rendering of the files above for reading and sharing; no command
   reads it back
-- First successful model auto-promoted to production
+- First successful model auto-promoted to production. After that, a new model replaces production
+  only when it passes the quality gate and beats production on the task's primary metric; a task
+  that reports no primary metric is saved to staging and left for `mloop promote`
 
 #### Which columns training drops, and how to change that
 
@@ -224,6 +226,14 @@ models:
       zip:
         type: categorical     # one-hot, even though it looks numeric
 ```
+
+**Text models read the columns you declare `text`.** Text classification and NER read one text
+column, sentence similarity reads two (in declaration order: the first is sentence 1), and question
+answering reads a context and then a question. Undeclared, they take string columns whose values read as
+language — several words, or long, or mostly distinct — and skip short codes such as a source tag or
+a category, even when those come first in the file. If too few columns read as language, the rest
+are filled from the remaining string columns and the choice is printed as a warning, with how to
+declare it. `train` logs which columns it used (`Sentence similarity: s1='…', s2='…'`).
 
 ### Image Classification
 

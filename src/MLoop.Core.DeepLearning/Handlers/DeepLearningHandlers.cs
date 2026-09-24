@@ -72,7 +72,7 @@ internal static class DeepLearningHandlers
     {
         return await Task.Run(() =>
         {
-            var textCol = TextColumnFinder.FindFirst(trainSet.Schema, config.LabelColumn)
+            var textCol = TextColumnFinder.FindFirst(trainSet, config.LabelColumn, config.ColumnOverrides, log)
                 ?? throw new InvalidOperationException("No text column found for text classification.");
 
             log($"Text classification: text='{textCol}', label='{config.LabelColumn}'");
@@ -117,7 +117,7 @@ internal static class DeepLearningHandlers
     {
         return await Task.Run(() =>
         {
-            var textCols = TextColumnFinder.Find(trainSet.Schema, config.LabelColumn, 2);
+            var textCols = TextColumnFinder.Find(trainSet, config.LabelColumn, 2, config.ColumnOverrides, log);
             if (textCols.Count < 2)
                 throw new InvalidOperationException("Sentence similarity requires at least two text columns.");
 
@@ -163,7 +163,7 @@ internal static class DeepLearningHandlers
     {
         return await Task.Run(() =>
         {
-            var textCol = TextColumnFinder.FindFirst(trainSet.Schema, config.LabelColumn)
+            var textCol = TextColumnFinder.FindFirst(trainSet, config.LabelColumn, config.ColumnOverrides, log)
                 ?? throw new InvalidOperationException("No text column found for NER.");
 
             log($"NER: text='{textCol}', label='{config.LabelColumn}'");
@@ -262,7 +262,7 @@ internal static class DeepLearningHandlers
     {
         return await Task.Run(() =>
         {
-            var textCols = TextColumnFinder.Find(trainSet.Schema, config.LabelColumn, 2);
+            var textCols = TextColumnFinder.Find(trainSet, config.LabelColumn, 2, config.ColumnOverrides, log);
             var contextCol = textCols.Count > 0 ? textCols[0] : throw new InvalidOperationException("No context column found.");
             var questionCol = textCols.Count > 1 ? textCols[1] : contextCol;
 
