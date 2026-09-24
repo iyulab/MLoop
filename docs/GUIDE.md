@@ -544,6 +544,12 @@ the band the series itself implies at the requested coverage, so a point outside
 for *this* series rather than unusual in the abstract. **`Period`** is estimated, not supplied, and
 is `null` when the series has none.
 
+An index marked **`*`** sits near an end of the series, where the score is least reliable: the
+transform treats the series as circular, so its first and last few points are scored partly against
+each other. The mark is a position, not a verdict — a real spike there is still an anomaly — but a
+flag that appears only at an end is worth a second look. `--output` and `--json` carry it per point
+as `NearEdge` / `nearEdge`.
+
 The table lists only the anomalies. `--output` writes every point with its score, expected value
 and limits — that is the file to chart. `--json` carries the same thing:
 
@@ -562,7 +568,8 @@ and limits — that is the file to chart. `--json` carries the same thing:
       "score": 15.565493686292202,
       "expectedValue": 24.677441826232204,
       "controlLower": 24.230905650284555,
-      "controlUpper": 25.123978002179854
+      "controlUpper": 25.123978002179854,
+      "nearEdge": false
     }
   ]
 }

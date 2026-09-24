@@ -252,7 +252,10 @@ public static class DetectCommand
     }
 
     /// <summary>Per-point output columns. Control = the band to chart.</summary>
-    internal const string CsvHeader = "Index,Value,IsAnomaly,Score,ExpectedValue,ControlLower,ControlUpper";
+    /// <summary>Marks a listed anomaly that sits near an end of the series.</summary>
+    internal const string EdgeMark = "*";
+
+    internal const string CsvHeader = "Index,Value,IsAnomaly,Score,ExpectedValue,ControlLower,ControlUpper,NearEdge";
 
     internal static async Task WriteCsvAsync(string outputPath, Detection result)
     {
@@ -260,7 +263,7 @@ public static class DetectCommand
         foreach (var p in result.Report.Points)
         {
             lines.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{p.Index},{p.Value},{(p.IsAnomaly ? 1 : 0)},{p.Score},{p.Expected},{p.Lower},{p.Upper}"));
+                $"{p.Index},{p.Value},{(p.IsAnomaly ? 1 : 0)},{p.Score},{p.Expected},{p.Lower},{p.Upper},{(p.NearEdge ? 1 : 0)}"));
         }
         await File.WriteAllLinesAsync(outputPath, lines);
     }
@@ -289,7 +292,8 @@ public static class DetectCommand
                 p.Score,
                 ExpectedValue = p.Expected,
                 ControlLower = p.Lower,
-                ControlUpper = p.Upper
+                ControlUpper = p.Upper,
+                p.NearEdge
             })
         };
 
@@ -321,10 +325,11 @@ public static class DetectCommand
             table.AddColumn("Control Upper");
 
             const int maxRows = 50;
-            foreach (var p in result.Report.Points.Where(p => p.IsAnomaly).Take(maxRows))
+            var anomalies = result.Report.Points.Where(p => p.IsAnomaly).Take(maxRows).ToList();
+            foreach (var p in anomalies)
             {
                 table.AddRow(
-                    p.Index.ToString(CultureInfo.InvariantCulture),
+                    p.Index.ToString(CultureInfo.InvariantCulture) + (p.NearEdge ? EdgeMark : ""),
                     p.Value.ToString("G6", CultureInfo.InvariantCulture),
                     p.Score.ToString("F3", CultureInfo.InvariantCulture),
                     p.Expected.ToString("G6", CultureInfo.InvariantCulture),
@@ -333,6 +338,9 @@ public static class DetectCommand
             }
 
             AnsiConsole.Write(table);
+            if (anomalies.Any(p => p.NearEdge))
+                AnsiConsole.MarkupLine($"[grey]{Markup.Escape(EdgeMark)} near an end of the series, where the score is least " +
+                                       "reliable — a flag seen only there is worth a second look.[/]");
             if (result.AnomalyCount > maxRows)
                 AnsiConsole.MarkupLine($"[grey]Showing first {maxRows} of {result.AnomalyCount} anomalies " +
                                        "(use --output or --json for the full list)[/]");

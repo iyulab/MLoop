@@ -144,9 +144,47 @@ public class DetectCommandTests : IDisposable
 
         var lines = await File.ReadAllLinesAsync(path);
         Assert.Equal(DetectCommand.CsvHeader, lines[0]);
-        Assert.EndsWith("ExpectedValue,ControlLower,ControlUpper", lines[0]);
+        Assert.Contains("ExpectedValue,ControlLower,ControlUpper", lines[0]);
+        Assert.EndsWith(",NearEdge", lines[0]);
         Assert.Equal(series.Count + 1, lines.Length);
         Assert.All(lines.Skip(1), l => Assert.Equal(lines[0].Split(',').Length, l.Split(',').Length));
+    }
+
+    [Fact]
+    public async Task An_anomaly_near_an_end_is_marked_and_explained()
+    {
+        var csv = WriteCsv(["Value", .. SpikeSeries(spikeAt: 57).Select(v => v.ToString(System.Globalization.CultureInfo.InvariantCulture))]);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["detect", csv]);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("57" + DetectCommand.EdgeMark, stdout);
+        Assert.Contains("near an end of the series", stdout);
+    }
+
+    [Fact]
+    public async Task An_anomaly_away_from_the_ends_carries_no_edge_note()
+    {
+        var csv = WriteCsv(["Value", .. SpikeSeries(spikeAt: 30).Select(v => v.ToString(System.Globalization.CultureInfo.InvariantCulture))]);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["detect", csv]);
+
+        Assert.Equal(0, exitCode);
+        Assert.DoesNotContain("near an end of the series", stdout);
+    }
+
+    [Fact]
+    public async Task Json_points_say_whether_they_sit_near_an_end()
+    {
+        var csv = WriteCsv(["Value", .. SpikeSeries(spikeAt: 57).Select(v => v.ToString(System.Globalization.CultureInfo.InvariantCulture))]);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["detect", csv, "--json"]);
+
+        Assert.Equal(0, exitCode);
+        var points = System.Text.Json.JsonDocument.Parse(stdout).RootElement.GetProperty("points");
+        Assert.True(points[57].GetProperty("nearEdge").GetBoolean());
+        Assert.True(points[57].GetProperty("isAnomaly").GetBoolean());
+        Assert.False(points[30].GetProperty("nearEdge").GetBoolean());
     }
 
     // --- detection behaviour (moved from the core detector's tests when detection moved here) ---
