@@ -2,6 +2,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.AutoML;
 using MLoop.Core.DataQuality;
 using MLoop.Core.Prediction;
 using MLoop.Core.Diagnostics;
@@ -88,7 +89,9 @@ internal static class TrainPresenter
         table.AddRow("Task", definition.Task);
         table.AddRow("Data File", Path.GetFileName(sourceFile ?? dataFile));
         table.AddRow("Label Column", definition.Label);
-        table.AddRow("Time Limit", useAutoTime
+        table.AddRow("Time Limit", DeepLearningRegistry.Handles(definition.Task)
+            ? "not used — trains a fixed number of epochs"
+            : useAutoTime
             ? "[cyan]auto[/] (estimated from data size)"
             : $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);

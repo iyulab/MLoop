@@ -963,8 +963,9 @@ public static class TrainCommand
                 return 1;
             }
 
-            // If auto-time, display static estimate before progress bar starts
-            if (useAutoTime)
+            // If auto-time, display static estimate before progress bar starts. A deep-learning fit
+            // takes no budget, so an estimate would describe time nothing uses.
+            if (useAutoTime && !DeepLearningRegistry.Handles(trainingConfig.Task))
             {
                 var (rowCount, colCount, hasText, classCount) = TrainingEngine.CollectDataStats(
                     trainingConfig.DataFile, trainingConfig.LabelColumn, trainingConfig.Task);

@@ -36,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   1/N floor effectively zero, and on real data a model scoring the share of `O` (0.85 of words, 0.12
   averaged over tags) went to production. The label schema now records the tags as the classes, the
   gate's floors apply per tag, and NER's primary metric is the tag average (`macro_accuracy`).
+- **Deep-learning training no longer talks about a time budget it does not use.** `train` printed an
+  auto-time estimate ("⏱ Auto-time: 60s estimated") and a time limit for tasks that train a fixed
+  number of epochs; the configuration table now says the limit is not used, and no estimate is shown.
 - **Deep-learning training no longer runs twice under auto-time.** The probe phase is a short trial
   run for AutoML; a deep-learning fit ignores its budget, so the probe was a whole training thrown
   away before the real one (NER: 1,050 s → 719 s on the same data). These tasks now skip it.
