@@ -155,6 +155,10 @@ mloop train data.csv --label defect --task binary-classification --balance 5  # 
 ```
 
 **Automatic Features**:
+- **Data File Formats**: besides CSV, `train`, `predict`, `evaluate`, `info`, `analyze` and `detect`
+  take `.parquet`, `.xlsx`/`.xls`, `.json` (an array of objects) and `.tsv` files. A Parquet struct
+  column becomes one column per leaf, named by its dotted path — a label stored as `labels.label` is
+  passed as `--label labels.label` — and a list column becomes one column of JSON text.
 - **Encoding Detection**: CP949/EUC-KR files auto-converted to UTF-8 (Korean text support)
 - **Schema Validation**: Same-schema files auto-detected for `--auto-merge`
 - **Label Handling**: Missing labels auto-dropped for classification tasks
