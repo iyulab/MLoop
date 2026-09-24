@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`mloop detect` marks an anomaly that sits near an end of the series.** The score is least
+  reliable in the first and last few points, where the transform's boundary handling moves it most,
+  and a flag seen only there used to look exactly like any other. The table now marks such an index
+  with `*` and says why; `--output` gains a `NearEdge` column and `--json` a `nearEdge` field on
+  every point.
+
 ### Fixed
 - **`mloop detect` finds the period of a series that is not a whole number of cycles long.** The
   estimate used to land a few steps short on such a series — 60 for a period of 63 over 300 points
