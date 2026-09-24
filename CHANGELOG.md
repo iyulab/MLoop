@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Data files in Parquet, Excel, JSON and TSV.** `train`, `predict`, `evaluate`, `info`, `analyze`
+  and `detect` used to read every data file as comma-separated text, so a Parquet file reached the
+  label check as binary noise listed as "available columns". Such a file is now read as the table it
+  is — once per run, whichever step asks — and a Parquet struct column becomes one column per leaf
+  named by its dotted path (`labels.label`). Comes with FilePrepper 0.8.0.
 - **`mloop detect` marks an anomaly that sits near an end of the series.** The score is least
   reliable in the first and last few points, where the transform's boundary handling moves it most,
   and a flag seen only there used to look exactly like any other. The table now marks such an index
@@ -14,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every point.
 
 ### Fixed
+- **`train` and `info` describe the file you named.** The file name and size in `train`'s data
+  summary and configuration, and the size and modification time in `info`, came from whichever copy
+  MLoop was reading at that moment — a UTF-8 conversion of a CP949 file, a flattened or split copy —
+  so they could name a temporary file and report its size.
 - **`mloop detect` finds the period of a series that is not a whole number of cycles long.** The
   estimate used to land a few steps short on such a series — 60 for a period of 63 over 300 points
   — because the autocorrelation it compared shrinks with the lag and nothing corrected for that.
