@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **`mloop detect` finds the period of a series that is not a whole number of cycles long.** The
+  estimate used to land a few steps short on such a series — 60 for a period of 63 over 300 points
+  — because the autocorrelation it compared shrinks with the lag and nothing corrected for that.
+  This comes with DataLens 0.16.0.
 - **An image built by `mloop docker` for one model now serves that model.** The generated Dockerfile
   sets `MLOOP_MODEL_NAME`, and that variable existed precisely so an image serving a single model
   would not need it named on every request — but the only code reading it was in the CLI, and what
