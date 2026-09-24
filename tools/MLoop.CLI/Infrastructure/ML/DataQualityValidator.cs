@@ -100,6 +100,12 @@ public class DataQualityValidator
                 return result;
             }
 
+            // A tag sequence or an answer text is neither a number nor a class to count.
+            if (AutoMLRunner.HasTextLabel(taskType))
+            {
+                return result;
+            }
+
             // Extract label column values - support both numeric and text labels
             var numericLabelValues = new List<double>();
             var textLabelValues = new List<string>();

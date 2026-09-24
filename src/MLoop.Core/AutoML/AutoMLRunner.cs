@@ -124,6 +124,16 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
+    /// Whether a task's label is text that is neither a class nor a number: NER labels every word
+    /// of a sentence (one tag per word, space-separated), question answering labels with the text
+    /// of the answer. Checks written for the other two kinds — a numeric label's variance, a class
+    /// column's balance — do not apply, and "not a classification task, so the label must be a
+    /// number" refused every NER set before its trainer was reached.
+    /// </summary>
+    public static bool HasTextLabel(string? task) =>
+        Models.TaskTypes.Canonical(task) is "ner" or "question-answering";
+
+    /// <summary>
     /// Single source of truth for which task types are time-series. These tasks ignore
     /// <c>config.TestSplit</c> entirely: a random train/test split would break temporal order,
     /// so <see cref="RunAsync"/> feeds the full dataset and the trainer holds out the last

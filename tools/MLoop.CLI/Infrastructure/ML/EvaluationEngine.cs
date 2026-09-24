@@ -135,11 +135,21 @@ public class EvaluationEngine
                     metrics = EvaluateRecommendation(predictions, labelColumn);
                 }
                 else if (taskType.Equals("image-classification", StringComparison.OrdinalIgnoreCase) ||
-                         taskType.Equals("text-classification", StringComparison.OrdinalIgnoreCase) ||
-                         taskType.Equals("ner", StringComparison.OrdinalIgnoreCase) ||
-                         taskType.Equals("question-answering", StringComparison.OrdinalIgnoreCase))
+                         taskType.Equals("text-classification", StringComparison.OrdinalIgnoreCase))
                 {
                     metrics = EvaluateMulticlassClassification(predictions, "Label");
+                }
+                else if (taskType.Equals("ner", StringComparison.OrdinalIgnoreCase))
+                {
+                    // One tag per word: the multiclass evaluator reads one class per row and looked
+                    // for a Score column NER does not have. Scored the way training scored it.
+                    var (micro, macro) = NerTagAccuracy.Measure(_mlContext, predictions, labelColumn);
+                    metrics = new Dictionary<string, double> { ["micro_accuracy"] = micro, ["accuracy"] = macro };
+                }
+                else if (taskType.Equals("question-answering", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new NotSupportedException(
+                        "Question answering reports no evaluation metric yet, so there is nothing to evaluate it on.");
                 }
                 else if (taskType.Equals("sentence-similarity", StringComparison.OrdinalIgnoreCase))
                 {

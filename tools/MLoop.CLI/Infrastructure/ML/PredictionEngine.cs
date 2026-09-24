@@ -370,6 +370,12 @@ public class PredictionEngine
                 outputData = RenderBooleanLabel(outputData, BinaryLabelVocabulary.Of(trainedSchema));
             }
 
+            // NER answers one tag per word; written as a vector it spreads over nameless columns.
+            if (outputData.Schema.GetColumnOrNull("PredictedLabel") is { Type: VectorDataViewType { ItemType: TextDataViewType } })
+            {
+                outputData = RenderTagSequence(outputData);
+            }
+
             // Save predictions to CSV (without schema metadata for cleaner output)
             await using (var fileStream = File.Create(outputPath))
             {
@@ -454,6 +460,19 @@ public class PredictionEngine
             contractName: null)
             .Fit(predictions)
             .Transform(predictions);
+    }
+
+    private IDataView RenderTagSequence(IDataView predictions) =>
+        _mlContext.Transforms.CustomMapping(
+            (TagVector input, RenderedLabel output) =>
+                output.PredictedLabel = TagSequence.Render(input.PredictedLabel ?? []),
+            contractName: null)
+            .Fit(predictions)
+            .Transform(predictions);
+
+    private sealed class TagVector
+    {
+        public string[]? PredictedLabel { get; set; }
     }
 
     private sealed class BooleanLabel

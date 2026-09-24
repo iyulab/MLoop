@@ -29,6 +29,25 @@ public class DataQualityValidatorTests : IDisposable
         return path;
     }
 
+    #region Text labels
+
+    [Theory]
+    [InlineData("ner", "O B-DATE B-TIME I-TIME O")]
+    [InlineData("question-answering", "the answer text")]
+    public void ValidateTrainingData_TextLabelTask_AcceptsTextLabels(string task, string label)
+    {
+        // "Not a classification task, so the label must be a number" refused every NER set before
+        // its trainer was ever reached.
+        var rows = string.Join("\n", Enumerable.Range(0, 12).Select(i => $"sentence number {i},{label}"));
+        var path = CreateCsv("Sentence,Label\n" + rows + "\n");
+
+        var result = _validator.ValidateTrainingData(path, "Label", task);
+
+        Assert.True(result.IsValid, result.ErrorMessage);
+    }
+
+    #endregion
+
     #region Constructor
 
     [Fact]
