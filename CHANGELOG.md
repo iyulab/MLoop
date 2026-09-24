@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Deep-learning training shows how far along it is.** Text classification, NER, sentence
+  similarity, question answering and object detection train for a fixed number of epochs in one
+  call, and the progress bar sat at 0% for the whole of it — over four minutes on eleven thousand
+  sentence pairs with nothing to say whether that was a tenth of the run or all of it. The bar now
+  counts epochs (`Epoch 3/10 — about 9m left`), `train` says up front that the time limit does not
+  shorten these tasks, and `--json` emits a `phase: "epoch"` event with `epoch` and `epochs` per epoch.
 - **Data files in Parquet, Excel, JSON and TSV.** `train`, `predict`, `evaluate`, `info`, `analyze`
   and `detect` used to read every data file as comma-separated text, so a Parquet file reached the
   label check as binary noise listed as "available columns". Such a file is now read as the table it

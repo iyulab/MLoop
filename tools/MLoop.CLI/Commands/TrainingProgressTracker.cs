@@ -98,7 +98,39 @@ public sealed class TrainingProgressTracker
         TrainingPhase.ProbeConverged => "[green]Converged[/] in probe phase",
         TrainingPhase.ProbeFellBack => "[yellow]AutoML unavailable[/] for this data",
         TrainingPhase.Complete => $"[green]Finalizing {Markup.Escape(modelName)}...[/]",
+        TrainingPhase.Epoch when p.MaxEpochs > 0 =>
+            $"[green]Epoch {p.Epoch}/{p.MaxEpochs}[/]{RemainingSuffix(p)}",
         _ => null
+    };
+
+    /// <summary>
+    /// Percentage for a deep-learning epoch event, or <c>null</c> for any other event. A fit runs a
+    /// fixed number of epochs, so epochs finished — not time spent against the budget — is how far
+    /// along it is. Capped below 100: evaluation and saving still follow the last epoch.
+    /// </summary>
+    public static double? EpochPercent(TrainingProgress p)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+        if (p.Phase != TrainingPhase.Epoch || p.MaxEpochs <= 0)
+            return null;
+        return Math.Clamp((double)p.Epoch / p.MaxEpochs * 100, 0, 99);
+    }
+
+    // Epochs of one fit take about the same time, so the ones done predict the ones left.
+    private static string RemainingSuffix(TrainingProgress p)
+    {
+        if (p.Epoch <= 0 || p.Epoch >= p.MaxEpochs || p.ElapsedSeconds <= 0)
+            return "";
+        var remaining = TimeSpan.FromSeconds(p.ElapsedSeconds / p.Epoch * (p.MaxEpochs - p.Epoch));
+        return $" — about {FormatDuration(remaining)} left";
+    }
+
+    /// <summary>A rough duration for a person: <c>40s</c>, <c>12m</c>, <c>1h 05m</c>.</summary>
+    public static string FormatDuration(TimeSpan span) => span.TotalSeconds switch
+    {
+        < 60 => $"{Math.Max(1, (int)Math.Round(span.TotalSeconds))}s",
+        < 3600 => $"{(int)Math.Round(span.TotalMinutes)}m",
+        _ => $"{(int)span.TotalHours}h {span.Minutes:00}m"
     };
 
     /// <summary>The progress description for a completed trial.</summary>

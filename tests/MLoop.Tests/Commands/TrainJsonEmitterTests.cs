@@ -59,6 +59,7 @@ public class TrainJsonEmitterTests
     [InlineData(TrainingPhase.ProbeFellBack, "fellback", true, false, true, true, false)]
     [InlineData(TrainingPhase.MainStart, "main", false, true, false, false, false)]
     [InlineData(TrainingPhase.Complete, "complete", false, false, true, false, true)]
+    [InlineData(TrainingPhase.Epoch, "epoch", false, false, false, false, true)]
     public void Phase_names_the_boundary_and_carries_only_the_facts_it_has(
         TrainingPhase phase, string expected,
         bool probe, bool budget, bool trials, bool metric, bool elapsed)
@@ -91,6 +92,24 @@ public class TrainJsonEmitterTests
         if (metric) Assert.Equal(0.7, m.GetDouble());
         Assert.Equal(elapsed, e.TryGetProperty("elapsedMs", out var el));
         if (elapsed) Assert.Equal(12500, el.GetInt64());
+        Assert.Equal(phase == TrainingPhase.Epoch, e.TryGetProperty("epoch", out _));
+        Assert.Equal(phase == TrainingPhase.Epoch, e.TryGetProperty("epochs", out _));
+    }
+
+    [Fact]
+    public void An_epoch_event_says_how_many_epochs_are_done_out_of_how_many()
+    {
+        var (emitter, sink) = Build();
+
+        emitter.Phase(new TrainingProgress
+        {
+            TrialNumber = 0, TrainerName = "NER (NAS-BERT)", MetricName = "", Metric = 0, ElapsedSeconds = 90,
+            Phase = TrainingPhase.Epoch, Epoch = 3, MaxEpochs = 10
+        });
+
+        var e = Assert.Single(Events(sink));
+        Assert.Equal(3, e.GetProperty("epoch").GetInt32());
+        Assert.Equal(10, e.GetProperty("epochs").GetInt32());
     }
 
     [Fact]

@@ -50,6 +50,11 @@ public enum TrainingPhase
     ProbeFellBack,
     /// <summary>The training window is starting under a fixed budget (no probe). Data: FinalTimeSeconds.</summary>
     MainStart,
+    /// <summary>
+    /// A deep-learning trainer finished an epoch. Its fit runs a fixed number of epochs, so this —
+    /// not the time budget — is how far along it is. Data: Epoch (finished), MaxEpochs, ElapsedSeconds.
+    /// </summary>
+    Epoch,
     /// <summary>The training window ended; post-training steps (save, evaluate, promote) follow. Every successful run ends its phase stream with this. Data: TrialNumber (trials retained in the experiment — matches trials.ndjson; under auto-time, discarded probe trials are not in it), ElapsedSeconds.</summary>
     Complete
 }
@@ -69,4 +74,8 @@ public class TrainingProgress
     public TrainingPhase? Phase { get; init; }
     public int ProbeTimeSeconds { get; init; }
     public int FinalTimeSeconds { get; init; }
+
+    // Deep-learning epoch reporting (Phase = Epoch)
+    public int Epoch { get; init; }
+    public int MaxEpochs { get; init; }
 }

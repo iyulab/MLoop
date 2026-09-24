@@ -1005,6 +1005,8 @@ public static class TrainCommand
                             progressTracker.EnterPhase(p);
                             progressTask.Description =
                                 TrainingProgressTracker.PhaseDescription(p, resolvedModelName) ?? progressTask.Description;
+                            if (TrainingProgressTracker.EpochPercent(p) is { } epochPercent)
+                                progressTask.Value = epochPercent;
                             return;
                         }
 
