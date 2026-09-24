@@ -25,6 +25,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every point.
 
 ### Fixed
+- **Error suggestions name commands that exist.** A failed `train` suggested `mloop experiments list`
+  and `mloop experiments promote` (there is no such group — `mloop list`, `mloop promote`),
+  `mloop analyze` without the aspect it requires, and `mloop init` without a project name; its
+  "What you can try" list numbered every item `1.`; and a missing label column — whose message names
+  the model — drew the suggestions for a missing model. Every `mloop …` a message suggests is now
+  parsed against the real command tree by a test.
 - **A text model reads the text, not the first string columns.** Text classification, NER,
   sentence similarity and question answering took the first string columns in the file. On a
   sentence-similarity set whose first column was a source tag, the model was trained on the tag and

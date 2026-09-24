@@ -46,7 +46,7 @@ public static class ErrorSuggestions
             {
                 err.MarkupLine($"  [blue]>[/] {suggestion}");
             }
-            // Suggestion text carries markup (e.g. "[cyan]mloop analyze[/]") for the terminal; each
+            // Suggestion text carries markup (e.g. "[cyan]mloop info <data-file>[/]") for the terminal; each
             // machine stream strips it before reporting, same as every other markup-bearing string.
             machineParts.Add("Suggestions: " + string.Join("; ", suggestions));
         }
@@ -148,10 +148,11 @@ public static class ErrorSuggestions
         {
             suggestions.Add("Verify the data file has the expected columns");
             suggestions.Add("Check if the label column name matches (case-sensitive)");
-            suggestions.Add("Run [cyan]mloop analyze[/] to inspect your data schema");
+            suggestions.Add("Inspect the columns MLoop sees: [cyan]mloop info <data-file>[/]");
         }
 
-        if (message.Contains("label") && (message.Contains("not found") || message.Contains("missing")))
+        var labelNotFound = message.Contains("label") && (message.Contains("not found") || message.Contains("missing"));
+        if (labelNotFound)
         {
             suggestions.Add("Update the label in mloop.yaml: [cyan]label: YourLabelColumnName[/]");
             suggestions.Add("Or specify via CLI: [cyan]mloop train --label YourLabelColumnName[/]");
@@ -212,19 +213,21 @@ public static class ErrorSuggestions
             suggestions.Add("Ensure consistent column separators (comma)");
         }
 
-        // Model errors
-        if (message.Contains("model") && (message.Contains("not found") || message.Contains("load")))
+        // Model errors. A missing label column names the model it was looking for ("… not found in
+        // data for model 'default'"), which is not a missing model — those suggestions would send the
+        // reader after experiments when the problem is a column.
+        if (!labelNotFound && message.Contains("model") && (message.Contains("not found") || message.Contains("load")))
         {
-            suggestions.Add("Run [cyan]mloop experiments list[/] to see available models");
+            suggestions.Add("See the models and their experiments: [cyan]mloop list[/]");
             suggestions.Add("Train a model first: [cyan]mloop train[/]");
-            suggestions.Add("Promote an experiment: [cyan]mloop experiments promote <experiment-id>[/]");
+            suggestions.Add("Promote an experiment: [cyan]mloop promote <experiment-id>[/]");
         }
 
         // Configuration errors
         if (message.Contains("config") || message.Contains("yaml") || message.Contains("mloop.yaml"))
         {
             suggestions.Add("Check mloop.yaml syntax (YAML is space-sensitive)");
-            suggestions.Add("Run [cyan]mloop init[/] to create a default configuration");
+            suggestions.Add("Start from a fresh project to compare against: [cyan]mloop init <project-name>[/]");
             suggestions.Add("Validate your YAML at https://www.yamllint.com/");
         }
 
@@ -242,7 +245,7 @@ public static class ErrorSuggestions
             if (!suggestions.Any())
             {
                 // Generic training suggestions if no specific match
-                suggestions.Add("Run [cyan]mloop analyze <data-file>[/] to check data quality");
+                suggestions.Add("Check data quality: [cyan]mloop analyze profile <data-file>[/]");
                 suggestions.Add("Try with a smaller time limit first: [cyan]mloop train --time 30[/]");
                 suggestions.Add("Check the GUIDE.md for common solutions");
             }
@@ -389,9 +392,9 @@ public static class ErrorSuggestions
         {
             err.WriteLine();
             err.MarkupLine("[yellow]What you can try:[/]");
-            foreach (var suggestion in suggestions)
+            for (var i = 0; i < suggestions.Count; i++)
             {
-                err.MarkupLine($"  [blue]1.[/] {suggestion}");
+                err.MarkupLine($"  [blue]{i + 1}.[/] {suggestions[i]}");
             }
             machineParts.Add("Suggestions: " + string.Join("; ", suggestions));
         }
@@ -403,7 +406,7 @@ public static class ErrorSuggestions
         err.MarkupLine("[grey]Diagnostic commands:[/]");
         if (!string.IsNullOrEmpty(dataFile))
         {
-            err.MarkupLine($"  [cyan]mloop analyze {Markup.Escape(dataFile)}[/]  - Analyze your data");
+            err.MarkupLine($"  [cyan]mloop info {Markup.Escape(dataFile)}[/]  - Inspect your data");
         }
         err.MarkupLine("  [cyan]mloop status[/]                    - Check project status");
     }

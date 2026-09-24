@@ -100,6 +100,18 @@ public class ErrorConsoleTests
     }
 
     [Fact]
+    public void DisplayTrainingError_NumbersItsSuggestionsInOrder()
+    {
+        // Every suggestion used to be printed as "1." — a list that counts nothing.
+        var ex = new ArgumentException("Label column 'Label' not found in data for model 'default'.", "labelColumn");
+
+        var output = CaptureStdErr(() => ErrorSuggestions.DisplayTrainingError(ex, "default"));
+
+        Assert.Contains("  1. ", output);
+        Assert.Contains("  2. ", output);
+    }
+
+    [Fact]
     public void PathNotFoundTip_NamesTheProjectRoot()
     {
         // Every explicit-path command option resolves a relative path against the project root
