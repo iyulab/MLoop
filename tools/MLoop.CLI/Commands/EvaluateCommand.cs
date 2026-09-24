@@ -263,6 +263,9 @@ public static class EvaluateCommand
             // Validate schema before evaluation (CSV-column validation; not applicable to image directories)
             if (!isDirectoryBased)
             {
+                // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
+                resolvedTestDataFile = await TabularDataFile.AsCsvAsync(resolvedTestDataFile);
+
                 var validator = new SchemaValidator(fileSystem, projectDiscovery);
                 var validationResult = await validator.ValidateAsync(resolvedTestDataFile, resolvedModelName, resolvedExperimentId);
 

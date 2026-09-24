@@ -18,9 +18,11 @@ namespace MLoop.CLI.Commands;
 internal static class TrainPresenter
 {
     /// <summary>
-    /// Displays a summary of the training data (row count, column count, file size).
+    /// Displays a summary of the training data (row count, column count, file size). Rows and
+    /// columns are counted in <paramref name="dataFile"/>, the table training reads; the size is
+    /// that of <paramref name="sourceFile"/>, the file the user named, when it differs.
     /// </summary>
-    public static void DisplayDataSummary(string dataFile, string labelColumn)
+    public static void DisplayDataSummary(string dataFile, string labelColumn, string? sourceFile = null)
     {
         try
         {
@@ -47,7 +49,7 @@ internal static class TrainPresenter
             table.AddRow("Label", $"[cyan]{labelColumn}[/]");
 
             // Check file size
-            var fileSize = new FileInfo(dataFile).Length;
+            var fileSize = new FileInfo(sourceFile ?? dataFile).Length;
             var sizeStr = fileSize switch
             {
                 < 1024 => $"{fileSize} B",
@@ -69,7 +71,8 @@ internal static class TrainPresenter
     /// Displays the training configuration before training starts.
     /// </summary>
     public static void DisplayTrainingConfig(
-        string dataFile, string modelName, ModelDefinition definition, string? testDataFile = null, bool useAutoTime = false)
+        string dataFile, string modelName, ModelDefinition definition, string? testDataFile = null, bool useAutoTime = false,
+        string? sourceFile = null)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[blue]Training Configuration[/]").LeftJustified());
@@ -82,7 +85,7 @@ internal static class TrainPresenter
 
         table.AddRow("Model", $"[cyan]{modelName}[/]");
         table.AddRow("Task", definition.Task);
-        table.AddRow("Data File", Path.GetFileName(dataFile));
+        table.AddRow("Data File", Path.GetFileName(sourceFile ?? dataFile));
         table.AddRow("Label Column", definition.Label);
         table.AddRow("Time Limit", useAutoTime
             ? "[cyan]auto[/] (estimated from data size)"
