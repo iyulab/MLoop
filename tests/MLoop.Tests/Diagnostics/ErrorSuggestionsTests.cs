@@ -250,4 +250,18 @@ public class ErrorSuggestionsTests
 
         Assert.Contains(suggestions, s => s.Contains("--max-rows") || s.Contains("mloop sample"));
     }
+
+    [Fact]
+    public void A_missing_label_column_is_not_taken_for_a_missing_model()
+    {
+        // The label check names the model it was reading for; that made the model rule fire and
+        // send the reader to experiments when the problem is a column.
+        var ex = new ArgumentException(
+            "Label column 'Label' not found in data for model 'default'.\nAvailable columns: a, b", "labelColumn");
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "training");
+
+        Assert.Contains(suggestions, s => s.Contains("label:"));
+        Assert.DoesNotContain(suggestions, s => s.Contains("mloop promote") || s.Contains("mloop list"));
+    }
 }

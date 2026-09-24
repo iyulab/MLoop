@@ -1054,7 +1054,7 @@ public static class TrainCommand
                 ErrorConsole.Out.WriteLine();
                 ErrorConsole.Out.MarkupLine("[yellow]Suggestions:[/]");
                 ErrorConsole.Out.MarkupLine("  [blue]>[/] Try increasing the time limit: [cyan]--time 120[/]");
-                ErrorConsole.Out.MarkupLine("  [blue]>[/] Check data quality: [cyan]mloop analyze[/]");
+                ErrorConsole.Out.MarkupLine("  [blue]>[/] Check data quality: [cyan]mloop analyze profile <data-file>[/]");
                 ErrorConsole.Out.MarkupLine("  [blue]>[/] Verify label column exists and has valid values");
                 return 1;
             }
