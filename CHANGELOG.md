@@ -71,7 +71,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`mloop detect` finds the period of a series that is not a whole number of cycles long.** The
   estimate used to land a few steps short on such a series — 60 for a period of 63 over 300 points
   — because the autocorrelation it compared shrinks with the lag and nothing corrected for that.
-  This comes with DataLens 0.16.0.
+  This comes with DataLens 0.18.0.
 - **An image built by `mloop docker` for one model now serves that model.** The generated Dockerfile
   sets `MLOOP_MODEL_NAME`, and that variable existed precisely so an image serving a single model
   would not need it named on every request — but the only code reading it was in the CLI, and what
@@ -134,6 +134,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   found.
 
 ### Changed
+- **DataLens 0.18.0** (from 0.14.3), on UInsight 0.24.0. Two of its changes reach `mloop analyze` and
+  `mloop info --analyze` output: K-means and HDBSCAN clusters are numbered by first appearance (the
+  grouping is unchanged; the numbers attached to it can differ from 0.32.0), and permutation
+  importance no longer depends on column order or names, so its scores for the same data differ from
+  earlier versions. An analysis step that fails is now reported as a warning instead of being
+  dropped silently.
 - **`mloop detect` runs on every platform, and finds what it used to miss.** Detection moved
   from ML.NET's SR-CNN to spectral residual scoring in the statistics engine MLoop already uses for
   analysis (through DataLens 0.15.0). The old path needed ML.NET's FFT native — absent on Apple
