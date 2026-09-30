@@ -51,6 +51,7 @@ information about the task. A field without a value is absent, never zero and ne
 
 | Field | Type | Carries a value for |
 |---|---|---|
+| `predictionId` | string (16 hex characters) | `POST /predict` rows that were logged — the id `POST /feedback` takes to record the actual value. Absent from `mloop predict --json` (find a CLI prediction's id with `mloop logs`) and from a served row the server could not log, which then carries a warning |
 | `predictedLabel` | string | classification (binary, multiclass, text, image) |
 | `probabilities` | object: class name → number | classification |
 | `score` | number | binary classification (P of the positive class), regression, forecasting, ranking, recommendation |

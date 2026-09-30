@@ -169,4 +169,26 @@ public class FilePredictionLoggerTests : IDisposable
         var logs = await _logger.GetLogsAsync(modelName);
         logs.Should().HaveCount(1);
     }
+
+    [Fact]
+    public async Task LogBatchAsync_KeepsTheIdTheCallerHandedOut()
+    {
+        // `mloop serve` returns each row's id before the entry is written; the log must hold that id.
+        var dir = Path.Combine(Path.GetTempPath(), $"mloop-test-{Guid.NewGuid():N}");
+        try
+        {
+            var logger = new FilePredictionLogger(dir);
+            var id = PredictionIds.New();
+            await logger.LogBatchAsync("m", "exp-001",
+                [new PredictionLogEntry("m", "exp-001", new Dictionary<string, object> { ["x"] = 1 }, "yes", 0.9, DateTimeOffset.UtcNow, id)]);
+
+            var logs = await logger.GetLogsAsync("m");
+
+            logs.Should().ContainSingle().Which.Id.Should().Be(id);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
 }

@@ -59,7 +59,8 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
 
             // Override Ops/DataStore services to use test directory
             ReplaceService<IModelComparer>(services, new FileModelComparer(_testProjectRoot));
-            ReplaceService<IRetrainingTrigger>(services, new TimeBasedTrigger(_testProjectRoot));
+            ReplaceService<IRetrainingTrigger>(services,
+                new CompositeRetrainingTrigger(_testProjectRoot, new FileFeedbackCollector(_testProjectRoot)));
             ReplaceService<IPredictionLogger>(services, new FilePredictionLogger(_testProjectRoot));
             ReplaceService<IFeedbackCollector>(services, new FileFeedbackCollector(_testProjectRoot));
             ReplaceService<IPromotionManager>(services, new FilePromotionManager(_testProjectRoot));

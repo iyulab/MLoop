@@ -118,6 +118,43 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
     }
 
     [Fact]
+    public async Task Served_predictions_are_logged_and_close_the_feedback_loop()
+    {
+        // Served traffic used to reach none of logs, feedback or triggers: `/predict` never logged,
+        // nothing showed the id feedback needs, and an unknown id came back as a 500.
+        var modelName = SeedMulticlassProductionModel();
+
+        var predict = await _client.PostAsJsonAsync($"/predict?name={modelName}", new[] { new { X1 = 1.0, X2 = 1.0 } });
+        predict.StatusCode.Should().Be(HttpStatusCode.OK, await predict.Content.ReadAsStringAsync());
+        var row = JsonSerializer.Deserialize<JsonElement>(await predict.Content.ReadAsStringAsync())
+            .GetProperty("predictions")[0];
+        var id = row.GetProperty("predictionId").GetString();
+        id.Should().MatchRegex("^[0-9a-f]{16}$");
+
+        var logs = JsonSerializer.Deserialize<JsonElement>(await _client.GetStringAsync($"/logs?name={modelName}"));
+        logs.GetProperty("logs").EnumerateArray().Select(l => l.GetProperty("id").GetString())
+            .Should().Contain(id, "the id a response hands out is the id the log holds");
+
+        var first = await _client.PostAsJsonAsync("/feedback", new { predictionId = id, actualValue = "bird" });
+        first.StatusCode.Should().Be(HttpStatusCode.OK, await first.Content.ReadAsStringAsync());
+
+        // Recording it again is a correction, not an error; the metrics count the prediction once.
+        var again = await _client.PostAsJsonAsync("/feedback", new { predictionId = id, actualValue = "bird" });
+        again.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var unknown = await _client.PostAsJsonAsync("/feedback", new { predictionId = "0000000000000000", actualValue = "bird" });
+        unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var empty = await _client.PostAsJsonAsync("/feedback", new { });
+        empty.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var trigger = JsonSerializer.Deserialize<JsonElement>(await _client.GetStringAsync($"/trigger?name={modelName}"));
+        trigger.GetProperty("conditions").EnumerateArray().Select(c => c.GetProperty("type").GetString())
+            .Should().BeEquivalentTo(["AccuracyDrop", "FeedbackVolume", "TimeBased"],
+                "the API checks the same default conditions as `mloop trigger check`");
+    }
+
+    [Fact]
     public async Task Predict_Multiclass_MatchesTheDocumentedResponseContract()
     {
         var modelName = SeedMulticlassProductionModel();

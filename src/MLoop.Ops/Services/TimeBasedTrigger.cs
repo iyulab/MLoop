@@ -75,15 +75,7 @@ public sealed class TimeBasedTrigger : IRetrainingTrigger
         CancellationToken cancellationToken = default)
     {
         // Default: retrain if 30 days have passed since last training
-        var defaultConditions = new List<RetrainingCondition>
-        {
-            new(
-                Type: ConditionType.TimeBased,
-                Name: "Scheduled Retraining",
-                Threshold: DefaultRetrainingIntervalDays,
-                Description: $"Retrain if more than {DefaultRetrainingIntervalDays} days since last training"
-            )
-        };
+        var defaultConditions = new List<RetrainingCondition> { RetrainingDefaults.Interval() };
 
         return Task.FromResult<IReadOnlyList<RetrainingCondition>>(defaultConditions);
     }

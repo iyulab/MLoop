@@ -180,12 +180,12 @@ public static class FeedbackCommand
 
             return 0;
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
+        catch (PredictionNotFoundException ex)
         {
-            // The tip used to render via a bare AnsiConsole.MarkupLine after ErrorConsole.Error —
-            // stdout, not stderr, so a --json consumer got the cause and lost the remedy (the same
-            // channel defect ErrorConsole.Error(cause, tip) exists to close).
-            ErrorConsole.Error(ex.Message, "Make sure the prediction was logged with --log.");
+            ErrorConsole.Error(
+                Markup.Escape(ex.Message),
+                "Prediction ids are in the ID column of `mloop logs`. Only logged predictions have one — "
+                + "`mloop predict --log`, or any prediction served by `mloop serve`.");
             return 1;
         }
         catch (Exception ex)

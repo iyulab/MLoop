@@ -36,14 +36,14 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         string? source = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(predictionId);
+        ArgumentNullException.ThrowIfNull(actualValue);
+
         // Find the original prediction to get modelName and predictedValue
         var prediction = await FindPredictionByIdAsync(predictionId, cancellationToken).ConfigureAwait(false);
         if (prediction == null)
-        {
-            throw new InvalidOperationException(
-                $"Prediction with ID '{predictionId}' not found in logs. " +
-                "Ensure the prediction was logged and try again.");
-        }
+            throw new PredictionNotFoundException(predictionId);
+
 
         var entry = new SerializableFeedbackEntry
         {
@@ -116,6 +116,13 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                 Recall: null,
                 CalculatedAt: DateTimeOffset.UtcNow);
         }
+
+        // Recording feedback again for a prediction corrects it — the latest actual value stands, as
+        // sampling already reads it — so each prediction is counted once.
+        feedback = feedback
+            .GroupBy(e => e.PredictionId)
+            .Select(g => g.OrderByDescending(e => e.Timestamp).First())
+            .ToList();
 
         // Calculate accuracy for classification tasks
         int correctCount = 0;

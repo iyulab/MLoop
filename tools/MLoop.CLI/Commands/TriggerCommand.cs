@@ -42,7 +42,7 @@ public static class TriggerCommand
 
         var feedbackOption = new Option<int?>("--feedback", "-f")
         {
-            Description = "Feedback volume threshold. Triggers if feedback count exceeds this value."
+            Description = "Feedback volume threshold. Triggers once the feedback count reaches this value."
         };
 
         var jsonOption = new Option<bool>("--json")
@@ -85,16 +85,10 @@ public static class TriggerCommand
             if (projectRoot == null) return 1;
 
             var feedbackCollector = new FileFeedbackCollector(projectRoot);
-            var trigger = new FeedbackBasedTrigger(feedbackCollector);
-
-            // Build conditions
+            // The same trigger and the same default conditions as `GET /trigger`, so the CLI and the API
+            // give one answer for one model.
+            var trigger = new CompositeRetrainingTrigger(projectRoot, feedbackCollector);
             var conditions = BuildConditions(accuracyThreshold, feedbackThreshold);
-            if (conditions.Count == 0)
-            {
-                // Use default conditions if none specified
-                conditions = (await trigger.GetDefaultConditionsAsync(modelName.ToLowerInvariant()))
-                    .ToList();
-            }
 
             TriggerEvaluation result = null!;
 
@@ -125,39 +119,33 @@ public static class TriggerCommand
         }
     }
 
+    /// <summary>
+    /// The default retraining conditions (<see cref="RetrainingDefaults.All"/>), with an option given on
+    /// the command line replacing the default it names rather than the whole set.
+    /// </summary>
     internal static List<RetrainingCondition> BuildConditions(
         double? accuracyThreshold,
-        int? feedbackThreshold)
-    {
-        var conditions = new List<RetrainingCondition>();
-
-        if (accuracyThreshold.HasValue)
-        {
-            conditions.Add(new RetrainingCondition(
-                ConditionType.AccuracyDrop,
-                "accuracy_threshold",
-                accuracyThreshold.Value,
-                $"Accuracy below {accuracyThreshold.Value:P0}"));
-        }
-
-        if (feedbackThreshold.HasValue)
-        {
-            conditions.Add(new RetrainingCondition(
-                ConditionType.FeedbackVolume,
-                "feedback_threshold",
-                feedbackThreshold.Value,
-                $"Feedback count >= {feedbackThreshold.Value}"));
-        }
-
-        return conditions;
-    }
+        int? feedbackThreshold) =>
+        RetrainingDefaults.All
+            .Select(c => c.Type switch
+            {
+                ConditionType.AccuracyDrop when accuracyThreshold.HasValue =>
+                    RetrainingDefaults.Accuracy(accuracyThreshold.Value),
+                ConditionType.FeedbackVolume when feedbackThreshold.HasValue =>
+                    RetrainingDefaults.Feedback(feedbackThreshold.Value),
+                _ => c
+            })
+            .ToList();
 
     private static void OutputResultAsJson(TriggerEvaluation result)
     {
         var options = new JsonSerializerOptions
         {
             WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            // A model never trained is infinitely old for the interval condition. `GET /trigger` writes
+            // that as "Infinity" (the API's serializer allows named literals); the CLI writes it the same way.
+            NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
         };
 
         var output = new

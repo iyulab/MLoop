@@ -31,6 +31,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every point.
 
 ### Fixed
+- **Predictions served by `mloop serve` reach logs, feedback and retraining triggers.** `POST /predict`
+  never logged what it answered, so `GET /logs`, feedback and triggers saw only batch predictions made
+  with `mloop predict --log`, and nothing anywhere showed the id feedback needs. Served predictions are
+  now logged (`Serve:LogPredictions`, on by default), each row carries its `predictionId`, and the id
+  appears in `mloop logs` (an ID column and an `id` field in `--json`) and in `GET /logs`. A failure to
+  log does not fail the prediction; the row comes back without an id and with a warning.
+- **`POST /feedback` answers a caller's mistake as one.** An id no log holds returned 500; it is now
+  404, and a request without an id or an actual value is 400. `mloop feedback add` names where ids are
+  found. Recording feedback again for the same prediction is a correction: feedback accuracy now counts
+  each prediction once, with its latest actual value, where it used to count every entry.
+- **`mloop trigger check` and `GET /trigger` check the same conditions.** The CLI checked feedback
+  accuracy and volume while the API checked only the time since training, so one model got two answers.
+  Both now check all three by default, and `--accuracy`/`--feedback` replace the default they name
+  instead of discarding the others.
 - **`mloop preprocess --incremental` no longer reports cleaned data it did not write.** The workflow
   discovers rules with every detector, but most rule types have no application strategy yet. A run
   whose rules changed nothing still printed "Incremental preprocessing complete!" and a

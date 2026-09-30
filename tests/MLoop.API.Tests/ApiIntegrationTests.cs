@@ -520,8 +520,8 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
         // Act
         var response = await _client.PostAsJsonAsync("/feedback", request);
 
-        // Assert - should fail because prediction was never logged
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        // Assert - the prediction was never logged: the caller named something that is not there
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
