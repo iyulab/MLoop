@@ -39,7 +39,11 @@ public class ErrorConsoleTests
         {
             Console.SetError(original);
         }
-        return buffer.ToString();
+        // These tests read the words, not the colours. Whether the stderr console emits ANSI depends on
+        // where it runs — none when redirected on a developer machine, colour on a CI runner that
+        // advertises it (GITHUB_ACTIONS) — and a colour code between "1." and its text split the
+        // sentence a test looked for on every CI platform while passing locally.
+        return System.Text.RegularExpressions.Regex.Replace(buffer.ToString(), @"\x1B\[[0-9;]*m", "");
     }
 
     [Fact]
