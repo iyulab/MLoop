@@ -72,6 +72,22 @@ public sealed class IncrementalWorkflowState
     public required IncrementalWorkflowConfig Config { get; init; }
 
     /// <summary>
+    /// Where the cleaned dataset was written, or <c>null</c> when none was — no rule was approved, or
+    /// the approved rules changed nothing, in which case a "cleaned" copy would be the input itself.
+    /// </summary>
+    public string? CleanedDataPath { get; set; }
+
+    /// <summary>
+    /// Rows the approved rules changed when they were applied to the full dataset.
+    /// </summary>
+    public long RowsAffected { get; set; }
+
+    /// <summary>
+    /// Approved rules whose type has no application strategy yet, so they left the data untouched.
+    /// </summary>
+    public int RulesNotImplemented { get; set; }
+
+    /// <summary>
     /// Optional user notes or observations.
     /// </summary>
     public string? Notes { get; set; }

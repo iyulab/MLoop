@@ -31,6 +31,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every point.
 
 ### Fixed
+- **`mloop preprocess --incremental` no longer reports cleaned data it did not write.** The workflow
+  discovers rules with every detector, but most rule types have no application strategy yet. A run
+  whose rules changed nothing still printed "Incremental preprocessing complete!" and a
+  `cleaned_data.csv` path — a copy identical to the input, or a file that was never written when no
+  rule was approved — and exited 0. Now a run that finds or approves no rule says so and exits 0; a
+  run whose approved rules could not change the data writes no cleaned copy, says how many rules have
+  no strategy yet, and exits 1. A run that did change rows reports how many.
+- **Running `mloop` with no arguments lists every command.** The list was a hand-kept copy that had
+  fallen six commands behind (`analyze`, `detect`, `features`, `token`, `new`, `runtime`) and it now
+  comes from the command tree itself.
 - **A NER model that tags every word `O` is no longer promoted.** NER's label cell holds a sentence of
   tags, and the quality gate counted the cells as classes: N was the number of distinct sentences, its
   1/N floor effectively zero, and on real data a model scoring the share of `O` (0.85 of words, 0.12
@@ -181,6 +191,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the best one. A note under the table now gives the direction for each metric present, and says
   the list is ordered newest-first rather than ranked. A metric MLoop does not recognize is left
   unclaimed rather than assumed to be maximized.
+
+### Removed
+- **`mloop pipeline`.** It never ran a step: the handlers it dispatched to were placeholders that
+  reported an experiment named `exp-pipeline-001`, a metric of 0.95 and a completed promotion without
+  training or promoting anything, and the command exited 0. Each MLoop command already runs as its own
+  process, so a shell script or CI job is the pipeline — `mloop train`, `mloop evaluate` and
+  `mloop promote` in sequence, stopping on the first non-zero exit code.
+- **`mloop extensions`.** It printed that listing extensions was not yet available. Scripts are found by
+  where they are: `.mloop/scripts/hooks/`, `metrics/`, `preprocess/`, `detectors/`.
 
 ### Security
 - **Build-time: `Microsoft.SourceLink.GitHub` 10.0.401** (from 10.0.301), which brings

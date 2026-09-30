@@ -361,9 +361,7 @@ The section above shows the ones a first project uses. This is the whole surface
 | `serve` | Start the REST API server for model serving |
 | `token` | Issue a JWT bearer token for the local serve API |
 | `docker` | Generate Docker configuration for model deployment |
-| `pipeline` | Execute an ML workflow from a YAML pipeline definition |
-| `extensions` | List all discovered extensibility scripts |
-| `new` | Generate new project components (hooks, metrics, scripts) |
+| `new` | Generate new project components (hooks) |
 | `runtime` | Manage on-demand ML runtime downloads |
 | `update` | Check for and install CLI updates |
 
