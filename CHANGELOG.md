@@ -182,6 +182,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the list is ordered newest-first rather than ranked. A metric MLoop does not recognize is left
   unclaimed rather than assumed to be maximized.
 
+### Security
+- **Build-time: `Microsoft.SourceLink.GitHub` 10.0.401** (from 10.0.301), which brings
+  `Microsoft.Build.Tasks.Git` out of the range of GHSA-23fw-v26w-5fgq (CVE-2026-62900). The reference
+  is build-only (`PrivateAssets="All"`) and never reached a consumer's package graph, but every build
+  that included MLoop's projects reported the advisory as a warning.
+
 ## [0.32.0] - 2026-09-20
 
 ### Added
