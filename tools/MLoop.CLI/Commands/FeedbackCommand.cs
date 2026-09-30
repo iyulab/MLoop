@@ -69,7 +69,7 @@ public static class FeedbackCommand
         var nameOption = new Option<string>("--model", "-m")
         {
             Description = "Model name",
-            Required = true
+            DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
         };
 
         var limitOption = new Option<int>("--limit", "-l")
@@ -118,7 +118,7 @@ public static class FeedbackCommand
         var nameOption = new Option<string>("--model", "-m")
         {
             Description = "Model name",
-            Required = true
+            DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
         };
 
         var fromOption = new Option<DateTime?>("--from")

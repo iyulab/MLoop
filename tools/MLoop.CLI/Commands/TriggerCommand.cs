@@ -32,7 +32,7 @@ public static class TriggerCommand
         var nameOption = new Option<string>("--name", "-n", "--model", "-m")
         {
             Description = "Model name to evaluate",
-            Required = true
+            DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
         };
 
         var accuracyOption = new Option<double?>("--accuracy", "-a")
