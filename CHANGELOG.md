@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+- **Build-time: `Microsoft.SourceLink.GitHub` 10.0.401** (from 10.0.301), which brings
+  `Microsoft.Build.Tasks.Git` out of the range of GHSA-23fw-v26w-5fgq (CVE-2026-62900). The reference
+  is build-only (`PrivateAssets="All"`) and never reached a consumer's package graph, but every build
+  that included MLoop's projects reported the advisory as a warning.
+
 ### Fixed
 - **An image built by `mloop docker` for one model now serves that model.** The generated Dockerfile
   sets `MLOOP_MODEL_NAME`, and that variable existed precisely so an image serving a single model
