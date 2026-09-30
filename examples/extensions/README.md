@@ -246,8 +246,8 @@ mloop train data.csv --label target
 
 ### Hook Not Executing
 ```bash
-# Verify hook discovery
-mloop extensions list
+# Verify hook discovery — a hook is picked up by its location and file name
+ls .mloop/scripts/hooks/
 
 # Check hook naming convention
 # pre-train.cs, post-train.cs, pre-predict.cs, post-evaluate.cs

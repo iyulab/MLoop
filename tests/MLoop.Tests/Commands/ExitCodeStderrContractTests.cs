@@ -61,7 +61,6 @@ public class ExitCodeStderrContractTests
     /// </summary>
     private static readonly string[][] FailingCommandLines =
     [
-        ["pipeline", "no-such-pipeline.yaml"],
         ["validate"],
         ["status"],
         ["list"],

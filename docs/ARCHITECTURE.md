@@ -680,7 +680,6 @@ MLoop/
 │   ├── MLoop.Ops.Tests/            # 45 tests (comparison, triggers)
 │   ├── MLoop.DataStore.Tests/      # 26 tests (logging, feedback)
 │   ├── MLoop.API.Tests/            # 15 tests (REST endpoints)
-│   ├── MLoop.Pipeline.Tests/       # 13 tests (pipeline integration)
 │   └── MLoop.Tests.Common/         # Shared test utilities
 │
 ├── examples/                            # Example projects
@@ -1175,7 +1174,6 @@ $ mloop experiment show exp-005  # Read metadata.json, metrics.json
 | `MLoop.Ops.Tests` | 45 | Model comparison, retraining triggers |
 | `MLoop.DataStore.Tests` | 26 | Prediction logging, feedback collection |
 | `MLoop.API.Tests` | 15 | REST API endpoints |
-| `MLoop.Pipeline.Tests` | 13 | Pipeline integration |
 
 ### 12.2 Unit Testing
 
@@ -1860,24 +1858,14 @@ $ mloop train data.csv --label target --metric profit-metric.cs
 ```bash
 # Create new extension
 mloop new hook --name DataValidation --type pre-train
-mloop new metric --name ProfitMetric
 
 # Validate extension
 mloop validate .mloop/scripts/hooks/pre-train.cs
 # ✅ Compilation successful
 # ✅ Implements IMLoopHook
 
-# List extensions
-mloop extensions list
-# Hooks:
-#   ✅ pre-train.cs (Data Validation)
-#   ✅ post-train.cs (MLflow Logging)
-# Metrics:
-#   ✅ profit-metric.cs (Expected Profit)
-
-# Clean cache
-mloop extensions clean
-# Removed 5 cached DLLs
+# Scripts are discovered by location — a file under .mloop/scripts/<kind>/ is picked up
+ls .mloop/scripts/hooks .mloop/scripts/metrics
 ```
 
 ### 14.11 Backward Compatibility

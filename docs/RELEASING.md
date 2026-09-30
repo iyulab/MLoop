@@ -67,7 +67,7 @@ the tree.
 
 ```bash
 for p in tests/MLoop.Tests tests/MLoop.Core.Tests tests/MLoop.Core.DeepLearning.Tests \
-         tests/MLoop.API.Tests tests/MLoop.DataStore.Tests tests/MLoop.Ops.Tests tests/MLoop.Pipeline.Tests; do
+         tests/MLoop.API.Tests tests/MLoop.DataStore.Tests tests/MLoop.Ops.Tests; do
   dotnet test "$p" -c Release --nologo || break
 done
 ```

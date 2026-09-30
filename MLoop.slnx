@@ -23,6 +23,5 @@
   <Project Path="tests/MLoop.API.Tests/MLoop.API.Tests.csproj" />
   <Project Path="tests/MLoop.Core.Tests/MLoop.Core.Tests.csproj" />
   <Project Path="tests/MLoop.Core.DeepLearning.Tests/MLoop.Core.DeepLearning.Tests.csproj" />
-  <Project Path="tests/MLoop.Pipeline.Tests/MLoop.Pipeline.Tests.csproj" />
   <Project Path="tests/MLoop.Tests/MLoop.Tests.csproj" />
 </Solution>

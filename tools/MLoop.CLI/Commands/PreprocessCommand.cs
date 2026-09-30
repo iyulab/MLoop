@@ -46,7 +46,9 @@ public static class PreprocessCommand
         var incrementalOption = new Option<bool>("--incremental")
         {
             Description = "Use the incremental rule-discovery workflow (pattern detectors → rule "
-                + "application, with HITL validation). NOTE: custom IPreprocessingScript files in "
+                + "application, with HITL validation). Rule discovery covers every detector; most rule types "
+                + "have no application strategy yet, and a run that changes no rows writes no cleaned data "
+                + "and exits 1. NOTE: custom IPreprocessingScript files in "
                 + ".mloop/scripts/preprocess/ run only in the DEFAULT (non-incremental) path, not here."
         };
 
@@ -333,7 +335,6 @@ public static class PreprocessCommand
 
         // Execute workflow with progress display
         IncrementalWorkflowState? finalState = null;
-        string? manifestCleanedPath = null;
 
         await AnsiConsole.Progress()
             .Columns(
@@ -352,27 +353,53 @@ public static class PreprocessCommand
                 });
 
                 finalState = await orchestrator.ExecuteWorkflowAsync(resolvedInputFile, config, progressReporter);
-                manifestCleanedPath = finalState != null
-                    ? Path.Combine(config.OutputDirectory, "cleaned_data.csv")
-                    : null;
 
                 workflowTask.Value = 100;
                 workflowTask.StopTask();
             });
 
-        if (finalState == null || string.IsNullOrEmpty(manifestCleanedPath))
+        if (finalState == null)
         {
             AnsiConsole.MarkupLine("[red]✗[/] Workflow did not complete successfully");
             return 1;
         }
 
         AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"Discovered rules: {finalState.DiscoveredRules.Count}");
+        AnsiConsole.MarkupLine($"Approved rules: {finalState.ApprovedRules.Count}");
+        AnsiConsole.MarkupLine($"Confidence: {finalState.ConfidenceScore:P2}");
+        AnsiConsole.MarkupLine($"Converged: {(finalState.HasConverged ? "Yes" : "No")}");
+        AnsiConsole.WriteLine();
+
+        // Only a dataset the rules actually changed is reported as cleaned. Rule discovery works for
+        // every detector, but most rule types have no application strategy yet, and a run whose rules
+        // changed nothing has produced no cleaned data — saying otherwise is a success it did not have.
+        if (finalState.ApprovedRules.Count == 0)
+        {
+            // Nothing to apply is an answer, not a failure: either no rule was found or every one was
+            // declined. There is simply no cleaned copy to point at.
+            AnsiConsole.MarkupLine(finalState.DiscoveredRules.Count == 0
+                ? "[green]✓[/] No preprocessing rule was found — the data was left as it is."
+                : "[yellow]![/] No rule was approved — the data was left as it is.");
+            return 0;
+        }
+
+        if (finalState.CleanedDataPath is null)
+        {
+            var cause = finalState.RulesNotImplemented > 0
+                ? $"{finalState.RulesNotImplemented} of {finalState.ApprovedRules.Count} approved rule(s) have no "
+                  + "application strategy yet, and none changed the data — no cleaned data was written."
+                : "The approved rules changed no rows — no cleaned data was written.";
+            ErrorConsole.Error(
+                Markup.Escape(cause),
+                "The incremental workflow reports the rules it finds; to transform the data now, write a "
+                + "preprocessing script in .mloop/scripts/preprocess/ and run `mloop preprocess` without --incremental.");
+            return 1;
+        }
+
         AnsiConsole.MarkupLine("[green]✓[/] Incremental preprocessing complete!");
-        ValueLine.Write("[green]✓[/] Cleaned data: ", Path.GetRelativePath(projectRoot, manifestCleanedPath));
-        AnsiConsole.MarkupLine($"[green]✓[/] Discovered rules: {finalState.DiscoveredRules.Count}");
-        AnsiConsole.MarkupLine($"[green]✓[/] Approved rules: {finalState.ApprovedRules.Count}");
-        AnsiConsole.MarkupLine($"[green]✓[/] Confidence: {finalState.ConfidenceScore:P2}");
-        AnsiConsole.MarkupLine($"[green]✓[/] Converged: {(finalState.HasConverged ? "Yes" : "No")}");
+        ValueLine.Write("[green]✓[/] Cleaned data: ", Path.GetRelativePath(projectRoot, finalState.CleanedDataPath));
+        AnsiConsole.MarkupLine($"[green]✓[/] Rows changed: {finalState.RowsAffected}");
         AnsiConsole.WriteLine();
 
         return 0;

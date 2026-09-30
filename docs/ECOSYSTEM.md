@@ -205,7 +205,6 @@ src/
 ├── MLoop.Core/                # ML 엔진 라이브러리
 │   ├── AutoML/               # ML.NET AutoML 래퍼
 │   ├── Data/                 # 데이터 로딩
-│   ├── Pipeline/             # ML 파이프라인
 │   └── Models/               # 도메인 모델
 │
 ├── MLoop.DataStore/           # 운영 데이터 저장

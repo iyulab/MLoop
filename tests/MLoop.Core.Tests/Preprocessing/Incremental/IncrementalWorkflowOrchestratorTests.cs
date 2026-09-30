@@ -254,6 +254,39 @@ public class IncrementalWorkflowOrchestratorTests : IDisposable
 
         Assert.True(ruleApplier.ApplyRulesCalled);
         Assert.True(deliverableGen.GenerateAllCalled);
+        Assert.Equal(Path.Combine(_tempDir, "cleaned.csv"), state.CleanedDataPath);
+        Assert.Equal(1, state.RowsAffected);
+    }
+
+    [Fact]
+    public async Task ExecuteWorkflowAsync_RulesThatChangeNothing_WriteNoCleanedData()
+    {
+        // An approved rule without an application strategy leaves every row as it was. A "cleaned"
+        // copy would be the input under another name, so none is written and the state says why.
+        var rules = new[] { CreateTestRule("rule-1") };
+        var rde = new FakeRuleDiscoveryEngine(stage1Rules: rules);
+        var ruleApplier = new FakeRuleApplier(RuleApplicationStatus.NotImplemented, rowsAffected: 0);
+        var deliverableGen = new FakeDeliverableGenerator();
+
+        var orchestrator = CreateOrchestrator(
+            ruleDiscoveryEngine: rde,
+            ruleApplier: ruleApplier,
+            deliverableGenerator: deliverableGen);
+
+        var config = new IncrementalWorkflowConfig
+        {
+            SkipHITL = true,
+            EnableCheckpoints = false,
+            OutputDirectory = _tempDir
+        };
+
+        var state = await orchestrator.ExecuteWorkflowAsync(_csvPath, config);
+
+        Assert.True(ruleApplier.ApplyRulesCalled);
+        Assert.False(deliverableGen.GenerateAllCalled);
+        Assert.Null(state.CleanedDataPath);
+        Assert.Equal(0, state.RowsAffected);
+        Assert.Equal(1, state.RulesNotImplemented);
     }
 
     [Fact]
@@ -659,7 +692,8 @@ public class IncrementalWorkflowOrchestratorTests : IDisposable
             => Task.FromResult(new HITLDecisionSummary { TotalDecisions = _logs.Count });
     }
 
-    private sealed class FakeRuleApplier : IRuleApplier
+    private sealed class FakeRuleApplier(
+        RuleApplicationStatus status = RuleApplicationStatus.Applied, int rowsAffected = 1) : IRuleApplier
     {
         public bool ApplyRulesCalled { get; private set; }
 
@@ -684,8 +718,8 @@ public class IncrementalWorkflowOrchestratorTests : IDisposable
                 Results = rules.Select(r => new RuleApplicationResult
                 {
                     Rule = r,
-                    Status = RuleApplicationStatus.Applied,
-                    RowsAffected = 1,
+                    Status = status,
+                    RowsAffected = rowsAffected,
                     RowsSkipped = 0,
                     Duration = TimeSpan.FromMilliseconds(10),
                     Success = true

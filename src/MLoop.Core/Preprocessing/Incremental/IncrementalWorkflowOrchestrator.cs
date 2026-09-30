@@ -7,6 +7,7 @@ using MLoop.Core.Preprocessing.Incremental.HITL;
 using MLoop.Core.Preprocessing.Incremental.HITL.Models;
 using MLoop.Core.Preprocessing.Incremental.Models;
 using MLoop.Core.Preprocessing.Incremental.RuleApplication.Contracts;
+using MLoop.Core.Preprocessing.Incremental.RuleApplication.Models;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models;
 
@@ -90,25 +91,32 @@ public sealed class IncrementalWorkflowOrchestrator : IWorkflowOrchestrator
             _logger.LogInformation("Rules applied: {Successful}/{Total} successful",
                 applicationResult.SuccessfulRules, applicationResult.TotalRules);
 
-            // Silent-success guard: if nothing was actually transformed, the "cleaned" deliverable
-            // is byte-for-byte the input. Surface this loudly instead of implying it was cleaned.
+            state.RowsAffected = applicationResult.TotalRowsAffected;
+            state.RulesNotImplemented = applicationResult.Results
+                .Count(r => r.Status == RuleApplicationStatus.NotImplemented);
+
             if (applicationResult.TotalRowsAffected == 0)
             {
+                // Nothing was transformed, so a "cleaned" deliverable would be the input under another
+                // name. None is written; the caller reports what was discovered and why nothing changed.
                 _logger.LogWarning(
-                    "No rules effectively modified the data ({Successful}/{Total} applied, 0 rows affected); " +
-                    "the generated cleaned dataset is identical to the input.",
-                    applicationResult.SuccessfulRules, applicationResult.TotalRules);
+                    "No rules modified the data ({Successful}/{Total} applied, {NotImplemented} without an " +
+                    "application strategy, 0 rows affected); no cleaned dataset was written.",
+                    applicationResult.SuccessfulRules, applicationResult.TotalRules, state.RulesNotImplemented);
             }
+            else
+            {
+                // Generate all deliverables (cleaned data, script, report, metadata)
+                var manifest = await _deliverableGenerator.GenerateAllAsync(
+                    state,
+                    fullData,
+                    config.OutputDirectory,
+                    cancellationToken).ConfigureAwait(false);
 
-            // Generate all deliverables (cleaned data, script, report, metadata)
-            var manifest = await _deliverableGenerator.GenerateAllAsync(
-                state,
-                fullData,
-                config.OutputDirectory,
-                cancellationToken).ConfigureAwait(false);
-
-            _logger.LogInformation("Deliverables generated: {CleanedDataPath}", manifest.CleanedDataPath);
-            ReportProgress(progress, WorkflowStage.BulkProcessing, 1.0, "Deliverables generated", state);
+                state.CleanedDataPath = manifest.CleanedDataPath;
+                _logger.LogInformation("Deliverables generated: {CleanedDataPath}", manifest.CleanedDataPath);
+                ReportProgress(progress, WorkflowStage.BulkProcessing, 1.0, "Deliverables generated", state);
+            }
         }
         else if (state.ApprovedRules.Count == 0)
         {

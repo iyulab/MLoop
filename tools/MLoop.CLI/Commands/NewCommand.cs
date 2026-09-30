@@ -9,12 +9,10 @@ public static class NewCommand
 {
     public static Command Create()
     {
-        var command = new Command("new", "Generate new project components (hooks, metrics, scripts)");
+        var command = new Command("new", "Generate new project components (hooks)");
 
         // Add subcommands using Subcommands property
         command.Subcommands.Add(NewHookCommand.Create());
-        // Future: command.Subcommands.Add(NewMetricCommand.Create());
-        // Future: command.Subcommands.Add(NewScriptCommand.Create());
 
         return command;
     }
