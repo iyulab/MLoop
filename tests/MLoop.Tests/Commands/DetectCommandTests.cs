@@ -293,7 +293,9 @@ public class DetectCommandTests : IDisposable
         var ex = Assert.Throws<ArgumentException>(() =>
             DetectCommand.Detect(Enumerable.Repeat(1.0, length).ToList(), threshold, sensitivity));
 
-        Assert.Contains(named, ex.Message);
+        // The library names the option in its own vocabulary (`Threshold`), which is what this checks:
+        // that the refusal says which option, not how the library spells it.
+        Assert.Contains(named, ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
