@@ -90,6 +90,11 @@ inference from a later passing run rather than something checked against the tes
 the output through, or re-run the project with `--logger "console;verbosity=normal"` on failure — a
 suspected load failure is only diagnosed when the same named test passes on a quiet machine.
 
+Run `tests/MLoop.Tests` once more with `GITHUB_ACTIONS=true` set. A CI runner advertises colour, so
+the console there writes ANSI codes that a redirected local run never sees — a test that read an
+error's text passed on every developer machine and failed on all three CI platforms, which is the
+first place a release found out.
+
 If a suite produces **no test output at all** for minutes — no passes, no failures — suspect its
 build output before its code: `rm -rf tests/<project>/bin tests/<project>/obj` and run it again.
 A half-updated `bin/` (a test host killed mid-run, two builds overlapping) has wedged ML.NET's
