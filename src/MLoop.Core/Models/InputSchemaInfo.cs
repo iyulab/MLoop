@@ -7,6 +7,29 @@ public class InputSchemaInfo
 {
     public required List<ColumnSchema> Columns { get; init; }
     public required DateTime CapturedAt { get; init; }
+
+    /// <summary>
+    /// This schema with <paramref name="columns"/> recorded as <c>Ignore</c>: columns the trainer read,
+    /// like the label, that a prediction does not supply — a question-answering answer's start position.
+    /// Left as <c>Feature</c>, prediction refused every file without them.
+    /// </summary>
+    public InputSchemaInfo WithTrainingOnly(IReadOnlyCollection<string> columns) => new()
+    {
+        CapturedAt = CapturedAt,
+        Columns = Columns
+            .Select(c => columns.Contains(c.Name, StringComparer.OrdinalIgnoreCase) && c.Purpose == "Feature"
+                ? new ColumnSchema
+                {
+                    Name = c.Name,
+                    DataType = c.DataType,
+                    Purpose = "Ignore",
+                    CategoricalValues = c.CategoricalValues,
+                    UniqueValueCount = c.UniqueValueCount,
+                    MajorityClassRatio = c.MajorityClassRatio,
+                }
+                : c)
+            .ToList()
+    };
 }
 
 /// <summary>

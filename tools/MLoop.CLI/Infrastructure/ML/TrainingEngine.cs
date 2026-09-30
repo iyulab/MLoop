@@ -390,6 +390,9 @@ public class TrainingEngine : ITrainingEngine
 
             WarnIfAccuracyDoesNotBeatTheMajorityClass(config, autoMLResult.Metrics, inputSchema);
 
+            if (inputSchema is not null && autoMLResult.TrainingOnlyColumns is { Count: > 0 } trainingOnly)
+                inputSchema = inputSchema.WithTrainingOnly(trainingOnly);
+
             // Prepare experiment data
             var experimentData = new ExperimentData
             {

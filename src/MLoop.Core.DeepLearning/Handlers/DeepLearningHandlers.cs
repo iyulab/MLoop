@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using Microsoft.ML.Data;
 using Microsoft.ML.TorchSharp;
 using MLoop.Core.AutoML;
 using MLoop.Core.Data;
@@ -284,29 +285,124 @@ internal static class DeepLearningHandlers
     {
         return await Task.Run(() =>
         {
-            var textCols = TextColumnFinder.Find(trainSet, config.LabelColumn, 2, config.ColumnOverrides, log);
-            var contextCol = textCols.Count > 0 ? textCols[0] : throw new InvalidOperationException("No context column found.");
-            var questionCol = textCols.Count > 1 ? textCols[1] : contextCol;
+            var answerCol = config.LabelColumn;
+            var textCols = TextColumnFinder.Find(trainSet, answerCol, 2, config.ColumnOverrides, log);
+            if (textCols.Count < 2)
+                throw new InvalidOperationException(
+                    "Question answering needs two text columns besides the answer — the passage and the question. " +
+                    $"Found {textCols.Count}: {string.Join(", ", textCols)}.");
 
-            log($"Question answering: context='{contextCol}', question='{questionCol}', answer='{config.LabelColumn}'");
+            // The passage is the longer of the two: which column is declared or reads more like language
+            // does not say which one holds the answer, and a question used as the passage trains nothing.
+            var (contextCol, questionCol) = MeanLength(trainSet, textCols[0]) >= MeanLength(trainSet, textCols[1])
+                ? (textCols[0], textCols[1])
+                : (textCols[1], textCols[0]);
+            var startCol = AnswerStartColumn.Find(trainSet, contextCol, answerCol, [contextCol, questionCol, answerCol])
+                ?? throw new InvalidOperationException(
+                    $"Question answering needs the answer's start position in '{contextCol}': a column of whole " +
+                    $"numbers where '{contextCol}' read from that position gives '{answerCol}'. No column did.");
+
+            log($"Question answering: context='{contextCol}', question='{questionCol}', answer='{answerCol}', start='{startCol}'");
+
+            // The answer and its start are what the trainer learns from; a prediction needs only the passage
+            // and the question. So the training rows are prepared outside the model, as NER prepares its
+            // tags: each start is located (past whitespace a trimmed answer no longer has) and made the
+            // trainer's Int32, under the passage's and question's own names so the saved model reads them.
+            var (prepared, dropped) = PrepareQuestionAnswerRows(mlContext, trainSet, contextCol, questionCol, answerCol, startCol);
+            if (dropped > 0)
+                log($"Question answering: {dropped} row(s) left out — the answer is not in the passage at the recorded position");
+            const string start = QuestionAnswerRow.StartColumn;
 
             var pipeline = mlContext.MulticlassClassification.Trainers.QuestionAnswer(
                 contextColumnName: contextCol,
                 questionColumnName: questionCol,
+                trainingAnswerColumnName: answerCol,
+                answerIndexColumnName: start,
                 maxEpochs: EpochProgress.MaxEpochs);
 
-            // No trial is reported — this handler computes no metrics, same as object detection above.
+            var trialChannel = new TrialProgressChannel(progress);
+
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Question answering", log))
-                model = pipeline.Fit(trainSet);
+                model = pipeline.Fit(prepared);
+
+            var (exact, f1) = AnswerOverlap.Measure(model.Transform(testSet), answerCol);
+            var metricsDict = new Dictionary<string, double>
+            {
+                [AnswerOverlap.CharF1] = f1,
+                [AnswerOverlap.ExactMatch] = exact
+            };
+
+            trialChannel.ReportCompleted(TrainerDescriptor.Of("QA (NAS-BERT)"), AnswerOverlap.CharF1, f1, metricsDict);
 
             return new AutoMLResult
             {
                 Trainer = TrainerDescriptor.Of("QA (NAS-BERT)"),
                 Model = model,
-                Metrics = new Dictionary<string, double>(),
-                RowCount = trainSet.GetRowCount() ?? 0
+                Metrics = metricsDict,
+                RowCount = trainSet.GetRowCount() ?? 0,
+                Trials = trialChannel.Records,
+                RankingMetric = trialChannel.RankingMetric,
+                TrainingOnlyColumns = [startCol]
             };
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static double MeanLength(IDataView data, string column)
+    {
+        var col = data.Schema[column];
+        using var cursor = data.GetRowCursor([col]);
+        var getter = cursor.GetGetter<ReadOnlyMemory<char>>(col);
+        ReadOnlyMemory<char> value = default;
+        long total = 0, rows = 0;
+        while (rows < 500 && cursor.MoveNext())
+        {
+            getter(ref value);
+            total += value.Length;
+            rows++;
+        }
+        return rows == 0 ? 0 : (double)total / rows;
+    }
+
+    private sealed class QuestionAnswerRow
+    {
+        public const string StartColumn = "__AnswerStart";
+
+        public string Context { get; set; } = "";
+        public string Question { get; set; } = "";
+        public string Answer { get; set; } = "";
+        public int Start { get; set; }
+    }
+
+    private static (IDataView Rows, int Dropped) PrepareQuestionAnswerRows(
+        MLContext mlContext, IDataView data, string contextCol, string questionCol, string answerCol, string startCol)
+    {
+        var columns = new[] { data.Schema[contextCol], data.Schema[questionCol], data.Schema[answerCol], data.Schema[startCol] };
+        using var cursor = data.GetRowCursor(columns);
+        var context = cursor.GetGetter<ReadOnlyMemory<char>>(columns[0]);
+        var question = cursor.GetGetter<ReadOnlyMemory<char>>(columns[1]);
+        var answer = cursor.GetGetter<ReadOnlyMemory<char>>(columns[2]);
+        var position = AnswerStartColumn.Reader(cursor, columns[3]);
+
+        var rows = new List<QuestionAnswerRow>();
+        var dropped = 0;
+        ReadOnlyMemory<char> c = default, q = default, a = default;
+        while (cursor.MoveNext())
+        {
+            context(ref c);
+            question(ref q);
+            answer(ref a);
+            if (AnswerStartColumn.Locate(c.Span, a.Span, position()) is { } at)
+                rows.Add(new QuestionAnswerRow { Context = c.ToString(), Question = q.ToString(), Answer = a.ToString(), Start = at });
+            else
+                dropped++;
+        }
+
+        var schema = SchemaDefinition.Create(typeof(QuestionAnswerRow));
+        schema[nameof(QuestionAnswerRow.Context)].ColumnName = contextCol;
+        schema[nameof(QuestionAnswerRow.Question)].ColumnName = questionCol;
+        schema[nameof(QuestionAnswerRow.Answer)].ColumnName = answerCol;
+        schema[nameof(QuestionAnswerRow.Start)].ColumnName = QuestionAnswerRow.StartColumn;
+        return (mlContext.Data.LoadFromEnumerable(rows, schema), dropped);
     }
 }

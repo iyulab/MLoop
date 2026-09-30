@@ -41,7 +41,7 @@ public static class MetricNames
     private static readonly string[] Regression =
         ["r_squared", "rmse", "mae", "mse"];
     private static readonly string[] Other =
-        ["average_distance", "davies_bouldin_index", "ndcg", "detection_rate", "mape"];
+        ["average_distance", "davies_bouldin_index", "ndcg", "detection_rate", "mape", "exact_match", "char_f1"];
 
     /// <summary>Every canonical metric name, in a stable order.</summary>
     public static IReadOnlyList<string> All { get; } = [.. Binary, .. Multiclass, .. Regression, .. Other];

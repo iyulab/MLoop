@@ -233,7 +233,7 @@ models:
 
 **Text models read the columns you declare `text`.** Text classification and NER read one text
 column, sentence similarity reads two (in declaration order: the first is sentence 1), and question
-answering reads a context and then a question. Undeclared, they take string columns whose values read as
+answering reads a passage and a question (the longer of the two is the passage). Undeclared, they take string columns whose values read as
 language — several words, or long, or mostly distinct — and skip short codes such as a source tag or
 a category, even when those come first in the file. If too few columns read as language, the rest
 are filled from the remaining string columns and the choice is printed as a warning, with how to
@@ -299,6 +299,30 @@ tagged correctly over the tags that occur, so tagging everything `O` scores 1/N;
 the plain share of words tagged correctly, which on most text is dominated by `O`. The quality gate
 reads the label's classes as its tags, so a model that does no better than answering `O` stays in
 staging.
+
+### Question Answering
+
+One row per question, with the answer and where it starts in the passage:
+
+```csv
+context,question,answer,answer_start
+"Seoul is the capital of Korea.",What is the capital of Korea?,Seoul,0
+```
+
+- The **label** is the answer text (`label: answer` in `mloop.yaml`).
+- The passage and the question are the two text columns besides it; the longer one is the passage.
+- The start position is found by what it holds, not by its name: the numeric column where the passage,
+  read from that character position, gives the answer on at least nine in ten rows. Without one,
+  training stops and says so — an extractive model learns *where* the answer is, and the position is
+  that lesson.
+- A prediction needs only the passage and the question. Its `predictedLabel` is the model's best answer
+  and `score` that answer's model score (not a probability).
+
+Training and `mloop evaluate` score the best answer against the expected one the way the KorQuAD
+benchmark does: `char_f1`, the F1 of the characters the two answers share after normalization
+(lowercase, quotes and punctuation removed), is the primary metric; `exact_match` is reported beside
+it. Characters rather than words, because an answer is often part of a word — `서울에서` contains the
+answer `서울` — and a word-level F1 would score that zero.
 
 ### `mloop predict`
 

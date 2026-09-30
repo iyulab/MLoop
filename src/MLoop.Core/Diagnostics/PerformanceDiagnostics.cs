@@ -69,8 +69,14 @@ public class PerformanceDiagnostics
             case "text-classification":
             case "object-detection":
             case "ner":
-            case "question-answering":
                 AnalyzeMulticlassClassification(result);
+                break;
+            case "question-answering":
+                // No band is established for answer overlap the way R² or AUC have one, so this states
+                // the numbers rather than grading them. It used to read `macro_accuracy`, a key QA never has.
+                result.OverallAssessment = PerformanceLevel.Unknown;
+                result.Summary = $"Answer overlap: character F1 {result.Metrics.GetValueOrDefault("char_f1"):F4}, "
+                    + $"exact match {result.Metrics.GetValueOrDefault("exact_match"):F4}";
                 break;
             case "sentence-similarity":
                 AnalyzeRegression(result);

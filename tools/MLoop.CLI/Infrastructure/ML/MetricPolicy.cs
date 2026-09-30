@@ -130,6 +130,8 @@ public static class MetricPolicy
             "macro_f1" => classCount.HasValue && classCount.Value > 1
                 ? 1.0 / classCount.Value                 // Must be better than random (1/N)
                 : 0.0,
+            // Question answering: a model whose answers share nothing with the truth has learned nothing.
+            "char_f1" or "exact_match" => 0.0,
             _ => null                                    // No threshold for unknown/error metrics
         };
     }

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Question answering trains, predicts and evaluates.** The trainer was given only the passage and
+  the question, so it read the answer and its position from columns that had to be named
+  `TrainingAnswer` and `AnswerStart`; training reported no metric, so the quality gate had nothing to
+  judge; `mloop predict` read the answer vector as a single number; and `mloop evaluate` refused the
+  task. The answer is now the label, its start position is the column that locates it in the passage,
+  the passage is the longer text column, and training and `evaluate` score the best answer with
+  `char_f1` (primary) and `exact_match`, the KorQuAD rules. A prediction's `predictedLabel` is the
+  answer. See the guide's Question Answering section for the data format.
+
 ## [0.33.0] - 2026-10-01
 
 ### Added

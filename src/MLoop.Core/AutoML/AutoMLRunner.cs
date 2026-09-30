@@ -2469,6 +2469,12 @@ public record AutoMLResult
     public InputSchemaInfo? Schema { get; init; }
 
     /// <summary>
+    /// Columns the trainer read that a prediction does not supply, besides the label — for question
+    /// answering, the answer's start position. The saved schema records them as not required.
+    /// </summary>
+    public IReadOnlyList<string>? TrainingOnlyColumns { get; init; }
+
+    /// <summary>
     /// ② regression wave (heteroscedastic): the auxiliary σ(x) model that predicts residual magnitude
     /// from the features, used to widen/narrow the conformal band per row. Null for non-regression
     /// tasks, homoscedastic fallbacks, or when the holdout was too small to fit one — callers then use
