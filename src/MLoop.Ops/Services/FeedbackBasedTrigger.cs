@@ -58,13 +58,7 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
         string modelName,
         CancellationToken cancellationToken = default)
     {
-        var defaults = new List<RetrainingCondition>
-        {
-            new(ConditionType.AccuracyDrop, "accuracy_threshold", 0.7,
-                "Trigger retraining when accuracy drops below 70%"),
-            new(ConditionType.FeedbackVolume, "feedback_count", 100,
-                "Trigger retraining when 100+ new feedback entries are available")
-        };
+        var defaults = new List<RetrainingCondition> { RetrainingDefaults.Accuracy(), RetrainingDefaults.Feedback() };
 
         return Task.FromResult<IReadOnlyList<RetrainingCondition>>(defaults);
     }

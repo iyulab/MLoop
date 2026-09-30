@@ -1,5 +1,6 @@
 using MLoop.CLI.Commands;
 using MLoop.Ops.Interfaces;
+using MLoop.Ops.Services;
 
 namespace MLoop.Tests.Commands;
 
@@ -8,45 +9,47 @@ public class TriggerCommandTests
     #region BuildConditions
 
     [Fact]
-    public void BuildConditions_NoThresholds_ReturnsEmpty()
+    public void BuildConditions_NoThresholds_ReturnsTheSharedDefaults()
     {
         var result = TriggerCommand.BuildConditions(null, null);
 
-        Assert.Empty(result);
+        Assert.Equal(RetrainingDefaults.All, result);
     }
 
     [Fact]
-    public void BuildConditions_AccuracyOnly_ReturnsSingleCondition()
+    public void BuildConditions_Accuracy_ReplacesOnlyTheAccuracyDefault()
     {
         var result = TriggerCommand.BuildConditions(0.85, null);
 
-        Assert.Single(result);
-        Assert.Equal(ConditionType.AccuracyDrop, result[0].Type);
-        Assert.Equal(0.85, result[0].Threshold);
-        Assert.Equal("accuracy_threshold", result[0].Name);
-        Assert.Contains("85", result[0].Description!);
+        Assert.Equal(RetrainingDefaults.All.Count, result.Count);
+        var accuracy = Assert.Single(result, c => c.Type == ConditionType.AccuracyDrop);
+        Assert.Equal(0.85, accuracy.Threshold);
+        Assert.Equal(RetrainingDefaults.AccuracyName, accuracy.Name);
+        Assert.Contains("85", accuracy.Description!);
+        Assert.Contains(result, c => c.Type == ConditionType.TimeBased);
+        Assert.Contains(RetrainingDefaults.Feedback(), result);
     }
 
     [Fact]
-    public void BuildConditions_FeedbackOnly_ReturnsSingleCondition()
+    public void BuildConditions_Feedback_ReplacesOnlyTheFeedbackDefault()
     {
-        var result = TriggerCommand.BuildConditions(null, 100);
+        var result = TriggerCommand.BuildConditions(null, 50);
 
-        Assert.Single(result);
-        Assert.Equal(ConditionType.FeedbackVolume, result[0].Type);
-        Assert.Equal(100, result[0].Threshold);
-        Assert.Equal("feedback_threshold", result[0].Name);
-        Assert.Contains("100", result[0].Description!);
+        var feedback = Assert.Single(result, c => c.Type == ConditionType.FeedbackVolume);
+        Assert.Equal(50, feedback.Threshold);
+        // One name for one condition, whichever surface built it.
+        Assert.Equal(RetrainingDefaults.FeedbackVolumeName, feedback.Name);
+        Assert.Contains(RetrainingDefaults.Accuracy(), result);
     }
 
     [Fact]
-    public void BuildConditions_BothThresholds_ReturnsTwoConditions()
+    public void BuildConditions_BothThresholds_KeepTheTimeCondition()
     {
         var result = TriggerCommand.BuildConditions(0.9, 50);
 
-        Assert.Equal(2, result.Count);
-        Assert.Equal(ConditionType.AccuracyDrop, result[0].Type);
-        Assert.Equal(ConditionType.FeedbackVolume, result[1].Type);
+        Assert.Equal(
+            [ConditionType.AccuracyDrop, ConditionType.FeedbackVolume, ConditionType.TimeBased],
+            result.Select(c => c.Type));
     }
 
     #endregion

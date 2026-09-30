@@ -233,7 +233,7 @@ public sealed class FilePredictionLogger : IPredictionLogger
     {
         return new SerializablePredictionLog
         {
-            Id = Guid.NewGuid().ToString("N")[..16],
+            Id = entry.Id ?? PredictionIds.New(),
             ModelName = entry.ModelName,
             ExperimentId = entry.ExperimentId,
             Input = entry.Input.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
@@ -251,7 +251,8 @@ public sealed class FilePredictionLogger : IPredictionLogger
             log.Input ?? new Dictionary<string, object>(),
             log.Output ?? new object(),
             log.Confidence,
-            log.Timestamp);
+            log.Timestamp,
+            log.Id);
     }
 
     /// <summary>

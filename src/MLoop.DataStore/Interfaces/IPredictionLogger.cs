@@ -56,4 +56,16 @@ public record PredictionLogEntry(
     IDictionary<string, object> Input,
     object Output,
     double? Confidence,
-    DateTimeOffset Timestamp);
+    DateTimeOffset Timestamp,
+    string? Id = null);
+
+/// <summary>
+/// The identifier a logged prediction is known by — what feedback names when it reports the actual
+/// value. One format, made in one place, so an id handed back to a caller before the entry is written
+/// is the id the log file holds.
+/// </summary>
+public static class PredictionIds
+{
+    /// <summary>A new prediction id: 16 lowercase hex characters.</summary>
+    public static string New() => Guid.NewGuid().ToString("N")[..16];
+}

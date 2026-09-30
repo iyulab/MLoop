@@ -157,6 +157,7 @@ public static class LogsCommand
 
         var output = logs.Select(l => new
         {
+            l.Id,
             l.ModelName,
             l.ExperimentId,
             Input = l.Input,
@@ -179,6 +180,9 @@ public static class LogsCommand
 
         var table = new Table();
         table.Border(TableBorder.Rounded);
+        // The id is what `mloop feedback add --prediction-id` takes; this is where a user finds it.
+        // Never wrapped: a copied id split over two lines names a prediction that does not exist.
+        table.AddColumn(new TableColumn("ID").NoWrap());
         table.AddColumn(TimestampDisplay.ZoneHeading("Timestamp"));
         table.AddColumn("Model");
         table.AddColumn("Experiment");
@@ -191,6 +195,7 @@ public static class LogsCommand
             var outputStr = log.Output?.ToString() ?? "-";
 
             table.AddRow(
+                log.Id ?? "-",
                 TimestampDisplay.LocalWithoutZone(log.Timestamp),
                 log.ModelName,
                 log.ExperimentId.Length > 12 ? log.ExperimentId[..12] + "..." : log.ExperimentId,

@@ -10,6 +10,12 @@ public class PredictionResult
 
 public record PredictionRow
 {
+    /// <summary>
+    /// The id this prediction was logged under — what feedback names when it reports the actual value.
+    /// Set only where the prediction was logged (<c>mloop serve</c>); <c>null</c> otherwise.
+    /// </summary>
+    public string? PredictionId { get; init; }
+
     public string? PredictedLabel { get; init; }
     public Dictionary<string, double>? Probabilities { get; init; }
     public double? Score { get; init; }

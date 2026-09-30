@@ -64,6 +64,37 @@ public class FileFeedbackCollectorTests : IDisposable
     }
 
     [Fact]
+    public async Task RecordFeedbackAsync_NotFound_IsItsOwnError()
+    {
+        var act = async () => await _collector.RecordFeedbackAsync("0000000000000000", "value");
+        (await act.Should().ThrowAsync<PredictionNotFoundException>())
+            .Which.PredictionId.Should().Be("0000000000000000");
+    }
+
+    [Fact]
+    public async Task RecordFeedbackAsync_AgainCorrectsIt_AndMetricsCountThePredictionOnce()
+    {
+        var predictionId = await CreatePredictionLog("model", "A");
+        await _collector.RecordFeedbackAsync(predictionId, "B");
+        await _collector.RecordFeedbackAsync(predictionId, "A");
+
+        var metrics = await _collector.CalculateMetricsAsync("model");
+
+        metrics.TotalFeedback.Should().Be(1, "a correction replaces the earlier actual value");
+        metrics.Accuracy.Should().Be(1.0, "the latest actual value stands");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task RecordFeedbackAsync_RequiresAPredictionId(string? predictionId)
+    {
+        var act = async () => await _collector.RecordFeedbackAsync(predictionId!, "value");
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
     public async Task GetFeedbackAsync_ReturnsEmpty_WhenNoFeedback()
     {
         // Act

@@ -264,8 +264,9 @@ builder.Services.AddSingleton<IPromotionManager>(sp =>
 });
 builder.Services.AddSingleton<IRetrainingTrigger>(sp =>
 {
+    // The same trigger and default conditions `mloop trigger check` uses.
     var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
-    return new TimeBasedTrigger(projectRoot);
+    return new CompositeRetrainingTrigger(projectRoot, sp.GetRequiredService<IFeedbackCollector>());
 });
 
 // Register MLoop.DataStore services
@@ -412,6 +413,8 @@ app.MapPost("/predict", async (
     IExperimentStore experimentStore,
     MLContext mlContext,
     IModelCache modelCache,
+    IPredictionLogger predictionLogger,
+    IConfiguration configuration,
     ILogger<Program> logger,
     CancellationToken ct) =>
 {
@@ -535,15 +538,42 @@ app.MapPost("/predict", async (
             modelName, result.Rows.Count, stopwatch.ElapsedMilliseconds,
             stopwatch.ElapsedMilliseconds / Math.Max(1.0, result.Rows.Count));
 
+        // Served predictions are logged like `mloop predict --log`, so logs, feedback and the
+        // retraining triggers see the traffic the model actually answers. Each row carries the id it
+        // was logged under — the id feedback names. A failure to log never fails the prediction.
+        var predictions = result.Rows;
+        var warnings = result.Warnings;
+        if (configuration.GetValue("Serve:LogPredictions", true) && predictions.Count == rows.Length)
+        {
+            try
+            {
+                var loggedAt = DateTimeOffset.UtcNow;
+                var ids = predictions.Select(_ => PredictionIds.New()).ToArray();
+                await predictionLogger.LogBatchAsync(
+                    modelName,
+                    productionModel.ExperimentId,
+                    predictions.Select((row, i) => new PredictionLogEntry(
+                        modelName, productionModel.ExperimentId, rows[i], LoggedOutput(row), row.Confidence,
+                        loggedAt, ids[i])),
+                    ct);
+                predictions = predictions.Select((row, i) => row with { PredictionId = ids[i] }).ToList();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Predictions for '{ModelName}' were served but not logged", modelName);
+                warnings = [.. warnings ?? [], "These predictions were not logged, so they carry no predictionId: " + ex.Message];
+            }
+        }
+
         return Results.Ok(new
         {
             modelName,
             experimentId = productionModel.ExperimentId,
             predictedAt = DateTime.UtcNow,
             task = result.TaskType,
-            count = result.Rows.Count,
-            predictions = result.Rows,
-            warnings = result.Warnings
+            count = predictions.Count,
+            predictions,
+            warnings
         });
     }
     catch (ArgumentException ex)
@@ -1179,6 +1209,7 @@ app.MapGet("/logs", async (
             filter = modelName,
             logs = logs.Select(l => new
             {
+                id = l.Id,
                 modelName = l.ModelName,
                 experimentId = l.ExperimentId,
                 input = l.Input,
@@ -1286,6 +1317,16 @@ app.MapPost("/feedback", async (
             timestamp = DateTime.UtcNow
         });
     }
+    catch (ArgumentException ex)
+    {
+        return Results.Problem(title: "Invalid feedback", detail: ex.Message,
+            statusCode: StatusCodes.Status400BadRequest);
+    }
+    catch (PredictionNotFoundException ex)
+    {
+        return Results.Problem(title: "Prediction not found", detail: ex.Message,
+            statusCode: StatusCodes.Status404NotFound);
+    }
     catch (Exception ex)
     {
         logger.LogError(ex, "Failed to record feedback after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
@@ -1299,6 +1340,8 @@ app.MapPost("/feedback", async (
 .WithName("SubmitFeedback")
 .WithTags("Monitoring")
 .Produces<object>(StatusCodes.Status200OK)
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
 .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
 .RequireAuthorization();
 
@@ -1505,6 +1548,10 @@ static bool TryParseDateRange(string? from, string? to,
 
     return true;
 }
+
+// The single value a logged prediction records as its answer — what feedback is compared against.
+static object LoggedOutput(PredictionRow row) =>
+    (object?)row.PredictedLabel ?? (object?)row.Score ?? (object?)row.ClusterId ?? (object?)row.IsAnomaly ?? string.Empty;
 
 static Dictionary<string, object>[] ParseJsonInput(JsonElement input)
 {
