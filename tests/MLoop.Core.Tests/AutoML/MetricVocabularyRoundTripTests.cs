@@ -67,7 +67,8 @@ public class MetricVocabularyRoundTripTests
                         || AutoMLRunner.RegressionMetricFor(name).HasValue
                         || TaskMetadata.AllPrimaryMetrics.Contains(name)
                         || name == "davies_bouldin_index" // clustering's second metric: reported, never optimized
-                        || name == "mape";                // forecasting's second metric: reported, never optimized
+                        || name == "mape"                 // forecasting's second metric: reported, never optimized
+                        || name == "exact_match";         // question answering's second metric: reported, never optimized
             Assert.True(accepted, $"'{name}' is in the vocabulary but no optimizer accepts it");
         }
     }

@@ -42,6 +42,9 @@ public static class TaskMetadata
             // sentence-similarity model with R² below zero replaced a production model at 0.73.
             ["sentence-similarity"] = "r_squared",
             ["ner"] = "macro_accuracy",
+            // Character F1 over the best answer (AnswerOverlap) — the graded half of the KorQuAD pair;
+            // exact match is reported beside it.
+            ["question-answering"] = "char_f1",
             ["regression"] = "r_squared",
             ["anomaly-detection"] = "auc",
             ["clustering"] = "average_distance",

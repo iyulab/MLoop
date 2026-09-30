@@ -447,6 +447,8 @@ public class PredictionService
             return ExtractTimeSeriesAnomalyRows(cursor, schema);
         if (task == "ner")
             return ExtractTagSequenceRows(cursor, predictedLabelCol);
+        if (task == "question-answering")
+            return ExtractAnswerRows(cursor, schema.GetColumnOrNull(Evaluation.AnswerOverlap.PredictedAnswerColumn), scoreCol);
 
         // ranking, recommendation, etc. — just score (no conformal band; interval is regression-only)
         return ExtractRegressionRows(cursor, scoreCol);
@@ -474,7 +476,7 @@ public class PredictionService
             "clustering" => rows.All(r => r.ClusterId is null),
             "anomaly-detection" or "time-series-anomaly" =>
                 rows.All(r => r.IsAnomaly is null && r.AnomalyScore is null),
-            "ner" => rows.All(r => r.PredictedLabel is null),
+            "ner" or "question-answering" => rows.All(r => r.PredictedLabel is null),
             _ => rows.All(r => r.Score is null), // ranking, recommendation, etc.
         };
 
@@ -744,6 +746,48 @@ public class PredictionService
                 label = TagSequence.Render(tags.DenseValues().Select(t => t.ToString()));
             }
             rows.Add(new PredictionRow { PredictedLabel = label });
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// A question-answering row: the trainer writes its answers best first, with a score each. The row
+    /// carries the best one — its text as the predicted label and its score (a model score, not a
+    /// probability).
+    /// </summary>
+    private static List<PredictionRow> ExtractAnswerRows(
+        DataViewRowCursor cursor, DataViewSchema.Column? answerCol, DataViewSchema.Column? scoreCol)
+    {
+        var rows = new List<PredictionRow>();
+        ValueGetter<VBuffer<ReadOnlyMemory<char>>>? answerGetter =
+            answerCol is { Type: VectorDataViewType { ItemType: TextDataViewType } } a
+                ? cursor.GetGetter<VBuffer<ReadOnlyMemory<char>>>(a)
+                : null;
+        ValueGetter<VBuffer<float>>? scoreGetter =
+            scoreCol is { Type: VectorDataViewType { ItemType: NumberDataViewType { RawType: var raw } } } s && raw == typeof(float)
+                ? cursor.GetGetter<VBuffer<float>>(s)
+                : null;
+
+        VBuffer<ReadOnlyMemory<char>> answers = default;
+        VBuffer<float> scores = default;
+        while (cursor.MoveNext())
+        {
+            string? answer = null;
+            double? score = null;
+            if (answerGetter != null)
+            {
+                answerGetter(ref answers);
+                if (answers.Length > 0)
+                    answer = answers.GetItemOrDefault(0).ToString();
+            }
+            if (scoreGetter != null)
+            {
+                scoreGetter(ref scores);
+                if (scores.Length > 0)
+                    score = scores.GetItemOrDefault(0);
+            }
+            rows.Add(new PredictionRow { PredictedLabel = answer, Score = score });
         }
 
         return rows;

@@ -45,6 +45,8 @@ public static class MetricScale
         "detection_rate",
         "r_squared",
         "log_loss_reduction",
+        "exact_match",
+        "char_f1",
     };
 
     /// <summary>

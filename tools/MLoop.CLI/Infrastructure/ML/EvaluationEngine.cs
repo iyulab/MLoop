@@ -148,8 +148,9 @@ public class EvaluationEngine
                 }
                 else if (taskType.Equals("question-answering", StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new NotSupportedException(
-                        "Question answering reports no evaluation metric yet, so there is nothing to evaluate it on.");
+                    // Scored the way training scored it: the best answer against the expected one.
+                    var (exact, f1) = AnswerOverlap.Measure(predictions, labelColumn);
+                    metrics = new Dictionary<string, double> { [AnswerOverlap.CharF1] = f1, [AnswerOverlap.ExactMatch] = exact };
                 }
                 else if (taskType.Equals("sentence-similarity", StringComparison.OrdinalIgnoreCase))
                 {

@@ -68,5 +68,6 @@ public static class MetricDirection
         || lower.Contains("recall")
         || lower.Contains("ndcg")
         || lower.Contains("dcg")
-        || lower == "detection_rate";
+        || lower == "detection_rate"
+        || lower == "exact_match";
 }
