@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-01
+
 ### Added
 - **NER works end to end.** No NER model could be trained: the data check refused a text label for
   any task that was not classification, and past it the trainer received one key per sentence where it
@@ -31,6 +33,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every point.
 
 ### Fixed
+- **`mloop trigger check`, `mloop feedback list`/`metrics` and `mloop sample` default to the `default`
+  model** like every other command, instead of refusing to run without a model name.
 - **Predictions served by `mloop serve` reach logs, feedback and retraining triggers.** `POST /predict`
   never logged what it answered, so `GET /logs`, feedback and triggers saw only batch predictions made
   with `mloop predict --log`, and nothing anywhere showed the id feedback needs. Served predictions are

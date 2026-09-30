@@ -100,7 +100,7 @@ public static class SampleCommand
         var nameOption = new Option<string>("--model", "-m")
         {
             Description = "Model name",
-            Required = true
+            DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
         };
 
         var jsonOption = new Option<bool>("--json")
