@@ -244,6 +244,9 @@ public static class TrainCommand
             machineOutput.WarningSink = events.Warning;
         }
 
+        // The task, once resolved, so a failure's advice can fit it.
+        string? failedTask = task;
+
         try
         {
             // Initialize components
@@ -297,6 +300,7 @@ public static class TrainCommand
                     cliLabel: label,
                     cliTask: task,
                     cliTraining: cliTraining);
+                failedTask = effectiveDefinition.Task;
             }
             catch (InvalidOperationException ex)
             {
@@ -1207,7 +1211,7 @@ public static class TrainCommand
             var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
                 ? ConfigDefaults.DefaultModelName
                 : modelName.Trim().ToLowerInvariant();
-            ErrorSuggestions.DisplayTrainingError(ex, resolvedModelName, dataFile);
+            ErrorSuggestions.DisplayTrainingError(ex, resolvedModelName, dataFile, failedTask);
             return 1;
         }
     }

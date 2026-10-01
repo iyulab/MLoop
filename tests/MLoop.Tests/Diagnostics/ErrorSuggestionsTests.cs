@@ -40,6 +40,33 @@ public class ErrorSuggestionsTests
         Assert.DoesNotContain(suggestions, s => s.Contains("--time 30"));
     }
 
+    [Theory]
+    [InlineData("object-detection")]
+    [InlineData("time-series-anomaly")]
+    public void GetSuggestions_GenericTrainingAdvice_DoesNotOfferATimeLimitTheFitIgnores(string task)
+    {
+        var suggestions = ErrorSuggestions.GetSuggestions(new InvalidOperationException("something unexpected"), "training", task);
+
+        Assert.DoesNotContain(suggestions, s => s.Contains("--time", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GetSuggestions_GenericTrainingAdvice_DoesNotProfileAnImageDirectory()
+    {
+        var suggestions = ErrorSuggestions.GetSuggestions(new InvalidOperationException("something unexpected"), "training", "object-detection");
+
+        Assert.DoesNotContain(suggestions, s => s.Contains("analyze profile", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GetSuggestions_GenericTrainingAdvice_StillOffersBothToATabularSearch()
+    {
+        var suggestions = ErrorSuggestions.GetSuggestions(new InvalidOperationException("something unexpected"), "training", "regression");
+
+        Assert.Contains(suggestions, s => s.Contains("--time", StringComparison.Ordinal));
+        Assert.Contains(suggestions, s => s.Contains("analyze profile", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void GetSuggestions_AModelThatFailedToLoadStillPointsAtTheModels()
     {

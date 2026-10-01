@@ -105,7 +105,8 @@ public static partial class ErrorSuggestions
     /// <summary>
     /// Gets actionable suggestions for the given exception.
     /// </summary>
-    public static List<string> GetSuggestions(Exception ex, string context = "")
+    /// <param name="task">The task being trained, when known — the generic training advice depends on it.</param>
+    public static List<string> GetSuggestions(Exception ex, string context = "", string? task = null)
     {
         var suggestions = new List<string>();
         var message = ex.Message.ToLowerInvariant();
@@ -253,9 +254,12 @@ public static partial class ErrorSuggestions
         {
             if (!suggestions.Any())
             {
-                // Generic training suggestions if no specific match
-                suggestions.Add("Check data quality: [cyan]mloop analyze profile <data-file>[/]");
-                suggestions.Add("Try with a smaller time limit first: [cyan]mloop train --time 30[/]");
+                // Generic training suggestions if no specific match. A directory of images has no
+                // table to profile, and a fit that takes no time budget is not shortened by --time.
+                if (!MLoop.Core.Data.DataLoaderFactory.IsDirectoryBased(task))
+                    suggestions.Add("Check data quality: [cyan]mloop analyze profile <data-file>[/]");
+                if (AutoMLRunner.TimeBudgetUnused(task) is null)
+                    suggestions.Add("Try with a smaller time limit first: [cyan]mloop train --time 30[/]");
                 suggestions.Add("Check the GUIDE.md for common solutions");
             }
         }
@@ -372,7 +376,7 @@ public static partial class ErrorSuggestions
     /// <summary>
     /// Displays a training-specific error with enhanced diagnostics.
     /// </summary>
-    public static void DisplayTrainingError(Exception ex, string modelName, string? dataFile = null)
+    public static void DisplayTrainingError(Exception ex, string modelName, string? dataFile = null, string? task = null)
     {
         var err = ErrorConsole.Out;
 
@@ -398,7 +402,7 @@ public static partial class ErrorSuggestions
             machineParts.Add($"Inner: {ex.InnerException.Message}");
         }
 
-        var suggestions = GetSuggestions(ex, "training");
+        var suggestions = GetSuggestions(ex, "training", task);
         if (suggestions.Count > 0)
         {
             err.WriteLine();

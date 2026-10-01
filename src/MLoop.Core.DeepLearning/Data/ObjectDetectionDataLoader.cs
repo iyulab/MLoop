@@ -33,6 +33,15 @@ public sealed class ObjectDetectionDataLoader : DataProviderBase
             : new CocoDataLoader(_mlContext, _log);
 
         _log($"[Info] Object-detection format: {(inner is YoloDataLoader ? "YOLO" : "COCO")}.");
-        return inner.LoadData(filePath, labelColumn, taskType, preserveColumns);
+        try
+        {
+            return inner.LoadData(filePath, labelColumn, taskType, preserveColumns);
+        }
+        catch (FileNotFoundException ex) when (inner is CocoDataLoader)
+        {
+            // COCO was only the fallback; the reader should hear about the layout that was looked for first.
+            throw new FileNotFoundException(
+                $"{ex.Message} A YOLO dataset is read too: an images/ folder beside a labels/ folder of .txt files.", ex);
+        }
     }
 }

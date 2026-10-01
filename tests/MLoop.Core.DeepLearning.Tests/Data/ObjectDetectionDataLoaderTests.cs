@@ -43,6 +43,20 @@ public sealed class ObjectDetectionDataLoaderTests : IDisposable
     }
 
     [Fact]
+    public void ObjectDetectionLoader_ADirectoryOfNeitherLayoutNamesBoth()
+    {
+        // Only images, no annotations: COCO is the fallback, so its "no annotations file" was all the
+        // reader heard — not that the YOLO layout had been looked for first.
+        CreateImage("img1.jpg");
+        var loader = new ObjectDetectionDataLoader(_mlContext, _ => { });
+
+        var ex = Assert.Throws<FileNotFoundException>(() => loader.LoadData(_tempDirectory, taskType: "object-detection"));
+
+        Assert.Contains("COCO", ex.Message);
+        Assert.Contains("YOLO", ex.Message);
+    }
+
+    [Fact]
     public void ObjectDetectionLoader_DispatchesToCocoForJsonAnnotations()
     {
         CreateImage("img1.jpg");

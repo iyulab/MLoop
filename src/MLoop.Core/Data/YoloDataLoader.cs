@@ -55,8 +55,23 @@ public sealed class YoloDataLoader : DataProviderBase
         if (imageDir == null || labelDir == null)
             return false;
 
-        // At least one label .txt must exist for a YOLO dataset.
-        return Directory.EnumerateFiles(labelDir, "*.txt", SearchOption.TopDirectoryOnly).Any();
+        // A YOLO label is a .txt named after its image; any other .txt (a README, notes) is not one.
+        return HasLabelForAnImage(imageDir, labelDir);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="labelDir"/> holds a .txt named after an image in <paramref name="imageDir"/>.
+    /// `mloop init --task object-detection` writes a README.txt beside where COCO images go; counting any
+    /// .txt as a label sent every such project to this loader.
+    /// </summary>
+    private static bool HasLabelForAnImage(string imageDir, string labelDir)
+    {
+        var imageStems = Directory.EnumerateFiles(imageDir)
+            .Where(f => SupportedImageExtensions.Contains(Path.GetExtension(f)))
+            .Select(Path.GetFileNameWithoutExtension)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return Directory.EnumerateFiles(labelDir, "*.txt", SearchOption.TopDirectoryOnly)
+            .Any(f => imageStems.Contains(Path.GetFileNameWithoutExtension(f)));
     }
 
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
@@ -104,11 +119,8 @@ public sealed class YoloDataLoader : DataProviderBase
         if (Directory.Exists(imagesSub) && Directory.Exists(labelsSub))
             return (imagesSub, labelsSub);
 
-        // Flat layout: images and .txt labels in the same directory.
-        var hasImages = Directory.EnumerateFiles(root)
-            .Any(f => SupportedImageExtensions.Contains(Path.GetExtension(f)));
-        var hasLabels = Directory.EnumerateFiles(root, "*.txt", SearchOption.TopDirectoryOnly).Any();
-        if (hasImages && hasLabels)
+        // Flat layout: images and their .txt labels in the same directory.
+        if (HasLabelForAnImage(root, root))
             return (root, root);
 
         return (null, null);
