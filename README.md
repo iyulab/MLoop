@@ -79,6 +79,26 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 > `predict` emits per-image detections (label + score + box) as JSON and `evaluate` reports mAP
 > (`map_50` / `map_50_95`) via ML.NET's built-in object-detection evaluator.
 
+**What the text and vision trainers can and cannot do — measured.** Text classification, sentence
+similarity, NER and question answering each train, predict and evaluate end to end. Their limits come
+from the ML.NET trainers underneath, so they are stated here rather than discovered:
+
+- **The text trainers start from English pretrained models** (NAS-BERT, RoBERTa). Other languages
+  train, but from English sub-word pieces.
+- **NER tags whole words** — one label per space-separated word. Where words carry attached particles,
+  as in Korean, an entity often starts or ends inside a word: on a Korean time-expression set, 67% of
+  entity spans did, so the model learns `8월20일부터` as a date as a whole.
+- **Question answering writes its answer one byte per character**, so an answer in Korean, Chinese,
+  Japanese or Cyrillic comes out with those characters missing and never matches exactly
+  ([dotnet/machinelearning#7749](https://github.com/dotnet/machinelearning/issues/7749)). Training says
+  how many answers are affected and where `exact_match` stops. Use it for Latin-script text.
+- **Object detection on a CPU is slow**: AutoFormerV2 took 47 minutes per epoch over 16 images of
+  1920×1080 (ten epochs by default). It trains on one thread, as a guard against an intermittent native
+  crash in TorchSharp; that guard is part of the cost.
+- **The pretrained weights download on first use** and ML.NET's downloader can fail on large files
+  ([dotnet/machinelearning#6980](https://github.com/dotnet/machinelearning/issues/6980)); training then
+  prints the file, the folder it is looked for in, and the command that fetches it.
+
 ## Quick Start
 
 ### Installation
