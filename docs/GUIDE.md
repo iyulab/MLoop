@@ -126,8 +126,8 @@ mloop train <data-file> <label-column> [options]
 # Data:
 #   --data, -d <files...>       Training file(s); several files with the same schema are merged
 #   --auto-merge                Merge every same-schema CSV found in datasets/
-#   --drop-missing-labels       Drop rows with a missing label (default: on for classification,
-#                               off for regression)
+#   --drop-missing-labels       Drop rows with a missing label (default: on wherever the label is
+#                               a target to learn; off for a time series, whose label is the series)
 #   --max-rows <n>              Cap on training rows; larger data is sampled (random for
 #                               regression/anomaly, stratified for classification)
 #   --sampling-strategy <s>     'random' or 'stratified' when --max-rows applies (alias: --sampling)
@@ -1512,7 +1512,10 @@ mloop train --auto-merge --label Target --task regression
 
 **Problem**: Training fails with "label column contains null values"
 
-**Solution**: Use `--drop-missing-labels` (default for classification):
+**Solution**: Rows with an empty label are dropped by default for every task whose label is a target
+(classification, regression, ranking, recommendation, NER, question answering) — a row without a
+target can neither teach the model nor score it. A time series keeps its rows. To keep them anyway,
+pass `--drop-missing-labels false`:
 ```bash
 # Explicit handling
 mloop train data.csv --label label --task binary-classification --drop-missing-labels

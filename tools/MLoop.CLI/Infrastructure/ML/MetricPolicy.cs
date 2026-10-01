@@ -145,6 +145,16 @@ public static class MetricPolicy
         => MetricDirection.IsLowerBetter(metricName);
 
     /// <summary>
+    /// The R² of a model judged on an error metric, when it is at or below 0 — no better than answering
+    /// every row with the mean; otherwise <c>null</c>. An error metric (rmse, mae, mse) has no floor of
+    /// its own: what counts as a small error depends on the label's scale. The regression evaluator
+    /// reports R² beside it, and R² ≤ 0 is the trivial baseline the higher-is-better floors stand for.
+    /// Measured: a recommendation model optimized on rmse reached production at R² −0.65.
+    /// </summary>
+    public static double? NoBetterThanTheMean(string metricKey, IReadOnlyDictionary<string, double> metrics)
+        => IsErrorMetric(metricKey) && metrics.TryGetValue("r_squared", out var r2) && r2 <= 0 ? r2 : null;
+
+    /// <summary>
     /// True when a metric value is the direction-aware worst-case sentinel that
     /// <see cref="MetricSanitizer"/> records for an undefined (NaN/±∞) measurement —
     /// <see cref="double.MaxValue"/> for lower-is-better metrics, <see cref="double.MinValue"/>

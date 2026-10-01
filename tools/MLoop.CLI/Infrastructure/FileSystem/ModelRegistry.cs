@@ -267,6 +267,12 @@ public class ModelRegistry : IModelRegistry
             }
         }
 
+        // An error metric has no floor of its own; R² at or below 0 says the model is no better than the mean.
+        if (metricKey != null && MetricPolicy.NoBetterThanTheMean(metricKey, experiment.Metrics) is not null)
+        {
+            return false;
+        }
+
         // Degenerate model detection: high accuracy but the model only ever predicts one
         // class (zero F1 on the positive class, or zero recall on the negative class)
         if (MetricPolicy.IsClassificationDegenerateModel(experiment.Metrics))
