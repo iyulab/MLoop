@@ -308,9 +308,11 @@ internal static class DeepLearningHandlers
             // and the question. So the training rows are prepared outside the model, as NER prepares its
             // tags: each start is located (past whitespace a trimmed answer no longer has) and made the
             // trainer's Int32, under the passage's and question's own names so the saved model reads them.
-            var (prepared, dropped) = PrepareQuestionAnswerRows(mlContext, trainSet, contextCol, questionCol, answerCol, startCol);
+            var (prepared, dropped, writable, kept) = PrepareQuestionAnswerRows(mlContext, trainSet, contextCol, questionCol, answerCol, startCol);
             if (dropped > 0)
                 log($"Question answering: {dropped} row(s) left out — the answer is not in the passage at the recorded position");
+            if (QuestionAnswerAlphabet.Warning(writable, kept) is { } unwritable)
+                log(unwritable);
             const string start = QuestionAnswerRow.StartColumn;
 
             var pipeline = mlContext.MulticlassClassification.Trainers.QuestionAnswer(
@@ -374,7 +376,7 @@ internal static class DeepLearningHandlers
         public int Start { get; set; }
     }
 
-    private static (IDataView Rows, int Dropped) PrepareQuestionAnswerRows(
+    private static (IDataView Rows, int Dropped, int Writable, int Kept) PrepareQuestionAnswerRows(
         MLContext mlContext, IDataView data, string contextCol, string questionCol, string answerCol, string startCol)
     {
         var columns = new[] { data.Schema[contextCol], data.Schema[questionCol], data.Schema[answerCol], data.Schema[startCol] };
@@ -385,7 +387,7 @@ internal static class DeepLearningHandlers
         var position = AnswerStartColumn.Reader(cursor, columns[3]);
 
         var rows = new List<QuestionAnswerRow>();
-        var dropped = 0;
+        int dropped = 0, writable = 0;
         ReadOnlyMemory<char> c = default, q = default, a = default;
         while (cursor.MoveNext())
         {
@@ -393,7 +395,11 @@ internal static class DeepLearningHandlers
             question(ref q);
             answer(ref a);
             if (AnswerStartColumn.Locate(c.Span, a.Span, position()) is { } at)
+            {
                 rows.Add(new QuestionAnswerRow { Context = c.ToString(), Question = q.ToString(), Answer = a.ToString(), Start = at });
+                if (QuestionAnswerAlphabet.CanWrite(a.Span))
+                    writable++;
+            }
             else
                 dropped++;
         }
@@ -403,6 +409,6 @@ internal static class DeepLearningHandlers
         schema[nameof(QuestionAnswerRow.Question)].ColumnName = questionCol;
         schema[nameof(QuestionAnswerRow.Answer)].ColumnName = answerCol;
         schema[nameof(QuestionAnswerRow.Start)].ColumnName = QuestionAnswerRow.StartColumn;
-        return (mlContext.Data.LoadFromEnumerable(rows, schema), dropped);
+        return (mlContext.Data.LoadFromEnumerable(rows, schema), dropped, writable, rows.Count);
     }
 }
