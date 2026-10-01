@@ -29,6 +29,37 @@ public class DataQualityValidatorTests : IDisposable
         return path;
     }
 
+    #region Feature count
+
+    // Ten columns besides the label, fifty rows: under the 10x-features rule of thumb.
+    private string WideTable() => CreateCsv(
+        string.Join(",", Enumerable.Range(0, 10).Select(i => $"c{i}")) + ",value\n"
+        + string.Join("\n", Enumerable.Range(0, 50).Select(r =>
+            string.Join(",", Enumerable.Range(0, 10).Select(i => (r * i % 7).ToString())) + $",{r % 9}.5")) + "\n");
+
+    [Theory]
+    [InlineData("time-series-anomaly")]
+    [InlineData("forecasting")]
+    [InlineData("recommendation")]
+    public void ValidateTrainingData_TaskThatReadsNoFeatureColumns_IsNotWarnedAboutFeatureCount(string task)
+    {
+        // A series model reads one column and matrix factorization two; "50 samples for 10 features"
+        // counted columns the model never sees.
+        var result = _validator.ValidateTrainingData(WideTable(), "value", task);
+
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("features", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_TaskThatReadsFeatureColumns_IsStillWarnedAboutFeatureCount()
+    {
+        var result = _validator.ValidateTrainingData(WideTable(), "value", "regression");
+
+        Assert.Contains(result.Warnings, w => w.Contains("samples for 10 features", StringComparison.Ordinal));
+    }
+
+    #endregion
+
     #region Text labels
 
     [Theory]

@@ -147,6 +147,18 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
+    /// Whether <paramref name="task"/>'s model reads the table's other columns as features. A series model
+    /// reads its one series column, matrix factorization its user and item, and a deep-learning trainer the
+    /// text or images it is pointed at — for those, advice drawn from the column count (samples per
+    /// feature, which columns look like an index) counts columns the model never sees. Measured: a series
+    /// of 300 readings was warned it had "300 samples for 35 features".
+    /// </summary>
+    public static bool ReadsFeatureColumns(string? task) =>
+        !DeepLearningRegistry.Handles(task)
+        && !IsTimeSeriesTask(task)
+        && Models.TaskTypes.Canonical(task) != "recommendation";
+
+    /// <summary>
     /// Why <paramref name="task"/>'s fit takes no time budget, or <c>null</c> when it does. Only an
     /// AutoML search spends a budget; a deep-learning fit runs a fixed number of epochs and a time-series
     /// fit runs its algorithm over the series once. For those the auto-time probe would be a whole second

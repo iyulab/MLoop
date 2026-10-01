@@ -203,8 +203,11 @@ public class TrainingEngine : ITrainingEngine
                 // The full dataset is the deciding slice, matching the schema capture below: a column
                 // is dropped because it carries no signal in the data as a whole, not because one
                 // random partition happened to flatten it.
+                // A model that reads no feature columns (a series, matrix factorization, a deep-learning
+                // input) loses nothing to these exclusions, so they are made without being announced.
+                var readsFeatures = AutoMLRunner.ReadsFeatureColumns(config.Task);
                 var featureExclusions = CsvDataLoader.DetermineExcludedColumns(
-                    dataFilePath, config.LabelColumn, CoreNarration.Sink, config.ClaimedColumns);
+                    dataFilePath, config.LabelColumn, readsFeatures ? CoreNarration.Sink : null, config.ClaimedColumns);
                 config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
 
                 // Say which columns the model will not see, and why. The removal chain narrates this
@@ -213,7 +216,7 @@ public class TrainingEngine : ITrainingEngine
                 // schema to know what was actually trained on. The reasons are already structured
                 // here, which is why this is a warning raised from the decision rather than a string
                 // scraped out of the chain.
-                foreach (var group in featureExclusions.GroupBy(c => c.Reason))
+                foreach (var group in readsFeatures ? featureExclusions.GroupBy(c => c.Reason) : [])
                 {
                     WarningConsole.Warn(
                         $"Excluded from features ({Markup.Escape(group.Key)}): " +

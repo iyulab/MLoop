@@ -65,15 +65,20 @@ public class CsvDataLoader : DataProviderBase
         // Warn if CSV appears to have no header row
         WarnIfHeaderless(mlnetCompatiblePath);
 
-        // Warn about monotonically increasing columns that may be IDs
-        WarnMonotonicColumns(mlnetCompatiblePath, labelColumn);
+        // Warn about monotonically increasing columns that may be IDs — where the model would read them.
+        if (AutoML.AutoMLRunner.ReadsFeatureColumns(taskType))
+            WarnMonotonicColumns(mlnetCompatiblePath, labelColumn);
+
+        // Column removals are announced only where the model reads feature columns; elsewhere a dropped
+        // column was never going to be read.
+        var narrateExclusions = AutoML.AutoMLRunner.ReadsFeatureColumns(taskType) ? _log : null;
 
         if (featureExclusions is not null)
         {
             // The caller already decided — apply that decision verbatim. Re-deriving it from this
             // file would let a train/test partition disagree with the rest of the run about the
             // feature width (see DetermineExcludedColumns).
-            mlnetCompatiblePath = RemoveExcludedColumns(mlnetCompatiblePath, featureExclusions, _log);
+            mlnetCompatiblePath = RemoveExcludedColumns(mlnetCompatiblePath, featureExclusions, narrateExclusions);
         }
         else
         {
@@ -81,21 +86,21 @@ public class CsvDataLoader : DataProviderBase
             // ML.NET treats datetime strings as text and applies FeaturizeText,
             // creating tens of thousands of character n-gram features.
             // Removing from CSV ensures InferColumns never sees them.
-            mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn, _log);
+            mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn, narrateExclusions);
 
             // Pre-InferColumns: Remove sparse columns (>90% missing) from CSV.
             // ML.NET may combine sparse columns into a "Features" vector, preventing
             // post-InferColumns detection. Pre-removing prevents OOM from FeaturizeText.
-            mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn, log: _log);
+            mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn, log: narrateExclusions);
 
             // Pre-InferColumns: Remove constant columns (all identical values) from CSV.
             // Constant columns provide zero predictive signal and waste compute resources.
-            mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn, _log);
+            mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn, narrateExclusions);
 
             // Pre-InferColumns: Remove identifier columns (a distinct value in every row) from CSV.
             // InferColumns marks them Ignore, but BuildColumnInformation turns every text column
             // back into a text feature, so an id column became TF-IDF noise — and a leak path.
-            mlnetCompatiblePath = RemoveIdentifierColumns(mlnetCompatiblePath, labelColumn, preserveColumns, _log);
+            mlnetCompatiblePath = RemoveIdentifierColumns(mlnetCompatiblePath, labelColumn, preserveColumns, narrateExclusions);
         }
 
         // Pre-InferColumns: Warn about mixed-type columns (mostly numeric with some text).

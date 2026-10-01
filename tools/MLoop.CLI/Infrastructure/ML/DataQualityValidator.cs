@@ -35,8 +35,8 @@ public class DataQualityValidator
             return result; // Critical error, don't check dataset size
         }
 
-        // Then check dataset size
-        CheckDatasetSize(dataFile, result);
+        // Then check dataset size — against the feature count only where the model reads the features.
+        CheckDatasetSize(dataFile, result, AutoMLRunner.ReadsFeatureColumns(taskType));
 
         return result;
     }
@@ -485,7 +485,7 @@ public class DataQualityValidator
     /// <summary>
     /// Checks if dataset has sufficient samples for the number of features
     /// </summary>
-    private static void CheckDatasetSize(string dataFile, DataQualityResult result)
+    private static void CheckDatasetSize(string dataFile, DataQualityResult result, bool readsFeatureColumns)
     {
         try
         {
@@ -528,6 +528,9 @@ public class DataQualityValidator
                 result.Warnings.Add($"   Recommended minimum: {RECOMMENDED_MINIMUM} rows for reliable results");
                 result.Warnings.Add("   Model performance may be unreliable with limited data");
             }
+
+            if (!readsFeatureColumns)
+                return;
 
             // Statistical rule of thumb: minimum 10× features
             var recommendedMin = featureCount * 10;

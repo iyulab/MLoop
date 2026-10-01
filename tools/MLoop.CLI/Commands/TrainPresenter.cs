@@ -96,7 +96,12 @@ internal static class TrainPresenter
             : $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
 
-        if (testDataFile != null)
+        if (AutoMLRunner.IsTimeSeriesTask(definition.Task))
+        {
+            // A random split would break time order, so a series is never split (see IsTimeSeriesTask).
+            table.AddRow("Test Split", "not used — a series keeps its time order");
+        }
+        else if (testDataFile != null)
         {
             table.AddRow("Test Split", $"Pre-split ([cyan]{Path.GetFileName(testDataFile)}[/])");
         }
