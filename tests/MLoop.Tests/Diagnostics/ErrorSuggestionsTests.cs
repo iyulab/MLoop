@@ -16,6 +16,39 @@ public class ErrorSuggestionsTests
     }
 
     [Fact]
+    public void GetSuggestions_AFailedDownloadIsNotAMissingModel()
+    {
+        // "download" contains "load", and a weights URL contains "models/" — together they read as a
+        // model that failed to load, and the reader was sent to list, train and promote.
+        var ex = new InvalidOperationException(
+            "ML.NET could not download the pretrained weights this task trains from: "
+            + "curl -L -o w.tsm https://aka.ms/mlnet-resources/models/w.tsm");
+
+        Assert.DoesNotContain(ErrorSuggestions.GetSuggestions(ex, "training"), s => s.Contains("mloop promote"));
+    }
+
+    [Fact]
+    public void GetSuggestions_UnavailableWeightsAnswerWithTheirRemedyNotTheGenericTrainingAdvice()
+    {
+        var weights = new MLoop.Core.DeepLearning.PretrainedWeightsUnavailableException(
+            "ML.NET could not download the pretrained weights …", new InvalidOperationException("abandoned mutex"));
+        var ex = new InvalidOperationException($"Training failed for experiment default/exp-006: {weights.Message}", weights);
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "training");
+
+        Assert.Contains(suggestions, s => s.Contains("Fetch the file"));
+        Assert.DoesNotContain(suggestions, s => s.Contains("--time 30"));
+    }
+
+    [Fact]
+    public void GetSuggestions_AModelThatFailedToLoadStillPointsAtTheModels()
+    {
+        var ex = new InvalidOperationException("Failed to load model from models/default/production/model.zip");
+
+        Assert.Contains(ErrorSuggestions.GetSuggestions(ex), s => s.Contains("mloop list"));
+    }
+
+    [Fact]
     public void GetSuggestions_FileNotFoundInTraining_SuggestsDataFile()
     {
         var ex = new FileNotFoundException("File not found");

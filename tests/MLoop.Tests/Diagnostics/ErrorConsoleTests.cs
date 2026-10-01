@@ -116,6 +116,21 @@ public class ErrorConsoleTests
     }
 
     [Fact]
+    public void DisplayTrainingError_DoesNotRepeatAnInnerMessageTheErrorAlreadySays()
+    {
+        // The training engine wraps its failure as "Training failed for experiment …: {inner}", so the
+        // inner message printed again below it is the same sentence twice. The general display already
+        // skipped such an inner; the training display did not.
+        var inner = new InvalidOperationException("The weights could not be fetched.");
+        var ex = new InvalidOperationException($"Training failed for experiment default/exp-005: {inner.Message}", inner);
+
+        var output = CaptureStdErr(() => ErrorSuggestions.DisplayTrainingError(ex, "default"));
+
+        Assert.DoesNotContain("Inner exception", output);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(output, "could not be fetched"));
+    }
+
+    [Fact]
     public void PathNotFoundTip_NamesTheProjectRoot()
     {
         // Every explicit-path command option resolves a relative path against the project root

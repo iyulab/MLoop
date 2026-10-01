@@ -19,6 +19,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `exact_match` stops; the guide's Question Answering section explains the limit.
 
 ### Fixed
+- **A deep-learning task whose pretrained weights cannot be downloaded says how to fetch them.**
+  ML.NET's downloader fails on large files (dotnet/machinelearning#6980), and its error named the URL
+  but not where the file is expected; the advice after it pointed at listing and promoting models.
+  Training now names the file, the folder it is looked for in (`mlnet` in the temp folder) and the
+  command that fetches it, and suggests only that. A training error also no longer prints its cause a
+  second time as an "Inner exception".
 - **Question answering trains, predicts and evaluates.** The trainer was given only the passage and
   the question, so it read the answer and its position from columns that had to be named
   `TrainingAnswer` and `AnswerStart`; training reported no metric, so the quality gate had nothing to
