@@ -271,6 +271,11 @@ public class PerformanceTests
         var config2 = new SamplingConfiguration { RandomSeed = 42 };
         var engine = new SamplingEngine(new RandomSamplingStrategy(), NullLogger<SamplingEngine>.Instance);
 
+        // Warm up first: otherwise the first timed run carries JIT and first-call costs, and the
+        // comparison measures a cold run against a warm one — measured 26ms vs 390ms in a Release
+        // build, on every run, while both runs did the same seeded work.
+        await engine.SampleAsync(data, 0.1, new SamplingConfiguration { RandomSeed = 42 });
+
         // Act
         var stopwatch1 = Stopwatch.StartNew();
         var sample1 = await engine.SampleAsync(data, 0.1, config1);
