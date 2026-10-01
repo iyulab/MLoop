@@ -455,15 +455,28 @@ public static class TrainCommand
 
                     var csvMerger = new CsvMerger(csvHelper);
 
+                    // Each file is read as a table before the merge reads it as CSV — a JSON, Parquet or
+                    // Excel file otherwise had its raw text taken for a header. Reports keep naming the
+                    // files the user gave.
+                    var tables = new List<string>();
+                    var givenName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var file in resolvedPaths)
+                    {
+                        var table = await TabularDataFile.AsCsvAsync(file, records);
+                        tables.Add(table);
+                        givenName[Path.GetFileName(table)] = Path.GetFileName(file);
+                    }
+                    string Given(string name) => givenName.GetValueOrDefault(name, name);
+
                     // Validate schemas
-                    var validation = await csvMerger.ValidateSchemaCompatibilityAsync(resolvedPaths);
+                    var validation = await csvMerger.ValidateSchemaCompatibilityAsync(tables);
                     if (!validation.IsCompatible)
                     {
                         // validation.Message only counts the mismatch; the columns that actually
                         // differ per file live in MismatchedColumns and were computed regardless —
                         // surface them instead of making the user re-diff the files by hand.
                         var perFile = string.Join("; ", validation.MismatchedColumns
-                            .Select(kv => $"{Markup.Escape(kv.Key)}: {Markup.Escape(string.Join(", ", kv.Value))}"));
+                            .Select(kv => $"{Markup.Escape(Given(kv.Key))}: {Markup.Escape(string.Join(", ", kv.Value))}"));
                         ErrorConsole.Error(
                             $"Schema mismatch between files: {validation.Message}",
                             $"Columns unique to each file — {perFile}. Keep only the {validation.CommonColumns.Count} shared columns across files, or merge files with matching schemas.");
@@ -478,7 +491,7 @@ public static class TrainCommand
                     }
 
                     var mergedPath = Path.Combine(datasetsPath, "merged_train.csv");
-                    var mergeResult = await csvMerger.MergeAsync(resolvedPaths, mergedPath);
+                    var mergeResult = await csvMerger.MergeAsync(tables, mergedPath);
 
                     if (!mergeResult.Success)
                     {
@@ -491,7 +504,7 @@ public static class TrainCommand
                     AnsiConsole.MarkupLine($"[green]✓[/] Merged [cyan]{mergeResult.TotalRows}[/] rows from {resolvedPaths.Count} files");
                     foreach (var (fileName, rowCount) in mergeResult.RowsPerFile)
                     {
-                        AnsiConsole.MarkupLine($"    [grey]• {fileName}: {rowCount} rows[/]");
+                        AnsiConsole.MarkupLine($"    [grey]• {Markup.Escape(Given(fileName))}: {rowCount} rows[/]");
                     }
                     AnsiConsole.WriteLine();
 

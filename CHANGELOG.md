@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `exact_match` stops; the guide's Question Answering section explains the limit.
 
 ### Fixed
+- **`mloop train --data a --data b` merges JSON, Parquet, Excel and TSV files.** The merge read every
+  file as CSV text, so two JSON files of the same shape were refused as having no column in common,
+  with each file's raw JSON listed as its columns. Each file is now read as a table first (with
+  `--records` when given), and the merge report names the files as given.
 - **`mloop info` without a label no longer calls a column the label.** ML.NET's type inference needs
   one, so `info` guesses (a common label name, else the last column) — and reported that guess as the
   column's purpose. A guessed column now shows the purpose its type gives it.
