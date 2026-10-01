@@ -324,6 +324,10 @@ context,question,answer,answer_start
   data.paragraphs.qas.answers` gives one row per answer with its `paragraphs.context` and
   `qas.question`. If another text column it brings along is taken for the question, name the two
   with `type: text` in `mloop.yaml`.
+- **Language**: ML.NET's question-answering model does not cut its answer out of the passage; it
+  decodes it from English RoBERTa tokens, one byte per character. An answer outside Latin-1 —
+  Korean, Chinese, Japanese, Cyrillic — comes out with those characters missing, so it can never
+  match exactly. Training says how many answers are like that and where `exact_match` stops.
 - A prediction needs only the passage and the question. Its `predictedLabel` is the model's best answer
   and `score` that answer's model score (not a probability).
 

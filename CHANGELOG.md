@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   trains question answering as it is published. A JSON file that is not a table is refused with the
   paths that would read it; `--records` on a file that is not JSON is refused rather than ignored.
   This comes with FilePrepper 0.9.0.
+- **Question answering says when its answers cannot be written.** ML.NET's question-answering model
+  decodes its answer one byte per character, so an answer in Korean, Chinese, Japanese or Cyrillic
+  comes out with those characters missing. Training now counts such answers and says where
+  `exact_match` stops; the guide's Question Answering section explains the limit.
 
 ### Fixed
 - **Question answering trains, predicts and evaluates.** The trainer was given only the passage and
