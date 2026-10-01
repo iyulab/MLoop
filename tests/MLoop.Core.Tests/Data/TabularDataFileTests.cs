@@ -108,4 +108,32 @@ public class TabularDataFileTests : IDisposable
 
         Assert.Contains("--records", ex.Message);
     }
+
+    [Fact]
+    public async Task A_file_holding_one_record_is_a_one_row_table()
+    {
+        var path = Path.Combine(_dir, "reading.json");
+        File.WriteAllText(path, """{"id": "00002", "volts": 3.295, "temp.1": 26.9}""");
+
+        var lines = File.ReadAllLines(await TabularDataFile.AsCsvAsync(path));
+
+        Assert.Equal(2, lines.Length);
+        Assert.Contains("temp.1", lines[0]);
+    }
+
+    [Fact]
+    public async Task Records_is_suggested_only_when_there_is_a_path_to_give()
+    {
+        var nested = Path.Combine(_dir, "nested.json");
+        File.WriteAllText(nested, """{"data": [{"x": 1}]}""");
+        var scalars = Path.Combine(_dir, "scalars.json");
+        File.WriteAllText(scalars, "[1, 2, 3]");
+
+        var withPath = await Assert.ThrowsAnyAsync<Exception>(() => TabularDataFile.AsCsvAsync(nested));
+        var withoutPath = await Assert.ThrowsAnyAsync<Exception>(() => TabularDataFile.AsCsvAsync(scalars));
+
+        Assert.Contains("--records", withPath.Message);
+        Assert.Contains("'data'", withPath.Message);
+        Assert.DoesNotContain("--records", withoutPath.Message);
+    }
 }

@@ -12,13 +12,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a row that keeps its question and passage (`qas.question`, `paragraphs.context`), so such a file
   trains question answering as it is published. A JSON file that is not a table is refused with the
   paths that would read it; `--records` on a file that is not JSON is refused rather than ignored.
-  This comes with FilePrepper 0.9.0.
+  This comes with FilePrepper 0.9.0 (now 0.10.0).
 - **Question answering says when its answers cannot be written.** ML.NET's question-answering model
   decodes its answer one byte per character, so an answer in Korean, Chinese, Japanese or Cyrillic
   comes out with those characters missing. Training now counts such answers and says where
   `exact_match` stops; the guide's Question Answering section explains the limit.
 
 ### Fixed
+- **A time-series anomaly prediction CSV answers in two columns.** The detectors' one output vector
+  matched none of the columns the CSV keeps, so the file held every input column twice, the loader's
+  feature vector slot by slot, and the answer as three unnamed numbers; the preview collapsed into
+  one-character columns. It now answers in `PredictedLabel` (anomaly or not) and `Score`, the columns
+  anomaly detection uses, with the values `--json` reports as `isAnomaly` and `anomalyScore`.
+- **Forecasting and time-series anomaly training no longer run an auto-time probe.** Their fit takes
+  no time budget, so the probe trained the model a second time, its warnings printed twice, and the
+  progress reported a 19-second probe and a 114-second main pass for a 2-second fit. The "Time Limit"
+  row now says the budget is not used.
+- **A JSON file holding one object reads as a one-row table** (with FilePrepper 0.10.0), so a file per
+  record — a sensor reading per timestamp — can be passed with `--data`. `--records` is suggested only
+  when the file has rows under a path to give.
 - **`mloop train --data a --data b` merges JSON, Parquet, Excel and TSV files.** The merge read every
   file as CSV text, so two JSON files of the same shape were refused as having no column in common,
   with each file's raw JSON listed as its columns. Each file is now read as a table first (with

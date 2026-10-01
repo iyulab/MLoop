@@ -85,11 +85,11 @@ public class TrainingEngine : ITrainingEngine
         // auto-time replaces the configured value with the budgets it chose (probe, then main when
         // it runs), so the record states what ran rather than a default nobody used.
         var grantedSeconds = new StrongBox<int>(config.TimeLimitSeconds);
-        // A deep-learning fit runs a fixed number of epochs and ignores its budget, so a probe would
-        // be a whole second training whose result is thrown away — measured: NER ran twice, 1,050 s.
+        // A fit that ignores its budget (deep learning, time series) would make the probe a whole second
+        // training whose result is thrown away — measured: NER ran twice, 1,050 s.
         var autoTimed = config.UseAutoTime
                         && !DataLoaderFactory.IsDirectoryBased(config.Task)
-                        && !DeepLearningRegistry.Handles(config.Task);
+                        && AutoMLRunner.TimeBudgetUnused(config.Task) is null;
 
         try
         {

@@ -146,6 +146,19 @@ public partial class AutoMLRunner
         return Models.TaskTypes.Canonical(task) is "forecasting" or "time-series-anomaly";
     }
 
+    /// <summary>
+    /// Why <paramref name="task"/>'s fit takes no time budget, or <c>null</c> when it does. Only an
+    /// AutoML search spends a budget; a deep-learning fit runs a fixed number of epochs and a time-series
+    /// fit runs its algorithm over the series once. For those the auto-time probe would be a whole second
+    /// training whose result is thrown away, its estimate would describe time nothing uses, and a "Time
+    /// Limit" row would promise a bound nothing enforces — measured: a 2-second time-series fit was
+    /// reported as a 19-second probe and a 114-second main pass, its warnings printed twice.
+    /// </summary>
+    public static string? TimeBudgetUnused(string? task) =>
+        DeepLearningRegistry.Handles(task) ? "trains a fixed number of epochs"
+        : IsTimeSeriesTask(task) ? "fits the series once, without a search"
+        : null;
+
     public async Task<AutoMLResult> RunAsync(
         TrainingConfig config,
         IProgress<TrainingProgress>? progress = null,

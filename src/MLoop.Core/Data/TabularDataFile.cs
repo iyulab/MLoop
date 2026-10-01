@@ -52,9 +52,10 @@ public static class TabularDataFile
         {
             pipeline = await DataPipeline.FromFileAsync(path, jsonRecordPath).ConfigureAwait(false);
         }
-        catch (InvalidDataException ex) when (DataFileFormats.FromPath(path) == DataFileFormat.Json && jsonRecordPath is null)
+        catch (JsonShapeException ex) when (jsonRecordPath is null && ex.RecordPaths.Count > 0)
         {
-            // The reader names the record paths that would read the file; here the way to give one is an option.
+            // The reader names the record paths that would read the file; here the way to give one is an
+            // option. A document with no rows to point at gets no such advice.
             throw new InvalidDataException($"{ex.Message} Pass the path with --records.", ex);
         }
         await pipeline.ToCsvAsync(csv).ConfigureAwait(false);
