@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-10-01
+
 ### Added
 - **`--records` reads a JSON file whose rows sit in a nested array** (`train`, `predict`, `evaluate`,
   `info`, `analyze`, `detect`). `--records data.paragraphs.qas.answers` reads each answer of a reading-comprehension file as
