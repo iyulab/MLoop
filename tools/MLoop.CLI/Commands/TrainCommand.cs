@@ -1104,7 +1104,7 @@ public static class TrainCommand
             events?.Result(result, resolvedModelName);
 
             // Display results
-            TrainPresenter.DisplayResults(result, resolvedModelName, promotionFollows: !noPromote);
+            TrainPresenter.DisplayResults(result, resolvedModelName, promotionFollows: !noPromote, records);
 
             // T4.4: Performance diagnostics
             var performanceDiagnostics = new PerformanceDiagnostics();

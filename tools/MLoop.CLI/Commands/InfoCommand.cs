@@ -272,6 +272,11 @@ public static class InfoCommand
             labelColumnName: inferLabel,
             separatorChar: ',');
 
+        // A guessed label only lets InferColumns run; no one named it the label, so no column is
+        // reported as one — each keeps the role its type gives it.
+        if (inferLabel != labelColumn)
+            columnInference.ColumnInformation.LabelColumnName = null;
+
         // Ensure RFC 4180 compliance
         columnInference.TextLoaderOptions.AllowQuoting = true;
 

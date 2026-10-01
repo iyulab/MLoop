@@ -58,4 +58,15 @@ public class FirstSessionGuidanceTests
 
         Assert.Contains(steps, s => s == "mloop promote exp-007 --name churn");
     }
+
+    [Fact]
+    public void NextStepsPredictTheWayTheModelWasTrained()
+    {
+        // A model trained from the rows of a nested JSON array reads its prediction data the same way;
+        // a predict line without the record path is refused on such a file.
+        var steps = TrainPresenter.NextStepsAfterTraining("default", "exp-001", promotionFollows: true,
+            records: "data.paragraphs.qas.answers");
+
+        Assert.Contains(steps, s => s == "mloop predict data.json --records data.paragraphs.qas.answers --name default");
+    }
 }
