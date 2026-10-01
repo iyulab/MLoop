@@ -88,7 +88,7 @@ internal static class DeepLearningHandlers
 
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Text classification (NAS-BERT)", log))
-                model = pipeline.Fit(trainSet);
+                model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
             var predictions = model.Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
@@ -137,7 +137,7 @@ internal static class DeepLearningHandlers
 
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Sentence similarity (NAS-BERT)", log))
-                model = pipeline.Fit(trainSet);
+                model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
             var predictions = model.Transform(testSet);
             var metrics = mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
 
@@ -194,7 +194,7 @@ internal static class DeepLearningHandlers
 
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "NER (NAS-BERT)", log))
-                model = pipeline.Fit(preparedTrain);
+                model = PretrainedWeights.Guard(() => pipeline.Fit(preparedTrain));
 
             var (micro, macro) = NerTagAccuracy.Measure(mlContext, model.Transform(testSet), config.LabelColumn);
             // Named as multiclass names them, and for the same reason: the tag average is what a model
@@ -265,7 +265,7 @@ internal static class DeepLearningHandlers
             // report said accuracy=0, which for a detector reads as "found nothing".
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Object detection (AutoFormerV2)", log))
-                model = pipeline.Fit(trainSet);
+                model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
             var predictions = model.Transform(testSet);
 
             return new AutoMLResult
@@ -326,7 +326,7 @@ internal static class DeepLearningHandlers
 
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Question answering", log))
-                model = pipeline.Fit(prepared);
+                model = PretrainedWeights.Guard(() => pipeline.Fit(prepared));
 
             var (exact, f1) = AnswerOverlap.Measure(model.Transform(testSet), answerCol);
             var metricsDict = new Dictionary<string, double>

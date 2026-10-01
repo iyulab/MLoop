@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using MLoop.Core.AutoML;
 using Spectre.Console;
 
@@ -8,7 +9,7 @@ namespace MLoop.CLI.Infrastructure.Diagnostics;
 /// Provides actionable error suggestions based on exception types and messages.
 /// Helps users understand and resolve common issues quickly.
 /// </summary>
-public static class ErrorSuggestions
+public static partial class ErrorSuggestions
 {
     /// <summary>
     /// Displays an error with actionable suggestions based on context.
@@ -181,6 +182,12 @@ public static class ErrorSuggestions
             suggestions.Add("If the log showed native allocation warnings (e.g. [[LightGBM]] bad allocation), memory is the likely cause");
         }
 
+        // Pretrained weights that could not be fetched: the message already carries the command that
+        // fetches them, and the generic training fallback below ("a smaller time limit") does not apply
+        // to a fixed-epoch deep-learning trainer that never started.
+        if (HasInChain<MLoop.Core.DeepLearning.PretrainedWeightsUnavailableException>(ex))
+            suggestions.Add("Fetch the file with the command above, then run the same [cyan]mloop train[/] again");
+
         // Memory and resource errors. The type test walks the inner chain: AutoML wraps OOM in an
         // AggregateException and the CLI wraps again ("Training failed for experiment {id}: …"), so a
         // bare `ex is OutOfMemoryException` never matched in production. Native trainers report the
@@ -216,7 +223,9 @@ public static class ErrorSuggestions
         // Model errors. A missing label column names the model it was looking for ("… not found in
         // data for model 'default'"), which is not a missing model — those suggestions would send the
         // reader after experiments when the problem is a column.
-        if (!labelNotFound && message.Contains("model") && (message.Contains("not found") || message.Contains("load")))
+        // "load" as a word start: "download" is not a model failing to load, and a weights URL under
+        // ".../models/" otherwise completed the match.
+        if (!labelNotFound && message.Contains("model") && (message.Contains("not found") || LoadWord().IsMatch(message)))
         {
             suggestions.Add("See the models and their experiments: [cyan]mloop list[/]");
             suggestions.Add("Train a model first: [cyan]mloop train[/]");
@@ -379,7 +388,9 @@ public static class ErrorSuggestions
         // through this path reported no error event whatsoever.
         var machineParts = new List<string> { $"Training failed for model '{modelName}': {ex.Message}" };
 
-        if (ex.InnerException != null)
+        // The training engine wraps its failure with the inner message in it — repeating it says the
+        // same sentence twice (the same rule DisplayError applies).
+        if (ex.InnerException != null && AddsInformation(ex.Message, ex.InnerException.Message))
         {
             err.WriteLine();
             err.MarkupLine("[grey]Inner exception:[/]");
@@ -410,4 +421,7 @@ public static class ErrorSuggestions
         }
         err.MarkupLine("  [cyan]mloop status[/]                    - Check project status");
     }
+
+    [GeneratedRegex(@"\bload")]
+    private static partial Regex LoadWord();
 }
