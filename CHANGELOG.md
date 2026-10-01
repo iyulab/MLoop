@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `exact_match` stops; the guide's Question Answering section explains the limit.
 
 ### Fixed
+- **A failed training run no longer suggests what cannot help it.** The fallback advice offered
+  `--time 30` to deep-learning and time-series runs, whose fit takes no time budget, and
+  `mloop analyze profile` for an image directory. It now fits the task. An object-detection directory
+  with neither layout also says that a YOLO dataset would be read, not only that no COCO file was found.
 - **Training no longer advises about columns the model does not read.** For time-series tasks,
   recommendation and deep-learning tasks, the samples-per-feature rule ("300 samples for 35 features"),
   the suggestion to drop an index-like column and the announcements of excluded columns all counted

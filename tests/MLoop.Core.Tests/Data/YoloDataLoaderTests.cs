@@ -57,6 +57,28 @@ public class YoloDataLoaderTests : IDisposable
     }
 
     [Fact]
+    public void IsYoloDirectory_ANoteBesideTheImagesIsNotALabel()
+    {
+        // `mloop init --task object-detection` writes datasets/coco/README.txt. With images added beside
+        // it, the folder read as a flat YOLO layout and every COCO project went to the wrong loader.
+        CreateBmp(Path.Combine(_tempDirectory, "a.bmp"), 100, 100);
+        File.WriteAllText(Path.Combine(_tempDirectory, "README.txt"), "Object detection dataset layout (COCO format)");
+        File.WriteAllText(Path.Combine(_tempDirectory, "annotations.json"), "{}");
+
+        Assert.False(YoloDataLoader.IsYoloDirectory(_tempDirectory));
+    }
+
+    [Fact]
+    public void IsYoloDirectory_AFlatLayoutIsKnownByALabelNamedAfterItsImage()
+    {
+        CreateBmp(Path.Combine(_tempDirectory, "a.bmp"), 100, 100);
+        File.WriteAllText(Path.Combine(_tempDirectory, "a.txt"), "0 0.5 0.5 0.2 0.2");
+        File.WriteAllText(Path.Combine(_tempDirectory, "README.txt"), "notes");
+
+        Assert.True(YoloDataLoader.IsYoloDirectory(_tempDirectory));
+    }
+
+    [Fact]
     public void LoadData_ProducesThreeColumns()
     {
         var (imagesDir, labelsDir) = CreateImagesLabelsDirs();
