@@ -5,6 +5,7 @@ using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Models;
 using MLoop.Core.Data;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Prediction;
 using MLoop.Core.Storage;
 
@@ -272,13 +273,17 @@ public class PredictionEngine
             // Note: After MapKeyToValue("PredictedLabel"), the schema contains both the original
             // hidden key-type PredictedLabel and the new visible string PredictedLabel.
             // Must skip hidden columns to avoid duplicate names in SelectColumns.
+            // Question answering answers in the trainer's own column, best first; it is rendered to one
+            // PredictedLabel below, after the guards have read it.
+            var isQuestionAnswering = TaskTypes.Canonical(taskType) == "question-answering";
             var predictionColumns = new List<string>();
             foreach (var col in predictions.Schema)
             {
                 if (col.IsHidden) continue; // Skip hidden columns (e.g., key-type PredictedLabel after MapKeyToValue)
                 // Include standard prediction output columns
                 if (col.Name == "PredictedLabel" || col.Name == "Score" || col.Name == "Probability"
-                    || col.Name == "ScoreLowerBound" || col.Name == "ScoreUpperBound")
+                    || col.Name == "ScoreLowerBound" || col.Name == "ScoreUpperBound"
+                    || (isQuestionAnswering && col.Name == AnswerOverlap.PredictedAnswerColumn))
                 {
                     predictionColumns.Add(col.Name);
                 }
@@ -376,6 +381,13 @@ public class PredictionEngine
                 outputData = RenderTagSequence(outputData);
             }
 
+            // Question answering writes its answers and their scores best first; a row answers with the
+            // best one, as the structured path does.
+            if (isQuestionAnswering && outputData.Schema.GetColumnOrNull(AnswerOverlap.PredictedAnswerColumn) is not null)
+            {
+                outputData = RenderBestAnswer(outputData);
+            }
+
             // Save predictions to CSV (without schema metadata for cleaner output)
             await using (var fileStream = File.Create(outputPath))
             {
@@ -469,6 +481,32 @@ public class PredictionEngine
             contractName: null)
             .Fit(predictions)
             .Transform(predictions);
+
+    private IDataView RenderBestAnswer(IDataView predictions)
+    {
+        var rendered = _mlContext.Transforms.CustomMapping(
+                (AnswerVector input, BestAnswer output) =>
+                {
+                    output.PredictedLabel = input.Answer is { Length: > 0 } answers ? answers[0] : "";
+                    output.Score = input.Score is { Length: > 0 } scores ? scores[0] : float.NaN;
+                },
+                contractName: null)
+            .Fit(predictions)
+            .Transform(predictions);
+        return _mlContext.Transforms.SelectColumns("PredictedLabel", "Score").Fit(rendered).Transform(rendered);
+    }
+
+    private sealed class AnswerVector
+    {
+        public string[]? Answer { get; set; }
+        public float[]? Score { get; set; }
+    }
+
+    private sealed class BestAnswer
+    {
+        public string PredictedLabel { get; set; } = "";
+        public float Score { get; set; }
+    }
 
     private sealed class TagVector
     {

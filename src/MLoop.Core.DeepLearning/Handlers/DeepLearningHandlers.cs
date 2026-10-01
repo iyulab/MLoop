@@ -333,11 +333,11 @@ internal static class DeepLearningHandlers
                 [AnswerOverlap.ExactMatch] = exact
             };
 
-            trialChannel.ReportCompleted(TrainerDescriptor.Of("QA (NAS-BERT)"), AnswerOverlap.CharF1, f1, metricsDict);
+            trialChannel.ReportCompleted(TrainerDescriptor.Of("QA (RoBERTa)"), AnswerOverlap.CharF1, f1, metricsDict);
 
             return new AutoMLResult
             {
-                Trainer = TrainerDescriptor.Of("QA (NAS-BERT)"),
+                Trainer = TrainerDescriptor.Of("QA (RoBERTa)"),
                 Model = model,
                 Metrics = metricsDict,
                 RowCount = trainSet.GetRowCount() ?? 0,

@@ -79,4 +79,33 @@ public class TabularDataFileTests : IDisposable
     [InlineData("data.tsv", true)]
     public void Only_formats_other_than_delimited_text_are_converted(string path, bool expected) =>
         Assert.Equal(expected, TabularDataFile.NeedsConversion(path));
+
+    [Fact]
+    public async Task A_record_path_reads_the_rows_of_a_nested_json_array()
+    {
+        var path = Path.Combine(_dir, "squad.json");
+        File.WriteAllText(path, """
+            {"version":"1","data":[{"paragraphs":[{"context":"서울은 수도다","qas":[
+              {"question":"수도는?","answers":[{"text":"서울","answer_start":0}]}]}]}]}
+            """);
+
+        var csv = await TabularDataFile.AsCsvAsync(path, "data.paragraphs.qas.answers");
+        var lines = File.ReadAllLines(csv);
+
+        Assert.Equal(2, lines.Length);
+        Assert.Contains("paragraphs.context", lines[0]);
+        Assert.Contains("qas.question", lines[0]);
+        Assert.Contains("서울은 수도다", lines[1]);
+    }
+
+    [Fact]
+    public async Task A_record_path_for_a_file_that_is_not_json_is_refused_not_ignored()
+    {
+        var path = Path.Combine(_dir, "rows.csv");
+        File.WriteAllLines(path, ["a,b", "1,2"]);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => TabularDataFile.AsCsvAsync(path, "data"));
+
+        Assert.Contains("--records", ex.Message);
+    }
 }

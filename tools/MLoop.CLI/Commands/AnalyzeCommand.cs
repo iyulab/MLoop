@@ -65,7 +65,7 @@ public static class AnalyzeCommand
     /// data file can be resolved. Read-only: never mutates the data file or mloop.yaml.
     /// </summary>
     internal static async Task<AnalyzeContext?> ResolveAsync(
-        string? dataFile, string? labelOption, string modelName)
+        string? dataFile, string? labelOption, string modelName, string? records = null)
     {
         var fileSystem = new FileSystemManager();
         var projectDiscovery = new ProjectDiscovery(fileSystem);
@@ -111,7 +111,7 @@ public static class AnalyzeCommand
         }
 
         // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
-        return new AnalyzeContext(await TabularDataFile.AsCsvAsync(resolved), label);
+        return new AnalyzeContext(await TabularDataFile.AsCsvAsync(resolved, records), label);
     }
 
     /// <summary>
@@ -145,12 +145,14 @@ public static class AnalyzeCommand
         var labelOption = LabelOption();
         var nameOption = NameOption();
         var jsonOption = JsonOption();
+        var recordsOption = DataFileOptions.Records();
 
         var cmd = new Command("profile", "Column types, null %, cardinality, constant columns");
         cmd.Arguments.Add(dataFileArg);
         cmd.Options.Add(labelOption);
         cmd.Options.Add(nameOption);
         cmd.Options.Add(jsonOption);
+        cmd.Options.Add(recordsOption);
 
         cmd.SetAction((parseResult) =>
         {
@@ -158,18 +160,19 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return WithJsonContract(json, () => ExecuteProfileAsync(dataFile, label, modelName, json));
+            var records = parseResult.GetValue(recordsOption);
+            return WithJsonContract(json, () => ExecuteProfileAsync(dataFile, label, modelName, json, records));
         });
 
         return cmd;
     }
 
     private static async Task<int> ExecuteProfileAsync(
-        string? dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json, string? records)
     {
         try
         {
-            var ctx = await ResolveAsync(dataFile, labelOption, modelName);
+            var ctx = await ResolveAsync(dataFile, labelOption, modelName, records);
             if (ctx == null) return 1;
 
             var dataLens = new Infrastructure.ML.DataLensAnalyzer();
@@ -259,12 +262,14 @@ public static class AnalyzeCommand
         var labelOption = LabelOption();
         var nameOption = NameOption();
         var jsonOption = JsonOption();
+        var recordsOption = DataFileOptions.Records();
 
         var cmd = new Command("correlation", "High-correlation pairs and multicollinearity");
         cmd.Arguments.Add(dataFileArg);
         cmd.Options.Add(labelOption);
         cmd.Options.Add(nameOption);
         cmd.Options.Add(jsonOption);
+        cmd.Options.Add(recordsOption);
 
         cmd.SetAction((parseResult) =>
         {
@@ -272,17 +277,18 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return WithJsonContract(json, () => ExecuteCorrelationAsync(dataFile, label, modelName, json));
+            var records = parseResult.GetValue(recordsOption);
+            return WithJsonContract(json, () => ExecuteCorrelationAsync(dataFile, label, modelName, json, records));
         });
         return cmd;
     }
 
     private static async Task<int> ExecuteCorrelationAsync(
-        string? dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json, string? records)
     {
         try
         {
-            var ctx = await ResolveAsync(dataFile, labelOption, modelName);
+            var ctx = await ResolveAsync(dataFile, labelOption, modelName, records);
             if (ctx == null) return 1;
 
             var dataLens = new Infrastructure.ML.DataLensAnalyzer();
@@ -316,12 +322,14 @@ public static class AnalyzeCommand
         var labelOption = LabelOption();
         var nameOption = NameOption();
         var jsonOption = JsonOption();
+        var recordsOption = DataFileOptions.Records();
 
         var cmd = new Command("importance", "Feature importance ranking (requires a label)");
         cmd.Arguments.Add(dataFileArg);
         cmd.Options.Add(labelOption);
         cmd.Options.Add(nameOption);
         cmd.Options.Add(jsonOption);
+        cmd.Options.Add(recordsOption);
 
         cmd.SetAction((parseResult) =>
         {
@@ -329,17 +337,18 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return WithJsonContract(json, () => ExecuteImportanceAsync(dataFile, label, modelName, json));
+            var records = parseResult.GetValue(recordsOption);
+            return WithJsonContract(json, () => ExecuteImportanceAsync(dataFile, label, modelName, json, records));
         });
         return cmd;
     }
 
     private static async Task<int> ExecuteImportanceAsync(
-        string? dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json, string? records)
     {
         try
         {
-            var ctx = await ResolveAsync(dataFile, labelOption, modelName);
+            var ctx = await ResolveAsync(dataFile, labelOption, modelName, records);
             if (ctx == null) return 1;
 
             if (string.IsNullOrEmpty(ctx.Value.Label))
@@ -390,12 +399,14 @@ public static class AnalyzeCommand
         var labelOption = LabelOption();
         var nameOption = NameOption();
         var jsonOption = JsonOption();
+        var recordsOption = DataFileOptions.Records();
 
         var cmd = new Command("outliers", "Outlier count, rate, and isolation-forest threshold");
         cmd.Arguments.Add(dataFileArg);
         cmd.Options.Add(labelOption);
         cmd.Options.Add(nameOption);
         cmd.Options.Add(jsonOption);
+        cmd.Options.Add(recordsOption);
 
         cmd.SetAction((parseResult) =>
         {
@@ -403,17 +414,18 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return WithJsonContract(json, () => ExecuteOutliersAsync(dataFile, label, modelName, json));
+            var records = parseResult.GetValue(recordsOption);
+            return WithJsonContract(json, () => ExecuteOutliersAsync(dataFile, label, modelName, json, records));
         });
         return cmd;
     }
 
     private static async Task<int> ExecuteOutliersAsync(
-        string? dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json, string? records)
     {
         try
         {
-            var ctx = await ResolveAsync(dataFile, labelOption, modelName);
+            var ctx = await ResolveAsync(dataFile, labelOption, modelName, records);
             if (ctx == null) return 1;
 
             var dataLens = new Infrastructure.ML.DataLensAnalyzer();
@@ -447,12 +459,14 @@ public static class AnalyzeCommand
         var labelOption = LabelOption();
         var nameOption = NameOption();
         var jsonOption = JsonOption();
+        var recordsOption = DataFileOptions.Records();
 
         var cmd = new Command("distribution", "Skewness, kurtosis, and normality tests per numeric column");
         cmd.Arguments.Add(dataFileArg);
         cmd.Options.Add(labelOption);
         cmd.Options.Add(nameOption);
         cmd.Options.Add(jsonOption);
+        cmd.Options.Add(recordsOption);
 
         cmd.SetAction((parseResult) =>
         {
@@ -460,17 +474,18 @@ public static class AnalyzeCommand
             var label = parseResult.GetValue(labelOption);
             var modelName = parseResult.GetValue(nameOption)!;
             var json = parseResult.GetValue(jsonOption);
-            return WithJsonContract(json, () => ExecuteDistributionAsync(dataFile, label, modelName, json));
+            var records = parseResult.GetValue(recordsOption);
+            return WithJsonContract(json, () => ExecuteDistributionAsync(dataFile, label, modelName, json, records));
         });
         return cmd;
     }
 
     private static async Task<int> ExecuteDistributionAsync(
-        string? dataFile, string? labelOption, string modelName, bool json)
+        string? dataFile, string? labelOption, string modelName, bool json, string? records)
     {
         try
         {
-            var ctx = await ResolveAsync(dataFile, labelOption, modelName);
+            var ctx = await ResolveAsync(dataFile, labelOption, modelName, records);
             if (ctx == null) return 1;
 
             var dataLens = new Infrastructure.ML.DataLensAnalyzer();

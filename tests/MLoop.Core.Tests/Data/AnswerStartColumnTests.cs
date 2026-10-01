@@ -56,3 +56,34 @@ public class AnswerStartColumnTests
         Assert.Equal("Id", Find(data));
     }
 }
+
+public class AnswerStartColumnLoaderTests : IDisposable
+{
+    private readonly string _dir = Directory.CreateTempSubdirectory("mloop-qa-start-").FullName;
+
+    public void Dispose() => Directory.Delete(_dir, recursive: true);
+
+    [Fact]
+    public void The_start_column_survives_the_loader_when_other_numeric_columns_sit_beside_it()
+    {
+        // A reading-comprehension file read by record path carries the enclosing items' fields — here a
+        // numeric source and title — next to the answer's start. The loader must still give the start
+        // its own column, or no column is left to locate the answer with.
+        var path = Path.Combine(_dir, "qa.csv");
+        var lines = new List<string> { "source,title,context,question,text,answer_start" };
+        string[] passages = ["서울은 한국의 수도이다", "부산에서 친구를 만났다", "제주도는 섬이다 바다가 넓다"];
+        string[] answers = ["수도", "친구", "바다"];
+        for (var i = 0; i < 30; i++)
+        {
+            var p = passages[i % 3];
+            var a = answers[i % 3];
+            lines.Add($"{i % 4},{100 + i * 7},{p},질문 {i}는 무엇인가,{a},{p.IndexOf(a, StringComparison.Ordinal)}");
+        }
+        File.WriteAllLines(path, lines);
+
+        var data = new CsvDataLoader(new MLContext(seed: 0)).LoadData(path, "text", "question-answering");
+
+        Assert.Equal("answer_start",
+            AnswerStartColumn.Find(data, "context", "text", ["context", "question", "text"]));
+    }
+}

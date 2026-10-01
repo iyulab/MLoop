@@ -102,6 +102,8 @@ public static class DetectCommand
         command.Options.Add(removedPeriodOption);
         command.Options.Add(outputOption);
         command.Options.Add(jsonOption);
+        var recordsOption = DataFileOptions.Records();
+        command.Options.Add(recordsOption);
 
         command.SetAction((parseResult) =>
         {
@@ -118,7 +120,7 @@ public static class DetectCommand
                            + "the result. The series' own period is reported instead (\"period\" in --json).", json);
                 return Task.FromResult(1);
             }
-            return ExecuteAsync(dataFile, column, threshold, sensitivity, output, json);
+            return ExecuteAsync(dataFile, column, threshold, sensitivity, output, json, parseResult.GetValue(recordsOption));
         });
 
         return command;
@@ -130,7 +132,8 @@ public static class DetectCommand
         double threshold,
         double sensitivity,
         string? outputPath,
-        bool jsonOutput)
+        bool jsonOutput,
+        string? records = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -161,7 +164,7 @@ public static class DetectCommand
             }
 
             // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
-            var series = await LoadSeriesAsync(await TabularDataFile.AsCsvAsync(dataFile), column, jsonOutput);
+            var series = await LoadSeriesAsync(await TabularDataFile.AsCsvAsync(dataFile, records), column, jsonOutput);
             if (series == null)
                 return 1;
 

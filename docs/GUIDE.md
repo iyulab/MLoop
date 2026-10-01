@@ -163,6 +163,11 @@ mloop train data.csv --label defect --task binary-classification --balance 5  # 
   take `.parquet`, `.xlsx`/`.xls`, `.json` (an array of objects) and `.tsv` files. A Parquet struct
   column becomes one column per leaf, named by its dotted path — a label stored as `labels.label` is
   passed as `--label labels.label` — and a list column becomes one column of JSON text.
+  A JSON file whose rows sit in a nested array takes `--records` with the dotted path to that array
+  (`train`, `predict`, `evaluate`, `info`, `analyze`, `detect`): `--records data.paragraphs.qas.answers` reads each answer
+  as a row, and a row also carries the fields of the items it sits in, named by their array
+  (`paragraphs.context`, `qas.question`). Without it, such a file is refused with the paths that would
+  read it.
 - **Encoding Detection**: CP949/EUC-KR files auto-converted to UTF-8 (Korean text support)
 - **Schema Validation**: Same-schema files auto-detected for `--auto-merge`
 - **Label Handling**: Missing labels auto-dropped for classification tasks
@@ -315,6 +320,10 @@ context,question,answer,answer_start
   read from that character position, gives the answer on at least nine in ten rows. Without one,
   training stops and says so — an extractive model learns *where* the answer is, and the position is
   that lesson.
+- A SQuAD-format JSON file is read as published: `mloop train squad.json --label text --records
+  data.paragraphs.qas.answers` gives one row per answer with its `paragraphs.context` and
+  `qas.question`. If another text column it brings along is taken for the question, name the two
+  with `type: text` in `mloop.yaml`.
 - A prediction needs only the passage and the question. Its `predictedLabel` is the model's best answer
   and `score` that answer's model score (not a probability).
 
