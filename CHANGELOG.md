@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`--records` reads a JSON file whose rows sit in a nested array** (`train`, `predict`, `evaluate`,
+  `info`, `analyze`, `detect`). `--records data.paragraphs.qas.answers` reads each answer of a reading-comprehension file as
+  a row that keeps its question and passage (`qas.question`, `paragraphs.context`), so such a file
+  trains question answering as it is published. A JSON file that is not a table is refused with the
+  paths that would read it; `--records` on a file that is not JSON is refused rather than ignored.
+  This comes with FilePrepper 0.9.0.
+
 ### Fixed
 - **Question answering trains, predicts and evaluates.** The trainer was given only the passage and
   the question, so it read the answer and its position from columns that had to be named
@@ -14,7 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   task. The answer is now the label, its start position is the column that locates it in the passage,
   the passage is the longer text column, and training and `evaluate` score the best answer with
   `char_f1` (primary) and `exact_match`, the KorQuAD rules. A prediction's `predictedLabel` is the
-  answer. See the guide's Question Answering section for the data format.
+  answer — in the CSV as in `--json`, with its `Score`. The start position is found among any number
+  of numeric columns: a file that also carries numeric ids keeps each column under its own name. See
+  the guide's Question Answering section for the data format.
 
 ## [0.33.0] - 2026-10-01
 

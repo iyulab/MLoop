@@ -169,6 +169,8 @@ public static class TrainCommand
         command.Options.Add(samplingStrategyAliasOption);
         command.Options.Add(seedOption);
         command.Options.Add(jsonOption);
+        var recordsOption = DataFileOptions.Records();
+        command.Options.Add(recordsOption);
 
         command.SetAction((parseResult) =>
         {
@@ -198,7 +200,7 @@ public static class TrainCommand
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json);
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption));
         });
 
         return command;
@@ -225,7 +227,8 @@ public static class TrainCommand
         int? maxRows = null,
         string? samplingStrategy = null,
         int? seed = null,
-        bool json = false)
+        bool json = false,
+        string? records = null)
     {
         // --json reserves stdout for the event stream: every renderer and narrator in the training
         // path is silenced for the duration, and the real stdout is handed to the emitter. Disposed
@@ -584,7 +587,7 @@ public static class TrainCommand
             if (!isDirectoryBased)
             {
             // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
-            resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile);
+            resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);
 
             // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
             resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink);

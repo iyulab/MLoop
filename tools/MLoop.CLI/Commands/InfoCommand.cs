@@ -61,6 +61,8 @@ public static class InfoCommand
         command.Options.Add(analyzeOption);
         command.Options.Add(sampleSizeOption);
         command.Options.Add(jsonOption);
+        var recordsOption = DataFileOptions.Records();
+        command.Options.Add(recordsOption);
 
         command.SetAction((parseResult) =>
         {
@@ -70,7 +72,7 @@ public static class InfoCommand
             var analyze = parseResult.GetValue(analyzeOption);
             var sampleSize = parseResult.GetValue(sampleSizeOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(dataFile, label, modelName, analyze, sampleSize, json);
+            return ExecuteAsync(dataFile, label, modelName, analyze, sampleSize, json, parseResult.GetValue(recordsOption));
         });
 
         return command;
@@ -78,7 +80,7 @@ public static class InfoCommand
 
     private static async Task<int> ExecuteAsync(
         string dataFile, string? labelOption, string modelName,
-        bool analyze, int sampleSize, bool jsonOutput = false)
+        bool analyze, int sampleSize, bool jsonOutput = false, string? records = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -161,7 +163,7 @@ public static class InfoCommand
             }
 
             // Profile the dataset
-            return await ProfileDatasetAsync(resolvedDataFile, labelColumn, labelSource, analyze, sampleSize, columnOverrides, jsonOutput);
+            return await ProfileDatasetAsync(resolvedDataFile, labelColumn, labelSource, analyze, sampleSize, columnOverrides, jsonOutput, records);
         }
         catch (Exception ex)
         {
@@ -172,13 +174,13 @@ public static class InfoCommand
 
     private static async Task<int> ProfileDatasetAsync(
         string dataFile, string? labelColumn, string? labelSource, bool analyze, int sampleSize,
-        Dictionary<string, string>? columnOverrides = null, bool jsonOutput = false)
+        Dictionary<string, string>? columnOverrides = null, bool jsonOutput = false, string? records = null)
     {
         var reportedDataFile = dataFile;
         var mlContext = new MLContext(seed: 42);
 
         // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
-        dataFile = await TabularDataFile.AsCsvAsync(dataFile);
+        dataFile = await TabularDataFile.AsCsvAsync(dataFile, records);
 
         // Keep original path for DataLens (which requires .csv extension via CsvBridge)
         var originalDataFile = dataFile;

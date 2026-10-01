@@ -45,6 +45,8 @@ public static class EvaluateCommand
         command.Arguments.Add(testDataArg);
         command.Options.Add(nameOption);
         command.Options.Add(jsonOption);
+        var recordsOption = DataFileOptions.Records();
+        command.Options.Add(recordsOption);
 
         command.SetAction((parseResult) =>
         {
@@ -52,7 +54,7 @@ public static class EvaluateCommand
             var testDataFile = parseResult.GetValue(testDataArg);
             var name = parseResult.GetValue(nameOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(experimentId, testDataFile, name, json);
+            return ExecuteAsync(experimentId, testDataFile, name, json, parseResult.GetValue(recordsOption));
         });
 
         return command;
@@ -101,7 +103,8 @@ public static class EvaluateCommand
         string? experimentId,
         string? testDataFile,
         string? modelName,
-        bool jsonOutput = false)
+        bool jsonOutput = false,
+        string? records = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -264,7 +267,7 @@ public static class EvaluateCommand
             if (!isDirectoryBased)
             {
                 // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
-                resolvedTestDataFile = await TabularDataFile.AsCsvAsync(resolvedTestDataFile);
+                resolvedTestDataFile = await TabularDataFile.AsCsvAsync(resolvedTestDataFile, records);
 
                 var validator = new SchemaValidator(fileSystem, projectDiscovery);
                 var validationResult = await validator.ValidateAsync(resolvedTestDataFile, resolvedModelName, resolvedExperimentId);

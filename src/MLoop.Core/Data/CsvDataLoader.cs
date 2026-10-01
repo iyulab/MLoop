@@ -222,6 +222,14 @@ public class CsvDataLoader : DataProviderBase
         // columns: a preFeaturizer like NormalizeMinMax requires a numeric input, so forcing
         // String here would break it. Columns already defined individually keep their own
         // inferred kind untouched.
+        //
+        // Question answering keeps every column by its name. Its trainer reads the passage and
+        // the question by name and no feature vector at all, and the answer's start position is
+        // found by what it does (AnswerStartColumn) — merged into a vector beside the other numeric
+        // columns a file carries (a record path brings the enclosing items' ids along), it has no
+        // name left to be found by.
+        if (TaskTypes.Canonical(taskType) == "question-answering")
+            preserveColumns = csvHeaders.Concat(preserveColumns ?? []);
         ApplyColumnPreservation(columnInference, mlnetCompatiblePath, preserveColumns);
 
         // Record which source columns each merged range spans — the loaded IDataView

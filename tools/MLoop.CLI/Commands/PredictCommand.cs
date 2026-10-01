@@ -86,6 +86,8 @@ public static class PredictCommand
         command.Options.Add(logOption);
         command.Options.Add(includeFeaturesOption);
         command.Options.Add(jsonOption);
+        var recordsOption = DataFileOptions.Records();
+        command.Options.Add(recordsOption);
 
         command.SetAction((parseResult) =>
         {
@@ -97,7 +99,7 @@ public static class PredictCommand
             var logPredictions = parseResult.GetValue(logOption);
             var includeFeatures = parseResult.GetValue(includeFeaturesOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures, json);
+            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures, json, parseResult.GetValue(recordsOption));
         });
 
         return command;
@@ -120,7 +122,8 @@ public static class PredictCommand
         string unknownStrategy,
         bool logPredictions,
         bool includeFeatures,
-        bool json = false)
+        bool json = false,
+        string? records = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -360,7 +363,7 @@ public static class PredictCommand
             }
 
             // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
-            resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile);
+            resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);
 
             // Ensure UTF-8 encoding for prediction data (same as training)
             var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(resolvedDataFile);
