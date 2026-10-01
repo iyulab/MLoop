@@ -375,6 +375,13 @@ internal static class TrainPresenter
                     $"— saved to staging, not promoted. The threshold is what a model that learned nothing would score: " +
                     $"{beatenBy}. Check data quality, feature relevance, and class balance.");
             }
+            else if (result.Metrics != null && MetricPolicy.NoBetterThanTheMean(primaryMetric, result.Metrics) is { } r2)
+            {
+                WarningConsole.Warn(
+                    $"Model r_squared ({r2:F4}) is at or below 0 — no better than answering every row with the mean of " +
+                    $"the label — saved to staging, not promoted. {primaryMetric} has no floor of its own; R² is the baseline " +
+                    "it is held to. Check data quality and whether the features carry the signal.");
+            }
             else if (production is not null && (result.Metrics is null || !result.Metrics.ContainsKey(primaryMetric)))
             {
                 var what = primaryMetric == MetricNames.Auto

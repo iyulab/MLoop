@@ -147,6 +147,33 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task ShouldPromoteAsync_ErrorMetricModelNoBetterThanTheMean_IsNotPromoted()
+    {
+        // An error metric has no floor of its own, so a first model optimized on rmse was promoted even
+        // with R² below 0 — worse than answering every row with the mean rating (measured: a
+        // recommendation model at R² -0.65 went to production).
+        var exp = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["rmse"] = 1.10,
+            ["r_squared"] = -0.65
+        });
+
+        Assert.False(await _modelRegistry.ShouldPromoteAsync(DefaultModelName, exp, "rmse", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ShouldPromoteAsync_ErrorMetricModelBetterThanTheMean_IsPromoted()
+    {
+        var exp = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double>
+        {
+            ["rmse"] = 1.10,
+            ["r_squared"] = 0.20
+        });
+
+        Assert.True(await _modelRegistry.ShouldPromoteAsync(DefaultModelName, exp, "rmse", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ShouldPromoteAsync_WithErrorMetric_LowerIsBetter()
     {
         // Arrange

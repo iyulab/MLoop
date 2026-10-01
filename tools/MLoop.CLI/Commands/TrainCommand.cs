@@ -88,7 +88,8 @@ public static class TrainCommand
 
         var dropMissingLabelsOption = new Option<bool?>("--drop-missing-labels")
         {
-            Description = "Drop rows with missing label values (default: true for classification, false for regression)"
+            Description = "Drop rows with missing label values (default: true wherever the label is a target to learn; "
+                + "a time series keeps its rows)"
         };
 
         var dataOption = new Option<string[]?>("--data", "-d")
@@ -625,7 +626,7 @@ public static class TrainCommand
             // (allDataFilesUsed is declared above so it survives the directory-based bypass.)
 
             // Handle missing label values (T4.2)
-            // Default behavior: drop missing labels for classification tasks
+            // Default behavior: drop rows without a target wherever the label is one (DropsMissingLabelsByDefault)
             // The legacy spellings this used to list are folded before they get here
             // (TaskTypes.Canonical, applied in the config merge), so the question left is the
             // composed one: classes that live in a column, which is what dropping rows with a
@@ -634,8 +635,8 @@ public static class TrainCommand
                 AutoMLRunner.IsClassification(effectiveDefinition.Task)
                 && !DataLoaderFactory.IsDirectoryBased(effectiveDefinition.Task);
 
-            // Use explicit parameter if provided, otherwise default to true for classification
-            var shouldDropMissingLabels = dropMissingLabels ?? isClassificationTask;
+            // Use explicit parameter if provided, otherwise the task's default (see DropsMissingLabelsByDefault)
+            var shouldDropMissingLabels = dropMissingLabels ?? DropsMissingLabelsByDefault(effectiveDefinition.Task);
 
             if (shouldDropMissingLabels && !string.IsNullOrEmpty(effectiveDefinition.Label))
             {
@@ -1222,6 +1223,19 @@ public static class TrainCommand
     /// object detection uses <c>datasets/coco</c>, image classification uses <c>datasets/images</c>,
     /// both finally falling back to <c>datasets</c>. Returns null if no directory exists.
     /// </summary>
+    /// <summary>
+    /// Whether rows whose label is empty are dropped when the user has not said. A row without a target
+    /// can neither teach a supervised model nor score it. This was the default for classification only,
+    /// and a recommendation set whose unrated visits (22% of rows) stayed in trained and scored a model
+    /// at R² 0.54 — 0.54 that was not there: with those rows dropped the same model scored −0.64, below
+    /// the quality gate. A time series is the exception — its label is the series, and dropping a row
+    /// would close up the time between its neighbours — as are unsupervised tasks and image directories.
+    /// </summary>
+    internal static bool DropsMissingLabelsByDefault(string? task) =>
+        AutoMLRunner.RequiresLabel(task)
+        && !AutoMLRunner.IsTimeSeriesTask(task)
+        && !DataLoaderFactory.IsDirectoryBased(task);
+
     private static string? ResolveDirectoryDataset(string task, string? dataFile, string[]? dataPaths, string projectRoot)
     {
         static string Full(string root, string p) =>

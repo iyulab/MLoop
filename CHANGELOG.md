@@ -18,7 +18,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   comes out with those characters missing. Training now counts such answers and says where
   `exact_match` stops; the guide's Question Answering section explains the limit.
 
+### Changed
+- **Rows with an empty label are dropped by default wherever the label is a target** — regression,
+  ranking, recommendation, NER and question answering, not only classification. A row without a
+  target can neither teach a model nor score it: a recommendation set whose unrated visits (22% of
+  rows) stayed in scored R² 0.54, and −0.64 once they were left out. A time series keeps its rows.
+  `--drop-missing-labels false` keeps them.
+
 ### Fixed
+- **A model no better than the mean is no longer promoted when it is judged on an error metric.**
+  rmse, mae and mse have no floor of their own, so a recommendation model at R² −0.65 — worse than
+  answering every row with the mean rating — reached production. R² at or below 0 now keeps such a
+  model in staging, with the reason.
 - **A failed training run no longer suggests what cannot help it.** The fallback advice offered
   `--time 30` to deep-learning and time-series runs, whose fit takes no time budget, and
   `mloop analyze profile` for an image directory. It now fits the task. An object-detection directory
@@ -33,10 +44,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   feature vector slot by slot, and the answer as three unnamed numbers; the preview collapsed into
   one-character columns. It now answers in `PredictedLabel` (anomaly or not) and `Score`, the columns
   anomaly detection uses, with the values `--json` reports as `isAnomaly` and `anomalyScore`.
-- **Forecasting and time-series anomaly training no longer run an auto-time probe.** Their fit takes
-  no time budget, so the probe trained the model a second time, its warnings printed twice, and the
-  progress reported a 19-second probe and a 114-second main pass for a 2-second fit. The "Time Limit"
-  row now says the budget is not used.
+- **Forecasting, time-series anomaly and recommendation training no longer run an auto-time probe.**
+  Their fit takes no time budget, so the probe trained the model a second time (its warnings printed
+  twice), a 2-second time-series fit was reported as a 19-second probe and a 114-second main pass, and
+  a 2-second matrix factorization as "converged in probe phase (30s)" after a 143-second estimate. The
+  "Time Limit" row now says the budget is not used and why.
 - **A JSON file holding one object reads as a one-row table** (with FilePrepper 0.10.0), so a file per
   record — a sensor reading per timestamp — can be passed with `--data`. `--records` is suggested only
   when the file has rows under a path to give.

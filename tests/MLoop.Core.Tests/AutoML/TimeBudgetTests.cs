@@ -16,6 +16,10 @@ public class TimeBudgetTests
     public void A_time_series_fit_takes_no_budget(string task) =>
         Assert.NotNull(AutoMLRunner.TimeBudgetUnused(task));
 
+    [Fact]
+    public void Matrix_factorization_takes_no_budget() =>
+        Assert.NotNull(AutoMLRunner.TimeBudgetUnused("recommendation"));
+
     [Theory]
     [InlineData("regression")]
     [InlineData("binary-classification")]
