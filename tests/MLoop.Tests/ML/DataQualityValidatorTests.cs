@@ -29,6 +29,28 @@ public class DataQualityValidatorTests : IDisposable
         return path;
     }
 
+    #region Structured label
+
+    [Theory]
+    [InlineData("ranking")]
+    [InlineData("regression")]
+    [InlineData("multiclass-classification")]
+    public void ValidateTrainingData_ListInEveryLabelCell_SaysToUnpackIt_NotToClassify(string task)
+    {
+        // One row per query, its documents' grades packed in a list. "For text labels, use
+        // classification" sent the reader to count each list as a class.
+        var rows = Enumerable.Range(0, 30).Select(i => $"{i},\"[{i % 3},0,1]\"");
+        var csv = CreateCsv(string.Join(Environment.NewLine, rows.Prepend("query,labels")) + Environment.NewLine);
+
+        var result = _validator.ValidateTrainingData(csv, "labels", task);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("holds a list in each row", result.ErrorMessage);
+        Assert.DoesNotContain(result.Suggestions, s => s.Contains("classification"));
+    }
+
+    #endregion
+
     #region Feature count
 
     // Ten columns besides the label, fifty rows: under the 10x-features rule of thumb.

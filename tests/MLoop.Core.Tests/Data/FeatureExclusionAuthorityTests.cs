@@ -64,6 +64,41 @@ public class FeatureExclusionAuthorityTests : IDisposable
     }
 
     [Fact]
+    public void DetermineExcludedColumns_ListInEveryRow_IsStructured_NotTextNorIdentifier()
+    {
+        // A Parquet list column arrives as JSON text, one list per row. Read as text it became a
+        // TF-IDF "Text Feature" of brackets and digits; a whitespace-free distinct one would even
+        // have been called an identifier, which names the wrong reason.
+        var lines = new List<string> { "keep,scores,meta,note,label" };
+        for (int i = 0; i < 40; i++)
+            lines.Add($"{i},\"[{i},{i + 1},{i % 3}]\",\"{{\"\"k\"\":{i}}}\",\"[draft] row {i % 4}\",{i % 2}");
+        var csvPath = CreateCsv("structured.csv", lines);
+
+        var messages = new List<string>();
+        var excluded = CsvDataLoader.DetermineExcludedColumns(csvPath, "label", messages.Add);
+
+        Assert.Equal(SchemaDataTypes.ExcludedStructured, ReasonFor(excluded, "scores"));
+        Assert.Equal(SchemaDataTypes.ExcludedStructured, ReasonFor(excluded, "meta"));
+        // Bracketed text that is not JSON is language, not structure.
+        Assert.DoesNotContain(excluded, c => c.Name == "note");
+        Assert.Contains(messages, m => m.Contains("'scores'") && m.Contains("list"));
+    }
+
+    [Fact]
+    public void LoadData_DropsAStructuredColumn_FromTheFeatures()
+    {
+        // The removal chain itself, not only the decision: the loaded view has no such column.
+        var lines = new List<string> { "x,scores,label" };
+        for (int i = 0; i < 40; i++)
+            lines.Add($"{i},\"[{i},{i * 2}]\",{i % 2}");
+        var csvPath = CreateCsv("structured-load.csv", lines);
+
+        var data = _loader.LoadData(csvPath, "label");
+
+        Assert.Null(data.Schema.GetColumnOrNull("scores"));
+    }
+
+    [Fact]
     public void DetermineExcludedColumns_ProtectedColumn_IsNeverAnIdentifier()
     {
         // A recommendation's user column is one-row-per-user in a small file — exactly the shape the

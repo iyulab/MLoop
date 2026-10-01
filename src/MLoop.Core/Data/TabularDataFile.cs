@@ -12,7 +12,7 @@ namespace MLoop.Core.Data;
 /// <para>MLoop reads data in many places, all of them as CSV. Rather than teach each of them other
 /// formats, a command passes its data path through <see cref="AsCsvAsync"/> as soon as the path is
 /// known, and everything after sees CSV. Delimited text (<c>.csv</c>, and any extension FilePrepper
-/// does not claim) is returned unchanged; Excel, Parquet, JSON and TSV are written to a temporary
+/// does not claim) is returned unchanged; Excel, Parquet, JSON, SVMlight and TSV are written to a temporary
 /// <c>.csv</c> — the extension matters, because readers downstream route on it.</para>
 /// <para>How nested Parquet data becomes columns (a struct's leaves as dotted names, a list as JSON
 /// text) is FilePrepper's decision, not restated here.</para>

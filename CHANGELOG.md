@@ -21,6 +21,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every image under the folder, subfolders included; before, the images had to be listed by hand in a
   CSV with an `ImagePath` column (still read). After training, the suggested predict line names a
   folder for image models instead of `data.csv`.
+- **SVMlight / libsvm data** — `label [qid:q] index:value …`, the format learning-to-rank sets are
+  published in — is read by every command, under its own extensions or by its lines (`rank.train`).
+  It becomes `label`, `qid` and one `f<index>` column per feature; a group-size file beside it
+  (`rank.train.query`) supplies the groups. Such a file was read as one CSV column headed by its first
+  row, and training went ahead on zero features. This comes with FilePrepper 0.11.0.
 - **`mloop info <folder>` describes an image-classification folder** — images per class folder and
   each class's share — instead of reporting an existing folder as "File not found" with a tip about
   relative paths. Any other folder is named as a folder.
@@ -37,6 +42,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the numbered columns.
 
 ### Fixed
+- **A column that holds a list in every row is not read as a feature.** A Parquet or JSON list column
+  arrives as JSON text, and was featurized as text — TF-IDF over brackets and digits. It is now
+  excluded like a constant or identifier column, with the reason `Structured` and a line saying it
+  must be unpacked first. A label column of lists is refused with that reason instead of the advice
+  to use classification.
+- **`mloop info` shows the columns training will drop**, as `Excluded (Constant)`,
+  `Excluded (Identifier)` and so on, from the same decision training uses. It called them features.
+- **`train --group-column` is saved to `mloop.yaml`** with the label it was given alongside, so the
+  next run groups the rows the same way; the scaffold's `query_id` stayed behind.
+- **`predict` no longer shows an input column as the prediction distribution.** Without a predicted
+  class the distribution counted the file's first column — a ranking file's query ids. It now
+  appears only for a class answer. The ranking log counts feature values, not merged columns
+  ("1 features" for 209).
 - **`predict` no longer announces a strategy for unseen category values when there were none.** Every
   image-classification prediction printed "Low unknown value ratio (0.00%) - safely replacing with
   most frequent values"; the line now appears only when some value was actually unseen, and goes

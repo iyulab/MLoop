@@ -78,7 +78,7 @@ public class InfoCommandJsonTests : IDisposable
         // Outside a project and without --label, nothing names the label. The column guessed for
         // ML.NET's type inference (the last one, here a start position) was reported as "Label" —
         // a role the user never gave it.
-        var path = WriteCsv("qa.csv", "context,question,answer,answer_start\nseoul is big,what,big,9\nbusan is far,where,far,9\n");
+        var path = WriteCsv("qa.csv", "context,question,answer,answer_start\nseoul is big,what,big,9\nbusan is far,where,far,7\n");
 
         var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--json");
 
@@ -202,5 +202,22 @@ public class InfoCommandJsonTests : IDisposable
         var errors = doc.RootElement.GetProperty("errors").EnumerateArray().Select(e => e.GetString()!).ToList();
         Assert.Contains(errors, e => e.Contains("is a folder"));
         Assert.DoesNotContain(errors, e => e.Contains("not found"));
+    }
+
+    [Fact]
+    public async Task Info_Json_ReportsAColumnTrainingDrops_AsExcluded_WithTheReason()
+    {
+        // A list column (how a Parquet list arrives) was reported as a "Text Feature"; training drops
+        // it, and info now says so, from the same decision training uses.
+        var rows = Enumerable.Range(0, 30).Select(i => $"{i},\"[{i},{i + 1}]\",{(i % 2 == 0 ? "yes" : "no")}");
+        var path = WriteCsv("lists.csv", string.Join(Environment.NewLine, rows.Prepend("x,scores,Label")) + Environment.NewLine);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "Label", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var scores = doc.RootElement.GetProperty("columns").EnumerateArray()
+            .Single(c => c.GetProperty("name").GetString() == "scores");
+        Assert.Equal("Excluded (Structured)", scores.GetProperty("purpose").GetString());
     }
 }

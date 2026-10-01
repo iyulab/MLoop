@@ -75,4 +75,14 @@ public class PredictCommandTests
     }
 
     #endregion
+
+    [Theory]
+    [InlineData(new[] { "qid", "f1", "Score" }, -1)]
+    [InlineData(new[] { "x", "Score" }, -1)]
+    [InlineData(new[] { "x", "PredictedLabel", "Score.a" }, 1)]
+    public void DistributionColumn_CountsOnlyAPredictedClass(string[] headers, int expected)
+    {
+        // A ranking prediction file's distribution counted its first column — the query ids.
+        Assert.Equal(expected, PredictCommand.DistributionColumn(headers));
+    }
 }

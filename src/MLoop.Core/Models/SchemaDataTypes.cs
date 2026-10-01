@@ -40,10 +40,17 @@ public static class SchemaDataTypes
     public const string ExcludedIdentifier = "Identifier";
 
     /// <summary>
+    /// A column whose every value is a JSON list or object — what a Parquet or JSON list column
+    /// becomes in a table. It is structure to be unpacked, not language and not one value. See
+    /// <see cref="Data.CsvDataLoader.RemoveStructuredColumns"/>.
+    /// </summary>
+    public const string ExcludedStructured = "Structured";
+
+    /// <summary>
     /// Every name this vocabulary defines, including the exclusion markers.
     /// </summary>
     public static IReadOnlyList<string> All { get; } =
-        [Numeric, Categorical, Text, Boolean, ExcludedDateTime, ExcludedSparse, ExcludedConstant, ExcludedIdentifier];
+        [Numeric, Categorical, Text, Boolean, ExcludedDateTime, ExcludedSparse, ExcludedConstant, ExcludedIdentifier, ExcludedStructured];
 
     /// <summary>
     /// Whether <paramref name="dataType"/> is one of this vocabulary's names.
