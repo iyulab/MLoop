@@ -251,7 +251,7 @@ public static class EvaluateCommand
                 // Directory-based tasks accept a directory (or a direct COCO .json); CSV tasks need a file.
                 bool exists = isDirectoryBased
                     ? (Directory.Exists(resolvedTestDataFile) || File.Exists(resolvedTestDataFile))
-                    : File.Exists(resolvedTestDataFile);
+                    : TabularDataFile.Exists(resolvedTestDataFile);
                 if (!exists)
                 {
                     ErrorConsole.Error($"Test data not found: {resolvedTestDataFile}", ErrorConsole.PathNotFoundTip(projectRoot));

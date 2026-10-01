@@ -331,7 +331,7 @@ public static class PredictCommand
                     ValueLine.Write("[green]>[/] Images: ", $"{images.Count:N0} under {Path.GetFileName(Path.TrimEndingDirectorySeparator(resolvedDataFile))}");
                     resolvedDataFile = ImageDirectoryLoader.WriteImageTable(images);
                 }
-                else if (!File.Exists(resolvedDataFile))
+                else if (!TabularDataFile.Exists(resolvedDataFile))
                 {
                     var cause = Markup.Escape(BuildMissingDataFileMessage(resolvedDataFile));
                     if (Directory.Exists(resolvedDataFile))
