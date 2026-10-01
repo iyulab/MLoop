@@ -69,4 +69,17 @@ public class FirstSessionGuidanceTests
 
         Assert.Contains(steps, s => s == "mloop predict data.json --records data.paragraphs.qas.answers --name default");
     }
+
+    [Theory]
+    [InlineData("image-classification")]
+    [InlineData("object-detection")]
+    public void NextStepsPredictAnImageModelOnAFolderOfImages(string task)
+    {
+        // "mloop predict data.csv" after training on a folder of photos named a file the user
+        // does not have and a shape the model does not read.
+        var steps = TrainPresenter.NextStepsAfterTraining("default", "exp-001", promotionFollows: true, taskType: task);
+
+        Assert.Contains(steps, s => s == "mloop predict <image-folder> --name default");
+        Assert.DoesNotContain(steps, s => s.Contains("data.csv"));
+    }
 }

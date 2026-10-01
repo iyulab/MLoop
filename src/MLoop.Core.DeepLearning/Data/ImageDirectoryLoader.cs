@@ -78,14 +78,63 @@ public sealed class ImageDirectoryLoader : DataProviderBase
     /// is the single source of truth for "what counts as a class". Returns 0 for a missing
     /// directory or one with no qualifying class folders.
     /// </summary>
-    public static int CountClasses(string directory)
+    public static int CountClasses(string directory) => CountImagesPerClass(directory).Count;
+
+    /// <summary>
+    /// Images per class label in an image-classification dataset directory, ordered by label
+    /// (ordinal) — the same scan the loader trains on, for callers that describe a dataset
+    /// without loading it. Folders without a supported image are not classes and are left out.
+    /// Empty for a missing directory or one with no qualifying class folders.
+    /// </summary>
+    public static IReadOnlyDictionary<string, int> CountImagesPerClass(string directory)
+    {
+        var counts = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            return counts;
+
+        foreach (var classDir in Directory.EnumerateDirectories(directory))
+        {
+            var images = Directory.EnumerateFiles(classDir).Count(IsSupportedImage);
+            if (images > 0)
+                counts[Path.GetFileName(classDir)] = images;
+        }
+        return counts;
+    }
+
+    private static bool IsSupportedImage(string path) => SupportedExtensions.Contains(Path.GetExtension(path));
+
+    /// <summary>The image extensions the loader reads, for messages that name them.</summary>
+    public static string SupportedExtensionList => string.Join(", ", SupportedExtensions.OrderBy(e => e, StringComparer.Ordinal));
+
+    /// <summary>
+    /// Every supported image under <paramref name="directory"/>, at any depth, ordered by full path
+    /// (ordinal) — the images a folder of unlabelled pictures holds, and equally a labelled
+    /// class-folder layout's. Empty for a missing directory.
+    /// </summary>
+    public static IReadOnlyList<string> ListImages(string directory)
     {
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
-            return 0;
+            return [];
 
-        return Directory.EnumerateDirectories(directory)
-            .Count(classDir => Directory.EnumerateFiles(classDir)
-                .Any(f => SupportedExtensions.Contains(Path.GetExtension(f))));
+        return Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(IsSupportedImage)
+            .Select(Path.GetFullPath)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Writes <paramref name="images"/> as the table a trained image-classification model scores —
+    /// one <see cref="ImagePathColumn"/> per row — to a temporary <c>.csv</c> and returns its path.
+    /// </summary>
+    public static string WriteImageTable(IEnumerable<string> images)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"mloop-images-{Guid.NewGuid():N}.csv");
+        using var writer = new StreamWriter(path, append: false, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        writer.WriteLine(ImagePathColumn);
+        foreach (var image in images)
+            writer.WriteLine(MLoop.Core.Prediction.CsvFieldParser.FormatLine([image])); // a path may hold a comma
+        return path;
     }
 
     /// <summary>
@@ -113,7 +162,7 @@ public sealed class ImageDirectoryLoader : DataProviderBase
         {
             var label = Path.GetFileName(classDir);
             var images = Directory.EnumerateFiles(classDir)
-                .Where(f => SupportedExtensions.Contains(Path.GetExtension(f)))
+                .Where(IsSupportedImage)
                 .OrderBy(f => f, StringComparer.Ordinal)
                 .ToList();
 

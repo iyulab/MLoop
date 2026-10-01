@@ -60,6 +60,7 @@ public class TrainJsonEmitterTests
     [InlineData(TrainingPhase.MainStart, "main", false, true, false, false, false)]
     [InlineData(TrainingPhase.Complete, "complete", false, false, true, false, true)]
     [InlineData(TrainingPhase.Epoch, "epoch", false, false, false, false, true)]
+    [InlineData(TrainingPhase.Featurize, "featurize", false, false, false, false, true)]
     public void Phase_names_the_boundary_and_carries_only_the_facts_it_has(
         TrainingPhase phase, string expected,
         bool probe, bool budget, bool trials, bool metric, bool elapsed)
@@ -94,6 +95,42 @@ public class TrainJsonEmitterTests
         if (elapsed) Assert.Equal(12500, el.GetInt64());
         Assert.Equal(phase == TrainingPhase.Epoch, e.TryGetProperty("epoch", out _));
         Assert.Equal(phase == TrainingPhase.Epoch, e.TryGetProperty("epochs", out _));
+        Assert.Equal(phase == TrainingPhase.Featurize, e.TryGetProperty("step", out _));
+        Assert.Equal(phase == TrainingPhase.Featurize, e.TryGetProperty("steps", out _));
+        Assert.False(e.TryGetProperty("stopsEarly", out _));
+    }
+
+    [Fact]
+    public void A_featurize_event_says_how_many_items_are_done_out_of_how_many()
+    {
+        var (emitter, sink) = Build();
+
+        emitter.Phase(new TrainingProgress
+        {
+            TrialNumber = 0, TrainerName = "Image classification (TensorFlow)", MetricName = "", Metric = 0,
+            ElapsedSeconds = 30, Phase = TrainingPhase.Featurize, Step = 120, Steps = 776
+        });
+
+        var e = Assert.Single(Events(sink));
+        Assert.Equal("featurize", e.GetProperty("phase").GetString());
+        Assert.Equal(120, e.GetProperty("step").GetInt32());
+        Assert.Equal(776, e.GetProperty("steps").GetInt32());
+    }
+
+    [Fact]
+    public void An_early_stopping_epoch_marks_its_epoch_count_as_a_cap()
+    {
+        var (emitter, sink) = Build();
+
+        emitter.Phase(new TrainingProgress
+        {
+            TrialNumber = 0, TrainerName = "Image classification (TensorFlow)", MetricName = "", Metric = 0,
+            ElapsedSeconds = 30, Phase = TrainingPhase.Epoch, Epoch = 12, MaxEpochs = 200, StopsEarly = true
+        });
+
+        var e = Assert.Single(Events(sink));
+        Assert.Equal(200, e.GetProperty("epochs").GetInt32());
+        Assert.True(e.GetProperty("stopsEarly").GetBoolean());
     }
 
     [Fact]

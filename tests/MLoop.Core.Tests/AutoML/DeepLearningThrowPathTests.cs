@@ -70,6 +70,76 @@ public class DeepLearningThrowPathTests
         public IDataProvider? CreateDataLoader(string task, MLContext mlContext, Action<string>? log) => null;
     }
 
+    /// <summary>
+    /// A registered module whose directory loader narrates while loading, and whose training is
+    /// never reached — the run stops right after the load with <see cref="TrainingNotReached"/>.
+    /// </summary>
+    private sealed class NarratingLoaderDeepLearningModule(IDataView data) : IDeepLearningModule
+    {
+        public bool CanHandleTask(string task) => true;
+
+        public Task<AutoMLResult> TrainAsync(
+            MLContext mlContext, Action<string> log, string task,
+            IDataView trainSet, IDataView testSet, TrainingConfig config,
+            IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
+            => throw new TrainingNotReached();
+
+        public IDataProvider? CreateDataLoader(string task, MLContext mlContext, Action<string>? log)
+            => new NarratingProvider(new InMemoryDataProvider(mlContext, data), log);
+    }
+
+    private sealed class TrainingNotReached : Exception;
+
+    private sealed class NarratingProvider(IDataProvider inner, Action<string>? log) : IDataProvider
+    {
+        public IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
+            IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null)
+        {
+            log?.Invoke("[Info] Loaded 5 images across 2 class(es)");
+            return inner.LoadData(filePath, labelColumn, taskType, preserveColumns, featureExclusions);
+        }
+
+        public bool ValidateLabelColumn(IDataView data, string labelColumn) => inner.ValidateLabelColumn(data, labelColumn);
+        public DataSchema GetSchema(IDataView data) => inner.GetSchema(data);
+        public (IDataView trainSet, IDataView testSet) SplitData(IDataView data, double testFraction = 0.2)
+            => inner.SplitData(data, testFraction);
+    }
+
+    [Fact]
+    public async Task RunAsync_DirectoryBasedTask_LoaderNarrationReachesTheHost()
+    {
+        // The directory loader was created without the runner's narration channel, so its image
+        // counts and its warnings (a single class, sparse or imbalanced classes) were dropped:
+        // an image-classification run printed nothing about its data before ten minutes of 0%.
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(Enumerable.Range(0, 10)
+            .Select(i => new Row { F1 = i, Label = i % 2 }));
+        var narration = new List<string>();
+
+        var tmpDir = Path.Combine(Path.GetTempPath(), $"mloop_dlnarr_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        DeepLearningRegistry.Register(new NarratingLoaderDeepLearningModule(data));
+        try
+        {
+            var runner = new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, data), tmpDir,
+                warningSink: narration.Add, narrationSink: narration.Add);
+            var config = new TrainingConfig
+            {
+                ModelName = "test", DataFile = tmpDir, LabelColumn = "Label",
+                Task = "image-classification", TimeLimitSeconds = 5
+            };
+
+            await Assert.ThrowsAnyAsync<Exception>(() => runner.RunAsync(config));
+
+            Assert.Contains(narration, line => line.Contains("Loaded 5 images"));
+        }
+        finally
+        {
+            DeepLearningRegistry.Register(null!);
+            Directory.Delete(tmpDir, recursive: true);
+        }
+    }
+
     [Fact]
     public void Create_DirectoryBasedTask_RegisteredModuleReturnsNullLoader_ThrowsNotSupportedException()
     {

@@ -50,7 +50,7 @@ public class PredictCommandTests
     public void BuildMissingDataFileMessage_TrulyMissing_SaysNotFound()
     {
         var missing = Path.Combine(Path.GetTempPath(), $"mloop-missing-{Guid.NewGuid()}.csv");
-        var msg = PredictCommand.BuildMissingDataFileMessage(missing, "regression");
+        var msg = PredictCommand.BuildMissingDataFileMessage(missing);
 
         Assert.Contains("not found", msg, StringComparison.OrdinalIgnoreCase);
     }
@@ -62,31 +62,11 @@ public class PredictCommandTests
         Directory.CreateDirectory(dir);
         try
         {
-            var msg = PredictCommand.BuildMissingDataFileMessage(dir, "regression");
+            var msg = PredictCommand.BuildMissingDataFileMessage(dir);
 
             // Honest diagnosis: the path exists but is a directory, not a missing file.
             Assert.Contains("directory", msg, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("not found", msg, StringComparison.OrdinalIgnoreCase);
-        }
-        finally
-        {
-            Directory.Delete(dir);
-        }
-    }
-
-    [Fact]
-    public void BuildMissingDataFileMessage_DirectoryForImageClassification_HintsCsvAndEvaluate()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), $"mloop-imgdir-{Guid.NewGuid()}");
-        Directory.CreateDirectory(dir);
-        try
-        {
-            var msg = PredictCommand.BuildMissingDataFileMessage(dir, "image-classification");
-
-            // Image predict expects a CSV with ImagePath; labelled directories go to evaluate.
-            Assert.Contains("directory", msg, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("ImagePath", msg, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("evaluate", msg, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {

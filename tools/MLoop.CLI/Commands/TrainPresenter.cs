@@ -3,6 +3,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.AutoML;
+using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
 using MLoop.Core.Prediction;
 using MLoop.Core.Diagnostics;
@@ -149,13 +150,17 @@ internal static class TrainPresenter
     /// the reader to run <c>mloop promote exp-001</c> and the very next lines reported the model as
     /// already promoted. Read top to bottom, the command asked for something it had just done.
     /// </remarks>
-    internal static string[] NextStepsAfterTraining(string modelName, string experimentId, bool promotionFollows, string? records = null)
+    internal static string[] NextStepsAfterTraining(
+        string modelName, string experimentId, bool promotionFollows, string? records = null, string? taskType = null)
     {
         // Prediction data is read as the training data was: a record path that found the training rows
-        // finds the prediction rows too, and a JSON file is refused without it.
-        var predict = records is null
-            ? $"mloop predict data.csv --name {modelName}"
-            : $"mloop predict data.json --records {records} --name {modelName}";
+        // finds the prediction rows too, and a JSON file is refused without it — and a model trained on
+        // a folder of images is asked about a folder of images.
+        var predict = DataLoaderFactory.IsDirectoryBased(taskType)
+            ? $"mloop predict <image-folder> --name {modelName}"
+            : records is null
+                ? $"mloop predict data.csv --name {modelName}"
+                : $"mloop predict data.json --records {records} --name {modelName}";
         string[] always = [$"mloop list --name {modelName}", predict];
         return promotionFollows ? always : [.. always, $"mloop promote {experimentId} --name {modelName}"];
     }
@@ -166,7 +171,9 @@ internal static class TrainPresenter
     /// very next lines report as already done.
     /// </param>
     /// <param name="records">The <c>--records</c> path the training data was read with, if any.</param>
-    public static void DisplayResults(TrainingResult result, string modelName, bool promotionFollows = false, string? records = null)
+    /// <param name="taskType">The task trained, which decides what prediction data looks like.</param>
+    public static void DisplayResults(
+        TrainingResult result, string modelName, bool promotionFollows = false, string? records = null, string? taskType = null)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[green]Training Complete![/]").LeftJustified());
@@ -204,7 +211,7 @@ internal static class TrainPresenter
             ValueLine.Write("[grey]Report:[/]         ", WhereItLandedInTheProject(result.ReportPath));
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
-        foreach (var step in NextStepsAfterTraining(modelName, result.ExperimentId, promotionFollows, records))
+        foreach (var step in NextStepsAfterTraining(modelName, result.ExperimentId, promotionFollows, records, taskType))
         {
             AnsiConsole.MarkupLine($"  {step}");
         }

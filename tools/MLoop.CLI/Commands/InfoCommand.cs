@@ -115,6 +115,9 @@ public static class InfoCommand
                 resolvedDataFile = dataFile;
             }
 
+            if (Directory.Exists(resolvedDataFile))
+                return DescribeFolder(resolvedDataFile, analyze, jsonOutput);
+
             if (!File.Exists(resolvedDataFile))
             {
                 ErrorConsole.Error(
@@ -170,6 +173,46 @@ public static class InfoCommand
             ErrorSuggestions.DisplayError(ex, "info");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// A folder is a dataset only in the image-classification layout (one subfolder of images
+    /// per class) — described by the loader's own scan. Any other folder is named as a folder,
+    /// not reported missing.
+    /// </summary>
+    private static int DescribeFolder(string folder, bool analyze, bool jsonOutput)
+    {
+        var imagesPerClass = ImageDirectoryLoader.CountImagesPerClass(folder);
+        if (imagesPerClass.Count == 0)
+        {
+            var message = $"'{folder}' is a folder. `mloop info` profiles a data file (CSV, TSV, Excel, Parquet, JSON) " +
+                          "or an image-classification folder (one subfolder of images per class).";
+            ErrorConsole.Error(Markup.Escape(message));
+            EmitJson(folder, null, null, analyze, null, null, null, null, null, [message], jsonOutput);
+            return 1;
+        }
+
+        var total = imagesPerClass.Values.Sum();
+        ValueLine.Write("[blue]Analyzing:[/] ", Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)));
+        AnsiConsole.MarkupLine(
+            $"Image folder — [green]{total:N0} images[/] in {imagesPerClass.Count} class folder(s); folder name = label " +
+            "(the layout [blue]--task image-classification[/] trains on).");
+        AnsiConsole.WriteLine();
+
+        var table = new Table().Border(TableBorder.Rounded);
+        table.AddColumn("Class");
+        table.AddColumn(new TableColumn("Images").RightAligned());
+        table.AddColumn(new TableColumn("Share").RightAligned());
+        foreach (var (label, count) in imagesPerClass)
+            table.AddRow(Markup.Escape(label), count.ToString("N0"), $"{count * 100.0 / total:F1}%");
+        AnsiConsole.Write(table);
+
+        if (analyze)
+            AnsiConsole.MarkupLine("[yellow]Note:[/] --analyze profiles table columns; an image folder has none, so it was skipped.");
+
+        EmitJson(folder, ImageDirectoryLoader.DefaultLabelColumn, "folder names", analyze, null, null,
+            imagesPerClass.ToDictionary(), null, null, null, jsonOutput);
+        return 0;
     }
 
     private static async Task<int> ProfileDatasetAsync(

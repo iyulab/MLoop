@@ -1027,8 +1027,8 @@ public static class TrainCommand
                             progressTracker.EnterPhase(p);
                             progressTask.Description =
                                 TrainingProgressTracker.PhaseDescription(p, resolvedModelName) ?? progressTask.Description;
-                            if (TrainingProgressTracker.EpochPercent(p) is { } epochPercent)
-                                progressTask.Value = epochPercent;
+                            if (TrainingProgressTracker.FitPercent(p) is { } fitPercent)
+                                progressTask.Value = fitPercent;
                             return;
                         }
 
@@ -1122,7 +1122,7 @@ public static class TrainCommand
             events?.Result(result, resolvedModelName);
 
             // Display results
-            TrainPresenter.DisplayResults(result, resolvedModelName, promotionFollows: !noPromote, records);
+            TrainPresenter.DisplayResults(result, resolvedModelName, promotionFollows: !noPromote, records, effectiveDefinition.Task);
 
             // T4.4: Performance diagnostics
             var performanceDiagnostics = new PerformanceDiagnostics();

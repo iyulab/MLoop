@@ -144,4 +144,63 @@ public class InfoCommandJsonTests : IDisposable
         Assert.Contains("Label", stdout);
         Assert.DoesNotContain("{", stdout); // no JSON leaked into the human report
     }
+
+    private string WriteImageFolder(params (string Class, int Images)[] classes)
+    {
+        var root = Path.Combine(_testDir, "images");
+        foreach (var (cls, images) in classes)
+        {
+            Directory.CreateDirectory(Path.Combine(root, cls));
+            for (int i = 0; i < images; i++)
+                File.WriteAllBytes(Path.Combine(root, cls, $"img{i}.png"), [0x89, 0x50, 0x4E, 0x47]);
+        }
+        return root;
+    }
+
+    [Fact]
+    public async Task Info_ImageFolder_ReportsImagesPerClass()
+    {
+        // An existing absolute folder was reported as "File not found", with a tip blaming a
+        // relative path — the one thing it wasn't.
+        var root = WriteImageFolder(("ripe", 3), ("unripe", 2));
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", root, "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var dist = doc.RootElement.GetProperty("labelDistribution");
+        Assert.Equal(3, dist.GetProperty("ripe").GetInt32());
+        Assert.Equal(2, dist.GetProperty("unripe").GetInt32());
+        Assert.False(doc.RootElement.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task Info_ImageFolder_HumanReport_NamesTheFolderLayout()
+    {
+        var root = WriteImageFolder(("ripe", 3), ("unripe", 2));
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", root);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("unripe", stdout);
+        Assert.Contains("5 images", stdout);
+        Assert.DoesNotContain("not found", stdout, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("--balance", stdout); // a tabular-training remedy
+    }
+
+    [Fact]
+    public async Task Info_FolderWithoutImageClasses_SaysItIsAFolder()
+    {
+        var dir = Path.Combine(_testDir, "tables");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "a.csv"), "x,y\n1,2\n");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", dir, "--json");
+
+        Assert.Equal(1, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var errors = doc.RootElement.GetProperty("errors").EnumerateArray().Select(e => e.GetString()!).ToList();
+        Assert.Contains(errors, e => e.Contains("is a folder"));
+        Assert.DoesNotContain(errors, e => e.Contains("not found"));
+    }
 }

@@ -51,8 +51,15 @@ public enum TrainingPhase
     /// <summary>The training window is starting under a fixed budget (no probe). Data: FinalTimeSeconds.</summary>
     MainStart,
     /// <summary>
-    /// A deep-learning trainer finished an epoch. Its fit runs a fixed number of epochs, so this —
-    /// not the time budget — is how far along it is. Data: Epoch (finished), MaxEpochs, ElapsedSeconds.
+    /// A deep-learning trainer computed the features of one more input item before its first epoch
+    /// (image classification runs every image through a pretrained network once; on a CPU that pass
+    /// is most of the fit). Data: Step (items done), Steps (items in all), ElapsedSeconds.
+    /// </summary>
+    Featurize,
+    /// <summary>
+    /// A deep-learning trainer finished an epoch. Its fit runs at most a fixed number of epochs, so
+    /// this — not the time budget — is how far along it is. Data: Epoch (finished), MaxEpochs,
+    /// StopsEarly (the fit may end before MaxEpochs), ElapsedSeconds.
     /// </summary>
     Epoch,
     /// <summary>The training window ended; post-training steps (save, evaluate, promote) follow. Every successful run ends its phase stream with this. Data: TrialNumber (trials retained in the experiment — matches trials.ndjson; under auto-time, discarded probe trials are not in it), ElapsedSeconds.</summary>
@@ -78,4 +85,9 @@ public class TrainingProgress
     // Deep-learning epoch reporting (Phase = Epoch)
     public int Epoch { get; init; }
     public int MaxEpochs { get; init; }
+    public bool StopsEarly { get; init; }
+
+    // Deep-learning featurization reporting (Phase = Featurize)
+    public int Step { get; init; }
+    public int Steps { get; init; }
 }

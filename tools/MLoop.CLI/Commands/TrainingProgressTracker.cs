@@ -98,30 +98,43 @@ public sealed class TrainingProgressTracker
         TrainingPhase.ProbeConverged => "[green]Converged[/] in probe phase",
         TrainingPhase.ProbeFellBack => "[yellow]AutoML unavailable[/] for this data",
         TrainingPhase.Complete => $"[green]Finalizing {Markup.Escape(modelName)}...[/]",
+        TrainingPhase.Featurize when p.Steps > 0 =>
+            $"[green]Featurizing {p.Step}/{p.Steps}[/]{RemainingSuffix(p.Step, p.Steps, p.ElapsedSeconds)}",
+        // An early-stopping fit usually ends well before its cap, so the cap would predict a
+        // remaining time many times too long — it is named as a cap instead.
+        TrainingPhase.Epoch when p.MaxEpochs > 0 && p.StopsEarly =>
+            $"[green]Epoch {p.Epoch}[/] (at most {p.MaxEpochs}; stops early once accuracy stops improving)",
         TrainingPhase.Epoch when p.MaxEpochs > 0 =>
-            $"[green]Epoch {p.Epoch}/{p.MaxEpochs}[/]{RemainingSuffix(p)}",
+            $"[green]Epoch {p.Epoch}/{p.MaxEpochs}[/]{RemainingSuffix(p.Epoch, p.MaxEpochs, p.ElapsedSeconds)}",
         _ => null
     };
 
     /// <summary>
-    /// Percentage for a deep-learning epoch event, or <c>null</c> for any other event. A fit runs a
-    /// fixed number of epochs, so epochs finished — not time spent against the budget — is how far
-    /// along it is. Capped below 100: evaluation and saving still follow the last epoch.
+    /// Percentage for a deep-learning fit event (featurization or an epoch), or <c>null</c> for any
+    /// other event. Such a fit runs a fixed amount of work, so the share done — not time spent
+    /// against the budget — is how far along it is. Each phase fills the bar on its own, the way the
+    /// probe and main phases do. Capped below 100: evaluation and saving still follow.
     /// </summary>
-    public static double? EpochPercent(TrainingProgress p)
+    public static double? FitPercent(TrainingProgress p)
     {
         ArgumentNullException.ThrowIfNull(p);
-        if (p.Phase != TrainingPhase.Epoch || p.MaxEpochs <= 0)
+        var (done, total) = p.Phase switch
+        {
+            TrainingPhase.Featurize => (p.Step, p.Steps),
+            TrainingPhase.Epoch => (p.Epoch, p.MaxEpochs),
+            _ => (0, 0)
+        };
+        if (total <= 0)
             return null;
-        return Math.Clamp((double)p.Epoch / p.MaxEpochs * 100, 0, 99);
+        return Math.Clamp((double)done / total * 100, 0, 99);
     }
 
-    // Epochs of one fit take about the same time, so the ones done predict the ones left.
-    private static string RemainingSuffix(TrainingProgress p)
+    // Units of one phase take about the same time, so the ones done predict the ones left.
+    private static string RemainingSuffix(int done, int total, double elapsedSeconds)
     {
-        if (p.Epoch <= 0 || p.Epoch >= p.MaxEpochs || p.ElapsedSeconds <= 0)
+        if (done <= 0 || done >= total || elapsedSeconds <= 0)
             return "";
-        var remaining = TimeSpan.FromSeconds(p.ElapsedSeconds / p.Epoch * (p.MaxEpochs - p.Epoch));
+        var remaining = TimeSpan.FromSeconds(elapsedSeconds / done * (total - done));
         return $" — about {FormatDuration(remaining)} left";
     }
 

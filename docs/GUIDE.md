@@ -270,9 +270,20 @@ mloop runtime install tf
 # 4. Train — the directory is auto-detected (or pass it explicitly)
 mloop train --task image-classification
 mloop train --task image-classification datasets/images
+
+# 5. Predict a folder of new images (subfolders are searched too)
+mloop predict new-photos/
+
+# 6. Score the model on a labelled folder laid out like the training data
+mloop evaluate exp-001 test-images/
 ```
 
 Notes:
+- `mloop info <folder>` counts the images in each class folder before you train.
+- Training first runs every image through a pretrained network once — most of the time on a CPU —
+  then trains for at most 200 epochs, stopping early once accuracy stops improving. The progress bar
+  shows both. The time limit does not shorten it.
+- A prediction CSV with an `ImagePath` column (one row per image) is read as well.
 - Supported extensions: `.jpg .jpeg .png .bmp .gif`. Other files (e.g. `meta.json`) are ignored.
 - The trainer uses TensorFlow transfer learning, so the `tf` runtime is required. Without it, training
   stops with a clear message pointing to `mloop runtime install tf`.
