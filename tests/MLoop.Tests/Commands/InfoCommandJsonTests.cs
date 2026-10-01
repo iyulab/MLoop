@@ -73,6 +73,24 @@ public class InfoCommandJsonTests : IDisposable
     }
 
     [Fact]
+    public async Task Info_Json_WithoutALabel_DoesNotCallAnyColumnTheLabel()
+    {
+        // Outside a project and without --label, nothing names the label. The column guessed for
+        // ML.NET's type inference (the last one, here a start position) was reported as "Label" —
+        // a role the user never gave it.
+        var path = WriteCsv("qa.csv", "context,question,answer,answer_start\nseoul is big,what,big,9\nbusan is far,where,far,9\n");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var purposes = doc.RootElement.GetProperty("columns").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("name").GetString()!, c => c.GetProperty("purpose").GetString());
+        Assert.DoesNotContain("Label", purposes.Values);
+        Assert.Equal("Numeric Feature", purposes["answer_start"]);
+    }
+
+    [Fact]
     public async Task Info_Json_Profile_ReportsColumnsAndLabelDistribution()
     {
         var path = WriteDataCsv();

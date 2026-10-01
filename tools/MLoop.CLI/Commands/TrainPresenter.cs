@@ -144,9 +144,14 @@ internal static class TrainPresenter
     /// the reader to run <c>mloop promote exp-001</c> and the very next lines reported the model as
     /// already promoted. Read top to bottom, the command asked for something it had just done.
     /// </remarks>
-    internal static string[] NextStepsAfterTraining(string modelName, string experimentId, bool promotionFollows)
+    internal static string[] NextStepsAfterTraining(string modelName, string experimentId, bool promotionFollows, string? records = null)
     {
-        string[] always = [$"mloop list --name {modelName}", $"mloop predict data.csv --name {modelName}"];
+        // Prediction data is read as the training data was: a record path that found the training rows
+        // finds the prediction rows too, and a JSON file is refused without it.
+        var predict = records is null
+            ? $"mloop predict data.csv --name {modelName}"
+            : $"mloop predict data.json --records {records} --name {modelName}";
+        string[] always = [$"mloop list --name {modelName}", predict];
         return promotionFollows ? always : [.. always, $"mloop promote {experimentId} --name {modelName}"];
     }
 
@@ -155,7 +160,8 @@ internal static class TrainPresenter
     /// before the promotion runs, so with this false the reader is told to run a command that the
     /// very next lines report as already done.
     /// </param>
-    public static void DisplayResults(TrainingResult result, string modelName, bool promotionFollows = false)
+    /// <param name="records">The <c>--records</c> path the training data was read with, if any.</param>
+    public static void DisplayResults(TrainingResult result, string modelName, bool promotionFollows = false, string? records = null)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[green]Training Complete![/]").LeftJustified());
@@ -193,7 +199,7 @@ internal static class TrainPresenter
             ValueLine.Write("[grey]Report:[/]         ", WhereItLandedInTheProject(result.ReportPath));
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
-        foreach (var step in NextStepsAfterTraining(modelName, result.ExperimentId, promotionFollows))
+        foreach (var step in NextStepsAfterTraining(modelName, result.ExperimentId, promotionFollows, records))
         {
             AnsiConsole.MarkupLine($"  {step}");
         }

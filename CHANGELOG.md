@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `exact_match` stops; the guide's Question Answering section explains the limit.
 
 ### Fixed
+- **`mloop info` without a label no longer calls a column the label.** ML.NET's type inference needs
+  one, so `info` guesses (a common label name, else the last column) — and reported that guess as the
+  column's purpose. A guessed column now shows the purpose its type gives it.
+- **`mloop train` suggests a predict command that reads the data the same way.** After training on
+  `--records`, the next steps said `mloop predict data.csv`; they now carry the record path.
 - **A deep-learning task whose pretrained weights cannot be downloaded says how to fetch them.**
   ML.NET's downloader fails on large files (dotnet/machinelearning#6980), and its error named the URL
   but not where the file is expected; the advice after it pointed at listing and promoting models.
