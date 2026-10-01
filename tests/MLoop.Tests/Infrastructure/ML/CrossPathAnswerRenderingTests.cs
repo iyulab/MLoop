@@ -2,6 +2,7 @@ using Microsoft.ML;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
+using MLoop.Core.Runtime;
 
 namespace MLoop.Tests.Infrastructure.ML;
 
@@ -43,6 +44,12 @@ public class CrossPathAnswerRenderingTests : IDisposable
         ],
     };
 
+    private static bool TorchRuntimeInstalled()
+    {
+        var runtime = RuntimeRegistry.GetRequiredByTask("question-answering");
+        return runtime != null && new RuntimeManager().IsInstalled(runtime);
+    }
+
     [Fact]
     public async Task The_csv_carries_the_best_answer_and_its_score_as_the_structured_path_does()
     {
@@ -71,17 +78,26 @@ public class CrossPathAnswerRenderingTests : IDisposable
                 Score: double.Parse(f[Array.IndexOf(header, "Score")], System.Globalization.CultureInfo.InvariantCulture)))
             .ToList();
 
-        var structured = new PredictionService(ml).Predict(
-            [
-                new Dictionary<string, object> { ["context"] = "busan is far", ["question"] = "where" },
-                new Dictionary<string, object> { ["context"] = "seoul is big", ["question"] = "what" },
-            ],
-            Schema, modelPath, "question-answering", "text").Rows;
-
+        // The stand-in's score vector is the passage's word counts over the fitted vocabulary (seoul, is,
+        // big): its first slot is 0 for "busan is far" and 1 for "seoul is big".
         Assert.Equal(2, count);
         Assert.Equal(["busan", "seoul"], csv.Select(r => r.Answer));
-        Assert.Equal(structured.Select(r => r.PredictedLabel), csv.Select(r => (string?)r.Answer));
-        Assert.Equal(structured.Select(r => r.Score), csv.Select(r => (double?)r.Score));
+        Assert.Equal([0.0, 1.0], csv.Select(r => r.Score));
+
+        // The structured path loads the task's native runtime before it reads a model, so the
+        // comparison runs where that runtime is installed (not on CI); the values above hold everywhere.
+        if (TorchRuntimeInstalled())
+        {
+            var structured = new PredictionService(ml).Predict(
+                [
+                    new Dictionary<string, object> { ["context"] = "busan is far", ["question"] = "where" },
+                    new Dictionary<string, object> { ["context"] = "seoul is big", ["question"] = "what" },
+                ],
+                Schema, modelPath, "question-answering", "text").Rows;
+
+            Assert.Equal(structured.Select(r => r.PredictedLabel), csv.Select(r => (string?)r.Answer));
+            Assert.Equal(structured.Select(r => r.Score), csv.Select(r => (double?)r.Score));
+        }
         Assert.DoesNotContain("Answer", header);
     }
 }
