@@ -168,10 +168,10 @@ public class TrainingProgressTrackerTests
     [Fact]
     public void An_epoch_moves_the_bar_by_epochs_done_not_time_spent()
     {
-        Assert.Equal(30, TrainingProgressTracker.EpochPercent(Epoch(3, 10, elapsed: 5000)));
+        Assert.Equal(30, TrainingProgressTracker.FitPercent(Epoch(3, 10, elapsed: 5000)));
         // The last epoch is not the end: evaluation and saving follow.
-        Assert.Equal(99, TrainingProgressTracker.EpochPercent(Epoch(10, 10, elapsed: 100)));
-        Assert.Null(TrainingProgressTracker.EpochPercent(Trial(10)));
+        Assert.Equal(99, TrainingProgressTracker.FitPercent(Epoch(10, 10, elapsed: 100)));
+        Assert.Null(TrainingProgressTracker.FitPercent(Trial(10)));
     }
 
     [Fact]
@@ -182,6 +182,43 @@ public class TrainingProgressTrackerTests
 
         Assert.Contains("Epoch 3/10", text);
         Assert.Contains("about 9m left", text);
+        Assert.NotNull(new Spectre.Console.Markup(text));
+    }
+
+    private static TrainingProgress Featurized(int step, int steps, double elapsed) => new()
+    {
+        TrialNumber = 0, TrainerName = "Image classification (TensorFlow)", Metric = 0, MetricName = "",
+        ElapsedSeconds = elapsed, Phase = TrainingPhase.Featurize, Step = step, Steps = steps
+    };
+
+    [Fact]
+    public void Featurization_moves_the_bar_and_estimates_what_is_left()
+    {
+        // 100 of 400 images in two minutes: the other 300 take about six.
+        var p = Featurized(100, 400, elapsed: 120);
+
+        Assert.Equal(25, TrainingProgressTracker.FitPercent(p));
+        var text = TrainingProgressTracker.PhaseDescription(p, "default")!;
+        Assert.Contains("Featurizing 100/400", text);
+        Assert.Contains("about 6m left", text);
+        Assert.NotNull(new Spectre.Console.Markup(text));
+    }
+
+    [Fact]
+    public void An_early_stopping_epoch_names_its_cap_as_a_cap_and_predicts_no_end()
+    {
+        // 200 is a cap the fit usually stops far short of; dividing by it would promise hours.
+        var p = new TrainingProgress
+        {
+            TrialNumber = 0, TrainerName = "Image classification (TensorFlow)", Metric = 0, MetricName = "",
+            ElapsedSeconds = 60, Phase = TrainingPhase.Epoch, Epoch = 12, MaxEpochs = 200, StopsEarly = true
+        };
+
+        var text = TrainingProgressTracker.PhaseDescription(p, "default")!;
+        Assert.Contains("Epoch 12", text);
+        Assert.Contains("at most 200", text);
+        Assert.DoesNotContain("12/200", text);
+        Assert.DoesNotContain("left", text);
         Assert.NotNull(new Spectre.Console.Markup(text));
     }
 

@@ -316,15 +316,28 @@ public static class PredictCommand
                     ? dataFile
                     : Path.Combine(projectRoot, dataFile);
 
-                if (!File.Exists(resolvedDataFile))
+                if (Directory.Exists(resolvedDataFile)
+                    && string.Equals(taskType, "image-classification", StringComparison.OrdinalIgnoreCase))
                 {
-                    var cause = Markup.Escape(BuildMissingDataFileMessage(resolvedDataFile, taskType));
+                    // A folder of pictures is what an image model is asked about; the table it scores
+                    // (one ImagePath per row) is built here rather than by the user.
+                    var images = ImageDirectoryLoader.ListImages(resolvedDataFile);
+                    if (images.Count == 0)
+                    {
+                        ErrorConsole.Error(Markup.Escape(
+                            $"No images found under {resolvedDataFile} (looked for {ImageDirectoryLoader.SupportedExtensionList}, in subfolders too)."));
+                        return 1;
+                    }
+                    ValueLine.Write("[green]>[/] Images: ", $"{images.Count:N0} under {Path.GetFileName(Path.TrimEndingDirectorySeparator(resolvedDataFile))}");
+                    resolvedDataFile = ImageDirectoryLoader.WriteImageTable(images);
+                }
+                else if (!File.Exists(resolvedDataFile))
+                {
+                    var cause = Markup.Escape(BuildMissingDataFileMessage(resolvedDataFile));
                     if (Directory.Exists(resolvedDataFile))
                     {
                         // A directory at this path is a wrong-type mismatch, not a wrong-location
-                        // one — the path resolution rule below doesn't explain what to do about it,
-                        // and the image-classification branch of the message already carries its
-                        // own remedy.
+                        // one — the path resolution rule below doesn't explain what to do about it.
                         ErrorConsole.Error(cause);
                     }
                     else
@@ -651,25 +664,15 @@ public static class PredictCommand
     }
 
     /// <summary>
-    /// Builds an honest diagnosis when the resolved predict data path is not a readable CSV file.
-    /// A bare "Data file not found" is misleading when the path actually exists as a directory —
-    /// the common case of pointing image-classification predict at a folder of images. Image
-    /// predict consumes a CSV with an <c>ImagePath</c> column; a labelled image directory belongs
-    /// to <c>evaluate</c> (object detection has its own directory path and never reaches here).
+    /// Builds an honest diagnosis when the resolved predict data path is not a readable data file.
+    /// A bare "Data file not found" is misleading when the path actually exists as a directory.
+    /// (An image-classification model predicts over a folder of images and never reaches here;
+    /// object detection has its own directory path.)
     /// </summary>
-    internal static string BuildMissingDataFileMessage(string resolvedDataFile, string? taskType)
+    internal static string BuildMissingDataFileMessage(string resolvedDataFile)
     {
         if (Directory.Exists(resolvedDataFile))
-        {
-            if (string.Equals(taskType, "image-classification", StringComparison.OrdinalIgnoreCase))
-            {
-                return $"Expected a CSV file but got a directory: {resolvedDataFile}\n" +
-                       "Image-classification predict reads a CSV with an 'ImagePath' column (one row per image). " +
-                       "To evaluate a labelled image directory (folder = class), use: mloop evaluate <dir>";
-            }
-
             return $"Expected a data file but got a directory: {resolvedDataFile}";
-        }
 
         return $"Data file not found: {resolvedDataFile}";
     }

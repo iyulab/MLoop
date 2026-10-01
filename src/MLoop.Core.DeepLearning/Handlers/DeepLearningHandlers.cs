@@ -1,6 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.TorchSharp;
+using Microsoft.ML.Vision;
 using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
@@ -32,12 +33,24 @@ internal static class DeepLearningHandlers
             // The ImageClassification trainer requires raw image bytes as its feature
             // column. ImageDirectoryLoader produces an "ImagePath" string column, so
             // LoadRawImageBytes reads each file into a VarVector<byte> before fitting.
+            var images = trainSet.GetColumn<string>(ImageDirectoryLoader.ImagePathColumn).Count();
+            var fitProgress = new ImageClassificationProgress(progress, "Image classification (TensorFlow)", images);
             var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
                 .Append(mlContext.Transforms.LoadRawImageBytes(
                     outputColumnName: "ImageBytes", imageFolder: null, inputColumnName: "ImagePath"))
                 .Append(mlContext.MulticlassClassification.Trainers.ImageClassification(
-                    featureColumnName: "ImageBytes", labelColumnName: "Label"))
+                    new ImageClassificationTrainer.Options
+                    {
+                        FeatureColumnName = "ImageBytes",
+                        LabelColumnName = "Label",
+                        Epoch = ImageClassificationProgress.MaxEpochs,
+                        MetricsCallback = fitProgress.OnMetrics
+                    }))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+
+            log($"Image classification featurizes {images:N0} images once, then trains for at most " +
+                $"{ImageClassificationProgress.MaxEpochs} epochs (stopping early once accuracy stops improving); " +
+                "the time limit does not shorten it.");
 
             var trialChannel = new TrialProgressChannel(progress);
 

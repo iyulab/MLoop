@@ -1,6 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
@@ -52,7 +53,7 @@ public class EvaluationEngine
                 // the training pipeline maps to a key, same as the CSV image-classification branch).
                 if (MLoop.Core.Data.DataLoaderFactory.IsDirectoryBased(taskType))
                 {
-                    var dirData = MLoop.Core.Data.DataLoaderFactory.Create(taskType, _mlContext)
+                    var dirData = MLoop.Core.Data.DataLoaderFactory.Create(taskType, _mlContext, CoreNarration.Sink)
                         .LoadData(testDataPath, labelColumn, taskType);
                     var dirScored = trainedModel.Transform(dirData);
 

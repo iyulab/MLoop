@@ -238,6 +238,53 @@ public class ImageDirectoryLoaderTests : IDisposable
         Assert.Equal(0, ImageDirectoryLoader.CountClasses(Path.Combine(_tempDirectory, "nope")));
     }
 
+    [Fact]
+    public void CountImagesPerClass_ReportsEachClassFolderInOrder()
+    {
+        CreateClass("NG", 2);
+        CreateClass("OK", 3);
+        Directory.CreateDirectory(Path.Combine(_tempDirectory, "empty"));
+
+        var counts = ImageDirectoryLoader.CountImagesPerClass(_tempDirectory);
+
+        Assert.Equal(["NG", "OK"], counts.Keys);
+        Assert.Equal([2, 3], counts.Values);
+    }
+
+    [Fact]
+    public void ListImages_FindsImagesAtAnyDepthAndSkipsOtherFiles()
+    {
+        // A folder of new pictures may be flat or still sorted into subfolders.
+        CreateClass("OK", 2);
+        File.WriteAllBytes(Path.Combine(_tempDirectory, "loose.png"), [0x89]);
+        File.WriteAllText(Path.Combine(_tempDirectory, "README.txt"), "not an image");
+
+        var images = ImageDirectoryLoader.ListImages(_tempDirectory);
+
+        Assert.Equal(3, images.Count);
+        Assert.All(images, p => Assert.True(Path.IsPathRooted(p)));
+        Assert.DoesNotContain(images, p => p.EndsWith(".txt"));
+    }
+
+    [Fact]
+    public void WriteImageTable_IsTheTableTheModelScores_AndQuotesPathsThatNeedIt()
+    {
+        var odd = Path.Combine(_tempDirectory, "a,b \"c\".jpg");
+        var table = ImageDirectoryLoader.WriteImageTable([odd, "/plain.jpg"]);
+        try
+        {
+            Assert.Equal(".csv", Path.GetExtension(table));
+            using var reader = new CsvHelper.CsvReader(new StreamReader(table),
+                System.Globalization.CultureInfo.InvariantCulture);
+            var rows = reader.GetRecords<dynamic>().Select(r => (string)((IDictionary<string, object>)r)[ImageDirectoryLoader.ImagePathColumn]).ToList();
+            Assert.Equal([odd, "/plain.jpg"], rows);
+        }
+        finally
+        {
+            File.Delete(table);
+        }
+    }
+
     /// <summary>Creates a class subfolder with <paramref name="count"/> placeholder image files.</summary>
     private void CreateClass(string label, int count)
     {

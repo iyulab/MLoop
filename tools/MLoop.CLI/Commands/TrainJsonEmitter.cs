@@ -81,10 +81,13 @@ public sealed class TrainJsonEmitter(TextWriter output)
         var hasBudget = phase is TrainingPhase.ProbeComplete or TrainingPhase.MainStart;
         var hasMetric = phase is TrainingPhase.ProbeComplete or TrainingPhase.ProbeConverged
                                 or TrainingPhase.ProbeFellBack;
-        var hasTrials = phase is not (TrainingPhase.ProbeStart or TrainingPhase.MainStart or TrainingPhase.Epoch);
-        var hasElapsed = phase is TrainingPhase.Complete or TrainingPhase.Epoch;
-        // A deep-learning fit reports epochs, not trials: how many are done, out of how many.
+        var hasTrials = phase is not (TrainingPhase.ProbeStart or TrainingPhase.MainStart
+                                      or TrainingPhase.Featurize or TrainingPhase.Epoch);
+        var hasElapsed = phase is TrainingPhase.Complete or TrainingPhase.Featurize or TrainingPhase.Epoch;
+        // A deep-learning fit reports epochs, not trials: how many are done, out of how many —
+        // and, before them, how many input items it has featurized.
         var hasEpoch = phase is TrainingPhase.Epoch;
+        var hasStep = phase is TrainingPhase.Featurize;
 
         Write(new
         {
@@ -106,6 +109,10 @@ public sealed class TrainJsonEmitter(TextWriter output)
             elapsedMs = hasElapsed ? (long)(progress.ElapsedSeconds * 1000) : (long?)null,
             epoch = hasEpoch ? progress.Epoch : (int?)null,
             epochs = hasEpoch ? progress.MaxEpochs : (int?)null,
+            // Present only when true: `epochs` is then a cap the fit usually stops short of.
+            stopsEarly = hasEpoch && progress.StopsEarly ? true : (bool?)null,
+            step = hasStep ? progress.Step : (int?)null,
+            steps = hasStep ? progress.Steps : (int?)null,
             ts = Now()
         });
     }

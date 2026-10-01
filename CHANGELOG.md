@@ -17,6 +17,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   decodes its answer one byte per character, so an answer in Korean, Chinese, Japanese or Cyrillic
   comes out with those characters missing. Training now counts such answers and says where
   `exact_match` stops; the guide's Question Answering section explains the limit.
+- **An image-classification model predicts a folder of images.** `mloop predict new-photos/` scores
+  every image under the folder, subfolders included; before, the images had to be listed by hand in a
+  CSV with an `ImagePath` column (still read). After training, the suggested predict line names a
+  folder for image models instead of `data.csv`.
+- **`mloop info <folder>` describes an image-classification folder** — images per class folder and
+  each class's share — instead of reporting an existing folder as "File not found" with a tip about
+  relative paths. Any other folder is named as a folder.
 
 ### Changed
 - **Rows with an empty label are dropped by default wherever the label is a target** — regression,
@@ -24,8 +31,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   target can neither teach a model nor score it: a recommendation set whose unrated visits (22% of
   rows) stayed in scored R² 0.54, and −0.64 once they were left out. A time series keeps its rows.
   `--drop-missing-labels false` keeps them.
+- **A multiclass prediction CSV names each score column after its class** — `Score.cat`, `Score.dog`
+  rather than `Score.0`, `Score.1` — the names `--json` already reported. The CSV said which slot
+  scored highest but not which class that slot was. A model whose classes cannot be recovered keeps
+  the numbered columns.
 
 ### Fixed
+- **`predict` no longer announces a strategy for unseen category values when there were none.** Every
+  image-classification prediction printed "Low unknown value ratio (0.00%) - safely replacing with
+  most frequent values"; the line now appears only when some value was actually unseen, and goes
+  where the rest of the command's narration goes.
+- **Image-classification training shows its progress.** The bar stood at 0% for the whole fit (ten
+  minutes on 970 images on a CPU), because this trainer reports progress through a callback rather
+  than its log. It now counts the images featurized, with the time left, and then the epochs, which
+  are named as a cap of 200 since the trainer stops early once accuracy stops improving. `train --json`
+  carries the same as `featurize` events (`step`, `steps`) and `epoch` events with `stopsEarly`.
+- **Image-classification `train` and `evaluate` say what they loaded.** The image loader's count of
+  images per class, and its warnings about empty or sparse class folders, a single class or severe
+  imbalance, were written to no one.
 - **A model no better than the mean is no longer promoted when it is judged on an error metric.**
   rmse, mae and mse have no floor of their own, so a recommendation model at R² −0.65 — worse than
   answering every row with the mean rating — reached production. R² at or below 0 now keeps such a
