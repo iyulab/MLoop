@@ -4,6 +4,7 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Models;
+using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Prediction;
@@ -276,6 +277,9 @@ public class PredictionEngine
             // Question answering answers in the trainer's own column, best first; it is rendered to one
             // PredictedLabel below, after the guards have read it.
             var isQuestionAnswering = TaskTypes.Canonical(taskType) == "question-answering";
+            // Time-series anomaly answers in the detectors' one vector (alert, raw score, …); it is
+            // rendered below into the columns anomaly detection answers in.
+            var isTimeSeriesAnomaly = TaskTypes.Canonical(taskType) == "time-series-anomaly";
             var predictionColumns = new List<string>();
             foreach (var col in predictions.Schema)
             {
@@ -283,7 +287,8 @@ public class PredictionEngine
                 // Include standard prediction output columns
                 if (col.Name == "PredictedLabel" || col.Name == "Score" || col.Name == "Probability"
                     || col.Name == "ScoreLowerBound" || col.Name == "ScoreUpperBound"
-                    || (isQuestionAnswering && col.Name == AnswerOverlap.PredictedAnswerColumn))
+                    || (isQuestionAnswering && col.Name == AnswerOverlap.PredictedAnswerColumn)
+                    || (isTimeSeriesAnomaly && col.Name == TimeSeriesAnomalyOutput.PredictionColumnName))
                 {
                     predictionColumns.Add(col.Name);
                 }
@@ -360,6 +365,11 @@ public class PredictionEngine
                     // Materialization quirk on an exotic schema — the guard must never break a CSV
                     // this path could previously write (same contract as the Confidence enrichment).
                 }
+            }
+
+            if (isTimeSeriesAnomaly && outputData.Schema.GetColumnOrNull(TimeSeriesAnomalyOutput.PredictionColumnName) is not null)
+            {
+                outputData = RenderAnomalyAlert(outputData);
             }
 
             // A Boolean PredictedLabel is what binary classification produces, and the text writer
@@ -494,6 +504,35 @@ public class PredictionEngine
             .Fit(predictions)
             .Transform(predictions);
         return _mlContext.Transforms.SelectColumns("PredictedLabel", "Score").Fit(rendered).Transform(rendered);
+    }
+
+    private IDataView RenderAnomalyAlert(IDataView predictions)
+    {
+        var rendered = _mlContext.Transforms.CustomMapping(
+                (DetectorVector input, AnomalyAlert output) =>
+                {
+                    var slots = input.Prediction ?? [];
+                    output.PredictedLabel = slots.Length > TimeSeriesAnomalyOutput.AlertSlot
+                        && slots[TimeSeriesAnomalyOutput.AlertSlot] != 0;
+                    output.Score = slots.Length > TimeSeriesAnomalyOutput.RawScoreSlot
+                        ? slots[TimeSeriesAnomalyOutput.RawScoreSlot]
+                        : double.NaN;
+                },
+                contractName: null)
+            .Fit(predictions)
+            .Transform(predictions);
+        return _mlContext.Transforms.SelectColumns("PredictedLabel", "Score").Fit(rendered).Transform(rendered);
+    }
+
+    private sealed class DetectorVector
+    {
+        public double[]? Prediction { get; set; }
+    }
+
+    private sealed class AnomalyAlert
+    {
+        public bool PredictedLabel { get; set; }
+        public double Score { get; set; }
     }
 
     private sealed class AnswerVector

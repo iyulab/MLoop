@@ -89,8 +89,8 @@ internal static class TrainPresenter
         table.AddRow("Task", definition.Task);
         table.AddRow("Data File", Path.GetFileName(sourceFile ?? dataFile));
         table.AddRow("Label Column", definition.Label);
-        table.AddRow("Time Limit", DeepLearningRegistry.Handles(definition.Task)
-            ? "not used — trains a fixed number of epochs"
+        table.AddRow("Time Limit", AutoMLRunner.TimeBudgetUnused(definition.Task) is { } unused
+            ? $"not used — {unused}"
             : useAutoTime
             ? "[cyan]auto[/] (estimated from data size)"
             : $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
