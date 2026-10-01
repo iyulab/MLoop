@@ -157,7 +157,7 @@ public static class DetectCommand
                 return 1;
             }
 
-            if (!File.Exists(dataFile))
+            if (!TabularDataFile.Exists(dataFile))
             {
                 WriteError($"Data file not found: {dataFile}", jsonOutput);
                 return 1;

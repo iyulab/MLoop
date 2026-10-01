@@ -136,4 +136,43 @@ public class TabularDataFileTests : IDisposable
         Assert.Contains("'data'", withPath.Message);
         Assert.DoesNotContain("--records", withoutPath.Message);
     }
+
+    [Fact]
+    public async Task A_folder_of_data_files_is_one_table_in_file_name_order()
+    {
+        var folder = Path.Combine(_dir, "parts");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "part_002.json"), """{"x": 2}""");
+        File.WriteAllText(Path.Combine(folder, "part_001.json"), """{"x": 1}""");
+        File.WriteAllText(Path.Combine(folder, ".done"), "");
+
+        Assert.True(TabularDataFile.Exists(folder));
+        Assert.True(TabularDataFile.NeedsConversion(folder));
+        var csv = await TabularDataFile.AsCsvAsync(folder);
+
+        Assert.Equal(".csv", Path.GetExtension(csv));
+        Assert.Equal(["x", "1", "2"], File.ReadAllLines(csv).Select(l => l.Trim('\uFEFF')));
+        Assert.Equal(16, TabularDataFile.SizeOf(folder)); // the two data files, not the marker
+    }
+
+    [Fact]
+    public void A_folder_without_data_files_is_not_data()
+    {
+        var folder = Path.Combine(_dir, "empty");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "notes.md"), "# about");
+
+        Assert.False(TabularDataFile.Exists(folder));
+        Assert.False(TabularDataFile.NeedsConversion(folder));
+    }
+
+    [Fact]
+    public async Task Records_apply_to_a_folder_of_json_files_and_are_refused_for_one_of_csv()
+    {
+        var folder = Path.Combine(_dir, "csvs");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "a.csv"), "x\n1\n");
+
+        await Assert.ThrowsAsync<ArgumentException>(() => TabularDataFile.AsCsvAsync(folder, "data"));
+    }
 }

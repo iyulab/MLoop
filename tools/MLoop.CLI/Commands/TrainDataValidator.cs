@@ -81,7 +81,7 @@ internal static class TrainDataValidator
                 ? dataFile
                 : Path.Combine(projectRoot, dataFile);
 
-            return File.Exists(resolvedPath)
+            return TabularDataFile.Exists(resolvedPath)
                 ? Task.FromResult<string?>(resolvedPath)
                 : Task.FromResult<string?>(null);
         }

@@ -189,11 +189,12 @@ public class InfoCommandJsonTests : IDisposable
     }
 
     [Fact]
-    public async Task Info_FolderWithoutImageClasses_SaysItIsAFolder()
+    public async Task Info_FolderWithNeitherDataNorImages_SaysItIsAFolder()
     {
-        var dir = Path.Combine(_testDir, "tables");
+        // A folder holding CSV files used to get this answer too; it is now one table (below).
+        var dir = Path.Combine(_testDir, "notes");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "a.csv"), "x,y\n1,2\n");
+        File.WriteAllText(Path.Combine(dir, "README.md"), "# about");
 
         var (exitCode, stdout, _) = await CliRunner.RunAsync("info", dir, "--json");
 
@@ -202,6 +203,27 @@ public class InfoCommandJsonTests : IDisposable
         var errors = doc.RootElement.GetProperty("errors").EnumerateArray().Select(e => e.GetString()!).ToList();
         Assert.Contains(errors, e => e.Contains("is a folder"));
         Assert.DoesNotContain(errors, e => e.Contains("not found"));
+    }
+
+    [Fact]
+    public async Task Info_FolderOfDataFiles_IsProfiledAsOneTable()
+    {
+        // An export that writes one JSON object per measurement: hundreds of files could not be listed
+        // on a command line, and the folder was refused.
+        var dir = Path.Combine(_testDir, "readings");
+        Directory.CreateDirectory(dir);
+        for (int i = 0; i < 12; i++)
+            File.WriteAllText(Path.Combine(dir, $"reading_{i:D5}.json"), $"{{\"t\": {i}, \"temp\": {20 + i % 3}.5}}");
+        File.WriteAllText(Path.Combine(dir, ".done"), "");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", dir, "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal(12, doc.RootElement.GetProperty("fileInfo").GetProperty("lineCount").GetInt32());
+        Assert.Equal("readings", doc.RootElement.GetProperty("fileInfo").GetProperty("fileName").GetString());
+        var names = doc.RootElement.GetProperty("columns").EnumerateArray().Select(c => c.GetProperty("name").GetString());
+        Assert.Equal(["t", "temp"], names);
     }
 
     [Fact]

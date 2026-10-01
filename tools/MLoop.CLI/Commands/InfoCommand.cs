@@ -104,7 +104,8 @@ public static class InfoCommand
                 // Not in a project, that's ok for info command
             }
 
-            // Resolve data file path
+            // Resolve data file path (a folder named with a trailing separator still has a name)
+            dataFile = Path.TrimEndingDirectorySeparator(dataFile);
             string resolvedDataFile;
             if (projectRoot != null && !Path.IsPathRooted(dataFile))
             {
@@ -115,10 +116,12 @@ public static class InfoCommand
                 resolvedDataFile = dataFile;
             }
 
-            if (Directory.Exists(resolvedDataFile))
+            // A folder of data files is one table, profiled below like a file; any other folder is
+            // described as an image dataset, or named as a folder.
+            if (Directory.Exists(resolvedDataFile) && !TabularDataFile.IsTableFolder(resolvedDataFile))
                 return DescribeFolder(resolvedDataFile, analyze, jsonOutput);
 
-            if (!File.Exists(resolvedDataFile))
+            if (!TabularDataFile.Exists(resolvedDataFile))
             {
                 ErrorConsole.Error(
                     $"File not found: {resolvedDataFile}",
@@ -185,7 +188,8 @@ public static class InfoCommand
         var imagesPerClass = ImageDirectoryLoader.CountImagesPerClass(folder);
         if (imagesPerClass.Count == 0)
         {
-            var message = $"'{folder}' is a folder. `mloop info` profiles a data file (CSV, TSV, Excel, Parquet, JSON) " +
+            var message = $"'{folder}' is a folder with neither data files nor class folders of images. `mloop info` " +
+                          "profiles a data file (CSV, TSV, Excel, Parquet, JSON, SVMlight), a folder of such files, " +
                           "or an image-classification folder (one subfolder of images per class).";
             ErrorConsole.Error(Markup.Escape(message));
             EmitJson(folder, null, null, analyze, null, null, null, null, null, [message], jsonOutput);
@@ -254,7 +258,8 @@ public static class InfoCommand
 
         // Size and modification time describe the file the user named; the rows are counted in the
         // table MLoop reads, which may be a converted or flattened copy of it.
-        var fileInfo = new FileInfo(reportedDataFile);
+        var reportedSize = TabularDataFile.SizeOf(reportedDataFile);
+        var reportedWritten = TabularDataFile.LastWriteTimeOf(reportedDataFile);
 
         int lineCount = 0;
         string? firstLine = null;
@@ -277,7 +282,7 @@ public static class InfoCommand
 
         // 1. File Information
         InfoPresenter.DisplayFileInfo(
-            Path.GetFileName(reportedDataFile), fileInfo.Length, lineCount, fileInfo.LastWriteTime);
+            Path.GetFileName(reportedDataFile), reportedSize, lineCount, reportedWritten);
 
         var columns = CsvFieldParser.ParseFields(firstLine);
 
@@ -347,7 +352,7 @@ public static class InfoCommand
         if (dataLens.IsAvailable)
         {
             // Size gate: skip profiling for files > 200MB (unless --analyze forces deep analysis)
-            if (fileInfo.Length <= 200 * 1024 * 1024 || analyze)
+            if (reportedSize <= 200 * 1024 * 1024 || analyze)
             {
                 profile = await dataLens.ProfileAsync(originalDataFile);
             }
@@ -411,7 +416,7 @@ public static class InfoCommand
 
         EmitJson(
             reportedDataFile, labelColumn, labelSource, analyze,
-            new FileInfoRow(Path.GetFileName(reportedDataFile), fileInfo.Length, lineCount, fileInfo.LastWriteTime),
+            new FileInfoRow(Path.GetFileName(reportedDataFile), reportedSize, lineCount, reportedWritten),
             columnRows, labelDistribution, profile, analysisResult, null, jsonOutput);
 
         return 0;

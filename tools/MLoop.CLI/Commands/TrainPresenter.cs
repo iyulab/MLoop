@@ -52,7 +52,7 @@ internal static class TrainPresenter
             table.AddRow("Label", $"[cyan]{labelColumn}[/]");
 
             // Check file size
-            var fileSize = new FileInfo(sourceFile ?? dataFile).Length;
+            var fileSize = TabularDataFile.SizeOf(sourceFile ?? dataFile);
             var sizeStr = fileSize switch
             {
                 < 1024 => $"{fileSize} B",

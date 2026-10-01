@@ -434,7 +434,7 @@ public static class TrainCommand
                 foreach (var path in dataPaths)
                 {
                     var resolved = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(projectRoot, path));
-                    if (!File.Exists(resolved))
+                    if (!TabularDataFile.Exists(resolved))
                     {
                         ErrorConsole.Error($"Data file not found: {path}", ErrorConsole.PathNotFoundTip(projectRoot));
                         return 1;

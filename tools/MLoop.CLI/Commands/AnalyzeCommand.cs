@@ -87,10 +87,10 @@ public static class AnalyzeCommand
         else
         {
             // Outside a project only an explicit, existing path works (no config/discovery).
-            resolved = !string.IsNullOrEmpty(dataFile) && File.Exists(dataFile) ? dataFile : null;
+            resolved = !string.IsNullOrEmpty(dataFile) && TabularDataFile.Exists(dataFile) ? dataFile : null;
         }
 
-        if (resolved == null || !File.Exists(resolved))
+        if (resolved == null || !TabularDataFile.Exists(resolved))
         {
             if (string.IsNullOrEmpty(dataFile))
                 AnsiConsole.MarkupLine(

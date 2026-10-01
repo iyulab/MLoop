@@ -168,6 +168,11 @@ mloop train data.csv --label defect --task binary-classification --balance 5  # 
   read too — by the `.svm`/`.svmlight`/`.libsvm` extensions or by their lines, so `rank.train` works —
   as `label`, `qid` and `f<index>` columns; a group-size file beside the data (`rank.train.query`)
   supplies `qid`. Train a ranking model on one with `--label label --group-column qid`.
+  **A folder of data files** in one format is read as one table, rows in file-name order — the shape
+  of exports that write a file per record (`mloop train readings/ --label temp`), which could not be
+  listed one by one past the command line's length limit. Files of mixed formats or different columns
+  are refused by name; other files in the folder (`.done` markers, notes) are left out. A folder laid
+  out for image classification or object detection stays that task's input.
   A JSON file whose rows sit in a nested array takes `--records` with the dotted path to that array
   (`train`, `predict`, `evaluate`, `info`, `analyze`, `detect`): `--records data.paragraphs.qas.answers` reads each answer
   as a row, and a row also carries the fields of the items it sits in, named by their array

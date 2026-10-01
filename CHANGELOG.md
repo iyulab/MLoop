@@ -21,6 +21,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every image under the folder, subfolders included; before, the images had to be listed by hand in a
   CSV with an `ImagePath` column (still read). After training, the suggested predict line names a
   folder for image models instead of `data.csv`.
+- **A folder of data files is one table** for `train`, `predict`, `evaluate`, `info`, `analyze` and
+  `detect`: every data file directly inside it, in file-name order, each read as it would be alone. An
+  export that writes a file per record (one JSON object per measurement) could not be given at all
+  before — several hundred paths on a command line exceed the operating system's length limit — and
+  `info` refused a folder. Mixed formats or different columns are refused by name. This comes with
+  FilePrepper 0.11.0.
 - **SVMlight / libsvm data** — `label [qid:q] index:value …`, the format learning-to-rank sets are
   published in — is read by every command, under its own extensions or by its lines (`rank.train`).
   It becomes `label`, `qid` and one `f<index>` column per feature; a group-size file beside it
