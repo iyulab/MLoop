@@ -323,6 +323,11 @@ public static class InfoCommand
         // Ensure RFC 4180 compliance
         columnInference.TextLoaderOptions.AllowQuoting = true;
 
+        // What training will drop before featurizing — the one authority, run silently: the table
+        // below states it per column.
+        var excluded = CsvDataLoader.DetermineExcludedColumns(dataFile, labelColumn, _ => { })
+            .ToDictionary(c => c.Name, c => c.Reason, StringComparer.Ordinal);
+
         // Sample data lines for text-likeness analysis (reuses TrainingEngine logic)
         var sampleLines = ReadSampleLines(dataFile, 200);
 
@@ -330,7 +335,7 @@ public static class InfoCommand
         InfoPresenter.DisplayColumnInfo(
             columns,
             (colName, colIdx) => InferDisplayType(colName, columnInference, colIdx, sampleLines),
-            (colName, dataType) => GetColumnPurpose(colName, columnInference.ColumnInformation, dataType),
+            (colName, dataType) => GetColumnPurpose(colName, columnInference.ColumnInformation, dataType, excluded),
             columnOverrides);
 
         // 3. DataLens Profile (always-on, nullable)
@@ -369,7 +374,7 @@ public static class InfoCommand
         for (int ci = 0; ci < columns.Length; ci++)
         {
             var dataType = InferDisplayType(columns[ci], columnInference, ci, sampleLines);
-            var purpose = GetColumnPurpose(columns[ci], columnInference.ColumnInformation, dataType);
+            var purpose = GetColumnPurpose(columns[ci], columnInference.ColumnInformation, dataType, excluded);
             string? overrideType = columnOverrides != null && columnOverrides.TryGetValue(columns[ci], out var ot)
                 ? ot
                 : null;
@@ -486,10 +491,17 @@ public static class InfoCommand
     /// Display-only coloring is applied by <see cref="InfoPresenter"/>, not here, so this value is
     /// also what the <c>--json</c> payload reports for each column.
     /// </summary>
-    internal static string GetColumnPurpose(string columnName, ColumnInformation columnInfo, string dataType)
+    /// <param name="excluded">Columns training drops before featurizing, with the reason — the
+    /// decision of <see cref="CsvDataLoader.DetermineExcludedColumns"/>, so the report names what
+    /// training will do instead of calling a dropped column a feature.</param>
+    internal static string GetColumnPurpose(
+        string columnName, ColumnInformation columnInfo, string dataType,
+        IReadOnlyDictionary<string, string>? excluded = null)
     {
         if (columnInfo.LabelColumnName == columnName)
             return "Label";
+        if (excluded is not null && excluded.TryGetValue(columnName, out var reason))
+            return $"Excluded ({reason})";
         if (columnInfo.IgnoredColumnNames?.Contains(columnName) == true)
             return "Ignored";
 

@@ -1113,7 +1113,7 @@ public static class TrainCommand
             }
 
             // Sync mloop.yaml if CLI overrode label or task
-            await SyncYamlConfigAsync(configLoader, userConfig, resolvedModelName, effectiveDefinition, label, task);
+            await SyncYamlConfigAsync(configLoader, userConfig, resolvedModelName, effectiveDefinition, label, task, groupColumn);
 
             // Emitted here, before auto-promote: the experiment is finished and recorded at this
             // point. A promotion that fails afterwards adds an error event and a non-zero exit, so a
@@ -1271,8 +1271,8 @@ public static class TrainCommand
     }
 
     /// <summary>
-    /// Updates mloop.yaml when CLI-specified label or task differs from the stored config.
-    /// This ensures predict can find the correct label after training with --label override.
+    /// Updates mloop.yaml when CLI-specified label, task or ranking group column differs from the
+    /// stored config, so the next command reads the columns this model was trained with.
     /// </summary>
     internal static async Task SyncYamlConfigAsync(
         ConfigLoader configLoader,
@@ -1280,10 +1280,11 @@ public static class TrainCommand
         string modelName,
         ModelDefinition effectiveDefinition,
         string? cliLabel,
-        string? cliTask)
+        string? cliTask,
+        string? cliGroupColumn = null)
     {
         // Only sync if CLI actually overrode something
-        if (string.IsNullOrEmpty(cliLabel) && string.IsNullOrEmpty(cliTask))
+        if (string.IsNullOrEmpty(cliLabel) && string.IsNullOrEmpty(cliTask) && string.IsNullOrEmpty(cliGroupColumn))
             return;
 
         var yamlModel = userConfig.Models.TryGetValue(modelName, out var m) ? m : null;
@@ -1292,6 +1293,8 @@ public static class TrainCommand
         if (!string.IsNullOrEmpty(cliLabel) && (yamlModel == null || !string.Equals(yamlModel.Label, cliLabel, StringComparison.Ordinal)))
             needsUpdate = true;
         if (!string.IsNullOrEmpty(cliTask) && (yamlModel == null || !string.Equals(yamlModel.Task, cliTask, StringComparison.OrdinalIgnoreCase)))
+            needsUpdate = true;
+        if (!string.IsNullOrEmpty(cliGroupColumn) && (yamlModel == null || !string.Equals(yamlModel.GroupColumn, cliGroupColumn, StringComparison.Ordinal)))
             needsUpdate = true;
 
         if (!needsUpdate)
@@ -1304,6 +1307,8 @@ public static class TrainCommand
                 yamlModel.Label = cliLabel;
             if (!string.IsNullOrEmpty(cliTask))
                 yamlModel.Task = cliTask;
+            if (!string.IsNullOrEmpty(cliGroupColumn))
+                yamlModel.GroupColumn = cliGroupColumn;
         }
         else
         {
@@ -1312,6 +1317,7 @@ public static class TrainCommand
             {
                 Task = effectiveDefinition.Task,
                 Label = effectiveDefinition.Label,
+                GroupColumn = effectiveDefinition.GroupColumn,
                 Training = effectiveDefinition.Training
             };
         }
@@ -1319,7 +1325,9 @@ public static class TrainCommand
         try
         {
             await configLoader.SaveUserConfigAsync(userConfig);
-            AnsiConsole.MarkupLine($"[grey]Updated mloop.yaml: model '{modelName}' → label={effectiveDefinition.Label}, task={effectiveDefinition.Task}[/]");
+            var group = string.IsNullOrEmpty(effectiveDefinition.GroupColumn) ? "" : $", group_column={effectiveDefinition.GroupColumn}";
+            var text = $"Updated mloop.yaml: model '{modelName}' → label={effectiveDefinition.Label}, task={effectiveDefinition.Task}{group}";
+            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(text)}[/]");
         }
         catch (Exception ex)
         {

@@ -75,6 +75,7 @@ public static class InferenceDataPreprocessor
             // here the information is genuinely absent, so the fallback stays; what it must not do is
             // stay silent, because the symptom it produces is an opaque ML.NET schema-mismatch error.
             var before = ReadHeaderCount(current);
+            current = Step(CsvDataLoader.RemoveStructuredColumns(current, labelColumn, null, log), current, tempFiles);
             current = Step(CsvDataLoader.RemoveDateTimeColumns(current, labelColumn, log), current, tempFiles);
             current = Step(CsvDataLoader.RemoveSparseColumns(current, labelColumn, log: log), current, tempFiles);
             current = Step(CsvDataLoader.RemoveConstantColumns(current, labelColumn, log), current, tempFiles);

@@ -881,6 +881,15 @@ public static class PredictCommand
         }
     }
 
+    /// <summary>
+    /// The column whose values the distribution counts: the predicted class, or <c>-1</c> when the
+    /// answer is not a class. A score (regression, ranking) has no categories to count — and falling
+    /// back to the first column, as this did, counted an input column (a ranking file's query ids)
+    /// under the heading "Prediction Distribution".
+    /// </summary>
+    internal static int DistributionColumn(string[] headers) =>
+        Array.FindIndex(headers, h => h.Equals("PredictedLabel", StringComparison.OrdinalIgnoreCase));
+
     private static void DisplayPredictionDistribution(string outputPath)
     {
         try
@@ -895,9 +904,8 @@ public static class PredictCommand
                 if (headers == null)
                 {
                     headers = CsvFieldParser.ParseFields(line);
-                    predIdx = Array.FindIndex(headers, h =>
-                        h.Equals("PredictedLabel", StringComparison.OrdinalIgnoreCase));
-                    if (predIdx < 0) predIdx = 0;
+                    predIdx = DistributionColumn(headers);
+                    if (predIdx < 0) return;
                     continue;
                 }
 

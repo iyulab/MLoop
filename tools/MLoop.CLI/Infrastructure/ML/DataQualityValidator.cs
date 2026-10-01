@@ -131,6 +131,19 @@ public class DataQualityValidator
                 }
             }
 
+            // A list in every row is many labels packed into one cell — a file with one row per group
+            // (a query and its documents' grades). It is neither text to classify nor a number, and
+            // saying "use classification" sent the reader to count each list as a class.
+            if (textLabelValues.Count > 0 && textLabelValues.All(StructuredValue.Is))
+            {
+                result.IsValid = false;
+                result.ErrorMessage =
+                    $"Label column '{labelColumn}' holds a list in each row, not one value. A model learns one " +
+                    "label per row, so the lists have to be unpacked into rows first — one row per element, " +
+                    "with the columns that belong to it.";
+                return result;
+            }
+
             // For classification tasks, text labels are valid
             if (isClassificationTask && textLabelValues.Count > 0)
             {

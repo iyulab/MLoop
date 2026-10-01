@@ -1592,7 +1592,10 @@ public partial class AutoMLRunner
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for ranking.");
 
-            _logger.Info($"Ranking: {featureColumns.Count} features, group='{config.GroupColumn}', label='{config.LabelColumn}'");
+            // Count values, not columns: the loader may have merged many numeric columns into one vector.
+            var featureWidth = featureColumns.Sum(name =>
+                trainSet.Schema[name].Type is VectorDataViewType vector ? vector.Size : 1);
+            _logger.Info($"Ranking: {featureWidth} features, group='{config.GroupColumn}', label='{config.LabelColumn}'");
 
             // Build pipeline: convert label to Single, hash group to Key, concatenate features
             var pipeline = _mlContext.Transforms.Conversion.ConvertType(config.LabelColumn, outputKind: Microsoft.ML.Data.DataKind.Single)

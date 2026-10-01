@@ -86,6 +86,10 @@ public class CsvDataLoader : DataProviderBase
             // ML.NET treats datetime strings as text and applies FeaturizeText,
             // creating tens of thousands of character n-gram features.
             // Removing from CSV ensures InferColumns never sees them.
+            // Pre-InferColumns: Remove columns holding a JSON list or object in every row (a Parquet or
+            // JSON list column). Read as text they became TF-IDF over brackets and digits. First in the
+            // chain, so the identifier rule never claims one under the wrong reason.
+            mlnetCompatiblePath = RemoveStructuredColumns(mlnetCompatiblePath, labelColumn, preserveColumns, narrateExclusions);
             mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn, narrateExclusions);
 
             // Pre-InferColumns: Remove sparse columns (>90% missing) from CSV.
@@ -914,6 +918,70 @@ public class CsvDataLoader : DataProviderBase
     }
 
     /// <summary>
+    /// Removes columns whose every non-empty value is a JSON list or object — the form a Parquet or
+    /// JSON list column takes in a table. Such a column was read as text and featurized as TF-IDF
+    /// over brackets and digits (or, distinct and without spaces, called an identifier); it is
+    /// neither. Its contents need unpacking into rows or columns before a model can read them.
+    /// </summary>
+    /// <param name="filePath">The CSV to read.</param>
+    /// <param name="labelColumn">The label, never removed here (a structured label is refused with its own message).</param>
+    /// <param name="protectedColumns">Columns claimed for a purpose of their own; never removed.</param>
+    /// <param name="log">Where each removal is announced.</param>
+    /// <returns>A temp copy without the structured columns, or <paramref name="filePath"/> when there are none.</returns>
+    public static string RemoveStructuredColumns(
+        string filePath, string? labelColumn, IEnumerable<string>? protectedColumns = null, Action<string>? log = null)
+    {
+        var write = log ?? NoLog;
+        try
+        {
+            string[] headers;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                var headerLine = reader.ReadLine();
+                if (headerLine == null) return filePath;
+                headers = ParseCsvLine(headerLine);
+            }
+
+            var protectedSet = new HashSet<string>(protectedColumns ?? [], StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(labelColumn)) protectedSet.Add(labelColumn);
+
+            // Candidate until a value disqualifies it; it qualifies only if it carried some value.
+            var candidate = headers.Select(h => !protectedSet.Contains(h.Trim())).ToArray();
+            var sawValue = new bool[headers.Length];
+
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                reader.ReadLine(); // skip header
+                string? line;
+                while ((line = reader.ReadLine()) != null && candidate.Any(c => c))
+                {
+                    var fields = ParseCsvLine(line);
+                    for (int i = 0; i < headers.Length; i++)
+                    {
+                        if (!candidate[i]) continue;
+                        var value = i < fields.Length ? fields[i] : string.Empty;
+                        if (string.IsNullOrWhiteSpace(value)) continue;
+                        if (StructuredValue.Is(value)) sawValue[i] = true;
+                        else candidate[i] = false;
+                    }
+                }
+            }
+
+            var structured = Enumerable.Range(0, headers.Length).Where(i => candidate[i] && sawValue[i]).ToList();
+            if (structured.Count == 0) return filePath;
+
+            var tempPath = WriteWithoutColumns(filePath, structured, "mloop_nostruct_");
+            foreach (var idx in structured)
+                write($"[Warning] Column '{headers[idx]}' holds a list or record in every row and is not read as a feature — unpack it into rows or columns first");
+            return tempPath;
+        }
+        catch
+        {
+            return filePath; // Non-critical, continue with original
+        }
+    }
+
+    /// <summary>
     /// Fewer data rows than this and identifier detection does not run: with a handful of rows every
     /// categorical column is all-distinct, so the rule has nothing to say yet.
     /// </summary>
@@ -1448,9 +1516,12 @@ public class CsvDataLoader : DataProviderBase
         var temps = new List<string>();
         try
         {
-            var beforeDateTime = ReadCsvHeaders(filePath);
+            var beforeStructured = ReadCsvHeaders(filePath);
 
-            var afterDateTimePath = Track(RemoveDateTimeColumns(filePath, labelColumn, log));
+            var afterStructuredPath = Track(RemoveStructuredColumns(filePath, labelColumn, protectedColumns, log));
+            var beforeDateTime = ReadCsvHeaders(afterStructuredPath);
+
+            var afterDateTimePath = Track(RemoveDateTimeColumns(afterStructuredPath, labelColumn, log));
             var afterDateTime = ReadCsvHeaders(afterDateTimePath);
 
             var afterSparsePath = Track(RemoveSparseColumns(afterDateTimePath, labelColumn, log: log));
@@ -1463,6 +1534,7 @@ public class CsvDataLoader : DataProviderBase
             var afterIdentifier = ReadCsvHeaders(afterIdentifierPath);
 
             var excluded = new List<ExcludedColumn>();
+            excluded.AddRange(Dropped(beforeStructured, beforeDateTime, SchemaDataTypes.ExcludedStructured));
             excluded.AddRange(Dropped(beforeDateTime, afterDateTime, SchemaDataTypes.ExcludedDateTime));
             excluded.AddRange(Dropped(afterDateTime, afterSparse, SchemaDataTypes.ExcludedSparse));
             excluded.AddRange(Dropped(afterSparse, afterConstant, SchemaDataTypes.ExcludedConstant));

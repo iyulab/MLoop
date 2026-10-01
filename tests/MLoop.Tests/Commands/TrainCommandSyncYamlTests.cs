@@ -190,4 +190,46 @@ public class TrainCommandSyncYamlTests
         Assert.Equal("NewLabel", userConfig.Models["default"].Label);
         Assert.Equal("binary-classification", userConfig.Models["default"].Task);
     }
+
+    [Fact]
+    public async Task SyncYamlConfig_CLIGroupColumnDiffers_UpdatesYaml()
+    {
+        // `train --label label --group-column qid` on a project scaffolded with group_column: query_id
+        // recorded the label and kept query_id: the model was grouped by qid while the file a later
+        // run reads said otherwise.
+        var userConfig = new MLoopConfig
+        {
+            Project = "test",
+            Models = new Dictionary<string, ModelDefinition>
+            {
+                ["default"] = new() { Task = "ranking", Label = "Label", GroupColumn = "query_id" }
+            }
+        };
+        var effective = new ModelDefinition { Task = "ranking", Label = "label", GroupColumn = "qid" };
+
+        await TrainCommand.SyncYamlConfigAsync(_configLoader, userConfig, "default", effective,
+            cliLabel: "label", cliTask: null, cliGroupColumn: "qid");
+
+        Assert.Equal("qid", userConfig.Models["default"].GroupColumn);
+        Assert.Contains("group_column: qid", _fs.LastWrittenTextContent);
+    }
+
+    [Fact]
+    public async Task SyncYamlConfig_OnlyTheGroupColumnDiffers_StillWrites()
+    {
+        var userConfig = new MLoopConfig
+        {
+            Project = "test",
+            Models = new Dictionary<string, ModelDefinition>
+            {
+                ["default"] = new() { Task = "ranking", Label = "label", GroupColumn = "query_id" }
+            }
+        };
+        var effective = new ModelDefinition { Task = "ranking", Label = "label", GroupColumn = "qid" };
+
+        await TrainCommand.SyncYamlConfigAsync(_configLoader, userConfig, "default", effective,
+            cliLabel: null, cliTask: null, cliGroupColumn: "qid");
+
+        Assert.Equal("qid", userConfig.Models["default"].GroupColumn);
+    }
 }
