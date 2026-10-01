@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `exact_match` stops; the guide's Question Answering section explains the limit.
 
 ### Fixed
+- **Training no longer advises about columns the model does not read.** For time-series tasks,
+  recommendation and deep-learning tasks, the samples-per-feature rule ("300 samples for 35 features"),
+  the suggestion to drop an index-like column and the announcements of excluded columns all counted
+  columns the model never sees. They now apply only where the model reads the table's columns as
+  features, and a time-series run shows its test split as not used, since a series keeps its order.
 - **A time-series anomaly prediction CSV answers in two columns.** The detectors' one output vector
   matched none of the columns the CSV keeps, so the file held every input column twice, the loader's
   feature vector slot by slot, and the answer as three unnamed numbers; the preview collapsed into
