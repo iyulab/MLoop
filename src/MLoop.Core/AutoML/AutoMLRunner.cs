@@ -247,7 +247,7 @@ public partial class AutoMLRunner
         // Weighted training: fitted and chosen on weighted resamples of two disjoint partitions.
         IDataView? validationSet = null;
         if (!string.IsNullOrEmpty(config.WeightColumn))
-            (trainSet, validationSet) = PrepareWeightedPartitions(trainSet, config);
+            (trainSet, validationSet) = PrepareWeightedPartitions(trainSet, testSet, config);
 
         // Discover hooks (zero-overhead if .mloop/scripts/hooks/ doesn't exist)
         var hooks = await _scriptDiscovery.DiscoverHooksAsync().ConfigureAwait(false);
@@ -315,6 +315,9 @@ public partial class AutoMLRunner
         // with the direction-aware worst value, so a broken measurement can never win selection,
         // pass the quality gate, or crash metrics.json serialization. Runs before hooks/persistence
         // so every downstream consumer of result.Metrics sees only finite values.
+        if (!string.IsNullOrEmpty(config.WeightColumn))
+            ReplaceWithWeightedMetrics(result, testSet, config);
+
         var undefinedMetrics = Evaluation.MetricSanitizer.SanitizeInPlace(result.Metrics);
         if (undefinedMetrics.Count > 0)
             _logger.Warning(
@@ -516,12 +519,16 @@ public partial class AutoMLRunner
     /// on, and resamples each by the weight column on its own — the same source row is never on both
     /// sides. The test partition is left as it is. Refuses a task the weights would not reach.
     /// </summary>
-    private (IDataView Train, IDataView Validation) PrepareWeightedPartitions(IDataView trainSet, TrainingConfig config)
+    private (IDataView Train, IDataView Validation) PrepareWeightedPartitions(IDataView trainSet, IDataView testSet, TrainingConfig config)
     {
         if (!WeightedResampling.Supports(config.Task))
             throw new NotSupportedException(
                 $"Weighted training (weight column '{config.WeightColumn}') applies to binary-classification, " +
                 $"multiclass-classification and regression; '{config.Task}' would ignore the weights. Remove the weight to train it.");
+
+        if (testSet.Schema.GetColumnOrNull(config.WeightColumn!) is null)
+            throw new InvalidOperationException(
+                $"The test data has no weight column '{config.WeightColumn}'; a weighted model is judged on weighted test rows.");
 
         var split = _mlContext.Data.TrainTestSplit(trainSet, testFraction: WeightedValidationFraction, seed: WeightedSeed);
         var train = WeightedResampling.Resample(_mlContext, split.TrainSet, config.WeightColumn!, WeightedSeed + 1);
@@ -530,6 +537,38 @@ public partial class AutoMLRunner
                      $"({train.GetRowCount()} + {validation.GetRowCount()} rows).");
         return (train, validation);
     }
+
+    /// <summary>
+    /// Re-scores the test partition with the final model and replaces the task's evaluator metrics
+    /// with their weighted counterparts — the whole family, so a weighted value is never reported
+    /// next to an unweighted one under the same name. Descriptive extras (prediction-interval widths)
+    /// stay as computed.
+    /// </summary>
+    private void ReplaceWithWeightedMetrics(AutoMLResult result, IDataView testSet, TrainingConfig config)
+    {
+        var weight = config.WeightColumn!;
+        var predictions = result.Model.Transform(testSet);
+        var (family, weighted) = config.Task.ToLowerInvariant() switch
+        {
+            "binary-classification" => (WeightedBinaryKeys, WeightedMetrics.Binary(predictions, config.LabelColumn, weight)),
+            "multiclass-classification" => (WeightedMulticlassKeys, WeightedMetrics.Multiclass(predictions, config.LabelColumn, weight)),
+            _ => (WeightedRegressionKeys, WeightedMetrics.Regression(predictions, config.LabelColumn, weight)),
+        };
+        if (weighted is null)
+            throw new InvalidOperationException(
+                $"The test predictions could not be scored by weight '{weight}' — the columns the {config.Task} metrics need are missing.");
+
+        foreach (var key in family)
+            result.Metrics.Remove(key);
+        foreach (var (key, value) in weighted)
+            result.Metrics[key] = value;
+    }
+
+    private static readonly string[] WeightedBinaryKeys =
+        ["accuracy", "precision", "recall", "negative_recall", "f1_score", "auc", "auprc", "ece"];
+    private static readonly string[] WeightedMulticlassKeys =
+        ["micro_accuracy", "macro_accuracy", "log_loss", "log_loss_reduction", "macro_f1", "ece"];
+    private static readonly string[] WeightedRegressionKeys = ["r_squared", "rmse", "mae", "mse"];
 
     // The share of the training partition models are chosen on when the rows are weighted, and the
     // seed of that split and its resamples. Fixed, so a weighted run is reproducible.

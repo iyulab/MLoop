@@ -416,7 +416,8 @@ public class TrainingEngine : ITrainingEngine
                     InputSchema = inputSchema,
                     GroupColumn = config.GroupColumn,
                     UserColumn = config.UserColumn,
-                    ItemColumn = config.ItemColumn
+                    ItemColumn = config.ItemColumn,
+                    WeightColumn = config.WeightColumn
                 },
                 Result = new ExperimentResult
                 {
@@ -471,7 +472,8 @@ public class TrainingEngine : ITrainingEngine
                     TestSplit = config.TestSplit,
                     GroupColumn = config.GroupColumn,
                     UserColumn = config.UserColumn,
-                    ItemColumn = config.ItemColumn
+                    ItemColumn = config.ItemColumn,
+                    WeightColumn = config.WeightColumn
                 },
                 Result = new ExperimentResult
                 {

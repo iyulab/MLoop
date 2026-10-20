@@ -65,7 +65,7 @@ public class WeightedTrainingTests : IDisposable
         }
     }
 
-    private async Task<(float High, float Low)> TrainAndScore(string? weightColumn)
+    private async Task<(float High, float Low, Dictionary<string, double> Metrics)> TrainAndScore(string? weightColumn)
     {
         var ctx = new MLContext(seed: 42);
         var data = ctx.Data.LoadFromEnumerable(Fixture());
@@ -90,22 +90,26 @@ public class WeightedTrainingTests : IDisposable
             new Row { X = 0.1f, Y = 0.5f, W = 0, Label = true },
         });
         var probabilities = result.Model.Transform(probe).GetColumn<float>("Probability").ToArray();
-        return (probabilities[0], probabilities[1]);
+        return (probabilities[0], probabilities[1], result.Metrics);
     }
 
     [Fact]
     public async Task TheWeightReachesTheModel()
     {
-        var (high, low) = await TrainAndScore("W");
+        var (high, low, metrics) = await TrainAndScore("W");
 
         Assert.True(high > 0.7f, $"P(true | x=0.9) = {high}, expected the weighted 0.9");
         Assert.True(low < 0.3f, $"P(true | x=0.1) = {low}, expected the weighted 0.1");
+        // Judged on the weighted test rows: unweighted, every x carries both labels and no model
+        // scores above 0.5; weighted, the right side of 0.5 is right ten times in eleven.
+        Assert.True(metrics["accuracy"] > 0.8, $"weighted accuracy {metrics["accuracy"]}");
+        Assert.True(metrics["auc"] > 0.8, $"weighted auc {metrics["auc"]}");
     }
 
     [Fact]
     public async Task WithoutTheWeight_TheSameDataTellsNothing()
     {
-        var (high, low) = await TrainAndScore(null);
+        var (high, low, _) = await TrainAndScore(null);
 
         Assert.InRange(high, 0.3f, 0.7f);
         Assert.InRange(low, 0.3f, 0.7f);

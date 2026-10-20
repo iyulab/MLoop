@@ -155,6 +155,8 @@ public class ExperimentConfig
     // addressable for the model's key transforms (the same as GroupColumn for ranking).
     public string? UserColumn { get; init; }
     public string? ItemColumn { get; init; }
+    // The column the rows were weighted by. When set, the recorded metrics are weighted by it too.
+    public string? WeightColumn { get; init; }
 }
 
 /// <summary>
