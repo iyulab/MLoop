@@ -168,4 +168,35 @@ public sealed class PromoteQualityGateTests : IDisposable
         Assert.Equal("f1_score", entry.GetProperty("metricName").GetString());
         Assert.Equal(0, entry.GetProperty("bestMetric").GetDouble());
     }
+
+    [Fact]
+    public async Task Rollback_ReturnsProductionToTheExperimentItReplaced()
+    {
+        await SaveExperimentAsync("exp-001", LearnedModel);
+        await SaveExperimentAsync("exp-002", LearnedModel);
+        Assert.Equal(0, (await CliRunner.RunAsync(["promote", "exp-001", "--json"])).ExitCode);
+        Assert.Equal(0, (await CliRunner.RunAsync(["promote", "exp-002", "--json"])).ExitCode);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["rollback", "--json"]);
+
+        Assert.Equal(0, exitCode);
+        using var result = JsonDocument.Parse(stdout);
+        Assert.Equal("exp-001", result.RootElement.GetProperty("experimentId").GetString());
+        Assert.Equal("exp-002", result.RootElement.GetProperty("previousProduction").GetString());
+        Assert.Equal("exp-001", ProductionExperiment());
+    }
+
+    [Fact]
+    public async Task Rollback_RefusesAnExperimentThatNeverServed()
+    {
+        await SaveExperimentAsync("exp-001", LearnedModel);
+        await SaveExperimentAsync("exp-002", LearnedModel);
+        Assert.Equal(0, (await CliRunner.RunAsync(["promote", "exp-001", "--json"])).ExitCode);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["rollback", "--to", "exp-002", "--json"]);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("never been in production", JsonDocument.Parse(stdout).RootElement.GetProperty("error").GetString());
+        Assert.Equal("exp-001", ProductionExperiment());
+    }
 }

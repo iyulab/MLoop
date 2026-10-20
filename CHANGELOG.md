@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   single-class model's accuracy outranked every model that had learned.
 
 ### Added
+- **`mloop rollback`** returns production to the experiment it held before the current one, from the
+  promotion history; `--to <exp>` names a former production experiment. The current production is
+  backed up and the rollback recorded, so a second rollback undoes the first. An experiment that never
+  served is refused — that is a promotion. `POST /rollback` (admin) does the same (409 when there is
+  nothing to return to). Promotion already kept backups; going back was a manual copy.
 - **`mloop list --json` carries each experiment's `metrics` and the gate's verdict** (`qualityGate`,
   `null` when it passes), so a consumer deciding promotion no longer opens files in the experiment
   directory.

@@ -436,6 +436,28 @@ says why it left a model in staging. `mloop list
 --json` carries each experiment's `metrics` and the gate's verdict as `qualityGate` (`null` when it
 passes). `POST /promote` applies the same gate and answers 422; send `"force": true` to override.
 
+### `mloop rollback`
+
+Returns production to the experiment it held before the current one, from the promotion history.
+The current production is backed up first, and the rollback is recorded in the history, so a second
+rollback undoes the first.
+
+```bash
+mloop rollback                     # back to what the current production replaced
+mloop rollback --to exp-001        # back to a named experiment that has been production before
+mloop rollback --json              # machine-readable result
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--name` | `-n` | Model name (default: `default`) |
+| `--to` | | Experiment to return to; it must have been in production before |
+| `--json` | | Output the result as JSON |
+
+Only a former production experiment qualifies — promoting one that never served is a new decision,
+which is `mloop promote`'s, quality gate included. `POST /rollback` (admin) does the same and answers
+409 when there is nothing to return to.
+
 ### `mloop status`
 
 Everything the project currently holds, on one screen: the configuration each model was defined

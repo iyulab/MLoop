@@ -68,6 +68,18 @@ public sealed class FilePromotionManager : IPromotionManager
         return backupPath;
     }
 
+    public async Task<IReadOnlyList<PromotionRecord>> GetHistoryAsync(
+        string modelName,
+        CancellationToken cancellationToken = default)
+    {
+        var historyPath = GetHistoryPath(modelName);
+        if (!File.Exists(historyPath))
+            return [];
+
+        var json = await File.ReadAllTextAsync(historyPath, cancellationToken).ConfigureAwait(false);
+        return JsonSerializer.Deserialize<List<PromotionRecord>>(json, JsonOptions) ?? [];
+    }
+
     private async Task RecordHistoryAsync(
         string modelName,
         string experimentId,

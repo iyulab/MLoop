@@ -53,4 +53,35 @@ public class PromoteQualityGateApiTests : IClassFixture<TestWebApplicationFactor
         var forced = await _client.PostAsJsonAsync("/promote", new { experimentId = "exp-001", name = "gate", force = true });
         forced.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [Fact]
+    public async Task RollbackEndpoint_ReturnsProductionToWhatItReplaced()
+    {
+        var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();
+        foreach (var id in new[] { "exp-001", "exp-002" })
+        {
+            var path = store.GetExperimentPath("rb", id);
+            Directory.CreateDirectory(path);
+            await File.WriteAllTextAsync(Path.Combine(path, "model.zip"), "model");
+            await store.SaveAsync("rb", new MLoop.CLI.Infrastructure.FileSystem.ExperimentData
+            {
+                ModelName = "rb", ExperimentId = id, Timestamp = DateTime.UtcNow, Status = "Completed",
+                Task = "binary-classification",
+                Config = new MLoop.CLI.Infrastructure.FileSystem.ExperimentConfig
+                {
+                    DataFile = "train.csv", LabelColumn = "y", Metric = "auc", TimeLimitSeconds = 60, TestSplit = 0.2,
+                },
+                Metrics = new Dictionary<string, double> { ["accuracy"] = 0.9, ["f1_score"] = 0.88, ["negative_recall"] = 0.9, ["auc"] = 0.95 },
+            }, CancellationToken.None);
+            (await _client.PostAsJsonAsync("/promote", new { experimentId = id, name = "rb" })).StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var response = await _client.PostAsJsonAsync("/rollback", new { name = "rb" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("\"experimentId\":\"exp-001\"");
+
+        var refused = await _client.PostAsJsonAsync("/rollback", new { name = "rb", to = "exp-009" });
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
 }

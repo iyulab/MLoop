@@ -1030,6 +1030,39 @@ app.MapPost("/promote", async (
 .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
 .RequireAuthorization("Admin");
 
+// Rollback (admin): production back to the experiment it held before — same target rule as `mloop rollback`
+app.MapPost("/rollback", async (
+    [FromBody] RollbackRequest request,
+    IModelRegistry registry,
+    IExperimentStore experimentStore,
+    IPromotionManager promotionManager,
+    ILogger<Program> logger,
+    CancellationToken ct) =>
+{
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
+    var current = (await registry.GetProductionAsync(modelName, ct))?.ExperimentId;
+    var history = await promotionManager.GetHistoryAsync(modelName, ct);
+    var (target, error) = MLoop.Ops.Interfaces.RollbackTarget.Resolve(history, current, request.To?.Trim());
+    if (target is null)
+        return Results.Json(new { error }, statusCode: StatusCodes.Status409Conflict);
+
+    if (!experimentStore.ExperimentExists(modelName, target))
+        return Results.Json(new { error = $"'{target}' is no longer in staging, so it cannot be restored from there." },
+            statusCode: StatusCodes.Status409Conflict);
+
+    var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
+    await registry.PromoteAsync(modelName, target, ct);
+    await promotionManager.RecordPromotionAsync(modelName, target, current, "api-rollback", cancellationToken: ct);
+    logger.LogInformation("Rolled back '{ModelName}' from {Previous} to {Target}", modelName, current, target);
+
+    return Results.Ok(new { modelName, experimentId = target, previousExperimentId = current, backupPath });
+})
+.WithName("RollbackProduction")
+.WithTags("Model")
+.Produces<object>(StatusCodes.Status200OK)
+.Produces<object>(StatusCodes.Status409Conflict)
+.RequireAuthorization("Admin");
+
 // Compare experiments endpoint (secured)
 app.MapGet("/compare", async (
     [FromQuery] string candidate,
@@ -1598,6 +1631,10 @@ public record PromoteRequest(
     string? Name = null,
     bool? CreateBackup = true,
     bool Force = false);
+
+public record RollbackRequest(
+    string? Name = null,
+    string? To = null);
 
 public record EvaluateRequest(
     string TestDataPath,
