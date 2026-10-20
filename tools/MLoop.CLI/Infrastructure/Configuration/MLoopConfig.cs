@@ -69,6 +69,13 @@ public class ModelDefinition
     public int? NumClusters { get; set; }
 
     /// <summary>
+    /// Column whose values weight the rows in training: the relative frequency each row should have
+    /// (for a row sampled with probability π, 1/π). Never used as a feature. Supported for
+    /// binary-classification, multiclass-classification and regression.
+    /// </summary>
+    public string? Weight { get; set; }
+
+    /// <summary>
     /// Group column name for ranking task.
     /// Groups rows into query contexts for learning-to-rank.
     /// </summary>

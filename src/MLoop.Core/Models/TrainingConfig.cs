@@ -81,7 +81,34 @@ public record TrainingConfig
     /// Column type overrides from mloop.yaml.
     /// Key: column name, Value: type string (text, categorical, numeric, ignore)
     /// </summary>
-    public Dictionary<string, string>? ColumnOverrides { get; init; }
+    /// <remarks>
+    /// Includes <see cref="WeightColumn"/> as <c>ignore</c>: a weight is not a feature, and every path
+    /// that keeps a column out of the features (the saved schema, AutoML's column information, the
+    /// claimed set) reads this one map. A weight that leaked into the features would let the model
+    /// learn the sampling — a 1/π weight correlates with the label wherever the sampling did.
+    /// </remarks>
+    public Dictionary<string, string>? ColumnOverrides
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(WeightColumn))
+                return _columnOverrides;
+            var merged = _columnOverrides is null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(_columnOverrides, StringComparer.OrdinalIgnoreCase);
+            merged[WeightColumn] = "ignore";
+            return merged;
+        }
+        init => _columnOverrides = value;
+    }
+
+    private readonly Dictionary<string, string>? _columnOverrides;
+
+    /// <summary>
+    /// The column whose values weight the rows — the relative frequency each row should have (for a
+    /// row sampled with probability π, 1/π). Null for unweighted training. Never a feature.
+    /// </summary>
+    public string? WeightColumn { get; init; }
 
     /// <summary>
     /// prep 통계 변환을 ML.NET AutoML에 fold-내 fit으로 위임하기 위한 pre-featurizer.

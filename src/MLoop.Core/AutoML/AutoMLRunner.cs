@@ -193,6 +193,8 @@ public partial class AutoMLRunner
         // (e.g. NormalizeMinMax("age","age")) throws "Could not find input column 'age'".
         if (config.PreFeaturizerColumns is { Count: > 0 })
             preserveColumns.AddRange(config.PreFeaturizerColumns);
+        // The weight is read by name to resample the rows; merged into the feature vector it is gone.
+        if (!string.IsNullOrEmpty(config.WeightColumn)) preserveColumns.Add(config.WeightColumn);
         var preserve = preserveColumns.Count > 0 ? preserveColumns : null;
 
         // Directory-based tasks (image classification) need a different loader than the
@@ -242,6 +244,11 @@ public partial class AutoMLRunner
             mergedColumnGroups = loader.GetMergedColumnGroups();
         }
 
+        // Weighted training: fitted and chosen on weighted resamples of two disjoint partitions.
+        IDataView? validationSet = null;
+        if (!string.IsNullOrEmpty(config.WeightColumn))
+            (trainSet, validationSet) = PrepareWeightedPartitions(trainSet, config);
+
         // Discover hooks (zero-overhead if .mloop/scripts/hooks/ doesn't exist)
         var hooks = await _scriptDiscovery.DiscoverHooksAsync().ConfigureAwait(false);
 
@@ -282,11 +289,11 @@ public partial class AutoMLRunner
         var result = config.Task.ToLowerInvariant() switch
         {
             "binary-classification" => await RunBinaryClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
+                trainSet, testSet, config, progress, cancellationToken, validationSet).ConfigureAwait(false),
             "multiclass-classification" => await RunMulticlassClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
+                trainSet, testSet, config, progress, cancellationToken, validationSet).ConfigureAwait(false),
             "regression" => await RunRegressionAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
+                trainSet, testSet, config, progress, cancellationToken, validationSet).ConfigureAwait(false),
             "anomaly-detection" => await RunAnomalyDetectionAsync(
                 trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "clustering" => await RunClusteringAsync(
@@ -504,12 +511,38 @@ public partial class AutoMLRunner
         return slotNames.DenseValues().Select(v => v.ToString()).ToArray();
     }
 
+    /// <summary>
+    /// Splits the training partition into the rows models are fitted on and the rows they are chosen
+    /// on, and resamples each by the weight column on its own — the same source row is never on both
+    /// sides. The test partition is left as it is. Refuses a task the weights would not reach.
+    /// </summary>
+    private (IDataView Train, IDataView Validation) PrepareWeightedPartitions(IDataView trainSet, TrainingConfig config)
+    {
+        if (!WeightedResampling.Supports(config.Task))
+            throw new NotSupportedException(
+                $"Weighted training (weight column '{config.WeightColumn}') applies to binary-classification, " +
+                $"multiclass-classification and regression; '{config.Task}' would ignore the weights. Remove the weight to train it.");
+
+        var split = _mlContext.Data.TrainTestSplit(trainSet, testFraction: WeightedValidationFraction, seed: WeightedSeed);
+        var train = WeightedResampling.Resample(_mlContext, split.TrainSet, config.WeightColumn!, WeightedSeed + 1);
+        var validation = WeightedResampling.Resample(_mlContext, split.TestSet, config.WeightColumn!, WeightedSeed + 2);
+        _logger.Info($"Weighted by '{config.WeightColumn}': models are fitted and chosen on weighted resamples " +
+                     $"({train.GetRowCount()} + {validation.GetRowCount()} rows).");
+        return (train, validation);
+    }
+
+    // The share of the training partition models are chosen on when the rows are weighted, and the
+    // seed of that split and its resamples. Fixed, so a weighted run is reproducible.
+    private const double WeightedValidationFraction = 0.2;
+    private const int WeightedSeed = 1683;
+
     private async Task<AutoMLResult> RunBinaryClassificationAsync(
         IDataView trainSet,
         IDataView testSet,
         TrainingConfig config,
         IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IDataView? validationSet = null)
     {
         var optimizingMetric = GetBinaryMetric(config);
         string? metricFallbackNote = null;
@@ -517,7 +550,7 @@ public partial class AutoMLRunner
         try
         {
             return await RunBinaryClassificationCoreAsync(
-                trainSet, testSet, config, optimizingMetric, progress, cancellationToken).ConfigureAwait(false);
+                trainSet, testSet, config, optimizingMetric, progress, cancellationToken, validationSet: validationSet).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsAucUndefinedException(ex))
         {
@@ -541,7 +574,7 @@ public partial class AutoMLRunner
             {
                 return await RunBinaryClassificationCoreAsync(
                     trainSet, testSet, config, BinaryClassificationMetric.F1Score, progress, cancellationToken,
-                    metricFallbackNote).ConfigureAwait(false);
+                    metricFallbackNote, validationSet).ConfigureAwait(false);
             }
             catch (Exception fallbackEx) when (IsAucUndefinedException(fallbackEx))
             {
@@ -560,7 +593,8 @@ public partial class AutoMLRunner
         BinaryClassificationMetric optimizingMetric,
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken,
-        string? metricFallbackNote = null)
+        string? metricFallbackNote = null,
+        IDataView? validationSet = null)
     {
         var settings = new BinaryExperimentSettings
         {
@@ -578,7 +612,11 @@ public partial class AutoMLRunner
         var trialReporter = CreateTrialReporter(progress, DescribeBinaryMetric(optimizingMetric));
 
         var experimentResult = await ExecuteExperimentAsync(
-            () => columnInfo != null
+            () => validationSet != null
+                ? experiment.Execute(trainSet, validationSet,
+                    columnInfo ?? new ColumnInformation { LabelColumnName = config.LabelColumn },
+                    config.PreFeaturizer, trialReporter)
+                : columnInfo != null
                 ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer, trialReporter)
                 : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
                     preFeaturizer: config.PreFeaturizer, progressHandler: trialReporter),
@@ -1140,7 +1178,8 @@ public partial class AutoMLRunner
         IDataView testSet,
         TrainingConfig config,
         IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IDataView? validationSet = null)
     {
         var optimizingMetric = GetMulticlassMetric(config);
         var settings = new MulticlassExperimentSettings
@@ -1158,7 +1197,11 @@ public partial class AutoMLRunner
         var trialReporter = CreateTrialReporter(progress, DescribeMulticlassMetric(optimizingMetric));
 
         var experimentResult = await ExecuteExperimentAsync(
-            () => columnInfo != null
+            () => validationSet != null
+                ? experiment.Execute(trainSet, validationSet,
+                    columnInfo ?? new ColumnInformation { LabelColumnName = config.LabelColumn },
+                    config.PreFeaturizer, trialReporter)
+                : columnInfo != null
                 ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer, trialReporter)
                 : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
                     preFeaturizer: config.PreFeaturizer, progressHandler: trialReporter),
@@ -1216,7 +1259,8 @@ public partial class AutoMLRunner
         IDataView testSet,
         TrainingConfig config,
         IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IDataView? validationSet = null)
     {
         var optimizingMetric = GetRegressionMetric(config);
         var settings = new RegressionExperimentSettings
@@ -1234,7 +1278,11 @@ public partial class AutoMLRunner
         var trialReporter = CreateTrialReporter(progress, DescribeRegressionMetric(optimizingMetric));
 
         var experimentResult = await ExecuteExperimentAsync(
-            () => columnInfo != null
+            () => validationSet != null
+                ? experiment.Execute(trainSet, validationSet,
+                    columnInfo ?? new ColumnInformation { LabelColumnName = config.LabelColumn },
+                    config.PreFeaturizer, trialReporter)
+                : columnInfo != null
                 ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer, trialReporter)
                 : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
                     preFeaturizer: config.PreFeaturizer, progressHandler: trialReporter),
