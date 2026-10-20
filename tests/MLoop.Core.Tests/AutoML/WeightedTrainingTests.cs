@@ -183,14 +183,24 @@ public class WeightedResamplingTests
     }
 
     [Fact]
-    public void AllZeroWeights_MissingColumn_AndTextColumn_AreRefused()
+    public void AllZeroWeights_MissingColumn_AndNonNumericText_AreRefused()
     {
         var ml = new MLContext(seed: 1);
         var data = ml.Data.LoadFromEnumerable(new[] { new R { V = 1, W = 0, T = "x" } });
 
         Assert.Contains("is 0", Assert.Throws<InvalidOperationException>(() => WeightedResampling.ReadWeights(data, "W")).Message);
         Assert.Contains("not in the data", Assert.Throws<InvalidOperationException>(() => WeightedResampling.ReadWeights(data, "Q")).Message);
-        Assert.Contains("must be numeric", Assert.Throws<InvalidOperationException>(() => WeightedResampling.ReadWeights(data, "T")).Message);
+        // A text column whose values are not numbers: named with the row, like any missing weight.
+        Assert.Contains("row 1", Assert.Throws<InvalidOperationException>(() => WeightedResampling.ReadWeights(data, "T")).Message);
+    }
+
+    [Fact]
+    public void NumbersReadAsText_AreWeights()
+    {
+        var ml = new MLContext(seed: 1);
+        var data = ml.Data.LoadFromEnumerable(new[] { new R { T = "2.5" }, new R { T = "0" } });
+
+        Assert.Equal(new[] { 2.5, 0 }, WeightedResampling.ReadWeights(data, "T"));
     }
 
     [Fact]

@@ -135,6 +135,8 @@ mloop train <data-file> <label-column> [options]
 #   --balance [strategy]        Class balancing: 'auto' (to 10:1 when the ratio exceeds 10:1),
 #                               'none', or a target ratio such as '5'; bare --balance means 'auto'
 #   --group-column <column>     Query/group column for the ranking task
+#   --weight <column>           Column that weights the rows (binary, multiclass, regression);
+#                               never a feature. Same as `weight:` in mloop.yaml
 
 # Before and after training:
 #   --analyze-data              Analyze data quality and print preprocessing recommendations
@@ -156,7 +158,22 @@ mloop train --auto-merge --label Status --task binary-classification
 # Class imbalance handling (v0.5.0+)
 mloop train data.csv --label is_fraud --task binary-classification --balance auto
 mloop train data.csv --label defect --task binary-classification --balance 5  # Target 5:1 ratio
+
+# Weighted rows — e.g. labels from a recheck sample, each row weighted 1/π
+mloop train data.csv --label risk --task binary-classification --weight inv_pi
 ```
+
+**Weighted training** (`--weight <column>`, or `weight: <column>` under the model in `mloop.yaml`):
+each row counts by its weight — the relative frequency it should have, such as 1/π for a row drawn
+with probability π, or a lower weight for a less reliable label source. AutoML takes a weight
+column and does not pass it to the trainers it builds, so MLoop resamples instead: the training
+rows are split into the rows models are fitted on and the rows they are chosen on, each part is
+resampled in proportion to the weight on its own (the same row is never on both sides), and the test
+metrics are weighted too — every metric of the task, under its usual name, with `report.md` and the
+training output saying "Each test row counts by its *column*". The weight is never a feature. It
+applies to binary-classification, multiclass-classification and regression; on any other task, with
+`--balance`, on the label column itself, or on a column also declared a feature, training refuses it
+instead of ignoring it. Weights must be zero or positive numbers, and not all zero.
 
 **Automatic Features**:
 - **Data File Formats**: besides CSV, `train`, `predict`, `evaluate`, `info`, `analyze` and `detect`
@@ -755,7 +772,16 @@ mloop evaluate exp-003 datasets/test.csv
 
 # The same metrics for each value of a column of the test data
 mloop evaluate exp-003 datasets/test.csv --slice-by site
+
+# Rows weighted by a column of the test file (e.g. 1/π of a recheck sample)
+mloop evaluate exp-003 datasets/rechecked.csv --weight inv_pi
 ```
+
+`--weight <column>` counts each test row by that column, scored as weighted training scores its own
+test rows. An experiment trained with a weight uses that column by default when the test file has
+it; when the file does not, the test metrics are unweighted and `evaluate` says that the training and
+test columns then describe different distributions. `--json` carries `weightColumn` (`null` when
+unweighted); `--slice-by` slices are weighted the same way.
 
 `--slice-by <column>` adds one row per value of that column (any column of the test file — it does not
 have to be a feature). Each slice is evaluated as a test file of its own, so its numbers mean what the

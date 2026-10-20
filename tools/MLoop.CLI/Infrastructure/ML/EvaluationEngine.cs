@@ -33,8 +33,13 @@ public class EvaluationEngine
         InputSchemaInfo? trainedSchema = null,
         string? groupColumn = null,
         string? userColumn = null,
-        string? itemColumn = null)
+        string? itemColumn = null,
+        string? weightColumn = null)
     {
+        if (!string.IsNullOrEmpty(weightColumn) && !WeightedResampling.Supports(taskType))
+            throw new NotSupportedException(
+                $"Weighted evaluation (weight '{weightColumn}') applies to binary-classification, multiclass-classification and regression, not '{taskType}'.");
+
         return await Task.Run(() =>
         {
             List<string> tempFiles = new();
@@ -67,13 +72,14 @@ public class EvaluationEngine
                 // individually (MapValueToKey), so they must stay addressable at evaluate time — the
                 // same preservation the train and predict paths apply. Without it InferColumns
                 // merges them into the Features range and model.Transform crashes outright.
-                var preserveColumns = new[] { groupColumn, userColumn, itemColumn }
+                var preserveColumns = new[] { groupColumn, userColumn, itemColumn, weightColumn }
                     .Where(c => !string.IsNullOrWhiteSpace(c))
                     .Select(c => c!)
                     .ToList();
 
                 // Load test data (no label renaming - model pipeline transforms label column)
-                var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, preserveColumns, out tempFiles);
+                var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, preserveColumns, out tempFiles,
+                    keepColumns: string.IsNullOrEmpty(weightColumn) ? null : [weightColumn]);
 
                 // Make predictions on test data
                 // Model pipeline transforms the label column (e.g. MapValueToKey for classification)
@@ -98,7 +104,18 @@ public class EvaluationEngine
                 // After model.Transform, classification labels are in Key type (via MapValueToKey)
                 Dictionary<string, double> metrics;
 
-                if (taskType.Equals("regression", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(weightColumn))
+                {
+                    // The same weighted scoring training applies to its test partition.
+                    metrics = (taskType.ToLowerInvariant() switch
+                    {
+                        "binary-classification" => WeightedMetrics.Binary(predictions, labelColumn, weightColumn),
+                        "multiclass-classification" => WeightedMetrics.Multiclass(predictions, labelColumn, weightColumn),
+                        _ => WeightedMetrics.Regression(predictions, labelColumn, weightColumn),
+                    }) ?? throw new InvalidOperationException(
+                        $"The predictions could not be scored by weight '{weightColumn}' — the columns the {taskType} metrics need are missing.");
+                }
+                else if (taskType.Equals("regression", StringComparison.OrdinalIgnoreCase))
                 {
                     metrics = EvaluateRegression(predictions, labelColumn);
                 }
@@ -181,14 +198,15 @@ public class EvaluationEngine
         }, cancellationToken);
     }
 
-    private IDataView LoadTestData(string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema, IReadOnlyList<string>? preserveColumns, out List<string> tempFiles)
+    private IDataView LoadTestData(string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema, IReadOnlyList<string>? preserveColumns, out List<string> tempFiles,
+        IReadOnlyCollection<string>? keepColumns = null)
     {
         // Apply the single shared inference preprocessing sequence (encoding → flatten → index →
         // schema-based exclude / data-dependent fallback). This is the same path predict uses, which
         // is what makes the test feature vector reproduce the model's training-time width. Converging
         // here fixed CP949 encoding and index/excluded columns left in place, and closed the
         // flatten/constant gaps that the previous per-engine reimplementation hid.
-        string loadPath = InferenceDataPreprocessor.Prepare(testDataPath, labelColumn, trainedSchema, out tempFiles);
+        string loadPath = InferenceDataPreprocessor.Prepare(testDataPath, labelColumn, trainedSchema, out tempFiles, keepColumns: keepColumns);
 
         // Infer column types from the data
         var columnInference = _mlContext.Auto().InferColumns(

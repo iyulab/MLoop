@@ -40,6 +40,10 @@ public static class WeightedResampling
                 NumberDataViewType t when t.RawType == typeof(double) => Wrap<double>(cursor, column, v => v),
                 NumberDataViewType t when t.RawType == typeof(int) => Wrap<int>(cursor, column, v => v),
                 NumberDataViewType t when t.RawType == typeof(long) => Wrap<long>(cursor, column, v => v),
+                // A loader that does not treat the column as a feature may read it as text; the numbers are still numbers.
+                TextDataViewType => Wrap<ReadOnlyMemory<char>>(cursor, column, v =>
+                    double.TryParse(v.Span, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d)
+                        ? d : double.NaN),
                 _ => throw new InvalidOperationException(
                     $"Weight column '{weightColumn}' must be numeric; it was read as {column.Type}."),
             };

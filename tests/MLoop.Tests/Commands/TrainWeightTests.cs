@@ -76,6 +76,21 @@ public sealed class TrainWeightTests : IDisposable
         var experiment = await store.LoadAsync("default", "exp-001", CancellationToken.None);
         var w = experiment.Config!.InputSchema!.Columns.Single(c => c.Name == "w");
         Assert.Equal("Exclude", w.Purpose);
+        Assert.Equal("w", experiment.Config.WeightColumn);
+
+        // evaluate counts the rows by the experiment's weight when the file carries it…
+        var (evalExit, evalJson, _) = await CliRunner.RunAsync("evaluate", "exp-001", "datasets/train.csv", "--json");
+        Assert.True(evalExit == 0, evalJson);
+        Assert.Equal("w", System.Text.Json.JsonDocument.Parse(evalJson).RootElement.GetProperty("weightColumn").GetString());
+
+        // …and says so when it does not, rather than comparing a weighted training column with an unweighted test one.
+        var lines = (await File.ReadAllLinesAsync("datasets/train.csv")).Select(l => string.Join(',', l.Split(',').Where((_, i) => i != 2)));
+        await File.WriteAllLinesAsync("datasets/no-weight.csv", lines);
+        var (plainExit, plainJson, plainErr) = await CliRunner.RunAsync("evaluate", "exp-001", "datasets/no-weight.csv", "--json");
+        Assert.True(plainExit == 0, plainJson + plainErr);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null,
+            System.Text.Json.JsonDocument.Parse(plainJson).RootElement.GetProperty("weightColumn").ValueKind);
+        Assert.Contains("weighted by 'w'", plainErr);
     }
 
     [Fact]

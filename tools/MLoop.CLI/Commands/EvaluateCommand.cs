@@ -41,6 +41,10 @@ public static class EvaluateCommand
                           "Progress and narration go to stderr."
         };
 
+        var weightOption = new Option<string?>("--weight")
+        {
+            Description = "Column that weights the test rows (e.g. 1/π of a recheck sample). Defaults to the column the experiment was trained with, when the file has it"
+        };
         var sliceByOption = new Option<string?>("--slice-by")
         {
             Description = "Also report the metrics separately for each value of this column of the test data"
@@ -52,6 +56,7 @@ public static class EvaluateCommand
         command.Options.Add(nameOption);
         command.Options.Add(jsonOption);
         command.Options.Add(sliceByOption);
+        command.Options.Add(weightOption);
         var recordsOption = DataFileOptions.Records();
         command.Options.Add(recordsOption);
 
@@ -62,7 +67,7 @@ public static class EvaluateCommand
             var name = parseResult.GetValue(nameOption);
             var json = parseResult.GetValue(jsonOption);
             return ExecuteAsync(experimentId, testDataFile, name, json, parseResult.GetValue(recordsOption),
-                parseResult.GetValue(sliceByOption));
+                parseResult.GetValue(sliceByOption), parseResult.GetValue(weightOption));
         });
 
         return command;
@@ -88,10 +93,12 @@ public static class EvaluateCommand
         bool? possibleOverfitting,
         string? skipped = null,
         string? sliceBy = null,
-        IReadOnlyList<SliceResult>? slices = null)
+        IReadOnlyList<SliceResult>? slices = null,
+        string? weightColumn = null)
     {
         var payload = new
         {
+            WeightColumn = weightColumn,
             Model = model,
             Skipped = skipped,
             ExperimentId = experimentId,
@@ -117,7 +124,8 @@ public static class EvaluateCommand
         string? modelName,
         bool jsonOutput = false,
         string? records = null,
-        string? sliceBy = null)
+        string? sliceBy = null,
+        string? weight = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -335,6 +343,21 @@ public static class EvaluateCommand
                 AnsiConsole.WriteLine();
             }
 
+            // The weight the test rows count by: the one asked for, else the one the experiment was
+            // trained with when this file carries it. Training metrics recorded under a weight and test
+            // metrics without one describe different distributions; saying so is the least owed.
+            var weightColumn = string.IsNullOrWhiteSpace(weight) ? null : weight.Trim();
+            var trainedWeight = experimentData!.Config.WeightColumn;
+            if (weightColumn is null && !string.IsNullOrEmpty(trainedWeight))
+            {
+                if (HeaderHas(resolvedTestDataFile, trainedWeight))
+                    weightColumn = trainedWeight;
+                else
+                    WarningConsole.Warn(Markup.Escape(
+                        $"The training metrics are weighted by '{trainedWeight}' and this file has no such column, so the test " +
+                        "metrics are unweighted — the two columns below describe different distributions."));
+            }
+
             // Perform evaluation with progress indicator
             Dictionary<string, double>? testMetrics = null;
 
@@ -353,7 +376,8 @@ public static class EvaluateCommand
                         experimentData.Config.InputSchema,
                         experimentData.Config.GroupColumn,
                         experimentData.Config.UserColumn,
-                        experimentData.Config.ItemColumn);
+                        experimentData.Config.ItemColumn,
+                        weightColumn);
 
                     ctx.Status("[green]Evaluation complete![/]");
                 });
@@ -388,6 +412,8 @@ public static class EvaluateCommand
             }
 
             AnsiConsole.Write(table);
+            if (weightColumn is not null)
+                AnsiConsole.MarkupLineInterpolated($"[grey]Each test row counts by its {weightColumn}.[/]");
             AnsiConsole.WriteLine();
 
             var overfitting = DetectOverfitting(experimentData.Task ?? "", trainingMetrics, testMetrics!);
@@ -410,13 +436,13 @@ public static class EvaluateCommand
             IReadOnlyList<SliceResult>? slices = null;
             if (!string.IsNullOrWhiteSpace(sliceBy))
             {
-                slices = await EvaluateSlicesAsync(sliceBy.Trim(), resolvedTestDataFile, resolvedModelPath, experimentData);
+                slices = await EvaluateSlicesAsync(sliceBy.Trim(), resolvedTestDataFile, resolvedModelPath, experimentData, weightColumn);
                 ShowSlices(sliceBy.Trim(), slices, testMetrics!.Keys.ToList());
             }
 
             if (jsonOutput)
                 EmitJson(resolvedModelName, resolvedExperimentId, resolvedTestDataFile,
-                    trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices);
+                    trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices, weightColumn: weightColumn);
 
             return 0;
         }
@@ -424,6 +450,22 @@ public static class EvaluateCommand
         {
             ErrorSuggestions.DisplayError(ex, "evaluate");
             return 1;
+        }
+    }
+
+    // Whether the CSV header names the column (case-insensitive, as the loaders match names).
+    private static bool HeaderHas(string csvPath, string column)
+    {
+        try
+        {
+            using var reader = new StreamReader(csvPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var header = reader.ReadLine();
+            return header is not null && MLoop.Core.Prediction.CsvFieldParser.ParseFields(header)
+                .Any(f => string.Equals(f.Trim(), column, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (IOException)
+        {
+            return false;
         }
     }
 
@@ -439,7 +481,7 @@ public static class EvaluateCommand
     /// class only, for AUC) reports why instead of failing the command.
     /// </summary>
     private static async Task<IReadOnlyList<SliceResult>> EvaluateSlicesAsync(
-        string sliceBy, string testDataFile, string modelPath, ExperimentData experiment)
+        string sliceBy, string testDataFile, string modelPath, ExperimentData experiment, string? weightColumn)
     {
         var directory = Path.Combine(Path.GetTempPath(), "mloop-slices-" + Guid.NewGuid().ToString("N"));
         try
@@ -454,7 +496,8 @@ public static class EvaluateCommand
                     var metrics = await engine.EvaluateAsync(
                         modelPath, part.Path, experiment.Config.LabelColumn, experiment.Task,
                         CancellationToken.None, experiment.Config.InputSchema,
-                        experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn);
+                        experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn,
+                        weightColumn);
                     results.Add(new SliceResult(part.Value, part.Rows, metrics, null, part.Rows < SmallSliceRows));
                 }
                 catch (Exception ex)
