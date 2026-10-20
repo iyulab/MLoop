@@ -253,5 +253,12 @@ jobs:
     - name: Pack dotnet tool
       run: dotnet pack tools/MLoop.CLI/MLoop.CLI.csproj --configuration Release -o ./nupkg
 
+    # The in-process library ships at the CLI's version, so a host that calls the engine directly
+    # takes it as a PackageReference and receives its dependency floors through the nuspec.
+    - name: Pack in-process library
+      run: |
+        dotnet pack src/MLoop.Extensibility/MLoop.Extensibility.csproj --configuration Release -o ./nupkg
+        dotnet pack src/MLoop.Core/MLoop.Core.csproj --configuration Release -o ./nupkg
+
     - name: Push to NuGet.org
       run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

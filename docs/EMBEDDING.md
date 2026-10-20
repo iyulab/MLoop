@@ -7,10 +7,14 @@ training/prediction inside their own process, rather than shelling out to the `m
 If you only use the `mloop` CLI (`dotnet tool install -g mloop`), you do not need this guide —
 see [GUIDE.md](GUIDE.md).
 
-> **Distribution note.** MLoop's SDK packages (`MLoop.Core`, `MLoop.Extensibility`,
-> `MLoop.DataStore`, `MLoop.Ops`) are **not published to NuGet.org** by policy — the `mloop`
-> dotnet tool is MLoop's shipping unit. In-process consumers today reference the SDK by
-> git-submodule / `ProjectReference` or a private/local NuGet feed.
+> **Distribution note.** `MLoop.Core` and `MLoop.Extensibility` are published to NuGet.org at
+> the CLI's version from 0.35.0: `dotnet add package MLoop.Core`. Take the package rather than a
+> `ProjectReference` to the repository — a package carries its dependency floors in its nuspec,
+> while the central-package pins in this repository do not cross a `ProjectReference` into your
+> build. The versions `0.3.0`, `0.4.0` and `1.0.0` on NuGet.org predate the current library. A
+> minimum version (`0.35.0`) resolves to the lowest match and is safe; a floating version (`*`)
+> resolves to the highest and picks the old `1.0.0`. `MLoop.DataStore` and `MLoop.Ops` are not
+> published.
 
 ---
 

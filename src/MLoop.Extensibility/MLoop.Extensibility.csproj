@@ -6,7 +6,8 @@
     <Nullable>enable</Nullable>
     <LangVersion>13</LangVersion>
 
-    <!-- NuGet Package Metadata (retained for future use) -->
+    <!-- Published with the CLI at the same version (in-process library — umbrella policy 7′). -->
+    <IsPackable>true</IsPackable>
     <PackageId>MLoop.Extensibility</PackageId>
     <Authors>MLoop Contributors</Authors>
     <Description>Extensibility interfaces for MLoop - preprocessing scripts, hooks, and custom metrics</Description>

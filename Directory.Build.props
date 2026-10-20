@@ -18,7 +18,8 @@
 
     <Version>0.34.0</Version>
 
-    <!-- Only MLoop.CLI is packable (dotnet tool). All other projects are not published to NuGet. -->
+    <!-- Packable: MLoop.CLI (dotnet tool) and the in-process library MLoop.Core + MLoop.Extensibility,
+         all at this version. The rest is not published. -->
     <IsPackable>false</IsPackable>
 
     <!-- Build settings -->
