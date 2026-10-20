@@ -175,6 +175,12 @@ applies to binary-classification, multiclass-classification and regression; on a
 `--balance`, on the label column itself, or on a column also declared a feature, training refuses it
 instead of ignoring it. Weights must be zero or positive numbers, and not all zero.
 
+Metrics weighted by different columns — or one weighted and one not — share names, not a
+distribution. Training therefore does not promote a model over a production model measured another
+way (it says so and leaves production unchanged; promote explicitly once both are scored on one
+evaluation set with `mloop evaluate … --weight`), and `mloop compare` warns, adds a Weight row, and
+carries `weightsDiffer` and each experiment's `weightColumn` in `--json`.
+
 **Automatic Features**:
 - **Data File Formats**: besides CSV, `train`, `predict`, `evaluate`, `info`, `analyze` and `detect`
   take `.parquet`, `.xlsx`/`.xls`, `.json` (an array of objects) and `.tsv` files. A Parquet struct

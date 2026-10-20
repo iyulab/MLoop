@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   values — is refused before training. Binary, multiclass and regression.
 - **`mloop evaluate --weight <column>`** counts test rows by a column of the test file; a weighted
   experiment's column is the default when the file has it. `--json` carries `weightColumn`.
+- Automatic promotion (training, `POST /train`) does not compare metrics weighted one way with a
+  production model's measured another way — it leaves production unchanged and says why; an explicit
+  `mloop promote` still decides. `mloop compare` warns about such a comparison and carries
+  `weightsDiffer` and each experiment's `weightColumn` in `--json`.
 
 ### Fixed
 - **`POST /train` trains under the project's model definition.** The API built its training

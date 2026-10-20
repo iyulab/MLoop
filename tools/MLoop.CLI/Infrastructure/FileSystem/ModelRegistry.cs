@@ -228,6 +228,13 @@ public class ModelRegistry : IModelRegistry
             return true; // No production model yet (or it has no metrics), promote first model
         }
 
+        // Metrics weighted by different columns (or one weighted, one not) describe different
+        // distributions; "better" between them is not a judgement either. An explicit promote decides.
+        if (await IncomparableWithProductionAsync(resolvedName, experiment, currentProduction, cancellationToken) is not null)
+        {
+            return false;
+        }
+
         // No metric to judge by means no judgement was made: neither the quality gate above nor a
         // comparison can run. Replacing a production model on that basis is a decision nobody took
         // — it once let a model scoring below zero replace one at 0.73 because the metric name was
@@ -342,6 +349,36 @@ public class ModelRegistry : IModelRegistry
 
         return null;
 
+    }
+
+    /// <summary>
+    /// Why <paramref name="experiment"/>'s metrics cannot be compared with production's, or
+    /// <c>null</c> when they can: the two were measured with rows weighted by different columns, or
+    /// one weighted and the other not — the same metric names over different distributions.
+    /// </summary>
+    public async Task<string?> IncomparableWithProductionAsync(
+        string modelName, ExperimentData experiment, ModelInfo? production, CancellationToken cancellationToken = default)
+    {
+        if (production is null || production.ExperimentId == experiment.ExperimentId)
+            return null;
+
+        string? productionWeight;
+        try
+        {
+            productionWeight = (await _experimentStore.LoadAsync(modelName, production.ExperimentId, cancellationToken)).Config?.WeightColumn;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException or InvalidOperationException)
+        {
+            return null; // production's experiment is gone; its recorded metrics are all there is to compare
+        }
+
+        var weight = experiment.Config?.WeightColumn;
+        if (string.Equals(weight ?? "", productionWeight ?? "", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        static string Describe(string? w) => string.IsNullOrEmpty(w) ? "unweighted" : $"weighted by '{w}'";
+        return $"its metrics are {Describe(weight)} and production's ({production.ExperimentId}) are {Describe(productionWeight)} — " +
+               "the same names over different distributions";
     }
 
     /// <summary>

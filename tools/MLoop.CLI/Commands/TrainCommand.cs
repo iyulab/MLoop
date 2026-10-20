@@ -1161,12 +1161,14 @@ public static class TrainCommand
                 int? classCount = null;
                 double? majorityClassRatio = null;
                 string? gateRefusal = null;
+                string? incomparable = null;
                 if (!promoted)
                 {
                     try
                     {
                         var expData = await experimentStore.LoadAsync(resolvedModelName, result.ExperimentId, CancellationToken.None);
                         gateRefusal = ModelRegistry.QualityGateRefusal(expData, primaryMetric);
+                        incomparable = await modelRegistry.IncomparableWithProductionAsync(resolvedModelName, expData, production);
                         var labelSchema = expData.Config?.InputSchema?.Columns?
                             .FirstOrDefault(s => s.Name.Equals(trainingConfig.LabelColumn, StringComparison.OrdinalIgnoreCase));
                         if (labelSchema?.UniqueValueCount > 0)
@@ -1191,7 +1193,7 @@ public static class TrainCommand
                 // in its messages and looks it up in result.Metrics. An unresolved sentinel made
                 // every TryGetValue miss, so the staging *reason* silently vanished instead of
                 // being shown.
-                TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold, majorityClassRatio, gateRefusal);
+                TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold, majorityClassRatio, gateRefusal, incomparable);
 
                 // Promoted or not, a model that ranks but answers one class at its threshold is told so.
                 if (result.Metrics != null && MetricPolicy.SingleClassAtThreshold(result.Metrics) is { } gateWarning)

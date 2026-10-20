@@ -265,6 +265,10 @@ public static class CompareCommand
                 e => $"{e.Config.TimeLimitSeconds}s");
             AddComparisonRow(table, "Label Column", experimentsToCompare,
                 e => e.Config.LabelColumn ?? "-");
+            var weightsDiffer = WeightsDiffer(experimentsToCompare);
+            if (weightsDiffer)
+                AddComparisonRow(table, "Weight", experimentsToCompare,
+                    e => string.IsNullOrEmpty(e.Config.WeightColumn) ? "-" : Markup.Escape(e.Config.WeightColumn));
 
             // Add separator
             table.AddEmptyRow();
@@ -312,6 +316,10 @@ public static class CompareCommand
             }
 
             AnsiConsole.Write(table);
+            if (weightsDiffer)
+                WarningConsole.Warn("These experiments' metrics were not measured the same way — rows weighted by different columns, " +
+                                    "or some weighted and some not — so the best values above are not a ranking. Score them on one " +
+                                    "evaluation set: mloop evaluate <experiment> <file> --weight <column>.");
             AnsiConsole.WriteLine();
 
             // Summary
@@ -389,6 +397,14 @@ public static class CompareCommand
     /// from the human path in both cases.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// True when the experiments' metrics were not all measured the same way — rows weighted by
+    /// different columns, or some weighted and some not. Their metrics then share names, not a
+    /// distribution, and the best of them is not a ranking.
+    /// </summary>
+    internal static bool WeightsDiffer(IReadOnlyCollection<ExperimentData> experiments)
+        => experiments.Select(e => (e.Config.WeightColumn ?? "").ToLowerInvariant()).Distinct().Count() > 1;
+
     private static int EmitLocalComparisonJson(
         List<ExperimentData> experiments,
         IReadOnlyList<string> notFound,
@@ -450,6 +466,8 @@ public static class CompareCommand
 
         var payload = new
         {
+            // The ranking below compares metrics measured over different distributions when true.
+            weightsDiffer = WeightsDiffer(experiments),
             metric,
             direction,
             directionSource,
@@ -468,6 +486,7 @@ public static class CompareCommand
                     timeLimitSeconds = e.Config.TimeLimitSeconds,
                     autoTime = e.Config.AutoTime,
                     labelColumn = e.Config.LabelColumn,
+                    weightColumn = e.Config.WeightColumn,
                     bestTrainer = e.Result?.BestTrainer,
                     isProduction = productionByModel.TryGetValue(e.ModelName, out var prodExpId)
                         && prodExpId == e.ExperimentId,

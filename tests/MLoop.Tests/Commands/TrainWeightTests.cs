@@ -106,4 +106,41 @@ public sealed class TrainWeightTests : IDisposable
         Assert.Equal(1, exit);
         Assert.Contains("weighted training applies to", stderr);
     }
+
+    [Fact]
+    public async Task AWeightedModel_IsNotPromotedOverAnUnweightedOne_OnMetricsOfAnotherDistribution()
+    {
+        var (initExit, initOutput, _) = await CliRunner.RunAsync("init", "p", "--task", "binary-classification");
+        Assert.True(initExit == 0, initOutput);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
+        var csv = new StringBuilder("x,z,w,y\n");
+        var rng = new Random(9);
+        for (var i = 0; i < 200; i++)
+        {
+            var x = rng.NextDouble();
+            csv.Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{(x > 0.5 ? 3 : 1)},{(x + rng.NextDouble() * 0.4 > 0.7 ? "true" : "false")}\n");
+        }
+        await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
+        await File.WriteAllTextAsync("mloop.yaml",
+            "project: p\nmodels:\n  default:\n    task: binary-classification\n    label: y\n    columns:\n      w:\n        type: ignore\n");
+
+        var (first, firstOut, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        Assert.True(first == 0, firstOut);
+        var (second, secondOut, secondErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--weight", "w", "--time", "5");
+        Assert.True(second == 0, secondOut);
+
+        Assert.Contains("Not compared with production", secondOut + secondErr);
+        var fileSystem = new FileSystemManager();
+        var discovery = new ProjectDiscovery(fileSystem);
+        var registry = new ModelRegistry(fileSystem, discovery, new ExperimentStore(fileSystem, discovery));
+        Assert.Equal("exp-001", (await registry.GetProductionAsync("default"))!.ExperimentId);
+
+        var (cmpExit, cmpJson, _) = await CliRunner.RunAsync("compare", "exp-001", "exp-002", "--json");
+        Assert.True(cmpExit == 0, cmpJson);
+        using var doc = System.Text.Json.JsonDocument.Parse(cmpJson);
+        Assert.True(doc.RootElement.GetProperty("weightsDiffer").GetBoolean());
+        var byId = doc.RootElement.GetProperty("experiments").EnumerateArray().ToDictionary(e => e.GetProperty("id").GetString()!);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, byId["exp-001"].GetProperty("weightColumn").ValueKind);
+        Assert.Equal("w", byId["exp-002"].GetProperty("weightColumn").GetString());
+    }
 }

@@ -336,7 +336,8 @@ internal static class TrainPresenter
         ModelInfo? production,
         double? minThreshold,
         double? majorityClassRatio = null,
-        string? gateRefusal = null)
+        string? gateRefusal = null,
+        string? incomparable = null)
     {
         if (promoted)
         {
@@ -401,6 +402,14 @@ internal static class TrainPresenter
                 WarningConsole.Warn(
                     $"Not promoted: {Markup.Escape(gateRefusal)}. Saved to staging; `mloop promote {result.ExperimentId} --force` " +
                     "promotes it anyway.");
+            }
+            else if (incomparable is not null && production is not null)
+            {
+                // Weighted against unweighted (or two different weights): no "better" was decided.
+                WarningConsole.Warn(
+                    $"Not compared with production: {Markup.Escape(incomparable)}. Saved to staging and production is " +
+                    $"unchanged. Score both on one evaluation set (mloop evaluate <experiment> <file> --weight <column>) " +
+                    $"and promote the one you want: mloop promote {result.ExperimentId}");
             }
             else if (production is not null && (result.Metrics is null || !result.Metrics.ContainsKey(primaryMetric)))
             {
