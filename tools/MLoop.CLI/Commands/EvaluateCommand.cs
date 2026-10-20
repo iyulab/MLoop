@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
@@ -40,11 +41,17 @@ public static class EvaluateCommand
                           "Progress and narration go to stderr."
         };
 
+        var sliceByOption = new Option<string?>("--slice-by")
+        {
+            Description = "Also report the metrics separately for each value of this column of the test data"
+        };
+
         var command = new Command("evaluate", "Evaluate model performance on test data");
         command.Arguments.Add(experimentArg);
         command.Arguments.Add(testDataArg);
         command.Options.Add(nameOption);
         command.Options.Add(jsonOption);
+        command.Options.Add(sliceByOption);
         var recordsOption = DataFileOptions.Records();
         command.Options.Add(recordsOption);
 
@@ -54,7 +61,8 @@ public static class EvaluateCommand
             var testDataFile = parseResult.GetValue(testDataArg);
             var name = parseResult.GetValue(nameOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(experimentId, testDataFile, name, json, parseResult.GetValue(recordsOption));
+            return ExecuteAsync(experimentId, testDataFile, name, json, parseResult.GetValue(recordsOption),
+                parseResult.GetValue(sliceByOption));
         });
 
         return command;
@@ -78,7 +86,9 @@ public static class EvaluateCommand
         object? trainingMetrics,
         object? testMetrics,
         bool? possibleOverfitting,
-        string? skipped = null)
+        string? skipped = null,
+        string? sliceBy = null,
+        IReadOnlyList<SliceResult>? slices = null)
     {
         var payload = new
         {
@@ -88,7 +98,9 @@ public static class EvaluateCommand
             TestDataFile = testDataFile,
             TrainingMetrics = trainingMetrics,
             TestMetrics = testMetrics,
-            PossibleOverfitting = possibleOverfitting
+            PossibleOverfitting = possibleOverfitting,
+            SliceBy = sliceBy,
+            Slices = slices,
         };
 
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload,
@@ -104,7 +116,8 @@ public static class EvaluateCommand
         string? testDataFile,
         string? modelName,
         bool jsonOutput = false,
-        string? records = null)
+        string? records = null,
+        string? sliceBy = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -394,9 +407,16 @@ public static class EvaluateCommand
             AnsiConsole.MarkupLine("[green]>[/] Evaluation complete!");
             AnsiConsole.WriteLine();
 
+            IReadOnlyList<SliceResult>? slices = null;
+            if (!string.IsNullOrWhiteSpace(sliceBy))
+            {
+                slices = await EvaluateSlicesAsync(sliceBy.Trim(), resolvedTestDataFile, resolvedModelPath, experimentData);
+                ShowSlices(sliceBy.Trim(), slices, testMetrics!.Keys.ToList());
+            }
+
             if (jsonOutput)
                 EmitJson(resolvedModelName, resolvedExperimentId, resolvedTestDataFile,
-                    trainingMetrics, testMetrics, overfitting);
+                    trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices);
 
             return 0;
         }
@@ -405,6 +425,80 @@ public static class EvaluateCommand
             ErrorSuggestions.DisplayError(ex, "evaluate");
             return 1;
         }
+    }
+
+    /// <summary>One value of the slicing column: its rows, and its metrics or why there are none.</summary>
+    internal sealed record SliceResult(string Value, int Rows, Dictionary<string, double>? Metrics, string? Error, bool Small);
+
+    /// <summary>Below this many rows a slice's metrics are printed but marked: they move a lot from one sample to the next.</summary>
+    internal const int SmallSliceRows = 30;
+
+    /// <summary>
+    /// Each slice is evaluated as a test file of its own — the path the whole file took — so a
+    /// slice's numbers mean what the overall numbers mean. A slice the evaluator cannot score (one
+    /// class only, for AUC) reports why instead of failing the command.
+    /// </summary>
+    private static async Task<IReadOnlyList<SliceResult>> EvaluateSlicesAsync(
+        string sliceBy, string testDataFile, string modelPath, ExperimentData experiment)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "mloop-slices-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var parts = await MLoop.Core.Data.CsvPartition.ByColumnAsync(testDataFile, sliceBy, directory);
+            var engine = new EvaluationEngine();
+            var results = new List<SliceResult>();
+            foreach (var part in parts)
+            {
+                try
+                {
+                    var metrics = await engine.EvaluateAsync(
+                        modelPath, part.Path, experiment.Config.LabelColumn, experiment.Task,
+                        CancellationToken.None, experiment.Config.InputSchema,
+                        experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn);
+                    results.Add(new SliceResult(part.Value, part.Rows, metrics, null, part.Rows < SmallSliceRows));
+                }
+                catch (Exception ex)
+                {
+                    results.Add(new SliceResult(part.Value, part.Rows, null, ex.Message, part.Rows < SmallSliceRows));
+                }
+            }
+            return results;
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); } catch { /* temp files; the OS reclaims them */ }
+        }
+    }
+
+    private static void ShowSlices(string sliceBy, IReadOnlyList<SliceResult> slices, IReadOnlyList<string> metricNames)
+    {
+        var table = new Table().Border(TableBorder.Rounded);
+        table.AddColumn(Markup.Escape(sliceBy));
+        table.AddColumn(new TableColumn("Rows").RightAligned());
+        foreach (var name in metricNames)
+            table.AddColumn(new TableColumn(Markup.Escape(name)).RightAligned());
+
+        foreach (var slice in slices)
+        {
+            var cells = new List<string>
+            {
+                Markup.Escape(slice.Value),
+                slice.Small ? $"[yellow]{slice.Rows}*[/]" : slice.Rows.ToString(CultureInfo.InvariantCulture),
+            };
+            foreach (var name in metricNames)
+                cells.Add(slice.Metrics?.TryGetValue(name, out var v) == true && !double.IsNaN(v)
+                    ? v.ToString("F4", CultureInfo.InvariantCulture)
+                    : "[grey]-[/]");
+            table.AddRow(cells.ToArray());
+        }
+
+        AnsiConsole.Write(new Rule($"[green]By {Markup.Escape(sliceBy)}[/]").LeftJustified());
+        AnsiConsole.Write(table);
+        if (slices.Any(s => s.Small))
+            AnsiConsole.MarkupLine($"[grey]* fewer than {SmallSliceRows} rows — these metrics vary a lot between samples[/]");
+        foreach (var failed in slices.Where(s => s.Error != null))
+            AnsiConsole.MarkupLineInterpolated($"[grey]{failed.Value}: not scored — {failed.Error}[/]");
+        AnsiConsole.WriteLine();
     }
 
     internal static bool IsLowerBetterMetric(string metricName)

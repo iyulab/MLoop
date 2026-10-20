@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   single-class model's accuracy outranked every model that had learned.
 
 ### Added
+- **`mloop evaluate --slice-by <column>`** reports the metrics for each value of a column of the test
+  data, so a regression confined to one device or one log type is not averaged away. Each slice goes
+  through the same evaluation as the whole file; small slices are marked.
 - **Calibration error (`ece`) for classifiers.** Training and `mloop evaluate` report the expected
   calibration error of the probabilities (binary: the positive-class probability; multiclass: the top
   class's), over ten bins. Accuracy, AUC and F1 do not see calibration, so a confidence used as a skip
@@ -34,6 +37,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The `MLoop.Core` README now shows the API that exists (`AutoMLRunner`, `PredictionService`).
 
 ### Fixed
+- `mloop evaluate` on binary test data holding a single class reports accuracy, precision and recall
+  from the counts instead of failing: ML.NET computes AUC with everything else and throws when it is
+  undefined.
 - `mloop train` says why the gate left a model in staging when the reason is not its metric's floor
   (a single-class model with AUC 0.95 was saved to staging with no reason given), and a model sitting
   exactly on the floor gets the floor message the gate applied.

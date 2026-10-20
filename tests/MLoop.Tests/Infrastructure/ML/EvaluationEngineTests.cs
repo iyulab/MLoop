@@ -180,6 +180,22 @@ public class EvaluationEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task EvaluateAsync_BinaryTestDataWithOneClass_ReportsTheCountsInsteadOfThrowing()
+    {
+        // A slice of the data (one device, one log type) often holds one class. AUC is undefined
+        // there and ML.NET's evaluator throws with it; the rows the model got wrong are still countable.
+        var (modelPath, _) = TrainSimpleBinaryModel();
+        var onlyPositives = CreateBomCsv("positives.csv", BuildCsv("Feature1,Label", ["9.1,true", "8.2,true", "1.5,true"]));
+
+        var metrics = await _engine.EvaluateAsync(modelPath, onlyPositives, "Label", "binary-classification");
+
+        Assert.DoesNotContain("auc", metrics.Keys);
+        Assert.DoesNotContain("negative_recall", metrics.Keys); // no negatives: undefined, not 0
+        Assert.Equal(2.0 / 3, metrics["recall"], precision: 5);
+        Assert.Equal(2.0 / 3, metrics["accuracy"], precision: 5);
+    }
+
+    [Fact]
     public async Task EvaluateAsync_MulticlassClassification_ReturnsMetrics()
     {
         var (modelPath, testDataPath) = TrainSimpleMulticlassModel();

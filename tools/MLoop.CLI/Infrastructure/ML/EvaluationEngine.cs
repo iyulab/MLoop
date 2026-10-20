@@ -313,7 +313,19 @@ public class EvaluationEngine
 
     private Dictionary<string, double> EvaluateBinaryClassification(IDataView predictions, string labelColumn)
     {
-        var metrics = _mlContext.BinaryClassification.Evaluate(predictions, labelColumnName: labelColumn, scoreColumnName: "Score");
+        BinaryClassificationMetrics metrics;
+        try
+        {
+            metrics = _mlContext.BinaryClassification.Evaluate(predictions, labelColumnName: labelColumn, scoreColumnName: "Score");
+        }
+        catch (ArgumentOutOfRangeException) when (BinaryCounts.Metrics(predictions, labelColumn) is { } counts)
+        {
+            // One class only (AUC undefined, and ML.NET computes it with everything else): the
+            // counts still say how many rows the model got wrong, which is the question on a subset.
+            if (CalibrationError.Binary(predictions, labelColumn) is { } countsEce)
+                counts[CalibrationError.MetricName] = countsEce;
+            return counts;
+        }
 
         var result = new Dictionary<string, double>
         {

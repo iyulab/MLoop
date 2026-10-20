@@ -741,7 +741,17 @@ mloop evaluate exp-003 datasets/test.csv
 # R²: 0.9456
 # RMSE: 13.21
 # MAE: 9.87
+
+# The same metrics for each value of a column of the test data
+mloop evaluate exp-003 datasets/test.csv --slice-by site
 ```
+
+`--slice-by <column>` adds one row per value of that column (any column of the test file — it does not
+have to be a feature). Each slice is evaluated as a test file of its own, so its numbers mean what the
+overall ones mean; a slice under 30 rows is marked, because its metrics move a lot between samples.
+A slice holding one class still gets accuracy, precision and recall from its counts — AUC is not
+defined there and is shown as `-`. More than 50 values is refused. `--json` adds `sliceBy` and
+`slices` (`value`, `rows`, `metrics`, `error`, `small`).
 
 ### `mloop validate`
 
