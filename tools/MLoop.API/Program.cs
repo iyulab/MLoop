@@ -975,6 +975,7 @@ app.MapPost("/promote", async (
         {
             logger.LogWarning("Promoting '{ExperimentId}' despite the quality gate (force): {Refusal}", experimentId, refusal);
         }
+        var qualityWarning = MLoop.CLI.Infrastructure.FileSystem.ModelRegistry.QualityGateWarning(experiment);
 
         // Check current production for comparison
         var currentProduction = await registry.GetProductionAsync(modelName, ct);
@@ -1008,7 +1009,8 @@ app.MapPost("/promote", async (
             promotedAt = DateTime.UtcNow,
             task = experiment.Task,
             metrics = experiment.Metrics,
-            bestTrainer = experiment.Result?.BestTrainer
+            bestTrainer = experiment.Result?.BestTrainer,
+            qualityWarning
         });
     }
     catch (Exception ex)

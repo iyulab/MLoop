@@ -186,13 +186,32 @@ public class PerformanceDiagnosticsTests
         {
             ["accuracy"] = 0.95,
             ["f1_score"] = 0.0,
-            ["auc"] = 0.52
+            ["auc"] = 0.5
         };
 
         var result = _diagnostics.Analyze("binary-classification", metrics);
 
         Assert.Equal(PerformanceLevel.Poor, result.OverallAssessment);
-        Assert.Contains(result.Warnings, w => w.Contains("majority class"));
+        Assert.Contains(result.Warnings, w => w.Contains("only predicts the negative class"));
+    }
+
+    [Fact]
+    public void Analyze_BinaryOneClassButRanksWell_IsAThresholdWarningNotDegenerate()
+    {
+        // Same reading as the promotion gate: AUC above chance means the scores carry the ranking.
+        var metrics = new Dictionary<string, double>
+        {
+            ["accuracy"] = 0.969,
+            ["f1_score"] = 0.0,
+            ["negative_recall"] = 1.0,
+            ["auc"] = 0.968
+        };
+
+        var result = _diagnostics.Analyze("binary-classification", metrics);
+
+        Assert.Equal(PerformanceLevel.Excellent, result.OverallAssessment);
+        Assert.DoesNotContain("Degenerate", result.Summary);
+        Assert.Contains(result.Warnings, w => w.Contains("threshold"));
     }
 
     [Fact]

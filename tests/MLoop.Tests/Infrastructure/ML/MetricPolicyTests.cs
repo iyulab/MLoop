@@ -321,6 +321,48 @@ public class MetricPolicyTests
         Assert.False(MetricPolicy.IsClassificationDegenerateModel(metrics));
     }
 
+    [Theory]
+    [InlineData(0.5)]   // ranks like chance — the floor itself
+    [InlineData(0.42)]  // ranks worse than chance
+    public void IsClassificationDegenerateModel_OneClassAndNoRanking_ReturnsTrue(double auc)
+    {
+        var metrics = new Dictionary<string, double> { ["accuracy"] = 0.991, ["f1_score"] = 0, ["negative_recall"] = 1, ["auc"] = auc };
+
+        Assert.True(MetricPolicy.IsClassificationDegenerateModel(metrics));
+        Assert.Null(MetricPolicy.SingleClassAtThreshold(metrics));
+    }
+
+    [Fact]
+    public void OneClassAtThresholdButRanksWell_IsAWarningNotDegenerate()
+    {
+        var metrics = new Dictionary<string, double> { ["accuracy"] = 0.969, ["f1_score"] = 0, ["negative_recall"] = 1, ["auc"] = 0.968 };
+
+        Assert.False(MetricPolicy.IsClassificationDegenerateModel(metrics));
+        var warning = MetricPolicy.SingleClassAtThreshold(metrics)!;
+        Assert.Contains("auc 0.9680", warning);
+        Assert.Contains("answers negative", warning);
+    }
+
+    [Fact]
+    public void AlwaysPositiveButRanks_IsAWarningThatNamesThePositiveClass()
+    {
+        var metrics = new Dictionary<string, double> { ["accuracy"] = 0.7468, ["f1_score"] = 0.855, ["negative_recall"] = 0, ["auc"] = 0.772 };
+
+        Assert.False(MetricPolicy.IsClassificationDegenerateModel(metrics));
+        Assert.Contains("answers positive", MetricPolicy.SingleClassAtThreshold(metrics));
+    }
+
+    [Theory]
+    [InlineData(0.85, 0.78, 0.88, 0.9)]   // healthy
+    [InlineData(0.95, 0.0, 1.0, double.NaN)] // no auc recorded — degenerate, not a warning
+    public void SingleClassAtThreshold_OtherShapes_ReturnsNull(double acc, double f1, double negRecall, double auc)
+    {
+        var metrics = new Dictionary<string, double> { ["accuracy"] = acc, ["f1_score"] = f1, ["negative_recall"] = negRecall };
+        if (!double.IsNaN(auc)) metrics["auc"] = auc;
+
+        Assert.Null(MetricPolicy.SingleClassAtThreshold(metrics));
+    }
+
     #endregion
 
     #region GetMinimumMetricThreshold

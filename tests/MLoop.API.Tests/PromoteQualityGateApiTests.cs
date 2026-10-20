@@ -55,6 +55,32 @@ public class PromoteQualityGateApiTests : IClassFixture<TestWebApplicationFactor
     }
 
     [Fact]
+    public async Task PromoteEndpoint_PassesAModelThatRanksButSitsOnOneClass_WithAQualityWarning()
+    {
+        // Ranks well (AUC 0.968) but answers one class at its default threshold: not refused on a
+        // ranking metric, and the response says what its predicted labels are worth.
+        var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();
+        var path = store.GetExperimentPath("ranks", "exp-001");
+        Directory.CreateDirectory(path);
+        await File.WriteAllTextAsync(Path.Combine(path, "model.zip"), "model");
+        await store.SaveAsync("ranks", new MLoop.CLI.Infrastructure.FileSystem.ExperimentData
+        {
+            ModelName = "ranks", ExperimentId = "exp-001", Timestamp = DateTime.UtcNow, Status = "Completed",
+            Task = "binary-classification",
+            Config = new MLoop.CLI.Infrastructure.FileSystem.ExperimentConfig
+            {
+                DataFile = "train.csv", LabelColumn = "y", Metric = "auc", TimeLimitSeconds = 60, TestSplit = 0.2,
+            },
+            Metrics = new Dictionary<string, double> { ["accuracy"] = 0.969, ["f1_score"] = 0, ["negative_recall"] = 1, ["auc"] = 0.968 },
+        }, CancellationToken.None);
+
+        var response = await _client.PostAsJsonAsync("/promote", new { experimentId = "exp-001", name = "ranks" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("\"qualityWarning\":\"it ranks the classes (auc 0.9680)");
+    }
+
+    [Fact]
     public async Task RollbackEndpoint_ReturnsProductionToWhatItReplaced()
     {
         var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();

@@ -17,10 +17,20 @@ public sealed class PromoteQualityGateTests : IDisposable
     private readonly string _root;
     private readonly string _originalDirectory;
 
+    // Answers "negative" for every row and ranks no better than chance: it learned nothing.
     private static readonly Dictionary<string, double> SingleClassModel = new()
     {
         ["accuracy"] = 0.993, ["f1_score"] = 0, ["precision"] = 0, ["recall"] = 0,
-        ["negative_recall"] = 1, ["auc"] = 0.95,
+        ["negative_recall"] = 1, ["auc"] = 0.5,
+    };
+
+    // Also answers "negative" for every row at the default threshold, but ranks the classes well:
+    // its scores are usable, its predicted labels are not. Measured shape of a model served for a
+    // month by a consumer deciding by score.
+    private static readonly Dictionary<string, double> RanksButSitsOnOneClass = new()
+    {
+        ["accuracy"] = 0.969, ["f1_score"] = 0, ["precision"] = 0, ["recall"] = 0,
+        ["negative_recall"] = 1, ["auc"] = 0.968,
     };
 
     private static readonly Dictionary<string, double> LearnedModel = new()
@@ -110,6 +120,34 @@ public sealed class PromoteQualityGateTests : IDisposable
     }
 
     [Fact]
+    public async Task ExplicitPromote_AModelThatRanksButSitsOnOneClass_PassesWithAThresholdWarning()
+    {
+        await SaveExperimentAsync("exp-001", RanksButSitsOnOneClass, metric: "auc");
+
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync(["promote", "exp-001", "--json"]);
+
+        Assert.Equal(0, exitCode);
+        var warning = JsonDocument.Parse(stdout).RootElement.GetProperty("qualityWarning").GetString()!;
+        Assert.Contains("auc 0.9680", warning);
+        Assert.Contains("threshold", warning);
+        Assert.Contains("threshold", stderr);
+        Assert.Equal("exp-001", ProductionExperiment());
+    }
+
+    [Fact]
+    public async Task ExplicitPromote_AModelThatRanksButScoresZeroOnItsOwnMetric_IsStillRefused()
+    {
+        // Ranking does not excuse the metric the project asked to optimize: F1 0 is at its floor.
+        await SaveExperimentAsync("exp-001", RanksButSitsOnOneClass, metric: "f1_score");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["promote", "exp-001", "--json"]);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("f1_score", JsonDocument.Parse(stdout).RootElement.GetProperty("error").GetString());
+        Assert.Null(ProductionExperiment());
+    }
+
+    [Fact]
     public async Task PromoteBest_ChoosesAmongTheModelsTheGateAccepts()
     {
         // On accuracy the single-class model (0.993) outranks the one that learned (0.91).
@@ -152,6 +190,25 @@ public sealed class PromoteQualityGateTests : IDisposable
         Assert.Contains("f1_score", byId["exp-001"].GetProperty("qualityGate").GetString());
         Assert.Equal(0.88, byId["exp-002"].GetProperty("metrics").GetProperty("f1_score").GetDouble());
         Assert.Equal(JsonValueKind.Null, byId["exp-002"].GetProperty("qualityGate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, byId["exp-002"].GetProperty("qualityWarning").ValueKind);
+    }
+
+    [Fact]
+    public async Task ListJson_TellsTheModelThatLearnedNothingFromTheOneThatSitsOnItsThreshold()
+    {
+        await SaveExperimentAsync("exp-001", SingleClassModel, metric: "auc");
+        await SaveExperimentAsync("exp-002", RanksButSitsOnOneClass, metric: "auc");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["list", "--json"]);
+
+        Assert.Equal(0, exitCode);
+        var byId = JsonDocument.Parse(stdout).RootElement.GetProperty("experiments").EnumerateArray()
+            .ToDictionary(e => e.GetProperty("experimentId").GetString()!);
+
+        Assert.NotEqual(JsonValueKind.Null, byId["exp-001"].GetProperty("qualityGate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, byId["exp-001"].GetProperty("qualityWarning").ValueKind);
+        Assert.Equal(JsonValueKind.Null, byId["exp-002"].GetProperty("qualityGate").ValueKind);
+        Assert.Contains("auc 0.9680", byId["exp-002"].GetProperty("qualityWarning").GetString());
     }
 
     [Fact]

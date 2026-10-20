@@ -344,6 +344,15 @@ public class ModelRegistry : IModelRegistry
 
     }
 
+    /// <summary>
+    /// What the quality gate lets through but a reader of the model should still be told, or
+    /// <c>null</c>. Today one shape: a binary model that ranks above chance yet answers one class at
+    /// its default threshold (<see cref="MetricPolicy.SingleClassAtThreshold"/>). Every surface that
+    /// shows <see cref="QualityGateRefusal"/> shows this beside it.
+    /// </summary>
+    public static string? QualityGateWarning(ExperimentData experiment)
+        => experiment.Metrics is { Count: > 0 } metrics ? MetricPolicy.SingleClassAtThreshold(metrics) : null;
+
     /// <inheritdoc />
     public async Task<bool> AutoPromoteAsync(
         string modelName,

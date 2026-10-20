@@ -206,6 +206,13 @@ public static class PromoteCommand
                         $"[yellow]Warning:[/] promoting despite the quality gate (--force): {refusal}.");
             }
 
+            // Passes the gate, but its predicted labels are not what it is good for.
+            var gateWarning = ModelRegistry.QualityGateWarning(experiment);
+            if (gateWarning != null)
+            {
+                AnsiConsole.MarkupLineInterpolated($"[yellow]Warning:[/] {gateWarning}.");
+            }
+
             if (!jsonOutput)
                 ShowPromotionDetails(resolvedModelName, experiment, autoSelectionReason);
 
@@ -274,7 +281,7 @@ public static class PromoteCommand
             if (jsonOutput)
             {
                 OutputAsJson(resolvedModelName, experimentId, autoSelectionReason,
-                    currentProduction?.ExperimentId, backupPath);
+                    currentProduction?.ExperimentId, backupPath, gateWarning);
             }
             else
             {
@@ -416,7 +423,7 @@ public static class PromoteCommand
 
     private static void OutputAsJson(
         string modelName, string experimentId, string? autoSelectionReason,
-        string? previousProduction, string? backupPath)
+        string? previousProduction, string? backupPath, string? qualityWarning)
     {
         var options = new JsonSerializerOptions
         {
@@ -432,6 +439,7 @@ public static class PromoteCommand
             SelectedBy = autoSelectionReason ?? "explicit",
             PreviousProduction = previousProduction,
             BackupPath = backupPath,
+            QualityWarning = qualityWarning,
         }, options));
     }
 

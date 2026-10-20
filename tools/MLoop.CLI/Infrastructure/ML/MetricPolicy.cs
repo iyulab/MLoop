@@ -1,3 +1,4 @@
+using System.Globalization;
 using MLoop.Core.Evaluation;
 
 namespace MLoop.CLI.Infrastructure.ML;
@@ -113,7 +114,7 @@ public static class MetricPolicy
         return metricName.ToLowerInvariant() switch
         {
             "r_squared" or "r2" => 0.0,                // Must be better than mean prediction
-            "auc" or "area_under_roc_curve" => 0.5,     // Must be better than random
+            "auc" or "area_under_roc_curve" => BinaryDecisionShape.ChanceAuc, // Must be better than random
             // Must beat the better of the two trivial models: random guessing (1/N) and always
             // predicting the majority class. On imbalanced data the second is far stronger — a
             // measured 99.2%-majority label makes 1/N = 0.5 meaningless, and a 98.6%-accurate model
@@ -171,36 +172,33 @@ public static class MetricPolicy
             : value == double.MinValue;
 
     /// <summary>
-    /// Detects degenerate classification models that achieve high accuracy by only
-    /// predicting one class. Returns true if accuracy > 0.5 but F1 ≈ 0 (always-negative
-    /// degenerate), or, symmetrically, if the model never predicts the negative class at
-    /// all (always-positive degenerate). The F1 check alone only catches the first
-    /// case: F1 is computed against the *positive* class, so it is ≈0 when the model
-    /// always predicts negative, but stays high (F1 ≈ 2·prevalence/(1+prevalence)) when
-    /// the model always predicts positive — which is the common real-world convention for
-    /// binary QC/pass-fail data (majority "OK"/pass mapped to the positive label). That
-    /// combination (recall ≈ 1, negative_recall ≈ 0) is undetectable from accuracy/F1/AUC
-    /// alone and slipped past this gate in a live run (accuracy 0.747, F1
-    /// 0.855, AUC 0.772 — all "healthy" — while negative_recall was exactly 0, i.e. the
-    /// promoted model never once predicted the minority "NG" class).
+    /// Detects degenerate classification models: ones whose accuracy only reflects the class
+    /// balance because they learned nothing. Returns true when
+    /// <list type="bullet">
+    /// <item>a binary model answers one class at its decision threshold — accuracy &gt; 0.5 with
+    /// F1 ≈ 0 (always negative) or negative recall ≈ 0 (always positive) — <b>and</b> its ranking
+    /// does not rescue it: AUC is at or below 0.5, or no AUC was recorded; or</item>
+    /// <item>a multiclass model has macro accuracy above chance but macro F1 ≈ 0.</item>
+    /// </list>
+    /// <para>
+    /// F1 alone only sees the first binary shape (it is computed against the positive class, so an
+    /// always-positive model keeps a high F1); negative recall catches the second — a live run
+    /// promoted a model with accuracy 0.747, F1 0.855, AUC 0.772 that never once predicted the
+    /// minority class.
+    /// </para>
+    /// <para>
+    /// Answering one class at the threshold is not, by itself, "learned nothing". A model can rank
+    /// the classes well and still sit on one side of the default 0.5 cut — measured: accuracy 0.969,
+    /// F1 0, <b>AUC 0.968</b>, served for a month by a consumer that decides by score. Its predicted
+    /// labels are useless, its scores are not. The model that learned nothing had AUC 0.5. AUC is
+    /// threshold-free, so it is what tells the two apart: that shape is
+    /// <see cref="SingleClassAtThreshold"/> — a warning, not a refusal.
+    /// </para>
     /// </summary>
-    public static bool IsClassificationDegenerateModel(Dictionary<string, double> metrics)
+    public static bool IsClassificationDegenerateModel(IReadOnlyDictionary<string, double> metrics)
     {
-        // Check binary: accuracy > 0.5 but f1_score == 0 (always predicts negative)
-        if (metrics.TryGetValue("f1_score", out var f1) &&
-            metrics.TryGetValue("accuracy", out var acc))
-        {
-            if (acc > 0.5 && f1 < 0.001)
-                return true;
-        }
-
-        // Check binary: accuracy > 0.5 but negative_recall == 0 (always predicts positive)
-        if (metrics.TryGetValue("negative_recall", out var negRecall) &&
-            metrics.TryGetValue("accuracy", out var accForNegRecall))
-        {
-            if (accForNegRecall > 0.5 && negRecall < 0.001)
-                return true;
-        }
+        if (BinaryDecisionShape.AnswersOneClass(metrics) != null && !BinaryDecisionShape.RanksAboveChance(metrics))
+            return true;
 
         // Check multiclass: macro_accuracy > random but macro_f1 == 0
         if (metrics.TryGetValue("macro_f1", out var macroF1) &&
@@ -211,5 +209,20 @@ public static class MetricPolicy
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Why a binary model that ranks above chance is still not usable for its predicted labels —
+    /// it answers one class at its default decision threshold — or <c>null</c> when that is not
+    /// its shape. The other half of <see cref="IsClassificationDegenerateModel"/>: the gate lets
+    /// such a model through (its scores carry the ranking) and says this instead.
+    /// </summary>
+    public static string? SingleClassAtThreshold(IReadOnlyDictionary<string, double> metrics)
+    {
+        if (BinaryDecisionShape.AnswersOneClass(metrics) is not { } answers || !BinaryDecisionShape.RanksAboveChance(metrics))
+            return null;
+
+        return string.Create(CultureInfo.InvariantCulture,
+            $"it ranks the classes (auc {metrics["auc"]:F4}) but answers {answers} for every row at its default decision threshold, so its predicted labels carry no information while its scores do — decide by its probability with a threshold chosen for the class you need");
     }
 }

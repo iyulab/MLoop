@@ -239,12 +239,25 @@ public class PerformanceDiagnostics
         {
             result.SecondaryMetrics["F1"] = f1;
 
-            // Degenerate model detection: high accuracy but zero F1
-            if (f1 < 0.001 && result.SecondaryMetrics.TryGetValue("Accuracy", out var accVal) && accVal > 0.5)
+        }
+
+        // One class for every row. Whether that is "learned nothing" or "sits on its threshold" is the
+        // ranking's call — the same reading the promotion gate makes (BinaryDecisionShape).
+        if (BinaryDecisionShape.AnswersOneClass(metrics) is { } answers)
+        {
+            var accVal = metrics["accuracy"];
+            if (BinaryDecisionShape.RanksAboveChance(metrics))
+            {
+                result.Summary = $"Answers {answers} for every row at its default threshold: Accuracy = {accVal:F4}, AUC = {metrics["auc"]:F4}";
+                result.Warnings.Add($"⚠ Predicted labels are all {answers}, but the scores rank the classes — decide by probability with a threshold of your own");
+                result.Warnings.Add("High accuracy is misleading due to class imbalance");
+                result.Suggestions.Add("Choose a decision threshold for the class you need, or balance the dataset");
+            }
+            else
             {
                 result.OverallAssessment = PerformanceLevel.Poor;
-                result.Summary = $"Degenerate model: Accuracy = {accVal:F4} but F1 = 0";
-                result.Warnings.Add("⚠ Model only predicts the majority class (F1 = 0)");
+                result.Summary = $"Degenerate model: Accuracy = {accVal:F4} but it answers {answers} for every row";
+                result.Warnings.Add($"⚠ Model only predicts the {answers} class and ranks no better than chance");
                 result.Warnings.Add("High accuracy is misleading due to class imbalance");
                 result.Suggestions.Add("Check class distribution and consider balancing the dataset");
             }

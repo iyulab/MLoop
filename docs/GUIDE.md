@@ -432,12 +432,23 @@ mloop promote exp-002 --force      # Promote even though the quality gate refuse
 
 `promote` applies the quality gate training applies before it promotes. A model no better than a
 trivial baseline — at or below the floor for its metric (AUC 0.5, the accuracy of always answering
-the most common class, R² 0), or one that predicts a single class — is refused with the reason, and
-the command exits 1. `--force` promotes it anyway and prints the reason as a warning. `--best` picks
-the best experiment the gate accepts (with `--force`, the best of all of them), and `mloop train`
-says why it left a model in staging. `mloop list
---json` carries each experiment's `metrics` and the gate's verdict as `qualityGate` (`null` when it
-passes). `POST /promote` applies the same gate and answers 422; send `"force": true` to override.
+the most common class, R² 0), or a binary model that answers one class for every row and ranks no
+better than chance (AUC 0.5 or below, or no AUC) — is refused with the reason, and the command exits
+1. `--force` promotes it anyway and prints the reason as a warning. `--best` picks the best
+experiment the gate accepts (with `--force`, the best of all of them), and `mloop train` says why it
+left a model in staging.
+
+A binary model that **ranks the classes well but answers one class at its default decision
+threshold** is not refused: its predicted labels carry no information, but its scores do, and a
+consumer that decides by probability can use it. The gate passes it and says so as a warning —
+`train` and `promote` print it, `promote --json` and `POST /promote` return it as `qualityWarning`.
+This applies when the project's metric is a ranking one (`auc`, `auprc`): a model that answers one
+class sits on the floor of `accuracy` (the share of the most common class) and of `f1_score` (0), and
+is refused on that metric as before.
+
+`mloop list --json` carries each experiment's `metrics`, the gate's verdict as `qualityGate` (`null`
+when it passes) and `qualityWarning` (`null` unless the gate passed it with the warning above).
+`POST /promote` applies the same gate and answers 422; send `"force": true` to override.
 
 ### `mloop rollback`
 

@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The quality gate told a model that learned nothing from one that only sits on its decision
+  threshold.** A binary model that answers one class for every row was refused as "predicts only one
+  class" whatever its AUC — so a model that ranks the classes well but whose default 0.5 cut falls on
+  one side (accuracy 0.969, F1 0, AUC 0.968) got the same verdict as one that ranks like chance
+  (accuracy 0.991, F1 0, AUC 0.5). AUC does not depend on the threshold, so it now decides: at or
+  below 0.5 (or not recorded) the model is refused as before; above it the gate passes the model and
+  warns that its predicted labels carry no information while its scores do. `train` and `promote`
+  print the warning; `promote --json`, `POST /promote` and `list --json` return it as
+  `qualityWarning`. The floor of the project's own metric is unchanged — on `accuracy` or `f1_score`
+  such a model sits on the floor and is still refused, so the warning applies to projects that
+  optimize a ranking metric.
+  Training's performance diagnostics read the same rule (`BinaryDecisionShape` in `MLoop.Core`), so
+  they no longer call such a model "degenerate", and now also recognise a model that answers
+  *positive* for every row.
+
 ## [0.35.0] - 2026-10-20
 
 ### Changed

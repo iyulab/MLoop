@@ -1189,6 +1189,10 @@ public static class TrainCommand
                 // every TryGetValue miss, so the staging *reason* silently vanished instead of
                 // being shown.
                 TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold, majorityClassRatio, gateRefusal);
+
+                // Promoted or not, a model that ranks but answers one class at its threshold is told so.
+                if (result.Metrics != null && MetricPolicy.SingleClassAtThreshold(result.Metrics) is { } gateWarning)
+                    WarningConsole.Warn($"Quality: {gateWarning}.");
             }
 
             // T4.6: Unused data warning - only scan project's datasets/ directory.

@@ -409,6 +409,8 @@ public static class ListCommand
                     Metrics = detail?.Metrics,
                     // null when the gate passes; otherwise why `mloop promote` refuses it without --force.
                     QualityGate = detail is null ? null : ModelRegistry.QualityGateRefusal(detail, detail.Config?.Metric),
+                    // null unless the gate passes a model whose predicted labels are still not usable.
+                    QualityWarning = detail is null ? null : ModelRegistry.QualityGateWarning(detail),
                     IsProduction = productionByModel.TryGetValue(expModelName, out var prodId)
                                    && e.ExperimentId == prodId,
                 };
