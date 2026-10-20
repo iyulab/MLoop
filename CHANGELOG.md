@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-10-20
+
 ### Changed
 - **`mloop promote` applies the quality gate** training applies before it promotes. A model no better
   than a trivial baseline — at or below its metric's floor, or one that predicts a single class (on
@@ -14,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   production without a word. `POST /promote` applies the same gate (422, `"force": true` to override).
 - `mloop promote --best` picks the best experiment the quality gate accepts: on imbalanced data a
   single-class model's accuracy outranked every model that had learned.
+- FilePrepper 0.11.1, DataLens 0.19.1 (Mahalanobis outliers are judged against the distance's exact
+  law, so small samples flag more rows; a single-value column's standard deviation is absent rather
+  than NaN), `Microsoft.*` 10.0.13.
 
 ### Added
 - **`mloop evaluate --slice-by <column>`** reports the metrics for each value of a column of the test
@@ -37,6 +42,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The `MLoop.Core` README now shows the API that exists (`AutoMLRunner`, `PredictionService`).
 
 ### Fixed
+- `mloop predict` and `mloop evaluate` on a file where a categorical feature holds only yes/no values
+  failed with `Could not find input column '<name>'` when training saw that column with more values
+  (ML.NET's column inference merges yes/no columns into one boolean vector). The saved schema records
+  how many values the column had, and a column with more than two goes back to its own text column.
+  A slice from `--slice-by` is exactly such a subset, which is how the release walk found it.
 - `mloop evaluate` on binary test data holding a single class reports accuracy, precision and recall
   from the counts instead of failing: ML.NET computes AUC with everything else and throws when it is
   undefined.
@@ -50,11 +60,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `System.Security.Cryptography.Pkcs` and `System.Security.Cryptography.Xml` resolve at 10.0.13
   (GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7, GHSA-7hqp-7c5m-4vq6, GHSA-r955-8q5j-3h83). 0.34.0 brought
   10.0.10 in through FilePrepper; FilePrepper 0.11.1 takes them at 10.0.13.
-
-### Changed
-- FilePrepper 0.11.1, DataLens 0.19.1 (Mahalanobis outliers are judged against the distance's exact
-  law, so small samples flag more rows; a single-value column's standard deviation is absent rather
-  than NaN), `Microsoft.*` 10.0.13.
 
 ## [0.34.0] - 2026-10-01
 

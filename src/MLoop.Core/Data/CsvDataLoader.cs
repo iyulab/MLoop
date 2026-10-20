@@ -369,6 +369,12 @@ public class CsvDataLoader : DataProviderBase
         //     property of training, not of this file.
         RestoreTrainedFeatureRange(options, trainedSchema, labelColumn, csvPath);
 
+        // 1c. The same for the boolean group: InferColumns also merges every column that reads as
+        //     yes/no into one BooleanFeatures vector, so a categorical feature that happens to hold
+        //     only two such values in this file disappears into it — no column of its name, and a
+        //     vector one slot wider than training's.
+        ReleaseFromBooleanGroup(options, trainedSchema, labelColumn, csvPath);
+
         // 2. Enable RFC 4180 quoting so fields containing commas (bbox "[1, 2, 3]", attribute
         //    dicts) load as a single column rather than splitting the row.
         options.AllowQuoting = true;
@@ -468,6 +474,72 @@ public class CsvDataLoader : DataProviderBase
                 continue;
 
             options.Columns = [.. options.Columns, new TextLoader.Column(column.Name, kind, index)];
+        }
+    }
+
+    /// <summary>
+    /// Takes out of a merged boolean range every column that cannot have been boolean in training,
+    /// and gives it back its own column at the type the schema records.
+    /// </summary>
+    /// <remarks>
+    /// Measured: a churn model trained where <c>MultipleLines</c> held three values
+    /// (<c>No</c>, <c>Yes</c>, <c>No phone service</c>); predicting or evaluating on the twelve
+    /// two-year-contract rows, where it held only <c>No</c>/<c>Yes</c>, failed with
+    /// <c>Could not find input column 'MultipleLines'</c>. The saved schema knows the column had
+    /// three distinct values, and a column with more than two cannot have been in training's boolean
+    /// group — that is the whole test, so only that case is touched. A file that already agrees with
+    /// training, and a column training may well have read as boolean, are left as inference built them.
+    /// </remarks>
+    private static void ReleaseFromBooleanGroup(
+        TextLoader.Options options,
+        InputSchemaInfo? trainedSchema,
+        string? labelColumn,
+        string csvPath)
+    {
+        if (trainedSchema == null || options.Columns == null)
+            return;
+
+        var groups = options.Columns
+            .Where(c => c.Source is { Length: > 0 } && c.DataKind == DataKind.Boolean && SpansMoreThanOneSource(c))
+            .ToList();
+        if (groups.Count == 0)
+            return;
+
+        var headers = ReadCsvHeaders(csvPath);
+        if (headers.Length == 0)
+            return;
+
+        var neverBoolean = trainedSchema.Columns
+            .Where(c => c.UniqueValueCount > 2
+                     && SchemaDataTypes.ToDataKind(c.DataType, DataKind.String) != DataKind.Boolean
+                     && (labelColumn == null || !c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)))
+            .ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+        if (neverBoolean.Count == 0)
+            return;
+
+        foreach (var group in groups)
+        {
+            var indices = group.Source!
+                .SelectMany(r => Enumerable.Range(r.Min, (r.Max ?? r.Min) - r.Min + 1))
+                .ToList();
+            var released = indices
+                .Where(i => i < headers.Length && neverBoolean.ContainsKey(headers[i]))
+                .ToList();
+            if (released.Count == 0)
+                continue;
+
+            var kept = indices.Except(released).Order().ToArray();
+            if (kept.Length > 0)
+                group.Source = ToRanges(kept);
+            else
+                options.Columns = [.. options.Columns.Where(c => !ReferenceEquals(c, group))];
+
+            foreach (var index in released)
+            {
+                var trained = neverBoolean[headers[index]];
+                options.Columns = [.. options.Columns,
+                    new TextLoader.Column(trained.Name, SchemaDataTypes.ToDataKind(trained.DataType, DataKind.String), index)];
+            }
         }
     }
 
