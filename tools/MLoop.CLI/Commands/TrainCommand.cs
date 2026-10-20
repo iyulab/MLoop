@@ -115,6 +115,10 @@ public static class TrainCommand
             Description = "Class balancing strategy: 'auto' (balance to 10:1 if ratio > 10:1), 'none' (no balancing), or target ratio (e.g., '5' for 5:1). Use without value for 'auto'.",
             Arity = ArgumentArity.ZeroOrOne
         };
+        var weightOption = new Option<string?>("--weight")
+        {
+            Description = "Column that weights the rows (relative frequency, e.g. 1/π for sampled labels); never a feature. Binary, multiclass and regression"
+        };
         var groupColumnOption = new Option<string?>("--group-column")
         {
             Description = "Group column for ranking task (groups rows into query contexts)"
@@ -165,6 +169,7 @@ public static class TrainCommand
         command.Options.Add(autoTimeOption);
         command.Options.Add(balanceOption);
         command.Options.Add(groupColumnOption);
+        command.Options.Add(weightOption);
         command.Options.Add(maxRowsOption);
         command.Options.Add(samplingStrategyOption);
         command.Options.Add(samplingStrategyAliasOption);
@@ -201,7 +206,7 @@ public static class TrainCommand
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption));
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption));
         });
 
         return command;
@@ -229,7 +234,8 @@ public static class TrainCommand
         string? samplingStrategy = null,
         int? seed = null,
         bool json = false,
-        string? records = null)
+        string? records = null,
+        string? weight = null)
     {
         // --json reserves stdout for the event stream: every renderer and narrator in the training
         // path is silenced for the duration, and the real stdout is handed to the emitter. Disposed
@@ -312,6 +318,16 @@ public static class TrainCommand
             // Apply CLI --group-column override
             if (!string.IsNullOrEmpty(groupColumn))
                 effectiveDefinition.GroupColumn = groupColumn;
+
+            // Apply CLI --weight override, then refuse a weight the run could not honour — a weight
+            // that silently did nothing would train an unweighted model the user believes weighted.
+            if (!string.IsNullOrEmpty(weight))
+                effectiveDefinition.Weight = weight;
+            if (WeightConflict(effectiveDefinition, balance) is { } weightError)
+            {
+                ErrorConsole.Error(weightError);
+                return 1;
+            }
 
             // Validate required fields (defensive guard for nullable flow analysis).
             // AutoMLRunner.RequiresLabel is the single source — previously this inline set omitted
@@ -947,7 +963,8 @@ public static class TrainCommand
                 UserColumn = effectiveDefinition.UserColumn,
                 ItemColumn = effectiveDefinition.ItemColumn,
                 PreFeaturizer = preFeaturizer,
-                PreFeaturizerColumns = preFeaturizerColumns
+                PreFeaturizerColumns = preFeaturizerColumns,
+                WeightColumn = string.IsNullOrWhiteSpace(effectiveDefinition.Weight) ? null : effectiveDefinition.Weight.Trim()
             };
 
             // Initialize hook engine
@@ -1122,7 +1139,8 @@ public static class TrainCommand
             events?.Result(result, resolvedModelName);
 
             // Display results
-            TrainPresenter.DisplayResults(result, resolvedModelName, promotionFollows: !noPromote, records, effectiveDefinition.Task);
+            TrainPresenter.DisplayResults(result, resolvedModelName, promotionFollows: !noPromote, records, effectiveDefinition.Task,
+                trainingConfig.WeightColumn);
 
             // T4.4: Performance diagnostics
             var performanceDiagnostics = new PerformanceDiagnostics();
@@ -1389,5 +1407,25 @@ public static class TrainCommand
             ErrorConsole.Out.MarkupLine($"[red]{message}[/]");
             ErrorConsole.Out.WriteException(exception);
         }
+    }
+
+    /// <summary>
+    /// Why the weight column in <paramref name="definition"/> cannot be honoured, or <c>null</c>.
+    /// </summary>
+    internal static string? WeightConflict(ModelDefinition definition, string? balance)
+    {
+        var weight = definition.Weight?.Trim();
+        if (string.IsNullOrEmpty(weight))
+            return null;
+        if (!WeightedResampling.Supports(definition.Task))
+            return $"weight '{weight}': weighted training applies to binary-classification, multiclass-classification and regression, not '{definition.Task}'.";
+        if (string.Equals(weight, definition.Label, StringComparison.OrdinalIgnoreCase))
+            return $"weight '{weight}' is the label column; the weight must be a column of its own.";
+        if (definition.Columns?.FirstOrDefault(c => string.Equals(c.Key.Trim(), weight, StringComparison.OrdinalIgnoreCase)) is { Key: not null } declared
+            && !string.Equals(declared.Value.Type, "ignore", StringComparison.OrdinalIgnoreCase))
+            return $"weight '{weight}' is also declared as a {declared.Value.Type} column in mloop.yaml; a weight is never a feature.";
+        if (!string.IsNullOrEmpty(balance) && !string.Equals(balance, "none", StringComparison.OrdinalIgnoreCase))
+            return $"--balance and weight '{weight}' both change how often rows count; use one of them.";
+        return null;
     }
 }

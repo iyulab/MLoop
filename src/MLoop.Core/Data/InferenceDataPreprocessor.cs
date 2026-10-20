@@ -33,7 +33,8 @@ public static class InferenceDataPreprocessor
         string? labelColumn,
         InputSchemaInfo? trainedSchema,
         out List<string> tempFiles,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        IReadOnlyCollection<string>? keepColumns = null)
     {
         tempFiles = new List<string>();
         string current = inputPath;
@@ -60,8 +61,11 @@ public static class InferenceDataPreprocessor
         //    data-dependent removals training runs, so predict and evaluate stay identical.
         if (trainedSchema != null)
         {
+            // A column the caller reads itself (the weight an evaluation counts rows by) stays, though
+            // it is no feature: removing it is what keeps it out of the model, not out of the file.
             var excluded = trainedSchema.Columns
                 .Where(c => c.Purpose == "Exclude")
+                .Where(c => keepColumns is null || !keepColumns.Contains(c.Name, StringComparer.OrdinalIgnoreCase))
                 .Select(c => c.Name);
             current = Step(CsvDataLoader.RemoveExcludedColumns(current, excluded, log), current, tempFiles);
         }

@@ -173,7 +173,8 @@ internal static class TrainPresenter
     /// <param name="records">The <c>--records</c> path the training data was read with, if any.</param>
     /// <param name="taskType">The task trained, which decides what prediction data looks like.</param>
     public static void DisplayResults(
-        TrainingResult result, string modelName, bool promotionFollows = false, string? records = null, string? taskType = null)
+        TrainingResult result, string modelName, bool promotionFollows = false, string? records = null, string? taskType = null,
+        string? weightColumn = null)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[green]Training Complete![/]").LeftJustified());
@@ -204,6 +205,8 @@ internal static class TrainPresenter
         }
 
         AnsiConsole.Write(metricsTable);
+        if (!string.IsNullOrEmpty(weightColumn))
+            AnsiConsole.MarkupLineInterpolated($"[grey]Each test row counts by its {weightColumn}.[/]");
         AnsiConsole.WriteLine();
 
         ValueLine.Write("[grey]Model saved to:[/] ", WhereItLandedInTheProject(result.ModelPath));

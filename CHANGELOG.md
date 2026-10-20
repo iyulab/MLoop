@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Weighted training** — `mloop train --weight <column>` or `weight: <column>` in `mloop.yaml`: each
+  row counts by its weight (for a row sampled with probability π, 1/π). AutoML accepts a weight
+  column but does not pass it to the trainers it builds, so the training rows are split into fit and
+  selection rows, each resampled in proportion to the weight, and AutoML is given the selection rows
+  as its validation set. The test metrics are weighted too (binary accuracy, precision, recall, F1,
+  AUC, ECE; multiclass accuracy, log loss, F1, ECE; regression R², RMSE, MAE), the experiment records
+  the weight column, and the weight is never a feature. A weight the run could not honour — another
+  task, `--balance`, the label itself, a column declared a feature, missing / negative / all-zero
+  values — is refused before training. Binary, multiclass and regression.
+- **`mloop evaluate --weight <column>`** counts test rows by a column of the test file; a weighted
+  experiment's column is the default when the file has it. `--json` carries `weightColumn`.
+
 ### Fixed
 - **The quality gate told a model that learned nothing from one that only sits on its decision
   threshold.** A binary model that answers one class for every row was refused as "predicts only one

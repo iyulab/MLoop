@@ -94,6 +94,8 @@ internal static class ExperimentReport
             Row(sb, "User column", config.UserColumn);
         if (!string.IsNullOrEmpty(config.ItemColumn))
             Row(sb, "Item column", config.ItemColumn);
+        if (!string.IsNullOrEmpty(config.WeightColumn))
+            Row(sb, "Weight", config.WeightColumn);
         Row(sb, "Test split", Percent(config.TestSplit));
         var seconds = $"{config.TimeLimitSeconds.ToString(CultureInfo.InvariantCulture)} s";
         Row(sb, "Time limit", config.AutoTime == true ? $"auto — {seconds} granted" : seconds);
@@ -145,6 +147,11 @@ internal static class ExperimentReport
             return;
         }
 
+        if (!string.IsNullOrEmpty(experiment.Config?.WeightColumn))
+        {
+            sb.AppendLine($"Each test row counts by its `{experiment.Config.WeightColumn}`.");
+            sb.AppendLine();
+        }
         sb.AppendLine("| Metric | Value |");
         sb.AppendLine("|---|---|");
         foreach (var (name, value) in experiment.Metrics.OrderBy(m => m.Key, StringComparer.Ordinal))

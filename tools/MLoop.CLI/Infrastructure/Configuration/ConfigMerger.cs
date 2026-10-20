@@ -109,6 +109,7 @@ public class ConfigMerger
             Columns = baseDefinition?.Columns,
             NumClusters = baseDefinition?.NumClusters,
             GroupColumn = baseDefinition?.GroupColumn,
+            Weight = baseDefinition?.Weight,
             Horizon = baseDefinition?.Horizon,
             WindowSize = baseDefinition?.WindowSize,
             SeriesLength = baseDefinition?.SeriesLength,
