@@ -15,6 +15,9 @@
     <!-- SDCA pinned to one thread for model fixtures: see the file. Same linking reason. -->
     <Compile Include="$(MSBuildThisFileDirectory)DeterministicTrainers.cs" Link="DeterministicTrainers.cs"
              Condition="$(MSBuildProjectName.EndsWith('.Tests'))" />
+    <!-- A fact that needs the time-series native skips where it is absent: see the file. -->
+    <Compile Include="$(MSBuildThisFileDirectory)TimeSeriesNativeFact.cs" Link="TimeSeriesNativeFact.cs"
+             Condition="$(MSBuildProjectName.EndsWith('.Tests'))" />
   </ItemGroup>
 
 </Project>

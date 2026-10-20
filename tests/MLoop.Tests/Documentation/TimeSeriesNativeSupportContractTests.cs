@@ -36,6 +36,14 @@ public class TimeSeriesNativeSupportContractTests
     private static readonly Regex LocalAvailabilityFlag =
         new(@"Lazy<bool>\s+\w*(?:Mkl|Native|Fft)\w*\s*=", RegexOptions.Compiled);
 
+    /// <summary>
+    /// A test that returns early when the native is absent. It asks the authority, but its answer
+    /// becomes a pass for a test that ran nothing — <see cref="TimeSeriesNativeFactAttribute"/>
+    /// reports the same condition as a skip.
+    /// </summary>
+    private static readonly Regex PassesWithoutRunning =
+        new(@"if\s*\(\s*!\s*TimeSeriesNativeSupport\.IsAvailable\s*\)\s*return\s*;", RegexOptions.Compiled);
+
     private static bool ReDerivesNativeAvailability(string source) =>
         LocalNativeProbe.IsMatch(source) || LocalAvailabilityFlag.IsMatch(source);
 
@@ -62,6 +70,37 @@ public class TimeSeriesNativeSupportContractTests
             + nameof(TimeSeriesNativeSupport) + "." + nameof(TimeSeriesNativeSupport.IsAvailable)
             + ", so the platform condition is described once and the product describes it too:\n"
             + string.Join('\n', offenders));
+    }
+
+    [Fact]
+    public void NoTestPassesWhereTheTimeSeriesNativeIsAbsent()
+    {
+        var scanned = RepoSourceTree.SourceFiles(nameof(TimeSeriesNativeSupportContractTests)).ToList();
+
+        // The suites that need the native are in the scan, and they reach it through the attribute.
+        var forecasting = Assert.Single(scanned, f => Path.GetFileName(f) == "PredictForecastingTests.cs");
+        Assert.Contains("[TimeSeriesNativeFact]", File.ReadAllText(forecasting));
+
+        var offenders = scanned
+            .Where(f => PassesWithoutRunning.IsMatch(File.ReadAllText(f)))
+            .Select(RepoSourceTree.Relative)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "A test that needs the time-series native returns early where it is absent, which reports a pass "
+            + "for a test that ran nothing. Mark it [TimeSeriesNativeFact] so it is reported as skipped:\n"
+            + string.Join('\n', offenders));
+    }
+
+    [Fact]
+    public void TheEarlyReturnScanSeesItsShape()
+    {
+        Assert.Matches(PassesWithoutRunning, "if (!TimeSeriesNativeSupport.IsAvailable) return;");
+        Assert.Matches(PassesWithoutRunning, "if (!TimeSeriesNativeSupport.IsAvailable)\n            return; // natives absent");
+        // The attribute itself asks the same question to set a skip, and must not be reported.
+        Assert.DoesNotMatch(PassesWithoutRunning,
+            "if (!TimeSeriesNativeSupport.IsAvailable)\n            Skip = TimeSeriesNativeSupport.UnavailableMessage;");
     }
 
     [Fact]

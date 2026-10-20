@@ -87,12 +87,9 @@ public class PredictForecastingTests : IDisposable
         return (modelPath, trainCsvPath);
     }
 
-    [Fact]
+    [TimeSeriesNativeFact]
     public async Task ComputeForecastAsync_ProducesHorizonForecastWithOrderedBounds()
     {
-        if (!TimeSeriesNativeSupport.IsAvailable)
-            return; // MKL natives absent (e.g. linux CI); integration coverage runs where MKL exists.
-
         var (modelPath, _) = CreateForecastingFixture(horizon: 5);
 
         var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(new MLContext(), modelPath, experimentId: null);
@@ -111,12 +108,9 @@ public class PredictForecastingTests : IDisposable
         }
     }
 
-    [Fact]
+    [TimeSeriesNativeFact]
     public async Task ComputeForecastAsync_MissingTrainingData_ReturnsActionableError()
     {
-        if (!TimeSeriesNativeSupport.IsAvailable)
-            return; // MKL natives absent (e.g. linux CI); integration coverage runs where MKL exists.
-
         var (modelPath, trainCsvPath) = CreateForecastingFixture();
         File.Delete(trainCsvPath);
 
@@ -131,12 +125,9 @@ public class PredictForecastingTests : IDisposable
     // horizon is fixed at train time (variableHorizon is not enabled), so a mismatched override
     // must fail fast with an actionable message rather than silently ignoring the request or
     // truncating/padding the result — the same "no silent GIGO" discipline as the guards above.
-    [Fact]
+    [TimeSeriesNativeFact]
     public async Task ComputeForecastAsync_RequestedHorizonMatchesTrained_Succeeds()
     {
-        if (!TimeSeriesNativeSupport.IsAvailable)
-            return;
-
         var (modelPath, _) = CreateForecastingFixture(horizon: 5);
 
         var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(
@@ -147,12 +138,9 @@ public class PredictForecastingTests : IDisposable
         Assert.Equal(5, forecast!.ForecastedValues.Length);
     }
 
-    [Fact]
+    [TimeSeriesNativeFact]
     public async Task ComputeForecastAsync_RequestedHorizonMismatch_ReturnsActionableError()
     {
-        if (!TimeSeriesNativeSupport.IsAvailable)
-            return;
-
         var (modelPath, _) = CreateForecastingFixture(horizon: 5);
 
         var (forecast, error) = await ForecastReplayService.ComputeForecastAsync(

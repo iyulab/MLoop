@@ -839,12 +839,9 @@ public class PredictionServiceTests : IDisposable
         Assert.NotNull(result.Rows[0].AnomalyScore);
     }
 
-    [Fact]
+    [TimeSeriesNativeFact]
     public void Predict_TimeSeriesAnomaly_ExtractsAlertAndRawScore()
     {
-        if (!TimeSeriesNativeSupport.IsAvailable)
-            return; // MKL natives absent (e.g. linux CI); integration coverage runs where MKL exists.
-
         // Flat-ish series with one large spike — SrCnn (the campaign's winning detector) must alert on it.
         var series = new List<SimpleSeries>();
         for (int i = 0; i < 40; i++)

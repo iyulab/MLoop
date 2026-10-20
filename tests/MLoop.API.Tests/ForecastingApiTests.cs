@@ -90,11 +90,9 @@ public class ForecastingApiTests : IClassFixture<TestWebApplicationFactory>
         return modelName;
     }
 
-    [Fact]
+    [TimeSeriesNativeFact]
     public async Task Predict_Forecasting_EmptyBody_UsesTrainedHorizon()
     {
-        if (!TimeSeriesNativeSupport.IsAvailable) return;
-
         var modelName = SeedForecastingProductionModel(horizon: 5);
 
         // "horizon omitted" means an empty JSON object, not a bodyless POST — /predict always
@@ -111,11 +109,9 @@ public class ForecastingApiTests : IClassFixture<TestWebApplicationFactory>
         predictions[0].GetProperty("score").GetSingle().Should().NotBe(0f);
     }
 
-    [Fact]
+    [TimeSeriesNativeFact]
     public async Task Predict_Forecasting_MatchingHorizon_Succeeds()
     {
-        if (!TimeSeriesNativeSupport.IsAvailable) return;
-
         var modelName = SeedForecastingProductionModel(horizon: 5);
 
         var response = await _client.PostAsJsonAsync($"/predict?name={modelName}", new { horizon = 5 });
@@ -125,11 +121,9 @@ public class ForecastingApiTests : IClassFixture<TestWebApplicationFactory>
         body.GetProperty("count").GetInt32().Should().Be(5);
     }
 
-    [Fact]
+    [TimeSeriesNativeFact]
     public async Task Predict_Forecasting_MismatchedHorizon_ReturnsActionableBadRequest()
     {
-        if (!TimeSeriesNativeSupport.IsAvailable) return;
-
         var modelName = SeedForecastingProductionModel(horizon: 5);
 
         var response = await _client.PostAsJsonAsync($"/predict?name={modelName}", new { horizon = 99 });
