@@ -315,7 +315,7 @@ public class EvaluationEngine
     {
         var metrics = _mlContext.BinaryClassification.Evaluate(predictions, labelColumnName: labelColumn, scoreColumnName: "Score");
 
-        return new Dictionary<string, double>
+        var result = new Dictionary<string, double>
         {
             { "accuracy", metrics.Accuracy },
             { "auc", metrics.AreaUnderRocCurve },
@@ -323,18 +323,24 @@ public class EvaluationEngine
             { "precision", metrics.PositivePrecision },
             { "recall", metrics.PositiveRecall }
         };
+        if (CalibrationError.Binary(predictions, labelColumn) is { } ece)
+            result[CalibrationError.MetricName] = ece;
+        return result;
     }
 
     private Dictionary<string, double> EvaluateMulticlassClassification(IDataView predictions, string labelColumn)
     {
         var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: labelColumn, scoreColumnName: "Score");
 
-        return new Dictionary<string, double>
+        var result = new Dictionary<string, double>
         {
             { "macro_accuracy", metrics.MacroAccuracy },
             { "micro_accuracy", metrics.MicroAccuracy },
             { "log_loss", metrics.LogLoss }
         };
+        if (CalibrationError.Multiclass(predictions, labelColumn) is { } ece)
+            result[CalibrationError.MetricName] = ece;
+        return result;
     }
 
     private Dictionary<string, double> EvaluateRecommendation(IDataView predictions, string labelColumn)

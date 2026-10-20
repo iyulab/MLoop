@@ -618,6 +618,9 @@ public partial class AutoMLRunner
                 metricsDict["auc"] = metrics.AreaUnderRocCurve;
         }
 
+        if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
+            metricsDict[CalibrationError.MetricName] = binaryEce;
+
         // The note says the run optimized a different metric than asked (AUC → F1Score), which is a
         // fact about the run, not part of the trainer's name — it used to be appended to it.
         var trainer = new TrainerDescriptor
@@ -1014,6 +1017,9 @@ public partial class AutoMLRunner
                 metricsDict["auc"] = metrics.AreaUnderRocCurve;
         }
 
+        if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
+            metricsDict[CalibrationError.MetricName] = binaryEce;
+
         // One descriptor for both the trial and the result: they describe the same fit, and the
         // trial line used to say "SdcaLogisticRegression (fallback)" while the result said
         // "SdcaLogisticRegression [manual fallback: AutoML AUC failure]" — two renderings of it.
@@ -1168,6 +1174,9 @@ public partial class AutoMLRunner
             ["micro_accuracy"] = metrics.MicroAccuracy,
             ["log_loss"] = metrics.LogLoss
         };
+
+        if (CalibrationError.Multiclass(predictions, config.LabelColumn) is { } multiclassEce)
+            metricsDict[CalibrationError.MetricName] = multiclassEce;
 
         // Calculate Macro F1 from confusion matrix per-class precision/recall
         try

@@ -188,7 +188,10 @@ mloop train data.csv --label defect --task binary-classification --balance 5  # 
 - `model.zip` — the trained model
 - `metadata.json`, `metrics.json`, `config.json` — what was trained, how it scored, how it was configured.
   The config carries `dataFileHash`, the SHA-256 of the training file as you have it, so you can
-  check later which data an experiment actually saw
+  check later which data an experiment actually saw. Classification metrics include `ece`, the
+  expected calibration error of the model's probabilities (ten bins; 0 = a stated 0.8 is right 80% of
+  the time) — read it before using a confidence as a threshold. It is reported, never optimized, and
+  absent for a model without probabilities.
 - `trials.ndjson`, `leaderboard.json` — every trial the search completed, in completion order and ranked
 - `report.md` — the experiment as a page: result, metrics, ranked trials, and each column's role (with
   the reason for any exclusion). A rendering of the files above for reading and sharing; no command

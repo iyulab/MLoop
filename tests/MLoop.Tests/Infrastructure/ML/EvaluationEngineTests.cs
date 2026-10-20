@@ -175,7 +175,8 @@ public class EvaluationEngineTests : IDisposable
         Assert.Contains("f1_score", metrics.Keys);
         Assert.Contains("precision", metrics.Keys);
         Assert.Contains("recall", metrics.Keys);
-        Assert.Equal(5, metrics.Count);
+        Assert.Contains("ece", metrics.Keys); // the fixture's model outputs probabilities
+        Assert.Equal(6, metrics.Count);
     }
 
     [Fact]
@@ -188,7 +189,8 @@ public class EvaluationEngineTests : IDisposable
         Assert.Contains("macro_accuracy", metrics.Keys);
         Assert.Contains("micro_accuracy", metrics.Keys);
         Assert.Contains("log_loss", metrics.Keys);
-        Assert.Equal(3, metrics.Count);
+        Assert.Contains("ece", metrics.Keys);
+        Assert.Equal(4, metrics.Count);
     }
 
     [Fact]

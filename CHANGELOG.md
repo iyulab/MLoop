@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   single-class model's accuracy outranked every model that had learned.
 
 ### Added
+- **Calibration error (`ece`) for classifiers.** Training and `mloop evaluate` report the expected
+  calibration error of the probabilities (binary: the positive-class probability; multiclass: the top
+  class's), over ten bins. Accuracy, AUC and F1 do not see calibration, so a confidence used as a skip
+  threshold had nothing behind it. Reported only — not a metric to optimize.
 - **`mloop rollback`** returns production to the experiment it held before the current one, from the
   promotion history; `--to <exp>` names a former production experiment. The current production is
   backed up and the rollback recorded, so a second rollback undoes the first. An experiment that never

@@ -28,6 +28,7 @@ public static class MetricDirection
             || lower.Contains("rmse")
             || lower.Contains("loss")
             || lower.Contains("mape")
+            || lower == CalibrationError.MetricName
             || lower == "average_distance"
             || lower == "davies_bouldin_index";
     }
