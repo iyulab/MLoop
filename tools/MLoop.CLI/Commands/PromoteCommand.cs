@@ -146,7 +146,21 @@ public static class PromoteCommand
             if (experimentId == null)
             {
                 var candidates = (await experimentStore.ListAsync(resolvedModelName, CancellationToken.None)).ToList();
-                var (selected, reason, error) = SelectExperiment(candidates, resolvedModelName, best);
+
+                // --best chooses among the models the gate accepts; --force widens it to all of them.
+                Dictionary<string, string>? refusals = null;
+                if (best && !force)
+                {
+                    refusals = [];
+                    foreach (var candidate in candidates.Where(c => c.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var data = await experimentStore.LoadAsync(resolvedModelName, candidate.ExperimentId, CancellationToken.None);
+                        if (ModelRegistry.QualityGateRefusal(data, data.Config?.Metric) is { } why)
+                            refusals[candidate.ExperimentId] = why;
+                    }
+                }
+
+                var (selected, reason, error) = SelectExperiment(candidates, resolvedModelName, best, refusals);
                 if (selected == null)
                 {
                     WriteError(error!, jsonOutput);
@@ -285,8 +299,14 @@ public static class PromoteCommand
     /// Picks the newest (--latest) or best-metric (--best) completed experiment. Metric comparison
     /// is direction-aware via <see cref="MetricDirection"/> (rmse-style = lower wins).
     /// </summary>
+    /// <param name="gateRefusals">
+    /// For --best: experiments the quality gate refuses, with the reason. They are not candidates —
+    /// the best experiment is the best one that may go to production, not the highest number. An
+    /// accuracy of 0.993 from a model answering one class outranked every model that had learned.
+    /// </param>
     internal static (string? ExperimentId, string? Reason, string? Error) SelectExperiment(
-        IReadOnlyList<ExperimentSummary> candidates, string modelName, bool best)
+        IReadOnlyList<ExperimentSummary> candidates, string modelName, bool best,
+        IReadOnlyDictionary<string, string>? gateRefusals = null)
     {
         var experiments = candidates
             .Where(e => e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
@@ -307,6 +327,17 @@ public static class PromoteCommand
             return (null, null,
                 $"No completed experiment for model '{modelName}' has a recorded metric — cannot select --best. " +
                 "Use --latest or an explicit experiment ID.");
+
+        if (gateRefusals is { Count: > 0 })
+        {
+            var refused = scored.Where(e => gateRefusals.ContainsKey(e.ExperimentId)).ToList();
+            scored = [.. scored.Except(refused)];
+            if (scored.Count == 0)
+                return (null, null,
+                    $"No completed experiment for model '{modelName}' passes the quality gate — "
+                    + string.Join("; ", refused.Select(e => $"{e.ExperimentId}: {gateRefusals[e.ExperimentId]}"))
+                    + ". Promote one explicitly with --force to override.");
+        }
 
         // Comparing across different metric names is meaningless; require a single metric.
         var metricNames = scored.Select(e => e.MetricName!.ToLowerInvariant()).Distinct().ToList();

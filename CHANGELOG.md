@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   0.6% positives: accuracy 0.993, F1 0) — is refused with the reason and exit code 1; `--force`
   promotes it and prints the reason as a warning. Before, an explicit promote put such a model in
   production without a word. `POST /promote` applies the same gate (422, `"force": true` to override).
+- `mloop promote --best` picks the best experiment the quality gate accepts: on imbalanced data a
+  single-class model's accuracy outranked every model that had learned.
 
 ### Added
 - **`mloop list --json` carries each experiment's `metrics` and the gate's verdict** (`qualityGate`,
@@ -23,6 +25,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The `MLoop.Core` README now shows the API that exists (`AutoMLRunner`, `PredictionService`).
 
 ### Fixed
+- `mloop train` says why the gate left a model in staging when the reason is not its metric's floor
+  (a single-class model with AUC 0.95 was saved to staging with no reason given), and a model sitting
+  exactly on the floor gets the floor message the gate applied.
 - `experiment-index.json` names the metric its `bestMetric` holds. A configured spelling the metrics
   file does not use (`f1` for `f1_score`) recorded the accuracy under the name `f1`.
 

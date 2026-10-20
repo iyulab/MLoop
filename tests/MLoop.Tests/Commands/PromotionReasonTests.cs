@@ -47,6 +47,18 @@ public class PromotionReasonTests
         Assert.Contains("Better accuracy", output, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AModelTheGateRefusesOnGroundsBeyondItsMetricIsToldWhy()
+    {
+        // A model answering one class scores AUC 0.95: above its floor, so neither threshold message
+        // applied, and the staging line stood alone with no reason.
+        var output = Render(production: null, current: 0.95, promoted: false,
+            gateRefusal: "it predicts only one class (its accuracy reflects the class balance, not learning)");
+
+        Assert.Contains("Not promoted: it predicts only one class", output, StringComparison.Ordinal);
+        Assert.Contains("--force", output, StringComparison.Ordinal);
+    }
+
     private static ModelInfo Production(string experimentId, double? accuracy) => new()
     {
         ModelName = "default",
@@ -56,7 +68,7 @@ public class PromotionReasonTests
         Metrics = accuracy is null ? null : new Dictionary<string, double> { ["accuracy"] = accuracy.Value },
     };
 
-    private static string Render(ModelInfo? production, double current)
+    private static string Render(ModelInfo? production, double current, bool promoted = true, string? gateRefusal = null)
     {
         var originalAnsiConsole = AnsiConsole.Console;
         var buffer = new StringWriter();
@@ -68,7 +80,7 @@ public class PromotionReasonTests
             });
 
             TrainPresenter.DisplayPromotionResult(
-                promoted: true,
+                promoted: promoted,
                 primaryMetric: "accuracy",
                 result: new TrainingResult
                 {
@@ -79,7 +91,8 @@ public class PromotionReasonTests
                     ModelPath = Path.Combine(Path.GetTempPath(), "unused", "model.zip"),
                 },
                 production: production,
-                minThreshold: null);
+                minThreshold: null,
+                gateRefusal: gateRefusal);
 
             return buffer.ToString();
         }

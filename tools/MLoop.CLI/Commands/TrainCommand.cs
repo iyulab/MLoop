@@ -1157,11 +1157,13 @@ public static class TrainCommand
                 // Resolve class count for quality gate threshold
                 int? classCount = null;
                 double? majorityClassRatio = null;
+                string? gateRefusal = null;
                 if (!promoted)
                 {
                     try
                     {
                         var expData = await experimentStore.LoadAsync(resolvedModelName, result.ExperimentId, CancellationToken.None);
+                        gateRefusal = ModelRegistry.QualityGateRefusal(expData, primaryMetric);
                         var labelSchema = expData.Config?.InputSchema?.Columns?
                             .FirstOrDefault(s => s.Name.Equals(trainingConfig.LabelColumn, StringComparison.OrdinalIgnoreCase));
                         if (labelSchema?.UniqueValueCount > 0)
@@ -1186,7 +1188,7 @@ public static class TrainCommand
                 // in its messages and looks it up in result.Metrics. An unresolved sentinel made
                 // every TryGetValue miss, so the staging *reason* silently vanished instead of
                 // being shown.
-                TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold, majorityClassRatio);
+                TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold, majorityClassRatio, gateRefusal);
             }
 
             // T4.6: Unused data warning - only scan project's datasets/ directory.

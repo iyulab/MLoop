@@ -110,6 +110,33 @@ public sealed class PromoteQualityGateTests : IDisposable
     }
 
     [Fact]
+    public async Task PromoteBest_ChoosesAmongTheModelsTheGateAccepts()
+    {
+        // On accuracy the single-class model (0.993) outranks the one that learned (0.91).
+        await SaveExperimentAsync("exp-001", SingleClassModel, metric: "accuracy");
+        await SaveExperimentAsync("exp-002", LearnedModel, metric: "accuracy");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["promote", "--best", "--json"]);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("exp-002", JsonDocument.Parse(stdout).RootElement.GetProperty("experimentId").GetString());
+    }
+
+    [Fact]
+    public async Task PromoteBest_WhenNoModelPasses_RefusesWithEachReason()
+    {
+        await SaveExperimentAsync("exp-001", SingleClassModel, metric: "accuracy");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["promote", "--best", "--json"]);
+
+        Assert.Equal(1, exitCode);
+        var error = JsonDocument.Parse(stdout).RootElement.GetProperty("error").GetString()!;
+        Assert.Contains("exp-001:", error);
+        Assert.Contains("quality gate", error);
+        Assert.Null(ProductionExperiment());
+    }
+
+    [Fact]
     public async Task ListJson_CarriesEachExperimentsMetricsAndTheGatesVerdict()
     {
         await SaveExperimentAsync("exp-001", SingleClassModel);

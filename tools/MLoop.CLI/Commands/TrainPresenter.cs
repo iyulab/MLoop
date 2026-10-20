@@ -332,7 +332,8 @@ internal static class TrainPresenter
         TrainingResult result,
         ModelInfo? production,
         double? minThreshold,
-        double? majorityClassRatio = null)
+        double? majorityClassRatio = null,
+        string? gateRefusal = null)
     {
         if (promoted)
         {
@@ -364,9 +365,10 @@ internal static class TrainPresenter
         {
             AnsiConsole.MarkupLine("[yellow]Model saved to staging[/]");
 
+            // `<=`, as the gate applies it: a model sitting exactly on the floor is refused too.
             if (minThreshold.HasValue && result.Metrics != null &&
                 result.Metrics.TryGetValue(primaryMetric, out var metricValue) &&
-                metricValue < minThreshold.Value)
+                metricValue <= minThreshold.Value)
             {
                 // The quality gate blocking promotion is a warning-class fact: it goes through the
                 // warning seam so a --json consumer receives it as an event instead of losing it
@@ -388,6 +390,14 @@ internal static class TrainPresenter
                     $"Model r_squared ({r2:F4}) is at or below 0 — no better than answering every row with the mean of " +
                     $"the label — saved to staging, not promoted. {primaryMetric} has no floor of its own; R² is the baseline " +
                     "it is held to. Check data quality and whether the features carry the signal.");
+            }
+            else if (gateRefusal is not null)
+            {
+                // Refused for a reason the two messages above do not cover — a model that answers one
+                // class scores well on its own metric. Said here, or the staging line has no reason.
+                WarningConsole.Warn(
+                    $"Not promoted: {Markup.Escape(gateRefusal)}. Saved to staging; `mloop promote {result.ExperimentId} --force` " +
+                    "promotes it anyway.");
             }
             else if (production is not null && (result.Metrics is null || !result.Metrics.ContainsKey(primaryMetric)))
             {

@@ -430,7 +430,9 @@ mloop promote exp-002 --force      # Promote even though the quality gate refuse
 `promote` applies the quality gate training applies before it promotes. A model no better than a
 trivial baseline — at or below the floor for its metric (AUC 0.5, the accuracy of always answering
 the most common class, R² 0), or one that predicts a single class — is refused with the reason, and
-the command exits 1. `--force` promotes it anyway and prints the reason as a warning. `mloop list
+the command exits 1. `--force` promotes it anyway and prints the reason as a warning. `--best` picks
+the best experiment the gate accepts (with `--force`, the best of all of them), and `mloop train`
+says why it left a model in staging. `mloop list
 --json` carries each experiment's `metrics` and the gate's verdict as `qualityGate` (`null` when it
 passes). `POST /promote` applies the same gate and answers 422; send `"force": true` to override.
 
