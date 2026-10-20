@@ -1,5 +1,7 @@
+using System.Globalization;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
@@ -211,74 +213,12 @@ public class ModelRegistry : IModelRegistry
             return false; // Cannot promote without metrics
         }
 
-        // User-facing metric aliases (e.g. "f1") differ from the canonical keys the
-        // EvaluationEngine stores (e.g. "f1_score"). Resolve to the stored key so the
-        // quality gate and production comparison operate on the right value instead of
-        // silently failing the lookup (which blocked first-model auto-promotion).
-        // When the project metric is the deferred "auto" (init leaves image/OD tasks as auto),
-        // fall back to the task's canonical metric so the gate still engages instead of being
-        // silently skipped.
-        var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
-
-        // Extract the label's shape from the schema for the dynamic thresholds: how many classes
-        // there are, and how strong a model that always answers with the most common one would be.
-        int? classCount = null;
-        double? majorityClassRatio = null;
-        if (experiment.Config?.InputSchema?.Columns != null && experiment.Config.LabelColumn != null)
-        {
-            var labelSchema = experiment.Config.InputSchema.Columns
-                .FirstOrDefault(s => s.Name.Equals(experiment.Config.LabelColumn, StringComparison.OrdinalIgnoreCase));
-            if (labelSchema?.UniqueValueCount > 0)
-            {
-                classCount = labelSchema.UniqueValueCount;
-            }
-            // Absent on experiments trained before the ratio was recorded, and on numeric labels —
-            // left null so the gate falls back to 1/N rather than to a fabricated 0.
-            majorityClassRatio = labelSchema?.MajorityClassRatio;
-        }
-
-        // An undefined-metric sentinel (MetricSanitizer's direction-aware worst-case for a NaN/∞
-        // measurement — e.g. an all-NaN-scoring degenerate model whose evaluator saw zero usable
-        // rows) must never pass the gate, per the sanitizer's own contract. Checked explicitly
-        // because the floor-threshold check below only gates higher-is-better metrics: a regression
-        // optimized on rmse/mae/mse had NO floor at all, so rmse = MaxValue still auto-promoted as
-        // the first production model.
-        if (metricKey != null && MetricPolicy.IsUndefinedMetricSentinel(metricKey, experiment.Metrics[metricKey]))
-        {
-            return false; // metric was undefined — a fabricated/degenerate measurement
-        }
-
-        // Check minimum metric threshold (quality gate) — only when the metric is present.
-        // Threshold and error-direction are computed from the RESOLVED canonical key, not the
-        // raw user/project metric: "auto" and aliases ("f1", "r2") have no entry in the
-        // threshold table, so using the raw value silently skipped the gate — the root of both.
-        if (metricKey != null && !MetricPolicy.IsErrorMetric(metricKey))
-        {
-            // <=, not <: every threshold here is a "must be better than the trivial baseline"
-            // floor (R² > 0 beats mean-prediction, AUC > 0.5 beats random, accuracy beats the
-            // majority-class predictor, …) — sitting exactly on the floor means the model is
-            // exactly as good as the trivial baseline, not better than it. A strict `<` let a
-            // model that scored precisely at the floor (e.g. R² == 0.0 on a degenerate test
-            // split) through as if it had passed.
-            var minThreshold = MetricPolicy.GetMinimumMetricThreshold(metricKey, classCount, majorityClassRatio);
-            if (minThreshold.HasValue && experiment.Metrics[metricKey] <= minThreshold.Value)
-            {
-                return false; // At or below minimum viable threshold
-            }
-        }
-
-        // An error metric has no floor of its own; R² at or below 0 says the model is no better than the mean.
-        if (metricKey != null && MetricPolicy.NoBetterThanTheMean(metricKey, experiment.Metrics) is not null)
+        if (QualityGateRefusal(experiment, primaryMetric) is not null)
         {
             return false;
         }
 
-        // Degenerate model detection: high accuracy but the model only ever predicts one
-        // class (zero F1 on the positive class, or zero recall on the negative class)
-        if (MetricPolicy.IsClassificationDegenerateModel(experiment.Metrics))
-        {
-            return false; // Block promotion for degenerate models
-        }
+        var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
 
         // Get current production model
         var currentProduction = await GetProductionAsync(resolvedName, cancellationToken);
@@ -313,6 +253,95 @@ public class ModelRegistry : IModelRegistry
         return MetricPolicy.IsErrorMetric(metricKey)
             ? newMetricValue < currentMetricValue  // Lower error is better
             : newMetricValue > currentMetricValue; // Higher score is better
+    }
+
+    /// <summary>
+    /// Why the quality gate refuses <paramref name="experiment"/> as a production model, or
+    /// <c>null</c> when it passes. The one statement of the gate: training's automatic promotion and
+    /// an explicit <c>mloop promote</c> both read it. Before it was shared, only training applied it,
+    /// so a model that predicted a single class (accuracy 0.99 on 0.6% positives, F1 0) went to
+    /// production through an explicit promote without a word.
+    /// </summary>
+    public static string? QualityGateRefusal(ExperimentData experiment, string? primaryMetric)
+    {
+        if (experiment.Metrics is not { Count: > 0 } metrics)
+        {
+            return "it has no recorded metrics";
+        }
+
+        // User-facing metric aliases (e.g. "f1") differ from the canonical keys the
+        // EvaluationEngine stores (e.g. "f1_score"). Resolve to the stored key so the
+        // quality gate and production comparison operate on the right value instead of
+        // silently failing the lookup (which blocked first-model auto-promotion).
+        // When the project metric is the deferred "auto" (init leaves image/OD tasks as auto),
+        // fall back to the task's canonical metric so the gate still engages instead of being
+        // silently skipped.
+        var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric ?? MetricNames.Auto, experiment.Task, metrics.Keys);
+
+        // Extract the label's shape from the schema for the dynamic thresholds: how many classes
+        // there are, and how strong a model that always answers with the most common one would be.
+        int? classCount = null;
+        double? majorityClassRatio = null;
+        if (experiment.Config?.InputSchema?.Columns != null && experiment.Config.LabelColumn != null)
+        {
+            var labelSchema = experiment.Config.InputSchema.Columns
+                .FirstOrDefault(s => s.Name.Equals(experiment.Config.LabelColumn, StringComparison.OrdinalIgnoreCase));
+            if (labelSchema?.UniqueValueCount > 0)
+            {
+                classCount = labelSchema.UniqueValueCount;
+            }
+            // Absent on experiments trained before the ratio was recorded, and on numeric labels —
+            // left null so the gate falls back to 1/N rather than to a fabricated 0.
+            majorityClassRatio = labelSchema?.MajorityClassRatio;
+        }
+
+        // An undefined-metric sentinel (MetricSanitizer's direction-aware worst-case for a NaN/∞
+        // measurement — e.g. an all-NaN-scoring degenerate model whose evaluator saw zero usable
+        // rows) must never pass the gate, per the sanitizer's own contract. Checked explicitly
+        // because the floor-threshold check below only gates higher-is-better metrics: a regression
+        // optimized on rmse/mae/mse had NO floor at all, so rmse = MaxValue still auto-promoted as
+        // the first production model.
+        if (metricKey != null && MetricPolicy.IsUndefinedMetricSentinel(metricKey, metrics[metricKey]))
+        {
+            return $"its {metricKey} could not be measured (the evaluator produced no usable value)";
+        }
+
+        // Check minimum metric threshold (quality gate) — only when the metric is present.
+        // Threshold and error-direction are computed from the RESOLVED canonical key, not the
+        // raw user/project metric: "auto" and aliases ("f1", "r2") have no entry in the
+        // threshold table, so using the raw value silently skipped the gate — the root of both.
+        if (metricKey != null && !MetricPolicy.IsErrorMetric(metricKey))
+        {
+            // <=, not <: every threshold here is a "must be better than the trivial baseline"
+            // floor (R² > 0 beats mean-prediction, AUC > 0.5 beats random, accuracy beats the
+            // majority-class predictor, …) — sitting exactly on the floor means the model is
+            // exactly as good as the trivial baseline, not better than it. A strict `<` let a
+            // model that scored precisely at the floor (e.g. R² == 0.0 on a degenerate test
+            // split) through as if it had passed.
+            var minThreshold = MetricPolicy.GetMinimumMetricThreshold(metricKey, classCount, majorityClassRatio);
+            if (minThreshold.HasValue && metrics[metricKey] <= minThreshold.Value)
+            {
+                return string.Create(CultureInfo.InvariantCulture,
+                    $"its {metricKey} {metrics[metricKey]:F4} is at or below {minThreshold.Value:F4}, what a model that learned nothing scores");
+            }
+        }
+
+        // An error metric has no floor of its own; R² at or below 0 says the model is no better than the mean.
+        if (metricKey != null && MetricPolicy.NoBetterThanTheMean(metricKey, metrics) is { } rSquared)
+        {
+            return string.Create(CultureInfo.InvariantCulture,
+                $"its r_squared {rSquared:F4} is no better than predicting the mean");
+        }
+
+        // Degenerate model detection: high accuracy but the model only ever predicts one
+        // class (zero F1 on the positive class, or zero recall on the negative class)
+        if (MetricPolicy.IsClassificationDegenerateModel(metrics))
+        {
+            return "it predicts only one class (its accuracy reflects the class balance, not learning)";
+        }
+
+        return null;
+
     }
 
     /// <inheritdoc />

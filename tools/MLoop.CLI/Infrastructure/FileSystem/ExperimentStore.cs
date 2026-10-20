@@ -436,21 +436,21 @@ public class ExperimentStore : IExperimentStore
             .Where(e => e.ExperimentId != experiment.ExperimentId)
             .ToList();
 
-        // Add new entry
+        // The value and the name come from one resolution, so the entry names the metric it holds.
+        var best = TaskMetadata.ResolvePrimaryMetric(
+            experiment.Metrics, experiment.Config.Metric, experiment.Task);
+
         experiments.Add(new ExperimentSummary
         {
             ModelName = modelName,
             ExperimentId = experiment.ExperimentId,
             Timestamp = experiment.Timestamp,
             Status = experiment.Status,
-            // Canonical primary-metric value (matches MetricName), not the insertion-order-dependent
-            // first dictionary entry — so ranking sorts by the metric the experiment optimized.
-            BestMetric = TaskMetadata.ResolvePrimaryMetricValue(
-                experiment.Metrics, experiment.Config.Metric, experiment.Task),
+            BestMetric = best?.Value,
             LabelColumn = experiment.Config.LabelColumn,
             BestTrainer = experiment.Result?.BestTrainer,
             Trainer = experiment.Result?.Trainer,
-            MetricName = experiment.Config.Metric,
+            MetricName = best?.Name ?? experiment.Config.Metric,
             TrainingTimeSeconds = experiment.Result?.TrainingTimeSeconds
         });
 

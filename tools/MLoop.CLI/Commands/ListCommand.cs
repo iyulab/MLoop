@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
@@ -218,7 +219,17 @@ public static class ListCommand
 
             if (jsonOutput)
             {
-                OutputAsJson(resolvedModelName, experimentsList, productionDict);
+                // Each experiment's own metrics and the gate's verdict, so a consumer that decides
+                // promotion reads them here instead of opening files in the experiment layout.
+                var details = new Dictionary<(string, string), ExperimentData?>();
+                foreach (var e in experimentsList)
+                {
+                    var expModelName = e.ModelName ?? ConfigDefaults.DefaultModelName;
+                    try { details[(expModelName, e.ExperimentId)] = await ctx.ExperimentStore.LoadAsync(expModelName, e.ExperimentId, CancellationToken.None); }
+                    catch (Exception) { details[(expModelName, e.ExperimentId)] = null; } // a partial experiment directory lists without them
+                }
+
+                OutputAsJson(resolvedModelName, experimentsList, productionDict, details);
                 return 0;
             }
 
@@ -370,7 +381,8 @@ public static class ListCommand
     private static void OutputAsJson(
         string? modelFilter,
         IReadOnlyList<Infrastructure.FileSystem.ExperimentSummary> experiments,
-        IReadOnlyDictionary<string, string> productionByModel)
+        IReadOnlyDictionary<string, string> productionByModel,
+        IReadOnlyDictionary<(string, string), ExperimentData?> details)
     {
         var options = new JsonSerializerOptions
         {
@@ -384,6 +396,7 @@ public static class ListCommand
             Experiments = experiments.Select(e =>
             {
                 var expModelName = e.ModelName ?? ConfigDefaults.DefaultModelName;
+                var detail = details.GetValueOrDefault((expModelName, e.ExperimentId));
                 return new
                 {
                     ModelName = expModelName,
@@ -393,6 +406,9 @@ public static class ListCommand
                     e.BestTrainer,
                     e.MetricName,
                     e.BestMetric,
+                    Metrics = detail?.Metrics,
+                    // null when the gate passes; otherwise why `mloop promote` refuses it without --force.
+                    QualityGate = detail is null ? null : ModelRegistry.QualityGateRefusal(detail, detail.Config?.Metric),
                     IsProduction = productionByModel.TryGetValue(expModelName, out var prodId)
                                    && e.ExperimentId == prodId,
                 };

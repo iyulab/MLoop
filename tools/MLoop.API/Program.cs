@@ -962,6 +962,20 @@ app.MapPost("/promote", async (
             });
         }
 
+        // The same gate `mloop promote` and training apply; `force` is the deliberate override.
+        var refusal = MLoop.CLI.Infrastructure.FileSystem.ModelRegistry.QualityGateRefusal(experiment, experiment.Config?.Metric);
+        if (refusal != null && !request.Force)
+        {
+            return Results.Json(new
+            {
+                error = $"'{experimentId}' does not pass the quality gate: {refusal}. Send \"force\": true to promote it anyway."
+            }, statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+        if (refusal != null)
+        {
+            logger.LogWarning("Promoting '{ExperimentId}' despite the quality gate (force): {Refusal}", experimentId, refusal);
+        }
+
         // Check current production for comparison
         var currentProduction = await registry.GetProductionAsync(modelName, ct);
         var previousExpId = currentProduction?.ExperimentId;
@@ -1582,7 +1596,8 @@ static Dictionary<string, object>[] ParseJsonInput(JsonElement input)
 public record PromoteRequest(
     string ExperimentId,
     string? Name = null,
-    bool? CreateBackup = true);
+    bool? CreateBackup = true,
+    bool Force = false);
 
 public record EvaluateRequest(
     string TestDataPath,

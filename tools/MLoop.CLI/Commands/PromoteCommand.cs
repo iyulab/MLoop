@@ -43,7 +43,7 @@ public static class PromoteCommand
 
         var forceOption = new Option<bool>("--force", "-f")
         {
-            Description = "Skip confirmation when replacing existing production model",
+            Description = "Skip confirmation when replacing the production model, and promote a model the quality gate refuses",
             DefaultValueFactory = _ => false
         };
 
@@ -173,6 +173,23 @@ public static class PromoteCommand
                 WriteError($"Cannot promote experiment with status '{experiment.Status}'. " +
                            "Only completed experiments can be promoted.", jsonOutput);
                 return 1;
+            }
+
+            // The gate training applies before it promotes: a model no better than a trivial
+            // baseline does not reach production by an explicit promote either, unless forced.
+            var refusal = ModelRegistry.QualityGateRefusal(experiment, experiment.Config?.Metric);
+            if (refusal != null)
+            {
+                if (!force)
+                {
+                    WriteError($"'{experimentId}' does not pass the quality gate: {refusal}. "
+                               + "Use --force to promote it anyway.", jsonOutput);
+                    return 1;
+                }
+
+                // Under --json, narration is routed to stderr, so the warning never breaks the document.
+                AnsiConsole.MarkupLineInterpolated(
+                        $"[yellow]Warning:[/] promoting despite the quality gate (--force): {refusal}.");
             }
 
             if (!jsonOutput)

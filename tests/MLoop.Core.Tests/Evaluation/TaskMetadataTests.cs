@@ -71,6 +71,17 @@ public class TaskMetadataTests
         Assert.Contains("average_distance", all);
     }
 
+    [Theory]
+    [InlineData("f1", "f1_score", 0.0)]     // an alias resolves to the stored key, never to accuracy
+    [InlineData("auto", "accuracy", 0.99)]  // auto is the task's primary metric, named as such
+    [InlineData("auc", "auc", 0.95)]
+    public void ResolvePrimaryMetric_NamesTheMetricItsValueCameFrom(string configured, string name, double value)
+    {
+        var metrics = new Dictionary<string, double> { ["accuracy"] = 0.99, ["f1_score"] = 0.0, ["auc"] = 0.95 };
+
+        Assert.Equal((name, value), TaskMetadata.ResolvePrimaryMetric(metrics, configured, "binary-classification"));
+    }
+
     [Fact]
     public void ResolvePrimaryMetricValue_PrefersExplicitMetricName()
     {

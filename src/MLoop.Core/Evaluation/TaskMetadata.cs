@@ -90,16 +90,34 @@ public static class TaskMetadata
     /// </summary>
     public static double? ResolvePrimaryMetricValue(
         IReadOnlyDictionary<string, double>? metrics, string? metricName, string? task)
+        => ResolvePrimaryMetric(metrics, metricName, task)?.Value;
+
+    /// <summary>
+    /// The metric <see cref="ResolvePrimaryMetricValue"/> reads, together with its name — so a
+    /// record that stores the value can name what it holds. The configured name is read the way the
+    /// optimizer reads it (<see cref="MetricNames.Canonical(string?, string?)"/>): <c>f1</c> is
+    /// <c>f1_score</c> and <c>auto</c> is the task's primary metric. Recording the configured
+    /// spelling beside a value resolved from another key labelled an accuracy of 0.99 as
+    /// <c>f1</c> on a model whose F1 was 0.
+    /// </summary>
+    public static (string Name, double Value)? ResolvePrimaryMetric(
+        IReadOnlyDictionary<string, double>? metrics, string? metricName, string? task)
     {
         if (metrics is null || metrics.Count == 0)
             return null;
 
-        if (metricName != null && metrics.TryGetValue(metricName, out var configured))
-            return configured;
+        var configured = MetricNames.Canonical(task, metricName);
+        if (configured != null && metrics.TryGetValue(configured, out var canonicalValue))
+            return (configured, canonicalValue);
+
+        if (metricName != null && metrics.TryGetValue(metricName, out var literalValue))
+            return (metricName, literalValue);
 
         var primary = PrimaryMetric(task);
-        return primary != null
-            ? metrics.GetValueOrDefault(primary, 0)
-            : metrics.Values.First();
+        if (primary != null)
+            return (primary, metrics.GetValueOrDefault(primary, 0));
+
+        var first = metrics.First();
+        return (first.Key, first.Value);
     }
 }

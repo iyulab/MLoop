@@ -6,11 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **`mloop promote` applies the quality gate** training applies before it promotes. A model no better
+  than a trivial baseline — at or below its metric's floor, or one that predicts a single class (on
+  0.6% positives: accuracy 0.993, F1 0) — is refused with the reason and exit code 1; `--force`
+  promotes it and prints the reason as a warning. Before, an explicit promote put such a model in
+  production without a word. `POST /promote` applies the same gate (422, `"force": true` to override).
+
 ### Added
+- **`mloop list --json` carries each experiment's `metrics` and the gate's verdict** (`qualityGate`,
+  `null` when it passes), so a consumer deciding promotion no longer opens files in the experiment
+  directory.
 - **`MLoop.Core` and `MLoop.Extensibility` are published to NuGet.org** with each release, at the
   CLI's version. A host that calls the engine in process takes a `PackageReference` and receives the
   dependency floors through the package, which a `ProjectReference` to this repository never carried.
   The `MLoop.Core` README now shows the API that exists (`AutoMLRunner`, `PredictionService`).
+
+### Fixed
+- `experiment-index.json` names the metric its `bestMetric` holds. A configured spelling the metrics
+  file does not use (`f1` for `f1_score`) recorded the accuracy under the name `f1`.
 
 ### Security
 - `System.Security.Cryptography.Pkcs` and `System.Security.Cryptography.Xml` resolve at 10.0.13
