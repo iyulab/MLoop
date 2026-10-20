@@ -34,21 +34,21 @@ public sealed class TrainWeightTests : IDisposable
 
     [Fact]
     public void AWeightTheRunCanHonour_HasNoConflict()
-        => Assert.Null(TrainCommand.WeightConflict(Definition(), balance: null));
+        => Assert.Null(ModelTrainingConfig.WeightConflict(Definition(), balance: null));
 
     [Theory]
     [InlineData("clustering", "w", null, "applies to binary-classification")]
     [InlineData("binary-classification", "y", null, "is the label column")]
     [InlineData("binary-classification", "w", "auto", "--balance")]
     public void AWeightTheRunCouldNotHonour_IsRefusedWithTheReason(string task, string weight, string? balance, string expected)
-        => Assert.Contains(expected, TrainCommand.WeightConflict(Definition(task, weight), balance));
+        => Assert.Contains(expected, ModelTrainingConfig.WeightConflict(Definition(task, weight), balance));
 
     [Fact]
     public void AWeightDeclaredAsAFeature_IsRefused()
     {
         var definition = Definition(columns: new() { ["W"] = new ColumnOverride { Type = "numeric" } });
 
-        Assert.Contains("never a feature", TrainCommand.WeightConflict(definition, balance: "none"));
+        Assert.Contains("never a feature", ModelTrainingConfig.WeightConflict(definition, balance: "none"));
     }
 
     [Fact]

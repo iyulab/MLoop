@@ -20,6 +20,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   experiment's column is the default when the file has it. `--json` carries `weightColumn`.
 
 ### Fixed
+- **`POST /train` trains under the project's model definition.** The API built its training
+  configuration from the request alone, so the model's `mloop.yaml` entry — column overrides, the
+  weight, the ranking group and recommendation user/item columns, the forecasting horizon — was never
+  read: an `ignore`d column was a feature, and a weighted model would have trained unweighted. The
+  request now stands where a `mloop train` command line stands, merged with `mloop.yaml` the same way,
+  and one shared step turns the definition into the training configuration for both. What the
+  definition asks for that the API cannot honour is refused with 400 before a job exists: a weight
+  the task would not reach, and `prep` steps, which the API does not run.
 - **The quality gate told a model that learned nothing from one that only sits on its decision
   threshold.** A binary model that answers one class for every row was refused as "predicts only one
   class" whatever its AUC — so a model that ranks the classes well but whose default 0.5 cut falls on

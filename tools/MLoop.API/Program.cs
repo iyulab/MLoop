@@ -1448,11 +1448,12 @@ app.MapGet("/trigger", async (
 .RequireAuthorization();
 
 // Start training job (async, secured)
-app.MapPost("/train", (
+app.MapPost("/train", async (
     [FromBody] TrainingJobRequest request,
     TrainingJobStore jobStore,
     TrainingJobRunner jobRunner,
     ProjectRootPath projectRootPath,
+    ConfigLoader configLoader,
     ILogger<Program> logger) =>
 {
     // Refuse a metric the task cannot optimize now, not minutes later inside the job — the job
@@ -1468,6 +1469,13 @@ app.MapPost("/train", (
         return Results.BadRequest(new { error = "Data file must be within the project directory." });
     if (!File.Exists(resolvedDataFile))
         return Results.BadRequest(new { error = $"Data file not found: {request.DataFile}" });
+
+    // Refused now, not inside the job: what the project's mloop.yaml asks for that this run could
+    // not honour (a weight on a task it does not reach, prep steps the API does not run).
+    var (_, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
+        request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit);
+    if (definitionError != null)
+        return Results.BadRequest(new { error = definitionError });
 
     // Create job and enqueue for background processing
     var jobId = jobStore.CreateJob(request);

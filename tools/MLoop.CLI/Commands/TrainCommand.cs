@@ -323,7 +323,7 @@ public static class TrainCommand
             // that silently did nothing would train an unweighted model the user believes weighted.
             if (!string.IsNullOrEmpty(weight))
                 effectiveDefinition.Weight = weight;
-            if (WeightConflict(effectiveDefinition, balance) is { } weightError)
+            if (ModelTrainingConfig.WeightConflict(effectiveDefinition, balance) is { } weightError)
             {
                 ErrorConsole.Error(weightError);
                 return 1;
@@ -941,31 +941,16 @@ public static class TrainCommand
             // Ensure model directory structure exists
             await modelNameResolver.EnsureModelDirectoryAsync(resolvedModelName);
 
-            var trainingConfig = new TrainingConfig
-            {
-                ModelName = resolvedModelName,
-                DataFile = Path.GetFullPath(resolvedDataFile),
-                LabelColumn = effectiveDefinition.Label,
-                Task = effectiveDefinition.Task,
-                TimeLimitSeconds = effectiveDefinition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
-                Metric = effectiveDefinition.Training?.Metric ?? ConfigDefaults.DefaultMetric,
-                TestSplit = testDataFile != null ? 0 : (effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit),
-                TestDataFile = testDataFile != null ? Path.GetFullPath(testDataFile) : null,
-                UseAutoTime = useAutoTime,
-                ColumnOverrides = effectiveDefinition.Columns?.ToDictionary(
-                    kvp => kvp.Key,
-                    kvp => kvp.Value.Type),
-                NumClusters = effectiveDefinition.NumClusters ?? 0,
-                GroupColumn = effectiveDefinition.GroupColumn,
-                Horizon = effectiveDefinition.Horizon ?? 0,
-                WindowSize = effectiveDefinition.WindowSize ?? 0,
-                SeriesLength = effectiveDefinition.SeriesLength ?? 0,
-                UserColumn = effectiveDefinition.UserColumn,
-                ItemColumn = effectiveDefinition.ItemColumn,
-                PreFeaturizer = preFeaturizer,
-                PreFeaturizerColumns = preFeaturizerColumns,
-                WeightColumn = string.IsNullOrWhiteSpace(effectiveDefinition.Weight) ? null : effectiveDefinition.Weight.Trim()
-            };
+            var trainingConfig = ModelTrainingConfig.From(
+                effectiveDefinition,
+                resolvedModelName,
+                Path.GetFullPath(resolvedDataFile),
+                effectiveDefinition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
+                testDataFile != null ? 0 : (effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit),
+                testDataFile != null ? Path.GetFullPath(testDataFile) : null,
+                useAutoTime,
+                preFeaturizer,
+                preFeaturizerColumns);
 
             // Initialize hook engine
             var hookEngine = new HookEngine(projectRoot, new TrainCommandLogger());
@@ -1407,25 +1392,5 @@ public static class TrainCommand
             ErrorConsole.Out.MarkupLine($"[red]{message}[/]");
             ErrorConsole.Out.WriteException(exception);
         }
-    }
-
-    /// <summary>
-    /// Why the weight column in <paramref name="definition"/> cannot be honoured, or <c>null</c>.
-    /// </summary>
-    internal static string? WeightConflict(ModelDefinition definition, string? balance)
-    {
-        var weight = definition.Weight?.Trim();
-        if (string.IsNullOrEmpty(weight))
-            return null;
-        if (!WeightedResampling.Supports(definition.Task))
-            return $"weight '{weight}': weighted training applies to binary-classification, multiclass-classification and regression, not '{definition.Task}'.";
-        if (string.Equals(weight, definition.Label, StringComparison.OrdinalIgnoreCase))
-            return $"weight '{weight}' is the label column; the weight must be a column of its own.";
-        if (definition.Columns?.FirstOrDefault(c => string.Equals(c.Key.Trim(), weight, StringComparison.OrdinalIgnoreCase)) is { Key: not null } declared
-            && !string.Equals(declared.Value.Type, "ignore", StringComparison.OrdinalIgnoreCase))
-            return $"weight '{weight}' is also declared as a {declared.Value.Type} column in mloop.yaml; a weight is never a feature.";
-        if (!string.IsNullOrEmpty(balance) && !string.Equals(balance, "none", StringComparison.OrdinalIgnoreCase))
-            return $"--balance and weight '{weight}' both change how often rows count; use one of them.";
-        return null;
     }
 }

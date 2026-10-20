@@ -1,3 +1,4 @@
+using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Models;
 using System.Threading.Channels;
@@ -81,16 +82,14 @@ public class TrainingJobRunner : BackgroundService
                 .GetRequiredService<MLoop.CLI.Infrastructure.ML.ITrainingEngine>();
             var registry = scope.ServiceProvider.GetRequiredService<IModelRegistry>();
 
-            var config = new TrainingConfig
-            {
-                ModelName = job.ModelName,
-                DataFile = job.DataFile,
-                LabelColumn = job.LabelColumn,
-                Task = job.Task,
-                TimeLimitSeconds = job.TimeLimitSeconds,
-                Metric = job.Metric,
-                TestSplit = job.TestSplit
-            };
+            // The project's model definition, as `mloop train` reads it — columns, weight, the
+            // ranking/recommendation/time-series columns — with the request in the command line's place.
+            var (definition, refusal) = await TrainingDefinition.ResolveAsync(
+                scope.ServiceProvider.GetRequiredService<ConfigLoader>(),
+                job.ModelName, job.Task, job.LabelColumn, job.TimeLimitSeconds, job.Metric, job.TestSplit, stoppingToken);
+            if (definition is null)
+                throw new InvalidOperationException(refusal);
+            var config = ModelTrainingConfig.From(definition, job.ModelName, job.DataFile, job.TimeLimitSeconds, job.TestSplit);
 
             var result = await trainingEngine.TrainAsync(config, cancellationToken: stoppingToken);
 
