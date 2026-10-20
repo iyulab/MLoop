@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-10-21
+
 ### Added
 - **Weighted training** — `mloop train --weight <column>` or `weight: <column>` in `mloop.yaml`: each
   row counts by its weight (for a row sampled with probability π, 1/π). AutoML accepts a weight
