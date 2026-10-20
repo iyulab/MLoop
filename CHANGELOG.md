@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+- `System.Security.Cryptography.Pkcs` and `System.Security.Cryptography.Xml` resolve at 10.0.13
+  (GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7, GHSA-7hqp-7c5m-4vq6, GHSA-r955-8q5j-3h83). 0.34.0 brought
+  10.0.10 in through FilePrepper; FilePrepper 0.11.1 takes them at 10.0.13.
+
+### Changed
+- FilePrepper 0.11.1, DataLens 0.19.1 (Mahalanobis outliers are judged against the distance's exact
+  law, so small samples flag more rows; a single-value column's standard deviation is absent rather
+  than NaN), `Microsoft.*` 10.0.13.
+
 ## [0.34.0] - 2026-10-01
 
 ### Added
