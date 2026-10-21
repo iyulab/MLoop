@@ -338,11 +338,11 @@ public class PredictionEngine
         string? labelColumnOverride,
         IEnumerable<string>? preserveColumns,
         List<string> tempFiles,
-        bool withDecisionThreshold = true)
+        ScoringLayers layers = ScoringLayers.All)
     {
         // Load the trained model — with its decision threshold, unless the caller converts the saved model
         // itself (ONNX export: the graph carries the trained model, the manifest names the threshold).
-        var trainedModel = ScoringModel.Load(_mlContext, modelPath, out var modelSchema, withDecisionThreshold: withDecisionThreshold);
+        var trainedModel = ScoringModel.Load(_mlContext, modelPath, out var modelSchema, layers: layers);
 
         // Find the label column: prefer override, then trained schema
         // Treat empty string as null (unsupervised tasks like anomaly-detection have no label)

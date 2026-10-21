@@ -177,7 +177,7 @@ public static class ExportCommand
             var engine = new PredictionEngine();
             var input = engine.LoadInferenceInput(
                 modelPath, dataPath, experiment.Config?.InputSchema, labelColumn,
-                PreserveColumns(experiment.Config), tempFiles, withDecisionThreshold: false);
+                PreserveColumns(experiment.Config), tempFiles, layers: ScoringLayers.None);
 
             var outputDirectory = outputDir is { Length: > 0 }
                 ? Path.GetFullPath(Path.IsPathRooted(outputDir) ? outputDir : Path.Combine(projectRoot, outputDir))
@@ -230,6 +230,7 @@ public static class ExportCommand
                 Outputs = result.Outputs,
                 Label = LabelInfo(task, labelColumn, experiment, input, result, DecisionThreshold.ReadBeside(modelPath)),
                 DecisionThreshold = DecisionThreshold.ReadBeside(modelPath),
+                Calibration = ProbabilityCalibration.ReadBeside(modelPath),
                 Metrics = experiment.Metrics,
                 WeightColumn = experiment.Config?.WeightColumn,
                 Portable = experiment.Config?.Portable == true,

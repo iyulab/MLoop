@@ -122,9 +122,11 @@ public class EvaluationEngine
                 {
                     metrics = EvaluateBinaryClassification(predictions, labelColumn);
                     // ML.NET's binary evaluator re-derives each answer from the score at its own threshold
-                    // and ignores PredictedLabel. A model given a decision threshold answers otherwise, so
-                    // the metrics that depend on the answer are counted from the answers it gives.
-                    if (DecisionThreshold.ReadBeside(modelPath) is not null && BinaryCounts.Metrics(predictions, labelColumn) is { } answered)
+                    // and ignores PredictedLabel. A model given a decision threshold or a calibration
+                    // answers otherwise, so the metrics that depend on the answer are counted from the
+                    // answers it gives.
+                    if ((DecisionThreshold.ReadBeside(modelPath) is not null || ProbabilityCalibration.ReadBeside(modelPath) is not null)
+                        && BinaryCounts.Metrics(predictions, labelColumn) is { } answered)
                         foreach (var key in new[] { "accuracy", "precision", "recall", "negative_precision", "negative_recall", "f1_score" })
                             if (answered.TryGetValue(key, out var value)) metrics[key] = value;
                 }
@@ -254,20 +256,38 @@ public class EvaluationEngine
         string labelColumn,
         InputSchemaInfo? trainedSchema,
         string? weightColumn = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ScoringLayers layers = ScoringLayers.All)
         => ScoreAsync(modelPath, testDataPath, labelColumn, "binary-classification", trainedSchema, weightColumn,
-            (scored, weights) => DecisionThreshold.RowsOf(scored, labelColumn, weights), cancellationToken);
+            (scored, weights) => DecisionThreshold.RowsOf(scored, labelColumn, weights), cancellationToken, layers);
+
+    /// <summary>
+    /// Each labeled row's (class probabilities, true slot, weight) from a multiclass model scored on
+    /// <paramref name="testDataPath"/> — what a temperature is fit on. <c>null</c> when the scores are
+    /// not the label's class probabilities.
+    /// </summary>
+    public Task<IReadOnlyList<(float[] Probabilities, int Label, double Weight)>?> MulticlassCalibrationRowsAsync(
+        string modelPath,
+        string testDataPath,
+        string labelColumn,
+        InputSchemaInfo? trainedSchema,
+        string? weightColumn = null,
+        CancellationToken cancellationToken = default,
+        ScoringLayers layers = ScoringLayers.All)
+        => ScoreAsync(modelPath, testDataPath, labelColumn, "multiclass-classification", trainedSchema, weightColumn,
+            (scored, weights) => ProbabilityCalibration.MulticlassRowsOf(scored, labelColumn, weights), cancellationToken, layers);
 
     /// <summary>Scores the test file the way <see cref="EvaluateAsync"/> does and hands the scored rows (and weights) to <paramref name="read"/>.</summary>
     private Task<T> ScoreAsync<T>(
         string modelPath, string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema,
-        string? weightColumn, Func<IDataView, double[]?, T> read, CancellationToken cancellationToken)
+        string? weightColumn, Func<IDataView, double[]?, T> read, CancellationToken cancellationToken,
+        ScoringLayers layers = ScoringLayers.All)
         => Task.Run(() =>
         {
             List<string> tempFiles = new();
             try
             {
-                var model = ScoringModel.Load(_mlContext, modelPath, taskType);
+                var model = ScoringModel.Load(_mlContext, modelPath, taskType, layers);
                 var keep = string.IsNullOrEmpty(weightColumn) ? null : new[] { weightColumn };
                 var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, keep, out tempFiles, keepColumns: keep);
                 var scored = model.Transform(testData);

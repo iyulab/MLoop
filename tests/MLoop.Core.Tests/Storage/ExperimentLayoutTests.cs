@@ -25,5 +25,7 @@ public class ExperimentLayoutTests
         Assert.Equal("trials.ndjson", ExperimentLayout.TrialsFileName);
         Assert.Equal("leaderboard.json", ExperimentLayout.LeaderboardFileName);
         Assert.Equal("report.md", ExperimentLayout.ReportFileName);
+        Assert.Equal("decision-threshold.json", ExperimentLayout.DecisionThresholdFileName);
+        Assert.Equal("calibration.json", ExperimentLayout.CalibrationFileName);
     }
 }

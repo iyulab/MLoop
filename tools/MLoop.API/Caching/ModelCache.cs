@@ -143,9 +143,11 @@ public sealed class ModelCache : IModelCache
     /// </summary>
     private static DateTime StampOf(string modelPath)
     {
-        var model = File.GetLastWriteTimeUtc(modelPath);
-        var threshold = MLoop.Core.Models.DecisionThreshold.PathBeside(modelPath);
-        return File.Exists(threshold) && File.GetLastWriteTimeUtc(threshold) > model ? File.GetLastWriteTimeUtc(threshold) : model;
+        var stamp = File.GetLastWriteTimeUtc(modelPath);
+        foreach (var layer in new[] { MLoop.Core.Models.DecisionThreshold.PathBeside(modelPath), MLoop.Core.Models.ProbabilityCalibration.PathBeside(modelPath) })
+            if (File.Exists(layer) && File.GetLastWriteTimeUtc(layer) > stamp)
+                stamp = File.GetLastWriteTimeUtc(layer);
+        return stamp;
     }
 
     private ITransformer LoadFromDisk(string modelPath)

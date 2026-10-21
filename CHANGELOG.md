@@ -14,6 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   two apart.
 - `mloop predict --json` names the model that answered in `experimentId` (production's experiment
   by default).
+- `mloop calibrate [exp-id] --data <labeled> [--method platt|isotonic|temperature] [--weight <col>]` fits
+  a classifier's probability calibration on labeled rows without retraining — binary by Platt (default)
+  or isotonic, multiclass by temperature (its answers unchanged, the class names kept) — and every path that scores
+  — predict, serve, evaluate (its `ece`) and a threshold chosen afterwards — reads the calibrated
+  probability; `promote` carries `calibration.json` with the model, and the ONNX manifest names it.
+  Refused while a decision threshold stands (calibrate first, then choose the threshold).
+  MCP: `mloop_calibrate`.
 - `POST /predict?experiment=<exp-id>` — the same shadow prediction over HTTP; logged rows carry the
   candidate's id. `404` for an unknown experiment or one without a trained model.
 - `mloop threshold --precision-of <class>` targets the precision of a named class — the negative

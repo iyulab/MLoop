@@ -65,6 +65,13 @@ public sealed record OnnxManifest
     /// </summary>
     public Models.DecisionThreshold? DecisionThreshold { get; init; }
 
+    /// <summary>
+    /// The probability calibration beside the model, when one was fit — not in the graph, which carries
+    /// the trained model's own probability. Apply it (then <see cref="DecisionThreshold"/>) to answer as
+    /// <c>mloop predict</c> does.
+    /// </summary>
+    public Models.ProbabilityCalibration? Calibration { get; init; }
+
     /// <summary>How the graph compared with the model on data rows (<c>--verify</c>); null when not checked.</summary>
     public OnnxVerificationResult? Verification { get; init; }
 

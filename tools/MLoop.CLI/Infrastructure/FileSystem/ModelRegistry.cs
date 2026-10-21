@@ -102,12 +102,16 @@ public class ModelRegistry : IModelRegistry
 
         // So does the decision threshold: production answers at the threshold chosen for this model, or at
         // the trainer's own — never at the previous model's.
-        var sourceThresholdPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.DecisionThresholdFileName);
-        var targetThresholdPath = _fileSystem.CombinePath(targetPath, ExperimentLayout.DecisionThresholdFileName);
-        if (_fileSystem.FileExists(sourceThresholdPath))
-            await _fileSystem.CopyFileAsync(sourceThresholdPath, targetThresholdPath, overwrite: true, cancellationToken);
-        else if (_fileSystem.FileExists(targetThresholdPath))
-            File.Delete(targetThresholdPath);
+        // The calibration too, for the same reason.
+        foreach (var layer in new[] { ExperimentLayout.DecisionThresholdFileName, ExperimentLayout.CalibrationFileName })
+        {
+            var sourceLayerPath = _fileSystem.CombinePath(experimentPath, layer);
+            var targetLayerPath = _fileSystem.CombinePath(targetPath, layer);
+            if (_fileSystem.FileExists(sourceLayerPath))
+                await _fileSystem.CopyFileAsync(sourceLayerPath, targetLayerPath, overwrite: true, cancellationToken);
+            else if (_fileSystem.FileExists(targetLayerPath))
+                File.Delete(targetLayerPath);
+        }
 
         // Load experiment metadata
         var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);

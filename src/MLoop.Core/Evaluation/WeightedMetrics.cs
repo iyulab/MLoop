@@ -230,8 +230,11 @@ public static class WeightedMetrics
         return concordant / (positive * negative);
     }
 
-    // CalibrationError's ten bins, each row counting by its weight.
-    private static double? Ece(IReadOnlyList<(double Confidence, bool Hit, double Weight)> rows)
+    /// <summary>
+    /// <see cref="CalibrationError"/>'s ten-bin ECE with each row counting by its weight — rows are
+    /// (confidence, whether it was right, weight). <c>null</c> when no row has weight.
+    /// </summary>
+    public static double? Ece(IReadOnlyList<(double Confidence, bool Hit, double Weight)> rows)
     {
         var total = rows.Sum(r => r.Weight);
         if (total <= 0)

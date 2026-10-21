@@ -9,7 +9,7 @@ namespace MLoop.Core.Models;
 /// The probability from which a binary classifier answers its positive class, chosen on an evaluation
 /// set for a target precision — the lowest threshold whose precision reaches the target, which keeps
 /// the most recall. It lives beside the model (<see cref="ExperimentLayout.DecisionThresholdFileName"/>)
-/// and every path that loads the model applies it through <see cref="ScoringModel.Load(MLContext, string, string?, bool)"/>,
+/// and every path that loads the model applies it through <see cref="ScoringModel.Load(MLContext, string, string?, ScoringLayers)"/>,
 /// so predict, serve, evaluate and the gate all read the same answers.
 /// </summary>
 /// <param name="Threshold">The probability from which the answer is the positive class.</param>

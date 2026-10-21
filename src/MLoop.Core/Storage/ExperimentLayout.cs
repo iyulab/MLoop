@@ -47,6 +47,14 @@ public static class ExperimentLayout
     /// </summary>
     public const string DecisionThresholdFileName = "decision-threshold.json";
 
+    /// <summary>
+    /// A binary classifier's probability calibration, when one was fit for it on labeled rows
+    /// (<c>MLoop.Core.Models.ProbabilityCalibration</c>) — the map from the model's own probability to
+    /// a calibrated one. Beside <see cref="ModelFileName"/>, applied by every path that loads the model
+    /// (before <see cref="DecisionThresholdFileName"/>), and copied on promote like the threshold.
+    /// </summary>
+    public const string CalibrationFileName = "calibration.json";
+
     /// <summary>② regression wave (heteroscedastic): the optional auxiliary σ(x) model that gives the
     /// conformal band its per-row width. Sits beside <see cref="ModelFileName"/> in <c>staging/{expId}/</c>
     /// and the promoted <c>production/</c> slot, and is copied on promote when present. Absent for

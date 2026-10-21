@@ -9,9 +9,10 @@ namespace MLoop.Core.Models;
 /// threshold search all go through it, so none answers differently from another.
 /// </summary>
 /// <remarks>
-/// Loading a model to score is three things, not one: the native runtime a deep-learning task needs
-/// has to be present before deserialization; the decision threshold chosen beside the model
-/// (<see cref="DecisionThreshold"/>) has to be applied; and a regression model may carry a σ-model
+/// Loading a model to score is several things, not one: the native runtime a deep-learning task needs
+/// has to be present before deserialization; the probability calibration and the decision threshold
+/// beside the model (<see cref="ProbabilityCalibration"/>, <see cref="DecisionThreshold"/>) have to
+/// be applied, in that order; and a regression model may carry a σ-model
 /// sibling (<see cref="ExperimentLayout.ResidualModelFileName"/>) that widens its band per row. Each
 /// path used to do its own subset — the threshold at five sites, the sibling's path rebuilt at four —
 /// and a path that forgot one gave a different answer to the same row.
@@ -20,24 +21,30 @@ public static class ScoringModel
 {
     /// <summary>
     /// The model at <paramref name="modelPath"/>, ready to score: its task's runtime ensured (when
-    /// <paramref name="task"/> is given) and its decision threshold applied, unless
-    /// <paramref name="withDecisionThreshold"/> is false — for a caller that converts the saved model
-    /// itself (ONNX export: the graph carries the trained model, the manifest names the threshold).
+    /// <paramref name="task"/> is given), then the <paramref name="layers"/> beside it applied in their
+    /// order — the probability calibration, then the decision threshold, which answers from the
+    /// calibrated probability. A caller that converts the saved model itself passes
+    /// <see cref="ScoringLayers.None"/> (ONNX export: the graph carries the trained model, the manifest
+    /// names the layers); fitting a calibration reads the model's own probabilities the same way.
     /// </summary>
     /// <exception cref="InvalidOperationException">The task needs a runtime that is not installed.</exception>
     public static ITransformer Load(
-        MLContext mlContext, string modelPath, out DataViewSchema inputSchema, string? task = null, bool withDecisionThreshold = true)
+        MLContext mlContext, string modelPath, out DataViewSchema inputSchema, string? task = null, ScoringLayers layers = ScoringLayers.All)
     {
         ArgumentNullException.ThrowIfNull(mlContext);
         if (!string.IsNullOrWhiteSpace(task))
             RuntimeManager.EnsureRuntimeForTask(task);
         var model = mlContext.Model.Load(modelPath, out inputSchema);
-        return withDecisionThreshold ? DecisionThreshold.ApplyBeside(mlContext, model, modelPath) : model;
+        if (layers.HasFlag(ScoringLayers.Calibration))
+            model = ProbabilityCalibration.ApplyBeside(mlContext, model, modelPath);
+        if (layers.HasFlag(ScoringLayers.DecisionThreshold))
+            model = DecisionThreshold.ApplyBeside(mlContext, model, modelPath);
+        return model;
     }
 
-    /// <inheritdoc cref="Load(MLContext, string, out DataViewSchema, string?, bool)"/>
-    public static ITransformer Load(MLContext mlContext, string modelPath, string? task = null, bool withDecisionThreshold = true)
-        => Load(mlContext, modelPath, out _, task, withDecisionThreshold);
+    /// <inheritdoc cref="Load(MLContext, string, out DataViewSchema, string?, ScoringLayers)"/>
+    public static ITransformer Load(MLContext mlContext, string modelPath, string? task = null, ScoringLayers layers = ScoringLayers.All)
+        => Load(mlContext, modelPath, out _, task, layers);
 
     /// <summary>Where the σ-model beside <paramref name="modelPath"/> lives.</summary>
     public static string ResidualPathBeside(string modelPath)
@@ -50,4 +57,18 @@ public static class ScoringModel
         var path = ResidualPathBeside(modelPath);
         return File.Exists(path) ? mlContext.Model.Load(path, out _) : null;
     }
+}
+
+/// <summary>What <see cref="ScoringModel.Load(MLContext, string, string?, ScoringLayers)"/> applies on top of the saved model.</summary>
+[Flags]
+public enum ScoringLayers
+{
+    /// <summary>The saved model as trained.</summary>
+    None = 0,
+    /// <summary>The probability calibration beside it (<see cref="ProbabilityCalibration"/>).</summary>
+    Calibration = 1,
+    /// <summary>The decision threshold beside it (<see cref="DecisionThreshold"/>).</summary>
+    DecisionThreshold = 2,
+    /// <summary>Everything a scoring path answers with.</summary>
+    All = Calibration | DecisionThreshold,
 }

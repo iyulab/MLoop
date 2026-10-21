@@ -584,6 +584,44 @@ about reach the precision, the command says so and changes nothing. A model whos
 probability cannot be given one. The ONNX export does not apply it — the manifest names it, for the
 consumer to apply.
 
+### `mloop calibrate`
+
+A classifier's probability is a promise: of the rows it calls 0.8, about 8 in 10 should be
+right. `ece` (reported by `train` and `evaluate`) measures how far it is from keeping it. When a
+confidence is used to skip a check, recalibrate it on labeled rows the model was not trained on —
+without retraining — and every path answers with the calibrated probability.
+
+```bash
+mloop calibrate --data datasets/recheck.csv                        # the production model, Platt
+mloop calibrate exp-004 --data datasets/recheck.csv --method isotonic --weight inv_pi
+mloop calibrate --name grade --data datasets/recheck.csv           # multiclass: temperature
+mloop calibrate                                                    # show the current one
+mloop calibrate --clear                                            # back to the model's own
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--name` | `-n` | Model name (default: `default`) |
+| `--data` | | Labeled rows to fit on |
+| `--method` | | Binary: `platt` (default — two parameters, steady on a few hundred rows) or `isotonic` (no shape assumed, needs more rows). Multiclass: `temperature` (default and only — one parameter; every class's log-probability is scaled by 1/T and renormalized, so each row's answer and order of classes stay) |
+| `--weight` | | Column that weights the rows (defaults as `evaluate --weight` does) — `1/π` for a recheck sample |
+| `--clear` | | Remove the calibration |
+| `--json` | | Output as JSON |
+
+The calibration is written beside the model (`calibration.json`, with the method, its parameters and
+the ECE before and after on the rows it was fit on) — on the experiment, and on production too when
+the experiment is in production. `predict` (the probabilities and the label, which answers at 0.5 of
+the calibrated probability), `mloop serve`, `evaluate` (its `ece` and the answer-dependent metrics)
+and the gate policy then read it; `promote` carries it. Both methods keep the order of the
+probabilities, so AUC does not move; a multiclass model's answers do not change at all, only how
+sure it says it is (its `ece` and `log_loss` move). The after-ECE is measured on the fit rows and is optimistic —
+check it with `mloop evaluate` on other rows; when it is worse than before, the command says so.
+
+A decision threshold (binary) is chosen on probabilities, so the order is **calibrate, then threshold**: the
+command refuses a model that has a threshold, and a threshold chosen afterwards answers from the
+calibrated probability. The ONNX export carries the trained model's own probability; the manifest
+names the calibration for the consumer to apply.
+
 ### `mloop rollback`
 
 Returns production to the experiment it held before the current one, from the promotion history.
