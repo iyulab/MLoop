@@ -21,8 +21,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The guide covers `mloop trigger`, `mloop prep` (plan · run · step types · where each step runs), `mloop features`,
   `mloop runtime` and `mloop update`.
 
+### Changed
+
+- `mloop serve` no longer takes `-h` for `--host`: `-h` is help on every command, and `mloop serve -h` failed with
+  "Required argument missing for option: '-h'". Write `--host <address>`.
+
 ### Fixed
 
+- Training jobs survive a `mloop serve` restart. They were held in memory, so after a restart `GET /jobs/{id}` answered
+  404 for a job whose experiment was on disk. Each job is now a JSON file under `.mloop/jobs/`. A job that was running
+  when the server stopped reads as `Failed` with a message saying it was interrupted, and a job still queued is trained
+  when the server starts again.
+- `mloop init` writes `.mloop/temp/` and `.mloop/merged/` (copies of training data the API merges) to `.gitignore`.
 - A `POST /train` job on classification data with one class failed inside training with an unhelpful error; it
   now fails with the reason, as `mloop train` does.
 - `mloop trigger check` showed an accuracy nobody measured (no feedback yet) as `0.0%`, which reads as a model that

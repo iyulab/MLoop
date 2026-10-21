@@ -515,6 +515,8 @@ obj/
 # MLoop internal (keep metadata, ignore binaries)
 .mloop/cache/
 .mloop/.cache/
+.mloop/temp/
+.mloop/merged/
 
 # Model binaries (large files)
 models/*/staging/*/model.zip
