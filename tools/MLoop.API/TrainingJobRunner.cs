@@ -28,6 +28,10 @@ public class TrainingJobRunner : BackgroundService
         _jobStore = jobStore;
         _serviceProvider = serviceProvider;
         _logger = logger;
+
+        // Jobs a previous server process accepted and never started: the 202 promised to train them.
+        foreach (var queued in jobStore.GetQueuedJobs())
+            EnqueueJob(queued.JobId);
     }
 
     /// <summary>

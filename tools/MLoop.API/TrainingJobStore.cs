@@ -1,12 +1,46 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 /// <summary>
-/// In-memory store for background training jobs.
+/// The background training jobs of the project this server serves — one JSON file per job under
+/// <c>.mloop/jobs/</c>, held in memory for reads and written through on every change.
 /// Thread-safe for concurrent access from API endpoints and background tasks.
 /// </summary>
+/// <remarks>
+/// The jobs used to live only in memory, so a restarted server answered 404 for a job a client was
+/// still polling while the experiment it trained sat on disk. On load, a job that was running when
+/// the previous process stopped is marked failed — its training did not finish — and a queued one
+/// stays queued for <see cref="TrainingJobRunner"/> to pick up, since the 202 that accepted it
+/// promised to train it.
+/// </remarks>
 public class TrainingJobStore
 {
+    /// <summary>Where the jobs live, under the project's <c>.mloop/</c>.</summary>
+    public const string JobsDirectoryName = "jobs";
+
+    /// <summary>The status message of a job the previous server process left running.</summary>
+    public const string InterruptedMessage = "Interrupted: the server stopped while this job was running. Start it again with POST /train.";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter() },
+    };
+
     private readonly ConcurrentDictionary<string, TrainingJob> _jobs = new();
+    private readonly string _directory;
+    private readonly ILogger<TrainingJobStore> _logger;
+
+    public TrainingJobStore(MLoop.API.ProjectRootPath projectRoot, ILogger<TrainingJobStore>? logger = null)
+    {
+        _directory = Path.Combine(projectRoot.Value, ".mloop", JobsDirectoryName);
+        _logger = logger ?? NullLogger<TrainingJobStore>.Instance;
+        Load();
+    }
 
     public string CreateJob(TrainingJobRequest request)
     {
@@ -28,6 +62,10 @@ public class TrainingJobStore
             Status = JobStatus.Queued,
             CreatedAt = DateTime.UtcNow
         };
+        lock (job.SyncRoot)
+        {
+            Save(job);
+        }
         _jobs[jobId] = job;
         return jobId;
     }
@@ -37,6 +75,10 @@ public class TrainingJobStore
 
     public IReadOnlyList<TrainingJob> GetAllJobs() =>
         _jobs.Values.OrderByDescending(j => j.CreatedAt).ToList();
+
+    /// <summary>The jobs waiting to train, oldest first — the order they were accepted in.</summary>
+    public IReadOnlyList<TrainingJob> GetQueuedJobs() =>
+        _jobs.Values.Where(j => j.Status == JobStatus.Queued).OrderBy(j => j.CreatedAt).ToList();
 
     public void UpdateStatus(string jobId, JobStatus status, string? message = null)
     {
@@ -48,6 +90,7 @@ public class TrainingJobStore
                 if (message != null) job.StatusMessage = message;
                 if (status is JobStatus.Completed or JobStatus.Failed)
                     job.CompletedAt = DateTime.UtcNow;
+                Save(job);
             }
         }
     }
@@ -61,13 +104,70 @@ public class TrainingJobStore
                 job.ExperimentId = experimentId;
                 job.Metrics = metrics;
                 job.BestTrainer = bestTrainer;
+                Save(job);
             }
+        }
+    }
+
+    private string PathOf(string jobId) => Path.Combine(_directory, jobId + ".json");
+
+    // Called under the job's lock, so two changes to one job cannot interleave their writes.
+    // Written beside the target and moved over it, so a reader never sees half a file.
+    private void Save(TrainingJob job)
+    {
+        try
+        {
+            Directory.CreateDirectory(_directory);
+            var path = PathOf(job.JobId);
+            var temp = path + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(job, JsonOptions));
+            File.Move(temp, path, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The job still runs and answers from memory; only surviving a restart is lost.
+            _logger.LogWarning(ex, "Could not record training job '{JobId}' to {Directory}", job.JobId, _directory);
+        }
+    }
+
+    private void Load()
+    {
+        if (!Directory.Exists(_directory))
+            return;
+
+        foreach (var path in Directory.EnumerateFiles(_directory, "*.json"))
+        {
+            TrainingJob? job;
+            try
+            {
+                job = JsonSerializer.Deserialize<TrainingJob>(File.ReadAllText(path), JsonOptions);
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "Skipping unreadable training job record {Path}", path);
+                continue;
+            }
+            if (job is null || Path.GetFileNameWithoutExtension(path) != job.JobId)
+            {
+                _logger.LogWarning("Skipping training job record {Path}: it does not name its own job", path);
+                continue;
+            }
+
+            if (job.Status == JobStatus.Running)
+            {
+                job.Status = JobStatus.Failed;
+                job.StatusMessage = InterruptedMessage;
+                job.CompletedAt = DateTime.UtcNow;
+                Save(job);
+            }
+            _jobs[job.JobId] = job;
         }
     }
 }
 
 public class TrainingJob
 {
+    [JsonIgnore]
     internal readonly object SyncRoot = new();
 
     public required string JobId { get; init; }

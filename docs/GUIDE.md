@@ -1062,7 +1062,11 @@ curl -X POST http://localhost:5000/predict \
 ```
 
 **Features**:
+- One server serves one project — the directory it starts in (or `MLOOP_PROJECT_ROOT`); several models in it by `?name=`
 - Auto-loads production model from registry
+- Training jobs (`POST /train` → `GET /jobs/{id}`) run one at a time in the background while predictions keep
+  answering. Each job is recorded in `.mloop/jobs/`, so a restarted server still knows it: a job that was running when
+  the server stopped reads `Failed` (interrupted), and a queued one is trained when the server starts again
 - Swagger/OpenAPI documentation at `/swagger`
 - Single and batch predictions
 - JSON request/response format
