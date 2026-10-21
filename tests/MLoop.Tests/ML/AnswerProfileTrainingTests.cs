@@ -85,7 +85,7 @@ public class AnswerProfileTrainingTests : IDisposable
     /// since they are the one drift signal such a model has. The profile used to be skipped whole.
     /// </summary>
     [Fact]
-    public async Task A_text_only_classifier_still_profiles_its_answers()
+    public async Task A_text_only_classifier_profiles_its_text_and_its_answers()
     {
         var csv = Path.Combine(_tempDir, "logs.csv");
         var rnd = new Random(5);
@@ -102,6 +102,9 @@ public class AnswerProfileTrainingTests : IDisposable
         var (profile, experimentPath, schema) = await TrainAsync(csv, "Label", "binary-classification");
 
         Assert.Empty(profile.Features);
+        var text = Assert.Single(profile.Texts!);
+        Assert.Equal("Content", text.Column);
+        Assert.Contains("heartbeat", text.Vocabulary);
         Assert.NotNull(profile.Prediction);
         AssertTheLoggedAnswersDoNotDrift(profile, experimentPath, schema, csv, "Label", "binary-classification");
     }

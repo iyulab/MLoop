@@ -27,6 +27,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   one included, for when a wrong «no» is the costly answer. The threshold is then the highest one at
   which that class's answers reach the precision; the class is recorded in `decision-threshold.json`
   (`precisionOf`; absent = the positive class, as before).
+- `mloop drift` measures free-text columns: training profiles each text feature by its length and by
+  the share of words its vocabulary never saw, reported as `<column> (length)` and
+  `<column> (unseen words)` — so `input_drift` fires for a text classifier whose inputs change subject.
+  Models trained earlier keep their profile and are measured as before; retrain to add the text columns.
 - `mloop evaluate` reports `negative_precision` and `negative_recall` for binary models — the
   former was already a metric name `train --metric` accepted, but no evaluation reported it.
 

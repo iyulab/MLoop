@@ -1200,8 +1200,12 @@ numeric columns by decile, categorical ones by their most common values, missing
 for a classifier or a regressor, the distribution of the model's own answers over the same rows
 (the predicted class, or the predicted value by decile). This compares the production model's own
 logged predictions with both, by the population stability index (PSI). Nothing runs in the
-background — it is computed when you ask. Free-text columns are not profiled, so a model whose only
-input is text is measured by its answers alone: no `features`, and `input_drift` does not fire for it.
+background — it is computed when you ask. A free-text column is profiled through two descriptors,
+reported as two more columns: `<column> (length)` (characters, by decile) and `<column> (unseen words)`
+(the share of each value's words that training never saw — none, up to 10 %, 25 %, 50 %, 75 %, more).
+The second is the one that moves when the text is about something new; it is measured against
+training rows the vocabulary was not built from, so ordinary new text reads as stable. Words are runs
+of letters and digits; Chinese, Japanese and Thai characters count one by one.
 
 ```bash
 mloop drift                         # the most recent 5,000 logged predictions
@@ -1248,7 +1252,7 @@ on new traffic.
 
 **Most moved** is the bin whose share changed most — a decile range, a category, `(other)` for
 values training never saw, or `(missing)`. Only predictions of the model now in production count:
-an earlier model's traffic describes another model. Free-text columns are not profiled. A model
+an earlier model's traffic describes another model. A model
 trained before profiles were recorded, or a task that reads no feature columns (time series,
 recommendation, deep learning), has none — the command says so; retrain and promote to start.
 

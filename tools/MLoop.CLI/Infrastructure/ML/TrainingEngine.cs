@@ -817,17 +817,13 @@ public class TrainingEngine : ITrainingEngine
     {
         if (inputSchema is null || !File.Exists(dataFilePath) || !AutoMLRunner.ReadsFeatureColumns(config.Task))
             return;
-        var columns = MLoop.Core.Monitoring.DriftProfile.ColumnsOf(inputSchema);
         try
         {
             var sample = await MLoop.Core.Monitoring.DriftProfile.SampleCsvAsync(dataFilePath, cancellationToken: cancellationToken);
-            // The answers are profiled even when no column is — a model whose only input is free text
-            // has no column profile, and its answer distribution is then the one drift signal there is.
-            var prediction = AnswerProfile(sample, inputSchema, config, modelPath);
-            if (columns.Count == 0 && prediction is null)
+            var profile = MLoop.Core.Monitoring.DriftProfile.Of(sample, inputSchema)
+                with { Prediction = AnswerProfile(sample, inputSchema, config, modelPath) };
+            if (profile.Features.Count == 0 && profile.Texts is not { Count: > 0 } && profile.Prediction is null)
                 return;
-            var profile = MLoop.Core.Monitoring.DriftProfile.Build(sample.Project(columns.Select(c => c.Column).ToList()), columns)
-                with { Prediction = prediction };
             await _fileSystem.WriteJsonAsync(
                 _fileSystem.CombinePath(experimentPath, ExperimentLayout.DriftProfileFileName), profile, cancellationToken);
         }

@@ -30,7 +30,10 @@ public sealed record FeatureDrift(
 /// model's answers over the same window compared against its answers at training.
 /// </summary>
 /// <param name="Rows">Rows in the window.</param>
-/// <param name="Features">One entry per profiled input column, most moved first.</param>
+/// <param name="Features">
+/// One entry per profiled input column, most moved first — a free-text column as two
+/// (<see cref="TextProfile.LengthColumn"/>, <see cref="TextProfile.UnseenColumn"/>).
+/// </param>
 /// <param name="Prediction">
 /// The answers' drift (<see cref="DriftProfile.PredictionColumn"/>); <c>null</c> when the profile has
 /// no answer profile. Not part of <see cref="MaxPsi"/> and <see cref="Level"/>: those describe the
@@ -101,6 +104,11 @@ public static class DriftMeasure
         ArgumentNullException.ThrowIfNull(rows);
         var features = profile.Features
             .Select(feature => Measure(feature, rows.Select(r => ValueOf(r, feature.Column)).ToList()))
+            .Concat((profile.Texts ?? []).SelectMany(text =>
+            {
+                var (lengths, unseen) = text.Describe(rows.Select(r => ValueOf(r, text.Column)).ToList());
+                return new[] { Measure(text.Length, lengths), Measure(text.Unseen, unseen) };
+            }))
             .OrderByDescending(f => f.Psi)
             .ToList();
         var prediction = profile.Prediction is { } reference && answers is not null

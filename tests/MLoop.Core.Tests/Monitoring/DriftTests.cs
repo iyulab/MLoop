@@ -236,3 +236,99 @@ public class DriftMeasureTests
         Assert.Equal(1.0, absent.Features.Single(f => f.Column == "x").CurrentShare);
     }
 }
+
+public class TextProfileTests
+{
+    private static readonly string[] Topics = ["delivery was late again", "the screen cracked on day one", "refund took three weeks",
+        "battery drains overnight", "support answered quickly", "wrong size was shipped", "great value for the price"];
+
+    private static List<string?> Reviews(int n, string[] pool, int seed)
+    {
+        var random = new Random(seed);
+        return Enumerable.Range(0, n).Select(_ => (string?)$"{pool[random.Next(pool.Length)]} {pool[random.Next(pool.Length)]}").ToList();
+    }
+
+    private static IReadOnlyDictionary<string, object?> Row(string? text) => new Dictionary<string, object?> { ["review"] = text };
+
+    private static DriftProfile Profile(IReadOnlyList<string?> values)
+        => new() { Rows = values.Count, Features = [], Texts = [TextProfile.Build("review", values)] };
+
+    [Fact]
+    public void Words_AreLowerCasedLetterRuns_AndUnspacedScriptsGoCharacterByCharacter()
+    {
+        Assert.Equal(["delivery", "was", "late", "2", "days"], TextProfile.Words("Delivery was LATE: 2 days!"));
+        Assert.Equal(["배송이", "늦었어요"], TextProfile.Words("배송이 늦었어요."));
+        Assert.Equal(["配", "送", "abc"], TextProfile.Words("配送abc"));
+        Assert.Empty(TextProfile.Words("  ...  "));
+    }
+
+    [Fact]
+    public void TheSameKindOfText_DoesNotDrift()
+    {
+        var profile = Profile(Reviews(2000, Topics, 1));
+
+        var report = DriftMeasure.Compare(profile, Reviews(1000, Topics, 2).Select(Row).ToList());
+
+        Assert.Equal([TextProfile.LengthColumn("review"), TextProfile.UnseenColumn("review")],
+            report.Features.Select(f => f.Column).Order(StringComparer.Ordinal));
+        Assert.Equal(DriftLevel.None, report.Level);
+    }
+
+    [Fact]
+    public void TextAboutWhatTheModelNeverRead_DriftsInItsUnseenWords()
+    {
+        var profile = Profile(Reviews(2000, Topics, 1));
+        string[] elsewhere = ["firmware bricked the router", "invoice currency mismatch", "warehouse inventory audit pending"];
+
+        var report = DriftMeasure.Compare(profile, Reviews(1000, elsewhere, 3).Select(Row).ToList());
+
+        var unseen = report.Features.Single(f => f.Column == TextProfile.UnseenColumn("review"));
+        Assert.Equal(DriftLevel.Significant, unseen.Level);
+        Assert.Equal(DriftLevel.Significant, report.Level);   // a text column moves input_drift like any column
+    }
+
+    [Fact]
+    public void TheUnseenReference_IsNotZero_WhenEveryWordIsRare()
+    {
+        // Every value distinct: measured on the rows its vocabulary came from, every row would read 0 % unseen.
+        var values = Enumerable.Range(0, 400).Select(i => (string?)$"token{i} other{i}").ToList();
+
+        var profile = TextProfile.Build("review", values);
+
+        Assert.True(profile.Unseen.Shares[profile.Unseen.BinOf("1")] > 0.9);
+    }
+
+    [Fact]
+    public void Of_ProfilesTextFeaturesApart_FromBinnedColumns()
+    {
+        var schema = new InputSchemaInfo
+        {
+            CapturedAt = DateTime.UtcNow,
+            Columns =
+            [
+                new ColumnSchema { Name = "n", DataType = SchemaDataTypes.Numeric, Purpose = "Feature" },
+                new ColumnSchema { Name = "review", DataType = SchemaDataTypes.Text, Purpose = "Feature" },
+                new ColumnSchema { Name = "y", DataType = SchemaDataTypes.Text, Purpose = "Label" },
+            ],
+        };
+        var sample = new CsvSample(["n", "review", "y"], Enumerable.Range(0, 50).Select(i => new string?[] { i.ToString(CultureInfo.InvariantCulture), $"word{i % 4} more", "a" }).ToList());
+
+        var profile = DriftProfile.Of(sample, schema);
+
+        Assert.Equal(["n"], profile.Features.Select(f => f.Column));
+        Assert.Equal(["review"], profile.Texts!.Select(t => t.Column));
+        Assert.Equal(["more", "word0", "word2"], profile.Texts![0].Vocabulary.Order(StringComparer.Ordinal));   // even rows only
+    }
+
+    [Fact]
+    public void AProfileWithText_RoundTripsThroughJson()
+    {
+        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
+        var profile = Profile(Reviews(200, Topics, 1));
+
+        var back = JsonSerializer.Deserialize<DriftProfile>(JsonSerializer.Serialize(profile, options), options)!;
+
+        Assert.Equal(profile.Texts![0].Vocabulary, back.Texts![0].Vocabulary);
+        Assert.Equal(profile.Texts[0].Unseen.Shares, back.Texts[0].Unseen.Shares);
+    }
+}
