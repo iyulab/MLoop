@@ -147,32 +147,25 @@ public static class OnnxVerification
         var column = data.Schema.GetColumnOrNull(spec.Name)
             ?? throw new InvalidOperationException($"The data has no column '{spec.Name}' to feed the graph.");
         int[] shape = [rows, spec.Width];
-        switch (spec.ElementType)
+        // A vector column (a merged numeric range, the loader's group of yes/no columns) and a
+        // scalar one are fed the same way: rows × width values in slot order.
+        return spec.ElementType switch
         {
-            case "float32" when column.Type is VectorDataViewType:
-                return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<float>(
-                    data.GetColumn<VBuffer<float>>(column).Take(rows).SelectMany(b => b.DenseValues()).ToArray(), shape));
-            case "float32":
-                return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<float>(
-                    data.GetColumn<float>(column).Take(rows).ToArray(), shape));
-            case "float64":
-                return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<double>(
-                    data.GetColumn<double>(column).Take(rows).ToArray(), shape));
-            case "bool":
-                return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<bool>(
-                    data.GetColumn<bool>(column).Take(rows).ToArray(), shape));
-            case "string" when column.Type is VectorDataViewType:
-                return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<string>(
-                    data.GetColumn<VBuffer<ReadOnlyMemory<char>>>(column).Take(rows)
-                        .SelectMany(b => b.DenseValues().Select(v => v.ToString())).ToArray(), shape));
-            case "string":
-                return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<string>(
-                    data.GetColumn<ReadOnlyMemory<char>>(column).Take(rows).Select(v => v.ToString()).ToArray(), shape));
-            default:
-                throw new InvalidOperationException(
-                    $"Cannot feed input '{spec.Name}' of element type {spec.ElementType}.");
-        }
+            "float32" => NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<float>(Values<float>(data, column, rows), shape)),
+            "float64" => NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<double>(Values<double>(data, column, rows), shape)),
+            "bool" => NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<bool>(Values<bool>(data, column, rows), shape)),
+            "int32" => NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<int>(Values<int>(data, column, rows), shape)),
+            "int64" => NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<long>(Values<long>(data, column, rows), shape)),
+            "string" => NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<string>(
+                Values<ReadOnlyMemory<char>>(data, column, rows).Select(v => v.ToString()).ToArray(), shape)),
+            _ => throw new InvalidOperationException($"Cannot feed input '{spec.Name}' of element type {spec.ElementType}."),
+        };
     }
+
+    private static T[] Values<T>(IDataView data, DataViewSchema.Column column, int rows) =>
+        column.Type is VectorDataViewType
+            ? data.GetColumn<VBuffer<T>>(column).Take(rows).SelectMany(b => b.DenseValues()).ToArray()
+            : data.GetColumn<T>(column).Take(rows).ToArray();
 
     private static float[] ExpectedFloats(IDataView scored, string column, int rows) =>
         scored.Schema[column].Type is VectorDataViewType

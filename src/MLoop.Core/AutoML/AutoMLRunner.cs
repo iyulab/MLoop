@@ -24,6 +24,10 @@ public partial class AutoMLRunner
     private readonly ScriptDiscovery _scriptDiscovery;
     private readonly SinkLogger _logger;
 
+    // What a run has already said. A run can try more than one search (another metric, then a
+    // direct pipeline) and each one states the same column roles; saying it once is enough.
+    private readonly HashSet<string> _saidThisRun = new(StringComparer.Ordinal);
+
     /// <param name="mlContext">ML.NET context shared with the loader and the fitted pipelines.</param>
     /// <param name="dataLoader">Format-specific loader for the task's data.</param>
     /// <param name="projectRoot">Project root, for script discovery. Defaults to the current directory.</param>
@@ -179,6 +183,9 @@ public partial class AutoMLRunner
         IProgress<TrainingProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        lock (_saidThisRun)
+            _saidThisRun.Clear();
+
         // Load and split data
         IDataView trainSet, testSet;
         var isTimeSeriesTask = IsTimeSeriesTask(config.Task);
@@ -646,7 +653,7 @@ public partial class AutoMLRunner
 
         // Build explicit ColumnInformation to ensure text columns get
         // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         var preFeaturizer = config.PreFeaturizer;
         ITransformer? portableText = null;
         if (config.Portable)
@@ -1062,7 +1069,7 @@ public partial class AutoMLRunner
         // report (see TrialProgressChannel — reporting up front meant sending accuracy=0).
         var trialChannel = CreateTrialChannel(progress);
 
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
 
         // The pre-featurizer (statistical prep, portable text) belongs in front of this pipeline as it
         // does in front of AutoML's — without it the fallback trained on columns prep never touched.
@@ -1246,7 +1253,7 @@ public partial class AutoMLRunner
         var experiment = _mlContext.Auto().CreateMulticlassClassificationExperiment(settings);
 
         // Explicit ColumnInformation for text column featurization
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         var preFeaturizer = config.PreFeaturizer;
         ITransformer? portableText = null;
         if (config.Portable)
@@ -1332,7 +1339,7 @@ public partial class AutoMLRunner
         var experiment = _mlContext.Auto().CreateRegressionExperiment(settings);
 
         // Explicit ColumnInformation for text column featurization
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         var preFeaturizer = config.PreFeaturizer;
         ITransformer? portableText = null;
         if (config.Portable)
@@ -2422,6 +2429,15 @@ public partial class AutoMLRunner
         }
 
         return false;
+    }
+
+    private void InfoOnce(string message)
+    {
+        bool first;
+        lock (_saidThisRun)
+            first = _saidThisRun.Add(message);
+        if (first)
+            _logger.Info(message);
     }
 
     /// <summary>

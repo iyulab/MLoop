@@ -108,6 +108,43 @@ public sealed class OnnxExportTests : IDisposable
     }
 
     [Fact]
+    public void Verification_FeedsAVectorOfBooleans()
+    {
+        // The loader groups yes/no columns into one Boolean vector; the graph takes it as one input.
+        var rng = new Random(17);
+        var path = WriteCsv("a,f1,f2,label", Enumerable.Range(0, 160).Select(_ =>
+        {
+            double a = rng.NextDouble();
+            bool f1 = rng.NextDouble() < 0.5, f2 = rng.NextDouble() < 0.5;
+            return Row(a, f1 ? "true" : "false", f2 ? "true" : "false", a + (f1 ? 0.4 : 0) > 0.7 ? "true" : "false");
+        }));
+        var loader = new TextLoader.Options
+        {
+            HasHeader = true, Separators = [','],
+            Columns =
+            [
+                new TextLoader.Column("a", DataKind.Single, 0),
+                new TextLoader.Column("BooleanFeatures", DataKind.Boolean, 1, 2),
+                new TextLoader.Column("label", DataKind.Boolean, 3),
+            ],
+        };
+        var data = _ml.Data.CreateTextLoader(loader).Load(path);
+        var model = _ml.Transforms.Conversion.ConvertType("flags", "BooleanFeatures", DataKind.Single)
+            .Append(_ml.Transforms.Concatenate("Features", "a", "flags"))
+            .Append(_ml.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression("label"))
+            .Fit(data);
+
+        var (result, onnx) = Export(model, data, loader, ["a", "f1", "f2", "label"], "label");
+        var flags = Assert.Single(result.Inputs, i => i.Name == "BooleanFeatures");
+        Assert.Equal(("bool", 2), (flags.ElementType, flags.Width));
+        Assert.Equal(["f1", "f2"], flags.SourceColumns);
+
+        var verification = OnnxVerification.Compare(model, data, result, onnx);
+
+        Assert.True(verification.Passed, string.Join(", ", verification.MaxAbsDifference.Select(kv => $"{kv.Key}={kv.Value}")));
+    }
+
+    [Fact]
     public void Regression_TreeEnsemble_GraphMatchesModel()
     {
         var rng = new Random(11);
