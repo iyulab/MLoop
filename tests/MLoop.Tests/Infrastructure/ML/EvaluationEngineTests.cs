@@ -208,8 +208,9 @@ public class EvaluationEngineTests : IDisposable
         Assert.Contains("macro_accuracy", metrics.Keys);
         Assert.Contains("micro_accuracy", metrics.Keys);
         Assert.Contains("log_loss", metrics.Keys);
+        Assert.Contains("log_loss_reduction", metrics.Keys);
         Assert.Contains("ece", metrics.Keys);
-        Assert.Equal(4, metrics.Count);
+        Assert.Equal(5, metrics.Count);
     }
 
     [Fact]

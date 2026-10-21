@@ -407,13 +407,7 @@ public class EvaluationEngine
     {
         var metrics = _mlContext.Regression.Evaluate(predictions, labelColumnName: labelColumn, scoreColumnName: "Score");
 
-        return new Dictionary<string, double>
-        {
-            { "r_squared", metrics.RSquared },
-            { "rmse", metrics.RootMeanSquaredError },
-            { "mae", metrics.MeanAbsoluteError },
-            { "mse", metrics.MeanSquaredError }
-        };
+        return MetricReport.Describe(metrics);
     }
 
     private Dictionary<string, double> EvaluateBinaryClassification(IDataView predictions, string labelColumn)
@@ -432,7 +426,7 @@ public class EvaluationEngine
             return counts;
         }
 
-        var result = BinaryMetrics.Describe(metrics);
+        var result = MetricReport.Describe(metrics);
         if (CalibrationError.Binary(predictions, labelColumn) is { } ece)
             result[CalibrationError.MetricName] = ece;
         return result;
@@ -442,12 +436,7 @@ public class EvaluationEngine
     {
         var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: labelColumn, scoreColumnName: "Score");
 
-        var result = new Dictionary<string, double>
-        {
-            { "macro_accuracy", metrics.MacroAccuracy },
-            { "micro_accuracy", metrics.MicroAccuracy },
-            { "log_loss", metrics.LogLoss }
-        };
+        var result = MetricReport.Describe(metrics);
         if (CalibrationError.Multiclass(predictions, labelColumn) is { } ece)
             result[CalibrationError.MetricName] = ece;
         return result;

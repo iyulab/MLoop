@@ -29,4 +29,14 @@ public class MetricDirectionTests
     [InlineData("f1_score", false)]
     public void IsLowerBetter_ClassifiesByDirection(string metric, bool expected)
         => Assert.Equal(expected, MetricDirection.IsLowerBetter(metric));
+
+    [Theory]
+    [InlineData("log_loss_reduction")]
+    [InlineData("LogLossReduction")]
+    public void ALossReduction_IsHigherBetter_ThoughItsNameContainsTheLoss(string name)
+    {
+        Assert.False(MetricDirection.IsLowerBetter(name));
+        Assert.True(MetricDirection.IsKnown(name));
+        Assert.True(MetricDirection.IsLowerBetter("log_loss"));
+    }
 }

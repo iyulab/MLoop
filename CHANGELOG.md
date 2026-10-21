@@ -21,8 +21,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `mloop evaluate` reports `negative_precision` and `negative_recall` for binary models — the
   former was already a metric name `train --metric` accepted, but no evaluation reported it.
 
+### Changed
+
+- `--metric log_loss_reduction` and `--metric top_k_accuracy` (and `metric:` in `mloop.yaml`) are
+  refused for training, with the reason. Neither ever optimized what its name says: the AutoML engine
+  minimizes log-loss reduction although higher is better, so a run chose the model that learned
+  least (trials reached 0.96, the result was 0.0); and top-k accuracy needs a K that trials are not
+  scored with, so it was 0 for every model. **Migration:** use `log_loss` — on the same rows it ranks
+  models exactly as its reduction does — and for top-k, `macro_accuracy` or `micro_accuracy`.
+  `log_loss_reduction` is still reported for every multiclass model.
+
 ### Fixed
 
+- `log_loss_reduction` was read as lower-is-better wherever experiments are ranked or compared
+  (its name contains "loss"); it is higher-is-better.
+- A multiclass result did not carry `log_loss_reduction`; regression and multiclass results, like
+  binary ones, now come from one mapping per task family.
 - A binary model trained with `--metric auprc` or `--metric negative_precision` recorded no value for
   the metric it optimized: training reported neither (and `evaluate` did not report `auprc`). Every
   binary result — training, each trial, the small-data fallback and `evaluate` — now reports the same

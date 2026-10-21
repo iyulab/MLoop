@@ -22,6 +22,12 @@ public static class MetricDirection
     public static bool IsLowerBetter(string metricName)
     {
         var lower = metricName.ToLowerInvariant();
+        // A reduction of a loss is how much better than a baseline the model is: higher is better,
+        // though its name contains the loss. Matching "loss" alone ranked log_loss_reduction upside
+        // down — a run optimizing it picked the model that had learned nothing (reduction ≈ 0)
+        // over ones near 1.
+        if (IsReduction(lower))
+            return false;
         return lower.Contains("error")
             || lower.Contains("mae")
             || lower.Contains("mse")
@@ -57,8 +63,11 @@ public static class MetricDirection
     /// authority's home, rather than inferring "not lower-better ⇒ higher-better" so that
     /// <see cref="IsKnown"/> can tell a determination from the default.
     /// </summary>
+    private static bool IsReduction(string lower) => lower.Contains("reduction");
+
     private static bool IsKnownHigherBetter(string lower) =>
-        lower.Contains("accuracy")
+        IsReduction(lower)
+        || lower.Contains("accuracy")
         || lower.Contains("auc")
         || lower.Contains("auprc")
         || lower.Contains("r_squared")

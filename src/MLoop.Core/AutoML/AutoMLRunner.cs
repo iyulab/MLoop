@@ -680,11 +680,11 @@ public partial class AutoMLRunner
         // Use EvaluateNonCalibrated when Probability column is missing.
         var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
 
-        // One mapping from ML.NET's fields to MLoop's names (BinaryMetrics): a name the optimizer
+        // One mapping from ML.NET's fields to MLoop's names (MetricReport): a name the optimizer
         // accepts is a name this result carries.
-        var metricsDict = BinaryMetrics.Describe(hasProbability
+        var metricsDict = WithoutUndefinedRanking(MetricReport.Describe(hasProbability
             ? _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn)
-            : _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn));
+            : _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn)));
 
         if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
             metricsDict[CalibrationError.MetricName] = binaryEce;
@@ -1070,11 +1070,11 @@ public partial class AutoMLRunner
         var predictions = model.Transform(testSet);
         var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
 
-        // One mapping from ML.NET's fields to MLoop's names (BinaryMetrics): a name the optimizer
+        // One mapping from ML.NET's fields to MLoop's names (MetricReport): a name the optimizer
         // accepts is a name this result carries.
-        var metricsDict = BinaryMetrics.Describe(hasProbability
+        var metricsDict = WithoutUndefinedRanking(MetricReport.Describe(hasProbability
             ? _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn)
-            : _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn));
+            : _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn)));
 
         if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
             metricsDict[CalibrationError.MetricName] = binaryEce;
@@ -1237,12 +1237,7 @@ public partial class AutoMLRunner
         var predictions = bestModel.Transform(testSet);
         var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, config.LabelColumn);
 
-        var metricsDict = new Dictionary<string, double>
-        {
-            ["macro_accuracy"] = metrics.MacroAccuracy,
-            ["micro_accuracy"] = metrics.MicroAccuracy,
-            ["log_loss"] = metrics.LogLoss
-        };
+        var metricsDict = MetricReport.Describe(metrics);
 
         if (CalibrationError.Multiclass(predictions, config.LabelColumn) is { } multiclassEce)
             metricsDict[CalibrationError.MetricName] = multiclassEce;
@@ -1323,13 +1318,7 @@ public partial class AutoMLRunner
         var predictions = bestModel.Transform(testSet);
         var metrics = _mlContext.Regression.Evaluate(predictions, config.LabelColumn);
 
-        var metricsDict = new Dictionary<string, double>
-        {
-            ["r_squared"] = metrics.RSquared,
-            ["rmse"] = metrics.RootMeanSquaredError,
-            ["mae"] = metrics.MeanAbsoluteError,
-            ["mse"] = metrics.MeanSquaredError
-        };
+        var metricsDict = MetricReport.Describe(metrics);
 
         // ML.NET's Regression.Evaluate silently drops rows whose Score is non-finite. When the best
         // model is degenerate (e.g. FastForest fitted on a handful of rows scores NaN for EVERY input)
@@ -2191,8 +2180,6 @@ public partial class AutoMLRunner
         "macro_accuracy" => MulticlassClassificationMetric.MacroAccuracy,
         "micro_accuracy" => MulticlassClassificationMetric.MicroAccuracy,
         "log_loss" => MulticlassClassificationMetric.LogLoss,
-        "log_loss_reduction" => MulticlassClassificationMetric.LogLossReduction,
-        "top_k_accuracy" => MulticlassClassificationMetric.TopKAccuracy,
         _ => null
     };
 
@@ -2256,8 +2243,6 @@ public partial class AutoMLRunner
         {
             MulticlassClassificationMetric.MicroAccuracy => ("micro_accuracy", m => m.MicroAccuracy),
             MulticlassClassificationMetric.LogLoss => ("log_loss", m => m.LogLoss),
-            MulticlassClassificationMetric.LogLossReduction => ("log_loss_reduction", m => m.LogLossReduction),
-            MulticlassClassificationMetric.TopKAccuracy => ("top_k_accuracy", m => m.TopKAccuracy),
             _ => ("macro_accuracy", m => m.MacroAccuracy)
         };
 
@@ -2310,23 +2295,21 @@ public partial class AutoMLRunner
     // The full metric set per trial, in MLoop's own vocabulary — the same keys the final
     // AutoMLResult.Metrics uses, so a trial row and the results table name the same things.
 
-    private static Dictionary<string, double> DescribeAllBinaryMetrics(BinaryClassificationMetrics m) => BinaryMetrics.Describe(m);
+    private static Dictionary<string, double> DescribeAllBinaryMetrics(BinaryClassificationMetrics m) => MetricReport.Describe(m);
 
-    private static Dictionary<string, double> DescribeAllMulticlassMetrics(MulticlassClassificationMetrics m) => new()
+    // A test partition of one class leaves AUC and AUPRC undefined (NaN); the result records them as
+    // absent rather than as a number, as it always has for AUC.
+    private static Dictionary<string, double> WithoutUndefinedRanking(Dictionary<string, double> metrics)
     {
-        ["micro_accuracy"] = m.MicroAccuracy,
-        ["macro_accuracy"] = m.MacroAccuracy,
-        ["log_loss"] = m.LogLoss,
-        ["log_loss_reduction"] = m.LogLossReduction
-    };
+        foreach (var key in new[] { "auc", "auprc" })
+            if (metrics.TryGetValue(key, out var value) && double.IsNaN(value))
+                metrics.Remove(key);
+        return metrics;
+    }
 
-    private static Dictionary<string, double> DescribeAllRegressionMetrics(RegressionMetrics m) => new()
-    {
-        ["r_squared"] = m.RSquared,
-        ["rmse"] = m.RootMeanSquaredError,
-        ["mae"] = m.MeanAbsoluteError,
-        ["mse"] = m.MeanSquaredError
-    };
+    private static Dictionary<string, double> DescribeAllMulticlassMetrics(MulticlassClassificationMetrics m) => MetricReport.Describe(m);
+
+    private static Dictionary<string, double> DescribeAllRegressionMetrics(RegressionMetrics m) => MetricReport.Describe(m);
 
     /// <summary>
     /// Runs an AutoML experiment and translates its terminal failures (see

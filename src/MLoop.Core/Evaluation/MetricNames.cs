@@ -37,17 +37,27 @@ public static class MetricNames
     private static readonly string[] Binary =
         ["accuracy", "auc", "auprc", "f1_score", "precision", "recall", "negative_precision", "negative_recall"];
     private static readonly string[] Multiclass =
-        ["macro_accuracy", "micro_accuracy", "log_loss", "log_loss_reduction", "top_k_accuracy"];
+        ["macro_accuracy", "micro_accuracy", "log_loss"];
     private static readonly string[] Regression =
         ["r_squared", "rmse", "mae", "mse"];
     private static readonly string[] Other =
-        ["average_distance", "davies_bouldin_index", "ndcg", "detection_rate", "mape", "exact_match", "char_f1", CalibrationError.MetricName];
+        ["average_distance", "davies_bouldin_index", "ndcg", "detection_rate", "mape", "exact_match", "char_f1", "log_loss_reduction", CalibrationError.MetricName];
 
-    /// <summary>
-    /// The binary classifier's metric names — what <c>train --metric</c> can optimize, and so what
-    /// every binary evaluation reports (<see cref="BinaryMetrics.Describe"/>).
-    /// </summary>
-    public static IReadOnlyList<string> BinaryFamily { get; } = Binary;
+    // Names that will not be optimized, with why — each was accepted once and optimized the wrong
+    // thing. top_k_accuracy needs a K, and AutoML scores trials with ML.NET's default of none, which
+    // reports 0 for every model (measured: micro accuracy 1, top-k accuracy 0), so a run compared
+    // constants. log_loss_reduction is higher-better, but ML.NET's AutoML minimizes it
+    // (MultiClassMetricManager.IsMaximize: LogLossReduction => false), so a run converged on the
+    // model that had learned nothing (measured: trials up to 0.96, the result 0.0). It stays a
+    // reported metric; log_loss orders models on the same rows exactly as its reduction does.
+    private static readonly IReadOnlyDictionary<string, string> NotOptimizable = new Dictionary<string, string>
+    {
+        [Fold("top_k_accuracy")] =
+            "top-k accuracy needs a K, and trials are scored without one, so it is 0 for every model.",
+        [Fold("log_loss_reduction")] =
+            "the AutoML engine minimizes it although higher is better, and would choose the model that learned least. " +
+            "log_loss ranks models on the same rows exactly as its reduction does — optimize that.",
+    };
 
     /// <summary>Every canonical metric name, in a stable order.</summary>
     public static IReadOnlyList<string> All { get; } = [.. Binary, .. Multiclass, .. Regression, .. Other];
@@ -148,6 +158,9 @@ public static class MetricNames
 
         var accepted = OptimizableFor(task);
         var canonical = Canonical(task, name);
+
+        if (NotOptimizable.TryGetValue(Fold(name), out var why))
+            return $"Metric '{name}' cannot be optimized: {why} Choose one of: {Auto}, {string.Join(", ", accepted ?? All)}.";
 
         if (canonical is null)
         {

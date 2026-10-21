@@ -33,7 +33,6 @@ public static class MetricScale
         "accuracy",
         "macro_accuracy",
         "micro_accuracy",
-        "top_k_accuracy",
         "auc",
         "auprc",
         "f1_score",
