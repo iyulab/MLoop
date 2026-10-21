@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-10-21
+
 ### Added
 
 - `mloop feedback add --weight <w>` (and `weight` on `POST /feedback`) records how much the row counts — for a
@@ -1669,7 +1671,8 @@ This closes the **exclusion axis** of that error signature. A second, independen
 - YAML configuration (`mloop.yaml`)
 - Filesystem-based state management
 
-[Unreleased]: https://github.com/iyulab/MLoop/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/iyulab/MLoop/compare/v0.41.0...HEAD
+[0.41.0]: https://github.com/iyulab/MLoop/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/iyulab/MLoop/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/iyulab/MLoop/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/iyulab/MLoop/compare/v0.37.1...v0.38.0
