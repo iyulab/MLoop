@@ -48,6 +48,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Feedback for a prediction logged more than 7 days earlier was refused as "prediction not found" (`mloop feedback
+  add`, `POST /feedback` 404) although the prediction was in the logs. Every logged day is searched now, newest
+  first; how far back the logs reach is the retention period.
 - `mloop preprocess` said "Running preprocessing scripts" twice and "Preprocessing complete" three times.
 - `mloop new hook` wrote hooks that did not compile — every template, for every stage (`Exception` without
   `using System;`), and the validation template printed `{rowCount:N0}` instead of the count. The training engine then

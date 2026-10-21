@@ -15,7 +15,6 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
     private readonly string _logsDirectory;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly object _writeLock = new();
-    private const int DefaultSearchDays = 7;
 
     public FileFeedbackCollector(string baseDirectory)
     {
@@ -170,54 +169,51 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         if (!Directory.Exists(_logsDirectory))
             return null;
 
-        var modelDirs = Directory.GetDirectories(_logsDirectory);
-        var searchFrom = DateTimeOffset.UtcNow.AddDays(-DefaultSearchDays);
+        // Every logged day, newest first across models: the prediction feedback answers is usually recent, so
+        // the search ends early, and one older than any fixed window is still found. A window of 7 days used to
+        // stand here — feedback that arrived later was refused as "prediction not found" for a prediction that
+        // was on disk. How far back logs reach is the project's retention period (mloop logs prune).
+        var logFiles = Directory.GetDirectories(_logsDirectory)
+            .SelectMany(modelDir => Directory.GetFiles(modelDir, "*.jsonl").Select(file => (ModelName: Path.GetFileName(modelDir), File: file)))
+            .OrderByDescending(f => Path.GetFileName(f.File), StringComparer.Ordinal);
 
-        foreach (var modelDir in modelDirs)
+        foreach (var (modelName, file) in logFiles)
         {
-            var modelName = Path.GetFileName(modelDir);
-            var logFiles = Directory.GetFiles(modelDir, "*.jsonl")
-                .Where(f => IsFileInDateRange(f, searchFrom, DateTimeOffset.MaxValue))
-                .OrderByDescending(f => f);
+            if (cancellationToken.IsCancellationRequested)
+                return null;
 
-            foreach (var file in logFiles)
+            try
             {
-                if (cancellationToken.IsCancellationRequested)
-                    return null;
-
-                try
+                var lines = await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false);
+                foreach (var line in lines)
                 {
-                    var lines = await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false);
-                    foreach (var line in lines)
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    try
                     {
-                        if (string.IsNullOrWhiteSpace(line))
-                            continue;
+                        using var doc = JsonDocument.Parse(line);
+                        var root = doc.RootElement;
 
-                        try
+                        if (root.TryGetProperty("id", out var idElement) &&
+                            idElement.GetString() == predictionId)
                         {
-                            using var doc = JsonDocument.Parse(line);
-                            var root = doc.RootElement;
+                            var output = root.TryGetProperty("output", out var outputElement)
+                                ? GetObjectFromJsonElement(outputElement)
+                                : new object();
 
-                            if (root.TryGetProperty("id", out var idElement) &&
-                                idElement.GetString() == predictionId)
-                            {
-                                var output = root.TryGetProperty("output", out var outputElement)
-                                    ? GetObjectFromJsonElement(outputElement)
-                                    : new object();
-
-                                return (modelName, output);
-                            }
-                        }
-                        catch (JsonException)
-                        {
-                            // Skip malformed entries
+                            return (modelName, output);
                         }
                     }
+                    catch (JsonException)
+                    {
+                        // Skip malformed entries
+                    }
                 }
-                catch (IOException)
-                {
-                    // File might be locked or inaccessible
-                }
+            }
+            catch (IOException)
+            {
+                // File might be locked or inaccessible
             }
         }
 

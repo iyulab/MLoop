@@ -1231,9 +1231,8 @@ mloop logs prune --json
 ```
 
 Both stores are written one file per model per UTC day, so whole days leave and nothing is rewritten; files whose
-name is not a day are left alone. Logs and feedback share the period, since a retraining set joins them. Feedback
-is matched to a prediction logged in the last 7 days, so a period shorter than that also shortens how late feedback
-can arrive. Without `retention:` (or with `days` below 1, which `mloop validate` reports) nothing is removed.
+name is not a day are left alone. Logs and feedback share the period, since a retraining set joins them — and
+feedback is matched to its logged prediction, so the period is also how late feedback can arrive. Without `retention:` (or with `days` below 1, which `mloop validate` reports) nothing is removed.
 
 ---
 

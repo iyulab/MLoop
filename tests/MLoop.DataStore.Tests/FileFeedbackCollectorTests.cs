@@ -35,6 +35,22 @@ public class FileFeedbackCollectorTests : IDisposable
     }
 
     [Fact]
+    public async Task RecordFeedbackAsync_FindsAPredictionLoggedLongAgo()
+    {
+        // Feedback after human review can come weeks later; it used to be refused as "not found" past 7 days.
+        var predictionId = await CreatePredictionLog("test-model", "positive");
+        var logDir = Path.Combine(_testDir, ".mloop", "logs", "test-model");
+        var oldDay = DateTimeOffset.UtcNow.AddDays(-30).ToString("yyyy-MM-dd");
+        var today = Directory.GetFiles(logDir, "*.jsonl").Single();
+        File.Move(today, Path.Combine(logDir, $"{oldDay}.jsonl"));
+
+        await _collector.RecordFeedbackAsync(predictionId, "negative");
+
+        var feedback = await _collector.GetFeedbackAsync("test-model");
+        feedback.Should().ContainSingle(f => f.PredictionId == predictionId);
+    }
+
+    [Fact]
     public async Task RecordFeedbackAsync_Success_WhenPredictionExists()
     {
         // Arrange
