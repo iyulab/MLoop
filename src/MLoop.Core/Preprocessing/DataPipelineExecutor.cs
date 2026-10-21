@@ -64,6 +64,8 @@ public class DataPipelineExecutor
             "rolling" => ApplyRolling(pipeline, step),
             "resample" => ApplyResample(pipeline, step),
             "sample" => ApplySample(pipeline, step),
+            "explode" => pipeline.Explode(ResolveColumns(step)),
+            "split-list" => pipeline.SplitList(ResolveColumns(step)),
             _ => throw new InvalidOperationException(PrepStepRules.UnknownType(step.Type))
         };
     }

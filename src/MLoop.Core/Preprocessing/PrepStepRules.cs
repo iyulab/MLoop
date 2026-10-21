@@ -22,7 +22,7 @@ public static class PrepStepRules
     [
         "fill-missing", "normalize", "remove-columns", "rename-columns", "drop-duplicates",
         "extract-date", "parse-datetime", "filter-rows", "add-column", "parse-korean-time",
-        "parse-excel-date", "rolling", "resample", "sample",
+        "parse-excel-date", "rolling", "resample", "sample", "explode", "split-list",
     ];
 
     /// <summary>
@@ -57,6 +57,8 @@ public static class PrepStepRules
             case "fill-missing":
             case "normalize":
             case "remove-columns":
+            case "explode":
+            case "split-list":
                 if (!hasColumns)
                     yield return $"'{step.Type}' requires 'columns' or 'column'";
                 break;

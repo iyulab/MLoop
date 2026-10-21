@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `explode` and `split-list` prep steps: list columns (a list per cell, as Parquet and JSON lists are read) become one
+  row per element, and a list column of one length becomes one column per position (`features.0`, `features.1`, …).
+  A file holding a group per row — a query with its documents' grades and feature vectors — can now be trained on.
 - `TimestampKeys` (`MLoop.Core.Storage`): the times written into names a program reads back — the day-file name of a
   log or feedback entry (`Day`, `TryParseDay`, `DayFileCovers`) and a time to the second (`Stamp`,
   `yyyyMMdd-HHmmss`) — in the invariant culture and the Gregorian calendar. The prediction logger, the feedback
