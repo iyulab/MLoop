@@ -61,7 +61,8 @@ public sealed class GatePolicyTests : IDisposable
         await File.WriteAllTextAsync("datasets/recheck.csv", NoisyBinary(200, 9));
 
         // No 'yes' may be answered 'no' on the recheck set — impossible with flipped labels.
-        var yaml = (await File.ReadAllTextAsync("mloop.yaml")).Replace("    label: Label\n", "    label: y\n", StringComparison.Ordinal);
+        // init writes the platform's line endings; the edits below are made on \n.
+        var yaml = (await File.ReadAllTextAsync("mloop.yaml")).Replace("\r\n", "\n").Replace("    label: Label\n", "    label: y\n", StringComparison.Ordinal);
         Assert.Contains("    task: binary-classification\n", yaml);
         yaml = yaml.Replace("    task: binary-classification\n", """
                 task: binary-classification
@@ -104,7 +105,7 @@ public sealed class GatePolicyTests : IDisposable
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
         await File.WriteAllTextAsync("datasets/train.csv", NoisyBinary(240, 3));
         Assert.Equal(0, (await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote")).ExitCode);
-        var yaml = (await File.ReadAllTextAsync("mloop.yaml")).Replace("    task: binary-classification\n", """
+        var yaml = (await File.ReadAllTextAsync("mloop.yaml")).Replace("\r\n", "\n").Replace("    task: binary-classification\n", """
                 task: binary-classification
                 gate:
                   data: datasets/gone.csv
