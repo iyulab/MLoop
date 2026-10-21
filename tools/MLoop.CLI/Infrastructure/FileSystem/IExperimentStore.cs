@@ -236,6 +236,15 @@ public class ExperimentSummary
     /// Training duration in seconds
     /// </summary>
     public double? TrainingTimeSeconds { get; init; }
+
+    /// <summary>
+    /// The column the rows were weighted by (<see cref="ExperimentConfig.WeightColumn"/>), null when
+    /// unweighted. A weighted and an unweighted metric of the same name are not one scale, so
+    /// rankings compare only experiments that agree on this. Entries of an index older than
+    /// <see cref="ExperimentIndex.CurrentVersion"/> did not record it; the store fills it from each
+    /// experiment's own record when it reads such an index.
+    /// </summary>
+    public string? WeightColumn { get; set; }
 }
 
 /// <summary>
@@ -243,6 +252,16 @@ public class ExperimentSummary
 /// </summary>
 public class ExperimentIndex
 {
+    /// <summary>
+    /// The index format this build writes. 2: every entry records <see cref="ExperimentSummary.WeightColumn"/>.
+    /// </summary>
+    public const int CurrentVersion = 2;
+
+    /// <summary>
+    /// Format of this index; 0 when the file predates the field.
+    /// </summary>
+    public int Version { get; set; }
+
     /// <summary>
     /// Next experiment ID number
     /// </summary>

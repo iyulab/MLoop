@@ -496,7 +496,44 @@ public class ExperimentStoreTests : IDisposable
         Assert.Equal("Concatenate=>FastTreeBinary", summary.Trainer?.Name);
     }
 
-    private ExperimentData CreateExperimentData(string experimentId, string status = "Completed", double? metric = 0.85, string? modelName = null, ExperimentResult? result = null)
+    [Fact]
+    public async Task ListAsync_IndexEntryRecordsTheWeightColumn()
+    {
+        var weighted = CreateExperimentData("exp-001", weightColumn: "w");
+        await _experimentStore.SaveAsync(DefaultModelName, weighted, CancellationToken.None);
+        await _experimentStore.SaveAsync(DefaultModelName, CreateExperimentData("exp-002"), CancellationToken.None);
+
+        var entries = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None)).ToList();
+
+        Assert.Equal("w", entries.Single(e => e.ExperimentId == "exp-001").WeightColumn);
+        Assert.Null(entries.Single(e => e.ExperimentId == "exp-002").WeightColumn);
+    }
+
+    [Fact]
+    public async Task ListAsync_IndexWrittenBeforeTheWeightField_ReadsItFromEachRecord()
+    {
+        // An index written by a build that did not record the weighting: no version, no weightColumn.
+        var weighted = CreateExperimentData("exp-001", weightColumn: "w");
+        await _experimentStore.SaveAsync(DefaultModelName, weighted, CancellationToken.None);
+        await _experimentStore.SaveAsync(DefaultModelName, CreateExperimentData("exp-002"), CancellationToken.None);
+
+        var indexPath = Path.Combine(_testProjectRoot, ExperimentLayout.ModelsDirectory, DefaultModelName,
+            ExperimentLayout.IndexFileName);
+        var json = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(indexPath))!.AsObject();
+        json.Remove("version");
+        foreach (var entry in json["experiments"]!.AsArray())
+            entry!.AsObject().Remove("weightColumn");
+        await File.WriteAllTextAsync(indexPath, json.ToJsonString());
+
+        var entries = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None)).ToList();
+
+        Assert.Equal("w", entries.Single(e => e.ExperimentId == "exp-001").WeightColumn);
+        Assert.Null(entries.Single(e => e.ExperimentId == "exp-002").WeightColumn);
+        // Reading does not rewrite the file.
+        Assert.DoesNotContain("weightColumn", await File.ReadAllTextAsync(indexPath));
+    }
+
+    private ExperimentData CreateExperimentData(string experimentId, string status = "Completed", double? metric = 0.85, string? modelName = null, ExperimentResult? result = null, string? weightColumn = null)
     {
         return new ExperimentData
         {
@@ -511,7 +548,8 @@ public class ExperimentStoreTests : IDisposable
                 LabelColumn = "label",
                 TimeLimitSeconds = 60,
                 Metric = "r_squared",
-                TestSplit = 0.2
+                TestSplit = 0.2,
+                WeightColumn = weightColumn
             },
             Metrics = metric.HasValue ? new Dictionary<string, double>
             {

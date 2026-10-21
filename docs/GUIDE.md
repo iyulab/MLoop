@@ -548,12 +548,22 @@ mloop status --json                # machine-readable, on stdout
 │ Model   │ Experiments │ Completed │ Production │ Best Metric │  Last         │
 │         │             │           │            │             │   Prediction  │
 ├─────────┼─────────────┼───────────┼────────────┼─────────────┼───────────────┤
-│ default │      2      │     2     │ ✓ exp-001  │      0.9564 │      15m ago  │
+│ default │      2      │     2     │ ✓ exp-001  │ 0.9564 rmse │      15m ago  │
 ╰─────────┴─────────────┴───────────┴────────────┴─────────────┴───────────────╯
 
 ── Summary ─────────────────────────────────────────────────────────────────────
 
 Models: 1  Experiments: 2  Completed: 2  Production: 1
+```
+
+**`Best Metric`** is the best value among experiments **measured alike** — the same metric over the
+same row weighting as the newest experiment. A weighted and an unweighted accuracy describe
+different distributions, so neither outranks the other. When the best value is weighted, or some
+experiments were measured differently and were left out, the cell carries a `*` and a note under
+the table says which:
+
+```
+* default: accuracy, weighted by 'w' — best among experiments measured like the latest; 1 measured differently is not compared.
 ```
 
 **`Last Prediction`** counts every kind of prediction output — scored rows, object-detection
@@ -574,6 +584,10 @@ Under `--json` the document goes to **stdout** and the tables above go to stderr
       "hasProduction": true,
       "productionExperimentId": "exp-001",
       "bestMetric": 0.956375203955669,
+      "bestMetricName": "rmse",
+      "bestMetricWeightColumn": null,
+      "bestExperimentId": "exp-002",
+      "experimentsNotCompared": 0,
       "lastPredictionAt": null
     }
   ],

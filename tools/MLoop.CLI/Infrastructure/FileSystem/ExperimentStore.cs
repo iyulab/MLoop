@@ -408,6 +408,7 @@ public class ExperimentStore : IExperimentStore
 
             var newIndex = new ExperimentIndex
             {
+                Version = ExperimentIndex.CurrentVersion,
                 NextId = 1,
                 Experiments = new List<ExperimentSummary>()
             };
@@ -415,7 +416,39 @@ public class ExperimentStore : IExperimentStore
             return newIndex;
         }
 
-        return await _fileSystem.ReadJsonAsync<ExperimentIndex>(indexPath, cancellationToken);
+        var index = await _fileSystem.ReadJsonAsync<ExperimentIndex>(indexPath, cancellationToken);
+        if (index.Version < ExperimentIndex.CurrentVersion)
+            await UpgradeIndexAsync(modelName, index, cancellationToken);
+        return index;
+    }
+
+    /// <summary>
+    /// Fills what an older index did not record from each experiment's own record, in memory — a
+    /// read does not rewrite the file. The next write of the index saves it in the current format.
+    /// </summary>
+    private async Task UpgradeIndexAsync(string modelName, ExperimentIndex index, CancellationToken cancellationToken)
+    {
+        foreach (var entry in index.Experiments)
+        {
+            if (entry.WeightColumn is not null)
+                continue;
+            var configPath = _fileSystem.CombinePath(
+                GetExperimentPath(modelName, entry.ExperimentId), ConfigFileName);
+            if (!_fileSystem.FileExists(configPath))
+                continue;
+            try
+            {
+                var config = await _fileSystem.ReadJsonAsync<ExperimentConfig>(configPath, cancellationToken);
+                entry.WeightColumn = config.WeightColumn;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                           or System.Text.Json.JsonException)
+            {
+                // A record that cannot be read leaves the entry as it was: unweighted is what every
+                // experiment written before weighting existed was.
+            }
+        }
+        index.Version = ExperimentIndex.CurrentVersion;
     }
 
     private async Task SaveIndexAsync(string modelName, ExperimentIndex index, CancellationToken cancellationToken)
@@ -451,7 +484,8 @@ public class ExperimentStore : IExperimentStore
             BestTrainer = experiment.Result?.BestTrainer,
             Trainer = experiment.Result?.Trainer,
             MetricName = best?.Name ?? experiment.Config.Metric,
-            TrainingTimeSeconds = experiment.Result?.TrainingTimeSeconds
+            TrainingTimeSeconds = experiment.Result?.TrainingTimeSeconds,
+            WeightColumn = experiment.Config.WeightColumn
         });
 
         index.Experiments = experiments;

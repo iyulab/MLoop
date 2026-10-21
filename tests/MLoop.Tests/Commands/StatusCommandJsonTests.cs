@@ -50,13 +50,14 @@ public class StatusCommandJsonTests : IDisposable
     }
 
     private async Task CreateExperimentAsync(
-        string modelName, string experimentId, string status, double? metric)
+        string modelName, string experimentId, string status, double? metric,
+        string? weightColumn = null, int ageMinutes = 0)
     {
         var experiment = new ExperimentData
         {
             ModelName = modelName,
             ExperimentId = experimentId,
-            Timestamp = DateTime.UtcNow,
+            Timestamp = DateTime.UtcNow.AddMinutes(-ageMinutes),
             Status = status,
             Task = "binary-classification",
             Config = new ExperimentConfig
@@ -65,7 +66,8 @@ public class StatusCommandJsonTests : IDisposable
                 LabelColumn = "target",
                 TimeLimitSeconds = 60,
                 Metric = "accuracy",
-                TestSplit = 0.2
+                TestSplit = 0.2,
+                WeightColumn = weightColumn
             },
             Metrics = metric.HasValue
                 ? new Dictionary<string, double> { ["accuracy"] = metric.Value }
@@ -73,6 +75,27 @@ public class StatusCommandJsonTests : IDisposable
         };
 
         await _experimentStore.SaveAsync(modelName, experiment, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Status_Json_BestMetric_DoesNotRankAcrossWeightings()
+    {
+        // The unweighted 0.99 is on another scale; the newest experiment is weighted.
+        await CreateExperimentAsync(ConfigDefaults.DefaultModelName, "exp-001", "Completed", 0.99, ageMinutes: 30);
+        await CreateExperimentAsync(ConfigDefaults.DefaultModelName, "exp-002", "Completed", 0.81, "w", ageMinutes: 20);
+        await CreateExperimentAsync(ConfigDefaults.DefaultModelName, "exp-003", "Completed", 0.85, "w", ageMinutes: 10);
+
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("status", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var model = doc.RootElement.GetProperty("models")[0];
+        Assert.Equal(0.85, model.GetProperty("bestMetric").GetDouble());
+        Assert.Equal("exp-003", model.GetProperty("bestExperimentId").GetString());
+        Assert.Equal("accuracy", model.GetProperty("bestMetricName").GetString());
+        Assert.Equal("w", model.GetProperty("bestMetricWeightColumn").GetString());
+        Assert.Equal(1, model.GetProperty("experimentsNotCompared").GetInt32());
+        Assert.Contains("1 measured differently is not compared", stderr);
     }
 
     [Fact]

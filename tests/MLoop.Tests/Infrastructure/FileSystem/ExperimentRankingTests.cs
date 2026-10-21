@@ -19,7 +19,7 @@ public class ExperimentRankingTests
             Summary("exp-3", "average_distance", 9.0),
         };
 
-        Assert.Equal("exp-2", ExperimentRanking.SelectBest(exps)!.ExperimentId);
+        Assert.Equal("exp-2", ExperimentRanking.SelectBest(exps)!.Best.ExperimentId);
     }
 
     [Fact]
@@ -32,7 +32,7 @@ public class ExperimentRankingTests
             Summary("exp-3", "accuracy", 0.80),
         };
 
-        Assert.Equal("exp-2", ExperimentRanking.SelectBest(exps)!.ExperimentId);
+        Assert.Equal("exp-2", ExperimentRanking.SelectBest(exps)!.Best.ExperimentId);
     }
 
     [Fact]
@@ -54,12 +54,78 @@ public class ExperimentRankingTests
     public void SelectBest_NoMetrics_ReturnsNull()
         => Assert.Null(ExperimentRanking.SelectBest(new[] { Summary("exp-1", "accuracy", null) }));
 
-    private static ExperimentSummary Summary(string id, string metric, double? value)
+    [Fact]
+    public void SelectBest_DoesNotRankAcrossWeightings()
+    {
+        // The unweighted 0.99 is on another scale than the weighted runs; the newest is weighted.
+        var exps = new[]
+        {
+            Summary("exp-1", "auc", 0.99, ageDays: 3),
+            Summary("exp-2", "auc", 0.80, ageDays: 2, weight: "w"),
+            Summary("exp-3", "auc", 0.85, ageDays: 1, weight: "W"),
+        };
+
+        var pick = ExperimentRanking.SelectBest(exps)!;
+
+        Assert.Equal("exp-3", pick.Best.ExperimentId);
+        Assert.Equal(new ExperimentRanking.Measurement("auc", "w"), pick.Measurement);
+        Assert.Equal(1, pick.NotCompared);
+        Assert.Equal("auc, weighted by 'w'", pick.Measurement.ToString());
+    }
+
+    [Fact]
+    public void OrderByQuality_PutsExperimentsMeasuredLikeTheNewestFirst()
+    {
+        var exps = new[]
+        {
+            Summary("exp-1", "auc", 0.99, ageDays: 3),
+            Summary("exp-2", "auc", 0.80, ageDays: 2, weight: "w"),
+            Summary("exp-3", "auc", 0.85, ageDays: 1, weight: "w"),
+            Summary("exp-4", "auc", null, ageDays: 0),
+        };
+
+        var ordered = ExperimentRanking.OrderByQuality(exps).Select(e => e.ExperimentId).ToArray();
+
+        Assert.Equal(new[] { "exp-3", "exp-2", "exp-1", "exp-4" }, ordered);
+    }
+
+    [Fact]
+    public void SelectBest_DoesNotRankAcrossMetrics()
+    {
+        var exps = new[]
+        {
+            Summary("exp-1", "accuracy", 0.99, ageDays: 2),
+            Summary("exp-2", "f1_score", 0.40, ageDays: 1),
+        };
+
+        var pick = ExperimentRanking.SelectBest(exps)!;
+
+        Assert.Equal("exp-2", pick.Best.ExperimentId);
+        Assert.Equal(1, pick.NotCompared);
+    }
+
+    [Fact]
+    public void SelectBest_AllMeasuredAlike_ComparesEveryOne()
+    {
+        var exps = new[]
+        {
+            Summary("exp-1", "auc", 0.95, ageDays: 2),
+            Summary("exp-2", "auc", 0.90, ageDays: 1),
+        };
+
+        var pick = ExperimentRanking.SelectBest(exps)!;
+
+        Assert.Equal("exp-1", pick.Best.ExperimentId);
+        Assert.Equal(0, pick.NotCompared);
+    }
+
+    private static ExperimentSummary Summary(string id, string metric, double? value, int ageDays = 0, string? weight = null)
         => new()
         {
             ModelName = "m",
             ExperimentId = id,
-            Timestamp = new DateTime(2026, 1, 1),
+            Timestamp = new DateTime(2026, 1, 10).AddDays(-ageDays),
+            WeightColumn = weight,
             Status = "Completed",
             MetricName = metric,
             BestMetric = value,

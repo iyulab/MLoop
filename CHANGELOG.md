@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **`mloop status` and `GET /status` ranked weighted and unweighted experiments against each other.**
+  The best-metric value is now the best among experiments measured like the newest one — the same
+  metric and the same row weighting. The table names the metric beside the value and notes the
+  weighting and any experiments left out; `--json` adds `bestMetricName`, `bestMetricWeightColumn`,
+  `bestExperimentId` and `experimentsNotCompared`. Experiments optimized for different metrics were
+  compared too, and no longer are.
+- `mloop compare --name <model> --best N` takes its N from experiments measured like the newest one
+  first, rather than mixing weighted and unweighted values into one top-N.
+- The experiment index records each experiment's weight column (index format 2). An older index is
+  read by filling the column from each experiment's own record, so nothing needs migrating.
+
 ## [0.37.1] - 2026-10-21
 
 ### Fixed

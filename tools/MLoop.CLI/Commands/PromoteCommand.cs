@@ -147,25 +147,21 @@ public static class PromoteCommand
             {
                 var candidates = (await experimentStore.ListAsync(resolvedModelName, CancellationToken.None)).ToList();
 
-                // --best chooses among the models the gate accepts (--force widens it to all of them),
-                // and compares only metrics measured under one weighting. Both facts are read from each
-                // experiment's own record — the index predates the weight column on older entries.
+                // --best chooses among the models the gate accepts (--force widens it to all of them);
+                // the gate reads each experiment's own record.
                 Dictionary<string, string>? refusals = null;
-                Dictionary<string, string?>? weights = null;
-                if (best)
+                if (best && !force)
                 {
-                    refusals = force ? null : [];
-                    weights = [];
+                    refusals = [];
                     foreach (var candidate in candidates.Where(c => c.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)))
                     {
                         var data = await experimentStore.LoadAsync(resolvedModelName, candidate.ExperimentId, CancellationToken.None);
-                        weights[candidate.ExperimentId] = data.Config?.WeightColumn;
-                        if (refusals != null && ModelRegistry.QualityGateRefusal(data, data.Config?.Metric) is { } why)
+                        if (ModelRegistry.QualityGateRefusal(data, data.Config?.Metric) is { } why)
                             refusals[candidate.ExperimentId] = why;
                     }
                 }
 
-                var (selected, reason, error) = SelectExperiment(candidates, resolvedModelName, best, refusals, weights);
+                var (selected, reason, error) = SelectExperiment(candidates, resolvedModelName, best, refusals);
                 if (selected == null)
                 {
                     WriteError(error!, jsonOutput);
@@ -318,8 +314,7 @@ public static class PromoteCommand
     /// </param>
     internal static (string? ExperimentId, string? Reason, string? Error) SelectExperiment(
         IReadOnlyList<ExperimentSummary> candidates, string modelName, bool best,
-        IReadOnlyDictionary<string, string>? gateRefusals = null,
-        IReadOnlyDictionary<string, string?>? weightColumns = null)
+        IReadOnlyDictionary<string, string>? gateRefusals = null)
     {
         var experiments = candidates
             .Where(e => e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
@@ -362,18 +357,17 @@ public static class PromoteCommand
         // The same metric name over differently weighted rows is not one scale either: a metric
         // weighted toward rare, re-checked cases and an unweighted one describe different
         // distributions, so "best" between them is not a judgement --best can make.
-        if (weightColumns is not null)
+        // Promotion is an act, so a mix is refused rather than narrowed the way status narrows it.
         {
-            static string Describe(string? w) => string.IsNullOrEmpty(w) ? "unweighted" : $"weighted by '{w}'";
+            static string Describe(string? w) => w is null ? "unweighted" : $"weighted by '{w}'";
             var groups = scored
-                .GroupBy(e => weightColumns.TryGetValue(e.ExperimentId, out var w) && !string.IsNullOrEmpty(w)
-                    ? w.ToLowerInvariant() : "")
+                .GroupBy(e => ExperimentRanking.Measurement.Of(e).WeightColumn)
                 .ToList();
             if (groups.Count > 1)
                 return (null, null,
                     $"Experiments for model '{modelName}' were measured with different row weights ("
                     + string.Join("; ", groups.Select(g =>
-                        $"{string.Join(", ", g.Select(e => e.ExperimentId))}: {Describe(weightColumns[g.First().ExperimentId])}"))
+                        $"{string.Join(", ", g.Select(e => e.ExperimentId))}: {Describe(g.Key)}"))
                     + ") — --best cannot compare across them. Score the candidates on one evaluation set "
                     + "(mloop evaluate <experiment> <file> --weight <column>) and promote one by its ID.");
         }

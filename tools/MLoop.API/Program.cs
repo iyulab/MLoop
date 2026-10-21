@@ -845,9 +845,8 @@ app.MapGet("/status", async (
 
             productionDict.TryGetValue(modelName, out var prodModel);
 
-            // honor metric direction so lower-is-better metrics aren't ranked worst-first.
-            var bestMetric = MLoop.CLI.Infrastructure.FileSystem.ExperimentRanking
-                .SelectBest(modelExps)?.BestMetric;
+            // Ranked by metric direction, among experiments measured alike (one metric, one weighting).
+            var bestPick = MLoop.CLI.Infrastructure.FileSystem.ExperimentRanking.SelectBest(modelExps);
 
             return new
             {
@@ -857,7 +856,11 @@ app.MapGet("/status", async (
                 failed,
                 hasProduction = prodModel != null,
                 productionExperimentId = prodModel?.ExperimentId,
-                bestMetric,
+                bestMetric = bestPick?.Best.BestMetric,
+                bestMetricName = bestPick?.Measurement.Metric,
+                bestMetricWeightColumn = bestPick?.Measurement.WeightColumn,
+                bestExperimentId = bestPick?.Best.ExperimentId,
+                experimentsNotCompared = bestPick?.NotCompared ?? 0,
                 latestExperiment = modelExps
                     .OrderByDescending(e => e.Timestamp)
                     .FirstOrDefault()?.ExperimentId

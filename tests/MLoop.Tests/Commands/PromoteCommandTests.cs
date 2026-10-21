@@ -147,7 +147,7 @@ public class PromoteCommandTests : IDisposable
 
     private static MLoop.CLI.Infrastructure.FileSystem.ExperimentSummary Summary(
         string id, string status = "Completed", double? metric = null, string? metricName = null,
-        int ageMinutes = 0)
+        int ageMinutes = 0, string? weight = null)
         => new()
         {
             ModelName = "default",
@@ -156,6 +156,7 @@ public class PromoteCommandTests : IDisposable
             Timestamp = DateTime.UtcNow.AddMinutes(-ageMinutes),
             BestMetric = metric,
             MetricName = metricName,
+            WeightColumn = weight,
         };
 
     [Fact]
@@ -233,12 +234,11 @@ public class PromoteCommandTests : IDisposable
         var candidates = new[]
         {
             Summary("exp-001", metric: 0.90, metricName: "accuracy", ageMinutes: 60),
-            Summary("exp-002", metric: 0.95, metricName: "accuracy", ageMinutes: 30),
+            Summary("exp-002", metric: 0.95, metricName: "accuracy", ageMinutes: 30, weight: "w"),
         };
-        var weights = new Dictionary<string, string?> { ["exp-001"] = null, ["exp-002"] = "w" };
 
         var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(
-            candidates, "default", best: true, weightColumns: weights);
+            candidates, "default", best: true);
 
         Assert.Null(id);
         Assert.NotNull(error);
@@ -252,13 +252,12 @@ public class PromoteCommandTests : IDisposable
     {
         var candidates = new[]
         {
-            Summary("exp-001", metric: 0.90, metricName: "accuracy", ageMinutes: 60),
-            Summary("exp-002", metric: 0.95, metricName: "accuracy", ageMinutes: 30),
+            Summary("exp-001", metric: 0.90, metricName: "accuracy", ageMinutes: 60, weight: "W"),
+            Summary("exp-002", metric: 0.95, metricName: "accuracy", ageMinutes: 30, weight: "w"),
         };
-        var weights = new Dictionary<string, string?> { ["exp-001"] = "W", ["exp-002"] = "w" };
 
         var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(
-            candidates, "default", best: true, weightColumns: weights);
+            candidates, "default", best: true);
 
         Assert.Null(error);
         Assert.Equal("exp-002", id);
@@ -271,13 +270,12 @@ public class PromoteCommandTests : IDisposable
         var candidates = new[]
         {
             Summary("exp-001", metric: 0.90, metricName: "accuracy", ageMinutes: 60),
-            Summary("exp-002", metric: 0.95, metricName: "accuracy", ageMinutes: 30),
+            Summary("exp-002", metric: 0.95, metricName: "accuracy", ageMinutes: 30, weight: "w"),
         };
-        var weights = new Dictionary<string, string?> { ["exp-001"] = null, ["exp-002"] = "w" };
         var refusals = new Dictionary<string, string> { ["exp-002"] = "it predicts only one class" };
 
         var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(
-            candidates, "default", best: true, refusals, weights);
+            candidates, "default", best: true, refusals);
 
         Assert.Null(error);
         Assert.Equal("exp-001", id);

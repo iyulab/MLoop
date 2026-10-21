@@ -126,16 +126,17 @@ public static class StatusCommand
 
                 var hasProduction = productionDict.TryGetValue(modelName, out var prodExpId);
 
-                // honor metric direction so lower-is-better metrics (clustering/forecasting/
-                // recommendation) don't report the worst experiment as best.
-                var bestMetric = ExperimentRanking.SelectBest(modelExperiments)?.BestMetric;
+                // Ranked by metric direction, and only among experiments measured alike (one metric,
+                // one weighting) — the newest experiment's measurement is the model's current one.
+                var bestPick = ExperimentRanking.SelectBest(modelExperiments);
 
                 var lastPredictionDisplay = GetLatestPrediction(predictionsDir, modelName);
                 var lastPredictionAtUtc = GetLatestPredictionTimestampUtc(predictionsDir, modelName);
 
                 modelRows.Add(new ModelStatusRow(
                     modelName, total, completed, hasProduction,
-                    hasProduction ? prodExpId : null, bestMetric,
+                    hasProduction ? prodExpId : null, bestPick?.Best.BestMetric,
+                    bestPick?.Measurement, bestPick?.Best.ExperimentId, bestPick?.NotCompared ?? 0,
                     lastPredictionDisplay, lastPredictionAtUtc));
             }
 
@@ -145,8 +146,11 @@ public static class StatusCommand
                     ? $"[green]✓[/] {row.ProductionExperimentId}"
                     : "[grey]-[/]";
 
+                // The cell names the metric only — the weighting goes to a note under the table, since a
+                // longer cell tears every row across lines at 80 columns.
                 var bestMetricStr = row.BestMetric.HasValue
-                    ? $"[yellow]{row.BestMetric.Value:F4}[/]"
+                    ? $"[yellow]{row.BestMetric.Value:F4}[/] [grey]{Markup.Escape(row.BestMeasurement?.Metric ?? string.Empty)}[/]"
+                      + (NeedsMetricNote(row) ? "[grey]*[/]" : string.Empty)
                     : "[grey]-[/]";
 
                 modelsTable.AddRow(
@@ -159,6 +163,8 @@ public static class StatusCommand
             }
 
             AnsiConsole.Write(modelsTable);
+            foreach (var row in modelRows.Where(NeedsMetricNote))
+                AnsiConsole.MarkupLine($"[grey]* {Markup.Escape(MetricNote(row))}[/]");
             AnsiConsole.WriteLine();
 
             // Data Files Status
@@ -274,6 +280,10 @@ public static class StatusCommand
                 r.HasProduction,
                 r.ProductionExperimentId,
                 r.BestMetric,
+                BestMetricName = r.BestMeasurement?.Metric,
+                BestMetricWeightColumn = r.BestMeasurement?.WeightColumn,
+                r.BestExperimentId,
+                r.ExperimentsNotCompared,
                 LastPredictionAt = r.LastPredictionAtUtc
             }),
             DataFiles = dataFileRows?.Select(d => new { d.Type, d.Path, d.Exists }),
@@ -293,6 +303,19 @@ public static class StatusCommand
         }));
     }
 
+    private static bool NeedsMetricNote(ModelStatusRow row)
+        => row.BestMetric.HasValue && (row.ExperimentsNotCompared > 0 || row.BestMeasurement?.WeightColumn is not null);
+
+    /// <summary>What the best-metric cell measured, when the cell alone does not say it.</summary>
+    internal static string MetricNote(ModelStatusRow row)
+    {
+        var note = $"{row.ModelName}: {row.BestMeasurement}";
+        if (row.ExperimentsNotCompared > 0)
+            note += $" — best among experiments measured like the latest; {row.ExperimentsNotCompared} measured "
+                    + $"differently {(row.ExperimentsNotCompared == 1 ? "is" : "are")} not compared";
+        return note + ".";
+    }
+
     internal record ModelStatusRow(
         string ModelName,
         int TotalExperiments,
@@ -300,6 +323,9 @@ public static class StatusCommand
         bool HasProduction,
         string? ProductionExperimentId,
         double? BestMetric,
+        ExperimentRanking.Measurement? BestMeasurement,
+        string? BestExperimentId,
+        int ExperimentsNotCompared,
         string LastPredictionDisplay,
         DateTime? LastPredictionAtUtc);
 
