@@ -1494,6 +1494,22 @@ The **Leakage** column says where a step runs. A statistic learned from the data
 keeps a leak (`⚠ leak`). Steps that learn nothing (renames, filters, date parts) run on the CSV
 (`ℹ csv-stage`). `POST /train` refuses a model whose `prep:` it would have to skip.
 
+### `mloop features`
+
+Declares which columns are features — policy in `mloop.yaml` (`columns: {name: {type: ignore}}`), no data
+change. The automatic exclusions (dates, identifiers, constants — see `mloop train`) apply on top.
+
+```bash
+mloop features select --drop customerID,notes   # these are not features
+mloop features select --keep age,income,region  # only these (and the label) are
+mloop features select --reset                   # remove every 'ignore' override
+mloop features select --drop notes --name churn --json
+```
+
+`--drop` checks the names against the training data's header and skips one that is not there, saying so —
+a misspelt name would otherwise be recorded while the real column stayed a feature. `--keep` needs the
+training data, to know what "all others" are. Use one of the three at a time.
+
 ### Quick Examples
 
 ```bash

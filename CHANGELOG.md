@@ -18,8 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
-- The guide covers `mloop trigger`, `mloop prep` (plan · run · step types · where each step runs), `mloop runtime`
-  and `mloop update`.
+- The guide covers `mloop trigger`, `mloop prep` (plan · run · step types · where each step runs), `mloop features`,
+  `mloop runtime` and `mloop update`.
 
 ### Fixed
 

@@ -27,12 +27,6 @@ public class GuideCoverageContractTests
     /// </summary>
     private static readonly HashSet<string> Undocumented = new(StringComparer.Ordinal)
     {
-        "trigger",
-        "prep",
-        "features",
-        "runtime",
-        "update",
-
         // Found by this guard on its first run: the count that motivated it came from grepping
         // command constructors, which swept in subcommands and missed these. (`token`, the third,
         // is documented now.)
