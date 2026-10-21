@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-10-21
+
 ### Added
 - **`mloop export onnx [exp-id]`** writes a trained model as an ONNX graph (`model.onnx`) with a
   manifest (`model.onnx.json`): each graph input and the data columns behind it, the outputs, the
@@ -43,6 +45,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - ML.NET 5.0.1 (AutoML, TorchSharp 0.23.1); new dependency `Microsoft.ML.OnnxConverter` 0.23.1.
 
 ### Fixed
+- Training states each column-role line (`Categorical column(s): …`, `Text column(s): …`) once per
+  run; a run that retried with another metric and then fell back printed it once per attempt.
 - The small-data fallback trainer (used when AutoML cannot score a binary run) now applies the
   preprocessing steps that run inside training (statistical `prep` steps); it trained without them.
 - `mloop promote --best` no longer picks a "best" experiment across different row weightings —
