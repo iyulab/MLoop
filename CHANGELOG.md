@@ -28,6 +28,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`classes`, `counts`, `total`) overall and per slice, and so does `POST /evaluate`.
   `MLoop.Core.Evaluation.ConfusionCounts.ShareOf` reads any class-set measure from it — of the rows
   labeled with one of a set of classes, the share answered with one of another.
+- **`mloop threshold` — a binary classifier's decision threshold for a target precision.**
+  `mloop threshold [experiment] --precision 0.95 --data <labeled file> [--weight <column>]` chooses the
+  lowest probability threshold whose positive precision reaches the target on those rows (keeping
+  the most recall; rows of one probability are never split) and writes it beside the model as
+  `decision-threshold.json` — on production too when the experiment is in production. Every path
+  that loads the model then answers at it: `predict` (CSV and `--json`), `mloop serve` (its model
+  cache reloads when the threshold changes), `evaluate` and the gate policy. `promote` carries it
+  with the model; a promoted model without one answers at 0.5. Without `--precision` it shows the
+  current threshold; `--clear` removes it. The ONNX graph keeps the trainer's own decision, and the
+  manifest carries `decisionThreshold` and says to apply it to `Probability`.
 - **A project's own gate policy** (`gate:` under a model in `mloop.yaml`): rules a model must also
   pass to be promoted, judged on an evaluation set (`data`, optional `weight`) when `promote`, a
   training run or `POST /promote` would promote it — `no_worse_than_production` (refused when the
@@ -42,6 +52,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   returns it as `promotions`, and `GET /promotions?name=` returns the same.
 
 ### Fixed
+- **`evaluate` counts the answers a binary model gives.** ML.NET's binary evaluator re-derives each
+  answer from the score at its own threshold and ignores the model's `PredictedLabel`; for a model
+  answering at a chosen decision threshold, accuracy, precision, recall, negative recall and F1 are
+  now counted from its answers, as the confusion matrix is. AUC does not depend on the threshold.
 - **A model promoted by a training run is in the promotion history.** Only `promote`, `rollback`
   and their REST twins recorded an entry, so after `mloop train` (or `POST /train`) replaced the
   production model, `mloop rollback` answered that the history did not record what production held
