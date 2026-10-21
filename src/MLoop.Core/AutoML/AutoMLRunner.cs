@@ -646,7 +646,7 @@ public partial class AutoMLRunner
 
         // Build explicit ColumnInformation to ensure text columns get
         // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
 
         var trialReporter = CreateTrialReporter(progress, DescribeBinaryMetric(optimizingMetric));
 
@@ -1057,7 +1057,7 @@ public partial class AutoMLRunner
         // report (see TrialProgressChannel — reporting up front meant sending accuracy=0).
         var trialChannel = CreateTrialChannel(progress);
 
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
 
         var trainingPipeline = BuildManualBinaryPipeline(_mlContext, trainSet, config.LabelColumn, columnInfo);
 
@@ -1231,7 +1231,7 @@ public partial class AutoMLRunner
         var experiment = _mlContext.Auto().CreateMulticlassClassificationExperiment(settings);
 
         // Explicit ColumnInformation for text column featurization
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
 
         var trialReporter = CreateTrialReporter(progress, DescribeMulticlassMetric(optimizingMetric));
 
@@ -1312,7 +1312,7 @@ public partial class AutoMLRunner
         var experiment = _mlContext.Auto().CreateRegressionExperiment(settings);
 
         // Explicit ColumnInformation for text column featurization
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides);
+        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
 
         var trialReporter = CreateTrialReporter(progress, DescribeRegressionMetric(optimizingMetric));
 
@@ -2408,8 +2408,11 @@ public partial class AutoMLRunner
     public static ColumnInformation? BuildColumnInformation(
         IDataView data, string labelColumn,
         Action<string>? log = null,
-        Dictionary<string, string>? columnOverrides = null)
+        Dictionary<string, string>? columnOverrides = null,
+        IReadOnlyCollection<string>? categoryColumns = null)
     {
+        var categories = new HashSet<string>(categoryColumns ?? [], StringComparer.OrdinalIgnoreCase);
+        var inferredCategories = new List<string>();
         var textColumns = new List<string>();
         var numericColumns = new List<string>();
         var categoricalColumns = new List<string>();
@@ -2455,10 +2458,19 @@ public partial class AutoMLRunner
                 }
             }
 
-            // Default: infer from IDataView type
+            // Default: infer from IDataView type. A string column the run decided holds categories
+            // is one-hot encoded (CategoryColumns); any other is featurized as text.
             if (col.Type is TextDataViewType)
             {
-                textColumns.Add(col.Name);
+                if (categories.Contains(col.Name))
+                {
+                    categoricalColumns.Add(col.Name);
+                    inferredCategories.Add(col.Name);
+                }
+                else
+                {
+                    textColumns.Add(col.Name);
+                }
             }
             else if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType
                 || (col.Type is VectorDataViewType vt2 && vt2.ItemType is NumberDataViewType))
@@ -2488,8 +2500,11 @@ public partial class AutoMLRunner
         var write = log ?? Data.CsvDataLoader.NoLog;
         if (textColumns.Count > 0)
             write($"[Info] Text column(s): {string.Join(", ", textColumns)} — applying text featurization (TF-IDF, n-gram)");
-        if (categoricalColumns.Count > 0)
-            write($"[Info] Categorical column(s) (override): {string.Join(", ", categoricalColumns)}");
+        var declaredCategories = categoricalColumns.Except(inferredCategories).ToList();
+        if (inferredCategories.Count > 0)
+            write($"[Info] Categorical column(s): {string.Join(", ", inferredCategories)} — one-hot encoding");
+        if (declaredCategories.Count > 0)
+            write($"[Info] Categorical column(s) (override): {string.Join(", ", declaredCategories)}");
         if (ignoredColumns.Count > 0)
             write($"[Info] Ignored column(s) (override): {string.Join(", ", ignoredColumns)}");
 

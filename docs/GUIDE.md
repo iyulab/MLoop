@@ -253,6 +253,14 @@ mloop features select --keep age,income,region  # everything else excluded
 mloop features select --reset                   # clear the policy
 ```
 
+**String columns are either categories or text.** A string column whose values do not read as
+language — short codes or levels such as `sex`, `workclass`, `INFO`/`WARN`/`ERROR` — and that has
+at most 100 distinct values (or distinct values on under a tenth of its rows) is a **category** and
+is one-hot encoded. Any other string column is **text** and is featurized with word and character
+n-grams (TF-IDF). Training prints which is which (`Categorical column(s): …`), the decision is made
+once from the whole training file, and the saved schema records it. To decide yourself, declare the
+column `type: categorical` or `type: text` below.
+
 This writes column overrides into `mloop.yaml`, which you can also edit directly. An explicit type
 override is honoured over inference, and — for the identifier rule — over the heuristic: a column
 you declare as `text`, `categorical` or `numeric` is never dropped as an identifier, and neither is
@@ -1027,11 +1035,11 @@ experiment's training file, through the same loader prediction uses. A column th
 (an identifier, a weight) is not an input. An input the graph declares but no output needs — a
 multiclass label — is listed under `unusedInputs`: a runtime still requires it, so feed any value.
 
-Binary classification, multiclass classification and regression are supported. **A string feature
-is featurized as free text by default** (ML.NET `FeaturizeText`, which has no ONNX form), so such a
-model is refused with its string columns named. A column that holds a code or a category exports once
-it is declared `type: categorical` under the model's `columns:` (one-hot encoding) and the model is
-retrained; a column of free text cannot be exported yet. Nothing partial is written on a refusal.
+Binary classification, multiclass classification and regression are supported. Numeric columns
+and category columns (one-hot encoded) export; **a text column does not** — ML.NET's text
+featurization (`FeaturizeText`) has no ONNX form — so such a model is refused with its string columns
+named, and nothing partial is written. If the column actually holds codes or categories, declare it
+`type: categorical` under the model's `columns:` and retrain.
 
 ---
 

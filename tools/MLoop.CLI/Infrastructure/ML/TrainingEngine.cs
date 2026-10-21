@@ -210,6 +210,18 @@ public class TrainingEngine : ITrainingEngine
                     dataFilePath, config.LabelColumn, readsFeatures ? CoreNarration.Sink : null, config.ClaimedColumns);
                 config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
 
+                // Which untyped string columns hold categories (one-hot) rather than language (text
+                // featurization) — decided once, from the full file, like the exclusions above, so the
+                // training partition, the test partition and the saved schema all agree.
+                IReadOnlyList<string> categoryColumns = readsFeatures
+                    ? CategoryColumns.Decide(dataFilePath,
+                        skip: new[] { config.LabelColumn }
+                            .Concat(config.FeatureExclusions)
+                            .Concat(config.ClaimedColumns)
+                            .Concat(config.ColumnOverrides?.Keys ?? Enumerable.Empty<string>()))
+                    : [];
+                config = config with { CategoryColumns = categoryColumns };
+
                 // Say which columns the model will not see, and why. The removal chain narrates this
                 // as it goes, but as prose on the info channel — so a --json consumer, whose stdout
                 // carries only events, learned nothing about it and had to re-derive the post-exclusion
@@ -226,7 +238,7 @@ public class TrainingEngine : ITrainingEngine
                 // Capture input schema before training (using enhanced detection).
                 // Deliberately from the full dataset, not the train split — the schema must describe
                 // every category the model may be asked to predict on.
-                inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides, featureExclusions);
+                inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides, featureExclusions, config.CategoryColumns);
 
                 // Stratify the train/test split for classification. The unstratified alternative is
                 // ML.NET's TrainTestSplit (DataProviderBase.SplitData), which draws rows uniformly and
@@ -790,7 +802,7 @@ public class TrainingEngine : ITrainingEngine
     }
 
     private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn, string? taskType = null, Dictionary<string, string>? columnOverrides = null,
-        IReadOnlyList<ExcludedColumn>? featureExclusions = null)
+        IReadOnlyList<ExcludedColumn>? featureExclusions = null, IReadOnlyCollection<string>? categoryColumns = null)
     {
         try
         {
@@ -886,6 +898,27 @@ public class TrainingEngine : ITrainingEngine
                 {
                     purpose = "Feature";
                     Console.WriteLine($"[Info] Column '{colName}' reclassified: Ignored → Text Feature");
+                }
+
+                // A string feature's recorded type is what training does with it: Categorical when the
+                // run one-hot encodes it (CategoryColumns), Text when it featurizes it as text. The two
+                // used to disagree — the schema said Categorical for columns training read as text.
+                // A column of numbers keeps whatever the inference said; a typed column is settled
+                // by the override below.
+                if (categoryColumns != null && purpose == "Feature" && IsStringColumn(colIndex, dataLines))
+                {
+                    if (categoryColumns.Contains(colName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        if (dataType != SchemaDataTypes.Categorical)
+                        {
+                            var (values, count) = CollectCategoricalValues(colIndex, dataLines);
+                            (dataType, categoricalValues, uniqueCount) = (SchemaDataTypes.Categorical, values, count);
+                        }
+                    }
+                    else if (dataType == SchemaDataTypes.Categorical)
+                    {
+                        (dataType, categoricalValues) = (SchemaDataTypes.Text, null);
+                    }
                 }
 
                 // Apply column type overrides from mloop.yaml
@@ -1066,6 +1099,19 @@ public class TrainingEngine : ITrainingEngine
 
         // High cardinality text
         return (SchemaDataTypes.Text, null, uniqueCount);
+    }
+
+    /// <summary>Whether some non-empty value of the column does not parse as a number.</summary>
+    private static bool IsStringColumn(int colIndex, string[] dataLines)
+    {
+        foreach (var line in dataLines)
+        {
+            var values = CsvFieldParser.ParseFields(line);
+            if (colIndex < values.Length && values[colIndex].Trim() is { Length: > 0 } value
+                && !double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
+                return true;
+        }
+        return false;
     }
 
     private (List<string>? Values, int Count) CollectCategoricalValues(int colIndex, string[] dataLines)

@@ -76,7 +76,7 @@ public sealed class ExportCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task Export_OfAModelWithAFreeTextColumn_IsRefusedAndNamesTheColumn()
+    public async Task Export_OfAModelWithACategoryColumn_OneHotsItAndExports()
     {
         await InitAsync();
         var csv = new StringBuilder("x,level,y\n");
@@ -91,12 +91,44 @@ public sealed class ExportCommandTests : IDisposable
         var (trainExit, trainOutput, _) = await CliRunner.RunAsync(
             "train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote");
         Assert.True(trainExit == 0, trainOutput);
+        Assert.Contains("Categorical column(s): level", trainOutput);
+
+        var (exit, output, error) = await CliRunner.RunAsync("export", "onnx", "exp-001", "--json");
+
+        Assert.True(exit == 0, output + error);
+        using var doc = JsonDocument.Parse(output);
+        var manifest = OnnxManifest.FromJson(await File.ReadAllTextAsync(doc.RootElement.GetProperty("manifestPath").GetString()!));
+        var level = Assert.Single(manifest.Inputs, i => i.Name == "level");
+        Assert.Equal("string", level.ElementType);
+    }
+
+    [Fact]
+    public async Task Export_OfAModelWithAFreeTextColumn_IsRefusedAndNamesTheColumn()
+    {
+        await InitAsync();
+        var csv = new StringBuilder("x,note,y\n");
+        var rng = new Random(5);
+        string[] notes =
+        [
+            "the disk on the second volume failed during the nightly backup",
+            "a user signed in from a new device and was asked to confirm",
+            "the cache was refreshed after the configuration changed",
+        ];
+        for (var i = 0; i < 150; i++)
+        {
+            var x = rng.NextDouble();
+            csv.Append(CultureInfo.InvariantCulture, $"{x:F4},\"{notes[i % 3]} {i}\",{(x > 0.5 ? "yes" : "no")}\n");
+        }
+        await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
+        var (trainExit, trainOutput, _) = await CliRunner.RunAsync(
+            "train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote");
+        Assert.True(trainExit == 0, trainOutput);
 
         var (exit, output, error) = await CliRunner.RunAsync("export", "onnx", "exp-001");
 
         Assert.Equal(1, exit);
         var said = output + error;
-        Assert.Contains("'level'", said);
+        Assert.Contains("'note'", said);
         Assert.Contains("type: categorical", said);
         Assert.False(File.Exists(Path.Combine("models", "default", "staging", "exp-001", ExperimentLayout.OnnxModelFileName)));
     }

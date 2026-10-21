@@ -139,6 +139,15 @@ public record TrainingConfig
     public IReadOnlyCollection<string>? FeatureExclusions { get; init; }
 
     /// <summary>
+    /// String feature columns that hold categories and are one-hot encoded rather than featurized as
+    /// text — decided once for the whole run by <see cref="Data.CategoryColumns.Decide"/>, like
+    /// <see cref="FeatureExclusions"/>, and recorded as <c>Categorical</c> in the saved schema. A
+    /// column the user typed keeps its declared type. Null means no decision was made upstream (an
+    /// in-process caller), and every untyped string column is featurized as text, as before.
+    /// </summary>
+    public IReadOnlyCollection<string>? CategoryColumns { get; init; }
+
+    /// <summary>
     /// Number of clusters for clustering task (0 = auto-select via silhouette search)
     /// </summary>
     public int NumClusters { get; init; } = 0;

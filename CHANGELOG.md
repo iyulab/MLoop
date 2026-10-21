@@ -14,10 +14,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   training file) through the loader prediction uses, so a column the model does not read is not an
   input. Binary classification, multiclass classification and regression. A model with a step ONNX
   cannot express — a string column featurized as free text — is refused with its string columns
-  named and nothing is written; a category column exports once declared `type: categorical`.
+  named and nothing is written.
   `MLoop.Core` carries the conversion (`MLoop.Core.Export.OnnxExport`, `OnnxManifest`).
 
 ### Changed
+- **String columns of categories are one-hot encoded instead of featurized as text.** Every untyped
+  string column used to go through text featurization (word and character n-grams), so a column
+  like `sex` or a log level was read as a one-word document, while the saved schema called it
+  `Categorical`. Now a string column whose values do not read as language and that has at most 100
+  distinct values (or distinct values on under a tenth of its rows) is a category: one-hot encoded,
+  printed as `Categorical column(s): …`, and recorded as `Categorical` in the schema; any other string
+  column is text and recorded as `Text`. Decided once from the whole training file. A declared
+  `type:` still wins. Measured on the UCI Adult census data (eight category columns, 32,561 training
+  rows, 60 s): test AUC 0.9140 → 0.9171, accuracy 0.8683 → 0.8666, calibration error (ECE)
+  0.088 → 0.017 — and the model now exports to ONNX. Retrain to get the new featurization; existing
+  models are unchanged.
 - ML.NET 5.0.1 (AutoML, TorchSharp 0.23.1); new dependency `Microsoft.ML.OnnxConverter` 0.23.1.
 
 ### Fixed
