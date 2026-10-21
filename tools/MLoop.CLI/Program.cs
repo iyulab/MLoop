@@ -146,6 +146,7 @@ internal class Program
             CompareCommand.Create(),
             PromoteCommand.Create(),
             RollbackCommand.Create(),
+            ExportCommand.Create(),
             InfoCommand.Create(),
             AnalyzeCommand.Create(),
             DetectCommand.Create(),

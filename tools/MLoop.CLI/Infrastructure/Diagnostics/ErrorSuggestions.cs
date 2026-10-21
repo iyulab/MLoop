@@ -361,7 +361,7 @@ public static partial class ErrorSuggestions
     /// <summary>
     /// Gets the current mloop CLI version string (semver without commit hash).
     /// </summary>
-    private static string GetVersion()
+    internal static string GetVersion()
     {
         var attr = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>();

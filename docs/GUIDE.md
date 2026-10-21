@@ -999,6 +999,42 @@ Use mloop predict --log to log predictions.
 
 ---
 
+### `mloop export`
+
+`mloop export onnx` writes a trained model as an [ONNX](https://onnx.ai) graph, for a runtime that cannot load ML.NET —
+a Native AOT executable, an edge agent, another language (ONNX Runtime is available for most).
+
+```bash
+mloop export onnx                      # the production model
+mloop export onnx exp-004 --name churn # a named experiment
+mloop export onnx --data sample.csv    # read the input columns from another file
+mloop export onnx -o ./edge --json     # write elsewhere; machine-readable result
+```
+
+Two files land in the experiment's directory (or `--output`):
+
+- `model.onnx` — the graph. Its inputs are the model's input columns as ML.NET reads them: numeric
+  columns arrive merged into one `float32` vector (`Features`), a string column as a `string` tensor.
+  Its outputs are the prediction columns with `.output` appended (`PredictedLabel.output`,
+  `Score.output`, `Probability.output`).
+- `model.onnx.json` — the manifest: for each input, the data columns that fill it in slot order;
+  the outputs; the classes and how to read the answer (binary: `PredictedLabel` true is the second
+  class, `Score > 0`; multiclass: `Score` per class in `classes` order); the experiment's metrics and
+  weight column; SHA-256 of the graph and of the `model.zip` it came from.
+
+The model was saved without an input schema, so the export reads one from data — by default the
+experiment's training file, through the same loader prediction uses. A column the model does not read
+(an identifier, a weight) is not an input. An input the graph declares but no output needs — a
+multiclass label — is listed under `unusedInputs`: a runtime still requires it, so feed any value.
+
+Binary classification, multiclass classification and regression are supported. **A string feature
+is featurized as free text by default** (ML.NET `FeaturizeText`, which has no ONNX form), so such a
+model is refused with its string columns named. A column that holds a code or a category exports once
+it is declared `type: categorical` under the model's `columns:` (one-hot encoding) and the model is
+retrained; a column of free text cannot be exported yet. Nothing partial is written on a refusal.
+
+---
+
 ### `mloop docker` (v0.4.0+)
 
 Generate Docker configuration files for containerized deployment.

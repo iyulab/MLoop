@@ -29,18 +29,30 @@ internal static class TrainerDisplay
     /// </summary>
     /// <remarks>
     /// A name with no chain in it is already the trainer and comes back unchanged, which is the
-    /// ordinary case — the chain appears only when AutoML assembled one.
+    /// ordinary case — the chain appears only when AutoML assembled one. AutoML names a stage it has
+    /// no name for <c>Unknown</c>, and a multiclass pipeline ends in one (the key-to-value mapping
+    /// after the trainer), so the trainer is the last stage that has a name: taking the last stage
+    /// reported every multiclass model as trained by «Unknown».
     /// </remarks>
     internal static string Short(string? fullName)
     {
         if (string.IsNullOrWhiteSpace(fullName))
             return "-";
 
-        var lastStage = fullName.LastIndexOf(ChainSeparator, StringComparison.Ordinal);
-        return lastStage < 0
-            ? fullName.Trim()
-            : fullName[(lastStage + ChainSeparator.Length)..].Trim();
+        var stages = fullName.Split(ChainSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (stages.Length == 0)
+            return fullName.Trim();
+
+        for (var i = stages.Length - 1; i >= 0; i--)
+        {
+            if (!string.Equals(stages[i], UnnamedStage, StringComparison.Ordinal))
+                return stages[i];
+        }
+        return stages[^1];
     }
+
+    /// <summary>AutoML's name for a pipeline stage it cannot name.</summary>
+    private const string UnnamedStage = "Unknown";
 
     /// <summary>
     /// What the Trainer column shows: the trainer without the transforms in front of it, still

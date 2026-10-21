@@ -19,6 +19,9 @@ public class TrainerDisplayTests
     [InlineData("Concatenate=>LightGbmBinary", "LightGbmBinary")]
     [InlineData("LbfgsLogisticRegression", "LbfgsLogisticRegression")]
     [InlineData("A=>B=> C ", "C")]
+    // A multiclass pipeline ends in a key-to-value mapping AutoML calls "Unknown".
+    [InlineData("ReplaceMissingValues=>FeaturizeText=>Concatenate=>Unknown=>LbfgsLogisticRegressionOva=>Unknown", "LbfgsLogisticRegressionOva")]
+    [InlineData("Unknown", "Unknown")]
     public void TheColumnShowsTheTrainerAndNotTheTransformsBeforeIt(string full, string expected)
     {
         Assert.Equal(expected, TrainerDisplay.Short(full));

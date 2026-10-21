@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`mloop export onnx [exp-id]`** writes a trained model as an ONNX graph (`model.onnx`) with a
+  manifest (`model.onnx.json`): each graph input and the data columns behind it, the outputs, the
+  classes and how to read the answer, the experiment's metrics and weight column, and SHA-256 of the
+  graph and of the source `model.zip`. The input schema is read from data (default: the experiment's
+  training file) through the loader prediction uses, so a column the model does not read is not an
+  input. Binary classification, multiclass classification and regression. A model with a step ONNX
+  cannot express — a string column featurized as free text — is refused with its string columns
+  named and nothing is written; a category column exports once declared `type: categorical`.
+  `MLoop.Core` carries the conversion (`MLoop.Core.Export.OnnxExport`, `OnnxManifest`).
+
+### Changed
+- ML.NET 5.0.1 (AutoML, TorchSharp 0.23.1); new dependency `Microsoft.ML.OnnxConverter` 0.23.1.
+
 ### Fixed
 - `mloop promote --best` no longer picks a "best" experiment across different row weightings —
   a weighted and an unweighted accuracy describe different distributions. It refuses, lists the

@@ -79,136 +79,13 @@ public class PredictionEngine
         // mlnetCompatiblePath holds the file fed to ML.NET after preprocessing; tempFiles collects
         // every temp the shared preprocessor (and the dummy-label step below) creates, cleaned up in
         // finally once the lazy IDataView consumption is complete.
-        string mlnetCompatiblePath = processedDataPath;
         List<string> tempFiles = new();
 
         try
         {
-            // Load the trained model
-            DataViewSchema modelSchema;
-            var trainedModel = _mlContext.Model.Load(modelPath, out modelSchema);
-
-            // Find the label column: prefer override, then trained schema
-            // Treat empty string as null (unsupervised tasks like anomaly-detection have no label)
-            string? labelColumn = string.IsNullOrEmpty(labelColumnOverride) ? null : labelColumnOverride;
-            if (labelColumn == null && trainedSchema != null)
-            {
-                var labelInfo = trainedSchema.Columns.FirstOrDefault(c => c.Purpose == "Label");
-                if (labelInfo != null && !string.IsNullOrEmpty(labelInfo.Name))
-                {
-                    labelColumn = labelInfo.Name;
-                }
-            }
-
-            // Apply the single shared inference preprocessing sequence (encoding → flatten → index →
-            // schema-based exclude / data-dependent fallback) — identical to evaluate. This replaces
-            // predict's hand-rolled UTF-8 BOM check (which read CP949 as UTF-8) and the
-            // per-engine index/exclude reimplementation, and adds the previously-missing flatten and
-            // constant-column steps that the divergence had silently dropped.
-            mlnetCompatiblePath = InferenceDataPreprocessor.Prepare(processedDataPath, labelColumn, trainedSchema, out tempFiles);
-
-            // Read the header to get column names (after preprocessing)
-            string firstLine;
-            using (var reader = new StreamReader(mlnetCompatiblePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
-            {
-                firstLine = reader.ReadLine() ?? string.Empty;
-            }
-
-            if (string.IsNullOrEmpty(firstLine))
-            {
-                throw new InvalidOperationException("Input file is empty");
-            }
-
-            var columns = CsvFieldParser.ParseFields(firstLine);
-
-            // If label column is expected but missing from prediction data,
-            // add a dummy label column so the ML.NET model schema is satisfied
-            var labelExistsInData = labelColumn != null && columns.Contains(labelColumn);
-
-            if (!labelExistsInData && labelColumn != null)
-            {
-                var tempWithLabel = Path.GetTempFileName();
-                var allLines = File.ReadAllLines(mlnetCompatiblePath, System.Text.Encoding.UTF8);
-                using (var writer = new StreamWriter(tempWithLabel, false, new System.Text.UTF8Encoding(true)))
-                {
-                    // Add label column to header
-                    writer.WriteLine(labelColumn + "," + allLines[0]);
-                    // Add empty label value for each data row
-                    for (int i = 1; i < allLines.Length; i++)
-                    {
-                        writer.WriteLine("," + allLines[i]);
-                    }
-                }
-
-                // The previous path (if a preprocessor temp) is already tracked in tempFiles and gets
-                // cleaned up in finally; the original input is never tracked, so it stays untouched.
-                mlnetCompatiblePath = tempWithLabel;
-                tempFiles.Add(tempWithLabel);
-
-                // Update state: label now exists in the modified data
-                firstLine = labelColumn + "," + firstLine;
-                columns = CsvFieldParser.ParseFields(firstLine);
-                labelExistsInData = true;
-            }
-
-            var dummyLabel = labelExistsInData ? labelColumn! : (columns.Length > 0 ? columns[0] : "dummy");
-
-            var columnInference = _mlContext.Auto().InferColumns(
-                mlnetCompatiblePath,
-                labelColumnName: dummyLabel,
-                separatorChar: ',');
-
-            // If we have the label column in the data, ensure it's marked as ignored/label in inference
-            if (labelExistsInData && !string.IsNullOrEmpty(labelColumn) && columnInference.ColumnInformation != null)
-            {
-                // Remove from feature columns if present
-                columnInference.ColumnInformation.NumericColumnNames.Remove(labelColumn);
-                columnInference.ColumnInformation.CategoricalColumnNames.Remove(labelColumn);
-                columnInference.ColumnInformation.TextColumnNames.Remove(labelColumn);
-            }
-
-            // Shared non-label reconciliation — overrides feature types from the trained
-            // schema (including the "String" raw type name), enables RFC 4180 quoting
-            // and splits preserved group/user/item columns out of any merged Features range
-            // . The label is reconciled separately below because predict and evaluate handle it
-            // differently — a legitimate divergence the helper deliberately leaves alone.
-            CsvDataLoader.ReconcileInferredSchemaForInference(columnInference, trainedSchema, labelColumn, mlnetCompatiblePath, preserveColumns);
-
-            // The label: predict aligns the label column's type to the trained schema too. The
-            // label value is ignored at predict time, but its type must satisfy the model's input
-            // schema (e.g. MapValueToKey). evaluate deliberately skips this, so the shared
-            // helper leaves the label untouched; predict applies it here via the same type table.
-            if (trainedSchema != null && labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
-            {
-                var labelType = trainedSchema.Columns
-                    .FirstOrDefault(c => c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))?.DataType;
-                if (labelType != null)
-                {
-                    foreach (var col in columnInference.TextLoaderOptions.Columns)
-                    {
-                        if (col.Name != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
-                            col.DataKind = CsvDataLoader.MapTrainedTypeToDataKind(labelType, col.DataKind);
-                    }
-                }
-            }
-
-            // If the label column is (still) Boolean, convert to String for MapValueToKey
-            // compatibility — the same as CsvDataLoader's training-side fix.
-            if (labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
-            {
-                foreach (var col in columnInference.TextLoaderOptions.Columns)
-                {
-                    if (col.Name != null &&
-                        col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) &&
-                        col.DataKind == DataKind.Boolean)
-                    {
-                        col.DataKind = DataKind.String;
-                    }
-                }
-            }
-
-            var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
-            var inputData = textLoader.Load(mlnetCompatiblePath);
+            var loaded = LoadInferenceInput(modelPath, processedDataPath, trainedSchema, labelColumnOverride, preserveColumns, tempFiles);
+            var trainedModel = loaded.Model;
+            var inputData = loaded.Data;
 
             // Keep all columns including label for model.Transform
             // Classification models (e.g. multiclass) include MapValueToKey on the label column
@@ -437,6 +314,158 @@ public class PredictionEngine
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// What a trained model reads, loaded from a data file the way prediction loads it: the model,
+    /// the rows as the model's input view, the loader that built that view and the header its column
+    /// indices refer to. One path for predict and ONNX export, so an exported model is described by
+    /// the same input view the model is scored on.
+    /// </summary>
+    internal sealed record InferenceInput(
+        ITransformer Model, IDataView Data, TextLoader.Options LoaderOptions,
+        IReadOnlyList<string> Header, string? LabelColumn);
+
+    /// <summary>
+    /// Loads <paramref name="modelPath"/> and the rows of <paramref name="processedDataPath"/> as its
+    /// input view. Temporary files created on the way are added to <paramref name="tempFiles"/>; the
+    /// caller deletes them once the (lazy) view has been consumed.
+    /// </summary>
+    internal InferenceInput LoadInferenceInput(
+        string modelPath,
+        string processedDataPath,
+        InputSchemaInfo? trainedSchema,
+        string? labelColumnOverride,
+        IEnumerable<string>? preserveColumns,
+        List<string> tempFiles)
+    {
+        // Load the trained model
+        DataViewSchema modelSchema;
+        var trainedModel = _mlContext.Model.Load(modelPath, out modelSchema);
+
+        // Find the label column: prefer override, then trained schema
+        // Treat empty string as null (unsupervised tasks like anomaly-detection have no label)
+        string? labelColumn = string.IsNullOrEmpty(labelColumnOverride) ? null : labelColumnOverride;
+        if (labelColumn == null && trainedSchema != null)
+        {
+            var labelInfo = trainedSchema.Columns.FirstOrDefault(c => c.Purpose == "Label");
+            if (labelInfo != null && !string.IsNullOrEmpty(labelInfo.Name))
+            {
+                labelColumn = labelInfo.Name;
+            }
+        }
+
+        // Apply the single shared inference preprocessing sequence (encoding → flatten → index →
+        // schema-based exclude / data-dependent fallback) — identical to evaluate. This replaces
+        // predict's hand-rolled UTF-8 BOM check (which read CP949 as UTF-8) and the
+        // per-engine index/exclude reimplementation, and adds the previously-missing flatten and
+        // constant-column steps that the divergence had silently dropped.
+        var mlnetCompatiblePath = InferenceDataPreprocessor.Prepare(processedDataPath, labelColumn, trainedSchema, out var preparedTemps);
+        tempFiles.AddRange(preparedTemps);
+
+        // Read the header to get column names (after preprocessing)
+        string firstLine;
+        using (var reader = new StreamReader(mlnetCompatiblePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        {
+            firstLine = reader.ReadLine() ?? string.Empty;
+        }
+
+        if (string.IsNullOrEmpty(firstLine))
+        {
+            throw new InvalidOperationException("Input file is empty");
+        }
+
+        var columns = CsvFieldParser.ParseFields(firstLine);
+
+        // If label column is expected but missing from prediction data,
+        // add a dummy label column so the ML.NET model schema is satisfied
+        var labelExistsInData = labelColumn != null && columns.Contains(labelColumn);
+
+        if (!labelExistsInData && labelColumn != null)
+        {
+            var tempWithLabel = Path.GetTempFileName();
+            var allLines = File.ReadAllLines(mlnetCompatiblePath, System.Text.Encoding.UTF8);
+            using (var writer = new StreamWriter(tempWithLabel, false, new System.Text.UTF8Encoding(true)))
+            {
+                // Add label column to header
+                writer.WriteLine(labelColumn + "," + allLines[0]);
+                // Add empty label value for each data row
+                for (int i = 1; i < allLines.Length; i++)
+                {
+                    writer.WriteLine("," + allLines[i]);
+                }
+            }
+
+            // The previous path (if a preprocessor temp) is already tracked in tempFiles and gets
+            // cleaned up in finally; the original input is never tracked, so it stays untouched.
+            mlnetCompatiblePath = tempWithLabel;
+            tempFiles.Add(tempWithLabel);
+
+            // Update state: label now exists in the modified data
+            firstLine = labelColumn + "," + firstLine;
+            columns = CsvFieldParser.ParseFields(firstLine);
+            labelExistsInData = true;
+        }
+
+        var dummyLabel = labelExistsInData ? labelColumn! : (columns.Length > 0 ? columns[0] : "dummy");
+
+        var columnInference = _mlContext.Auto().InferColumns(
+            mlnetCompatiblePath,
+            labelColumnName: dummyLabel,
+            separatorChar: ',');
+
+        // If we have the label column in the data, ensure it's marked as ignored/label in inference
+        if (labelExistsInData && !string.IsNullOrEmpty(labelColumn) && columnInference.ColumnInformation != null)
+        {
+            // Remove from feature columns if present
+            columnInference.ColumnInformation.NumericColumnNames.Remove(labelColumn);
+            columnInference.ColumnInformation.CategoricalColumnNames.Remove(labelColumn);
+            columnInference.ColumnInformation.TextColumnNames.Remove(labelColumn);
+        }
+
+        // Shared non-label reconciliation — overrides feature types from the trained
+        // schema (including the "String" raw type name), enables RFC 4180 quoting
+        // and splits preserved group/user/item columns out of any merged Features range
+        // . The label is reconciled separately below because predict and evaluate handle it
+        // differently — a legitimate divergence the helper deliberately leaves alone.
+        CsvDataLoader.ReconcileInferredSchemaForInference(columnInference, trainedSchema, labelColumn, mlnetCompatiblePath, preserveColumns);
+
+        // The label: predict aligns the label column's type to the trained schema too. The
+        // label value is ignored at predict time, but its type must satisfy the model's input
+        // schema (e.g. MapValueToKey). evaluate deliberately skips this, so the shared
+        // helper leaves the label untouched; predict applies it here via the same type table.
+        if (trainedSchema != null && labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
+        {
+            var labelType = trainedSchema.Columns
+                .FirstOrDefault(c => c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))?.DataType;
+            if (labelType != null)
+            {
+                foreach (var col in columnInference.TextLoaderOptions.Columns)
+                {
+                    if (col.Name != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                        col.DataKind = CsvDataLoader.MapTrainedTypeToDataKind(labelType, col.DataKind);
+                }
+            }
+        }
+
+        // If the label column is (still) Boolean, convert to String for MapValueToKey
+        // compatibility — the same as CsvDataLoader's training-side fix.
+        if (labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
+        {
+            foreach (var col in columnInference.TextLoaderOptions.Columns)
+            {
+                if (col.Name != null &&
+                    col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) &&
+                    col.DataKind == DataKind.Boolean)
+                {
+                    col.DataKind = DataKind.String;
+                }
+            }
+        }
+
+        var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
+        var inputData = textLoader.Load(mlnetCompatiblePath);
+        return new InferenceInput(trainedModel, inputData, columnInference.TextLoaderOptions, columns, labelColumn);
     }
 
     /// <summary>

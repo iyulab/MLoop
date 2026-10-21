@@ -6,10 +6,13 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- ML.NET Core Packages -->
-    <PackageVersion Include="Microsoft.ML" Version="5.0.0" />
-    <PackageVersion Include="Microsoft.ML.AutoML" Version="0.23.0" />
-    <PackageVersion Include="Microsoft.ML.TorchSharp" Version="0.23.0" />
-    <PackageVersion Include="Microsoft.ML.Vision" Version="5.0.0" />
+    <PackageVersion Include="Microsoft.ML" Version="5.0.1" />
+    <PackageVersion Include="Microsoft.ML.AutoML" Version="0.23.1" />
+    <PackageVersion Include="Microsoft.ML.OnnxConverter" Version="0.23.1" />
+    <!-- Test-only: runs exported graphs to prove they answer what the ML.NET model answers. -->
+    <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
+    <PackageVersion Include="Microsoft.ML.TorchSharp" Version="0.23.1" />
+    <PackageVersion Include="Microsoft.ML.Vision" Version="5.0.1" />
     <!-- ASP.NET Core Packages -->
     <PackageVersion Include="AspNetCoreRateLimit" Version="5.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />

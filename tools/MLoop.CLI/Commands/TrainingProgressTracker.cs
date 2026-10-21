@@ -76,8 +76,7 @@ public sealed class TrainingProgressTracker
         if (string.IsNullOrWhiteSpace(trainerName))
             return "(unknown)";
 
-        var parts = trainerName.Split("=>", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return parts.Length > 0 ? parts[^1] : trainerName;
+        return Infrastructure.Display.TrainerDisplay.Short(trainerName);
     }
 
     // The progress bar's descriptions are Spectre markup, rendered on the progress refresh thread.

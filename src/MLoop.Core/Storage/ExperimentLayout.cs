@@ -73,6 +73,19 @@ public static class ExperimentLayout
     /// </summary>
     public const string ReportFileName = "report.md";
 
+    /// <summary>
+    /// The model as an ONNX graph, written by <c>mloop export onnx</c> inside <c>staging/{expId}/</c>
+    /// (or a directory the user names). Only the export writes it; no command reads it back.
+    /// </summary>
+    public const string OnnxModelFileName = "model.onnx";
+
+    /// <summary>
+    /// The manifest beside <see cref="OnnxModelFileName"/>: the graph's inputs and the data columns
+    /// behind them, its outputs, the classes, the source model's hash and the recorded metrics
+    /// (<c>MLoop.Core.Export.OnnxManifest</c>).
+    /// </summary>
+    public const string OnnxManifestFileName = "model.onnx.json";
+
     // The per-model production pointer + snapshot lives in production/metadata.json (the
     // ProductionMetadata authority), co-located with model.zip. The parallel registry.json that used to
     // duplicate it was removed (ProductionMetadata remarks) — there is no separate production registry file.
