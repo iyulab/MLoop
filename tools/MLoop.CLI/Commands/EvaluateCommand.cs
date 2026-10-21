@@ -208,17 +208,17 @@ public static class EvaluateCommand
                 // Use specified experiment
                 resolvedExperimentId = experimentId;
 
-                if (!experimentStore.ExperimentExists(resolvedModelName, resolvedExperimentId))
+                var (candidatePath, refusal) = ExperimentModels.Find(experimentStore, resolvedModelName, resolvedExperimentId);
+                if (candidatePath is null)
                 {
                     ErrorConsole.Error(
-                        $"Experiment not found: {resolvedExperimentId} for model '{resolvedModelName}'",
+                        Markup.Escape(refusal!),
                         $"Run [blue]mloop list --name {resolvedModelName}[/] to see all experiments.");
                     return 1;
                 }
 
                 experimentData = await experimentStore.LoadAsync(resolvedModelName, resolvedExperimentId, CancellationToken.None);
-                var experimentPath = experimentStore.GetExperimentPath(resolvedModelName, resolvedExperimentId);
-                resolvedModelPath = fileSystem.CombinePath(experimentPath, ExperimentLayout.ModelFileName);
+                resolvedModelPath = candidatePath;
 
                 AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
                 AnsiConsole.MarkupLine($"[green]>[/] Using experiment: [cyan]{resolvedExperimentId}[/]");
@@ -226,7 +226,7 @@ public static class EvaluateCommand
 
             if (!File.Exists(resolvedModelPath))
             {
-                ErrorConsole.Error($"Model file not found: {resolvedModelPath}");
+                ErrorConsole.Error(Markup.Escape(ExperimentModels.NoTrainedModel(resolvedExperimentId ?? "production")));
                 return 1;
             }
 

@@ -127,10 +127,10 @@ public static class ExportCommand
             }
             experimentId = experimentId.Trim();
 
-            if (!experimentStore.ExperimentExists(resolvedModelName, experimentId))
+            var (modelPath, refusal) = ExperimentModels.Find(experimentStore, resolvedModelName, experimentId);
+            if (modelPath is null)
             {
-                WriteError($"Experiment '{experimentId}' not found for model '{resolvedModelName}'. "
-                           + $"Run 'mloop list --name {resolvedModelName}' to see all experiments.", jsonOutput);
+                WriteError($"{refusal} Run 'mloop list --name {resolvedModelName}' to see all experiments.", jsonOutput);
                 return 1;
             }
 
@@ -150,12 +150,6 @@ public static class ExportCommand
             }
 
             var experimentPath = experimentStore.GetExperimentPath(resolvedModelName, experimentId);
-            var modelPath = Path.Combine(experimentPath, ExperimentLayout.ModelFileName);
-            if (!File.Exists(modelPath))
-            {
-                WriteError($"'{experimentId}' has no trained model ({ExperimentLayout.ModelFileName}).", jsonOutput);
-                return 1;
-            }
 
             // The input schema comes from data, because the model was saved without one; the
             // training file is the natural default — it has exactly the columns the model was fit on.

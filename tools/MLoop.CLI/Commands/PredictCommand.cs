@@ -214,23 +214,15 @@ public static class PredictCommand
                 // production stays where it is. Logged rows carry this experiment's id, so drift
                 // (which reads production's rows only) and feedback keep the two apart.
                 experimentId = experiment.Trim();
-                if (!experimentStore.ExperimentExists(resolvedModelName, experimentId))
+                var (candidatePath, refusal) = ExperimentModels.Find(experimentStore, resolvedModelName, experimentId);
+                if (candidatePath is null)
                 {
                     ErrorConsole.Error(
-                        $"Experiment not found: {Markup.Escape(experimentId)} for model '{resolvedModelName}'",
+                        Markup.Escape(refusal!),
                         $"Run [blue]mloop list --name {resolvedModelName}[/] to see all experiments.");
                     return 1;
                 }
-
-                resolvedModelPath = fileSystem.CombinePath(
-                    experimentStore.GetExperimentPath(resolvedModelName, experimentId), ExperimentLayout.ModelFileName);
-                if (!File.Exists(resolvedModelPath))
-                {
-                    ErrorConsole.Error(
-                        $"'{Markup.Escape(experimentId)}' has no trained model ({ExperimentLayout.ModelFileName}).",
-                        "A failed or interrupted experiment keeps its record but not a model.");
-                    return 1;
-                }
+                resolvedModelPath = candidatePath;
 
                 var production = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
                 var isProduction = string.Equals(production?.ExperimentId, experimentId, StringComparison.OrdinalIgnoreCase);

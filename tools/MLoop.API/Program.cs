@@ -436,11 +436,10 @@ app.MapPost("/predict", async (
         if (!string.IsNullOrWhiteSpace(experiment))
         {
             answeringId = experiment.Trim();
-            if (!experimentStore.ExperimentExists(modelName, answeringId))
-                return Results.NotFound(new { error = $"Experiment not found: {answeringId} for model '{modelName}'." });
-            modelPath = Path.Combine(experimentStore.GetExperimentPath(modelName, answeringId), ExperimentLayout.ModelFileName);
-            if (!File.Exists(modelPath))
-                return Results.NotFound(new { error = $"'{answeringId}' has no trained model ({ExperimentLayout.ModelFileName})." });
+            var (candidatePath, refusal) = ExperimentModels.Find(experimentStore, modelName, answeringId);
+            if (candidatePath is null)
+                return Results.NotFound(new { error = refusal });
+            modelPath = candidatePath;
             taskOfModel = (await experimentStore.LoadAsync(modelName, answeringId, ct))?.Task;
         }
         else
@@ -1221,22 +1220,13 @@ app.MapPost("/evaluate", async (
             experimentId = prod.ExperimentId;
         }
 
-        if (!experimentStore.ExperimentExists(modelName, experimentId))
-            return Results.NotFound(new { error = $"Experiment '{experimentId}' not found for model '{modelName}'." });
+        // The named experiment's own model — never production's in its place: a report under the
+        // experiment's id must be that experiment's measurement.
+        var (modelPath, refusal) = ExperimentModels.Find(experimentStore, modelName, experimentId);
+        if (modelPath is null)
+            return Results.NotFound(new { error = refusal });
 
         var experiment = await experimentStore.LoadAsync(modelName, experimentId, ct);
-
-        // Find model file
-        var expPath = experimentStore.GetExperimentPath(modelName, experimentId);
-        var modelPath = Path.Combine(expPath, ExperimentLayout.ModelFileName);
-
-        if (!File.Exists(modelPath))
-        {
-            // Check production path
-            modelPath = Path.Combine(registry.GetProductionPath(modelName), ExperimentLayout.ModelFileName);
-            if (!File.Exists(modelPath))
-                return Results.NotFound(new { error = $"Model file not found for experiment '{experimentId}'." });
-        }
 
         // Determine test data path (with path traversal protection)
         var testDataPath = request.TestDataPath;

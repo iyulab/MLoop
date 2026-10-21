@@ -42,6 +42,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `POST /evaluate` for an experiment without a trained model evaluated the production model and
+  reported it under the experiment's id; it is now `404` with the reason.
+- Commands and endpoints that take an experiment to score with (`predict --experiment`, `evaluate`,
+  `export onnx`, `threshold`, `calibrate`, `POST /predict`, `POST /evaluate`) say the same thing when it
+  does not exist or has no trained model — `evaluate` used to print the model file's absolute path.
 - `log_loss_reduction` was read as lower-is-better wherever experiments are ranked or compared
   (its name contains "loss"); it is higher-is-better.
 - A multiclass result did not carry `log_loss_reduction`; regression and multiclass results, like

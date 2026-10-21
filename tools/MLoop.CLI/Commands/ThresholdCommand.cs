@@ -90,13 +90,13 @@ public static class ThresholdCommand
             var id = string.IsNullOrWhiteSpace(experimentId) ? production?.ExperimentId : experimentId.Trim();
             if (id is null)
                 return Fail($"No model is in production for '{name}' — name an experiment.", jsonOutput);
-            if (!store.ExperimentExists(name, id))
-                return Fail($"Experiment not found: {id} for model '{name}'.", jsonOutput);
+            var (modelPath, refusal) = ExperimentModels.Find(store, name, id);
+            if (modelPath is null)
+                return Fail(refusal!, jsonOutput);
             var experiment = await store.LoadAsync(name, id, CancellationToken.None);
             if (TaskTypes.Canonical(experiment.Task) != "binary-classification")
                 return Fail($"A decision threshold is a binary classifier's; {id} is {experiment.Task}.", jsonOutput);
 
-            var modelPath = Path.Combine(store.GetExperimentPath(name, id), ExperimentLayout.ModelFileName);
             // The class is named the way the label was written; which side of the threshold it is on
             // is the training conversion's decision, read from the saved schema.
             var vocabulary = BinaryLabelVocabulary.Of(experiment.Config.InputSchema);

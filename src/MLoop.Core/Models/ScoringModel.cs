@@ -27,6 +27,11 @@ public static class ScoringModel
     /// <see cref="ScoringLayers.None"/> (ONNX export: the graph carries the trained model, the manifest
     /// names the layers); fitting a calibration reads the model's own probabilities the same way.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="inputSchema"/> is the schema the model was saved with, and training saves
+    /// without one — it is <c>null</c> for every trained model. A layer that needs the model's output
+    /// shape reads it from the data it is given (see the multiclass calibration), never from this.
+    /// </remarks>
     /// <exception cref="InvalidOperationException">The task needs a runtime that is not installed.</exception>
     public static ITransformer Load(
         MLContext mlContext, string modelPath, out DataViewSchema inputSchema, string? task = null, ScoringLayers layers = ScoringLayers.All)

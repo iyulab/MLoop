@@ -74,6 +74,27 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
         return (response.StatusCode, JsonDocument.Parse(text).RootElement.Clone());
     }
 
+    /// <summary>
+    /// An experiment that kept its record but not a model is refused — it used to be evaluated with
+    /// production's model while the report carried the experiment's id.
+    /// </summary>
+    [Fact]
+    public async Task AnExperimentWithoutAModel_IsRefused_NotScoredWithProductionsModel()
+    {
+        var staging = Path.Combine(_factory.TestProjectRoot, "models", Model, "staging");
+        var withoutModel = Path.Combine(staging, "exp-090");
+        Directory.CreateDirectory(withoutModel);
+        foreach (var file in new[] { "metadata.json", "config.json" })
+            if (File.Exists(Path.Combine(staging, "exp-001", file)))
+                File.WriteAllText(Path.Combine(withoutModel, file),
+                    File.ReadAllText(Path.Combine(staging, "exp-001", file)).Replace("exp-001", "exp-090"));
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-090", testDataPath = _withWeight });
+
+        status.Should().Be(HttpStatusCode.NotFound, body.ToString());
+        body.GetProperty("error").GetString().Should().Contain("no trained model");
+    }
+
     [Fact]
     public async Task AWeightedExperiment_IsScoredByItsWeight_WhenTheFileHasIt()
     {

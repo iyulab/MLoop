@@ -81,8 +81,9 @@ public static class CalibrateCommand
             var id = string.IsNullOrWhiteSpace(experimentId) ? production?.ExperimentId : experimentId.Trim();
             if (id is null)
                 return Fail($"No model is in production for '{name}' — name an experiment.", jsonOutput);
-            if (!store.ExperimentExists(name, id))
-                return Fail($"Experiment not found: {id} for model '{name}'.", jsonOutput);
+            var (modelPath, refusal) = ExperimentModels.Find(store, name, id);
+            if (modelPath is null)
+                return Fail(refusal!, jsonOutput);
             var experiment = await store.LoadAsync(name, id, CancellationToken.None);
             var task = TaskTypes.Canonical(experiment.Task);
             var methods = task switch
@@ -98,7 +99,6 @@ public static class CalibrateCommand
                 return Fail($"--method {method} does not calibrate a {task} model: {string.Join(", ", methods)}.", jsonOutput);
             var binary = task == "binary-classification";
 
-            var modelPath = Path.Combine(store.GetExperimentPath(name, id), ExperimentLayout.ModelFileName);
             // Production answers from its own copy: a calibration fit on the experiment in production is set there too.
             var productionModel = production?.ExperimentId.Equals(id, StringComparison.OrdinalIgnoreCase) == true
                 ? Path.Combine(registry.GetProductionPath(name), ExperimentLayout.ModelFileName)
