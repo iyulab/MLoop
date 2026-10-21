@@ -197,19 +197,10 @@ public static class PreprocessCommand
 
         AnsiConsole.WriteLine();
 
-        // Execute preprocessing with progress
-        string outputPath = string.Empty;
+        // The engine narrates each script and the end of the run; a spinner around it only repeated
+        // that ("Running preprocessing scripts..." and "Preprocessing complete!" twice over).
+        var outputPath = await preprocessingEngine.ExecuteAsync(resolvedInputFile, labelColumn);
 
-        await AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .StartAsync("[yellow]Running preprocessing scripts...[/]", async ctx =>
-            {
-                outputPath = await preprocessingEngine.ExecuteAsync(resolvedInputFile, labelColumn);
-                ctx.Status("[green]Preprocessing complete![/]");
-            });
-
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[green]✓[/] Preprocessing complete!");
         ValueLine.Write("[green]✓[/] Output: ", Path.GetRelativePath(projectRoot, outputPath));
 
         // Copy to specified output location if provided

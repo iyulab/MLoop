@@ -1593,6 +1593,50 @@ public class DateTimePreprocessor : IPreprocessingScript
 
 ---
 
+### `mloop preprocess`
+
+Runs the C# preprocessing scripts of `.mloop/scripts/preprocess/` on a data file — the scripts `mloop train` also runs,
+after the `prep:` steps of `mloop.yaml`. This is the place for logic the step types do not cover. The scripts run in
+file-name order (`01_*.cs`, `02_*.cs`, …), each reading the previous one's output.
+
+```csharp
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Preprocessing;
+
+public class DropLowA : IPreprocessingScript
+{
+    public async Task<string> ExecuteAsync(PreprocessContext context)
+    {
+        var rows = await context.Csv.ReadAsync(context.InputPath);
+        var kept = rows.Where(r => double.Parse(r["a"], CultureInfo.InvariantCulture) >= 0.1).ToList();
+        context.Logger.Info($"Kept {kept.Count} of {rows.Count} rows");
+        return await context.Csv.WriteAsync(System.IO.Path.Combine(context.OutputDirectory, "01_out.csv"), kept);
+    }
+}
+```
+
+```bash
+mloop preprocess                          # datasets/train.csv
+mloop preprocess datasets/raw.csv -o datasets/clean.csv
+```
+
+```
+✓ Auto-detected: datasets/train.csv
+🔄 Running 1 preprocessing script(s)...
+  📝 [1/1] 01_drop_low_a.cs
+Kept 2688 of 3000 rows
+    ✅ Output: 01_out.csv
+✅ Preprocessing complete
+✓ Output: .mloop/temp/preprocess/01_out.csv
+✓ Copied to: datasets/clean.csv
+```
+
+Without `-o` the result stays in `.mloop/temp/preprocess/`. A script that does not compile is reported with the
+compiler's errors. `--incremental` runs a different workflow — pattern detectors that propose cleaning rules, with
+prompts to approve them (`--skip-hitl`, `--auto-approve`); the scripts above do not run in that mode.
+
 ## Extensibility
 
 MLoop supports code-based extensibility through hooks and custom metrics.

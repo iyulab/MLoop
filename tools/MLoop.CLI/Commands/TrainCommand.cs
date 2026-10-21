@@ -778,7 +778,6 @@ public static class TrainCommand
             if (preprocessingEngine.HasPreprocessingScripts())
             {
                 AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[blue]Running preprocessing scripts...[/]");
 
                 try
                 {

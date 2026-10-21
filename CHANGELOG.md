@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- The guide covers `mloop new` (templates, stages, what each writes) and `mloop preprocess` (scripts, order, `-o`,
+  the incremental mode), and its Hooks section names the stage folders and what a hook gets at each stage — the old
+  example used a namespace hooks are not in and a folder that runs a hook at both stages. Every command now has a
+  section.
 - The guide covers `mloop trigger`, `mloop prep` (plan · run · step types · where each step runs), `mloop features`,
   `mloop runtime` and `mloop update`.
 
@@ -31,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop preprocess` said "Running preprocessing scripts" twice and "Preprocessing complete" three times.
 - `mloop new hook` wrote hooks that did not compile — every template, for every stage (`Exception` without
   `using System;`), and the validation template printed `{rowCount:N0}` instead of the count. The training engine then
   reported "No IMLoopHook implementations found", because script compile errors were never shown; they are now, for

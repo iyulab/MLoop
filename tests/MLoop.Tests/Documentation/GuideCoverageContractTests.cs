@@ -27,10 +27,8 @@ public class GuideCoverageContractTests
     /// </summary>
     private static readonly HashSet<string> Undocumented = new(StringComparer.Ordinal)
     {
-        // Found by this guard on its first run: the count that motivated it came from grepping
-        // command constructors, which swept in subcommands and missed these. (`token`, the third,
-        // is documented now.)
-        "preprocess",   // runs preprocessing scripts; distinct from `prep`, which is the pipeline
+        // Empty: every command has a section. The guard's first run found three missing (`new`,
+        // `preprocess`, `token`); all three are documented now.
     };
 
     private static readonly Regex GuideSection = new(@"^### `mloop ([a-z-]+)`", RegexOptions.Multiline);
