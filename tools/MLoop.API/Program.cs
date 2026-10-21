@@ -1673,10 +1673,12 @@ app.MapPost("/train", async (
 
     // Refused now, not inside the job: what the project's mloop.yaml asks for that this run could
     // not honour (a weight on a task it does not reach, prep steps the API does not run).
-    var (_, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
+    var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
         request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit, request.Weight);
     if (definitionError != null)
         return Results.BadRequest(new { error = definitionError });
+    if (TrainingInput.BalanceConflict(trainDefinition!, request.Balance) is { } balanceError)
+        return Results.BadRequest(new { error = balanceError });
 
     // Create job and enqueue for background processing
     var jobId = jobStore.CreateJob(request);
@@ -1751,6 +1753,7 @@ app.MapGet("/jobs/{id}", (
         testSplit = job.TestSplit,
         maxRows = job.MaxRows,
         weight = job.Weight,
+        balance = job.Balance,
         status = job.Status.ToString(),
         statusMessage = job.StatusMessage,
         createdAt = job.CreatedAt,

@@ -24,6 +24,7 @@ public class TrainingJobStore
             TestSplit = request.TestSplit,
             MaxRows = request.MaxRows,
             Weight = request.Weight,
+            Balance = request.Balance,
             Status = JobStatus.Queued,
             CreatedAt = DateTime.UtcNow
         };
@@ -80,6 +81,7 @@ public class TrainingJob
     public double? TestSplit { get; set; }
     public int? MaxRows { get; set; }
     public string? Weight { get; set; }
+    public string? Balance { get; set; }
 
     public JobStatus Status { get; set; }
     public string? StatusMessage { get; set; }
@@ -106,6 +108,10 @@ public class TrainingJob
 /// Files merged after <paramref name="DataFile"/>, as <c>mloop train --data a.csv b.csv</c> — a retraining set from
 /// <c>POST /samples</c>, say. A file without the model's weight column counts its rows 1.
 /// </param>
+/// <param name="Balance">
+/// Class balancing, as <c>--balance</c>: <c>auto</c>, <c>none</c> or a target ratio — the train part only, split off
+/// from the test part first. Classification only, and not with a weight column.
+/// </param>
 public record TrainingJobRequest(
     string DataFile,
     string LabelColumn,
@@ -116,7 +122,8 @@ public record TrainingJobRequest(
     double? TestSplit = null,
     int? MaxRows = null,
     IReadOnlyList<string>? AdditionalDataFiles = null,
-    string? Weight = null)
+    string? Weight = null,
+    string? Balance = null)
 {
     public string ModelName => string.IsNullOrWhiteSpace(Name) ? "default" : Name.Trim().ToLowerInvariant();
 }

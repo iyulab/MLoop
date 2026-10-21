@@ -65,6 +65,61 @@ public static class TrainingInput
         return new Prepared(result.OutputPath!, result.DroppedRowCount);
     }
 
+    /// <summary>The refusal when the training data holds one class — no classifier can be trained on it.</summary>
+    public const string SingleClassRefusal = "Cannot train a classifier with only one class.";
+
+    /// <summary>What to check when <see cref="SingleClassRefusal"/> is the answer.</summary>
+    public const string SingleClassGuidance =
+        "Check if the correct label column is specified, or if the data contains only one category.";
+
+    /// <summary>
+    /// Why <paramref name="balance"/> cannot be honoured for <paramref name="definition"/>, or null: not a balance
+    /// option, a task that is not classification, or a weight column that already decides how often rows count. An
+    /// option the run silently ignored would train a model its user believes balanced.
+    /// </summary>
+    public static string? BalanceConflict(ModelDefinition definition, string? balance)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        if (DataBalancer.OptionError(balance) is { } optionError)
+            return optionError;
+        if (string.IsNullOrEmpty(balance) || balance.Equals("none", StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (!AutoMLRunner.IsClassification(definition.Task))
+            return $"--balance applies to classification tasks; '{definition.Task}' has no classes to balance.";
+        return ModelTrainingConfig.WeightConflict(definition, balance);
+    }
+
+    /// <summary>The files a run trains and tests on once its classes are balanced.</summary>
+    /// <param name="TrainFile">The (balanced, when balancing applied) training rows.</param>
+    /// <param name="TestFile">The held-out rows, split off before balancing; null without a test split.</param>
+    /// <param name="Split">The stratified split, when there was one.</param>
+    /// <param name="Result">What balancing did.</param>
+    public sealed record Balanced(string TrainFile, string? TestFile, CsvSplitter.SplitResult? Split, DataBalancer.BalanceResult Result);
+
+    /// <summary>
+    /// Balances <paramref name="dataFile"/> by <paramref name="balance"/> for <c>mloop train</c> and <c>POST /train</c>
+    /// alike. With a test split the rows are split (stratified) <b>before</b> balancing and only the train part is
+    /// balanced — replicated minority rows in the test part would score the model on copies of what it trained on.
+    /// </summary>
+    public static Balanced Balance(string dataFile, string label, string balance, double testSplit)
+    {
+        var balancer = new DataBalancer();
+        if (testSplit <= 0)
+        {
+            var whole = balancer.Balance(dataFile, label, balance);
+            return new Balanced(whole is { Applied: true, BalancedFilePath: { } path } ? path : dataFile, null, null, whole);
+        }
+
+        var split = new CsvSplitter().StratifiedSplit(dataFile, label, testSplit);
+        var result = balancer.Balance(split.TrainFile, label, balance);
+        return new Balanced(result is { Applied: true, BalancedFilePath: { } balanced } ? balanced : split.TrainFile,
+            split.TestFile, split, result);
+    }
+
+    /// <summary>The class distribution of <paramref name="dataFile"/>'s <paramref name="label"/> — what both entry points warn on.</summary>
+    public static Task<MLoop.Core.Diagnostics.ClassDistributionResult> ClassesAsync(string dataFile, string label)
+        => new MLoop.Core.Diagnostics.ClassDistributionAnalyzer(new CsvHelperImpl()).AnalyzeAsync(dataFile, label);
+
     private sealed class SilentLogger : ILogger
     {
         public void Debug(string message) { }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
@@ -33,6 +34,19 @@ public class DataBalancer
     /// Minimum imbalance ratio to trigger auto-balancing
     /// </summary>
     public const double AutoTriggerThreshold = 10.0;
+
+    /// <summary>
+    /// Why <paramref name="balanceOption"/> is not a balance option — <c>auto</c>, <c>none</c> or a positive ratio — or
+    /// null when it is (absent included). Checked before anything runs, so a misspelt option refuses rather than
+    /// training unbalanced.
+    /// </summary>
+    public static string? OptionError(string? balanceOption) =>
+        string.IsNullOrWhiteSpace(balanceOption)
+        || balanceOption.Equals("none", StringComparison.OrdinalIgnoreCase)
+        || balanceOption.Equals("auto", StringComparison.OrdinalIgnoreCase)
+        || (double.TryParse(balanceOption, NumberStyles.Float, CultureInfo.InvariantCulture, out var ratio) && ratio > 0)
+            ? null
+            : $"Invalid balance option: '{balanceOption}'. Use 'auto', 'none', or a number (e.g., '5' for 5:1)";
 
     /// <summary>
     /// Balances the dataset by oversampling minority class
@@ -121,7 +135,7 @@ public class DataBalancer
             }
             targetRatio = DefaultTargetRatio;
         }
-        else if (double.TryParse(balanceOption, out var customRatio) && customRatio > 0)
+        else if (double.TryParse(balanceOption, NumberStyles.Float, CultureInfo.InvariantCulture, out var customRatio) && customRatio > 0)
         {
             targetRatio = customRatio;
         }

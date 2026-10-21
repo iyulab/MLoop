@@ -329,7 +329,8 @@ public static class TrainCommand
             // that silently did nothing would train an unweighted model the user believes weighted.
             if (!string.IsNullOrEmpty(weight))
                 effectiveDefinition.Weight = weight;
-            if (ModelTrainingConfig.WeightConflict(effectiveDefinition, balance) is { } weightError)
+            if ((TrainingInput.BalanceConflict(effectiveDefinition, balance)
+                 ?? ModelTrainingConfig.WeightConflict(effectiveDefinition, balance)) is { } weightError)
             {
                 ErrorConsole.Error(weightError);
                 return 1;
@@ -684,23 +685,16 @@ public static class TrainCommand
             // T4.5: Class distribution analysis for classification tasks
             if (isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
             {
-                var csvHelperForDistribution = new CsvHelperImpl();
-                var distributionAnalyzer = new ClassDistributionAnalyzer(csvHelperForDistribution);
-
                 try
                 {
-                    var distributionResult = await distributionAnalyzer.AnalyzeAsync(
-                        resolvedDataFile,
-                        effectiveDefinition.Label);
+                    var distributionResult = await TrainingInput.ClassesAsync(resolvedDataFile, effectiveDefinition.Label);
 
                     TrainPresenter.DisplayClassDistribution(distributionResult);
 
                     // Single-class early termination: cannot train a classifier with one class
                     if (distributionResult.ClassCount <= 1)
                     {
-                        ErrorConsole.Error(
-                            "Cannot train a classifier with only one class.",
-                            "Check if the correct label column is specified, or if the data contains only one category.");
+                        ErrorConsole.Error(TrainingInput.SingleClassRefusal, TrainingInput.SingleClassGuidance);
                         return 1;
                     }
                 }
@@ -797,19 +791,16 @@ public static class TrainCommand
                 }
             }
 
-            // Apply class balancing if requested (only for classification tasks)
+            // Apply class balancing if requested (classification only — BalanceConflict refused the rest).
             // Split BEFORE balancing to prevent data leakage
-            string? balancedFilePath = null;
             if (!string.IsNullOrEmpty(balance) && isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
             {
-                var effectiveTestSplit = effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit;
+                var balanced = TrainingInput.Balance(resolvedDataFile, effectiveDefinition.Label, balance,
+                    effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit);
+                var balanceResult = balanced.Result;
 
-                if (effectiveTestSplit > 0)
+                if (balanced.Split is { } splitResult)
                 {
-                    // Step 1: Stratified split BEFORE balancing
-                    var splitter = new CsvSplitter();
-                    var splitResult = splitter.StratifiedSplit(resolvedDataFile, effectiveDefinition.Label, effectiveTestSplit);
-
                     AnsiConsole.WriteLine();
                     AnsiConsole.Write(new Rule("[blue]Pre-Balance Split[/]").LeftJustified());
                     AnsiConsole.WriteLine();
@@ -820,68 +811,31 @@ public static class TrainCommand
                     allDataFilesUsed.Add(splitResult.TrainFile);
                     allDataFilesUsed.Add(splitResult.TestFile);
                     testDataFile = splitResult.TestFile;
-
-                    // Step 2: Balance only the train split
-                    var dataBalancer = new DataBalancer();
-                    var balanceResult = dataBalancer.Balance(splitResult.TrainFile, effectiveDefinition.Label, balance);
-
-                    if (balanceResult.Applied && balanceResult.BalancedFilePath != null)
-                    {
-                        AnsiConsole.Write(new Rule("[blue]Class Balancing (train only)[/]").LeftJustified());
-                        AnsiConsole.WriteLine();
-                        AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
-                        ValueLine.Write("[green]>[/] Balanced train: ", Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath));
-                        ValueLine.Write("[green]>[/] Clean test: ", Path.GetRelativePath(projectRoot, splitResult.TestFile));
-
-                        var replicationRatio = (double)balanceResult.NewMinorityCount / balanceResult.OriginalMinorityCount;
-                        if (replicationRatio > 10)
-                        {
-                            AnsiConsole.MarkupLine($"[yellow]Warning:[/] Minority class replicated {replicationRatio:F0}x in train set.");
-                        }
-                        AnsiConsole.WriteLine();
-
-                        resolvedDataFile = balanceResult.BalancedFilePath;
-                        allDataFilesUsed.Add(resolvedDataFile);
-                        balancedFilePath = balanceResult.BalancedFilePath;
-                    }
-                    else
-                    {
-                        // Balancing not applied (e.g., ratio within threshold) — use train split as-is
-                        if (!string.IsNullOrEmpty(balanceResult.Message))
-                        {
-                            AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
-                        }
-                        resolvedDataFile = splitResult.TrainFile;
-                    }
                 }
-                else
+
+                if (balanceResult.Applied && balanceResult.BalancedFilePath != null)
                 {
-                    // testSplit == 0: no split needed, balance entire dataset
-                    var dataBalancer = new DataBalancer();
-                    var balanceResult = dataBalancer.Balance(resolvedDataFile, effectiveDefinition.Label, balance);
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.Write(new Rule(balanced.Split is null ? "[blue]Class Balancing[/]" : "[blue]Class Balancing (train only)[/]").LeftJustified());
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
+                    ValueLine.Write(balanced.Split is null ? "[green]>[/] Using balanced data: " : "[green]>[/] Balanced train: ",
+                        Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath));
+                    if (balanced.TestFile is { } cleanTest)
+                        ValueLine.Write("[green]>[/] Clean test: ", Path.GetRelativePath(projectRoot, cleanTest));
 
-                    if (balanceResult.Applied && balanceResult.BalancedFilePath != null)
-                    {
-                        AnsiConsole.WriteLine();
-                        AnsiConsole.Write(new Rule("[blue]Class Balancing[/]").LeftJustified());
-                        AnsiConsole.WriteLine();
-                        AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
-                        ValueLine.Write("[green]>[/] Using balanced data: ", Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath));
-                        AnsiConsole.WriteLine();
+                    var replicationRatio = (double)balanceResult.NewMinorityCount / balanceResult.OriginalMinorityCount;
+                    if (replicationRatio > 10)
+                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Minority class replicated {replicationRatio:F0}x in train set.");
+                    AnsiConsole.WriteLine();
 
-                        resolvedDataFile = balanceResult.BalancedFilePath;
-                        allDataFilesUsed.Add(resolvedDataFile);
-                        balancedFilePath = balanceResult.BalancedFilePath;
-                    }
-                    else if (!string.IsNullOrEmpty(balanceResult.Message))
-                    {
-                        AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
-                    }
+                    allDataFilesUsed.Add(balanceResult.BalancedFilePath);
                 }
-            }
-            else if (!string.IsNullOrEmpty(balance) && !isClassificationTask)
-            {
-                AnsiConsole.MarkupLine("[yellow]Warning:[/] --balance option is only applicable to classification tasks");
+                else if (!string.IsNullOrEmpty(balanceResult.Message))
+                {
+                    AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
+                }
+                resolvedDataFile = balanced.TrainFile;
             }
             } // end if (!isDirectoryBased) — CSV preprocessing block
 

@@ -105,13 +105,46 @@ public class TrainingJobRunner : BackgroundService
                 dataFile = merge.Path ?? throw new InvalidOperationException($"{merge.Error} {merge.Guidance}");
             }
             var prepared = await TrainingInput.PrepareAsync(dataFile, definition, job.MaxRows, projectRoot);
+            var notes = new List<string>();
             if (prepared.DroppedMissingLabels > 0)
-                _jobStore.UpdateStatus(job.JobId, JobStatus.Running,
-                    $"Training started — {prepared.DroppedMissingLabels} rows without a label dropped");
+                notes.Add($"{prepared.DroppedMissingLabels} rows without a label dropped");
 
-            var config = ModelTrainingConfig.From(definition, job.ModelName, prepared.DataFile,
+            // The classes, checked and balanced as `mloop train` does: one class refuses, an imbalance is noted,
+            // and --balance splits off the test part before balancing the train part.
+            var trainFile = prepared.DataFile;
+            string? testFile = null;
+            var testSplit = definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit;
+            if (MLoop.Core.AutoML.AutoMLRunner.IsClassification(definition.Task) && !string.IsNullOrEmpty(definition.Label))
+            {
+                MLoop.Core.Diagnostics.ClassDistributionResult? classes = null;
+                try
+                {
+                    classes = await TrainingInput.ClassesAsync(trainFile, definition.Label);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    notes.Add($"class distribution analysis failed: {ex.Message}");
+                }
+                if (classes is { Error: null, ClassCount: <= 1 })
+                    throw new InvalidOperationException($"{TrainingInput.SingleClassRefusal} {TrainingInput.SingleClassGuidance}");
+                if (classes is { Error: null, NeedsAttention: true })
+                    notes.Add(classes.Summary);
+
+                if (!string.IsNullOrEmpty(job.Balance))
+                {
+                    var balanced = TrainingInput.Balance(trainFile, definition.Label, job.Balance, testSplit);
+                    if (!string.IsNullOrEmpty(balanced.Result.Message))
+                        notes.Add($"balance: {balanced.Result.Message}");
+                    (trainFile, testFile) = (balanced.TrainFile, balanced.TestFile);
+                }
+            }
+            if (notes.Count > 0)
+                _jobStore.UpdateStatus(job.JobId, JobStatus.Running, "Training started — " + string.Join("; ", notes));
+
+            var config = ModelTrainingConfig.From(definition, job.ModelName, trainFile,
                 definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
-                definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit);
+                testFile is null ? testSplit : 0,
+                testFile is null ? null : Path.GetFullPath(testFile));
 
             var result = await trainingEngine.TrainAsync(config, cancellationToken: stoppingToken);
 

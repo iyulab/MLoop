@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `POST /train` takes `balance` — class balancing as `mloop train --balance` (`auto`, `none` or a target ratio):
+  the test part is split off (stratified) first and only the train part is balanced. `GET /jobs/{id}` shows it, and
+  a job notes what balancing did and a class imbalance in its status.
+
+### Fixed
+
+- A `POST /train` job on classification data with one class failed inside training with an unhelpful error; it
+  now fails with the reason, as `mloop train` does.
+- `mloop train --balance` with a value that is not `auto`, `none` or a positive ratio trained unbalanced after a
+  grey note; it is now refused before training. So is `--balance` on a task that is not classification (it was a
+  warning). A ratio reads the same in every locale (`2.5`).
+
 ## [0.41.0] - 2026-10-21
 
 ### Added

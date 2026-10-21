@@ -181,4 +181,85 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         });
         outside.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    private string WriteImbalanced(string name, int positives)
+    {
+        var csv = new StringBuilder("x,z,y\n");
+        var rng = new Random(9);
+        for (var i = 0; i < 200; i++)
+        {
+            var positive = i < positives;
+            csv.Append(CultureInfo.InvariantCulture, $"{(positive ? 0.7 : 0.3) + rng.NextDouble() * 0.3:F4},{rng.NextDouble():F4},{(positive ? "yes" : "no")}\n");
+        }
+        var path = Path.Combine(_factory.TestProjectRoot, "datasets", name);
+        File.WriteAllText(path, csv.ToString());
+        return path;
+    }
+
+    private async Task<JsonElement> AwaitJobAsync(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        var jobId = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("jobId").GetString();
+        JsonElement job = default;
+        for (var i = 0; i < 240; i++)
+        {
+            await Task.Delay(500);
+            job = JsonDocument.Parse(await _client.GetStringAsync($"/jobs/{jobId}")).RootElement;
+            if (job.GetProperty("status").GetString() is "Completed" or "Failed")
+                break;
+        }
+        return job;
+    }
+
+    [Theory]
+    [InlineData("binary-classification", "lots", null, "Invalid balance option")]
+    [InlineData("regression", "auto", null, "classification")]
+    [InlineData("binary-classification", "auto", "z", "both change how often rows count")]
+    public async Task ABalanceTheRunCouldNotHonour_IsRefusedBeforeAJobExists(string task, string balance, string? weight, string message)
+    {
+        var data = WriteImbalanced("refused.csv", 20);
+        WriteYaml("bref", $"    task: {task}\n    label: {(task == "regression" ? "x" : "y")}\n");
+
+        var response = await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = data, labelColumn = task == "regression" ? "x" : "y", task, name = "bref", balance, weight,
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(message);
+    }
+
+    [Fact]
+    public async Task ABalancedJob_BalancesTheTrainPartOnly_AsMloopTrainDoes()
+    {
+        var data = WriteImbalanced("imbalanced.csv", 20);   // 9:1
+        WriteYaml("bal", "    task: binary-classification\n    label: y\n");
+
+        var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = data, labelColumn = "y", task = "binary-classification", name = "bal", timeLimitSeconds = 5, balance = "2",
+        }));
+
+        job.GetProperty("status").GetString().Should().Be("Completed", job.GetRawText());
+        job.GetProperty("balance").GetString().Should().Be("2");
+        var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();
+        var config = (await store.LoadAsync("bal", "exp-001", CancellationToken.None)).Config;
+        config.DataFile.Should().EndWith("_balanced.csv");
+        config.TestSplit.Should().Be(0, "the test part was split off before balancing, not split again from balanced rows");
+    }
+
+    [Fact]
+    public async Task AJobOnOneClass_FailsWithTheReason()
+    {
+        var data = WriteImbalanced("oneclass.csv", 0);
+        WriteYaml("one", "    task: binary-classification\n    label: y\n");
+
+        var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = data, labelColumn = "y", task = "binary-classification", name = "one", timeLimitSeconds = 5,
+        }));
+
+        job.GetProperty("status").GetString().Should().Be("Failed");
+        job.GetProperty("statusMessage").GetString().Should().Contain("only one class");
+    }
 }

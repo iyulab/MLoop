@@ -1253,8 +1253,10 @@ x1,x2,churn,weight
 - Over HTTP (`mloop serve`): `POST /samples` `{"name": "default", "rows": 1000, "strategy": "feedback-priority"}` writes
   the same file and answers with its `path`, `labeledCount` and `weightColumn`; `POST /train` takes it in
   `additionalDataFiles`, merged after `dataFile` the same way. A job prepares its data as `mloop train` does — rows
-  without a label dropped, `maxRows` applied — and a request without `timeLimitSeconds` or `testSplit` leaves them
-  to `mloop.yaml`.
+  without a label dropped, `maxRows` applied, a classification on one class refused, `balance` (as `--balance`)
+  balancing the train part after the test part is split off — and a request without `timeLimitSeconds` or
+  `testSplit` leaves them to `mloop.yaml`. A `balance` the run cannot honour (not `auto`/`none`/a ratio, a task that
+  is not classification, a weight column) is refused with 400 before a job exists.
 - `mloop sample create --from <csv>` samples a plain CSV instead (`random`, `head`, `stratified --label <col>`);
   `mloop sample stats --model <name>` reports how many logged predictions have feedback.
 
