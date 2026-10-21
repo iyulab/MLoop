@@ -49,9 +49,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with «The test data has no weight column». No feature-exclusion rule removes a column claimed for a role (weight,
   ranking group, recommendation user and item, pre-featurizer inputs, typed overrides) — before, only the
   structured and identifier rules respected that.
-- MCP `mloop_feedback` and `mloop_sample` passed options the CLI does not have (`--value`, `--name`, a data-file
-  positional), so `add`, `list` and `create` failed. They now pass the CLI's own options, and gain `source`, `weight`
-  (feedback) and `modelName`, `output`, `label` (sample).
+- MCP `mloop_feedback`, `mloop_sample`, `mloop_detect` and `mloop_prep` passed options the CLI does not have
+  (`--value`, `--name`, a data-file positional, `--period`, `--config`), so those calls failed. They now pass the
+  CLI's own options; `mloop_feedback` gains `source` and `weight`, `mloop_sample` `modelName`, `output` and `label`,
+  `mloop_prep` `modelName`, `input`, `output` and `dryRun`, and `mloop_train` `additionalDataFiles`. The MCP server's
+  `npm run check:cli` compares every tool's command lines with the CLI's own options.
 - A retraining set wrote logged inputs as the client spelled them — `x1` from a JSON client of a model trained on
   `X1` — so it did not merge with the training data. Inputs are now written in the model's spelling.
 - `mloop feedback list` printed the feedback's own text (prediction, actual value, source) as console markup — a
