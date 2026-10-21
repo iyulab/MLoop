@@ -65,12 +65,14 @@ public record TriggerEvaluation(
     DateTimeOffset EvaluatedAt);
 
 /// <summary>
-/// Result of evaluating a single condition.
+/// Result of evaluating a single condition. <paramref name="CurrentValue"/> is null when the condition could
+/// not be measured — no feedback to compute an accuracy from, too few logged rows to compare, a condition the
+/// trigger does not evaluate. Not measured is not zero: an accuracy of 0 would read as the model having failed.
 /// </summary>
 public record ConditionResult(
     RetrainingCondition Condition,
     bool IsMet,
-    double CurrentValue,
+    double? CurrentValue,
     string? Details)
 {
     /// <summary>

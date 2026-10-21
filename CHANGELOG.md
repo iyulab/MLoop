@@ -16,10 +16,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the test part is split off (stratified) first and only the train part is balanced. `GET /jobs/{id}` shows it, and
   a job notes what balancing did and a class imbalance in its status.
 
+### Documentation
+
+- The guide covers `mloop trigger`, `mloop prep` (plan · run · step types · where each step runs), `mloop runtime`
+  and `mloop update`.
+
 ### Fixed
 
 - A `POST /train` job on classification data with one class failed inside training with an unhelpful error; it
   now fails with the reason, as `mloop train` does.
+- `mloop trigger check` showed an accuracy nobody measured (no feedback yet) as `0.0%`, which reads as a model that
+  failed; it shows `-`, and `currentValue` is `null` in `--json` and `GET /trigger` for every condition that could
+  not be measured (no feedback, too few logged predictions, a condition the trigger does not evaluate).
+- `mloop prep plan` showed a step's columns in doubled brackets (`columns: [[x]]`).
+- `mloop runtime install` / `remove` help listed `tf, torch` and not `onnxruntime`; it lists what the registry knows.
 - `mloop train --balance` with a value that is not `auto`, `none` or a positive ratio trained unbalanced after a
   grey note; it is now refused before training. So is `--balance` on a task that is not classification (it was a
   warning). A ratio reads the same in every locale (`2.5`).

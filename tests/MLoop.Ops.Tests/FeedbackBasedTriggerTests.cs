@@ -95,6 +95,7 @@ public class FeedbackBasedTriggerTests : IDisposable
         result.ShouldRetrain.Should().BeFalse();
         result.ConditionResults[0].IsMet.Should().BeFalse();
         result.ConditionResults[0].Details.Should().Contain("No accuracy data");
+        result.ConditionResults[0].CurrentValue.Should().BeNull("an accuracy nobody measured is not 0");
     }
 
     [Fact]

@@ -242,13 +242,15 @@ public static class TriggerCommand
     internal static string FormatCurrentValue(ConditionResult result)
     {
         var color = result.IsMet ? "green" : "white";
+        // Not measured (no feedback, no profile, too few logged rows) is not zero — and not "no drift".
+        if (result.CurrentValue is null)
+            return "[grey]-[/]";
         return result.Condition.Type switch
         {
             ConditionType.AccuracyDrop => $"[{color}]{result.CurrentValue:P1}[/]",
             ConditionType.FeedbackVolume => $"[{color}]{result.CurrentValue:N0}[/]",
             ConditionType.TimeBased => $"[{color}]{result.CurrentValue:N0} days[/]",
-            // Not measured (no production model, no profile, too few logged rows) is not "no drift".
-            ConditionType.DataDrift => result.Drift is null ? "[grey]-[/]" : $"[{color}]PSI {result.CurrentValue:0.000}[/]",
+            ConditionType.DataDrift => $"[{color}]PSI {result.CurrentValue:0.000}[/]",
             _ => $"[{color}]{result.CurrentValue}[/]"
         };
     }

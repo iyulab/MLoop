@@ -1337,6 +1337,28 @@ The same measurement is a retraining condition: `mloop trigger check` and `GET /
 
 ---
 
+### `mloop trigger`
+
+Asks whether the model should be retrained, from what production has seen since it was trained.
+
+```bash
+mloop trigger check                         # the default conditions for model 'default'
+mloop trigger check --name churn --accuracy 0.8 --feedback 50
+mloop trigger check --json                  # shouldRetrain, recommendedAction, conditions[]
+```
+
+| Condition | Met when | Measured from |
+|-----------|----------|---------------|
+| `accuracy_threshold` (`AccuracyDrop`) | accuracy on feedback < 70% (`--accuracy`) | `mloop feedback add` / `POST /feedback` |
+| `feedback_count` (`FeedbackVolume`) | ≥ 100 feedback entries (`--feedback`) | the same feedback |
+| `Scheduled Retraining` (`TimeBased`) | the model is older than 30 days | the production model's training time |
+| `input_drift` (`DataDrift`) | PSI ≥ 0.25 on any column, or on the model's answers | logged predictions against the training profile (`mloop drift`) |
+
+Any condition met recommends retraining. A condition that could not be measured — no feedback yet, fewer
+than 100 logged predictions — is not met and shows `-` (`currentValue: null` in `--json`): an accuracy
+nobody measured is not 0%. `GET /trigger?name=` answers the same evaluation over HTTP; both read one set of
+conditions (`RetrainingDefaults`).
+
 ### `mloop export`
 
 `mloop export onnx` writes a trained model as an [ONNX](https://onnx.ai) graph, for a runtime that cannot load ML.NET —
@@ -1419,11 +1441,58 @@ file additionally mounts `models/` read-only so a promoted model can be picked u
 - Environment variables for API configuration, including the required signing key
 - Restart policy for production
 
+### `mloop runtime`
+
+Deep-learning tasks and ONNX verification need native libraries that are not shipped with the tool; they
+are downloaded on demand into the user's profile, once per machine.
+
+```bash
+mloop runtime list                  # each runtime, its size, whether it is installed, the tasks that need it
+mloop runtime list --json
+mloop runtime install tf            # TensorFlow CPU — image-classification
+mloop runtime install torch         # libtorch CPU — object-detection, text-classification, sentence-similarity, ner, question-answering
+mloop runtime install onnxruntime   # ONNX Runtime CPU — `mloop export onnx --verify`
+mloop runtime remove tf
+```
+
+A task whose runtime is missing stops before training with the `runtime install` line to run.
+
+### `mloop update`
+
+```bash
+mloop update --check   # is a newer version published?
+mloop update           # install it (runs `dotnet tool update --global mloop`; its exit code is passed through)
+```
+
 ---
 
 ## Data Preprocessing
 
 MLoop integrates with **FilePrepper** for high-performance CSV preprocessing.
+
+### `mloop prep` — preprocessing declared in `mloop.yaml`
+
+Steps under a model's `prep:` run on every `mloop train`, in order. `prep plan` edits the declaration (no data
+changes); `prep run` applies it to a file so you can look at the result.
+
+```bash
+mloop prep plan --set normalize:z-score --columns age,income   # add or replace a step
+mloop prep plan --set fill-missing:mean --columns income
+mloop prep plan --remove normalize                             # remove steps of a type
+mloop prep plan --list                                         # the plan, with each step's leakage class
+mloop prep run --dry-run                                       # the steps that would run
+mloop prep run -i datasets/train.csv -o datasets/train_prep.csv
+```
+
+Step types: `fill-missing` (mean · median · mode · constant · forward · backward), `normalize`, `scale`,
+`remove-columns`, `rename-columns`, `drop-duplicates`, `extract-date`, `parse-datetime`, `filter-rows`,
+`add-column`, `parse-korean-time`, `parse-excel-date`, `rolling`, `resample`, `sample`.
+
+The **Leakage** column says where a step runs. A statistic learned from the data (`normalize`, `scale`,
+`fill-missing:mean`) is fitted inside training on the training rows only, when the task supports it
+(`✓ fold-safe`); otherwise it is applied to the whole file before the train/test split and the evaluation
+keeps a leak (`⚠ leak`). Steps that learn nothing (renames, filters, date parts) run on the CSV
+(`ℹ csv-stage`). `POST /train` refuses a model whose `prep:` it would have to skip.
 
 ### Quick Examples
 

@@ -151,8 +151,10 @@ public static class PrepPlanCommand
         for (int i = 0; i < prep.Count; i++)
         {
             var s = prep[i];
+            // GetStepDetails is markup already (its user data escaped inside) — escaping it again
+            // showed `columns: [[x]]`.
             table.AddRow($"{i + 1}", Markup.Escape(s.Type),
-                Markup.Escape(PrepRunCommand.GetStepDetails(s)), CategoryLabel(s, supports));
+                PrepRunCommand.GetStepDetails(s), CategoryLabel(s, supports));
         }
         AnsiConsole.Write(table);
     }

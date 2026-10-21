@@ -99,11 +99,14 @@ public static class RuntimeCommand
         return command;
     }
 
+    // The ids the registry knows — a literal list here went stale when onnxruntime joined.
+    private static string RuntimeIds => string.Join(", ", RuntimeRegistry.All.Select(r => r.Id));
+
     private static Command CreateInstallCommand()
     {
         var runtimeArg = new Argument<string>("runtime")
         {
-            Description = "Runtime to install (tf, torch)",
+            Description = $"Runtime to install ({RuntimeIds})",
             Arity = ArgumentArity.ExactlyOne
         };
         var quietOption = new Option<bool>("--quiet", "-q")
@@ -183,7 +186,7 @@ public static class RuntimeCommand
 
     private static Command CreateRemoveCommand()
     {
-        var runtimeArg = new Argument<string>("runtime") { Description = "Runtime to remove (tf, torch)" };
+        var runtimeArg = new Argument<string>("runtime") { Description = $"Runtime to remove ({RuntimeIds})" };
         var command = new Command("remove", "Remove an installed runtime");
         command.Arguments.Add(runtimeArg);
 

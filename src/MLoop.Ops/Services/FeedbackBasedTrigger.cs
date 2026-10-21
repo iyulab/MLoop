@@ -72,7 +72,7 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
             return new ConditionResult(
                 condition,
                 IsMet: false,
-                CurrentValue: 0,
+                CurrentValue: null,
                 Details: "No accuracy data available (no feedback collected)");
         }
 
@@ -109,7 +109,7 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
         return new ConditionResult(
             condition,
             IsMet: false,
-            CurrentValue: 0,
+            CurrentValue: null,
             Details: $"Condition type '{condition.Type}' is not supported by FeedbackBasedTrigger");
     }
 }

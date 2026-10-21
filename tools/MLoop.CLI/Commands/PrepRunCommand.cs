@@ -268,6 +268,7 @@ public static class PrepRunCommand
         }));
     }
 
+    /// <summary>The step's details as Spectre markup — user data escaped, ready for a table cell; do not escape it again.</summary>
     internal static string GetStepDetails(PrepStep step)
     {
         var parts = new List<string>();

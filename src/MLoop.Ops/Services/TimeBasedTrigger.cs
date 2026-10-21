@@ -99,7 +99,7 @@ public sealed class TimeBasedTrigger : IRetrainingTrigger
                 return new ConditionResult(
                     Condition: condition,
                     IsMet: false,
-                    CurrentValue: 0,
+                    CurrentValue: null,
                     Details: $"Condition type '{condition.Type}' is not supported by TimeBasedTrigger. " +
                              "Use a full IRetrainingTrigger implementation with required data sources."
                 );
@@ -108,7 +108,7 @@ public sealed class TimeBasedTrigger : IRetrainingTrigger
                 return new ConditionResult(
                     Condition: condition,
                     IsMet: false,
-                    CurrentValue: 0,
+                    CurrentValue: null,
                     Details: $"Unknown condition type: {condition.Type}"
                 );
         }

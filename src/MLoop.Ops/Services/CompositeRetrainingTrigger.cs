@@ -96,8 +96,8 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
                 .ConfigureAwait(false);
             foreach (var condition in driftConditions)
             {
-                var psi = check.Report?.MaxPsi ?? 0;
-                results.Add(new ConditionResult(condition, check.Status == DriftCheckStatus.Measured && psi >= condition.Threshold, psi, check.Message)
+                var psi = check.Status == DriftCheckStatus.Measured ? check.Report?.MaxPsi : null;
+                results.Add(new ConditionResult(condition, psi >= condition.Threshold, psi, check.Message)
                 {
                     Drift = check.Report,
                 });
