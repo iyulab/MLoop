@@ -227,6 +227,63 @@ public class PromoteCommandTests : IDisposable
     }
 
     [Fact]
+    public void SelectExperiment_Best_MixedWeights_FailsActionable()
+    {
+        // The weighted model's accuracy is over a different distribution — not comparable.
+        var candidates = new[]
+        {
+            Summary("exp-001", metric: 0.90, metricName: "accuracy", ageMinutes: 60),
+            Summary("exp-002", metric: 0.95, metricName: "accuracy", ageMinutes: 30),
+        };
+        var weights = new Dictionary<string, string?> { ["exp-001"] = null, ["exp-002"] = "w" };
+
+        var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(
+            candidates, "default", best: true, weightColumns: weights);
+
+        Assert.Null(id);
+        Assert.NotNull(error);
+        Assert.Contains("exp-001: unweighted", error);
+        Assert.Contains("exp-002: weighted by 'w'", error);
+        Assert.Contains("--weight", error);
+    }
+
+    [Fact]
+    public void SelectExperiment_Best_SameWeight_CaseInsensitive_Compares()
+    {
+        var candidates = new[]
+        {
+            Summary("exp-001", metric: 0.90, metricName: "accuracy", ageMinutes: 60),
+            Summary("exp-002", metric: 0.95, metricName: "accuracy", ageMinutes: 30),
+        };
+        var weights = new Dictionary<string, string?> { ["exp-001"] = "W", ["exp-002"] = "w" };
+
+        var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(
+            candidates, "default", best: true, weightColumns: weights);
+
+        Assert.Null(error);
+        Assert.Equal("exp-002", id);
+    }
+
+    [Fact]
+    public void SelectExperiment_Best_MixedWeights_OnlyAmongGatePassing()
+    {
+        // The weighted experiment is refused by the gate, so the remaining candidates share one weighting.
+        var candidates = new[]
+        {
+            Summary("exp-001", metric: 0.90, metricName: "accuracy", ageMinutes: 60),
+            Summary("exp-002", metric: 0.95, metricName: "accuracy", ageMinutes: 30),
+        };
+        var weights = new Dictionary<string, string?> { ["exp-001"] = null, ["exp-002"] = "w" };
+        var refusals = new Dictionary<string, string> { ["exp-002"] = "it predicts only one class" };
+
+        var (id, _, error) = MLoop.CLI.Commands.PromoteCommand.SelectExperiment(
+            candidates, "default", best: true, refusals, weights);
+
+        Assert.Null(error);
+        Assert.Equal("exp-001", id);
+    }
+
+    [Fact]
     public void SelectExperiment_Best_NoMetrics_FailsActionable()
     {
         var candidates = new[] { Summary("exp-001"), Summary("exp-002") };

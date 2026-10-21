@@ -459,7 +459,10 @@ the most common class, R² 0), or a binary model that answers one class for ever
 better than chance (AUC 0.5 or below, or no AUC) — is refused with the reason, and the command exits
 1. `--force` promotes it anyway and prints the reason as a warning. `--best` picks the best
 experiment the gate accepts (with `--force`, the best of all of them), and `mloop train` says why it
-left a model in staging.
+left a model in staging. `--best` compares only experiments measured under one row weighting: when
+weighted and unweighted experiments (or ones weighted by different columns) are both candidates it
+refuses and lists them by weighting — score them on one evaluation set with
+`mloop evaluate <experiment> <file> --weight <column>` and promote one by its ID.
 
 A binary model that **ranks the classes well but answers one class at its default decision
 threshold** is not refused: its predicted labels carry no information, but its scores do, and a

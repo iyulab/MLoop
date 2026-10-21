@@ -147,20 +147,25 @@ public static class PromoteCommand
             {
                 var candidates = (await experimentStore.ListAsync(resolvedModelName, CancellationToken.None)).ToList();
 
-                // --best chooses among the models the gate accepts; --force widens it to all of them.
+                // --best chooses among the models the gate accepts (--force widens it to all of them),
+                // and compares only metrics measured under one weighting. Both facts are read from each
+                // experiment's own record — the index predates the weight column on older entries.
                 Dictionary<string, string>? refusals = null;
-                if (best && !force)
+                Dictionary<string, string?>? weights = null;
+                if (best)
                 {
-                    refusals = [];
+                    refusals = force ? null : [];
+                    weights = [];
                     foreach (var candidate in candidates.Where(c => c.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)))
                     {
                         var data = await experimentStore.LoadAsync(resolvedModelName, candidate.ExperimentId, CancellationToken.None);
-                        if (ModelRegistry.QualityGateRefusal(data, data.Config?.Metric) is { } why)
+                        weights[candidate.ExperimentId] = data.Config?.WeightColumn;
+                        if (refusals != null && ModelRegistry.QualityGateRefusal(data, data.Config?.Metric) is { } why)
                             refusals[candidate.ExperimentId] = why;
                     }
                 }
 
-                var (selected, reason, error) = SelectExperiment(candidates, resolvedModelName, best, refusals);
+                var (selected, reason, error) = SelectExperiment(candidates, resolvedModelName, best, refusals, weights);
                 if (selected == null)
                 {
                     WriteError(error!, jsonOutput);
@@ -313,7 +318,8 @@ public static class PromoteCommand
     /// </param>
     internal static (string? ExperimentId, string? Reason, string? Error) SelectExperiment(
         IReadOnlyList<ExperimentSummary> candidates, string modelName, bool best,
-        IReadOnlyDictionary<string, string>? gateRefusals = null)
+        IReadOnlyDictionary<string, string>? gateRefusals = null,
+        IReadOnlyDictionary<string, string?>? weightColumns = null)
     {
         var experiments = candidates
             .Where(e => e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
@@ -352,6 +358,25 @@ public static class PromoteCommand
             return (null, null,
                 $"Experiments for model '{modelName}' were optimized for different metrics ({string.Join(", ", metricNames)}) — " +
                 "--best cannot compare across them. Use --latest or an explicit experiment ID.");
+
+        // The same metric name over differently weighted rows is not one scale either: a metric
+        // weighted toward rare, re-checked cases and an unweighted one describe different
+        // distributions, so "best" between them is not a judgement --best can make.
+        if (weightColumns is not null)
+        {
+            static string Describe(string? w) => string.IsNullOrEmpty(w) ? "unweighted" : $"weighted by '{w}'";
+            var groups = scored
+                .GroupBy(e => weightColumns.TryGetValue(e.ExperimentId, out var w) && !string.IsNullOrEmpty(w)
+                    ? w.ToLowerInvariant() : "")
+                .ToList();
+            if (groups.Count > 1)
+                return (null, null,
+                    $"Experiments for model '{modelName}' were measured with different row weights ("
+                    + string.Join("; ", groups.Select(g =>
+                        $"{string.Join(", ", g.Select(e => e.ExperimentId))}: {Describe(weightColumns[g.First().ExperimentId])}"))
+                    + ") — --best cannot compare across them. Score the candidates on one evaluation set "
+                    + "(mloop evaluate <experiment> <file> --weight <column>) and promote one by its ID.");
+        }
 
         var lowerIsBetter = MetricDirection.IsLowerBetter(metricNames[0]);
         var winner = (lowerIsBetter

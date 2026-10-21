@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- `mloop promote --best` no longer picks a "best" experiment across different row weightings —
+  a weighted and an unweighted accuracy describe different distributions. It refuses, lists the
+  candidates by weighting, and points to `mloop evaluate --weight` and an explicit promote.
+
 ## [0.36.0] - 2026-10-21
 
 ### Added
