@@ -128,6 +128,10 @@ public static class ValidateCommand
                 }
             }
 
+            if (config.Retention?.Days is < 1 and var retentionDays)
+                errors.Add(new ValidationError("retention.days",
+                    $"The retention period must be at least 1 day (got {retentionDays}) — today's logs are always kept"));
+
             // Validate data paths and label column
             if (config.Data != null)
             {

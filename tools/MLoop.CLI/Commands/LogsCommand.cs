@@ -50,6 +50,7 @@ public static class LogsCommand
         command.Options.Add(fromOption);
         command.Options.Add(toOption);
         command.Options.Add(jsonOption);
+        command.Subcommands.Add(CreatePrune());
 
         command.SetAction((parseResult) =>
         {
@@ -143,6 +144,94 @@ public static class LogsCommand
         catch (Exception ex)
         {
             ErrorSuggestions.DisplayError(ex, "logs");
+            return 1;
+        }
+    }
+
+    private static Command CreatePrune()
+    {
+        var daysOption = new Option<int?>("--days")
+        {
+            Description = "Days to keep besides today (UTC); default: retention.days in mloop.yaml"
+        };
+        var dryRunOption = new Option<bool>("--dry-run")
+        {
+            Description = "Report what would be removed without removing it"
+        };
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Output in JSON format"
+        };
+
+        var command = new Command("prune",
+            "Remove prediction logs and feedback older than the retention period (whole days, every model)");
+        command.Options.Add(daysOption);
+        command.Options.Add(dryRunOption);
+        command.Options.Add(jsonOption);
+        command.SetAction(parseResult => PruneAsync(
+            parseResult.GetValue(daysOption), parseResult.GetValue(dryRunOption), parseResult.GetValue(jsonOption)));
+        return command;
+    }
+
+    private static async Task<int> PruneAsync(int? days, bool dryRun, bool jsonOutput)
+    {
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
+        try
+        {
+            var fileSystem = new FileSystemManager();
+            var projectDiscovery = new ProjectDiscovery(fileSystem);
+            string projectRoot;
+            try
+            {
+                projectRoot = projectDiscovery.FindRoot();
+            }
+            catch (InvalidOperationException)
+            {
+                ErrorConsole.Error(ProjectDiscovery.NotInsideProjectCause, ProjectDiscovery.NotInsideProjectGuidance);
+                return 1;
+            }
+
+            days ??= (await new ConfigLoader(fileSystem, projectDiscovery).LoadUserConfigAsync()).Retention?.Days;
+            if (days is not { } keep)
+            {
+                ErrorConsole.Error("No retention period: pass --days or set retention.days in mloop.yaml.",
+                    "Example: mloop logs prune --days 30 --dry-run");
+                return 1;
+            }
+            if (keep < 1)
+            {
+                ErrorConsole.Error($"The retention period must be at least 1 day (got {keep}).",
+                    "Today's logs are always kept; --days counts the days before today.");
+                return 1;
+            }
+
+            var report = RetentionPruner.Prune(projectRoot, keep, DateTimeOffset.UtcNow, dryRun);
+            if (jsonOutput)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    days = keep,
+                    dryRun,
+                    keptFrom = report.Cutoff, // the first UTC day kept — the day-files are named in UTC
+                    logFiles = report.LogFiles,
+                    feedbackFiles = report.FeedbackFiles,
+                    bytes = report.Bytes,
+                }, new JsonSerializerOptions { WriteIndented = true }));
+                return 0;
+            }
+
+            var verb = dryRun ? "Would remove" : "Removed";
+            // The days are UTC (the day-files are named in UTC); the boundary is shown in the reader's zone.
+            var boundary = TimestampDisplay.LocalToMinutes(report.Cutoff.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+            AnsiConsole.MarkupLine(report.Files == 0
+                ? $"[green]Nothing logged before {boundary} to remove.[/]"
+                : $"[green]{verb} {report.LogFiles} log and {report.FeedbackFiles} feedback day-file(s) — everything before " +
+                  $"{boundary}, {report.Bytes / 1024.0 / 1024.0:F1} MB.[/]");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            ErrorSuggestions.DisplayError(ex, "logs prune");
             return 1;
         }
     }

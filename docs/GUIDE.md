@@ -1211,6 +1211,30 @@ No prediction logs found.
 Use mloop predict --log to log predictions.
 ```
 
+#### Retention — `mloop logs prune`
+
+Logs and feedback are kept until something removes them. A service that logs every prediction should set a period
+in `mloop.yaml`:
+
+```yaml
+retention:
+  days: 30      # today (UTC) and the 30 days before it are kept
+```
+
+`mloop serve` then removes older days when it starts and once a day while it runs, and `mloop logs prune` does the
+same on demand (for a schedule of your own, or a project that is not served):
+
+```bash
+mloop logs prune --dry-run          # what retention.days would remove
+mloop logs prune --days 14          # a period of its own
+mloop logs prune --json
+```
+
+Both stores are written one file per model per UTC day, so whole days leave and nothing is rewritten; files whose
+name is not a day are left alone. Logs and feedback share the period, since a retraining set joins them. Feedback
+is matched to a prediction logged in the last 7 days, so a period shorter than that also shortens how late feedback
+can arrive. Without `retention:` (or with `days` below 1, which `mloop validate` reports) nothing is removed.
+
 ---
 
 ### `mloop feedback`

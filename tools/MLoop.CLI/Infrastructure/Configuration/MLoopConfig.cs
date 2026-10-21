@@ -22,6 +22,21 @@ public class MLoopConfig
     /// Shared data path settings
     /// </summary>
     public DataSettings? Data { get; set; }
+
+    /// <summary>
+    /// How long prediction logs and feedback are kept. Absent: kept until removed by hand.
+    /// </summary>
+    public RetentionSettings? Retention { get; set; }
+}
+
+/// <summary>
+/// <c>retention:</c> in mloop.yaml — the days of prediction logs and feedback to keep. <c>mloop logs prune</c>
+/// removes older day-files, and <c>mloop serve</c> does so once a day while it runs.
+/// </summary>
+public class RetentionSettings
+{
+    /// <summary>Days kept besides today (UTC); at least 1.</summary>
+    public int? Days { get; set; }
 }
 
 /// <summary>

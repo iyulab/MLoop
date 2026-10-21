@@ -241,6 +241,7 @@ builder.Services.AddSingleton<EvaluationEngine>();
 builder.Services.Configure<ModelCacheOptions>(builder.Configuration.GetSection(ModelCacheOptions.SectionName));
 builder.Services.AddSingleton<IModelCache, ModelCache>();
 builder.Services.AddHostedService<ModelCachePreloader>();
+builder.Services.AddHostedService<RetentionService>();
 builder.Services.AddSingleton<TrainingJobStore>();
 builder.Services.AddSingleton<MLoop.CLI.Infrastructure.ML.ITrainingEngine>(sp =>
 {

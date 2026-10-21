@@ -18,6 +18,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `POST /train` takes `promote` — `false` keeps the experiment in staging, as `mloop train --no-promote`, for an
   application that decides promotion itself (its own gate, a review) and then calls `POST /promote`. A completed job
   reports `promoted` and, when the experiment stayed in staging, `keptInStagingReason` (`GET /jobs` lists `promoted`).
+- Retention for prediction logs and feedback: `retention: days: N` in `mloop.yaml` keeps today (UTC) and the N days
+  before it. `mloop serve` removes older days at start and once a day; `mloop logs prune [--days N] [--dry-run]
+  [--json]` does it on demand. Whole day-files leave, logs and feedback together; nothing is removed without a period.
 - `GET /experiments` rows are the rows of `mloop list --json`: each carries its `metrics`, `qualityGate`,
   `qualityWarning` and `isProduction`, and the answer names each model's `production` experiment — one call where a
   client used to fetch every experiment separately. Rows are newest first, as in the CLI; `mloop list --json` rows
