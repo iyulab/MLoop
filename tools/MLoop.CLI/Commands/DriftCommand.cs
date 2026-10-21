@@ -105,6 +105,12 @@ public static class DriftCommand
                 $"{Markup.Escape(f.MostChangedBin)}: {f.ReferenceShare:P0} → {f.CurrentShare:P0}");
         AnsiConsole.Write(table);
 
+        if (report.Prediction is { } answers)
+            AnsiConsole.MarkupLine($"Answers ({Markup.Escape(name)}'s own predictions): PSI {answers.Psi:0.000} {LevelMarkup(answers.Level)} — "
+                                   + $"{Markup.Escape(answers.MostChangedBin)}: {answers.ReferenceShare:P0} → {answers.CurrentShare:P0}");
+        else
+            AnsiConsole.MarkupLine("[grey]Answers: not compared — this model was trained without an answer profile (classification and regression record one).[/]");
+
         if (check.Slices is { Count: > 0 } slices)
         {
             var bySlice = new Table().Border(TableBorder.Rounded)

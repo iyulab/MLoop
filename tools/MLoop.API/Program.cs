@@ -553,7 +553,7 @@ app.MapPost("/predict", async (
                     modelName,
                     productionModel.ExperimentId,
                     predictions.Select((row, i) => new PredictionLogEntry(
-                        modelName, productionModel.ExperimentId, rows[i], LoggedOutput(row), row.Confidence,
+                        modelName, productionModel.ExperimentId, rows[i], PredictionLogOutput.Of(row), row.Confidence,
                         loggedAt, ids[i])),
                     ct);
                 predictions = predictions.Select((row, i) => row with { PredictionId = ids[i] }).ToList();
@@ -1645,9 +1645,6 @@ static bool TryParseDateRange(string? from, string? to,
 }
 
 // The single value a logged prediction records as its answer — what feedback is compared against.
-static object LoggedOutput(PredictionRow row) =>
-    (object?)row.PredictedLabel ?? (object?)row.Score ?? (object?)row.ClusterId ?? (object?)row.IsAnomaly ?? string.Empty;
-
 static Dictionary<string, object>[] ParseJsonInput(JsonElement input)
 {
     var items = new List<JsonElement>();

@@ -382,7 +382,7 @@ The section above shows the ones a first project uses. This is the whole surface
 | `feedback` | Manage prediction feedback for model monitoring |
 | `sample` | Sample data from CSV files or prediction logs |
 | `trigger` | Evaluate retraining triggers for models |
-| `drift` | Compare recent inputs with the training data, per column (PSI) |
+| `drift` | Compare recent inputs and answers with the training data (PSI) |
 | `serve` | Start the REST API server for model serving |
 | `token` | Issue a JWT bearer token for the local serve API |
 | `docker` | Generate Docker configuration for model deployment |

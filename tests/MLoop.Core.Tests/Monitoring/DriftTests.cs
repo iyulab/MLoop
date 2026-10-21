@@ -152,6 +152,68 @@ public class DriftMeasureTests
         Assert.Equal(report.Features.Max(f => f.Psi), report.Features[0].Psi);   // most moved first
     }
 
+    [Theory]
+    [InlineData("binary-classification", false)]
+    [InlineData("multiclass-classification", false)]
+    [InlineData("regression", true)]
+    public void AnAnswerProfile_IsCategoricalForAClassifier_AndNumericForARegressor(string task, bool numeric)
+    {
+        var answers = Enumerable.Range(0, 100).Select(i => (object?)(numeric ? i * 1.5 : i % 4 == 0 ? "yes" : "no")).ToList();
+
+        var profile = DriftProfile.PredictionProfileOf(task, answers);
+
+        Assert.NotNull(profile);
+        Assert.Equal(numeric, profile!.IsNumeric);
+        Assert.Equal(DriftProfile.PredictionColumn, profile.Column);
+        Assert.Equal(1.0, profile.Shares.Sum(), 9);
+    }
+
+    [Theory]
+    [InlineData("clustering")]
+    [InlineData("anomaly-detection")]
+    [InlineData("ranking")]
+    public void ATaskWhoseAnswerIsNotAClassOrAValue_HasNoAnswerProfile(string task)
+        => Assert.Null(DriftProfile.PredictionProfileOf(task, [1.0, 2.0]));
+
+    [Fact]
+    public void ShiftedAnswers_Drift_ButDoNotRaiseTheInputLevel()
+    {
+        var answersAtTraining = Enumerable.Range(0, 2000).Select(i => (object?)(i % 4 == 0 ? "yes" : "no")).ToList();
+        var profile = Reference() with { Prediction = DriftProfile.PredictionProfileOf("binary-classification", answersAtTraining) };
+        var rows = Enumerable.Range(0, 2000).Select(i => Row(i % 100, i % 2 == 0 ? "a" : "b")).ToList();
+        // The same inputs, now answered "yes" twice as often — and logged as a JSON string, case changed.
+        using var doc = JsonDocument.Parse("""["YES", "no"]""");
+        var yes = doc.RootElement[0].Clone();
+        var answers = Enumerable.Range(0, 2000).Select(i => (object?)(i % 2 == 0 ? yes : "no")).ToList();
+
+        var report = DriftMeasure.Compare(profile, rows, answers);
+
+        Assert.Equal(DriftLevel.None, report.Level);
+        Assert.NotNull(report.Prediction);
+        Assert.Equal(DriftLevel.Significant, report.Prediction!.Level);
+        Assert.Equal(DriftProfile.PredictionColumn, report.Prediction.Column);
+        // Two answers move by the same amount; the tie goes to the more common one, "no": 0.75 → 0.5.
+        Assert.Equal("no", report.Prediction.MostChangedBin);
+        Assert.Equal(0.75, report.Prediction.ReferenceShare, 2);
+        Assert.Equal(0.5, report.Prediction.CurrentShare, 2);
+    }
+
+    [Fact]
+    public void AProfileWrittenBeforeAnswersWereProfiled_ComparesItsInputsOnly()
+    {
+        var json = JsonSerializer.Serialize(Reference(), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase })
+            .Replace(",\"prediction\":null", "");
+        var old = JsonSerializer.Deserialize<DriftProfile>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        var rows = Enumerable.Range(0, 200).Select(i => Row(i % 100, "a")).ToList();
+
+        var report = DriftMeasure.Compare(old, rows, rows.Select(_ => (object?)"yes").ToList());
+
+        Assert.DoesNotContain("prediction", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(old.Prediction);
+        Assert.Null(report.Prediction);
+        Assert.NotEmpty(report.Features);
+    }
+
     [Fact]
     public void LoggedJsonValues_AndAbsentColumns_AreReadLikeTheTrainingFile()
     {

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`mloop drift` compares the model's answers too.** Training a classifier or a regressor now also
+  records, in `drift-profile.json`, how the model's own answers were distributed over the sampled
+  training rows — the predicted class, or the predicted value cut at its deciles — read the way a
+  prediction log records them. `mloop drift`, `GET /drift` and the `input_drift` condition's `drift`
+  object carry it as `prediction` (PSI, level, most moved bin), and the text output adds an
+  **Answers** line. It is kept apart from the inputs' level, which still alone decides
+  `input_drift`. `prediction` is `null` for models trained earlier and for tasks whose answer is
+  neither a class nor a value.
+
 ## [0.38.0] - 2026-10-21
 
 ### Added

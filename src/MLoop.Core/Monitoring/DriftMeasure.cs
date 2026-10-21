@@ -25,13 +25,24 @@ public sealed record FeatureDrift(
     double ReferenceShare,
     double CurrentShare);
 
-/// <summary>A window of inputs compared against a training profile.</summary>
-public sealed record DriftReport(int Rows, IReadOnlyList<FeatureDrift> Features)
+/// <summary>
+/// A window of inputs compared against a training profile, and — when the profile carries one — the
+/// model's answers over the same window compared against its answers at training.
+/// </summary>
+/// <param name="Rows">Rows in the window.</param>
+/// <param name="Features">One entry per profiled input column, most moved first.</param>
+/// <param name="Prediction">
+/// The answers' drift (<see cref="DriftProfile.PredictionColumn"/>); <c>null</c> when the profile has
+/// no answer profile. Not part of <see cref="MaxPsi"/> and <see cref="Level"/>: those describe the
+/// inputs, and an answer shift with steady inputs is a different finding — the model's world changed
+/// where it cannot see, or the mix of what it is asked moved inside its inputs' ranges.
+/// </param>
+public sealed record DriftReport(int Rows, IReadOnlyList<FeatureDrift> Features, FeatureDrift? Prediction = null)
 {
-    /// <summary>The largest PSI of any column; 0 with none.</summary>
+    /// <summary>The largest PSI of any input column; 0 with none.</summary>
     public double MaxPsi => Features.Count == 0 ? 0 : Features.Max(f => f.Psi);
 
-    /// <summary>The level of the most moved column.</summary>
+    /// <summary>The level of the most moved input column.</summary>
     public DriftLevel Level => DriftMeasure.LevelOf(MaxPsi);
 }
 
@@ -77,21 +88,33 @@ public static class DriftMeasure
     /// Compares <paramref name="rows"/> (column → value, as a prediction log records inputs) with
     /// <paramref name="profile"/>, column by column. A column a row does not carry counts as missing in it.
     /// </summary>
-    public static DriftReport Compare(DriftProfile profile, IReadOnlyCollection<IReadOnlyDictionary<string, object?>> rows)
+    /// <param name="profile">The training profile.</param>
+    /// <param name="rows">The window's inputs.</param>
+    /// <param name="answers">
+    /// The answer logged for each row, in the same order (<see cref="Prediction.PredictionLogOutput"/>);
+    /// compared with <see cref="DriftProfile.Prediction"/> when both are present.
+    /// </param>
+    public static DriftReport Compare(
+        DriftProfile profile, IReadOnlyCollection<IReadOnlyDictionary<string, object?>> rows, IReadOnlyCollection<object?>? answers = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(rows);
-        var features = new List<FeatureDrift>(profile.Features.Count);
-        foreach (var feature in profile.Features)
-        {
-            var values = rows.Select(r => ValueOf(r, feature.Column)).ToList();
-            var current = feature.SharesOf(values);
-            var psi = Psi(feature.Shares, current);
+        var features = profile.Features
+            .Select(feature => Measure(feature, rows.Select(r => ValueOf(r, feature.Column)).ToList()))
+            .OrderByDescending(f => f.Psi)
+            .ToList();
+        var prediction = profile.Prediction is { } reference && answers is not null
+            ? Measure(reference, answers.Select(Text).ToList())
+            : null;
+        return new DriftReport(rows.Count, features, prediction);
+    }
 
-            var moved = Enumerable.Range(0, feature.BinCount).MaxBy(i => Math.Abs(current[i] - feature.Shares[i]));
-            features.Add(new FeatureDrift(feature.Column, psi, LevelOf(psi), BinName(feature, moved), feature.Shares[moved], current[moved]));
-        }
-        return new DriftReport(rows.Count, features.OrderByDescending(f => f.Psi).ToList());
+    private static FeatureDrift Measure(FeatureProfile feature, IReadOnlyCollection<string?> values)
+    {
+        var current = feature.SharesOf(values);
+        var psi = Psi(feature.Shares, current);
+        var moved = Enumerable.Range(0, feature.BinCount).MaxBy(i => Math.Abs(current[i] - feature.Shares[i]));
+        return new FeatureDrift(feature.Column, psi, LevelOf(psi), BinName(feature, moved), feature.Shares[moved], current[moved]);
     }
 
     /// <summary>A readable name for bin <paramref name="bin"/> of <paramref name="feature"/>: a category, a range, "other" or "missing".</summary>
@@ -118,7 +141,12 @@ public static class DriftMeasure
                 return null;
             value = row[match];
         }
-        return value switch
+        return Text(value);
+    }
+
+    /// <summary>A raw value as the text a profile bins — the same for a CSV field, a JSON log value and a CLR value.</summary>
+    internal static string? Text(object? value)
+        => value switch
         {
             null => null,
             string s => s,
@@ -131,5 +159,4 @@ public static class DriftMeasure
             IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
             _ => value.ToString(),
         };
-    }
 }

@@ -84,21 +84,23 @@ public static class DriftEvaluator
         var entries = (await logs.GetLogsAsync(modelName, limit: Math.Max(windowRows, 1) * 2, cancellationToken: cancellationToken).ConfigureAwait(false))
             .Where(e => string.Equals(e.ExperimentId, experimentId, StringComparison.OrdinalIgnoreCase))
             .Take(windowRows)
-            .Select(e => (IReadOnlyDictionary<string, object?>)e.Input.ToDictionary(kv => kv.Key, kv => (object?)kv.Value, StringComparer.OrdinalIgnoreCase))
+            .Select(e => new Logged(
+                e.Input.ToDictionary(kv => kv.Key, kv => (object?)kv.Value, StringComparer.OrdinalIgnoreCase),
+                e.Output))
             .ToList();
         if (entries.Count < MinimumRows)
             return new DriftCheck(DriftCheckStatus.TooFewRows, experimentId, entries.Count, null, null,
                 $"{entries.Count} logged predictions of {experimentId}; at least {MinimumRows} are needed to compare. "
                 + "Predictions are logged with `mloop predict --log` and by `mloop serve`.");
 
-        var report = DriftMeasure.Compare(profile, entries);
+        var report = Compare(profile, entries);
         IReadOnlyList<SliceDrift>? slices = null;
         if (!string.IsNullOrWhiteSpace(sliceColumn))
         {
             slices = entries
-                .GroupBy(r => r.TryGetValue(sliceColumn, out var v) ? Text(v) : "(missing)", StringComparer.Ordinal)
+                .GroupBy(r => r.Input.TryGetValue(sliceColumn, out var v) ? Text(v) : "(missing)", StringComparer.Ordinal)
                 .Where(g => g.Count() >= MinimumRows)
-                .Select(g => new SliceDrift(g.Key, DriftMeasure.Compare(profile, g.ToList())))
+                .Select(g => new SliceDrift(g.Key, Compare(profile, g.ToList())))
                 .OrderByDescending(s => s.Report.MaxPsi)
                 .ToList();
         }
@@ -108,27 +110,39 @@ public static class DriftEvaluator
             ? $"No profiled feature to compare for {experimentId}."
             : $"{Describe(report.Level)} over {entries.Count} predictions of {experimentId}: most moved '{top.Column}' "
               + $"(PSI {top.Psi:F3}; {top.MostChangedBin}: {top.ReferenceShare:P0} → {top.CurrentShare:P0}).";
+        if (report.Prediction is { } answers)
+            message += $" Answers: {Describe(answers.Level).ToLowerInvariant()} (PSI {answers.Psi:F3}; "
+                       + $"{answers.MostChangedBin}: {answers.ReferenceShare:P0} → {answers.CurrentShare:P0}).";
         return new DriftCheck(DriftCheckStatus.Measured, experimentId, entries.Count, report, slices, message);
     }
 
+    private sealed record Logged(IReadOnlyDictionary<string, object?> Input, object? Output);
+
+    private static DriftReport Compare(DriftProfile profile, IReadOnlyCollection<Logged> entries)
+        => DriftMeasure.Compare(profile, entries.Select(e => e.Input).ToList(), entries.Select(e => e.Output).ToList());
+
     /// <summary>
     /// The drift signal for machines — one shape for <c>mloop trigger check --json</c>, <c>mloop drift
-    /// --json</c> and the REST API: the window size, the level, and every column's PSI, most moved first.
+    /// --json</c> and the REST API: the window size, the inputs' level, every column's PSI (most moved
+    /// first), and the answers' drift — <c>null</c> when the model was trained without an answer profile.
     /// </summary>
     public static object Signal(DriftReport report) => new
     {
         rows = report.Rows,
         level = report.Level.ToString(),
         maxPsi = report.MaxPsi,
-        features = report.Features.Select(f => new
-        {
-            column = f.Column,
-            psi = f.Psi,
-            level = f.Level.ToString(),
-            mostChangedBin = f.MostChangedBin,
-            referenceShare = f.ReferenceShare,
-            currentShare = f.CurrentShare,
-        }),
+        features = report.Features.Select(Signal),
+        prediction = report.Prediction is { } p ? Signal(p) : null,
+    };
+
+    private static object Signal(FeatureDrift f) => new
+    {
+        column = f.Column,
+        psi = f.Psi,
+        level = f.Level.ToString(),
+        mostChangedBin = f.MostChangedBin,
+        referenceShare = f.ReferenceShare,
+        currentShare = f.CurrentShare,
     };
 
     private static string Describe(DriftLevel level) => level switch

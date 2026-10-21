@@ -27,7 +27,7 @@ public class DriftEvaluatorTests : IDisposable
 
     private string Production => Path.Combine(_root, ExperimentLayout.ModelsDirectory, "m", ExperimentLayout.ProductionDirectory);
 
-    private void Promote(string experimentId, bool withProfile = true)
+    private void Promote(string experimentId, bool withProfile = true, double? yesShareAtTraining = null)
     {
         Directory.CreateDirectory(Production);
         File.WriteAllText(Path.Combine(Production, ExperimentLayout.MetadataFileName),
@@ -36,18 +36,24 @@ public class DriftEvaluatorTests : IDisposable
             return;
         var rows = Enumerable.Range(0, 1000).Select(i => new[] { (i % 100).ToString(CultureInfo.InvariantCulture) }).ToArray();
         var profile = DriftProfile.Build(rows, [("x", true)]);
+        if (yesShareAtTraining is { } share)
+            profile = profile with
+            {
+                Prediction = DriftProfile.PredictionProfileOf("binary-classification",
+                    Enumerable.Range(0, 1000).Select(i => (object?)(i < share * 1000 ? "yes" : "no")).ToList()),
+            };
         File.WriteAllText(Path.Combine(Production, ExperimentLayout.DriftProfileFileName),
             JsonSerializer.Serialize(profile, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
     }
 
-    private async Task Log(string experimentId, int count, Func<int, double> x, Func<int, string>? site = null)
+    private async Task Log(string experimentId, int count, Func<int, double> x, Func<int, string>? site = null, Func<int, string>? answer = null)
     {
         for (var i = 0; i < count; i++)
         {
             var input = new Dictionary<string, object> { ["x"] = x(i) };
             if (site is not null)
                 input["site"] = site(i);
-            await _logs.LogPredictionAsync("m", experimentId, input, "1");
+            await _logs.LogPredictionAsync("m", experimentId, input, answer?.Invoke(i) ?? "1");
         }
     }
 
@@ -103,6 +109,36 @@ public class DriftEvaluatorTests : IDisposable
         check.Slices!.Select(s => s.Value).Should().Equal("moved", "steady");
         check.Slices![0].Report.Level.Should().Be(DriftLevel.Significant);
         check.Slices![1].Report.Level.Should().Be(DriftLevel.None);
+    }
+
+    [Fact]
+    public async Task TheModelsAnswers_AreComparedWithItsAnswersAtTraining()
+    {
+        Promote("exp-001", yesShareAtTraining: 0.2);
+        await Log("exp-001", 400, i => i % 100, answer: i => i % 2 == 0 ? "yes" : "no");
+
+        var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
+
+        check.Report!.Level.Should().Be(DriftLevel.None);            // the inputs held
+        check.Report.Prediction!.Level.Should().Be(DriftLevel.Significant);
+        check.Report.Prediction.MostChangedBin.Should().Be("no");   // 0.8 → 0.5 (yes moves as much the other way)
+        check.Message.Should().Contain("Answers: significant drift");
+        var signal = JsonSerializer.SerializeToElement(DriftEvaluator.Signal(check.Report));
+        signal.GetProperty("prediction").GetProperty("column").GetString().Should().Be(DriftProfile.PredictionColumn);
+        signal.GetProperty("level").GetString().Should().Be("None");
+    }
+
+    [Fact]
+    public async Task WithoutAnAnswerProfile_TheSignalSaysSo()
+    {
+        Promote("exp-001");
+        await Log("exp-001", 200, i => i % 100);
+
+        var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
+
+        check.Report!.Prediction.Should().BeNull();
+        JsonSerializer.SerializeToElement(DriftEvaluator.Signal(check.Report)).GetProperty("prediction").ValueKind
+            .Should().Be(JsonValueKind.Null);
     }
 
     [Fact]

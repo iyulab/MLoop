@@ -1034,11 +1034,13 @@ Use mloop predict --log to log predictions.
 
 ### `mloop drift`
 
-How far the production model's recent inputs have moved from the data it was trained on. Training
-records each feature's distribution beside the model (`drift-profile.json` — numeric columns by
-decile, categorical ones by their most common values, missing values apart); this compares the
-production model's own logged predictions with it, column by column, by the population stability
-index (PSI). Nothing runs in the background — it is computed when you ask.
+How far the production model's recent inputs — and its answers — have moved from the data it was
+trained on. Training records each feature's distribution beside the model (`drift-profile.json` —
+numeric columns by decile, categorical ones by their most common values, missing values apart), and,
+for a classifier or a regressor, the distribution of the model's own answers over the same rows
+(the predicted class, or the predicted value by decile). This compares the production model's own
+logged predictions with both, by the population stability index (PSI). Nothing runs in the
+background — it is computed when you ask.
 
 ```bash
 mloop drift                         # the most recent 5,000 logged predictions
@@ -1070,8 +1072,18 @@ mloop drift --json
 │ A     │  200 │   4.745 │ significant │ x                 │
 │ B     │  200 │   0.046 │   stable    │ x                 │
 ╰───────┴──────┴─────────┴─────────────┴───────────────────╯
+Answers (default's own predictions): PSI 0.205 moderate — yes: 24% → 45%
 PSI under 0.1 is stable, 0.1–0.25 moderate, 0.25+ significant.
 ```
+
+**Answers** compares what the model said over the window with what it said over its training rows.
+It is reported apart from the inputs and does not raise their level: answers that move while every
+input holds still say something different — the mix of what the model is asked shifted inside the
+ranges it knows, which the per-column PSI cannot see. In `--json` it is `drift.prediction` (the
+same fields as a column, under the name `(prediction)`), `null` for a model trained before answers
+were profiled or a task whose answer is not a class or a value. The reference is the model's
+answers on rows it was trained on, so a model that memorized them reads slightly sharper there than
+on new traffic.
 
 **Most moved** is the bin whose share changed most — a decile range, a category, `(other)` for
 values training never saw, or `(missing)`. Only predictions of the model now in production count:

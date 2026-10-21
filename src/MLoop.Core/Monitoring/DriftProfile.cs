@@ -23,6 +23,36 @@ public sealed record DriftProfile
     /// <summary>One entry per profiled feature column.</summary>
     public required IReadOnlyList<FeatureProfile> Features { get; init; }
 
+    /// <summary>
+    /// How the model's own answers were distributed over the same rows — the predicted class for a
+    /// classifier, the predicted value for a regressor — in the form a prediction log records them
+    /// (<see cref="Prediction.PredictionLogOutput"/>). <c>null</c> for a task whose answer is neither,
+    /// and for profiles written before answers were profiled.
+    /// </summary>
+    public FeatureProfile? Prediction { get; init; }
+
+    /// <summary>The name <see cref="Prediction"/> is reported under — no input column can carry it.</summary>
+    public const string PredictionColumn = "(prediction)";
+
+    /// <summary>
+    /// The answer profile of <paramref name="answers"/> — the logged output of each scored row — or
+    /// <c>null</c> when <paramref name="task"/>'s answer is not a class or a value.
+    /// </summary>
+    public static FeatureProfile? PredictionProfileOf(string? task, IReadOnlyCollection<object?> answers)
+    {
+        ArgumentNullException.ThrowIfNull(answers);
+        if (!HasAnswerProfile(task))
+            return null;
+        var values = answers.Select(DriftMeasure.Text).ToList();
+        return AutoML.AutoMLRunner.IsClassification(task)
+            ? FeatureProfile.Categorical(PredictionColumn, values)
+            : FeatureProfile.Numeric(PredictionColumn, values);
+    }
+
+    /// <summary>Whether <paramref name="task"/>'s answer is a class or a value — the answers an answer profile describes.</summary>
+    public static bool HasAnswerProfile(string? task)
+        => AutoML.AutoMLRunner.IsClassification(task) || TaskTypes.Canonical(task) == "regression";
+
     /// <summary>The feature columns of <paramref name="schema"/> a drift profile covers: numeric, categorical and boolean features. Free text has no distribution worth comparing bin by bin.</summary>
     public static IReadOnlyList<(string Column, bool Numeric)> ColumnsOf(InputSchemaInfo schema)
         => schema.Columns
@@ -37,10 +67,25 @@ public sealed record DriftProfile
     /// on a large file, and the same file gives the same profile.
     /// </summary>
     public static async Task<DriftProfile> FromCsvAsync(
-        string path, IReadOnlyList<(string Column, bool Numeric)> columns, int sampleSize = 20_000,
+        string path, IReadOnlyList<(string Column, bool Numeric)> columns, int sampleSize = DefaultSampleSize,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(columns);
+        var sample = await SampleCsvAsync(path, sampleSize, cancellationToken).ConfigureAwait(false);
+        return Build(sample.Project(columns.Select(c => c.Column).ToList()), columns);
+    }
+
+    /// <summary>Rows of the training file a profile is built from, at most.</summary>
+    public const int DefaultSampleSize = 20_000;
+
+    /// <summary>
+    /// Reads every row of <paramref name="path"/> (a CSV with a header) once and keeps a fixed-seed
+    /// reservoir sample of <paramref name="sampleSize"/> whole rows — memory stays flat on a large
+    /// file, and the same file gives the same sample. The rows an input profile is built from and the
+    /// rows the model is scored on for its answer profile are this one sample.
+    /// </summary>
+    public static async Task<CsvSample> SampleCsvAsync(string path, int sampleSize = DefaultSampleSize, CancellationToken cancellationToken = default)
+    {
         var (readPath, detection) = EncodingDetector.ConvertToUtf8WithBom(path);
         try
         {
@@ -54,12 +99,9 @@ public sealed record DriftProfile
             using var reader = new StreamReader(readPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
             using var csv = new CsvReader(reader, config);
             if (!await csv.ReadAsync().ConfigureAwait(false))
-                return Build([], columns);
+                return new CsvSample([], []);
             csv.ReadHeader();
             var header = csv.HeaderRecord ?? [];
-            var index = columns
-                .Select(c => Array.FindIndex(header, h => string.Equals(h, c.Column, StringComparison.OrdinalIgnoreCase)))
-                .ToArray();
 
             var random = new Random(20261021);
             var reservoir = new List<string?[]>();
@@ -67,16 +109,16 @@ public sealed record DriftProfile
             while (await csv.ReadAsync().ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var row = new string?[columns.Count];
-                for (var i = 0; i < columns.Count; i++)
-                    row[i] = index[i] >= 0 ? csv.GetField(index[i]) : null;
+                var row = new string?[header.Length];
+                for (var i = 0; i < header.Length; i++)
+                    row[i] = csv.TryGetField<string>(i, out var field) ? field : null;
                 seen++;
                 if (reservoir.Count < sampleSize)
                     reservoir.Add(row);
                 else if (random.Next(seen) is var slot && slot < sampleSize)
                     reservoir[slot] = row;
             }
-            return Build(reservoir, columns);
+            return new CsvSample(header, reservoir);
         }
         finally
         {
@@ -97,6 +139,22 @@ public sealed record DriftProfile
             features.Add(columns[i].Numeric ? FeatureProfile.Numeric(columns[i].Column, values) : FeatureProfile.Categorical(columns[i].Column, values));
         }
         return new DriftProfile { Rows = rows.Count, Features = features };
+    }
+}
+
+/// <summary>
+/// Whole rows drawn from a CSV file — its header, and the sampled rows in reservoir order. Any subset
+/// of the rows is itself a uniform sample of the file.
+/// </summary>
+public sealed record CsvSample(IReadOnlyList<string> Header, IReadOnlyList<string?[]> Rows)
+{
+    /// <summary>The rows cut down to <paramref name="columns"/>, in that order; a column the file lacks is missing in every row.</summary>
+    public IReadOnlyList<string?[]> Project(IReadOnlyList<string> columns)
+    {
+        var index = columns
+            .Select(c => Header.ToList().FindIndex(h => string.Equals(h, c, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        return Rows.Select(r => index.Select(i => i >= 0 && i < r.Length ? r[i] : null).ToArray()).ToList();
     }
 }
 

@@ -369,7 +369,7 @@ public class TrainingEngine : ITrainingEngine
                 _mlContext.Model.Save(autoMLResult.ResidualModel, null, residualPath);
             }
 
-            await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config.Task, cancellationToken);
+            await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config, modelPath, cancellationToken);
 
             // Execute PostTrain hooks
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PostTrain))
@@ -807,26 +807,70 @@ public class TrainingEngine : ITrainingEngine
 
     /// <summary>
     /// Writes the training inputs' distribution beside the model — the reference drift is measured
-    /// against (<see cref="ExperimentLayout.DriftProfileFileName"/>). Only for models that read feature
-    /// columns from a file; a failure is a warning, never a failed training.
+    /// against (<see cref="ExperimentLayout.DriftProfileFileName"/>) — together with the distribution of
+    /// the model's own answers over the same sampled rows. Only for models that read feature columns
+    /// from a file; a failure is a warning, never a failed training.
     /// </summary>
     private async Task SaveDriftProfileAsync(
-        string experimentPath, string dataFilePath, InputSchemaInfo? inputSchema, string task, CancellationToken cancellationToken)
+        string experimentPath, string dataFilePath, InputSchemaInfo? inputSchema, TrainingConfig config, string modelPath,
+        CancellationToken cancellationToken)
     {
-        if (inputSchema is null || !File.Exists(dataFilePath) || !AutoMLRunner.ReadsFeatureColumns(task))
+        if (inputSchema is null || !File.Exists(dataFilePath) || !AutoMLRunner.ReadsFeatureColumns(config.Task))
             return;
         var columns = MLoop.Core.Monitoring.DriftProfile.ColumnsOf(inputSchema);
         if (columns.Count == 0)
             return;
         try
         {
-            var profile = await MLoop.Core.Monitoring.DriftProfile.FromCsvAsync(dataFilePath, columns, cancellationToken: cancellationToken);
+            var sample = await MLoop.Core.Monitoring.DriftProfile.SampleCsvAsync(dataFilePath, cancellationToken: cancellationToken);
+            var profile = MLoop.Core.Monitoring.DriftProfile.Build(sample.Project(columns.Select(c => c.Column).ToList()), columns)
+                with { Prediction = AnswerProfile(sample, inputSchema, config, modelPath) };
             await _fileSystem.WriteJsonAsync(
                 _fileSystem.CombinePath(experimentPath, ExperimentLayout.DriftProfileFileName), profile, cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException or FormatException)
         {
             WarningConsole.Warn($"Could not write {ExperimentLayout.DriftProfileFileName}: {Markup.Escape(ex.Message)} — drift cannot be measured for this model.");
+        }
+    }
+
+    /// <summary>Rows of the drift sample the model is scored on for its answer profile.</summary>
+    internal const int AnswerProfileRows = 5_000;
+
+    /// <summary>
+    /// The model's answers over the first <see cref="AnswerProfileRows"/> sampled rows, read the way a
+    /// prediction log records them — scored through the same service <c>mloop serve</c> and
+    /// <c>predict --json</c> use, so a class is spelled as the log spells it. <c>null</c> when the task's
+    /// answer is not a class or a value, or when scoring fails (warned: input drift is still recorded).
+    /// </summary>
+    /// <remarks>
+    /// The rows are training rows, so a model that memorized them answers them closer to their labels
+    /// than it will answer new rows; the reference is then slightly sharper than live traffic. Accepted
+    /// against the alternative of keeping the holdout's rows from inside the search, which no path
+    /// exposes — and the input profile is built from the same rows, so both references describe one
+    /// population.
+    /// </remarks>
+    private MLoop.Core.Monitoring.FeatureProfile? AnswerProfile(MLoop.Core.Monitoring.CsvSample sample, InputSchemaInfo schema, TrainingConfig config, string modelPath)
+    {
+        if (!MLoop.Core.Monitoring.DriftProfile.HasAnswerProfile(config.Task) || sample.Rows.Count == 0)
+            return null;
+        var dropped = schema.Columns.Where(c => c.Purpose == "Exclude").Select(c => c.Name)
+            .Append(config.LabelColumn)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var kept = sample.Header.Select((name, i) => (Name: name.Trim(), Index: i)).Where(h => !dropped.Contains(h.Name)).ToList();
+        var rows = sample.Rows.Take(AnswerProfileRows)
+            .Select(r => kept.ToDictionary(h => h.Name, h => (object)(h.Index < r.Length ? r[h.Index] ?? "" : ""), StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        try
+        {
+            var result = new PredictionService(_mlContext).Predict(rows, schema, modelPath, config.Task, config.LabelColumn);
+            return MLoop.Core.Monitoring.DriftProfile.PredictionProfileOf(
+                config.Task, result.Rows.Select(r => (object?)PredictionLogOutput.Of(r)).ToList());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            WarningConsole.Warn($"Could not profile the model's answers: {Markup.Escape(ex.Message)} — answer drift cannot be measured for this model.");
+            return null;
         }
     }
 
