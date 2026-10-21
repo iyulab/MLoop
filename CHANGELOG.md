@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- NER models report `entity_precision`, `entity_recall` and `entity_f1` beside the word accuracies, in training
+  and `mloop evaluate` — whole entities with their type, the score NER is usually reported by. A model that finds
+  half of every entity no longer reads as half right. Tags are read as the IOB family (`B-`/`I-`, BIOES, bare types).
+
 - `POST /train` takes `balance` — class balancing as `mloop train --balance` (`auto`, `none` or a target ratio):
   the test part is split off (stratified) first and only the train part is balanced. `GET /jobs/{id}` shows it, and
   a job notes what balancing did and a class imbalance in its status.

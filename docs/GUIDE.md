@@ -371,6 +371,11 @@ the plain share of words tagged correctly, which on most text is dominated by `O
 reads the label's classes as its tags, so a model that does no better than answering `O` stays in
 staging.
 
+Both count words, and a word can be right while its entity is not: `B-PER I-PER` answered `B-PER O` is half
+the words and no person. `entity_precision`, `entity_recall` and `entity_f1` count whole entities — the same
+words with the same type — as NER is usually reported (CoNLL). The tags are read as the IOB family is written:
+`B-`/`I-`, `E-`/`S-` (BIOES), or a bare type repeated over the words of one entity.
+
 ### Question Answering
 
 One row per question, with the answer and where it starts in the passage:

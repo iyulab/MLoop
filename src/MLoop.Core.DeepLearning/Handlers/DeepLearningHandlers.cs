@@ -209,16 +209,12 @@ internal static class DeepLearningHandlers
             using (EpochProgress.Attach(mlContext, progress, "NER (NAS-BERT)", log))
                 model = PretrainedWeights.Guard(() => pipeline.Fit(preparedTrain));
 
-            var (micro, macro) = NerTagAccuracy.Measure(mlContext, model.Transform(testSet), config.LabelColumn);
-            // Named as multiclass names them, and for the same reason: the tag average is what a model
+            var scores = NerTagAccuracy.Measure(mlContext, model.Transform(testSet), config.LabelColumn);
+            // The tag average is named as multiclass names it, and for the same reason: it is what a model
             // that answers O everywhere cannot fake, and the gate's 1/N floor applies to it as-is.
-            var metricsDict = new Dictionary<string, double>
-            {
-                ["macro_accuracy"] = macro,
-                ["micro_accuracy"] = micro
-            };
+            var metricsDict = scores.Metrics();
 
-            trialChannel.ReportCompleted(TrainerDescriptor.Of("NER (NAS-BERT)"), "macro_accuracy", macro, metricsDict);
+            trialChannel.ReportCompleted(TrainerDescriptor.Of("NER (NAS-BERT)"), NerTagAccuracy.MacroAccuracy, scores.Macro, metricsDict);
 
             return new AutoMLResult
             {

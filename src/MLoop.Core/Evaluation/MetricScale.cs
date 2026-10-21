@@ -46,6 +46,9 @@ public static class MetricScale
         "log_loss_reduction",
         "exact_match",
         "char_f1",
+        "entity_precision",
+        "entity_recall",
+        "entity_f1",
     };
 
     /// <summary>
