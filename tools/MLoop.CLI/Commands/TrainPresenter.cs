@@ -337,7 +337,8 @@ internal static class TrainPresenter
         double? minThreshold,
         double? majorityClassRatio = null,
         string? gateRefusal = null,
-        string? incomparable = null)
+        string? incomparable = null,
+        string? policyRefusal = null)
     {
         if (promoted)
         {
@@ -402,6 +403,13 @@ internal static class TrainPresenter
                 WarningConsole.Warn(
                     $"Not promoted: {Markup.Escape(gateRefusal)}. Saved to staging; `mloop promote {result.ExperimentId} --force` " +
                     "promotes it anyway.");
+            }
+            else if (policyRefusal is not null)
+            {
+                // The project's own rules (mloop.yaml `gate:`) held it back, judged on their evaluation set.
+                WarningConsole.Warn(
+                    $"Not promoted — the gate policy refuses it: {Markup.Escape(policyRefusal)}. Saved to staging; " +
+                    $"`mloop promote {result.ExperimentId} --force` promotes it anyway.");
             }
             else if (incomparable is not null && production is not null)
             {

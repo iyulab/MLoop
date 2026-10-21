@@ -28,6 +28,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`classes`, `counts`, `total`) overall and per slice, and so does `POST /evaluate`.
   `MLoop.Core.Evaluation.ConfusionCounts.ShareOf` reads any class-set measure from it — of the rows
   labeled with one of a set of classes, the share answered with one of another.
+- **A project's own gate policy** (`gate:` under a model in `mloop.yaml`): rules a model must also
+  pass to be promoted, judged on an evaluation set (`data`, optional `weight`) when `promote`, a
+  training run or `POST /promote` would promote it — `no_worse_than_production` (refused when the
+  row-by-row comparison with production says production is better on those rows) and class
+  `limits` (`actual`, `predicted`, `max`: of the rows labeled with one of `actual`, at most `max`
+  answered with one of `predicted`), also per `slice_by` value with 30+ rows. A refusal names the
+  rule; `--force` (or `"force": true`) overrides and the history records it as `forced`. A rule that
+  cannot be judged refuses. `mloop validate` checks the policy.
 - **`mloop promote --history` lists every change of production**, with what each one replaced, how
   it happened (`promote`, `auto-promote`, `rollback`) and the quality gate's outcome at that moment
   (`passed`, `forced` with the refusal, `not-applied`) beside the project metric's value. `--json`

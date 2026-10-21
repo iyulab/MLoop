@@ -1176,6 +1176,7 @@ public static class TrainCommand
                 double? majorityClassRatio = null;
                 string? gateRefusal = null;
                 string? incomparable = null;
+                string? policyRefusal = null;
                 if (!promoted)
                 {
                     try
@@ -1183,6 +1184,10 @@ public static class TrainCommand
                         var expData = await experimentStore.LoadAsync(resolvedModelName, result.ExperimentId, CancellationToken.None);
                         gateRefusal = ModelRegistry.QualityGateRefusal(expData, primaryMetric);
                         incomparable = await modelRegistry.IncomparableWithProductionAsync(resolvedModelName, expData, production);
+                        // When the metrics alone would have promoted it, the gate policy is what held it back —
+                        // asked again so the staging line names the rule (an evaluation, only when one is configured).
+                        if (await modelRegistry.ShouldPromoteOnMetricsAsync(resolvedModelName, result.ExperimentId, primaryMetric))
+                            policyRefusal = await modelRegistry.GatePolicyRefusalAsync(resolvedModelName, result.ExperimentId);
                         var labelSchema = expData.Config?.InputSchema?.Columns?
                             .FirstOrDefault(s => s.Name.Equals(trainingConfig.LabelColumn, StringComparison.OrdinalIgnoreCase));
                         if (labelSchema?.UniqueValueCount > 0)
@@ -1207,7 +1212,7 @@ public static class TrainCommand
                 // in its messages and looks it up in result.Metrics. An unresolved sentinel made
                 // every TryGetValue miss, so the staging *reason* silently vanished instead of
                 // being shown.
-                TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold, majorityClassRatio, gateRefusal, incomparable);
+                TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold, majorityClassRatio, gateRefusal, incomparable, policyRefusal);
 
                 // Promoted or not, a model that ranks but answers one class at its threshold is told so.
                 if (result.Metrics != null && MetricPolicy.SingleClassAtThreshold(result.Metrics) is { } gateWarning)

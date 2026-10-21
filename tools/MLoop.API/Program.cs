@@ -978,6 +978,20 @@ app.MapPost("/promote", async (
         {
             logger.LogWarning("Promoting '{ExperimentId}' despite the quality gate (force): {Refusal}", experimentId, refusal);
         }
+
+        // The project's own gate policy (mloop.yaml `gate:`), judged on its evaluation set; `force` overrides it too.
+        var policyRefusal = await registry.GatePolicyRefusalAsync(modelName, experimentId, ct);
+        if (policyRefusal != null && !request.Force)
+        {
+            return Results.Json(new
+            {
+                error = $"'{experimentId}' does not pass the gate policy: {policyRefusal}. Send \"force\": true to promote it anyway."
+            }, statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+        if (policyRefusal != null)
+        {
+            logger.LogWarning("Promoting '{ExperimentId}' despite the gate policy (force): {Refusal}", experimentId, policyRefusal);
+        }
         var qualityWarning = MLoop.CLI.Infrastructure.FileSystem.ModelRegistry.QualityGateWarning(experiment);
 
         // Check current production for comparison
@@ -995,7 +1009,7 @@ app.MapPost("/promote", async (
         }
 
         // Promote — the registry records it in the promotion history, gate outcome included.
-        await registry.PromoteAsync(modelName, experimentId, PromotionActions.Promote, ct);
+        await registry.PromoteAsync(modelName, experimentId, PromotionActions.Promote, policyRefusal, ct);
 
         logger.LogInformation("Promoted experiment '{ExperimentId}' to production for model '{ModelName}' in {ElapsedMs}ms",
             experimentId, modelName, stopwatch.ElapsedMilliseconds);
@@ -1081,7 +1095,7 @@ app.MapPost("/rollback", async (
             statusCode: StatusCodes.Status409Conflict);
 
     var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
-    await registry.PromoteAsync(modelName, target, PromotionActions.Rollback, ct);
+    await registry.PromoteAsync(modelName, target, PromotionActions.Rollback, cancellationToken: ct);
     logger.LogInformation("Rolled back '{ModelName}' from {Previous} to {Target}", modelName, current, target);
 
     return Results.Ok(new { modelName, experimentId = target, previousExperimentId = current, backupPath });

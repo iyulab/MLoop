@@ -23,10 +23,29 @@ public interface IModelRegistry
     /// replaced and the quality gate's outcome. Every change of the production slot goes through here,
     /// so the history a rollback reads has no gaps.
     /// </summary>
+    /// <param name="modelName">The model.</param>
+    /// <param name="experimentId">The experiment taking production.</param>
+    /// <param name="action">How (<see cref="MLoop.Ops.Interfaces.PromotionActions"/>).</param>
+    /// <param name="gatePolicyRefusal">
+    /// Why the project's gate policy refused the experiment, when the promotion was forced past it
+    /// (<see cref="GatePolicyRefusalAsync"/>) — recorded as a forced gate. The fixed gate is judged here.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation.</param>
     Task PromoteAsync(
         string modelName,
         string experimentId,
         string action,
+        string? gatePolicyRefusal = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Why the model's gate policy (<c>gate:</c> in <c>mloop.yaml</c>) refuses <paramref name="experimentId"/>,
+    /// or <c>null</c> when it passes or the model has no policy. Scores the experiment on the policy's
+    /// evaluation set, so it costs an evaluation.
+    /// </summary>
+    Task<string?> GatePolicyRefusalAsync(
+        string modelName,
+        string experimentId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

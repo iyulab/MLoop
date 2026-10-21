@@ -496,6 +496,37 @@ is refused on that metric as before.
 when it passes) and `qualityWarning` (`null` unless the gate passed it with the warning above).
 `POST /promote` applies the same gate and answers 422; send `"force": true` to override.
 
+#### A project's own gate policy
+
+The fixed gate asks whether a model learned anything. A project can add its own rules under the
+model in `mloop.yaml`, judged on an evaluation set at the moment of promotion — by `promote`, by a
+training run, and by `POST /promote`:
+
+```yaml
+models:
+  default:
+    task: multiclass-classification
+    label: risk
+    gate:
+      data: datasets/recheck.csv        # labeled rows the rules are judged on
+      weight: inv_pi                    # optional; defaults as `evaluate --weight` does
+      no_worse_than_production: true    # refused when production is better on these rows
+      limits:                           # classifiers: of the rows labeled `actual`,
+        - actual: [high, critical]      # at most `max` may be answered `predicted`
+          predicted: [low]
+          max: 0.02
+      slice_by: site                    # the limits hold in every slice with 30+ rows too
+```
+
+`no_worse_than_production` is the row-by-row comparison of `evaluate --against production`: refused
+when the paired interval says production is better (a first model has nothing to be worse than).
+A limit reads the confusion matrix — of the rows labeled with one of `actual`, the share answered
+with one of `predicted`. A refused model stays in staging with the rule that held it, `--force`
+promotes it anyway, and the history records the promotion as `forced` with that rule. A rule that
+cannot be judged — no `data`, a missing file, a class limit on a regressor, a production model
+trained for another label — refuses: a policy that passed whenever its data went missing would be
+no policy. `mloop validate` checks the policy and its file.
+
 Every change of the production slot — `promote`, a training run promoting its own result,
 `rollback`, and the same through the REST API — is recorded in `models/<name>/promotion-history.json`,
 and `mloop promote --history` lists it: when, which experiment, how (`promote`, `auto-promote`,

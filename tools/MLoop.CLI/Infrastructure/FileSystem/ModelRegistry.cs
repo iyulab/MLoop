@@ -44,13 +44,14 @@ public class ModelRegistry : IModelRegistry
         string modelName,
         string experimentId,
         CancellationToken cancellationToken = default)
-        => PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.Promote, cancellationToken);
+        => PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.Promote, null, cancellationToken);
 
     /// <inheritdoc />
     public async Task PromoteAsync(
         string modelName,
         string experimentId,
         string action,
+        string? gatePolicyRefusal = null,
         CancellationToken cancellationToken = default)
     {
         var resolvedName = ResolveModelName(modelName);
@@ -119,7 +120,7 @@ public class ModelRegistry : IModelRegistry
         }, cancellationToken);
 
         await new MLoop.Ops.Services.FilePromotionManager(_projectRoot)
-            .RecordAsync(HistoryRecord(resolvedName, experiment, previous, action), cancellationToken);
+            .RecordAsync(HistoryRecord(resolvedName, experiment, previous, action, gatePolicyRefusal), cancellationToken);
     }
 
     /// <summary>
@@ -128,7 +129,7 @@ public class ModelRegistry : IModelRegistry
     /// A gate refusal on a promotion that went ahead means it was forced; a rollback is not gated.
     /// </summary>
     internal static MLoop.Ops.Interfaces.PromotionRecord HistoryRecord(
-        string modelName, ExperimentData experiment, string? previous, string action)
+        string modelName, ExperimentData experiment, string? previous, string action, string? gatePolicyRefusal = null)
     {
         var metric = experiment.Metrics is { Count: > 0 } metrics
             ? MetricPolicy.ResolveCanonicalMetricKey(experiment.Config?.Metric ?? MetricNames.Auto, experiment.Task, metrics.Keys)
@@ -141,7 +142,7 @@ public class ModelRegistry : IModelRegistry
         {
             (gate, detail) = (MLoop.Ops.Interfaces.PromotionGate.NotApplied, null);
         }
-        else if (QualityGateRefusal(experiment, experiment.Config?.Metric) is { } refusal)
+        else if ((QualityGateRefusal(experiment, experiment.Config?.Metric) ?? gatePolicyRefusal) is { } refusal)
         {
             (gate, detail) = (MLoop.Ops.Interfaces.PromotionGate.Forced, refusal);
         }
@@ -253,6 +254,31 @@ public class ModelRegistry : IModelRegistry
 
     /// <inheritdoc />
     public async Task<bool> ShouldPromoteAsync(
+        string modelName,
+        string experimentId,
+        string primaryMetric,
+        CancellationToken cancellationToken = default)
+        // The project's own rules last: they cost an evaluation, which a model the fixed gate or the
+        // production comparison already holds back does not need.
+        => await ShouldPromoteOnMetricsAsync(modelName, experimentId, primaryMetric, cancellationToken)
+           && await GatePolicyRefusalAsync(modelName, experimentId, cancellationToken) is null;
+
+    /// <inheritdoc />
+    public async Task<string?> GatePolicyRefusalAsync(string modelName, string experimentId, CancellationToken cancellationToken = default)
+    {
+        var resolvedName = ResolveModelName(modelName);
+        var config = await new Configuration.ConfigLoader(_fileSystem, _projectDiscovery).LoadUserConfigAsync(cancellationToken);
+        if (!config.Models.TryGetValue(resolvedName, out var definition) || definition.Gate is not { HasRules: true } policy)
+            return null;
+        var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
+        return await GatePolicyCheck.RefusalAsync(policy, _projectRoot, resolvedName, experimentId, experiment, _experimentStore, this, cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether the metrics alone — the fixed gate and the comparison with production — would promote
+    /// <paramref name="experimentId"/>; <see cref="ShouldPromoteAsync"/> adds the gate policy on top.
+    /// </summary>
+    public async Task<bool> ShouldPromoteOnMetricsAsync(
         string modelName,
         string experimentId,
         string primaryMetric,
@@ -454,7 +480,7 @@ public class ModelRegistry : IModelRegistry
     {
         if (await ShouldPromoteAsync(modelName, experimentId, primaryMetric, cancellationToken))
         {
-            await PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.AutoPromote, cancellationToken);
+            await PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.AutoPromote, null, cancellationToken);
             return true;
         }
 

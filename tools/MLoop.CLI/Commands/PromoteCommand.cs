@@ -218,6 +218,20 @@ public static class PromoteCommand
                         $"[yellow]Warning:[/] promoting despite the quality gate (--force): {refusal}.");
             }
 
+            // The project's own gate policy (mloop.yaml `gate:`), judged on its evaluation set.
+            var policyRefusal = await modelRegistry.GatePolicyRefusalAsync(resolvedModelName, experimentId, CancellationToken.None);
+            if (policyRefusal != null)
+            {
+                if (!force)
+                {
+                    WriteError($"'{experimentId}' does not pass the gate policy: {policyRefusal}. "
+                               + "Use --force to promote it anyway.", jsonOutput);
+                    return 1;
+                }
+                AnsiConsole.MarkupLineInterpolated(
+                        $"[yellow]Warning:[/] promoting despite the gate policy (--force): {policyRefusal}.");
+            }
+
             // Passes the gate, but its predicted labels are not what it is good for.
             var gateWarning = ModelRegistry.QualityGateWarning(experiment);
             if (gateWarning != null)
@@ -271,7 +285,7 @@ public static class PromoteCommand
 
             if (jsonOutput)
             {
-                await modelRegistry.PromoteAsync(resolvedModelName, experimentId, CancellationToken.None);
+                await modelRegistry.PromoteAsync(resolvedModelName, experimentId, PromotionActions.Promote, policyRefusal, CancellationToken.None);
             }
             else
             {
@@ -280,7 +294,7 @@ public static class PromoteCommand
                     .Spinner(Spinner.Known.Dots)
                     .StartAsync("[yellow]Promoting to production...[/]", async ctx =>
                     {
-                        await modelRegistry.PromoteAsync(resolvedModelName, experimentId, CancellationToken.None);
+                        await modelRegistry.PromoteAsync(resolvedModelName, experimentId, PromotionActions.Promote, policyRefusal, CancellationToken.None);
                         ctx.Status("[green]Promotion complete![/]");
                     });
             }

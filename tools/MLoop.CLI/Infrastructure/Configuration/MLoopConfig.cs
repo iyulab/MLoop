@@ -113,6 +113,60 @@ public class ModelDefinition
     /// Item column for recommendation task.
     /// </summary>
     public string? ItemColumn { get; set; }
+
+    /// <summary>
+    /// Rules a model must also pass to be promoted, judged on an evaluation set at the moment of
+    /// promotion — on top of the fixed quality gate. <c>null</c> applies the fixed gate alone.
+    /// </summary>
+    public GatePolicy? Gate { get; set; }
+}
+
+/// <summary>
+/// A project's own promotion rules (<c>gate:</c> under a model): judged on <see cref="Data"/> each time
+/// the model would be promoted — by <c>promote</c>, by a training run, or through the REST API. A rule
+/// the evaluation cannot judge refuses: a policy that silently passed when its data went missing would
+/// be no policy.
+/// </summary>
+public class GatePolicy
+{
+    /// <summary>The labeled evaluation set the rules are judged on, relative to the project root.</summary>
+    public string? Data { get; set; }
+
+    /// <summary>Column of <see cref="Data"/> that weights its rows; defaults as <c>mloop evaluate --weight</c> does.</summary>
+    public string? Weight { get; set; }
+
+    /// <summary>
+    /// Refuse a model that is worse than the one in production on <see cref="Data"/> — judged row by row
+    /// (<c>mloop evaluate --against production</c>): refused when the paired interval says production is better.
+    /// </summary>
+    public bool NoWorseThanProduction { get; set; }
+
+    /// <summary>Class-set limits a classifier must stay within, overall and in every slice.</summary>
+    public List<GateLimit>? Limits { get; set; }
+
+    /// <summary>Also apply <see cref="Limits"/> to each value of this column of <see cref="Data"/> (values with 30+ rows).</summary>
+    public string? SliceBy { get; set; }
+
+    /// <summary>Whether the policy has any rule to judge.</summary>
+    [YamlDotNet.Serialization.YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasRules => NoWorseThanProduction || Limits is { Count: > 0 };
+}
+
+/// <summary>
+/// Of the rows labeled with one of <see cref="Actual"/>, at most <see cref="Max"/> may be answered with
+/// one of <see cref="Predicted"/> — a class that must be caught, let through as a harmless one.
+/// </summary>
+public class GateLimit
+{
+    /// <summary>The label classes the limit is about.</summary>
+    public List<string> Actual { get; set; } = [];
+
+    /// <summary>The answers that count against it.</summary>
+    public List<string> Predicted { get; set; } = [];
+
+    /// <summary>The largest share allowed, from 0 to 1.</summary>
+    public double Max { get; set; }
 }
 
 /// <summary>

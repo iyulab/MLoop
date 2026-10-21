@@ -95,7 +95,7 @@ public static class RollbackCommand
             }
 
             var backupPath = await promotionManager.BackupProductionAsync(resolvedModelName);
-            await modelRegistry.PromoteAsync(resolvedModelName, target, MLoop.Ops.Interfaces.PromotionActions.Rollback, CancellationToken.None);
+            await modelRegistry.PromoteAsync(resolvedModelName, target, MLoop.Ops.Interfaces.PromotionActions.Rollback, cancellationToken: CancellationToken.None);
 
             if (jsonOutput)
             {

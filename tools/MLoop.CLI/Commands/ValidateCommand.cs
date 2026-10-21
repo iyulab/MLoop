@@ -137,6 +137,11 @@ public static class ValidateCommand
                 foreach (var (modelName, modelDef) in config.Models)
                 {
                     ValidateModel(modelName, modelDef, errors, warnings);
+                    // The gate policy's evaluation set is a path: a promotion would refuse every model without it.
+                    if (modelDef.Gate is { HasRules: true, Data: { Length: > 0 } gateData }
+                        && !MLoop.Core.Data.TabularDataFile.Exists(Path.IsPathRooted(gateData) ? gateData : Path.Combine(ctx.ProjectRoot, gateData)))
+                        errors.Add(new ValidationError($"models.{modelName}.gate.data",
+                            $"The gate policy's evaluation set was not found: {gateData} — every promotion of this model would be refused"));
                 }
             }
 
@@ -286,6 +291,9 @@ public static class ValidateCommand
         {
             ValidatePrepSteps($"{prefix}.prep", model.Prep, model.Task ?? "", errors, warnings);
         }
+
+        if (model.Gate is { } gate)
+            ValidateGatePolicy($"{prefix}.gate", gate, model.Task, errors, warnings);
 
         // Validate column overrides
         if (model.Columns is { Count: > 0 })
@@ -691,6 +699,34 @@ public static class ValidateCommand
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
+    }
+
+    /// <summary>The structure of a model's <c>gate:</c> policy; its evaluation set's path is checked with the project root.</summary>
+    internal static void ValidateGatePolicy(
+        string prefix, GatePolicy gate, string? task, List<ValidationError> errors, List<ValidationWarning> warnings)
+    {
+        if (!gate.HasRules)
+        {
+            warnings.Add(new ValidationWarning(prefix, "The gate policy has no rule (no_worse_than_production or limits) — it changes nothing"));
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(gate.Data))
+            errors.Add(new ValidationError($"{prefix}.data", "The gate policy has rules but no evaluation set to judge them on"));
+        if (gate.Limits is { Count: > 0 } limits)
+        {
+            if (TaskTypes.Canonical(task) is not ("binary-classification" or "multiclass-classification"))
+                errors.Add(new ValidationError($"{prefix}.limits", $"Class limits apply to binary and multiclass classification, not '{task}'"));
+            for (var i = 0; i < limits.Count; i++)
+            {
+                var l = limits[i];
+                if (l.Actual.Count == 0 || l.Predicted.Count == 0)
+                    errors.Add(new ValidationError($"{prefix}.limits[{i}]", "A limit names both 'actual' and 'predicted' classes"));
+                if (l.Max is < 0 or > 1 || double.IsNaN(l.Max))
+                    errors.Add(new ValidationError($"{prefix}.limits[{i}].max", $"'max' is a share from 0 to 1, not {l.Max}"));
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(gate.SliceBy) && gate.Limits is not { Count: > 0 })
+            warnings.Add(new ValidationWarning($"{prefix}.slice_by", "slice_by applies the class limits per slice, and there are none"));
     }
 
     internal record ValidationError(string Path, string Message);
