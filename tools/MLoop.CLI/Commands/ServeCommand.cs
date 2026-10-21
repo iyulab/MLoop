@@ -23,7 +23,7 @@ public class ServeCommand : Command
             DefaultValueFactory = _ => 5000
         };
 
-        var hostOption = new Option<string>("--host", "-h")
+        var hostOption = new Option<string>("--host")
         {
             Description = "Host address to bind to",
             DefaultValueFactory = _ => "localhost"
