@@ -16,6 +16,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   previous model's when the new one has none). `MLoop.Core.Monitoring` holds the profile and the
   population stability index (`DriftMeasure` — under 0.1 stable, 0.1–0.25 moderate, 0.25 and
   above significant), which reads logged JSON inputs the way the training file was read.
+- **`mloop drift`** compares the production model's own logged predictions (the most recent 5,000
+  by default, `--rows`) with that profile: each column's PSI, its level, and the bin that moved
+  most (`> 13.6: 10% → 45%`, a category, `(other)`, `(missing)`); `--slice-by <column>` repeats it
+  per value of an input column, so a moved site or device stands out from steady ones; `--json`
+  and `GET /drift` give the same document. Computed when asked — nothing runs in between.
+- **Input drift is a retraining condition.** `mloop trigger check` and `GET /trigger` evaluate
+  `input_drift` (met at PSI ≥ 0.25 on any column) beside accuracy, feedback volume and age, and
+  carry every column's PSI under `drift` in their JSON; a model with no profile, or too few logged
+  predictions, is reported as not measured rather than as stable.
 
 ### Fixed
 - **`mloop status` and `GET /status` ranked weighted and unweighted experiments against each other.**

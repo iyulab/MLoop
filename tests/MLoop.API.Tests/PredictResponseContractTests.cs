@@ -150,7 +150,7 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
 
         var trigger = JsonSerializer.Deserialize<JsonElement>(await _client.GetStringAsync($"/trigger?name={modelName}"));
         trigger.GetProperty("conditions").EnumerateArray().Select(c => c.GetProperty("type").GetString())
-            .Should().BeEquivalentTo(["AccuracyDrop", "FeedbackVolume", "TimeBased"],
+            .Should().BeEquivalentTo(MLoop.Ops.Services.RetrainingDefaults.All.Select(c => c.Type.ToString()),
                 "the API checks the same default conditions as `mloop trigger check`");
     }
 

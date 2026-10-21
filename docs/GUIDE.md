@@ -1032,6 +1032,59 @@ Use mloop predict --log to log predictions.
 
 ---
 
+### `mloop drift`
+
+How far the production model's recent inputs have moved from the data it was trained on. Training
+records each feature's distribution beside the model (`drift-profile.json` — numeric columns by
+decile, categorical ones by their most common values, missing values apart); this compares the
+production model's own logged predictions with it, column by column, by the population stability
+index (PSI). Nothing runs in the background — it is computed when you ask.
+
+```bash
+mloop drift                         # the most recent 5,000 logged predictions
+mloop drift --rows 1000
+mloop drift --slice-by site         # also per value of an input column
+mloop drift --json
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--name` | `-n` | Model name |
+| `--rows` | | How many of the most recent logged predictions to compare (at least 100) |
+| `--slice-by` | | Report drift per value of this input column (values with 100+ predictions) |
+| `--json` | | Output in JSON format |
+
+```
+   Input drift — default (exp-001, 400 predictions)
+╭────────┬───────┬─────────────┬─────────────────────╮
+│ Column │   PSI │    Level    │ Most moved          │
+├────────┼───────┼─────────────┼─────────────────────┤
+│ x      │ 0.781 │ significant │ > 13.629: 10% → 45% │
+│ color  │ 0.200 │  moderate   │ red: 34% → 54%      │
+│ flag   │ 0.001 │   stable    │ true: 54% → 52%     │
+╰────────┴───────┴─────────────┴─────────────────────╯
+                          By site
+╭───────┬──────┬─────────┬─────────────┬───────────────────╮
+│ Value │ Rows │ Max PSI │    Level    │ Most moved column │
+├───────┼──────┼─────────┼─────────────┼───────────────────┤
+│ A     │  200 │   4.745 │ significant │ x                 │
+│ B     │  200 │   0.046 │   stable    │ x                 │
+╰───────┴──────┴─────────┴─────────────┴───────────────────╯
+PSI under 0.1 is stable, 0.1–0.25 moderate, 0.25+ significant.
+```
+
+**Most moved** is the bin whose share changed most — a decile range, a category, `(other)` for
+values training never saw, or `(missing)`. Only predictions of the model now in production count:
+an earlier model's traffic describes another model. Free-text columns are not profiled. A model
+trained before profiles were recorded, or a task that reads no feature columns (time series,
+recommendation, deep learning), has none — the command says so; retrain and promote to start.
+
+The same measurement is a retraining condition: `mloop trigger check` and `GET /trigger` report
+`input_drift` (met at PSI ≥ 0.25 on any column) with every column's PSI under `drift` in `--json`.
+`GET /drift?name=&rows=&sliceBy=` returns what `mloop drift --json` does.
+
+---
+
 ### `mloop export`
 
 `mloop export onnx` writes a trained model as an [ONNX](https://onnx.ai) graph, for a runtime that cannot load ML.NET —

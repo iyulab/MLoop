@@ -47,9 +47,7 @@ public class TriggerCommandTests
     {
         var result = TriggerCommand.BuildConditions(0.9, 50);
 
-        Assert.Equal(
-            [ConditionType.AccuracyDrop, ConditionType.FeedbackVolume, ConditionType.TimeBased],
-            result.Select(c => c.Type));
+        Assert.Equal(RetrainingDefaults.All.Select(c => c.Type), result.Select(c => c.Type));
     }
 
     #endregion

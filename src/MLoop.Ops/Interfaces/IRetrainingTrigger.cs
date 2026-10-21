@@ -71,4 +71,11 @@ public record ConditionResult(
     RetrainingCondition Condition,
     bool IsMet,
     double CurrentValue,
-    string? Details);
+    string? Details)
+{
+    /// <summary>
+    /// For a <see cref="ConditionType.DataDrift"/> condition that was measured: every profiled column's
+    /// PSI, most moved first — which inputs moved, not only that something did.
+    /// </summary>
+    public MLoop.Core.Monitoring.DriftReport? Drift { get; init; }
+}

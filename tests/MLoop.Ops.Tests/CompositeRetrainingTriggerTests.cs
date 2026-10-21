@@ -19,23 +19,24 @@ public class CompositeRetrainingTriggerTests : IDisposable
     [Fact]
     public async Task Defaults_are_every_condition_the_project_measures()
     {
-        var trigger = new CompositeRetrainingTrigger(_testDir, new FileFeedbackCollector(_testDir));
+        var trigger = new CompositeRetrainingTrigger(_testDir, new FileFeedbackCollector(_testDir), new FilePredictionLogger(_testDir));
 
         var defaults = await trigger.GetDefaultConditionsAsync("m");
 
         defaults.Select(c => c.Type).Should().Equal(
-            ConditionType.AccuracyDrop, ConditionType.FeedbackVolume, ConditionType.TimeBased);
+            ConditionType.AccuracyDrop, ConditionType.FeedbackVolume, ConditionType.TimeBased, ConditionType.DataDrift);
     }
 
     [Fact]
     public async Task Each_condition_is_measured_by_the_trigger_that_can_measure_it()
     {
-        var trigger = new CompositeRetrainingTrigger(_testDir, new FileFeedbackCollector(_testDir));
+        var trigger = new CompositeRetrainingTrigger(_testDir, new FileFeedbackCollector(_testDir), new FilePredictionLogger(_testDir));
 
         var evaluation = await trigger.EvaluateAsync("m", RetrainingDefaults.All);
 
         // No training history: the interval condition is met by the time trigger. No feedback: the
-        // feedback conditions are measured (not "unsupported") and are not met.
+        // feedback conditions are measured (not "unsupported") and are not met. No production model:
+        // drift is not met and says why.
         evaluation.ConditionResults.Select(r => r.Condition).Should().Equal(RetrainingDefaults.All);
         evaluation.ConditionResults.Single(r => r.Condition.Type == ConditionType.TimeBased).IsMet.Should().BeTrue();
         evaluation.ConditionResults.Where(r => r.Condition.Type != ConditionType.TimeBased)

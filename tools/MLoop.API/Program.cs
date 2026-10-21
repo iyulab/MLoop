@@ -266,7 +266,7 @@ builder.Services.AddSingleton<IRetrainingTrigger>(sp =>
 {
     // The same trigger and default conditions `mloop trigger check` uses.
     var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
-    return new CompositeRetrainingTrigger(projectRoot, sp.GetRequiredService<IFeedbackCollector>());
+    return new CompositeRetrainingTrigger(projectRoot, sp.GetRequiredService<IFeedbackCollector>(), sp.GetRequiredService<IPredictionLogger>());
 });
 
 // Register MLoop.DataStore services
@@ -1397,6 +1397,40 @@ app.MapPost("/feedback", async (
 .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
 .RequireAuthorization();
 
+// Input drift: the production model's recent inputs against its training profile (secured)
+app.MapGet("/drift", async (
+    [FromQuery] string? name,
+    [FromQuery] int? rows,
+    [FromQuery] string? sliceBy,
+    [FromServices] ProjectRootPath root,
+    IPredictionLogger predictionLogs,
+    CancellationToken ct) =>
+{
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
+    var window = rows ?? MLoop.Ops.Services.DriftEvaluator.DefaultWindowRows;
+    if (window < MLoop.Ops.Services.DriftEvaluator.MinimumRows)
+        return Results.Problem(
+            title: "Invalid window",
+            detail: $"rows must be at least {MLoop.Ops.Services.DriftEvaluator.MinimumRows}.",
+            statusCode: StatusCodes.Status400BadRequest);
+    var check = await MLoop.Ops.Services.DriftEvaluator.CheckAsync(root.Value, predictionLogs, modelName, window, sliceBy, ct);
+    return Results.Ok(new
+    {
+        modelName,
+        status = check.Status.ToString(),
+        experimentId = check.ExperimentId,
+        message = check.Message,
+        drift = check.Report is { } r ? MLoop.Ops.Services.DriftEvaluator.Signal(r) : null,
+        sliceBy,
+        slices = check.Slices?.Select(sl => new { value = sl.Value, drift = MLoop.Ops.Services.DriftEvaluator.Signal(sl.Report) }),
+    });
+})
+.WithName("Drift")
+.WithTags("Monitoring")
+.Produces<object>(StatusCodes.Status200OK)
+.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+.RequireAuthorization();
+
 // Retraining trigger evaluation endpoint (secured)
 app.MapGet("/trigger", async (
     [FromQuery] string? name,
@@ -1430,7 +1464,8 @@ app.MapGet("/trigger", async (
                 threshold = cr.Condition.Threshold,
                 currentValue = cr.CurrentValue,
                 isMet = cr.IsMet,
-                details = cr.Details
+                details = cr.Details,
+                drift = cr.Drift is { } d ? MLoop.Ops.Services.DriftEvaluator.Signal(d) : null
             })
         });
     }

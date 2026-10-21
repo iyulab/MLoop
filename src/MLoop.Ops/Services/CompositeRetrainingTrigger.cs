@@ -24,6 +24,10 @@ public static class RetrainingDefaults
     public const string AccuracyName = "accuracy_threshold";
     public const string FeedbackVolumeName = "feedback_count";
     public const string IntervalName = "Scheduled Retraining";
+    public const string DriftName = "input_drift";
+
+    /// <summary>Retrain when any input column's PSI against the training profile reaches this (significant drift).</summary>
+    public const double DriftThreshold = MLoop.Core.Monitoring.DriftMeasure.SignificantThreshold;
 
     public static RetrainingCondition Accuracy(double threshold = AccuracyThreshold) =>
         new(ConditionType.AccuracyDrop, AccuracyName, threshold,
@@ -37,24 +41,33 @@ public static class RetrainingDefaults
         new(ConditionType.TimeBased, IntervalName, days,
             $"Retrain if more than {days} days since last training");
 
+    public static RetrainingCondition Drift(double threshold = DriftThreshold) =>
+        new(ConditionType.DataDrift, DriftName, threshold,
+            $"Trigger retraining when an input column's PSI against the training data reaches {threshold:0.##}");
+
     /// <summary>Every default condition, in the order they are reported.</summary>
-    public static IReadOnlyList<RetrainingCondition> All { get; } = [Accuracy(), Feedback(), Interval()];
+    public static IReadOnlyList<RetrainingCondition> All { get; } = [Accuracy(), Feedback(), Interval(), Drift()];
 }
 
 /// <summary>
 /// Evaluates every retraining condition type the project can measure by handing each condition to the
 /// trigger that measures it — feedback accuracy and volume to <see cref="FeedbackBasedTrigger"/>, time
-/// since training to <see cref="TimeBasedTrigger"/> — and reports the results in the order given.
+/// since training to <see cref="TimeBasedTrigger"/>, input drift to <see cref="DriftEvaluator"/> over the
+/// prediction logs — and reports the results in the order given.
 /// </summary>
 public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
 {
     private readonly FeedbackBasedTrigger _feedback;
     private readonly TimeBasedTrigger _time;
+    private readonly string _projectRoot;
+    private readonly IPredictionLogger _predictionLogs;
 
-    public CompositeRetrainingTrigger(string projectRoot, IFeedbackCollector feedbackCollector)
+    public CompositeRetrainingTrigger(string projectRoot, IFeedbackCollector feedbackCollector, IPredictionLogger predictionLogs)
     {
         _feedback = new FeedbackBasedTrigger(feedbackCollector);
         _time = new TimeBasedTrigger(projectRoot);
+        _projectRoot = projectRoot;
+        _predictionLogs = predictionLogs ?? throw new ArgumentNullException(nameof(predictionLogs));
     }
 
     /// <inheritdoc />
@@ -65,9 +78,10 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
     {
         var list = conditions.ToList();
         var timeConditions = list.Where(c => c.Type == ConditionType.TimeBased).ToList();
+        var driftConditions = list.Where(c => c.Type == ConditionType.DataDrift).ToList();
         // Everything else goes to the feedback trigger, which also reports the types nothing measures
-        // yet (data drift, performance degradation) as unsupported rather than dropping them.
-        var otherConditions = list.Where(c => c.Type != ConditionType.TimeBased).ToList();
+        // yet (performance degradation) as unsupported rather than dropping them.
+        var otherConditions = list.Where(c => c.Type is not (ConditionType.TimeBased or ConditionType.DataDrift)).ToList();
 
         var results = new List<ConditionResult>();
         if (otherConditions.Count > 0)
@@ -76,6 +90,19 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
         if (timeConditions.Count > 0)
             results.AddRange((await _time.EvaluateAsync(modelName, timeConditions, cancellationToken)
                 .ConfigureAwait(false)).ConditionResults);
+        if (driftConditions.Count > 0)
+        {
+            var check = await DriftEvaluator.CheckAsync(_projectRoot, _predictionLogs, modelName, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var condition in driftConditions)
+            {
+                var psi = check.Report?.MaxPsi ?? 0;
+                results.Add(new ConditionResult(condition, check.Status == DriftCheckStatus.Measured && psi >= condition.Threshold, psi, check.Message)
+                {
+                    Drift = check.Report,
+                });
+            }
+        }
 
         var ordered = results.OrderBy(r => list.IndexOf(r.Condition)).ToList();
         var met = ordered.Where(r => r.IsMet).ToList();

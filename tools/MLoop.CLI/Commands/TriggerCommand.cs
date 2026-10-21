@@ -87,7 +87,7 @@ public static class TriggerCommand
             var feedbackCollector = new FileFeedbackCollector(projectRoot);
             // The same trigger and the same default conditions as `GET /trigger`, so the CLI and the API
             // give one answer for one model.
-            var trigger = new CompositeRetrainingTrigger(projectRoot, feedbackCollector);
+            var trigger = new CompositeRetrainingTrigger(projectRoot, feedbackCollector, new FilePredictionLogger(projectRoot));
             var conditions = BuildConditions(accuracyThreshold, feedbackThreshold);
 
             TriggerEvaluation result = null!;
@@ -160,7 +160,8 @@ public static class TriggerCommand
                 Threshold = r.Condition.Threshold,
                 r.CurrentValue,
                 r.IsMet,
-                r.Details
+                r.Details,
+                Drift = r.Drift is { } d ? DriftEvaluator.Signal(d) : null
             })
         };
 
@@ -205,6 +206,8 @@ public static class TriggerCommand
         }
 
         AnsiConsole.Write(table);
+        foreach (var drift in result.ConditionResults.Where(r => r.Condition.Type == ConditionType.DataDrift && r.Details is not null))
+            AnsiConsole.MarkupLine($"[grey]Drift:[/] {Markup.Escape(drift.Details!)}");
         AnsiConsole.WriteLine();
 
         // Recommendation
@@ -231,6 +234,7 @@ public static class TriggerCommand
             ConditionType.AccuracyDrop => $"[yellow]< {condition.Threshold:P0}[/]",
             ConditionType.FeedbackVolume => $"[yellow]>= {condition.Threshold:N0}[/]",
             ConditionType.TimeBased => $"[yellow]> {condition.Threshold:N0} days[/]",
+            ConditionType.DataDrift => $"[yellow]PSI >= {condition.Threshold:0.##}[/]",
             _ => $"[yellow]{condition.Threshold}[/]"
         };
     }
@@ -243,6 +247,8 @@ public static class TriggerCommand
             ConditionType.AccuracyDrop => $"[{color}]{result.CurrentValue:P1}[/]",
             ConditionType.FeedbackVolume => $"[{color}]{result.CurrentValue:N0}[/]",
             ConditionType.TimeBased => $"[{color}]{result.CurrentValue:N0} days[/]",
+            // Not measured (no production model, no profile, too few logged rows) is not "no drift".
+            ConditionType.DataDrift => result.Drift is null ? "[grey]-[/]" : $"[{color}]PSI {result.CurrentValue:0.000}[/]",
             _ => $"[{color}]{result.CurrentValue}[/]"
         };
     }

@@ -143,6 +143,7 @@ internal class Program
             FeedbackCommand.Create(),
             SampleCommand.Create(),
             TriggerCommand.Create(),
+            DriftCommand.Create(),
             CompareCommand.Create(),
             PromoteCommand.Create(),
             RollbackCommand.Create(),
