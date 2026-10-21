@@ -35,6 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop analyze` on numeric columns in a small unit (values near 1e-9) reported an infinite condition number and
+  permutation importances of 0, and PCA, Mahalanobis and VIF read the columns as degenerate — fixed by depending on
+  DataLens 0.19.2 (UInsight 0.36.2).
+
 - A `POST /train` job trained on its file as given: `maxRows` was recorded and never applied, and rows with an empty
   label were trained on (an empty label a class of its own). A job now prepares its data as `mloop train` does —
   read as a table, sampled to `maxRows`, rows without a label dropped where the task drops them.
