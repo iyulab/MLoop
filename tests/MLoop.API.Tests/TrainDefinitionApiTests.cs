@@ -107,7 +107,7 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await _client.PostAsJsonAsync("/train", new
         {
             dataFile = data, labelColumn = "y", task = "binary-classification", name = "wmerge",
-            additionalDataFiles = new[] { extra },
+            additionalDataFiles = new[] { Path.Combine("datasets", "feedback.csv") },   // the project's relative path, as POST /samples answers
         });
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
         var jobId = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("jobId").GetString();
@@ -122,7 +122,8 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         }
         status.Should().Be("Completed", job.GetRawText());
         job.TryGetProperty("timeLimitSeconds", out var limit).Should().Be(false, "an absent budget is left to mloop.yaml");
-        job.GetProperty("additionalDataFiles").EnumerateArray().Select(f => f.GetString()).Should().Equal(extra);
+        job.GetProperty("additionalDataFiles").EnumerateArray().Select(f => f.GetString())
+            .Should().Equal(Path.GetFullPath(extra));
 
         var merged = File.ReadAllLines(Path.Combine(_factory.TestProjectRoot, ".mloop", "merged", $"{jobId}.csv"));
         merged.Should().HaveCount(1 + 200 + 3);
@@ -133,6 +134,32 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         experiment.Config.WeightColumn.Should().Be("w");
         experiment.Config.InputSchema!.Columns.Single(c => c.Name == "y").CategoricalValues
             .Should().BeEquivalentTo(["true", "false"], "an empty label is not a class");
+    }
+
+    [Fact]
+    public async Task TheRequestsWeight_TrainsWeighted_WhenTheYamlDeclaresNone()
+    {
+        // A retraining set answered weightColumn = "w"; mloop.yaml says nothing about weights.
+        var data = WriteData();
+        WriteYaml("wreq", "    task: binary-classification\n    label: y\n");
+
+        var response = await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = data, labelColumn = "y", task = "binary-classification", name = "wreq", timeLimitSeconds = 5, weight = "w",
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        var jobId = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("jobId").GetString();
+
+        string? status = null;
+        for (var i = 0; i < 240 && status is not ("Completed" or "Failed"); i++)
+        {
+            await Task.Delay(500);
+            status = JsonDocument.Parse(await _client.GetStringAsync($"/jobs/{jobId}")).RootElement.GetProperty("status").GetString();
+        }
+        status.Should().Be("Completed");
+
+        var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();
+        (await store.LoadAsync("wreq", "exp-001", CancellationToken.None)).Config.WeightColumn.Should().Be("w");
     }
 
     [Fact]

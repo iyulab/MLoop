@@ -14,7 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`weighted` in `--json`).
 - `POST /samples` — a retraining set from logged predictions and feedback over HTTP, as `mloop sample create
   --model` (admin). `POST /train` takes `additionalDataFiles`, merged after `dataFile` as `mloop train --data a b`
-  (a file without the weight column counts 1); `GET /jobs/{id}` shows them.
+  (a file without the weight column counts 1), and `weight` — the column that weights the rows, as `--weight` (the
+  `weightColumn` `POST /samples` answers with); `GET /jobs/{id}` shows both. A relative path is the project's.
 - `mloop sample create --model` strategies `stratified` and `low-confidence` — the sampler had both, the command
   did not accept them.
 

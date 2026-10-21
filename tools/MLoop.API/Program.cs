@@ -1629,21 +1629,28 @@ app.MapPost("/train", async (
     if (metricRejection != null)
         return Results.BadRequest(new { error = metricRejection });
 
-    // Validate every data file exists and is within project root
-    var trainProjectRoot = projectRootPath.Value;
+    // Validate every data file exists and is within project root. A relative path is the project's — the
+    // form POST /samples answers with — not the server process's working directory.
+    var trainProjectRoot = Path.GetFullPath(projectRootPath.Value);
+    string InProject(string file) => Path.GetFullPath(Path.IsPathRooted(file) ? file : Path.Combine(trainProjectRoot, file));
     foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
     {
-        var resolvedDataFile = Path.GetFullPath(file);
-        if (!resolvedDataFile.StartsWith(Path.GetFullPath(trainProjectRoot), StringComparison.OrdinalIgnoreCase))
+        var resolvedDataFile = InProject(file);
+        if (!resolvedDataFile.StartsWith(trainProjectRoot, StringComparison.OrdinalIgnoreCase))
             return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
         if (!File.Exists(resolvedDataFile))
             return Results.BadRequest(new { error = $"Data file not found: {file}" });
     }
+    request = request with
+    {
+        DataFile = InProject(request.DataFile),
+        AdditionalDataFiles = request.AdditionalDataFiles?.Select(InProject).ToList(),
+    };
 
     // Refused now, not inside the job: what the project's mloop.yaml asks for that this run could
     // not honour (a weight on a task it does not reach, prep steps the API does not run).
     var (_, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
-        request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit);
+        request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit, request.Weight);
     if (definitionError != null)
         return Results.BadRequest(new { error = definitionError });
 
@@ -1719,6 +1726,7 @@ app.MapGet("/jobs/{id}", (
         metric = job.Metric,
         testSplit = job.TestSplit,
         maxRows = job.MaxRows,
+        weight = job.Weight,
         status = job.Status.ToString(),
         statusMessage = job.StatusMessage,
         createdAt = job.CreatedAt,

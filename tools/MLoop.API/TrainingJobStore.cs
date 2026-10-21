@@ -23,6 +23,7 @@ public class TrainingJobStore
             Metric = request.Metric,
             TestSplit = request.TestSplit,
             MaxRows = request.MaxRows,
+            Weight = request.Weight,
             Status = JobStatus.Queued,
             CreatedAt = DateTime.UtcNow
         };
@@ -78,6 +79,7 @@ public class TrainingJob
     public string Metric { get; set; } = "auto";
     public double? TestSplit { get; set; }
     public int? MaxRows { get; set; }
+    public string? Weight { get; set; }
 
     public JobStatus Status { get; set; }
     public string? StatusMessage { get; set; }
@@ -99,6 +101,7 @@ public class TrainingJob
 /// <param name="MaxRows">Rows to sample the data down to, as <c>--max-rows</c>.</param>
 /// <param name="TimeLimitSeconds">The training budget; null leaves it to mloop.yaml, then the default — as an absent <c>--time</c> does.</param>
 /// <param name="TestSplit">The held-out share; null leaves it to mloop.yaml, then the default.</param>
+/// <param name="Weight">The column that weights the rows, as <c>--weight</c> — the <c>weightColumn</c> <c>POST /samples</c> answers with.</param>
 /// <param name="AdditionalDataFiles">
 /// Files merged after <paramref name="DataFile"/>, as <c>mloop train --data a.csv b.csv</c> — a retraining set from
 /// <c>POST /samples</c>, say. A file without the model's weight column counts its rows 1.
@@ -112,7 +115,8 @@ public record TrainingJobRequest(
     string Metric = "auto",
     double? TestSplit = null,
     int? MaxRows = null,
-    IReadOnlyList<string>? AdditionalDataFiles = null)
+    IReadOnlyList<string>? AdditionalDataFiles = null,
+    string? Weight = null)
 {
     public string ModelName => string.IsNullOrWhiteSpace(Name) ? "default" : Name.Trim().ToLowerInvariant();
 }

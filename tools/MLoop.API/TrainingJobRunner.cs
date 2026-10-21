@@ -88,7 +88,7 @@ public class TrainingJobRunner : BackgroundService
             // ranking/recommendation/time-series columns — with the request in the command line's place.
             var (definition, refusal) = await TrainingDefinition.ResolveAsync(
                 scope.ServiceProvider.GetRequiredService<ConfigLoader>(),
-                job.ModelName, job.Task, job.LabelColumn, job.TimeLimitSeconds, job.Metric, job.TestSplit, stoppingToken);
+                job.ModelName, job.Task, job.LabelColumn, job.TimeLimitSeconds, job.Metric, job.TestSplit, job.Weight, stoppingToken);
             if (definition is null)
                 throw new InvalidOperationException(refusal);
             // The data the job trains on, prepared as `mloop train` prepares its own: more files merged after
