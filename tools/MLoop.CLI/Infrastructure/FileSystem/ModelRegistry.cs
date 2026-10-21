@@ -100,6 +100,15 @@ public class ModelRegistry : IModelRegistry
         else if (_fileSystem.FileExists(targetDriftPath))
             File.Delete(targetDriftPath);
 
+        // So does the decision threshold: production answers at the threshold chosen for this model, or at
+        // the trainer's own — never at the previous model's.
+        var sourceThresholdPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.DecisionThresholdFileName);
+        var targetThresholdPath = _fileSystem.CombinePath(targetPath, ExperimentLayout.DecisionThresholdFileName);
+        if (_fileSystem.FileExists(sourceThresholdPath))
+            await _fileSystem.CopyFileAsync(sourceThresholdPath, targetThresholdPath, overwrite: true, cancellationToken);
+        else if (_fileSystem.FileExists(targetThresholdPath))
+            File.Delete(targetThresholdPath);
+
         // Load experiment metadata
         var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
 

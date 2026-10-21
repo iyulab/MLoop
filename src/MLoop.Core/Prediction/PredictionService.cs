@@ -49,7 +49,8 @@ public class PredictionService
         // DL tasks need their native runtime loaded before deserializing the model.
         RuntimeManager.EnsureRuntimeForTask(taskType);
 
-        var model = _mlContext.Model.Load(modelPath, out _);
+        // With its decision threshold, when one was chosen — the answer predict, serve and evaluate all give.
+        var model = DecisionThreshold.Load(_mlContext, modelPath);
 
         // ② regression wave (heteroscedastic): load the sibling σ-model for per-row band widths when the
         // interval carries the normalized-conformal parameters and the file was promoted alongside.

@@ -49,7 +49,8 @@ public class EvaluationEngine
                 MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
 
                 // Load the trained model
-                var trainedModel = _mlContext.Model.Load(modelPath, out var modelSchema);
+                // Scored at the model's decision threshold, when one was chosen: the answers it gives in production.
+                var trainedModel = DecisionThreshold.ApplyBeside(_mlContext, _mlContext.Model.Load(modelPath, out var modelSchema), modelPath);
 
                 // Directory-based tasks (image classification, object detection) consume an image
                 // directory, not a CSV — load via the matching directory loader and score before the
@@ -123,6 +124,12 @@ public class EvaluationEngine
                          taskType.Equals("binary-classification", StringComparison.OrdinalIgnoreCase))
                 {
                     metrics = EvaluateBinaryClassification(predictions, labelColumn);
+                    // ML.NET's binary evaluator re-derives each answer from the score at its own threshold
+                    // and ignores PredictedLabel. A model given a decision threshold answers otherwise, so
+                    // the metrics that depend on the answer are counted from the answers it gives.
+                    if (DecisionThreshold.ReadBeside(modelPath) is not null && BinaryCounts.Metrics(predictions, labelColumn) is { } answered)
+                        foreach (var key in new[] { "accuracy", "precision", "recall", "negative_recall", "f1_score" })
+                            if (answered.TryGetValue(key, out var value)) metrics[key] = value;
                 }
                 else if (taskType.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase))
                 {
@@ -240,6 +247,20 @@ public class EvaluationEngine
             cancellationToken);
     }
 
+    /// <summary>
+    /// Each labeled test row's (probability, label, weight) under a binary model — what a decision threshold
+    /// is chosen from (<see cref="DecisionThreshold.Choose"/>). <c>null</c> when the model gives no probability.
+    /// </summary>
+    public Task<IReadOnlyList<(double Probability, bool Positive, double Weight)>?> ThresholdRowsAsync(
+        string modelPath,
+        string testDataPath,
+        string labelColumn,
+        InputSchemaInfo? trainedSchema,
+        string? weightColumn = null,
+        CancellationToken cancellationToken = default)
+        => ScoreAsync(modelPath, testDataPath, labelColumn, "binary-classification", trainedSchema, weightColumn,
+            (scored, weights) => DecisionThreshold.RowsOf(scored, labelColumn, weights), cancellationToken);
+
     /// <summary>Scores the test file the way <see cref="EvaluateAsync"/> does and hands the scored rows (and weights) to <paramref name="read"/>.</summary>
     private Task<T> ScoreAsync<T>(
         string modelPath, string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema,
@@ -249,7 +270,7 @@ public class EvaluationEngine
             List<string> tempFiles = new();
             try
             {
-                var model = _mlContext.Model.Load(modelPath, out _);
+                var model = DecisionThreshold.Load(_mlContext, modelPath);
                 var keep = string.IsNullOrEmpty(weightColumn) ? null : new[] { weightColumn };
                 var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, keep, out tempFiles, keepColumns: keep);
                 var scored = model.Transform(testData);

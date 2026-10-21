@@ -39,6 +39,14 @@ public static class ExperimentLayout
     /// </summary>
     public const string DriftProfileFileName = "drift-profile.json";
 
+    /// <summary>
+    /// A binary classifier's decision threshold, when one was chosen for it
+    /// (<c>MLoop.Core.Models.DecisionThreshold</c>) — the probability from which it answers the positive
+    /// class. Beside <see cref="ModelFileName"/>, read by every path that loads the model, and copied on
+    /// promote (a promoted model without one drops the previous model's). Absent: 0.5, the trainer's own.
+    /// </summary>
+    public const string DecisionThresholdFileName = "decision-threshold.json";
+
     /// <summary>② regression wave (heteroscedastic): the optional auxiliary σ(x) model that gives the
     /// conformal band its per-row width. Sits beside <see cref="ModelFileName"/> in <c>staging/{expId}/</c>
     /// and the promoted <c>production/</c> slot, and is copied on promote when present. Absent for

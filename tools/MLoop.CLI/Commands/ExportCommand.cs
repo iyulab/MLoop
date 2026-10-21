@@ -177,7 +177,7 @@ public static class ExportCommand
             var engine = new PredictionEngine();
             var input = engine.LoadInferenceInput(
                 modelPath, dataPath, experiment.Config?.InputSchema, labelColumn,
-                PreserveColumns(experiment.Config), tempFiles);
+                PreserveColumns(experiment.Config), tempFiles, withDecisionThreshold: false);
 
             var outputDirectory = outputDir is { Length: > 0 }
                 ? Path.GetFullPath(Path.IsPathRooted(outputDir) ? outputDir : Path.Combine(projectRoot, outputDir))
@@ -228,7 +228,8 @@ public static class ExportCommand
                 Inputs = result.Inputs,
                 UnusedInputs = result.UnusedInputs,
                 Outputs = result.Outputs,
-                Label = LabelInfo(task, labelColumn, experiment, input, result),
+                Label = LabelInfo(task, labelColumn, experiment, input, result, DecisionThreshold.ReadBeside(modelPath)),
+                DecisionThreshold = DecisionThreshold.ReadBeside(modelPath),
                 Metrics = experiment.Metrics,
                 WeightColumn = experiment.Config?.WeightColumn,
                 Portable = experiment.Config?.Portable == true,
@@ -305,7 +306,8 @@ public static class ExportCommand
     }
 
     private static OnnxLabelInfo LabelInfo(
-        string task, string? labelColumn, ExperimentData experiment, PredictionEngine.InferenceInput input, OnnxExportResult result)
+        string task, string? labelColumn, ExperimentData experiment, PredictionEngine.InferenceInput input, OnnxExportResult result,
+        DecisionThreshold? threshold = null)
     {
         switch (task)
         {
@@ -316,7 +318,11 @@ public static class ExportCommand
                 {
                     Column = labelColumn,
                     Classes = vocabulary is { } v ? [v.Negative, v.Positive] : null,
-                    Decision = "PredictedLabel is true (the second class) when Score > 0; Probability is the calibrated chance of the second class",
+                    // The graph answers at the trainer's own threshold; a chosen one is the consumer's to apply.
+                    Decision = threshold is { } t
+                        ? string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                            $"The model answers the second class when Probability >= {t.Threshold:R} (its decision threshold — apply it to Probability; the graph's PredictedLabel is the trainer's own, Score > 0); Probability is the calibrated chance of the second class")
+                        : "PredictedLabel is true (the second class) when Score > 0; Probability is the calibrated chance of the second class",
                 };
             }
             case "multiclass-classification":

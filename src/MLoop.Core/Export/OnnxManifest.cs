@@ -58,6 +58,13 @@ public sealed record OnnxManifest
     /// </summary>
     public bool Portable { get; init; }
 
+    /// <summary>
+    /// The binary model's decision threshold, when one was chosen (<c>mloop threshold</c>): the graph does
+    /// not apply it — its <c>PredictedLabel</c> is the trainer's own — so a consumer answering as the model
+    /// does compares <c>Probability</c> with it. Null when the model answers at its trainer's threshold.
+    /// </summary>
+    public Models.DecisionThreshold? DecisionThreshold { get; init; }
+
     /// <summary>How the graph compared with the model on data rows (<c>--verify</c>); null when not checked.</summary>
     public OnnxVerificationResult? Verification { get; init; }
 

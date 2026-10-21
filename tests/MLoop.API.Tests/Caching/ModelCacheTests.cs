@@ -89,6 +89,36 @@ public sealed class ModelCacheTests : IDisposable
     }
 
     [Fact]
+    public void ADecisionThresholdChosenOrRemovedBesideACachedModel_ReloadsIt()
+    {
+        // In a directory of its own: the threshold file sits beside the model, and the other tests'
+        // models share the temp root.
+        var dir = Path.Combine(Path.GetTempPath(), $"mloop-cache-threshold-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, MLoop.Core.Storage.ExperimentLayout.ModelFileName);
+        _ml.Model.Save(s_tinyModel.Value.Model, s_tinyModel.Value.Schema, path);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(-10));
+        try
+        {
+            var cache = NewCache();
+            var plain = cache.GetOrLoad(path);
+
+            new MLoop.Core.Models.DecisionThreshold(0.7, 0.9, 0.9, 0.5, 10, "f.csv", null, DateTimeOffset.UtcNow).WriteBeside(path);
+            var withThreshold = cache.GetOrLoad(path);
+            File.Delete(MLoop.Core.Models.DecisionThreshold.PathBeside(path));
+            var withoutAgain = cache.GetOrLoad(path);
+
+            Assert.NotSame(plain, withThreshold);
+            Assert.NotSame(withThreshold, withoutAgain);   // removing it moves the stamp back, and that reloads too
+            Assert.Same(withoutAgain, cache.GetOrLoad(path));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void Evict_RemovesEntry()
     {
         var path = SaveTinyModel();

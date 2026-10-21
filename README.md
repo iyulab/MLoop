@@ -367,6 +367,7 @@ The section above shows the ones a first project uses. This is the whole surface
 | `evaluate` | Evaluate model performance on test data |
 | `promote` | Promote an experiment to production |
 | `rollback` | Return production to the experiment it held before |
+| `threshold` | Choose a binary classifier's decision threshold for a target precision, or show or remove it |
 | `export` | Export a model as ONNX with a manifest, for runtimes without ML.NET (`export onnx [--verify]`) |
 | `list` | List all experiments |
 | `compare` | Compare experiments side by side |

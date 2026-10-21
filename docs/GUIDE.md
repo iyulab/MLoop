@@ -535,6 +535,39 @@ and `mloop promote --history` lists it: when, which experiment, how (`promote`, 
 each with the experiment it replaced (`previousExperimentId`); `GET /promotions?name=` returns the same. Entries written
 before the gate was recorded carry `null` there.
 
+### `mloop threshold`
+
+A binary classifier answers its positive class from a probability of 0.5 unless told otherwise. When
+a wrong positive costs more than a missed one, choose the threshold on labeled rows for the precision
+you need: the lowest threshold that reaches it, which keeps the most recall.
+
+```bash
+mloop threshold --precision 0.95 --data datasets/recheck.csv           # the production model
+mloop threshold exp-004 --precision 0.95 --data datasets/recheck.csv --weight inv_pi
+mloop threshold                                                       # show the current one
+mloop threshold --clear                                               # back to 0.5
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--name` | `-n` | Model name (default: `default`) |
+| `--precision` | | Target positive precision, above 0 and at most 1 |
+| `--data` | | Labeled evaluation file to choose on (required with `--precision`) |
+| `--weight` | | Column that weights the rows (defaults as `evaluate --weight` does) |
+| `--clear` | | Remove the threshold |
+| `--json` | | Output as JSON |
+
+The threshold is written beside the model (`decision-threshold.json`, with the precision and recall
+it reached and the file it was chosen on) — on the experiment, and on production too when the
+experiment is in production. From then on every path that loads the model answers at it: `predict`
+(CSV and `--json`), `mloop serve` (its model cache reloads), `evaluate` (accuracy, precision, recall,
+F1 and the confusion matrix — AUC does not depend on it) and the gate policy. `promote` carries it
+with the model, and a promoted model without one answers at 0.5 again. Rows of one probability are
+answered alike, so a threshold never splits them; when not even the rows the model is most confident
+about reach the precision, the command says so and changes nothing. A model whose trainer gives no
+probability cannot be given one. The ONNX export does not apply it — the manifest names it, for the
+consumer to apply.
+
 ### `mloop rollback`
 
 Returns production to the experiment it held before the current one, from the promotion history.

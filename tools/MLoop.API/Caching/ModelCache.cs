@@ -48,7 +48,7 @@ public sealed class ModelCache : IModelCache
         }
 
         var key = Path.GetFullPath(modelPath);
-        var currentMtime = File.GetLastWriteTimeUtc(key);
+        var currentMtime = StampOf(key);
 
         while (true)
         {
@@ -66,7 +66,9 @@ public sealed class ModelCache : IModelCache
                 throw;
             }
 
-            if (entry.FileLastWriteTimeUtc < observedMtime)
+            // Any change of the stamp reloads, not only a newer one: removing the decision threshold
+            // moves it back to the model file's own time.
+            if (entry.FileLastWriteTimeUtc != observedMtime)
             {
                 var replacement = NewLazyEntry(key, observedMtime, countAsMiss: false);
                 if (_entries.TryUpdate(key, replacement, lazy))
@@ -135,12 +137,23 @@ public sealed class ModelCache : IModelCache
             return new CacheEntry(key, transformer, mtime);
         }, LazyThreadSafetyMode.ExecutionAndPublication);
 
+    /// <summary>
+    /// What a cached model is fresh against: the model file's write time, or its decision threshold's when
+    /// that is later — a threshold chosen (or removed) beside a cached model changes its answers.
+    /// </summary>
+    private static DateTime StampOf(string modelPath)
+    {
+        var model = File.GetLastWriteTimeUtc(modelPath);
+        var threshold = MLoop.Core.Models.DecisionThreshold.PathBeside(modelPath);
+        return File.Exists(threshold) && File.GetLastWriteTimeUtc(threshold) > model ? File.GetLastWriteTimeUtc(threshold) : model;
+    }
+
     private ITransformer LoadFromDisk(string modelPath)
     {
         if (!File.Exists(modelPath))
             throw new FileNotFoundException($"Model file not found: {modelPath}", modelPath);
 
-        return _loaderContext.Model.Load(modelPath, out _);
+        return MLoop.Core.Models.DecisionThreshold.Load(_loaderContext, modelPath);
     }
 
     private void EnsureCapacity()
