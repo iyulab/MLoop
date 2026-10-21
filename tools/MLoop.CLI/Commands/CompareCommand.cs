@@ -397,13 +397,8 @@ public static class CompareCommand
     /// from the human path in both cases.
     /// </para>
     /// </summary>
-    /// <summary>
-    /// True when the experiments' metrics were not all measured the same way — rows weighted by
-    /// different columns, or some weighted and some not. Their metrics then share names, not a
-    /// distribution, and the best of them is not a ranking.
-    /// </summary>
-    internal static bool WeightsDiffer(IReadOnlyCollection<ExperimentData> experiments)
-        => experiments.Select(e => (e.Config.WeightColumn ?? "").ToLowerInvariant()).Distinct().Count() > 1;
+    private static bool WeightsDiffer(IReadOnlyCollection<ExperimentData> experiments)
+        => Weighting.Differ(experiments.Select(e => Weighting.Of(e.Config.WeightColumn)));
 
     private static int EmitLocalComparisonJson(
         List<ExperimentData> experiments,

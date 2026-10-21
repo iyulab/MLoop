@@ -880,7 +880,7 @@ app.MapGet("/status", async (
                 productionExperimentId = prodModel?.ExperimentId,
                 bestMetric = bestPick?.Best.BestMetric,
                 bestMetricName = bestPick?.Measurement.Metric,
-                bestMetricWeightColumn = bestPick?.Measurement.WeightColumn,
+                bestMetricWeightColumn = bestPick?.Measurement.Weighting.Column,
                 bestExperimentId = bestPick?.Best.ExperimentId,
                 experimentsNotCompared = bestPick?.NotCompared ?? 0,
                 latestExperiment = modelExps

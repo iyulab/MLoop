@@ -466,12 +466,12 @@ public class ModelRegistry : IModelRegistry
             return null; // production's experiment is gone; its recorded metrics are all there is to compare
         }
 
-        var weight = experiment.Config?.WeightColumn;
-        if (string.Equals(weight ?? "", productionWeight ?? "", StringComparison.OrdinalIgnoreCase))
+        var weighting = Weighting.Of(experiment.Config?.WeightColumn);
+        var productionWeighting = Weighting.Of(productionWeight);
+        if (weighting == productionWeighting)
             return null;
 
-        static string Describe(string? w) => string.IsNullOrEmpty(w) ? "unweighted" : $"weighted by '{w}'";
-        return $"its metrics are {Describe(weight)} and production's ({production.ExperimentId}) are {Describe(productionWeight)} — " +
+        return $"its metrics are {weighting} and production's ({production.ExperimentId}) are {productionWeighting} — " +
                "the same names over different distributions";
     }
 

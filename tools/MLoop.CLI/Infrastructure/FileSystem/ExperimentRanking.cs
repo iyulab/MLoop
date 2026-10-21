@@ -26,15 +26,15 @@ public static class ExperimentRanking
     /// compare only when both agree — a metric weighted toward rare, re-checked cases and an
     /// unweighted one of the same name describe different distributions.
     /// </summary>
-    public readonly record struct Measurement(string Metric, string? WeightColumn)
+    public readonly record struct Measurement(string Metric, Weighting Weighting)
     {
         public static Measurement Of(ExperimentSummary e) => new(
             (e.MetricName ?? string.Empty).ToLowerInvariant(),
-            string.IsNullOrEmpty(e.WeightColumn) ? null : e.WeightColumn.ToLowerInvariant());
+            Weighting.Of(e.WeightColumn));
 
         /// <summary>"auc" or "auc, weighted by 'w'" — names the scale a value is on.</summary>
         public override string ToString()
-            => WeightColumn is null ? Metric : $"{Metric}, weighted by '{WeightColumn}'";
+            => Weighting.Column is null ? Metric : $"{Metric}, {Weighting}";
     }
 
     /// <summary>

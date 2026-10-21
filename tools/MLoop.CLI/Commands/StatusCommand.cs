@@ -281,7 +281,7 @@ public static class StatusCommand
                 r.ProductionExperimentId,
                 r.BestMetric,
                 BestMetricName = r.BestMeasurement?.Metric,
-                BestMetricWeightColumn = r.BestMeasurement?.WeightColumn,
+                BestMetricWeightColumn = r.BestMeasurement?.Weighting.Column,
                 r.BestExperimentId,
                 r.ExperimentsNotCompared,
                 LastPredictionAt = r.LastPredictionAtUtc
@@ -304,7 +304,7 @@ public static class StatusCommand
     }
 
     private static bool NeedsMetricNote(ModelStatusRow row)
-        => row.BestMetric.HasValue && (row.ExperimentsNotCompared > 0 || row.BestMeasurement?.WeightColumn is not null);
+        => row.BestMetric.HasValue && (row.ExperimentsNotCompared > 0 || row.BestMeasurement?.Weighting.Column is not null);
 
     /// <summary>What the best-metric cell measured, when the cell alone does not say it.</summary>
     internal static string MetricNote(ModelStatusRow row)

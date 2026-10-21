@@ -379,15 +379,14 @@ public static class PromoteCommand
         // distributions, so "best" between them is not a judgement --best can make.
         // Promotion is an act, so a mix is refused rather than narrowed the way status narrows it.
         {
-            static string Describe(string? w) => w is null ? "unweighted" : $"weighted by '{w}'";
             var groups = scored
-                .GroupBy(e => ExperimentRanking.Measurement.Of(e).WeightColumn)
+                .GroupBy(e => Weighting.Of(e.WeightColumn))
                 .ToList();
             if (groups.Count > 1)
                 return (null, null,
                     $"Experiments for model '{modelName}' were measured with different row weights ("
                     + string.Join("; ", groups.Select(g =>
-                        $"{string.Join(", ", g.Select(e => e.ExperimentId))}: {Describe(g.Key)}"))
+                        $"{string.Join(", ", g.Select(e => e.ExperimentId))}: {g.Key}"))
                     + ") — --best cannot compare across them. Score the candidates on one evaluation set "
                     + "(mloop evaluate <experiment> <file> --weight <column>) and promote one by its ID.");
         }

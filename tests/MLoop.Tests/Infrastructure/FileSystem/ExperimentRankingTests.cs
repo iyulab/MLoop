@@ -68,9 +68,9 @@ public class ExperimentRankingTests
         var pick = ExperimentRanking.SelectBest(exps)!;
 
         Assert.Equal("exp-3", pick.Best.ExperimentId);
-        Assert.Equal(new ExperimentRanking.Measurement("auc", "w"), pick.Measurement);
+        Assert.Equal(new ExperimentRanking.Measurement("auc", Weighting.Of("w")), pick.Measurement);
         Assert.Equal(1, pick.NotCompared);
-        Assert.Equal("auc, weighted by 'w'", pick.Measurement.ToString());
+        Assert.Equal("auc, weighted by 'W'", pick.Measurement.ToString());   // as the picked experiment recorded it
     }
 
     [Fact]
@@ -130,4 +130,23 @@ public class ExperimentRankingTests
             MetricName = metric,
             BestMetric = value,
         };
+
+    [Theory]
+    [InlineData(null, "", true)]
+    [InlineData(" ", null, true)]
+    [InlineData("W", "w", true)]        // columns are matched without case
+    [InlineData("w", null, false)]
+    [InlineData("w", "v", false)]
+    public void Weighting_IsTheSameWhenTheRowsWereCountedTheSameWay(string? a, string? b, bool same)
+    {
+        Assert.Equal(same, Weighting.Of(a) == Weighting.Of(b));
+        Assert.Equal(!same, Weighting.Differ([Weighting.Of(a), Weighting.Of(b)]));
+    }
+
+    [Fact]
+    public void Weighting_NamesItself_KeepingTheColumnsCase()
+    {
+        Assert.Equal("unweighted", Weighting.Of(null).ToString());
+        Assert.Equal("weighted by 'Weight'", Weighting.Of("Weight").ToString());
+    }
 }
