@@ -76,6 +76,13 @@ public class ModelDefinition
     public string? Weight { get; set; }
 
     /// <summary>
+    /// Train only with steps an ONNX runtime computes exactly, so the model can be exported with
+    /// <c>mloop export onnx</c>: text columns are featurized by character n-grams instead of
+    /// ML.NET's text featurizer. Binary classification, multiclass classification and regression.
+    /// </summary>
+    public bool? Portable { get; set; }
+
+    /// <summary>
     /// Group column name for ranking task.
     /// Groups rows into query contexts for learning-to-rank.
     /// </summary>

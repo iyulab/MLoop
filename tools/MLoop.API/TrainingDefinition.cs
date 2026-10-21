@@ -37,6 +37,8 @@ public static class TrainingDefinition
                           "train it with `mloop train`, or remove the prep steps.");
         if (ModelTrainingConfig.WeightConflict(definition) is { } weightError)
             return (null, weightError);
+        if (ModelTrainingConfig.PortableConflict(definition) is { } portableError)
+            return (null, portableError);
         return (definition, null);
     }
 }

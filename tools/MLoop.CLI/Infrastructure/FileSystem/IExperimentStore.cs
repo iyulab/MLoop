@@ -157,6 +157,9 @@ public class ExperimentConfig
     public string? ItemColumn { get; init; }
     // The column the rows were weighted by. When set, the recorded metrics are weighted by it too.
     public string? WeightColumn { get; init; }
+    // Trained with ONNX-expressible steps only (TrainingConfig.Portable). Absent when false.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Portable { get; init; }
 }
 
 /// <summary>

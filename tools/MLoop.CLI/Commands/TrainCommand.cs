@@ -119,6 +119,10 @@ public static class TrainCommand
         {
             Description = "Column that weights the rows (relative frequency, e.g. 1/π for sampled labels); never a feature. Binary, multiclass and regression"
         };
+        var portableOption = new Option<bool>("--portable")
+        {
+            Description = "Train only with steps ONNX can express, so 'mloop export onnx' can export the model (text columns use character n-grams). Binary, multiclass and regression"
+        };
         var groupColumnOption = new Option<string?>("--group-column")
         {
             Description = "Group column for ranking task (groups rows into query contexts)"
@@ -170,6 +174,7 @@ public static class TrainCommand
         command.Options.Add(balanceOption);
         command.Options.Add(groupColumnOption);
         command.Options.Add(weightOption);
+        command.Options.Add(portableOption);
         command.Options.Add(maxRowsOption);
         command.Options.Add(samplingStrategyOption);
         command.Options.Add(samplingStrategyAliasOption);
@@ -206,7 +211,7 @@ public static class TrainCommand
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption));
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption), parseResult.GetValue(portableOption));
         });
 
         return command;
@@ -235,7 +240,8 @@ public static class TrainCommand
         int? seed = null,
         bool json = false,
         string? records = null,
-        string? weight = null)
+        string? weight = null,
+        bool portable = false)
     {
         // --json reserves stdout for the event stream: every renderer and narrator in the training
         // path is silenced for the duration, and the real stdout is handed to the emitter. Disposed
@@ -326,6 +332,14 @@ public static class TrainCommand
             if (ModelTrainingConfig.WeightConflict(effectiveDefinition, balance) is { } weightError)
             {
                 ErrorConsole.Error(weightError);
+                return 1;
+            }
+
+            if (portable)
+                effectiveDefinition.Portable = true;
+            if (ModelTrainingConfig.PortableConflict(effectiveDefinition) is { } portableError)
+            {
+                ErrorConsole.Error(portableError);
                 return 1;
             }
 

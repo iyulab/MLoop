@@ -137,6 +137,8 @@ mloop train <data-file> <label-column> [options]
 #   --group-column <column>     Query/group column for the ranking task
 #   --weight <column>           Column that weights the rows (binary, multiclass, regression);
 #                               never a feature. Same as `weight:` in mloop.yaml
+#   --portable                  Train only with steps ONNX can express, so `mloop export onnx`
+#                               works (binary, multiclass, regression). Same as `portable: true`
 
 # Before and after training:
 #   --analyze-data              Analyze data quality and print preprocessing recommendations
@@ -180,6 +182,15 @@ distribution. Training therefore does not promote a model over a production mode
 way (it says so and leaves production unchanged; promote explicitly once both are scored on one
 evaluation set with `mloop evaluate … --weight`), and `mloop compare` warns, adds a Weight row, and
 carries `weightsDiffer` and each experiment's `weightColumn` in `--json`.
+
+**Portable training** (`--portable`, or `portable: true` under the model in `mloop.yaml`) trains with
+steps an ONNX runtime computes exactly, so `mloop export onnx` can export the model. The difference
+is in text columns: instead of ML.NET's text featurizer (which has no ONNX form) each text column is
+featurized as counts of character n-grams of lengths 1 to 4, case-sensitive — word tokenization and
+text normalization do not reproduce exactly in ONNX Runtime. On the UCI SMS spam data (60 s) a
+portable model scored accuracy 0.9848, AUC 0.9948 against 0.9865, 0.9874 for the default. Numeric
+and category columns train the same either way. Binary classification, multiclass classification and
+regression; the experiment records `portable: true`.
 
 **Automatic Features**:
 - **Data File Formats**: besides CSV, `train`, `predict`, `evaluate`, `info`, `analyze` and `detect`
@@ -1037,9 +1048,11 @@ multiclass label — is listed under `unusedInputs`: a runtime still requires it
 
 Binary classification, multiclass classification and regression are supported. Numeric columns
 and category columns (one-hot encoded) export; **a text column does not** — ML.NET's text
-featurization (`FeaturizeText`) has no ONNX form — so such a model is refused with its string columns
-named, and nothing partial is written. If the column actually holds codes or categories, declare it
-`type: categorical` under the model's `columns:` and retrain.
+featurization (`FeaturizeText`) has no ONNX form — unless the model was trained **portable**
+(`--portable`, see `mloop train`), which featurizes text with steps ONNX computes exactly. A model
+that is not is refused with its string columns named, and nothing partial is written. If the column
+actually holds codes or categories, declare it `type: categorical` under the model's `columns:` and
+retrain; otherwise retrain with `--portable`.
 
 ---
 

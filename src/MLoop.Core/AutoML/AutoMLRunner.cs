@@ -647,6 +647,10 @@ public partial class AutoMLRunner
         // Build explicit ColumnInformation to ensure text columns get
         // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
+        var preFeaturizer = config.PreFeaturizer;
+        ITransformer? portableText = null;
+        if (config.Portable)
+            (columnInfo, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, columnInfo, trainSet, validationSet);
 
         var trialReporter = CreateTrialReporter(progress, DescribeBinaryMetric(optimizingMetric));
 
@@ -654,15 +658,16 @@ public partial class AutoMLRunner
             () => validationSet != null
                 ? experiment.Execute(trainSet, validationSet,
                     columnInfo ?? new ColumnInformation { LabelColumnName = config.LabelColumn },
-                    config.PreFeaturizer, trialReporter)
+                    preFeaturizer, trialReporter)
                 : columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer, trialReporter)
+                ? experiment.Execute(trainSet, columnInfo, preFeaturizer, trialReporter)
                 : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
-                    preFeaturizer: config.PreFeaturizer, progressHandler: trialReporter),
+                    preFeaturizer: preFeaturizer, progressHandler: trialReporter),
             config, cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
-        var predictions = experimentResult.BestRun.Model.Transform(testSet);
+        var bestModel = PortableTextFeaturizer.Prepend(portableText, experimentResult.BestRun.Model);
+        var predictions = bestModel.Transform(testSet);
 
         // Some AutoML pipelines (non-calibrated models) don't produce a Probability column.
         // Use EvaluateNonCalibrated when Probability column is missing.
@@ -712,7 +717,7 @@ public partial class AutoMLRunner
         return new AutoMLResult
         {
             Trainer = trainer,
-            Model = EnsureCalibratedModel(_mlContext, experimentResult.BestRun.Model, predictions, config.LabelColumn, hasProbability),
+            Model = EnsureCalibratedModel(_mlContext, bestModel, predictions, config.LabelColumn, hasProbability),
             Metrics = metricsDict,
             RowCount = trainSet.GetRowCount() ?? 0,
             Trials = CollectTrials(experimentResult.RunDetails, DescribeAllBinaryMetrics),
@@ -1059,11 +1064,21 @@ public partial class AutoMLRunner
 
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
 
-        var trainingPipeline = BuildManualBinaryPipeline(_mlContext, trainSet, config.LabelColumn, columnInfo);
+        // The pre-featurizer (statistical prep, portable text) belongs in front of this pipeline as it
+        // does in front of AutoML's — without it the fallback trained on columns prep never touched.
+        var preFeaturizer = config.PreFeaturizer;
+        ITransformer? portableText = null;
+        if (config.Portable)
+            (columnInfo, portableText, trainSet, _) = PortableTextFeaturizer.FitAndApply(_mlContext, columnInfo, trainSet, null);
+        var manualPipeline = BuildManualBinaryPipeline(_mlContext,
+            preFeaturizer is null ? trainSet : preFeaturizer.Fit(trainSet).Transform(trainSet),
+            config.LabelColumn, columnInfo);
+        var trainingPipeline = preFeaturizer is null ? manualPipeline : preFeaturizer.Append(manualPipeline);
 
-        var model = await Task.Run(
+        var fittedPipeline = await Task.Run(
             () => trainingPipeline.Fit(trainSet),
             cancellationToken).ConfigureAwait(false);
+        var model = PortableTextFeaturizer.Prepend(portableText, fittedPipeline);
 
         // Evaluate on test set
         var predictions = model.Transform(testSet);
@@ -1232,6 +1247,10 @@ public partial class AutoMLRunner
 
         // Explicit ColumnInformation for text column featurization
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
+        var preFeaturizer = config.PreFeaturizer;
+        ITransformer? portableText = null;
+        if (config.Portable)
+            (columnInfo, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, columnInfo, trainSet, validationSet);
 
         var trialReporter = CreateTrialReporter(progress, DescribeMulticlassMetric(optimizingMetric));
 
@@ -1239,15 +1258,16 @@ public partial class AutoMLRunner
             () => validationSet != null
                 ? experiment.Execute(trainSet, validationSet,
                     columnInfo ?? new ColumnInformation { LabelColumnName = config.LabelColumn },
-                    config.PreFeaturizer, trialReporter)
+                    preFeaturizer, trialReporter)
                 : columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer, trialReporter)
+                ? experiment.Execute(trainSet, columnInfo, preFeaturizer, trialReporter)
                 : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
-                    preFeaturizer: config.PreFeaturizer, progressHandler: trialReporter),
+                    preFeaturizer: preFeaturizer, progressHandler: trialReporter),
             config, cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
-        var predictions = experimentResult.BestRun.Model.Transform(testSet);
+        var bestModel = PortableTextFeaturizer.Prepend(portableText, experimentResult.BestRun.Model);
+        var predictions = bestModel.Transform(testSet);
         var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, config.LabelColumn);
 
         var metricsDict = new Dictionary<string, double>
@@ -1285,7 +1305,7 @@ public partial class AutoMLRunner
         return new AutoMLResult
         {
             Trainer = TrainerDescriptor.Of(experimentResult.BestRun.TrainerName),
-            Model = experimentResult.BestRun.Model,
+            Model = bestModel,
             Metrics = metricsDict,
             RowCount = trainSet.GetRowCount() ?? 0,
             Trials = CollectTrials(experimentResult.RunDetails, DescribeAllMulticlassMetrics),
@@ -1313,6 +1333,10 @@ public partial class AutoMLRunner
 
         // Explicit ColumnInformation for text column featurization
         var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, m => _logger.Info(m), config.ColumnOverrides, config.CategoryColumns);
+        var preFeaturizer = config.PreFeaturizer;
+        ITransformer? portableText = null;
+        if (config.Portable)
+            (columnInfo, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, columnInfo, trainSet, validationSet);
 
         var trialReporter = CreateTrialReporter(progress, DescribeRegressionMetric(optimizingMetric));
 
@@ -1320,15 +1344,16 @@ public partial class AutoMLRunner
             () => validationSet != null
                 ? experiment.Execute(trainSet, validationSet,
                     columnInfo ?? new ColumnInformation { LabelColumnName = config.LabelColumn },
-                    config.PreFeaturizer, trialReporter)
+                    preFeaturizer, trialReporter)
                 : columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo, config.PreFeaturizer, trialReporter)
+                ? experiment.Execute(trainSet, columnInfo, preFeaturizer, trialReporter)
                 : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
-                    preFeaturizer: config.PreFeaturizer, progressHandler: trialReporter),
+                    preFeaturizer: preFeaturizer, progressHandler: trialReporter),
             config, cancellationToken).ConfigureAwait(false);
 
         // Evaluate on test set
-        var predictions = experimentResult.BestRun.Model.Transform(testSet);
+        var bestModel = PortableTextFeaturizer.Prepend(portableText, experimentResult.BestRun.Model);
+        var predictions = bestModel.Transform(testSet);
         var metrics = _mlContext.Regression.Evaluate(predictions, config.LabelColumn);
 
         var metricsDict = new Dictionary<string, double>
@@ -1384,7 +1409,7 @@ public partial class AutoMLRunner
         return new AutoMLResult
         {
             Trainer = TrainerDescriptor.Of(experimentResult.BestRun.TrainerName),
-            Model = experimentResult.BestRun.Model,
+            Model = bestModel,
             Metrics = metricsDict,
             ResidualModel = residualModel,
             RowCount = trainSet.GetRowCount() ?? 0,

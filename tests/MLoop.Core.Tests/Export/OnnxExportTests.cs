@@ -171,6 +171,49 @@ public sealed class OnnxExportTests : IDisposable
     }
 
     [Fact]
+    public void PortableText_SavedAndReloaded_GraphMatchesModel()
+    {
+        // The exported model is always one loaded from model.zip. A single n-gram extractor over all
+        // lengths exports correctly in memory but, once reloaded, as counting only the longest
+        // length — the graph then disagreed with the model on every row. The portable featurizer
+        // must survive the round trip.
+        string[] ham = ["see you at the station at six", "ok thanks, call me later", "lunch tomorrow?"];
+        string[] spam = ["WIN a FREE prize now!! call 0800 123", "URGENT: claim your cash reward", "Txt STOP to opt out of offers"];
+        var rng = new Random(9);
+        var path = WriteCsv("text,label", Enumerable.Range(0, 240).Select(i =>
+        {
+            var isSpam = i % 3 == 0;
+            var pool = isSpam ? spam : ham;
+            return Row($"\"{pool[rng.Next(pool.Length)]} {rng.Next(100)}\"", isSpam ? "true" : "false");
+        }));
+        var loader = new TextLoader.Options
+        {
+            HasHeader = true, Separators = [','], AllowQuoting = true,
+            Columns =
+            [
+                new TextLoader.Column("text", DataKind.String, 0),
+                new TextLoader.Column("label", DataKind.Boolean, 1),
+            ],
+        };
+        var data = _ml.Data.CreateTextLoader(loader).Load(path);
+        var trained = MLoop.Core.AutoML.PortableTextFeaturizer.For(_ml, "text")
+            .Append(_ml.Transforms.Concatenate("Features", "text"))
+            .Append(_ml.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression("label"))
+            .Fit(data);
+        var zip = Path.Combine(_dir, "model.zip");
+        _ml.Model.Save(trained, data.Schema, zip);
+        var model = _ml.Model.Load(zip, out _);
+
+        Assert.Null(OnnxExport.FindNotExportable(model));
+        var (result, onnx) = Export(model, data, loader, ["text", "label"], "label");
+
+        var input = Assert.Single(result.Inputs);
+        Assert.Equal(("text", "string"), (input.Name, input.ElementType));
+        var outputs = Run(onnx, data, result);
+        AssertClose(Floats(model.Transform(data), "Probability"), outputs["Probability.output"].Floats);
+    }
+
+    [Fact]
     public void Manifest_RoundTrips()
     {
         var manifest = new OnnxManifest

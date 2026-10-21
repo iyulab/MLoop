@@ -16,6 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   cannot express — a string column featurized as free text — is refused with its string columns
   named and nothing is written.
   `MLoop.Core` carries the conversion (`MLoop.Core.Export.OnnxExport`, `OnnxManifest`).
+- **Portable training** — `mloop train --portable`, or `portable: true` under the model in `mloop.yaml`:
+  train only with steps an ONNX runtime computes exactly, so the model exports. Text columns are
+  featurized as counts of character n-grams (lengths 1–4, case-sensitive) instead of ML.NET's text
+  featurizer, fitted once on the training rows and saved in front of the model AutoML picks. On the
+  UCI SMS spam data: accuracy 0.9848, AUC 0.9948, ECE 0.009 (default featurization 0.9865, 0.9874,
+  0.009), and the exported graph agrees with the model to 1e-7. Binary classification, multiclass
+  classification and regression; refused on other tasks. The experiment records `portable: true`.
 
 ### Changed
 - **String columns of categories are one-hot encoded instead of featurized as text.** Every untyped
@@ -32,6 +39,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - ML.NET 5.0.1 (AutoML, TorchSharp 0.23.1); new dependency `Microsoft.ML.OnnxConverter` 0.23.1.
 
 ### Fixed
+- The small-data fallback trainer (used when AutoML cannot score a binary run) now applies the
+  preprocessing steps that run inside training (statistical `prep` steps); it trained without them.
 - `mloop promote --best` no longer picks a "best" experiment across different row weightings —
   a weighted and an unweighted accuracy describe different distributions. It refuses, lists the
   candidates by weighting, and points to `mloop evaluate --weight` and an explicit promote.

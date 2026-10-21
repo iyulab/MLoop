@@ -47,7 +47,17 @@ public static class ModelTrainingConfig
             PreFeaturizer = preFeaturizer,
             PreFeaturizerColumns = preFeaturizerColumns ?? [],
             WeightColumn = string.IsNullOrWhiteSpace(definition.Weight) ? null : definition.Weight.Trim(),
+            Portable = definition.Portable == true,
         };
+
+    /// <summary>
+    /// Why <paramref name="definition"/> cannot be trained portable, or <c>null</c>. A setting that
+    /// silently did nothing would leave a model the user expects to export unexportable.
+    /// </summary>
+    public static string? PortableConflict(ModelDefinition definition)
+        => definition.Portable == true && !MLoop.Core.AutoML.AutoMLRunner.SupportsPreFeaturizer(definition.Task)
+            ? $"portable: a portable model is trained for binary-classification, multiclass-classification or regression, not '{definition.Task}'."
+            : null;
 
     /// <summary>
     /// Why the weight column in <paramref name="definition"/> cannot be honoured, or <c>null</c>.

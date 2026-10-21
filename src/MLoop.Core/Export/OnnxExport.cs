@@ -105,7 +105,8 @@ public static class OnnxExport
             throw new OnnxExportException(
                 $"This model cannot be exported to ONNX: {reason}.{which} A column that holds a code or a "
                 + "category exports once it is declared `type: categorical` under the model's `columns:` in "
-                + "mloop.yaml (one-hot encoding) and the model is retrained; a column of free text cannot be exported yet.");
+                + "mloop.yaml (one-hot encoding) and the model is retrained; a column of free text exports when the "
+                + "model is trained portable (`portable: true` in mloop.yaml, or `mloop train --portable`).");
         }
 
         // The label is a graph input only if the pipeline reads it at scoring time; a model that

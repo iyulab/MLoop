@@ -134,6 +134,50 @@ public sealed class ExportCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Export_OfAPortableModelWithAFreeTextColumn_TakesTheRawText()
+    {
+        await InitAsync();
+        var csv = new StringBuilder("x,note,y\n");
+        var rng = new Random(7);
+        string[] good = ["backup finished and every volume checked out", "the user signed in from the usual device"];
+        string[] bad = ["the disk on the second volume failed during the nightly run", "a login was refused from an unknown address"];
+        for (var i = 0; i < 160; i++)
+        {
+            var isBad = i % 2 == 0;
+            var pool = isBad ? bad : good;
+            csv.Append(CultureInfo.InvariantCulture, $"{rng.NextDouble():F4},\"{pool[i % 2]} {i}\",{(isBad ? "yes" : "no")}\n");
+        }
+        await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
+        var (trainExit, trainOutput, _) = await CliRunner.RunAsync(
+            "train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote", "--portable");
+        Assert.True(trainExit == 0, trainOutput);
+
+        var (exit, output, error) = await CliRunner.RunAsync("export", "onnx", "exp-001", "--json");
+
+        Assert.True(exit == 0, output + error);
+        using var doc = JsonDocument.Parse(output);
+        var manifest = OnnxManifest.FromJson(await File.ReadAllTextAsync(doc.RootElement.GetProperty("manifestPath").GetString()!));
+        var note = Assert.Single(manifest.Inputs, i => i.Name == "note");
+        Assert.Equal("string", note.ElementType);
+        Assert.Contains("\"portable\": true", await File.ReadAllTextAsync(Path.Combine("models", "default", "staging", "exp-001", "config.json")));
+    }
+
+    [Fact]
+    public async Task Portable_OnATaskItDoesNotCover_IsRefusedBeforeTraining()
+    {
+        var (initExit, initOutput, _) = await CliRunner.RunAsync("init", "c", "--task", "clustering");
+        Assert.True(initExit == 0, initOutput);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "c"));
+        await File.WriteAllTextAsync("datasets/train.csv", "a,b\n1,2\n3,4\n5,6\n");
+
+        var (exit, output, error) = await CliRunner.RunAsync("train", "datasets/train.csv", "--portable", "--time", "5");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("portable", output + error);
+        Assert.False(Directory.Exists(Path.Combine("models", "default", "staging", "exp-001")));
+    }
+
+    [Fact]
     public async Task Export_WithoutAProductionModel_AsksForAnExperiment()
     {
         await InitAsync();

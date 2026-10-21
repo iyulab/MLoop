@@ -429,7 +429,8 @@ public class TrainingEngine : ITrainingEngine
                     GroupColumn = config.GroupColumn,
                     UserColumn = config.UserColumn,
                     ItemColumn = config.ItemColumn,
-                    WeightColumn = config.WeightColumn
+                    WeightColumn = config.WeightColumn,
+                    Portable = config.Portable
                 },
                 Result = new ExperimentResult
                 {
@@ -485,7 +486,8 @@ public class TrainingEngine : ITrainingEngine
                     GroupColumn = config.GroupColumn,
                     UserColumn = config.UserColumn,
                     ItemColumn = config.ItemColumn,
-                    WeightColumn = config.WeightColumn
+                    WeightColumn = config.WeightColumn,
+                    Portable = config.Portable
                 },
                 Result = new ExperimentResult
                 {

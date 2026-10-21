@@ -148,6 +148,14 @@ public record TrainingConfig
     public IReadOnlyCollection<string>? CategoryColumns { get; init; }
 
     /// <summary>
+    /// Train only with steps an ONNX runtime computes exactly, so the model can be exported
+    /// (<c>mloop export onnx</c>): text columns are featurized by
+    /// <see cref="AutoML.PortableTextFeaturizer"/> instead of <c>FeaturizeText</c>.
+    /// Binary classification, multiclass classification and regression.
+    /// </summary>
+    public bool Portable { get; init; }
+
+    /// <summary>
     /// Number of clusters for clustering task (0 = auto-select via silhouette search)
     /// </summary>
     public int NumClusters { get; init; } = 0;
