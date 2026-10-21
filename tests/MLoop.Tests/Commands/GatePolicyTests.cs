@@ -75,12 +75,12 @@ public sealed class GatePolicyTests : IDisposable
 
             """.Replace("\r", ""), StringComparison.Ordinal);
         await File.WriteAllTextAsync("mloop.yaml", yaml);
-        var (validateExit, validateOut, _) = await CliRunner.RunAsync("validate");
-        Assert.True(validateExit == 0, validateOut);
+        var (validateExit, validateOut, validateErr) = await CliRunner.RunAsync("validate");
+        Assert.True(validateExit == 0, validateErr + "\n---\n" + validateOut);
 
         // A first model would be promoted on its metrics alone; the policy holds it in staging and says by what.
         var (trainExit, trainOut, trainErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
-        Assert.True(trainExit == 0, trainOut);
+        Assert.True(trainExit == 0, trainErr + "\n---\n" + trainOut);
         Assert.Contains("gate policy refuses it", trainOut + trainErr);
         Assert.Equal(0, (await HistoryAsync()).GetArrayLength());
 

@@ -129,10 +129,11 @@ public sealed class TrainWeightTests : IDisposable
         await File.WriteAllTextAsync("mloop.yaml",
             "project: p\nmodels:\n  default:\n    task: binary-classification\n    label: y\n    columns:\n      w:\n        type: ignore\n");
 
-        var (first, firstOut, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
-        Assert.True(first == 0, firstOut);
+        // On failure the cause is on stderr (errors go there); stdout alone ends mid-narration.
+        var (first, firstOut, firstErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        Assert.True(first == 0, firstErr + "\n---\n" + firstOut);
         var (second, secondOut, secondErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--weight", "w", "--time", "5");
-        Assert.True(second == 0, secondOut);
+        Assert.True(second == 0, secondErr + "\n---\n" + secondOut);
 
         Assert.Contains("Not compared with production", secondOut + secondErr);
         var fileSystem = new FileSystemManager();
