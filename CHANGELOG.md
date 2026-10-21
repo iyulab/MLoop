@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-10-21
+
 ### Fixed
 - **`mloop export onnx --verify` crashed the process on Windows.** Windows carries its own, older
   `onnxruntime.dll` for Windows ML; the system's library search found it, and ONNX Runtime's managed
@@ -1447,7 +1449,9 @@ This closes the **exclusion axis** of that error signature. A second, independen
 - YAML configuration (`mloop.yaml`)
 - Filesystem-based state management
 
-[Unreleased]: https://github.com/iyulab/MLoop/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/iyulab/MLoop/compare/v0.37.1...HEAD
+[0.37.1]: https://github.com/iyulab/MLoop/compare/v0.37.0...v0.37.1
+[0.37.0]: https://github.com/iyulab/MLoop/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/iyulab/MLoop/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/iyulab/MLoop/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/iyulab/MLoop/compare/v0.33.0...v0.34.0
