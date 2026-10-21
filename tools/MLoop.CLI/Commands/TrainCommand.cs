@@ -621,6 +621,37 @@ public static class TrainCommand
 
             // (allDataFilesUsed is declared above so it survives the directory-based bypass.)
 
+            // Execute YAML-defined preprocessing pipeline (누수 안전: 통계 변환은 preFeaturizer로 이전).
+            // It runs before the label checks below: a step can drop, add or reshape rows (filter-rows,
+            // sample, explode), so missing labels and classes are counted on the rows training gets.
+            if (effectiveDefinition.Prep is { Count: > 0 })
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.Write(new Rule("[blue]Preprocessing Pipeline[/]").LeftJustified());
+                AnsiConsole.WriteLine();
+                try
+                {
+                    var mlCtxForPrep = new MLContext(seed: 42);
+                    List<string> prepWarnings;
+                    (resolvedDataFile, preFeaturizer, prepWarnings, preFeaturizerColumns) =
+                        await ApplyPrepAsync(resolvedDataFile, effectiveDefinition.Prep, mlCtxForPrep, effectiveDefinition.Task);
+
+                    allDataFilesUsed.Add(resolvedDataFile);
+                    foreach (var w in prepWarnings)
+                        AnsiConsole.MarkupLine($"[yellow]![/] {w}");
+                    ValueLine.Write("[green]>[/] Preprocessed data: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
+                    if (preFeaturizer != null)
+                        AnsiConsole.MarkupLine("[green]>[/] Statistical steps are fitted inside training on the training rows (no leak).");
+                    AnsiConsole.WriteLine();
+                }
+                catch (Exception ex)
+                {
+                    ErrorConsole.Out.MarkupLine("[red]Preprocessing pipeline failed:[/]");
+                    ErrorConsole.Out.WriteLine(ex.Message);
+                    return 1;
+                }
+            }
+
             // Handle missing label values (T4.2)
             // Default behavior: drop rows without a target wherever the label is one (DropsMissingLabelsByDefault)
             // The legacy spellings this used to list are folded before they get here
@@ -736,35 +767,6 @@ public static class TrainCommand
                 if (analyzeData)
                 {
                     return 0;
-                }
-            }
-
-            // Execute YAML-defined preprocessing pipeline (누수 안전: 통계 변환은 preFeaturizer로 이전)
-            if (effectiveDefinition.Prep is { Count: > 0 })
-            {
-                AnsiConsole.WriteLine();
-                AnsiConsole.Write(new Rule("[blue]Preprocessing Pipeline[/]").LeftJustified());
-                AnsiConsole.WriteLine();
-                try
-                {
-                    var mlCtxForPrep = new MLContext(seed: 42);
-                    List<string> prepWarnings;
-                    (resolvedDataFile, preFeaturizer, prepWarnings, preFeaturizerColumns) =
-                        await ApplyPrepAsync(resolvedDataFile, effectiveDefinition.Prep, mlCtxForPrep, effectiveDefinition.Task);
-
-                    allDataFilesUsed.Add(resolvedDataFile);
-                    foreach (var w in prepWarnings)
-                        AnsiConsole.MarkupLine($"[yellow]![/] {w}");
-                    ValueLine.Write("[green]>[/] Preprocessed data: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
-                    if (preFeaturizer != null)
-                        AnsiConsole.MarkupLine("[green]>[/] Statistical steps are fitted inside training on the training rows (no leak).");
-                    AnsiConsole.WriteLine();
-                }
-                catch (Exception ex)
-                {
-                    ErrorConsole.Out.MarkupLine("[red]Preprocessing pipeline failed:[/]");
-                    ErrorConsole.Out.WriteLine(ex.Message);
-                    return 1;
                 }
             }
 
