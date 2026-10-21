@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-10-21
+
 ### Added
 - **`mloop drift` compares the model's answers too.** Training a classifier or a regressor now also
   records, in `drift-profile.json`, how the model's own answers were distributed over the sampled
