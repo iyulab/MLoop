@@ -684,24 +684,18 @@ public static class PredictCommand
         using var writer = new StreamWriter(outputPath, false, new System.Text.UTF8Encoding(true));
 
         // Header: features + predictions
-        var featureHeaders = keepIndices.Select(i => QuoteCsvField(inputHeaders[i]));
+        var featureHeaders = keepIndices.Select(i => CsvFieldParser.Quote(inputHeaders[i]));
         writer.WriteLine(string.Join(",", featureHeaders) + "," + predLines[0]);
 
         // Data rows
         for (int r = 1; r < Math.Min(inputLines.Length, predLines.Length); r++)
         {
             var fields = CsvFieldParser.ParseFields(inputLines[r]);
-            var featureValues = keepIndices.Select(i => i < fields.Length ? QuoteCsvField(fields[i]) : "");
+            var featureValues = keepIndices.Select(i => i < fields.Length ? CsvFieldParser.Quote(fields[i]) : "");
             writer.WriteLine(string.Join(",", featureValues) + "," + predLines[r]);
         }
     }
 
-    internal static string QuoteCsvField(string value)
-    {
-        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
-            return "\"" + value.Replace("\"", "\"\"") + "\"";
-        return value;
-    }
 
     /// <summary>
     /// Builds an honest diagnosis when the resolved predict data path is not a readable data file.

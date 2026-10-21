@@ -9,37 +9,37 @@ public class PredictCommandTests
     [Fact]
     public void QuoteCsvField_PlainValue_ReturnsUnquoted()
     {
-        Assert.Equal("hello", PredictCommand.QuoteCsvField("hello"));
+        Assert.Equal("hello", MLoop.Core.Prediction.CsvFieldParser.Quote("hello"));
     }
 
     [Fact]
     public void QuoteCsvField_WithComma_ReturnsQuoted()
     {
-        Assert.Equal("\"hello,world\"", PredictCommand.QuoteCsvField("hello,world"));
+        Assert.Equal("\"hello,world\"", MLoop.Core.Prediction.CsvFieldParser.Quote("hello,world"));
     }
 
     [Fact]
     public void QuoteCsvField_WithQuote_EscapesAndQuotes()
     {
-        Assert.Equal("\"say \"\"hi\"\"\"", PredictCommand.QuoteCsvField("say \"hi\""));
+        Assert.Equal("\"say \"\"hi\"\"\"", MLoop.Core.Prediction.CsvFieldParser.Quote("say \"hi\""));
     }
 
     [Fact]
     public void QuoteCsvField_WithNewline_ReturnsQuoted()
     {
-        Assert.Equal("\"line1\nline2\"", PredictCommand.QuoteCsvField("line1\nline2"));
+        Assert.Equal("\"line1\nline2\"", MLoop.Core.Prediction.CsvFieldParser.Quote("line1\nline2"));
     }
 
     [Fact]
     public void QuoteCsvField_EmptyString_ReturnsEmpty()
     {
-        Assert.Equal("", PredictCommand.QuoteCsvField(""));
+        Assert.Equal("", MLoop.Core.Prediction.CsvFieldParser.Quote(""));
     }
 
     [Fact]
     public void QuoteCsvField_NumericValue_ReturnsUnquoted()
     {
-        Assert.Equal("42.5", PredictCommand.QuoteCsvField("42.5"));
+        Assert.Equal("42.5", MLoop.Core.Prediction.CsvFieldParser.Quote("42.5"));
     }
 
     #endregion

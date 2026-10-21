@@ -37,12 +37,17 @@ public static class CsvFieldParser
     /// Formats fields into a RFC 4180 compliant CSV line.
     /// Fields containing commas, quotes, or newlines are quoted.
     /// </summary>
-    public static string FormatLine(string[] fields)
+    public static string FormatLine(IEnumerable<string> fields)
     {
-        return string.Join(",", fields.Select(QuoteField));
+        return string.Join(",", fields.Select(Quote));
     }
 
-    private static string QuoteField(string field)
+    /// <summary>
+    /// One field as RFC 4180 writes it: quoted, with its quotes doubled, when it holds a comma, a quote or a
+    /// line break; as it is otherwise. The one rule every CSV writer in MLoop uses — copies of it disagreed
+    /// on line breaks, and a field holding one split its row in two.
+    /// </summary>
+    public static string Quote(string field)
     {
         if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
         {

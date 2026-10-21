@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using MLoop.Core.Prediction;
 using MLoop.DataStore.Interfaces;
 
 namespace MLoop.DataStore.Services;
@@ -340,7 +341,7 @@ public sealed class FileDataSampler : IDataSampler
         var header = columns.Append(labelColumn);
         if (weightColumn is not null)
             header = header.Append(weightColumn);
-        sb.AppendLine(string.Join(",", header.Select(EscapeCsvField)));
+        sb.AppendLine(CsvFieldParser.FormatLine(header));
 
         foreach (var sample in samples)
         {
@@ -355,7 +356,7 @@ public sealed class FileDataSampler : IDataSampler
             if (weightColumn is not null)
                 values.Add((sample.Feedback?.EffectiveWeight ?? 1.0).ToString("R", CultureInfo.InvariantCulture));
 
-            sb.AppendLine(string.Join(",", values.Select(EscapeCsvField)));
+            sb.AppendLine(CsvFieldParser.FormatLine(values));
         }
 
         var dir = Path.GetDirectoryName(outputPath);
@@ -399,15 +400,6 @@ public sealed class FileDataSampler : IDataSampler
             JsonValueKind.Null => null,
             _ => element.GetRawText()
         };
-    }
-
-    private static string EscapeCsvField(string field)
-    {
-        if (field.Contains(',') || field.Contains('"') || field.Contains('\n'))
-        {
-            return $"\"{field.Replace("\"", "\"\"")}\"";
-        }
-        return field;
     }
 
     private static string SanitizeFileName(string name)

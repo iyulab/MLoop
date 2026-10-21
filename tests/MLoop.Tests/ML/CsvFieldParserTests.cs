@@ -169,4 +169,20 @@ public class CsvFieldParserTests
     }
 
     #endregion
+
+    [Theory]
+    [InlineData("plain", "plain")]
+    [InlineData("a,b", "\"a,b\"")]
+    [InlineData("say \"hi\"", "\"say \"\"hi\"\"\"")]
+    [InlineData("line1\nline2", "\"line1\nline2\"")]
+    [InlineData("line1\rline2", "\"line1\rline2\"")]   // a bare carriage return breaks a row too — one copy missed it
+    public void Quote_IsTheOneRuleEveryWriterUses(string field, string expected)
+        => Assert.Equal(expected, CsvFieldParser.Quote(field));
+
+    [Fact]
+    public void FormatLine_RoundTripsThroughParseFields()
+    {
+        var fields = new[] { "x", "a,b", "say \"hi\"", "" };
+        Assert.Equal(fields, CsvFieldParser.ParseFields(CsvFieldParser.FormatLine(fields)));
+    }
 }

@@ -44,7 +44,7 @@ public static class CsvStreamBuilder
                 else
                     fields[i] = "";
             }
-            writer.WriteLine(string.Join(",", fields.Select(QuoteCsvField)));
+            writer.WriteLine(CsvFieldParser.FormatLine(fields));
         }
 
         writer.Flush();
@@ -62,11 +62,4 @@ public static class CsvStreamBuilder
         bool b => b ? "1" : "0",
         _ => value.ToString() ?? ""
     };
-
-    private static string QuoteCsvField(string value)
-    {
-        if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
-            return "\"" + value.Replace("\"", "\"\"") + "\"";
-        return value;
-    }
 }

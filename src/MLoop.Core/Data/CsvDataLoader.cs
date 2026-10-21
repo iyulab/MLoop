@@ -768,20 +768,7 @@ public class CsvDataLoader : DataProviderBase
             var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_nodt_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
             var keepIndices = Enumerable.Range(0, headers.Length).Except(dateTimeIndices).ToArray();
 
-            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
-            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
-            {
-                foreach (var line in allLines)
-                {
-                    var fields = ParseCsvLine(line);
-                    var kept = keepIndices
-                        .Where(idx => idx < fields.Length)
-                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
-                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
-                            : fields[idx]);
-                    writer.WriteLine(string.Join(",", kept));
-                }
-            }
+            WriteColumns(filePath, tempPath, keepIndices);
 
             foreach (var idx in dateTimeIndices)
             {
@@ -871,20 +858,7 @@ public class CsvDataLoader : DataProviderBase
             var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_nosparse_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
             var keepIndices = Enumerable.Range(0, headers.Length).Except(sparseIndices).ToArray();
 
-            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
-            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
-            {
-                foreach (var line in allLines)
-                {
-                    var fields = ParseCsvLine(line);
-                    var kept = keepIndices
-                        .Where(idx => idx < fields.Length)
-                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
-                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
-                            : fields[idx]);
-                    writer.WriteLine(string.Join(",", kept));
-                }
-            }
+            WriteColumns(filePath, tempPath, keepIndices);
 
             var removedNames = sparseIndices.Select(i => headers[i]);
             foreach (var name in removedNames)
@@ -977,20 +951,7 @@ public class CsvDataLoader : DataProviderBase
             var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_noconst_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
             var keepIndices = Enumerable.Range(0, headers.Length).Except(constantIndices).ToArray();
 
-            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
-            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
-            {
-                foreach (var line in allLines)
-                {
-                    var fields = ParseCsvLine(line);
-                    var kept = keepIndices
-                        .Where(idx => idx < fields.Length)
-                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
-                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
-                            : fields[idx]);
-                    writer.WriteLine(string.Join(",", kept));
-                }
-            }
+            WriteColumns(filePath, tempPath, keepIndices);
 
             var removedNames = constantIndices.Select(i => headers[i]);
             foreach (var name in removedNames)
@@ -1192,18 +1153,7 @@ public class CsvDataLoader : DataProviderBase
         var headerCount = ParseCsvLine(File.ReadLines(filePath, System.Text.Encoding.UTF8).First()).Length;
         var keepIndices = Enumerable.Range(0, headerCount).Except(dropIndices).ToArray();
 
-        var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
-        using var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true));
-        foreach (var line in allLines)
-        {
-            var fields = ParseCsvLine(line);
-            var kept = keepIndices
-                .Where(idx => idx < fields.Length)
-                .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
-                    ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
-                    : fields[idx]);
-            writer.WriteLine(string.Join(",", kept));
-        }
+        WriteColumns(filePath, tempPath, keepIndices);
 
         return tempPath;
     }
@@ -1359,6 +1309,20 @@ public class CsvDataLoader : DataProviderBase
     private static string[] ParseCsvLine(string line) => Prediction.CsvFieldParser.ParseFields(line);
 
     /// <summary>
+    /// Writes <paramref name="source"/> to <paramref name="target"/> keeping only the columns at
+    /// <paramref name="keepIndices"/> — the one way every removal rule here rewrites a file, a line at a time.
+    /// </summary>
+    private static void WriteColumns(string source, string target, int[] keepIndices)
+    {
+        using var writer = new StreamWriter(target, false, new System.Text.UTF8Encoding(true));
+        foreach (var line in File.ReadLines(source, System.Text.Encoding.UTF8))
+        {
+            var fields = ParseCsvLine(line);
+            writer.WriteLine(Prediction.CsvFieldParser.FormatLine(keepIndices.Where(idx => idx < fields.Length).Select(idx => fields[idx])));
+        }
+    }
+
+    /// <summary>
     /// Ensures the CSV file has UTF-8 BOM for ML.NET compatibility.
     /// ML.NET's InferColumns doesn't have encoding parameters and relies on BOM detection.
     /// Detects encoding (UTF-8, CP949, EUC-KR) and converts to UTF-8 with BOM if needed.
@@ -1484,20 +1448,7 @@ public class CsvDataLoader : DataProviderBase
             var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_noidx_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
             var keepIndices = Enumerable.Range(0, headers.Length).Except(indexColumns).ToArray();
 
-            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
-            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
-            {
-                foreach (var line in allLines)
-                {
-                    var fields = ParseCsvLine(line);
-                    var kept = keepIndices
-                        .Where(idx => idx < fields.Length)
-                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
-                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
-                            : fields[idx]);
-                    writer.WriteLine(string.Join(",", kept));
-                }
-            }
+            WriteColumns(filePath, tempPath, keepIndices);
 
             var removedNames = indexColumns.Select(i => string.IsNullOrWhiteSpace(headers[i]) ? "(empty)" : headers[i]);
             write($"[Info] Removed index column(s): {string.Join(", ", removedNames)}");
@@ -1543,20 +1494,7 @@ public class CsvDataLoader : DataProviderBase
             var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_noexcl_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
             var keepIndices = Enumerable.Range(0, headers.Length).Except(excludeIndices).ToArray();
 
-            var allLines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
-            using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
-            {
-                foreach (var line in allLines)
-                {
-                    var fields = ParseCsvLine(line);
-                    var kept = keepIndices
-                        .Where(idx => idx < fields.Length)
-                        .Select(idx => fields[idx].Contains(',') || fields[idx].Contains('"')
-                            ? $"\"{fields[idx].Replace("\"", "\"\"")}\""
-                            : fields[idx]);
-                    writer.WriteLine(string.Join(",", kept));
-                }
-            }
+            WriteColumns(filePath, tempPath, keepIndices);
 
             write($"[Info] Removed excluded column(s): {string.Join(", ", excludeIndices.Select(i => headers[i]))}");
             return tempPath;
