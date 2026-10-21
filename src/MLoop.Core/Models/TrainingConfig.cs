@@ -83,8 +83,8 @@ public record TrainingConfig
     /// </summary>
     /// <remarks>
     /// Includes <see cref="WeightColumn"/> as <c>ignore</c>: a weight is not a feature, and every path
-    /// that keeps a column out of the features (the saved schema, AutoML's column information, the
-    /// claimed set) reads this one map. A weight that leaked into the features would let the model
+    /// that keeps a column out of the features (the saved schema, AutoML's column information) reads
+    /// this one map. It is also in <see cref="ClaimedColumns"/>, so no exclusion heuristic removes it from the data. A weight that leaked into the features would let the model
     /// learn the sampling — a 1/π weight correlates with the label wherever the sampling did.
     /// </remarks>
     public Dictionary<string, string>? ColumnOverrides
@@ -192,8 +192,8 @@ public record TrainingConfig
 
     /// <summary>
     /// Columns this run has claimed for a purpose of its own — the ranking group, the recommendation
-    /// user and item, pre-featurizer inputs, and every column the user gave an explicit type
-    /// override other than <c>ignore</c>. The identifier exclusion heuristic never drops one of
+    /// user and item, the row weight, pre-featurizer inputs, and every column the user gave an
+    /// explicit type override other than <c>ignore</c>. No feature-exclusion heuristic drops one of
     /// these: a stated intent outranks a guess about the data. Handed to
     /// <see cref="Data.CsvDataLoader.DetermineExcludedColumns"/> as its protected set, from one
     /// place so the runner and the CLI cannot derive two different sets.
@@ -206,6 +206,7 @@ public record TrainingConfig
             if (!string.IsNullOrEmpty(GroupColumn)) claimed.Add(GroupColumn);
             if (!string.IsNullOrEmpty(UserColumn)) claimed.Add(UserColumn);
             if (!string.IsNullOrEmpty(ItemColumn)) claimed.Add(ItemColumn);
+            if (!string.IsNullOrEmpty(WeightColumn)) claimed.Add(WeightColumn);
             if (PreFeaturizerColumns is { Count: > 0 }) claimed.AddRange(PreFeaturizerColumns);
             if (ColumnOverrides is not null)
             {

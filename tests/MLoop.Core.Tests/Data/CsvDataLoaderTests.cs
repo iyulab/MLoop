@@ -1010,6 +1010,50 @@ public class CsvDataLoaderTests : IDisposable
     }
 
     [Fact]
+    public void RemoveConstantColumns_ColumnThatVariesOnlyAfterTheFirstRows_IsKept()
+    {
+        // Rows appended after the original training data (feedback merged in) are where the column
+        // varies; a head sample judged it constant and threw that signal away.
+        var lines = new List<string> { "x,site,Label" };
+        lines.AddRange(Enumerable.Range(0, 500).Select(i => $"{i},A,{(i % 2 == 0 ? "y" : "n")}"));
+        lines.Add("500,B,y");
+        var csvPath = Path.Combine(_tempDirectory, "late-varying.csv");
+        File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
+
+        Assert.Equal(csvPath, CsvDataLoader.RemoveConstantColumns(csvPath, "Label"));
+    }
+
+    [Fact]
+    public void RemoveSparseColumns_ColumnFilledAfterTheFirstRows_IsJudgedOnEveryRow()
+    {
+        // Empty in the first 300 rows, filled in the next 300: half missing, not sparse.
+        var lines = new List<string> { "x,note,Label" };
+        lines.AddRange(Enumerable.Range(0, 600).Select(i => $"{i},{(i < 300 ? "" : "v" + i)},y"));
+        var csvPath = Path.Combine(_tempDirectory, "late-filled.csv");
+        File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
+
+        Assert.Equal(csvPath, CsvDataLoader.RemoveSparseColumns(csvPath, "Label"));
+    }
+
+    [Fact]
+    public void DetermineExcludedColumns_ClaimedColumn_IsNeverExcluded_ByAnyRule()
+    {
+        // A weight of all 1s is "constant", an ordered date is "DateTime", a mostly-empty group is
+        // "sparse" — rules about features. A column claimed for a role is not a feature candidate.
+        var lines = new List<string> { "x,w,when,g,Label" };
+        lines.AddRange(Enumerable.Range(0, 50).Select(i =>
+            $"{i},1,2026-01-{i % 28 + 1:00},{(i == 0 ? "g1" : "")},{(i % 2 == 0 ? "y" : "n")}"));
+        var csvPath = Path.Combine(_tempDirectory, "claimed.csv");
+        File.WriteAllLines(csvPath, lines, System.Text.Encoding.UTF8);
+
+        var unclaimed = CsvDataLoader.DetermineExcludedColumns(csvPath, "Label").Select(c => c.Name);
+        var claimed = CsvDataLoader.DetermineExcludedColumns(csvPath, "Label", protectedColumns: ["w", "when", "g"]);
+
+        Assert.Superset(new HashSet<string> { "w", "when", "g" }, unclaimed.ToHashSet());
+        Assert.Empty(claimed);
+    }
+
+    [Fact]
     public void RemoveConstantColumns_SingleConstantColumn_RemovesIt()
     {
         var csv = "Feature1,ConstCol,Label\n1,X,A\n2,X,B\n3,X,A\n";

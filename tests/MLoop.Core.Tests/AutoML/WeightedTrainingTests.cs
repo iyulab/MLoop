@@ -217,6 +217,8 @@ public class WeightedResamplingTests
 
         Assert.Equal("ignore", config.ColumnOverrides!["W"]);  // case-insensitive, as the schema matches it
         Assert.Equal("text", config.ColumnOverrides["note"]);
-        Assert.DoesNotContain("w", config.ClaimedColumns);
+        // Not a feature, but claimed for a role: no exclusion heuristic may take it out of the data —
+        // a weight column of mostly 1s is "constant" to a rule that judges features.
+        Assert.Contains("w", config.ClaimedColumns);
     }
 }

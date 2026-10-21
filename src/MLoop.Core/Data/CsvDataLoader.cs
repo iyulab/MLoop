@@ -90,16 +90,16 @@ public class CsvDataLoader : DataProviderBase
             // JSON list column). Read as text they became TF-IDF over brackets and digits. First in the
             // chain, so the identifier rule never claims one under the wrong reason.
             mlnetCompatiblePath = RemoveStructuredColumns(mlnetCompatiblePath, labelColumn, preserveColumns, narrateExclusions);
-            mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn, narrateExclusions);
+            mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn, narrateExclusions, preserveColumns);
 
             // Pre-InferColumns: Remove sparse columns (>90% missing) from CSV.
             // ML.NET may combine sparse columns into a "Features" vector, preventing
             // post-InferColumns detection. Pre-removing prevents OOM from FeaturizeText.
-            mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn, log: narrateExclusions);
+            mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn, log: narrateExclusions, protectedColumns: preserveColumns);
 
             // Pre-InferColumns: Remove constant columns (all identical values) from CSV.
             // Constant columns provide zero predictive signal and waste compute resources.
-            mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn, narrateExclusions);
+            mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn, narrateExclusions, preserveColumns);
 
             // Pre-InferColumns: Remove identifier columns (a distinct value in every row) from CSV.
             // InferColumns marks them Ignore, but BuildColumnInformation turns every text column
@@ -691,6 +691,14 @@ public class CsvDataLoader : DataProviderBase
     /// Prevents ML.NET from applying FeaturizeText to datetime strings,
     /// which would create thousands of useless character n-gram features.
     /// </summary>
+    /// <summary>The columns no exclusion rule removes: the label, and those the run claimed for a role.</summary>
+    private static HashSet<string> ProtectedSet(string? labelColumn, IEnumerable<string>? protectedColumns)
+    {
+        var set = new HashSet<string>(protectedColumns ?? [], StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(labelColumn)) set.Add(labelColumn);
+        return set;
+    }
+
     /// <summary>
     /// Pre-InferColumns step: removes DateTime columns from the CSV file.
     /// Returns a new file path without the DateTime columns, or the original path if none detected.
@@ -698,8 +706,10 @@ public class CsvDataLoader : DataProviderBase
     public static string RemoveDateTimeColumns(
         string filePath,
         string? labelColumn,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        IEnumerable<string>? protectedColumns = null)
     {
+        var keep = ProtectedSet(labelColumn, protectedColumns);
         var write = log ?? NoLog;
         try
         {
@@ -741,9 +751,8 @@ public class CsvDataLoader : DataProviderBase
             var dateTimeIndices = new HashSet<int>();
             for (int i = 0; i < headers.Length; i++)
             {
-                // Don't remove label column
-                if (!string.IsNullOrEmpty(labelColumn) &&
-                    headers[i].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                // Never the label or a column claimed for a role
+                if (keep.Contains(headers[i].Trim()))
                     continue;
 
                 columnValues.TryGetValue(headers[i], out var values);
@@ -790,17 +799,21 @@ public class CsvDataLoader : DataProviderBase
     /// <summary>
     /// Pre-InferColumns step: removes columns with >threshold missing values from the CSV file.
     /// Returns a new file path without the sparse columns, or the original path if none are sparse.
+    /// The rate is over every row: a head sample misjudged a file whose rows are ordered — data
+    /// appended later (feedback merged after the original training rows) filling a column the first
+    /// rows left empty.
     /// </summary>
     public static string RemoveSparseColumns(
         string filePath,
         string? labelColumn,
         double threshold = 0.90,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        IEnumerable<string>? protectedColumns = null)
     {
         var write = log ?? NoLog;
+        var keep = ProtectedSet(labelColumn, protectedColumns);
         try
         {
-            const int sampleRows = 200;
 
             string? headerLine;
             string[] headers;
@@ -813,7 +826,7 @@ public class CsvDataLoader : DataProviderBase
 
             if (headers.Length <= 1) return filePath;
 
-            // Count missing values per column by sampling
+            // Count missing values per column
             var missingCounts = new int[headers.Length];
             int totalRows = 0;
 
@@ -821,7 +834,7 @@ public class CsvDataLoader : DataProviderBase
             {
                 reader.ReadLine(); // skip header
                 string? line;
-                while ((line = reader.ReadLine()) != null && totalRows < sampleRows)
+                while ((line = reader.ReadLine()) != null)
                 {
                     totalRows++;
                     var fields = ParseCsvLine(line);
@@ -844,9 +857,8 @@ public class CsvDataLoader : DataProviderBase
                 double missingRate = (double)missingCounts[i] / totalRows;
                 if (missingRate >= threshold)
                 {
-                    // Don't remove label column
-                    if (!string.IsNullOrEmpty(labelColumn) &&
-                        headers[i].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                    // Never the label or a column claimed for a role
+                    if (keep.Contains(headers[i].Trim()))
                         continue;
 
                     sparseIndices.Add(i);
@@ -892,13 +904,17 @@ public class CsvDataLoader : DataProviderBase
     /// Removes constant columns (all values identical) from CSV before InferColumns.
     /// Constant columns provide zero predictive signal and waste compute resources.
     /// Returns original path if no constant columns found.
+    /// «All values» means every row: the first rows of an ordered file can agree on a column the rest
+    /// varies (data appended after the original training rows), and a head sample threw that column's
+    /// signal away. The scan stops as soon as every column has shown two values.
     /// </summary>
-    public static string RemoveConstantColumns(string filePath, string? labelColumn, Action<string>? log = null)
+    public static string RemoveConstantColumns(
+        string filePath, string? labelColumn, Action<string>? log = null, IEnumerable<string>? protectedColumns = null)
     {
         var write = log ?? NoLog;
+        var keep = ProtectedSet(labelColumn, protectedColumns);
         try
         {
-            const int sampleRows = 200;
 
             string? headerLine;
             string[] headers;
@@ -911,27 +927,29 @@ public class CsvDataLoader : DataProviderBase
 
             if (headers.Length <= 1) return filePath;
 
-            // Track unique values per column by sampling
+            // Track unique values per column — two are enough to rule a column out
             var uniqueValues = new HashSet<string>[headers.Length];
             for (int i = 0; i < headers.Length; i++)
                 uniqueValues[i] = new HashSet<string>();
 
             int totalRows = 0;
+            int varying = 0;
 
             using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {
                 reader.ReadLine(); // skip header
                 string? line;
-                while ((line = reader.ReadLine()) != null && totalRows < sampleRows)
+                while (varying < headers.Length && (line = reader.ReadLine()) != null)
                 {
                     totalRows++;
                     var fields = ParseCsvLine(line);
                     for (int i = 0; i < headers.Length && i < fields.Length; i++)
                     {
                         var value = fields[i].Trim();
-                        if (!string.IsNullOrEmpty(value))
+                        if (uniqueValues[i].Count < 2 && !string.IsNullOrEmpty(value)
+                            && uniqueValues[i].Add(value) && uniqueValues[i].Count == 2)
                         {
-                            uniqueValues[i].Add(value);
+                            varying++;
                         }
                     }
                 }
@@ -945,9 +963,8 @@ public class CsvDataLoader : DataProviderBase
             {
                 if (uniqueValues[i].Count == 1)
                 {
-                    // Don't remove label column
-                    if (!string.IsNullOrEmpty(labelColumn) &&
-                        headers[i].Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                    // Never the label or a column claimed for a role
+                    if (keep.Contains(headers[i].Trim()))
                         continue;
 
                     constantIndices.Add(i);
@@ -1578,8 +1595,8 @@ public class CsvDataLoader : DataProviderBase
     /// <param name="log">Where the chain narrates each drop; null discards the narration.</param>
     /// <param name="protectedColumns">
     /// Columns the caller has claimed for a purpose of its own (ranking group, recommendation
-    /// user/item, an explicit column override). The identifier rule is a heuristic and never
-    /// overrides such an intent; the other three rules are not affected by this set.
+    /// user/item, the weight, an explicit column override). No rule removes one: each is a heuristic
+    /// about features, and a stated role outranks a guess about the data.
     /// </param>
     /// <returns>Excluded column names paired with the reason, in removal order. Empty when nothing is dropped.</returns>
     public static IReadOnlyList<ExcludedColumn> DetermineExcludedColumns(
@@ -1593,13 +1610,13 @@ public class CsvDataLoader : DataProviderBase
             var afterStructuredPath = Track(RemoveStructuredColumns(filePath, labelColumn, protectedColumns, log));
             var beforeDateTime = ReadCsvHeaders(afterStructuredPath);
 
-            var afterDateTimePath = Track(RemoveDateTimeColumns(afterStructuredPath, labelColumn, log));
+            var afterDateTimePath = Track(RemoveDateTimeColumns(afterStructuredPath, labelColumn, log, protectedColumns));
             var afterDateTime = ReadCsvHeaders(afterDateTimePath);
 
-            var afterSparsePath = Track(RemoveSparseColumns(afterDateTimePath, labelColumn, log: log));
+            var afterSparsePath = Track(RemoveSparseColumns(afterDateTimePath, labelColumn, log: log, protectedColumns: protectedColumns));
             var afterSparse = ReadCsvHeaders(afterSparsePath);
 
-            var afterConstantPath = Track(RemoveConstantColumns(afterSparsePath, labelColumn, log));
+            var afterConstantPath = Track(RemoveConstantColumns(afterSparsePath, labelColumn, log, protectedColumns));
             var afterConstant = ReadCsvHeaders(afterConstantPath);
 
             var afterIdentifierPath = Track(RemoveIdentifierColumns(afterConstantPath, labelColumn, protectedColumns, log));
