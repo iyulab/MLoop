@@ -1236,6 +1236,9 @@ app.MapPost("/evaluate", async (
             experiment.Config.InputSchema, experiment.Config.GroupColumn,
             experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn);
 
+        var confusion = await evaluationEngine.ConfusionAsync(modelPath, resolvedTestPath, labelColumn, taskType,
+            experiment.Config.InputSchema, weightColumn, ct);
+
         var comparison = baseline is null
             ? null
             : await ModelComparison.CompareAsync(evaluationEngine, experimentId, modelPath, experiment, baseline, resolvedTestPath, weightColumn, ct);
@@ -1251,6 +1254,7 @@ app.MapPost("/evaluate", async (
             testDataPath,
             weightColumn,
             metrics,
+            confusion,
             comparison,
             warnings = weightWarning is null ? null : new[] { weightWarning },
         });

@@ -214,7 +214,37 @@ public class EvaluationEngine
     {
         if (PairedComparison.MeasureOf(taskType) is null)
             return null;
-        return await Task.Run<(double[] Losses, double[]? Weights)?>(() =>
+        return await ScoreAsync<(double[] Losses, double[]? Weights)?>(modelPath, testDataPath, labelColumn, taskType, trainedSchema, weightColumn,
+            (scored, weights) => PairedComparison.RowLosses(scored, taskType, labelColumn) is { } losses ? (losses, weights) : null,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// How this classifier's answers fell against the test labels (<see cref="ConfusionCounts"/>), each row
+    /// counting by <paramref name="weightColumn"/> when given; <c>null</c> for a task that is not binary or
+    /// multiclass classification.
+    /// </summary>
+    public async Task<ConfusionCounts?> ConfusionAsync(
+        string modelPath,
+        string testDataPath,
+        string labelColumn,
+        string taskType,
+        InputSchemaInfo? trainedSchema,
+        string? weightColumn = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (MLoop.Core.Models.TaskTypes.Canonical(taskType) is not ("binary-classification" or "multiclass-classification"))
+            return null;
+        return await ScoreAsync(modelPath, testDataPath, labelColumn, taskType, trainedSchema, weightColumn,
+            (scored, weights) => ConfusionCounts.Of(scored, taskType, labelColumn, weights, trainedSchema),
+            cancellationToken);
+    }
+
+    /// <summary>Scores the test file the way <see cref="EvaluateAsync"/> does and hands the scored rows (and weights) to <paramref name="read"/>.</summary>
+    private Task<T> ScoreAsync<T>(
+        string modelPath, string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema,
+        string? weightColumn, Func<IDataView, double[]?, T> read, CancellationToken cancellationToken)
+        => Task.Run(() =>
         {
             List<string> tempFiles = new();
             try
@@ -223,10 +253,8 @@ public class EvaluationEngine
                 var keep = string.IsNullOrEmpty(weightColumn) ? null : new[] { weightColumn };
                 var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, keep, out tempFiles, keepColumns: keep);
                 var scored = model.Transform(testData);
-                if (PairedComparison.RowLosses(scored, taskType, labelColumn) is not { } losses)
-                    return null;
                 var weights = string.IsNullOrEmpty(weightColumn) ? null : WeightedResampling.ReadWeights(scored, weightColumn);
-                return (losses, weights);
+                return read(scored, weights);
             }
             finally
             {
@@ -235,7 +263,6 @@ public class EvaluationEngine
                         try { File.Delete(tempFile); } catch (IOException) { }
             }
         }, cancellationToken);
-    }
 
     private IDataView LoadTestData(string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema, IReadOnlyList<string>? preserveColumns, out List<string> tempFiles,
         IReadOnlyCollection<string>? keepColumns = null)

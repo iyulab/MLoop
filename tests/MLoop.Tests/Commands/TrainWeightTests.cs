@@ -82,6 +82,11 @@ public sealed class TrainWeightTests : IDisposable
         var (evalExit, evalJson, _) = await CliRunner.RunAsync("evaluate", "exp-001", "datasets/train.csv", "--json");
         Assert.True(evalExit == 0, evalJson);
         Assert.Equal("w", System.Text.Json.JsonDocument.Parse(evalJson).RootElement.GetProperty("weightColumn").GetString());
+        // …and so does its confusion matrix: the classes in the label's own words, each cell a weighted sum.
+        var confusion = System.Text.Json.JsonDocument.Parse(evalJson).RootElement.GetProperty("confusion");
+        Assert.Equal(["false", "true"], confusion.GetProperty("classes").EnumerateArray().Select(c => c.GetString()));
+        var weightSum = (await File.ReadAllLinesAsync("datasets/train.csv")).Skip(1).Sum(l => double.Parse(l.Split(',')[2], CultureInfo.InvariantCulture));
+        Assert.Equal(weightSum, confusion.GetProperty("total").GetDouble(), 6);
 
         // …and says so when it does not, rather than comparing a weighted training column with an unweighted test one.
         var lines = (await File.ReadAllLinesAsync("datasets/train.csv")).Select(l => string.Join(',', l.Split(',').Where((_, i) => i != 2)));

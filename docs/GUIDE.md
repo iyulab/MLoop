@@ -831,6 +831,14 @@ mloop evaluate exp-003 datasets/rechecked.csv --weight inv_pi
 mloop evaluate exp-004 datasets/rechecked.csv --weight inv_pi --against production
 ```
 
+A classifier's evaluation also shows its **confusion matrix** — rows are the actual classes, columns
+the predicted ones, in the label's own words (the binary class names the model was trained on, the
+multiclass label's values). Each cell is a weighted sum under `--weight`. Above 10 classes it stays in
+`--json`, which always carries it as `confusion` (`classes`, `counts[actual][predicted]`, `total`) —
+for each slice too. Any class-set measure is read from it: of the rows labeled with one of a set of
+classes, the share answered with one of another set — the rate at which a class that must be caught
+is let through as a harmless one, without the evaluator knowing which classes those are.
+
 `--weight <column>` counts each test row by that column, scored as weighted training scores its own
 test rows. An experiment trained with a weight uses that column by default when the test file has
 it; when the file does not, the test metrics are unweighted and `evaluate` says that the training and

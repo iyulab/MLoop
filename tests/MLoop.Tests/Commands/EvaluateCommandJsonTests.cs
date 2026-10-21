@@ -164,6 +164,7 @@ public class EvaluateCommandJsonTests : IDisposable
         var testMetrics = doc.RootElement.GetProperty("testMetrics");
         Assert.True(testMetrics.GetProperty("r_squared").GetDouble() > 0.9); // near-perfect linear fit
         Assert.True(doc.RootElement.GetProperty("trainingMetrics").GetProperty("r_squared").GetDouble() > 0);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, doc.RootElement.GetProperty("confusion").ValueKind); // a regressor has none
     }
 
     [Fact]

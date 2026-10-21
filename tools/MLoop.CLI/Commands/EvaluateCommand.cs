@@ -100,12 +100,14 @@ public static class EvaluateCommand
         string? sliceBy = null,
         IReadOnlyList<SliceResult>? slices = null,
         string? weightColumn = null,
-        Comparison? comparison = null)
+        Comparison? comparison = null,
+        ConfusionCounts? confusion = null)
     {
         var payload = new
         {
             WeightColumn = weightColumn,
             Comparison = comparison,
+            Confusion = confusion,
             Model = model,
             Skipped = skipped,
             ExperimentId = experimentId,
@@ -360,6 +362,7 @@ public static class EvaluateCommand
 
             // Perform evaluation with progress indicator
             Dictionary<string, double>? testMetrics = null;
+            ConfusionCounts? confusion = null;
 
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
@@ -378,6 +381,9 @@ public static class EvaluateCommand
                         experimentData.Config.UserColumn,
                         experimentData.Config.ItemColumn,
                         weightColumn);
+
+                    confusion = await evaluationEngine.ConfusionAsync(resolvedModelPath, resolvedTestDataFile,
+                        experimentData.Config.LabelColumn, experimentData.Task, experimentData.Config.InputSchema, weightColumn);
 
                     ctx.Status("[green]Evaluation complete![/]");
                 });
@@ -415,6 +421,8 @@ public static class EvaluateCommand
             if (weightColumn is not null)
                 AnsiConsole.MarkupLineInterpolated($"[grey]Each test row counts by its {weightColumn}.[/]");
             AnsiConsole.WriteLine();
+            if (confusion is not null)
+                ShowConfusion(confusion, weightColumn is not null);
 
             var overfitting = DetectOverfitting(experimentData.Task ?? "", trainingMetrics, testMetrics!);
 
@@ -460,7 +468,7 @@ public static class EvaluateCommand
             if (jsonOutput)
                 EmitJson(resolvedModelName, resolvedExperimentId, resolvedTestDataFile,
                     trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices, weightColumn: weightColumn,
-                    comparison: comparison);
+                    comparison: comparison, confusion: confusion);
 
             return 0;
         }
@@ -469,6 +477,39 @@ public static class EvaluateCommand
             ErrorSuggestions.DisplayError(ex, "evaluate");
             return 1;
         }
+    }
+
+    /// <summary>Above this many classes the matrix stays in <c>--json</c>: a wider table does not fit a terminal.</summary>
+    internal const int MaxConfusionClassesShown = 10;
+
+    private static void ShowConfusion(ConfusionCounts confusion, bool weighted)
+    {
+        if (confusion.Classes.Count > MaxConfusionClassesShown)
+        {
+            AnsiConsole.MarkupLine($"[grey]{confusion.Classes.Count} classes — the confusion matrix is in --json (confusion).[/]");
+            AnsiConsole.WriteLine();
+            return;
+        }
+        // The caption is a line of its own: as a table title it wrapped to the width of a two-class table.
+        AnsiConsole.MarkupLine("[bold]Confusion[/] [grey](rows: actual · columns: predicted)[/]");
+        var table = new Table().Border(TableBorder.Rounded).AddColumn("");
+        foreach (var c in confusion.Classes)
+            table.AddColumn(new TableColumn(Markup.Escape(c)).RightAligned());
+        for (var i = 0; i < confusion.Classes.Count; i++)
+        {
+            var cells = new List<string> { Markup.Escape(confusion.Classes[i]) };
+            for (var j = 0; j < confusion.Classes.Count; j++)
+            {
+                var n = confusion.Counts[i][j];
+                var text = weighted ? n.ToString("0.##", CultureInfo.InvariantCulture) : n.ToString("0", CultureInfo.InvariantCulture);
+                cells.Add(i == j ? $"[green]{text}[/]" : n > 0 ? text : $"[grey]{text}[/]");
+            }
+            table.AddRow(cells.ToArray());
+        }
+        AnsiConsole.Write(table);
+        if (weighted)
+            AnsiConsole.MarkupLine("[grey]Counts are weighted sums.[/]");
+        AnsiConsole.WriteLine();
     }
 
     private static void ShowComparison(Comparison comparison, Dictionary<string, double> candidateMetrics)
@@ -508,7 +549,8 @@ public static class EvaluateCommand
     }
 
     /// <summary>One value of the slicing column: its rows, and its metrics or why there are none.</summary>
-    internal sealed record SliceResult(string Value, int Rows, Dictionary<string, double>? Metrics, string? Error, bool Small);
+    internal sealed record SliceResult(string Value, int Rows, Dictionary<string, double>? Metrics, string? Error, bool Small,
+        ConfusionCounts? Confusion = null);
 
     /// <summary>Below this many rows a slice's metrics are printed but marked: they move a lot from one sample to the next.</summary>
     internal const int SmallSliceRows = 30;
@@ -536,7 +578,9 @@ public static class EvaluateCommand
                         CancellationToken.None, experiment.Config.InputSchema,
                         experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn,
                         weightColumn);
-                    results.Add(new SliceResult(part.Value, part.Rows, metrics, null, part.Rows < SmallSliceRows));
+                    var confusion = await engine.ConfusionAsync(modelPath, part.Path, experiment.Config.LabelColumn, experiment.Task,
+                        experiment.Config.InputSchema, weightColumn);
+                    results.Add(new SliceResult(part.Value, part.Rows, metrics, null, part.Rows < SmallSliceRows, confusion));
                 }
                 catch (Exception ex)
                 {

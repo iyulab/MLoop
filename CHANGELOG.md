@@ -23,6 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carries it as `comparison`. A model trained for another task or label, and the candidate itself,
   are refused. `MLoop.Core.Evaluation.PairedComparison` holds the measure.
   `POST /evaluate` takes `against` too.
+- **`mloop evaluate` shows a classifier's confusion matrix** — actual × predicted, in the label's own
+  class names, each cell a weighted sum under `--weight`. `--json` carries it as `confusion`
+  (`classes`, `counts`, `total`) overall and per slice, and so does `POST /evaluate`.
+  `MLoop.Core.Evaluation.ConfusionCounts.ShareOf` reads any class-set measure from it — of the rows
+  labeled with one of a set of classes, the share answered with one of another.
 - **`mloop promote --history` lists every change of production**, with what each one replaced, how
   it happened (`promote`, `auto-promote`, `rollback`) and the quality gate's outcome at that moment
   (`passed`, `forced` with the refusal, `not-applied`) beside the project metric's value. `--json`
