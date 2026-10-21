@@ -30,8 +30,6 @@ public class GuideCoverageContractTests
         // Found by this guard on its first run: the count that motivated it came from grepping
         // command constructors, which swept in subcommands and missed these. (`token`, the third,
         // is documented now.)
-        "new",          // scaffolds hooks; the Extensibility section shows the
-                        // files it writes but never names the command that writes them
         "preprocess",   // runs preprocessing scripts; distinct from `prep`, which is the pipeline
     };
 

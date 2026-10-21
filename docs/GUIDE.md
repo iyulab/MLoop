@@ -1599,31 +1599,54 @@ MLoop supports code-based extensibility through hooks and custom metrics.
 
 ### Hooks
 
-Execute custom logic before/after training.
+Custom logic before and after training. A hook is a C# file in a folder named for its stage —
+`.mloop/scripts/hooks/pre-train/` or `.mloop/scripts/hooks/post-train/` — compiled when training
+starts (and cached). `mloop train` and `POST /train` run the same hooks, each once.
 
-**Script Location**: `.mloop/scripts/hooks/`
+| Stage | What the hook gets | `HookResult.Abort` |
+|-------|--------------------|--------------------|
+| `pre-train` | `DataView` (the training data) · `Metadata["DataFile"]` · `LabelColumn` · `TaskType` · `ModelName` · `ExperimentId` | stops the run before training |
+| `post-train` | `Metrics` (name → value, as the run reports them) · `Model` · `Metadata["ModelPath"]` · `BestTrainer` | reported as a warning; the model is already saved |
 
-```csharp
-using MLoop.Extensibility;
+A script that does not compile is reported with the compiler's errors and skipped.
 
-public class DataValidator : IMLoopHook
-{
-    public string Name => "Data Validator";
+### `mloop new`
 
-    public async Task<HookResult> ExecuteAsync(HookContext context)
-    {
-        // Pre-train validation
-        var rowCount = context.DataView.GetRowCount();
+Writes a hook from a template, in the folder for its stage:
 
-        if (rowCount < 100)
-        {
-            return HookResult.Abort("Insufficient data: need at least 100 rows");
-        }
+```bash
+mloop new hook row-guard pre-train                           # validation template
+mloop new hook gate post-train --template performance-gate   # hold the model to a metric floor
+```
 
-        context.Logger.Info($"✅ Validated {rowCount} rows");
-        return HookResult.Continue();
-    }
-}
+| Template | Writes |
+|----------|--------|
+| `basic` | a hook that logs and continues — the place to start your own |
+| `validation` | (pre-train) refuses data under 100 rows; elsewhere logs the model name |
+| `logging` | logs every metric of the run |
+| `performance-gate` | refuses a model whose `accuracy` (edit `Metric` · `Floor`) is under 0.70 |
+| `deploy` | marks a model at or above a threshold as ready to deploy |
+
+Without `--template`, a pre-train or pre-predict hook gets `validation` and a post-train or post-evaluate hook gets
+`logging`. An unknown template name is refused with the list. The stages are `pre-train`, `post-train`,
+`pre-predict` and `post-evaluate`; training runs the first two.
+
+```
+✅ Hook created successfully!
+
+Name: row-guard
+Type: pre-train
+Template: validation
+Path: .mloop/scripts/hooks/pre-train/row-guard.cs
+```
+
+During `mloop train`:
+
+```
+🔗 Executing 1 PreTrain hook(s)...
+  🪝 [1/1] row-guard.cs
+Dataset size: 3,000 rows
+Validation passed
 ```
 
 ### Custom Metrics

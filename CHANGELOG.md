@@ -28,6 +28,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop new hook` wrote hooks that did not compile — every template, for every stage (`Exception` without
+  `using System;`), and the validation template printed `{rowCount:N0}` instead of the count. The training engine then
+  reported "No IMLoopHook implementations found", because script compile errors were never shown; they are now, for
+  hooks, custom metrics and preprocessing scripts. A test compiles every template for every stage.
+- With a pre-train hook, `mloop train` always failed with "Specified argument was out of the range of valid values.
+  (Parameter 'Max')": hooks ran twice — once from the command, once from the training engine, whose data loader for
+  the hook was invalid. They now run once, in the training engine, for `mloop train` and `POST /train` alike; a
+  pre-train hook gets the training data as a `DataView` and its path as `Metadata["DataFile"]`.
+- The `performance-gate` and `deploy` templates read metrics as ML.NET metric objects, which hooks never receive, so
+  the gate always passed; they read the run's metric dictionary and name the metric they hold the model to.
+- `mloop new hook --help` said the default template was `basic`; it is `validation` for pre-train and pre-predict and
+  `logging` for post-train and post-evaluate. An unknown `--template` is refused instead of writing the basic template.
 - `mloop train` checked the label (missing values, classes, a single class) on the file before the `prep:` steps of
   `mloop.yaml` ran, so a step that drops or reshapes rows was trained on after the raw file's classes had been reported.
   The steps now run first and the checks see the rows training gets.

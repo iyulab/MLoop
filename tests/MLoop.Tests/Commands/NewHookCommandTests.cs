@@ -104,6 +104,18 @@ public class NewHookCommandTests
         Assert.Equal("validation", NewHookCommand.SelectTemplate("", HookType.PreTrain));
     }
 
+    [Fact]
+    public void Every_template_writes_its_own_content()
+    {
+        // An unknown name used to fall through to the basic template while the command reported
+        // the name it was given; every listed name must reach its own generator.
+        var contents = NewHookCommand.Templates
+            .Select(t => NewHookCommand.GenerateHookContent("probe", HookType.PostTrain, t))
+            .ToList();
+
+        Assert.Equal(contents.Count, contents.Distinct().Count());
+    }
+
     #endregion
 
     #region GenerateHookContent
@@ -150,7 +162,8 @@ public class NewHookCommandTests
         var result = NewHookCommand.GenerateHookContent("test", HookType.PreTrain, "validation");
 
         Assert.Contains("DataView", result);
-        Assert.Contains("MIN_ROWS", result);
+        Assert.Contains("\"DataFile\"", result); // the pre-train context of `mloop train` has no DataView
+        Assert.Contains("MinRows", result);
     }
 
     [Fact]
@@ -167,8 +180,9 @@ public class NewHookCommandTests
     {
         var result = NewHookCommand.GenerateHookContent("test", HookType.PostEvaluate, "performance-gate");
 
-        Assert.Contains("MIN_ACCURACY", result);
-        Assert.Contains("BinaryClassificationMetrics", result);
+        Assert.Contains("Floor", result);
+        // Metrics reach a hook as the run's name → value dictionary, not as ML.NET's metric types.
+        Assert.Contains("IReadOnlyDictionary<string, double>", result);
     }
 
     [Fact]
@@ -176,7 +190,7 @@ public class NewHookCommandTests
     {
         var result = NewHookCommand.GenerateHookContent("test", HookType.PostTrain, "deploy");
 
-        Assert.Contains("DEPLOY_THRESHOLD", result);
+        Assert.Contains("DeployThreshold", result);
         Assert.Contains("DeploymentTriggered", result);
     }
 
@@ -186,8 +200,50 @@ public class NewHookCommandTests
         var result = NewHookCommand.GenerateHookContent("test", HookType.PreTrain, "unknown-template");
 
         Assert.Contains("HookResult.Continue()", result);
-        Assert.Contains("TODO: Implement your hook logic here", result);
+        Assert.Contains("TODO: Implement your PreTrain logic here", result);
     }
 
     #endregion
+}
+
+/// <summary>
+/// What <c>mloop new hook</c> writes is a hook the engine loads: every template, for every hook
+/// type, compiles with the same Roslyn loader training uses and yields one <c>IMLoopHook</c>.
+/// </summary>
+public class NewHookTemplateCompilationTests : IDisposable
+{
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), $"mloop-hook-templates-{Guid.NewGuid():N}");
+
+    public NewHookTemplateCompilationTests() => Directory.CreateDirectory(_dir);
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_dir, recursive: true); } catch { }
+    }
+
+    public static TheoryData<string, HookType> Cases()
+    {
+        var data = new TheoryData<string, HookType>();
+        foreach (var template in NewHookCommand.Templates)
+            foreach (var type in Enum.GetValues<HookType>())
+                data.Add(template, type);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(Cases))]
+    public async Task Every_template_compiles_into_a_hook(string template, HookType type)
+    {
+        var content = NewHookCommand.GenerateHookContent("row-guard", type, template);
+        var path = Path.Combine(_dir, $"{template}-{type}.cs");
+        await File.WriteAllTextAsync(path, content);
+        var errors = new List<string>();
+
+        var hooks = await new MLoop.Core.Scripting.ScriptLoader(Path.Combine(_dir, "cache"), errors.Add)
+            .LoadScriptAsync<MLoop.Extensibility.Hooks.IMLoopHook>(path);
+
+        Assert.True(hooks.Count == 1, string.Join("\n", errors) + "\n" + content);
+        // An interpolation hole written as {{x}} prints the braces instead of the value.
+        Assert.DoesNotContain("{{", content);
+    }
 }

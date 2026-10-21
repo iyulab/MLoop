@@ -27,7 +27,8 @@ public static class NewHookCommand
 
         var templateOption = new Option<string?>("--template")
         {
-            Description = "Template: basic (default), validation, logging, performance-gate, deploy"
+            Description = "Template: basic, validation, logging, performance-gate, deploy " +
+                          "(default: validation for pre-train and pre-predict, logging for post-train and post-evaluate)"
         };
 
         var command = new Command("hook", "Generate a new hook script");
@@ -92,6 +93,13 @@ public static class NewHookCommand
             }
 
             // Select template
+            if (!string.IsNullOrEmpty(template) && !Templates.Contains(template, StringComparer.OrdinalIgnoreCase))
+            {
+                ErrorConsole.Error(
+                    $"Unknown template '{template}'.",
+                    $"Use one of: {string.Join(", ", Templates)} — or leave --template out for the hook type's default.");
+                return 1;
+            }
             var templateType = SelectTemplate(template, hookTypeEnum.Value);
 
             // Generate hook content
@@ -141,11 +149,14 @@ public static class NewHookCommand
         return hookType;
     }
 
+    /// <summary>The templates <see cref="GenerateHookContent"/> writes.</summary>
+    internal static readonly IReadOnlyList<string> Templates = ["basic", "validation", "logging", "performance-gate", "deploy"];
+
     internal static string SelectTemplate(string? template, HookType hookType)
     {
         if (!string.IsNullOrEmpty(template))
         {
-            return template;
+            return template.ToLowerInvariant();
         }
 
         // Default templates based on hook type
@@ -174,218 +185,207 @@ public static class NewHookCommand
         };
     }
 
-    private static string GenerateBasicTemplate(string className, string hookName, HookType hookType)
-    {
-        var stage = hookType.ToString();
+    // The templates are written for the contexts the engine passes (TrainCommand, TrainingEngine):
+    // pre-train and pre-predict may carry no DataView — the data file is in Metadata["DataFile"] —
+    // and Metrics, when present, is the run's metric dictionary (name → value).
+    private const string Usings = """
+        using System;
+        using System.Collections.Generic;
+        using System.Linq;
+        using System.Threading.Tasks;
+        using MLoop.Extensibility.Hooks;
+        """;
 
-        return $@"using System.Threading.Tasks;
-using MLoop.Extensibility.Hooks;
+    private static string GenerateBasicTemplate(string className, string hookName, HookType hookType) => $$"""
+        {{Usings}}
 
-public class {className} : IMLoopHook
-{{
-    public string Name => ""{hookName}"";
+        public class {{className}} : IMLoopHook
+        {
+            public string Name => "{{hookName}}";
 
-    public Task<HookResult> ExecuteAsync(HookContext ctx)
-    {{
-        try
-        {{
-            ctx.Logger.Info(""Executing {hookName} hook..."");
+            public Task<HookResult> ExecuteAsync(HookContext ctx)
+            {
+                try
+                {
+                    // TODO: Implement your {{hookType}} logic here
+                    var modelName = ctx.GetMetadata<string>("ModelName", "default");
+                    ctx.Logger.Info($"{{hookName}}: model {modelName}");
 
-            // TODO: Implement your hook logic here
-            var modelName = ctx.GetMetadata<string>(""ModelName"", ""default"");
-            ctx.Logger.Info($""Processing model: {{modelName}}"");
+                    return Task.FromResult(HookResult.Continue());
+                }
+                catch (Exception ex)
+                {
+                    return Task.FromResult(HookResult.Abort($"Hook error: {ex.Message}"));
+                }
+            }
+        }
 
-            return Task.FromResult(HookResult.Continue());
-        }}
-        catch (Exception ex)
-        {{
-            return Task.FromResult(HookResult.Abort($""Hook error: {{ex.Message}}""));
-        }}
-    }}
-}}
-";
-    }
+        """;
 
     private static string GenerateValidationTemplate(string className, string hookName, HookType hookType)
     {
-        var dataAvailable = hookType == HookType.PreTrain || hookType == HookType.PrePredict;
+        var check = hookType is HookType.PreTrain or HookType.PrePredict
+            ? """
+                        // The data, as a DataView when the stage has one, otherwise the file it reads.
+                        long? rowCount = ctx.DataView?.GetRowCount();
+                        if (rowCount is null && ctx.GetMetadata<string>("DataFile", "") is { Length: > 0 } dataFile && File.Exists(dataFile))
+                            rowCount = File.ReadLines(dataFile).LongCount() - 1; // minus the header
 
-        return $@"using System.Threading.Tasks;
-using MLoop.Extensibility.Hooks;
+                        if (rowCount is null)
+                        {
+                            ctx.Logger.Warning("No data to check");
+                            return Task.FromResult(HookResult.Continue());
+                        }
 
-public class {className} : IMLoopHook
-{{
-    public string Name => ""{hookName}"";
+                        ctx.Logger.Info($"Dataset size: {rowCount:N0} rows");
+                        if (rowCount < MinRows)
+                            return Task.FromResult(HookResult.Abort($"Insufficient data: {rowCount} rows (at least {MinRows})"));
 
-    private const int MIN_ROWS = 100;
+                        ctx.Logger.Info("Validation passed");
+            """
+            : """
+                        var modelName = ctx.GetMetadata<string>("ModelName", "default");
+                        ctx.Logger.Info($"Validating {modelName}...");
+            """;
 
-    public Task<HookResult> ExecuteAsync(HookContext ctx)
-    {{
-        try
-        {{
-{(dataAvailable ? @"            if (ctx.DataView == null)
+        return $$"""
+            {{Usings}}
+            using System.IO;
+
+            public class {{className}} : IMLoopHook
             {
-                return Task.FromResult(HookResult.Abort(""No data provided""));
+                public string Name => "{{hookName}}";
+
+                private const int MinRows = 100;
+
+                public Task<HookResult> ExecuteAsync(HookContext ctx)
+                {
+                    try
+                    {
+            {{check}}
+
+                        return Task.FromResult(HookResult.Continue());
+                    }
+                    catch (Exception ex)
+                    {
+                        return Task.FromResult(HookResult.Abort($"Validation error: {ex.Message}"));
+                    }
+                }
             }
 
-            var rowCount = ctx.DataView.GetRowCount() ?? 0;
-            ctx.Logger.Info($""Dataset size: {{rowCount:N0}} rows"");
+            """;
+    }
 
-            if (rowCount < MIN_ROWS)
+    private static string GenerateLoggingTemplate(string className, string hookName) => $$"""
+        {{Usings}}
+
+        public class {{className}} : IMLoopHook
+        {
+            public string Name => "{{hookName}}";
+
+            public Task<HookResult> ExecuteAsync(HookContext ctx)
             {
-                return Task.FromResult(HookResult.Abort($""Insufficient data: {{rowCount}} rows""));
+                try
+                {
+                    var modelName = ctx.GetMetadata<string>("ModelName", "default");
+                    ctx.Logger.Info($"Logging {modelName} metrics");
+
+                    if (ctx.Metrics is IReadOnlyDictionary<string, double> metrics)
+                    {
+                        foreach (var (metricName, metricValue) in metrics)
+                            ctx.Logger.Info($"   {metricName}: {metricValue:F4}");
+                    }
+
+                    return Task.FromResult(HookResult.Continue());
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.Warning($"Logging failed: {ex.Message}");
+                    return Task.FromResult(HookResult.Continue());
+                }
             }
+        }
 
-            ctx.Logger.Info(""✅ Validation passed"");" : @"            var modelName = ctx.GetMetadata<string>(""ModelName"", ""default"");
-            ctx.Logger.Info($""Validating {{modelName}}..."");")}
+        """;
 
-            return Task.FromResult(HookResult.Continue());
-        }}
-        catch (Exception ex)
-        {{
-            return Task.FromResult(HookResult.Abort($""Validation error: {{ex.Message}}""));
-        }}
-    }}
-}}
-";
-    }
+    private static string GeneratePerformanceGateTemplate(string className, string hookName) => $$"""
+        {{Usings}}
 
-    private static string GenerateLoggingTemplate(string className, string hookName)
-    {
-        return $@"using System.Threading.Tasks;
-using MLoop.Extensibility.Hooks;
+        public class {{className}} : IMLoopHook
+        {
+            public string Name => "{{hookName}}";
 
-public class {className} : IMLoopHook
-{{
-    public string Name => ""{hookName}"";
+            // The metric to hold the model to, and its floor. The names are those the run reports
+            // (accuracy, auc, f1_score, r_squared, …); pick one your task produces.
+            private const string Metric = "accuracy";
+            private const double Floor = 0.70;
 
-    public Task<HookResult> ExecuteAsync(HookContext ctx)
-    {{
-        try
-        {{
-            var modelName = ctx.GetMetadata<string>(""ModelName"", ""default"");
-            ctx.Logger.Info($""📊 Logging {{modelName}} metrics"");
+            public Task<HookResult> ExecuteAsync(HookContext ctx)
+            {
+                try
+                {
+                    if (ctx.Metrics is not IReadOnlyDictionary<string, double> metrics)
+                        return Task.FromResult(HookResult.Continue());
 
-            if (ctx.Metrics != null)
-            {{
-                var metricsDict = ctx.Metrics as IDictionary<string, double>;
-                if (metricsDict != null)
-                {{
-                    foreach (var (metricName, metricValue) in metricsDict)
-                    {{
-                        ctx.Logger.Info($""   {{metricName}}: {{metricValue:F4}}"");
-                    }}
-                }}
-            }}
+                    if (!metrics.TryGetValue(Metric, out var value))
+                    {
+                        ctx.Logger.Warning($"No '{Metric}' among the metrics ({string.Join(", ", metrics.Keys)})");
+                        return Task.FromResult(HookResult.Continue());
+                    }
 
-            return Task.FromResult(HookResult.Continue());
-        }}
-        catch (Exception ex)
-        {{
-            ctx.Logger.Warning($""Logging failed: {{ex.Message}}"");
-            return Task.FromResult(HookResult.Continue());
-        }}
-    }}
-}}
-";
-    }
+                    ctx.Logger.Info($"{Metric}: {value:F4} (floor {Floor:F4})");
+                    if (value < Floor)
+                        return Task.FromResult(HookResult.Abort($"{Metric} {value:F4} is below {Floor:F4}"));
 
-    private static string GeneratePerformanceGateTemplate(string className, string hookName)
-    {
-        return $@"using System.Threading.Tasks;
-using Microsoft.ML.Data;
-using MLoop.Extensibility.Hooks;
+                    ctx.Logger.Info("Performance gate passed");
+                    return Task.FromResult(HookResult.Continue());
+                }
+                catch (Exception ex)
+                {
+                    return Task.FromResult(HookResult.Abort($"Validation error: {ex.Message}"));
+                }
+            }
+        }
 
-public class {className} : IMLoopHook
-{{
-    public string Name => ""{hookName}"";
+        """;
 
-    private const double MIN_ACCURACY = 0.70;
+    private static string GenerateDeployTemplate(string className, string hookName) => $$"""
+        {{Usings}}
 
-    public Task<HookResult> ExecuteAsync(HookContext ctx)
-    {{
-        try
-        {{
-            if (ctx.Metrics == null)
-            {{
-                return Task.FromResult(HookResult.Continue());
-            }}
+        public class {{className}} : IMLoopHook
+        {
+            public string Name => "{{hookName}}";
 
-            double primaryMetric = 0.0;
-            if (ctx.Metrics is BinaryClassificationMetrics binaryMetrics)
-            {{
-                primaryMetric = binaryMetrics.Accuracy;
-            }}
-            else if (ctx.Metrics is MulticlassClassificationMetrics multiclassMetrics)
-            {{
-                primaryMetric = multiclassMetrics.MacroAccuracy;
-            }}
-            else if (ctx.Metrics is RegressionMetrics regressionMetrics)
-            {{
-                primaryMetric = regressionMetrics.RSquared;
-            }}
+            private const string Metric = "accuracy";
+            private const double DeployThreshold = 0.90;
 
-            ctx.Logger.Info($""Metric: {{primaryMetric:P2}} (threshold: {{MIN_ACCURACY:P2}})"");
+            public Task<HookResult> ExecuteAsync(HookContext ctx)
+            {
+                try
+                {
+                    if (ctx.Metrics is IReadOnlyDictionary<string, double> metrics
+                        && metrics.TryGetValue(Metric, out var value) && value >= DeployThreshold)
+                    {
+                        // TODO: Implement deployment logic
+                        var modelPath = ctx.GetMetadata<string>("ModelPath", "");
+                        ctx.Logger.Info($"Model ready to deploy: {modelPath}");
 
-            if (primaryMetric < MIN_ACCURACY)
-            {{
-                return Task.FromResult(HookResult.Abort($""Below threshold: {{primaryMetric:P2}}""));
-            }}
+                        return Task.FromResult(HookResult.ModifyConfig(
+                            new Dictionary<string, object> { ["DeploymentTriggered"] = true },
+                            "Deployment triggered"));
+                    }
 
-            ctx.Logger.Info(""✅ Performance gate passed"");
-            return Task.FromResult(HookResult.Continue());
-        }}
-        catch (Exception ex)
-        {{
-            return Task.FromResult(HookResult.Abort($""Validation error: {{ex.Message}}""));
-        }}
-    }}
-}}
-";
-    }
+                    return Task.FromResult(HookResult.Continue());
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.Warning($"Deployment failed: {ex.Message}");
+                    return Task.FromResult(HookResult.Continue());
+                }
+            }
+        }
 
-    private static string GenerateDeployTemplate(string className, string hookName)
-    {
-        return $@"using System.Threading.Tasks;
-using MLoop.Extensibility.Hooks;
-
-public class {className} : IMLoopHook
-{{
-    public string Name => ""{hookName}"";
-
-    private const double DEPLOY_THRESHOLD = 0.90;
-
-    public async Task<HookResult> ExecuteAsync(HookContext ctx)
-    {{
-        try
-        {{
-            var metricsDict = ctx.Metrics as IDictionary<string, double>;
-            var primaryMetric = metricsDict?.Values.FirstOrDefault() ?? 0.0;
-
-            if (primaryMetric >= DEPLOY_THRESHOLD)
-            {{
-                ctx.Logger.Info(""🚀 Triggering deployment..."");
-
-                // TODO: Implement deployment logic
-                var modelPath = ctx.GetMetadata<string>(""ModelPath"", """");
-                ctx.Logger.Info($""Model ready: {{modelPath}}"");
-
-                return HookResult.ModifyConfig(
-                    new Dictionary<string, object> {{ [""DeploymentTriggered""] = true }},
-                    ""Deployment triggered"");
-            }}
-
-            return HookResult.Continue();
-        }}
-        catch (Exception ex)
-        {{
-            ctx.Logger.Warning($""Deployment failed: {{ex.Message}}"");
-            return HookResult.Continue();
-        }}
-    }}
-}}
-";
-    }
+        """;
 
     internal static string ToPascalCase(string text)
     {
