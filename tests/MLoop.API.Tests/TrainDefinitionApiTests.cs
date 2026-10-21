@@ -289,6 +289,29 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ExperimentRows_CarryTheirMetricsAndTheProductionFlag_AsMloopListJsonDoes()
+    {
+        var data = WriteImbalanced("listed.csv", 60);
+        WriteYaml("lst", "    task: binary-classification\n    label: y\n");
+        foreach (var promote in new[] { true, false })
+        {
+            var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
+            {
+                dataFile = data, labelColumn = "y", task = "binary-classification", name = "lst", timeLimitSeconds = 5, promote,
+            }));
+            job.GetProperty("status").GetString().Should().Be("Completed", job.GetRawText());
+        }
+
+        var listed = JsonDocument.Parse(await _client.GetStringAsync("/experiments?name=lst")).RootElement;
+
+        var rows = listed.GetProperty("experiments").EnumerateArray().ToList();
+        rows.Select(r => r.GetProperty("experimentId").GetString()).Should().Equal("exp-002", "exp-001"); // newest first
+        rows.Select(r => r.GetProperty("isProduction").GetBoolean()).Should().Equal(false, true);
+        rows.Should().AllSatisfy(r => r.GetProperty("metrics").TryGetProperty("auc", out _).Should().BeTrue(r.GetRawText()));
+        listed.GetProperty("production").GetProperty("lst").GetString().Should().Be("exp-001");
+    }
+
+    [Fact]
     public async Task AJobOnOneClass_FailsWithTheReason()
     {
         var data = WriteImbalanced("oneclass.csv", 0);

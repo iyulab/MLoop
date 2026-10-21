@@ -198,6 +198,16 @@ public static class ListCommand
 
             var resolvedModelName = CommandContext.ResolveOptionalModelName(modelName);
 
+            if (jsonOutput)
+            {
+                // Each experiment's own metrics and the gate's verdict, so a consumer that decides
+                // promotion reads them here instead of opening files in the experiment layout.
+                var (rows, production) = await ExperimentListing.ListAsync(
+                    ctx.ExperimentStore, ctx.ModelRegistry, resolvedModelName, completedOnly: !showAll, CancellationToken.None);
+                OutputAsJson(resolvedModelName, rows, production);
+                return 0;
+            }
+
             // Get experiments (filtered by model if specified)
             var experiments = await ctx.ExperimentStore.ListAsync(resolvedModelName, CancellationToken.None);
             var experimentsList = experiments.ToList();
@@ -214,24 +224,8 @@ public static class ListCommand
                     .ToList();
             }
 
-            // Sort by timestamp (newest first) — same order for both output modes.
+            // Sort by timestamp (newest first) — the order ExperimentListing gives --json.
             experimentsList = experimentsList.OrderByDescending(e => e.Timestamp).ToList();
-
-            if (jsonOutput)
-            {
-                // Each experiment's own metrics and the gate's verdict, so a consumer that decides
-                // promotion reads them here instead of opening files in the experiment layout.
-                var details = new Dictionary<(string, string), ExperimentData?>();
-                foreach (var e in experimentsList)
-                {
-                    var expModelName = e.ModelName ?? ConfigDefaults.DefaultModelName;
-                    try { details[(expModelName, e.ExperimentId)] = await ctx.ExperimentStore.LoadAsync(expModelName, e.ExperimentId, CancellationToken.None); }
-                    catch (Exception) { details[(expModelName, e.ExperimentId)] = null; } // a partial experiment directory lists without them
-                }
-
-                OutputAsJson(resolvedModelName, experimentsList, productionDict, details);
-                return 0;
-            }
 
             if (!experimentsList.Any())
             {
@@ -380,9 +374,8 @@ public static class ListCommand
 
     private static void OutputAsJson(
         string? modelFilter,
-        IReadOnlyList<Infrastructure.FileSystem.ExperimentSummary> experiments,
-        IReadOnlyDictionary<string, string> productionByModel,
-        IReadOnlyDictionary<(string, string), ExperimentData?> details)
+        IReadOnlyList<ExperimentListRow> rows,
+        IReadOnlyDictionary<string, string> productionByModel)
     {
         var options = new JsonSerializerOptions
         {
@@ -393,28 +386,7 @@ public static class ListCommand
         var payload = new
         {
             Model = modelFilter,
-            Experiments = experiments.Select(e =>
-            {
-                var expModelName = e.ModelName ?? ConfigDefaults.DefaultModelName;
-                var detail = details.GetValueOrDefault((expModelName, e.ExperimentId));
-                return new
-                {
-                    ModelName = expModelName,
-                    e.ExperimentId,
-                    Timestamp = e.Timestamp.ToString("o"),
-                    e.Status,
-                    e.BestTrainer,
-                    e.MetricName,
-                    e.BestMetric,
-                    Metrics = detail?.Metrics,
-                    // null when the gate passes; otherwise why `mloop promote` refuses it without --force.
-                    QualityGate = detail is null ? null : ModelRegistry.QualityGateRefusal(detail, detail.Config?.Metric),
-                    // null unless the gate passes a model whose predicted labels are still not usable.
-                    QualityWarning = detail is null ? null : ModelRegistry.QualityGateWarning(detail),
-                    IsProduction = productionByModel.TryGetValue(expModelName, out var prodId)
-                                   && e.ExperimentId == prodId,
-                };
-            }),
+            Experiments = rows,
             Production = productionByModel,
         };
 

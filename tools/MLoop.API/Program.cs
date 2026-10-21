@@ -703,6 +703,7 @@ app.MapGet("/models", async (
 app.MapGet("/experiments", async (
     [FromQuery] string? name,
     IExperimentStore experimentStore,
+    IModelRegistry registry,
     ILogger<Program> logger,
     CancellationToken ct) =>
 {
@@ -712,28 +713,18 @@ app.MapGet("/experiments", async (
     try
     {
         logger.LogInformation("Listing experiments (filter: '{ModelName}')", modelName ?? "all");
-        var experiments = await experimentStore.ListAsync(modelName, ct);
-        var expList = experiments.ToList();
+        // The rows of `mloop list --json --all`: each experiment's metrics, gate verdict and production flag.
+        var (rows, production) = await ExperimentListing.ListAsync(experimentStore, registry, modelName, completedOnly: false, ct);
 
         logger.LogInformation("Retrieved {Count} experiment(s) in {ElapsedMs}ms",
-            expList.Count, stopwatch.ElapsedMilliseconds);
+            rows.Count, stopwatch.ElapsedMilliseconds);
 
         return Results.Ok(new
         {
-            count = expList.Count,
+            count = rows.Count,
             filter = modelName,
-            experiments = expList.Select(e => new
-            {
-                modelName = e.ModelName,
-                experimentId = e.ExperimentId,
-                timestamp = e.Timestamp,
-                status = e.Status,
-                bestMetric = e.BestMetric,
-                metricName = e.MetricName,
-                bestTrainer = e.BestTrainer,
-                labelColumn = e.LabelColumn,
-                trainingTimeSeconds = e.TrainingTimeSeconds
-            })
+            experiments = rows,
+            production,
         });
     }
     catch (Exception ex)
