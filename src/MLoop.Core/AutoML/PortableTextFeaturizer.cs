@@ -49,6 +49,8 @@ public static class PortableTextFeaturizer
         // converter writes it as counting only the longest length (min_gram_length = max), so the
         // exported graph silently drops the shorter n-grams: every row of a reloaded model
         // disagreed with ML.NET, while the same transformer exported before saving agreed.
+        // TODO(upstream: https://github.com/dotnet/machinelearning/issues/7824) — return to one
+        // useAllLengths extractor once a fixed converter ships.
         IEstimator<ITransformer> steps = mlContext.Transforms.Text.TokenizeIntoCharactersAsKeys(KeysColumn(textColumn), textColumn);
         var lengths = Enumerable.Range(1, NgramLength).Select(n => LengthColumn(textColumn, n)).ToArray();
         for (var n = 1; n <= NgramLength; n++)
