@@ -1744,6 +1744,10 @@ public partial class AutoMLRunner
                         bestMetrics = metricsDict;
                     }
                 }
+                catch (Exception ex) when (MLoop.Core.Runtime.NativeLoad.IsMissing(ex))
+                {
+                    _logger.Info(MLoop.Core.Runtime.NativeLoad.TrainerSkipped(trainerName));
+                }
                 catch (Exception ex)
                 {
                     var hint = ex.Message.Contains("invalid label")

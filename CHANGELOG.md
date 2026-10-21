@@ -28,6 +28,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop train` checked the label (missing values, classes, a single class) on the file before the `prep:` steps of
+  `mloop.yaml` ran, so a step that drops or reshapes rows was trained on after the raw file's classes had been reported.
+  The steps now run first and the checks see the rows training gets.
+- A ranking trainer whose native library does not load (LightGBM on osx-arm64) printed the loader's full search, dozens
+  of lines; it now says in one line that the trainer was skipped and why, and training continues with the others.
 - `mloop validate` refused a `sample` prep step that `mloop prep run` accepts and runs. The step names and what each
   step needs now come from one place (`PrepStepRules`) that the step runner and both validators read, and an unknown
   step type is reported with the full list everywhere.

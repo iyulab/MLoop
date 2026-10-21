@@ -68,16 +68,7 @@ public static class TimeSeriesNativeSupport
     /// which would also have swallowed an unrelated static-constructor bug and reported it to the
     /// user as a missing native.
     /// </remarks>
-    public static bool IsMissingNative(Exception ex)
-    {
-        for (var e = ex; e is not null; e = e.InnerException)
-        {
-            if (e is DllNotFoundException)
-                return true;
-        }
-
-        return false;
-    }
+    public static bool IsMissingNative(Exception ex) => MLoop.Core.Runtime.NativeLoad.IsMissing(ex);
 
     /// <summary>
     /// Whether the native loads on this machine. Probed once, through the same
