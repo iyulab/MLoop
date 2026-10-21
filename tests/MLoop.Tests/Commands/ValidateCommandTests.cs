@@ -434,6 +434,18 @@ public class ValidateCommandTests
     }
 
     [Fact]
+    public void ValidatePrepSteps_AcceptsEveryStepTypeTheExecutorRuns()
+    {
+        // `mloop validate` once refused a `sample` step that `mloop prep run` accepted and ran:
+        // the two kept their own lists of step names.
+        foreach (var type in MLoop.Core.Preprocessing.PrepStepRules.CanonicalNames.Append("data_sampling").Append("scale"))
+        {
+            var (errors, _) = RunValidatePrepSteps([new() { Type = type }]);
+            Assert.DoesNotContain(errors, e => e.Message.Contains("Unknown prep step type"));
+        }
+    }
+
+    [Fact]
     public void ValidatePrepSteps_FillMissing_RequiresColumns()
     {
         var steps = new List<PrepStep> { new() { Type = "fill-missing" } };

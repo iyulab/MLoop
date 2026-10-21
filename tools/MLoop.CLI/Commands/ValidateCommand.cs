@@ -27,23 +27,6 @@ public static class ValidateCommand
         "text", "categorical", "numeric", "ignore"
     };
 
-    private static readonly HashSet<string> ValidPrepStepTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "fill-missing", "fill_missing",
-        "normalize", "scale",
-        "remove-columns", "remove_columns",
-        "rename-columns", "rename_columns",
-        "drop-duplicates", "drop_duplicates",
-        "extract-date", "extract_date",
-        "parse-datetime", "parse_datetime",
-        "filter-rows", "filter_rows",
-        "add-column", "add_column",
-        "parse-korean-time", "parse_korean_time",
-        "parse-excel-date", "parse_excel_date",
-        "rolling",
-        "resample"
-    };
-
     public static Command Create()
     {
         var verboseOption = new Option<bool>("--verbose", "-v")
@@ -496,85 +479,14 @@ public static class ValidateCommand
                 continue;
             }
 
-            if (!ValidPrepStepTypes.Contains(step.Type))
+            if (PrepStepRules.Canonical(step.Type) is null)
             {
-                errors.Add(new ValidationError($"{stepPrefix}.type",
-                    $"Unknown prep step type '{step.Type}'. Valid types: fill-missing, normalize, remove-columns, rename-columns, drop-duplicates, extract-date, parse-datetime, filter-rows, add-column, parse-korean-time, parse-excel-date, rolling, resample"));
+                errors.Add(new ValidationError($"{stepPrefix}.type", PrepStepRules.UnknownType(step.Type)));
                 continue;
             }
 
-            // Validate required parameters per step type
-            var normalizedType = step.Type.ToLowerInvariant().Replace('_', '-');
-            switch (normalizedType)
-            {
-                case "fill-missing":
-                case "normalize":
-                case "scale":
-                case "remove-columns":
-                    if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
-                    {
-                        errors.Add(new ValidationError(stepPrefix,
-                            $"'{step.Type}' requires 'columns' or 'column' parameter"));
-                    }
-                    break;
-
-                case "rename-columns":
-                    if (step.Mapping == null || step.Mapping.Count == 0)
-                    {
-                        errors.Add(new ValidationError(stepPrefix,
-                            "'rename-columns' requires 'mapping' parameter"));
-                    }
-                    break;
-
-                case "extract-date":
-                case "parse-datetime":
-                case "parse-korean-time":
-                case "parse-excel-date":
-                    if (string.IsNullOrEmpty(step.Column))
-                    {
-                        errors.Add(new ValidationError(stepPrefix,
-                            $"'{step.Type}' requires 'column' parameter"));
-                    }
-                    if (normalizedType == "parse-datetime" && string.IsNullOrEmpty(step.Format))
-                    {
-                        errors.Add(new ValidationError(stepPrefix,
-                            "'parse-datetime' requires 'format' parameter"));
-                    }
-                    break;
-
-                case "filter-rows":
-                    if (string.IsNullOrEmpty(step.Column))
-                        errors.Add(new ValidationError(stepPrefix, "'filter-rows' requires 'column' parameter"));
-                    if (string.IsNullOrEmpty(step.Operator))
-                        errors.Add(new ValidationError(stepPrefix, "'filter-rows' requires 'operator' parameter"));
-                    if (string.IsNullOrEmpty(step.Value))
-                        errors.Add(new ValidationError(stepPrefix, "'filter-rows' requires 'value' parameter"));
-                    break;
-
-                case "add-column":
-                    if (string.IsNullOrEmpty(step.Column))
-                        errors.Add(new ValidationError(stepPrefix, "'add-column' requires 'column' parameter"));
-                    if (string.IsNullOrEmpty(step.Value) && string.IsNullOrEmpty(step.Expression))
-                        errors.Add(new ValidationError(stepPrefix,
-                            "'add-column' requires 'value' or 'expression' parameter"));
-                    break;
-
-                case "rolling":
-                    if (step.WindowSize < 1)
-                        errors.Add(new ValidationError(stepPrefix, "'rolling' requires 'window_size' > 0"));
-                    if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
-                        errors.Add(new ValidationError(stepPrefix, "'rolling' requires 'columns' parameter"));
-                    break;
-
-                case "resample":
-                    if (string.IsNullOrEmpty(step.TimeColumn))
-                        errors.Add(new ValidationError(stepPrefix, "'resample' requires 'time_column' parameter"));
-                    if (string.IsNullOrEmpty(step.Window))
-                        errors.Add(new ValidationError(stepPrefix, "'resample' requires 'window' parameter"));
-                    if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
-                        errors.Add(new ValidationError(stepPrefix, "'resample' requires 'columns' parameter"));
-                    break;
-            }
+            foreach (var problem in PrepStepRules.Problems(step))
+                errors.Add(new ValidationError(stepPrefix, problem));
         }
 
         // Emit task-aware leakage warnings (always-leaky steps + PreFeaturizer steps on tasks

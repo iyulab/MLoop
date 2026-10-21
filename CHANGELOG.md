@@ -28,6 +28,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop validate` refused a `sample` prep step that `mloop prep run` accepts and runs. The step names and what each
+  step needs now come from one place (`PrepStepRules`) that the step runner and both validators read, and an unknown
+  step type is reported with the full list everywhere.
 - Training jobs survive a `mloop serve` restart. They were held in memory, so after a restart `GET /jobs/{id}` answered
   404 for a job whose experiment was on disk. Each job is now a JSON file under `.mloop/jobs/`. A job that was running
   when the server stopped reads as `Failed` with a message saying it was interrupted, and a job still queued is trained

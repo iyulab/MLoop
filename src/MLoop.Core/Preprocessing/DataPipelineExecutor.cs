@@ -48,24 +48,23 @@ public class DataPipelineExecutor
 
     private DataPipeline ApplyStep(DataPipeline pipeline, PrepStep step)
     {
-        return step.Type.ToLowerInvariant() switch
+        return PrepStepRules.Canonical(step.Type) switch
         {
-            "fill-missing" or "fill_missing" => ApplyFillMissing(pipeline, step),
+            "fill-missing" => ApplyFillMissing(pipeline, step),
             "normalize" => ApplyNormalize(pipeline, step),
-            "scale" => ApplyScale(pipeline, step),
-            "remove-columns" or "remove_columns" => ApplyRemoveColumns(pipeline, step),
-            "rename-columns" or "rename_columns" => ApplyRenameColumns(pipeline, step),
-            "drop-duplicates" or "drop_duplicates" => ApplyDropDuplicates(pipeline, step),
-            "extract-date" or "extract_date" => ApplyExtractDate(pipeline, step),
-            "parse-datetime" or "parse_datetime" => ApplyParseDatetime(pipeline, step),
-            "filter-rows" or "filter_rows" => ApplyFilterRows(pipeline, step),
-            "add-column" or "add_column" => ApplyAddColumn(pipeline, step),
-            "parse-korean-time" or "parse_korean_time" => ApplyParseKoreanTime(pipeline, step),
-            "parse-excel-date" or "parse_excel_date" => ApplyParseExcelDate(pipeline, step),
+            "remove-columns" => ApplyRemoveColumns(pipeline, step),
+            "rename-columns" => ApplyRenameColumns(pipeline, step),
+            "drop-duplicates" => ApplyDropDuplicates(pipeline, step),
+            "extract-date" => ApplyExtractDate(pipeline, step),
+            "parse-datetime" => ApplyParseDatetime(pipeline, step),
+            "filter-rows" => ApplyFilterRows(pipeline, step),
+            "add-column" => ApplyAddColumn(pipeline, step),
+            "parse-korean-time" => ApplyParseKoreanTime(pipeline, step),
+            "parse-excel-date" => ApplyParseExcelDate(pipeline, step),
             "rolling" => ApplyRolling(pipeline, step),
             "resample" => ApplyResample(pipeline, step),
-            "sample" or "data-sampling" or "data_sampling" => ApplySample(pipeline, step),
-            _ => throw new InvalidOperationException($"Unknown prep step type: '{step.Type}'")
+            "sample" => ApplySample(pipeline, step),
+            _ => throw new InvalidOperationException(PrepStepRules.UnknownType(step.Type))
         };
     }
 
@@ -85,12 +84,6 @@ public class DataPipelineExecutor
 
         pipeline.Normalize(columns, method);
         return pipeline;
-    }
-
-    private DataPipeline ApplyScale(DataPipeline pipeline, PrepStep step)
-    {
-        // Scale is an alias for normalize
-        return ApplyNormalize(pipeline, step);
     }
 
     private DataPipeline ApplyRemoveColumns(DataPipeline pipeline, PrepStep step)

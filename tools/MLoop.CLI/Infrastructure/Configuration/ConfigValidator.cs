@@ -17,24 +17,6 @@ namespace MLoop.CLI.Infrastructure.Configuration;
 /// </remarks>
 public static class ConfigValidator
 {
-    private static readonly HashSet<string> ValidPrepStepTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "fill-missing", "fill_missing",
-        "normalize", "scale",
-        "remove-columns", "remove_columns",
-        "rename-columns", "rename_columns",
-        "drop-duplicates", "drop_duplicates",
-        "extract-date", "extract_date",
-        "parse-datetime", "parse_datetime",
-        "filter-rows", "filter_rows",
-        "add-column", "add_column",
-        "parse-korean-time", "parse_korean_time",
-        "parse-excel-date", "parse_excel_date",
-        "rolling",
-        "resample",
-        "sample", "data-sampling", "data_sampling"
-    };
-
     /// <summary>
     /// Validates a list of prep steps and returns errors.
     /// </summary>
@@ -53,86 +35,13 @@ public static class ConfigValidator
                 continue;
             }
 
-            if (!ValidPrepStepTypes.Contains(step.Type))
+            if (PrepStepRules.Canonical(step.Type) is null)
             {
-                errors.Add($"{prefix}: Unknown prep step type '{step.Type}'");
+                errors.Add($"{prefix}: {PrepStepRules.UnknownType(step.Type)}");
                 continue;
             }
 
-            var normalizedType = step.Type.ToLowerInvariant().Replace('_', '-');
-            switch (normalizedType)
-            {
-                case "fill-missing":
-                case "normalize":
-                case "scale":
-                case "remove-columns":
-                    if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
-                        errors.Add($"{prefix}: '{step.Type}' requires 'columns' or 'column'");
-                    break;
-
-                case "rename-columns":
-                    if (step.Mapping == null || step.Mapping.Count == 0)
-                        errors.Add($"{prefix}: 'rename-columns' requires 'mapping'");
-                    break;
-
-                case "extract-date":
-                case "parse-korean-time":
-                case "parse-excel-date":
-                    if (string.IsNullOrEmpty(step.Column))
-                        errors.Add($"{prefix}: '{step.Type}' requires 'column'");
-                    break;
-
-                case "parse-datetime":
-                    if (string.IsNullOrEmpty(step.Column))
-                        errors.Add($"{prefix}: 'parse-datetime' requires 'column'");
-                    if (string.IsNullOrEmpty(step.Format))
-                        errors.Add($"{prefix}: 'parse-datetime' requires 'format'");
-                    break;
-
-                case "filter-rows":
-                    if (string.IsNullOrEmpty(step.Column))
-                        errors.Add($"{prefix}: 'filter-rows' requires 'column'");
-                    if (string.IsNullOrEmpty(step.Operator))
-                        errors.Add($"{prefix}: 'filter-rows' requires 'operator'");
-                    if (string.IsNullOrEmpty(step.Value))
-                        errors.Add($"{prefix}: 'filter-rows' requires 'value'");
-                    break;
-
-                case "add-column":
-                    if (string.IsNullOrEmpty(step.Column))
-                        errors.Add($"{prefix}: 'add-column' requires 'column'");
-                    if (string.IsNullOrEmpty(step.Value) && string.IsNullOrEmpty(step.Expression))
-                        errors.Add($"{prefix}: 'add-column' requires 'value' or 'expression'");
-                    break;
-
-                case "rolling":
-                    if (step.WindowSize < 1)
-                        errors.Add($"{prefix}: 'rolling' requires 'window_size' > 0");
-                    if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
-                        errors.Add($"{prefix}: 'rolling' requires 'columns'");
-                    break;
-
-                case "resample":
-                    if (string.IsNullOrEmpty(step.TimeColumn))
-                        errors.Add($"{prefix}: 'resample' requires 'time_column'");
-                    if (string.IsNullOrEmpty(step.Window))
-                        errors.Add($"{prefix}: 'resample' requires 'window'");
-                    if ((step.Columns == null || step.Columns.Count == 0) && string.IsNullOrEmpty(step.Column))
-                        errors.Add($"{prefix}: 'resample' requires 'columns'");
-                    break;
-
-                case "sample":
-                case "data-sampling":
-                case "data_sampling":
-                    if (step.Count <= 0)
-                        errors.Add($"{prefix}: 'sample' requires 'count' > 0");
-                    var sampleMethod = (step.Method ?? "random").ToLowerInvariant();
-                    if (sampleMethod != "random" && sampleMethod != "stratified")
-                        errors.Add($"{prefix}: 'sample' method must be 'random' or 'stratified'");
-                    if (sampleMethod == "stratified" && string.IsNullOrEmpty(step.Column))
-                        errors.Add($"{prefix}: 'sample' with stratified method requires 'column'");
-                    break;
-            }
+            errors.AddRange(PrepStepRules.Problems(step).Select(p => $"{prefix}: {p}"));
         }
 
         return errors;
