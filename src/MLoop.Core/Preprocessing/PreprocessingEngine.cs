@@ -34,7 +34,7 @@ public class PreprocessingEngine
     {
         _projectRoot = projectRoot;
         _logger = logger;
-        _scriptLoader = scriptLoader ?? new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot));
+        _scriptLoader = scriptLoader ?? new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot), _logger.Warning);
         _csvHelper = csvHelper ?? new CsvHelperImpl();
         _filePrepper = filePrepper ?? new FilePrepperImpl();
     }
