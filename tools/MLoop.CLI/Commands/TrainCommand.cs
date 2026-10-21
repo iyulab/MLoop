@@ -887,39 +887,8 @@ public static class TrainCommand
                 preFeaturizer,
                 preFeaturizerColumns);
 
-            // Initialize hook engine
-            var hookEngine = new HookEngine(projectRoot, new TrainCommandLogger());
-
-            // Execute PreTrain hooks
-            var mlContext = new MLContext(seed: 0);
-
-            var preTrainContext = new HookContext
-            {
-                HookType = HookType.PreTrain,
-                HookName = "pre-train",
-                MLContext = mlContext,
-                DataView = null,  // Hooks can load data themselves using DataFile from metadata
-                Model = null,
-                ExperimentResult = null,
-                Metrics = null,
-                ProjectRoot = projectRoot,
-                Logger = new TrainCommandLogger(),
-                Metadata = new Dictionary<string, object>
-                {
-                    ["DataFile"] = trainingConfig.DataFile,
-                    ["LabelColumn"] = trainingConfig.LabelColumn,
-                    ["TaskType"] = trainingConfig.Task,
-                    ["ModelName"] = trainingConfig.ModelName,
-                    ["TimeLimit"] = trainingConfig.TimeLimitSeconds
-                }
-            };
-
-            var preTrainSuccess = await hookEngine.ExecuteHooksAsync(HookType.PreTrain, preTrainContext);
-            if (!preTrainSuccess)
-            {
-                ErrorConsole.Out.MarkupLine("[red]Training aborted by pre-train hook[/]");
-                return 1;
-            }
+            // The project's pre- and post-train hooks run inside TrainingEngine, the one place for
+            // `mloop train` and `POST /train` alike. They used to run here as well, so each ran twice.
 
             // If auto-time, display static estimate before progress bar starts. A fit that takes no
             // budget (deep learning, time series) would have an estimate describing time nothing uses.
@@ -1016,37 +985,6 @@ public static class TrainCommand
                 ErrorConsole.Out.MarkupLine("  [blue]>[/] Check data quality: [cyan]mloop analyze profile <data-file>[/]");
                 ErrorConsole.Out.MarkupLine("  [blue]>[/] Verify label column exists and has valid values");
                 return 1;
-            }
-
-            // Execute PostTrain hooks
-            var postTrainContext = new HookContext
-            {
-                HookType = HookType.PostTrain,
-                HookName = "post-train",
-                MLContext = mlContext,
-                DataView = null,  // Training data not needed for post-train
-                Model = null,  // Model not directly available, use ModelPath from metadata
-                ExperimentResult = result,
-                Metrics = result.Metrics,
-                ProjectRoot = projectRoot,
-                Logger = new TrainCommandLogger(),
-                Metadata = new Dictionary<string, object>
-                {
-                    ["LabelColumn"] = trainingConfig.LabelColumn,
-                    ["TaskType"] = trainingConfig.Task,
-                    ["ModelName"] = trainingConfig.ModelName,
-                    ["ExperimentId"] = result.ExperimentId,
-                    ["BestTrainer"] = result.BestTrainer,
-                    ["ModelPath"] = result.ModelPath,
-                    ["TrainingTimeSeconds"] = result.TrainingTimeSeconds
-                }
-            };
-
-            var postTrainSuccess = await hookEngine.ExecuteHooksAsync(HookType.PostTrain, postTrainContext);
-            if (!postTrainSuccess)
-            {
-                WarningConsole.Warn("Post-train hook aborted, but model was saved successfully");
-                // Don't return 1 here - training succeeded, only post-processing failed
             }
 
             // Sync mloop.yaml if CLI overrode label or task

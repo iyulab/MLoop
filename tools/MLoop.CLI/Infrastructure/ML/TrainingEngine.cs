@@ -54,10 +54,10 @@ public class TrainingEngine : ITrainingEngine
             warningSink: message => WarningConsole.Warn(Markup.Escape(message)),
             narrationSink: CoreNarration.Sink);
 
-        // Initialize HookEngine if project root provided
-        if (!string.IsNullOrEmpty(projectRoot) && logger != null)
+        // The one place training runs the project's hooks — for `mloop train` and `POST /train` alike.
+        if (!string.IsNullOrEmpty(projectRoot))
         {
-            _hookEngine = new HookEngine(projectRoot, logger);
+            _hookEngine = new HookEngine(projectRoot, logger ?? new TrainingEngineLogger());
         }
     }
 
@@ -274,22 +274,19 @@ public class TrainingEngine : ITrainingEngine
             // Execute PreTrain hooks
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PreTrain))
             {
-                // Load training data for hook context. Image classification reads a
-                // directory of class subfolders; tabular tasks read the CSV file.
-                IDataView trainData;
-                if (DataLoaderFactory.IsDirectoryBased(config.Task))
+                // The training data for the hook, read by the loader training itself uses. A text
+                // loader built over column range [0, int.MaxValue] used to stand here; ML.NET refuses
+                // that range, so any pre-train hook failed the whole run with "Parameter 'Max'".
+                IDataView? trainData = null;
+                try
                 {
-                    trainData = DataLoaderFactory
-                        .Create(config.Task, _mlContext)
-                        .LoadData(dataFilePath, config.LabelColumn, config.Task);
+                    trainData = DataLoaderFactory.IsDirectoryBased(config.Task)
+                        ? DataLoaderFactory.Create(config.Task, _mlContext).LoadData(dataFilePath, config.LabelColumn, config.Task)
+                        : _dataLoader.LoadData(dataFilePath, config.LabelColumn, config.Task);
                 }
-                else
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    var loader = _mlContext.Data.CreateTextLoader(
-                        new[] { new TextLoader.Column("Features", DataKind.Single, 0, int.MaxValue) },
-                        separatorChar: ',',
-                        hasHeader: true);
-                    trainData = loader.Load(dataFilePath);
+                    WarningConsole.Warn(Markup.Escape($"Pre-train hooks get no DataView: {ex.Message} — they can read Metadata[\"DataFile\"]."));
                 }
 
                 var hookContext = new HookContext
@@ -305,6 +302,7 @@ public class TrainingEngine : ITrainingEngine
                     Logger = new TrainingEngineLogger(),
                     Metadata = new Dictionary<string, object>
                     {
+                        ["DataFile"] = dataFilePath,
                         ["LabelColumn"] = config.LabelColumn,
                         ["TaskType"] = config.Task,
                         ["ModelName"] = modelName,
