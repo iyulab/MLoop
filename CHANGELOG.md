@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **`mloop export onnx --verify` crashed the process on Windows.** Windows carries its own, older
+  `onnxruntime.dll` for Windows ML; the system's library search found it, and ONNX Runtime's managed
+  half failed against it with an access violation — not an error message, the end of the process.
+  The native library is now loaded only by explicit path: the one installed with
+  `mloop runtime install onnxruntime` (or one shipped beside the application). Without either,
+  `--verify` refuses with the install command before loading anything.
+
 ## [0.37.0] - 2026-10-21
 
 ### Added

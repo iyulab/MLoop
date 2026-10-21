@@ -57,6 +57,15 @@ public static class OnnxVerification
     /// </summary>
     public static string? Unavailable()
     {
+        // Decided from files, without touching ONNX Runtime: loading the wrong native library is
+        // not an exception but a crash of the whole process (see NativeLibraryPath).
+        if (NativeLibraryPath() is null)
+        {
+            var runtime = RuntimeRegistry.OnnxRuntime;
+            return $"ONNX Runtime's native library is not installed. Install it with: mloop runtime install {runtime.Id} "
+                   + $"(~{runtime.ApproximateSizeMB} MB download)";
+        }
+
         RegisterRuntimeResolver();
         try
         {
@@ -65,9 +74,7 @@ public static class OnnxVerification
         }
         catch (Exception ex) when (IsMissingNative(ex))
         {
-            var runtime = RuntimeRegistry.OnnxRuntime;
-            return $"ONNX Runtime's native library is not installed. Install it with: mloop runtime install {runtime.Id} "
-                   + $"(~{runtime.ApproximateSizeMB} MB download)";
+            return $"ONNX Runtime's native library could not be loaded ({ex.GetBaseException().Message}).";
         }
     }
 
@@ -84,7 +91,8 @@ public static class OnnxVerification
         int maxRows = DefaultRows,
         double tolerance = DefaultTolerance)
     {
-        RegisterRuntimeResolver();
+        if (Unavailable() is { } unavailable)
+            throw new InvalidOperationException(unavailable);
 
         var rows = Math.Min(maxRows, CountRows(input, maxRows));
         var expected = model.Transform(input);
@@ -223,35 +231,58 @@ public static class OnnxVerification
     }
 
     /// <summary>
-    /// Lets the managed ONNX Runtime find the native library in the on-demand runtime cache. Falls
-    /// through to the default search (a native library beside the application, as in a test run)
-    /// when the runtime is not installed.
+    /// The ONNX Runtime native library to load, by explicit path: the one the application ships
+    /// beside itself (a test run, a self-contained deployment), else the on-demand runtime. Null
+    /// when there is neither.
+    /// </summary>
+    /// <remarks>
+    /// Never the operating system's search: Windows carries its own, older <c>onnxruntime.dll</c>
+    /// in System32 for Windows ML, the default search finds it, and the managed half crashed the
+    /// process against it with an access violation in its static initializer — not an exception
+    /// anything can catch.
+    /// </remarks>
+    public static string? NativeLibraryPath()
+    {
+        var runtime = RuntimeRegistry.OnnxRuntime;
+        var rid = PlatformDetector.GetRuntimeIdentifier();
+        if (!runtime.NativeLibraries.TryGetValue(rid, out var libs) || libs.Length == 0)
+            return null;
+        var file = libs[0];
+
+        foreach (var shipped in new[]
+                 {
+                     Path.Combine(AppContext.BaseDirectory, file),
+                     Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", file),
+                 })
+        {
+            if (File.Exists(shipped))
+                return shipped;
+        }
+
+        var status = new RuntimeManager().GetStatus(runtime);
+        var cached = Path.Combine(status.Path, file);
+        return status.Installed && File.Exists(cached) ? cached : null;
+    }
+
+    /// <summary>
+    /// Points the managed ONNX Runtime at <see cref="NativeLibraryPath"/>. Registered once, and only
+    /// when there is a library to point at — with none, the caller stops at <see cref="Unavailable"/>.
     /// </summary>
     private static void RegisterRuntimeResolver()
     {
+        if (NativeLibraryPath() is not { } libraryPath)
+            return;
         if (Interlocked.Exchange(ref _resolverRegistered, 1) == 1)
             return;
 
-        var runtime = RuntimeRegistry.OnnxRuntime;
-        var manager = new RuntimeManager();
-        var status = manager.GetStatus(runtime);
-        if (!status.Installed || !runtime.NativeLibraries.TryGetValue(status.RuntimeIdentifier, out var libs) || libs.Length == 0)
-            return;
-
-        var libraryPath = Path.Combine(status.Path, libs[0]);
         try
         {
-            NativeLibrary.SetDllImportResolver(typeof(InferenceSession).Assembly, (name, assembly, searchPath) =>
-            {
-                if (!name.Contains("onnxruntime", StringComparison.OrdinalIgnoreCase)
-                    || name.Contains("extensions", StringComparison.OrdinalIgnoreCase))
-                    return IntPtr.Zero;
-                // A native library the application already ships (beside it, or in its runtimes/
-                // folder) matches its own managed half; the on-demand cache is the fallback.
-                if (NativeLibrary.TryLoad(name, assembly, searchPath, out var shipped))
-                    return shipped;
-                return NativeLibrary.TryLoad(libraryPath, out var cached) ? cached : IntPtr.Zero;
-            });
+            NativeLibrary.SetDllImportResolver(typeof(InferenceSession).Assembly, (name, _, _) =>
+                name.Contains("onnxruntime", StringComparison.OrdinalIgnoreCase)
+                && !name.Contains("extensions", StringComparison.OrdinalIgnoreCase)
+                && NativeLibrary.TryLoad(libraryPath, out var handle)
+                    ? handle
+                    : IntPtr.Zero);
         }
         catch (InvalidOperationException)
         {

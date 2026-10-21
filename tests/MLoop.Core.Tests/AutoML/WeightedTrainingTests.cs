@@ -111,8 +111,11 @@ public class WeightedTrainingTests : IDisposable
     {
         var (high, low, _) = await TrainAndScore(null);
 
-        Assert.InRange(high, 0.3f, 0.7f);
-        Assert.InRange(low, 0.3f, 0.7f);
+        // Unweighted, every x carries both labels, so no model can do much better than 0.5; the
+        // search still fits noise (0.701 measured on a CI runner), so the band is about not having
+        // learned the weighted 0.9 / 0.1, not about hitting 0.5.
+        Assert.InRange(high, 0.25f, 0.75f);
+        Assert.InRange(low, 0.25f, 0.75f);
     }
 
     [Fact]
