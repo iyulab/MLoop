@@ -1067,6 +1067,11 @@ curl -X POST http://localhost:5000/predict \
 - Training jobs (`POST /train` → `GET /jobs/{id}`) run one at a time in the background while predictions keep
   answering. Each job is recorded in `.mloop/jobs/`, so a restarted server still knows it: a job that was running when
   the server stopped reads `Failed` (interrupted), and a queued one is trained when the server starts again
+- A job promotes its experiment as `mloop train` does — when it beats production and passes the gates — unless the
+  request sends `"promote": false` (`--no-promote`), for an application that decides promotion itself and then calls
+  `POST /promote`. The completed job says which: `promoted`, and `keptInStagingReason` when it stayed in staging (the
+  quality gate, the gate policy, production as good or better, a post-train hook, or `"promote": false`). The job
+  reads `Completed` only after that decision, so production is in place by the time a poller sees it
 - Swagger/OpenAPI documentation at `/swagger`
 - Single and batch predictions
 - JSON request/response format

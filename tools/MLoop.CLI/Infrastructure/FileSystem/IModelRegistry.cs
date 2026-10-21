@@ -89,6 +89,17 @@ public interface IModelRegistry
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Why <see cref="ShouldPromoteAsync"/> keeps <paramref name="experimentId"/> out of production, or
+    /// <c>null</c> when it would promote it — the quality gate, a comparison production's metrics cannot
+    /// make, the gate policy, or production being as good or better.
+    /// </summary>
+    Task<string?> KeptInStagingReasonAsync(
+        string modelName,
+        string experimentId,
+        string primaryMetric,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Automatically promotes experiment to production if it performs better
     /// than the current production model for the same model name.
     /// </summary>

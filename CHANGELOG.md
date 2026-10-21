@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `POST /train` takes `balance` — class balancing as `mloop train --balance` (`auto`, `none` or a target ratio):
   the test part is split off (stratified) first and only the train part is balanced. `GET /jobs/{id}` shows it, and
   a job notes what balancing did and a class imbalance in its status.
+- `POST /train` takes `promote` — `false` keeps the experiment in staging, as `mloop train --no-promote`, for an
+  application that decides promotion itself (its own gate, a review) and then calls `POST /promote`. A completed job
+  reports `promoted` and, when the experiment stayed in staging, `keptInStagingReason` (`GET /jobs` lists `promoted`).
 
 ### Documentation
 
@@ -26,6 +29,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `mloop runtime` and `mloop update`.
 
 ### Changed
+
+- A training job reads `Completed` only after its promotion is decided; before, a client that polled to completion
+  could read production before the job's experiment had been promoted.
 
 - A post-train hook that returns `HookResult.Abort` keeps the model out of production: it is saved in staging and not
   promoted automatically, by `mloop train` and `POST /train` alike (the job's status says why). It used to be a

@@ -287,6 +287,36 @@ public class ModelRegistry : IModelRegistry
         return await GatePolicyCheck.RefusalAsync(policy, _projectRoot, resolvedName, experimentId, experiment, _experimentStore, this, cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<string?> KeptInStagingReasonAsync(
+        string modelName,
+        string experimentId,
+        string primaryMetric,
+        CancellationToken cancellationToken = default)
+    {
+        var resolvedName = ResolveModelName(modelName);
+        var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
+        if (QualityGateRefusal(experiment, primaryMetric) is { } gateRefusal)
+            return $"the quality gate refuses it: {gateRefusal}";
+
+        var production = await GetProductionAsync(resolvedName, cancellationToken);
+        if (await IncomparableWithProductionAsync(resolvedName, experiment, production, cancellationToken) is { } incomparable)
+            return $"its metrics cannot be compared with production's: {incomparable}";
+
+        if (await ShouldPromoteOnMetricsAsync(resolvedName, experimentId, primaryMetric, cancellationToken))
+            return await GatePolicyRefusalAsync(resolvedName, experimentId, cancellationToken) is { } policyRefusal
+                ? $"the gate policy refuses it: {policyRefusal}"
+                : null;
+
+        var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics!.Keys);
+        if (metricKey == null || production?.Metrics is null)
+            return "there is no metric to judge it against production by — promote it explicitly";
+        return experiment.Metrics.TryGetValue(metricKey, out var candidate) && production.Metrics.TryGetValue(metricKey, out var current)
+            ? string.Create(CultureInfo.InvariantCulture,
+                $"it does not beat production ({production.ExperimentId}) on {metricKey}: {candidate:0.####} vs {current:0.####}")
+            : $"it does not beat production ({production.ExperimentId}) on {metricKey}";
+    }
+
     /// <summary>
     /// Whether the metrics alone — the fixed gate and the comparison with production — would promote
     /// <paramref name="experimentId"/>; <see cref="ShouldPromoteAsync"/> adds the gate policy on top.

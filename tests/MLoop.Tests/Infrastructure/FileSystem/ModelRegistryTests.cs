@@ -292,6 +292,35 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task KeptInStagingReason_NamesWhatHeldTheModelBack_AndIsNullWhenItWouldPromote()
+    {
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new() { ["r_squared"] = 0.85 });
+        Assert.Null(await _modelRegistry.KeptInStagingReasonAsync(DefaultModelName, exp1, "r_squared"));
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
+
+        var worse = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new() { ["r_squared"] = 0.8 });
+        Assert.Equal("it does not beat production (exp-001) on r_squared: 0.8 vs 0.85", await _modelRegistry.KeptInStagingReasonAsync(DefaultModelName, worse, "r_squared"));
+
+        var degenerate = await CreateDummyExperimentAsync(DefaultModelName, "exp-003", new() { ["r_squared"] = -0.2 });
+        Assert.StartsWith("the quality gate refuses it: ", await _modelRegistry.KeptInStagingReasonAsync(DefaultModelName, degenerate, "r_squared"));
+
+        var better = await CreateDummyExperimentAsync(DefaultModelName, "exp-004", new() { ["r_squared"] = 0.9 });
+        Assert.Null(await _modelRegistry.KeptInStagingReasonAsync(DefaultModelName, better, "r_squared"));
+    }
+
+    [Fact]
+    public async Task KeptInStagingReason_NoMetricToJudgeBy_SaysToPromoteExplicitly()
+    {
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001",
+            new Dictionary<string, double> { ["map_50"] = 0.8 }, task: "object-detection", metricConfig: "auto");
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002",
+            new Dictionary<string, double> { ["map_50"] = 0.9 }, task: "object-detection", metricConfig: "auto");
+
+        Assert.Contains("promote it explicitly", await _modelRegistry.KeptInStagingReasonAsync(DefaultModelName, exp2, "auto"));
+    }
+
+    [Fact]
     public async Task AutoPromoteAsync_WhenShouldPromote_PromotesAndReturnsTrue()
     {
         // Arrange

@@ -153,13 +153,24 @@ public class TrainingJobRunner : BackgroundService
             var result = await trainingEngine.TrainAsync(config, cancellationToken: stoppingToken);
 
             _jobStore.SetResult(job.JobId, result.ExperimentId, result.Metrics, result.BestTrainer);
+
+            // Decided before the job reads Completed, so a client that polls to completion and then reads
+            // production sees the outcome — and the job says which it was.
+            string? keptReason;
+            if (!job.Promote)
+                keptReason = "the request asked not to promote (\"promote\": false) — POST /promote promotes it";
+            else if (result.HookRefusal is { } hookRefusal)
+                // A post-train hook that refused the model keeps it from being promoted, as in `mloop train`.
+                keptReason = $"a post-train hook refused it ({hookRefusal})";
+            else
+                keptReason = await PromoteIfBetterAsync(registry, config, result, stoppingToken)
+                    ? null
+                    : await registry.KeptInStagingReasonAsync(config.ModelName, result.ExperimentId, config.CanonicalMetric, stoppingToken)
+                      ?? "it does not beat production";
+            _jobStore.SetPromotion(job.JobId, keptReason is null, keptReason);
             _jobStore.UpdateStatus(job.JobId, JobStatus.Completed,
                 $"Training completed: {result.BestTrainer} ({result.TrainingTimeSeconds:F1}s)"
-                + (result.HookRefusal is { } hookRefusal ? $" — not promoted: a post-train hook refused it ({hookRefusal})" : ""));
-
-            // A post-train hook that refused the model keeps it from being promoted, as in `mloop train`.
-            if (result.HookRefusal is null)
-                await PromoteIfBetterAsync(registry, config, result, stoppingToken);
+                + (keptReason is null ? " — promoted to production" : $" — kept in staging: {keptReason}"));
 
             _logger.LogInformation("Training job '{JobId}' completed: {BestTrainer}, exp={ExperimentId}",
                 job.JobId, result.BestTrainer, result.ExperimentId);

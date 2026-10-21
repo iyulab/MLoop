@@ -249,6 +249,46 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AJobAskedNotToPromote_KeepsItsExperimentInStaging_AndSaysSo()
+    {
+        var data = WriteImbalanced("nopromote.csv", 60);
+        WriteYaml("nopro", "    task: binary-classification\n    label: y\n");
+
+        var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = data, labelColumn = "y", task = "binary-classification", name = "nopro", timeLimitSeconds = 5, promote = false,
+        }));
+
+        job.GetProperty("status").GetString().Should().Be("Completed", job.GetRawText());
+        job.GetProperty("promote").GetBoolean().Should().BeFalse();
+        job.GetProperty("promoted").GetBoolean().Should().BeFalse();
+        job.GetProperty("keptInStagingReason").GetString().Should().Contain("\"promote\": false");
+        job.GetProperty("statusMessage").GetString().Should().Contain("kept in staging");
+        var registry = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IModelRegistry>();
+        (await registry.GetProductionAsync("nopro")).Should().BeNull("the first model of a model name would otherwise have gone in");
+    }
+
+    [Fact]
+    public async Task AJob_PromotesByDefault_AndTheCompletedJobSaysItWas()
+    {
+        var data = WriteImbalanced("promote.csv", 60);
+        WriteYaml("pro", "    task: binary-classification\n    label: y\n");
+
+        var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = data, labelColumn = "y", task = "binary-classification", name = "pro", timeLimitSeconds = 5,
+        }));
+
+        job.GetProperty("status").GetString().Should().Be("Completed", job.GetRawText());
+        job.GetProperty("promote").GetBoolean().Should().BeTrue();
+        job.GetProperty("promoted").GetBoolean().Should().BeTrue(job.GetRawText());
+        (job.TryGetProperty("keptInStagingReason", out var reason) ? reason.ValueKind : JsonValueKind.Null).Should().Be(JsonValueKind.Null);
+        // Completed is written after the decision, so production is already in place when a poller reads it.
+        var registry = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IModelRegistry>();
+        (await registry.GetProductionAsync("pro"))!.ExperimentId.Should().Be(job.GetProperty("experimentId").GetString());
+    }
+
+    [Fact]
     public async Task AJobOnOneClass_FailsWithTheReason()
     {
         var data = WriteImbalanced("oneclass.csv", 0);

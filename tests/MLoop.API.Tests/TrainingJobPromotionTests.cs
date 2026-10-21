@@ -65,6 +65,7 @@ public class TrainingJobPromotionTests
         public string GetProductionPath(string modelName) => "";
         public bool HasProduction(string modelName) => false;
         public string GetProductionModelFile(string modelName) => "";
+        public Task<string?> KeptInStagingReasonAsync(string modelName, string experimentId, string primaryMetric, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
         public Task<bool> ShouldPromoteAsync(string modelName, string experimentId, string primaryMetric, CancellationToken cancellationToken = default) => Task.FromResult(true);
     }
 }

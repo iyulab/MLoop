@@ -59,6 +59,7 @@ public class TrainingJobStore
             MaxRows = request.MaxRows,
             Weight = request.Weight,
             Balance = request.Balance,
+            Promote = request.Promote,
             Status = JobStatus.Queued,
             CreatedAt = DateTime.UtcNow
         };
@@ -90,6 +91,20 @@ public class TrainingJobStore
                 if (message != null) job.StatusMessage = message;
                 if (status is JobStatus.Completed or JobStatus.Failed)
                     job.CompletedAt = DateTime.UtcNow;
+                Save(job);
+            }
+        }
+    }
+
+    /// <summary>Records what became of the job's experiment: promoted to production, or kept in staging and why.</summary>
+    public void SetPromotion(string jobId, bool promoted, string? keptInStagingReason)
+    {
+        if (_jobs.TryGetValue(jobId, out var job))
+        {
+            lock (job.SyncRoot)
+            {
+                job.Promoted = promoted;
+                job.KeptInStagingReason = promoted ? null : keptInStagingReason;
                 Save(job);
             }
         }
@@ -182,6 +197,8 @@ public class TrainingJob
     public int? MaxRows { get; set; }
     public string? Weight { get; set; }
     public string? Balance { get; set; }
+    /// <summary>Whether the job may promote its experiment; <c>false</c> is <c>--no-promote</c>.</summary>
+    public bool Promote { get; init; } = true;
 
     public JobStatus Status { get; set; }
     public string? StatusMessage { get; set; }
@@ -192,6 +209,10 @@ public class TrainingJob
     public string? ExperimentId { get; set; }
     public Dictionary<string, double>? Metrics { get; set; }
     public string? BestTrainer { get; set; }
+    /// <summary>Whether the experiment went to production; <c>null</c> until the job completes.</summary>
+    public bool? Promoted { get; set; }
+    /// <summary>Why the experiment stayed in staging, when it did.</summary>
+    public string? KeptInStagingReason { get; set; }
 }
 
 /// <summary>A <c>POST /train</c> body.</summary>
@@ -212,6 +233,11 @@ public class TrainingJob
 /// Class balancing, as <c>--balance</c>: <c>auto</c>, <c>none</c> or a target ratio — the train part only, split off
 /// from the test part first. Classification only, and not with a weight column.
 /// </param>
+/// <param name="Promote">
+/// <c>false</c> keeps the experiment in staging, as <c>mloop train --no-promote</c> — for an application that decides
+/// promotion itself (its own gate, a review) and then calls <c>POST /promote</c>. Absent or <c>true</c>: promoted when it
+/// beats production and passes the gates, as <c>mloop train</c> does.
+/// </param>
 public record TrainingJobRequest(
     string DataFile,
     string LabelColumn,
@@ -223,7 +249,8 @@ public record TrainingJobRequest(
     int? MaxRows = null,
     IReadOnlyList<string>? AdditionalDataFiles = null,
     string? Weight = null,
-    string? Balance = null)
+    string? Balance = null,
+    bool Promote = true)
 {
     public string ModelName => string.IsNullOrWhiteSpace(Name) ? "default" : Name.Trim().ToLowerInvariant();
 }

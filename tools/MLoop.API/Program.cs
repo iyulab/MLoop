@@ -1721,7 +1721,8 @@ app.MapGet("/jobs", (
             createdAt = j.CreatedAt,
             completedAt = j.CompletedAt,
             experimentId = j.ExperimentId,
-            bestTrainer = j.BestTrainer
+            bestTrainer = j.BestTrainer,
+            promoted = j.Promoted
         })
     });
 })
@@ -1754,13 +1755,16 @@ app.MapGet("/jobs/{id}", (
         maxRows = job.MaxRows,
         weight = job.Weight,
         balance = job.Balance,
+        promote = job.Promote,
         status = job.Status.ToString(),
         statusMessage = job.StatusMessage,
         createdAt = job.CreatedAt,
         completedAt = job.CompletedAt,
         experimentId = job.ExperimentId,
         metrics = job.Metrics,
-        bestTrainer = job.BestTrainer
+        bestTrainer = job.BestTrainer,
+        promoted = job.Promoted,
+        keptInStagingReason = job.KeptInStagingReason
     });
 })
 .WithName("GetJobStatus")
