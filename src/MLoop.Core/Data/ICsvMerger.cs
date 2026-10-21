@@ -22,21 +22,28 @@ public interface ICsvMerger
     /// </summary>
     /// <param name="sourcePaths">Paths to source CSV files</param>
     /// <param name="outputPath">Path for merged output file</param>
+    /// <param name="columnDefaults">
+    /// Columns a file may lack, with the value its rows take (a weight column whose rows count 1 in a file
+    /// that carries no weights). Every other column must be in every file.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Merge result with statistics</returns>
     Task<CsvMergeResult> MergeAsync(
         IEnumerable<string> sourcePaths,
         string outputPath,
+        IReadOnlyDictionary<string, string>? columnDefaults = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Validates that multiple CSV files have compatible schemas.
     /// </summary>
     /// <param name="paths">Paths to CSV files to validate</param>
+    /// <param name="columnDefaults">Columns a file may lack — see <see cref="MergeAsync"/></param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Validation result with details</returns>
     Task<CsvSchemaValidation> ValidateSchemaCompatibilityAsync(
         IEnumerable<string> paths,
+        IReadOnlyDictionary<string, string>? columnDefaults = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

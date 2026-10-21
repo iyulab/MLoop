@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using MLoop.DataStore.Interfaces;
@@ -6,18 +7,20 @@ namespace MLoop.DataStore.Services;
 
 /// <summary>
 /// Filesystem-based data sampler that creates retraining datasets from predictions and feedback.
-/// Supports Random, Recent, and FeedbackPriority strategies.
+/// Supports Random, Recent, FeedbackPriority, Stratified and LowConfidence strategies.
 /// </summary>
 public sealed class FileDataSampler : IDataSampler
 {
     private readonly string _logsDirectory;
-    private readonly string _feedbackDirectory;
+    private readonly FileFeedbackCollector _feedback;
     private readonly JsonSerializerOptions _jsonOptions;
 
     public FileDataSampler(string baseDirectory)
     {
         _logsDirectory = Path.Combine(baseDirectory, ".mloop", "logs");
-        _feedbackDirectory = Path.Combine(baseDirectory, ".mloop", "feedback");
+        // Feedback is read through its own store — one reader of the format, so a field it gains
+        // (a weight) reaches sampling without a second parser to update.
+        _feedback = new FileFeedbackCollector(baseDirectory);
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true
@@ -30,8 +33,12 @@ public sealed class FileDataSampler : IDataSampler
         int sampleSize,
         SamplingStrategy strategy,
         string outputPath,
+        RetrainingColumns columns,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(columns);
+        ArgumentException.ThrowIfNullOrWhiteSpace(columns.Label);
+
         var predictions = await LoadPredictionsAsync(modelName, cancellationToken).ConfigureAwait(false);
         var feedback = await LoadFeedbackAsync(modelName, cancellationToken).ConfigureAwait(false);
 
@@ -43,12 +50,9 @@ public sealed class FileDataSampler : IDataSampler
         }
 
         // Join predictions with feedback. Feedback can be recorded more than once for the same
-        // prediction (RecordFeedbackAsync appends — e.g. a user correcting a label), so group by
-        // prediction id and keep the most recent value rather than ToDictionary-ing (which threw
-        // "same key already added" and crashed sampling on any duplicate).
-        var feedbackDict = feedback
-            .GroupBy(f => f.PredictionId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(f => f.Timestamp).Last().ActualValue);
+        // prediction (RecordFeedbackAsync appends — e.g. a user correcting a label): the latest stands.
+        var feedbackDict = FeedbackEntry.LatestPerPrediction(feedback)
+            .ToDictionary(f => f.PredictionId);
         var joinedData = predictions
             .Select(p => new JoinedSample(
                 p.PredictionId,
@@ -62,15 +66,22 @@ public sealed class FileDataSampler : IDataSampler
         // Apply sampling strategy
         var sampled = ApplyStrategy(joinedData, sampleSize, strategy);
 
-        // Write to CSV
-        await WriteCsvAsync(sampled, outputPath, cancellationToken).ConfigureAwait(false);
+        // A weight column is written when the model trains with one (its rows must carry it), or when
+        // feedback carries weights the model has not been told about yet.
+        var weightColumn = columns.Weight
+            ?? (sampled.Any(s => s.Feedback?.Weight is not null) ? DefaultWeightColumn(sampled, columns.Label) : null);
+
+        await WriteCsvAsync(sampled, outputPath, columns.Label, weightColumn, cancellationToken).ConfigureAwait(false);
 
         return new SamplingResult(
             OutputPath: outputPath,
             SampledCount: sampled.Count,
             TotalAvailable: predictions.Count,
             StrategyUsed: strategy,
-            CreatedAt: DateTimeOffset.UtcNow);
+            CreatedAt: DateTimeOffset.UtcNow,
+            LabeledCount: sampled.Count(s => s.Feedback is not null),
+            LabelColumn: columns.Label,
+            WeightColumn: weightColumn);
     }
 
     /// <inheritdoc />
@@ -137,8 +148,8 @@ public sealed class FileDataSampler : IDataSampler
     private static List<JoinedSample> FeedbackPrioritySample(List<JoinedSample> data, int size)
     {
         // Prioritize samples with feedback, then fill with random
-        var withFeedback = data.Where(d => d.ActualValue != null).ToList();
-        var withoutFeedback = data.Where(d => d.ActualValue == null).ToList();
+        var withFeedback = data.Where(d => d.Feedback != null).ToList();
+        var withoutFeedback = data.Where(d => d.Feedback == null).ToList();
 
         var result = new List<JoinedSample>();
         result.AddRange(withFeedback.Take(size));
@@ -275,115 +286,64 @@ public sealed class FileDataSampler : IDataSampler
         return predictions;
     }
 
-    private async Task<List<FeedbackRecord>> LoadFeedbackAsync(
+    private Task<IReadOnlyList<FeedbackEntry>> LoadFeedbackAsync(
         string modelName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        _feedback.GetFeedbackAsync(modelName, limit: int.MaxValue, cancellationToken: cancellationToken);
+
+    /// <summary>
+    /// <see cref="RetrainingColumns.DefaultWeight"/>, unless a logged input or the label already holds
+    /// that name — then <c>feedback_weight</c>, so the weight never overwrites a feature.
+    /// </summary>
+    private static string DefaultWeightColumn(List<JoinedSample> samples, string labelColumn)
     {
-        var feedback = new List<FeedbackRecord>();
-        var modelDir = Path.Combine(_feedbackDirectory, SanitizeFileName(modelName));
+        bool Taken(string name) =>
+            string.Equals(name, labelColumn, StringComparison.OrdinalIgnoreCase)
+            || samples.Any(s => s.Input.Keys.Any(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase)));
 
-        if (!Directory.Exists(modelDir))
-            return feedback;
-
-        var feedbackFiles = Directory.GetFiles(modelDir, "*.jsonl");
-        foreach (var file in feedbackFiles)
-        {
-            if (cancellationToken.IsCancellationRequested)
-                break;
-
-            try
-            {
-                var lines = await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false);
-                foreach (var line in lines)
-                {
-                    if (string.IsNullOrWhiteSpace(line))
-                        continue;
-
-                    try
-                    {
-                        using var doc = JsonDocument.Parse(line);
-                        var root = doc.RootElement;
-
-                        var predictionId = root.TryGetProperty("predictionId", out var pidEl)
-                            ? pidEl.GetString()
-                            : null;
-
-                        var actualValue = root.TryGetProperty("actualValue", out var avEl)
-                            ? GetObjectFromJson(avEl)
-                            : null;
-
-                        var timestamp = root.TryGetProperty("timestamp", out var tsEl)
-                            && tsEl.ValueKind == JsonValueKind.String
-                            && tsEl.TryGetDateTimeOffset(out var ts)
-                            ? ts
-                            : DateTimeOffset.MinValue;
-
-                        if (predictionId != null && actualValue != null)
-                        {
-                            feedback.Add(new FeedbackRecord(predictionId, actualValue, timestamp));
-                        }
-                    }
-                    catch (JsonException)
-                    {
-                        // Skip malformed entries
-                    }
-                }
-            }
-            catch (IOException)
-            {
-                // Skip inaccessible files
-            }
-        }
-
-        return feedback;
+        return Taken(RetrainingColumns.DefaultWeight) ? "feedback_weight" : RetrainingColumns.DefaultWeight;
     }
 
-    private async Task WriteCsvAsync(
+    private static async Task WriteCsvAsync(
         List<JoinedSample> samples,
         string outputPath,
+        string labelColumn,
+        string? weightColumn,
         CancellationToken cancellationToken)
     {
         if (samples.Count == 0)
             return;
 
-        // Collect all unique input columns
-        var allColumns = new HashSet<string>();
-        foreach (var sample in samples)
-        {
-            foreach (var key in sample.Input.Keys)
-            {
-                allColumns.Add(key);
-            }
-        }
+        // The logged inputs are the features. A logged column that shares the label's or the weight's
+        // name is that column: the label takes the feedback's value when there is one.
+        static bool Same(string a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+        var columns = samples
+            .SelectMany(s => s.Input.Keys)
+            .Where(k => !Same(k, labelColumn) && !Same(k, weightColumn))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
 
-        var columns = allColumns.OrderBy(c => c).ToList();
         var sb = new StringBuilder();
+        var header = columns.Append(labelColumn);
+        if (weightColumn is not null)
+            header = header.Append(weightColumn);
+        sb.AppendLine(string.Join(",", header.Select(EscapeCsvField)));
 
-        // Header: input columns + Output + ActualValue (if any have feedback)
-        var hasFeedback = samples.Any(s => s.ActualValue != null);
-        sb.Append(string.Join(",", columns.Select(EscapeCsvField)));
-        sb.Append(",Output");
-        if (hasFeedback)
-        {
-            sb.Append(",ActualValue");
-        }
-        sb.AppendLine();
-
-        // Data rows
         foreach (var sample in samples)
         {
-            var values = new List<string>();
-            foreach (var col in columns)
-            {
-                var value = sample.Input.TryGetValue(col, out var v) ? v?.ToString() ?? "" : "";
-                values.Add(EscapeCsvField(value));
-            }
-            values.Add(EscapeCsvField(sample.Output?.ToString() ?? ""));
-            if (hasFeedback)
-            {
-                values.Add(EscapeCsvField(sample.ActualValue?.ToString() ?? ""));
-            }
-            sb.AppendLine(string.Join(",", values));
+            var values = columns
+                .Select(col => FormatValue(sample.Input.FirstOrDefault(kv => Same(kv.Key, col)).Value))
+                .ToList();
+
+            var label = sample.Feedback?.ActualValue
+                ?? sample.Input.FirstOrDefault(kv => Same(kv.Key, labelColumn)).Value;
+            values.Add(FormatValue(label));
+
+            if (weightColumn is not null)
+                values.Add((sample.Feedback?.EffectiveWeight ?? 1.0).ToString("R", CultureInfo.InvariantCulture));
+
+            sb.AppendLine(string.Join(",", values.Select(EscapeCsvField)));
         }
 
         var dir = Path.GetDirectoryName(outputPath);
@@ -394,6 +354,14 @@ public sealed class FileDataSampler : IDataSampler
 
         await File.WriteAllTextAsync(outputPath, sb.ToString(), cancellationToken).ConfigureAwait(false);
     }
+
+    // Numbers are written invariantly — the file is read back by training, not by a person's locale.
+    private static string FormatValue(object? value) => value switch
+    {
+        null => "",
+        IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString() ?? ""
+    };
 
     private static Dictionary<string, object> ParseInput(JsonElement element)
     {
@@ -448,13 +416,11 @@ public sealed class FileDataSampler : IDataSampler
         double? Confidence,
         DateTimeOffset Timestamp);
 
-    private record FeedbackRecord(string PredictionId, object ActualValue, DateTimeOffset Timestamp);
-
     private record JoinedSample(
         string PredictionId,
         Dictionary<string, object> Input,
         object? Output,
         double? Confidence,
         DateTimeOffset Timestamp,
-        object? ActualValue);
+        FeedbackEntry? Feedback);
 }

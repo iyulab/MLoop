@@ -148,6 +148,18 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
         var empty = await _client.PostAsJsonAsync("/feedback", new { });
         empty.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
+        // A weight travels with the entry (a row reviewed with probability 1/4 counts 4), and one that
+        // cannot weight a row is the caller's mistake, not the server's.
+        var weighted = await _client.PostAsJsonAsync("/feedback", new { predictionId = id, actualValue = "bird", source = "reviewer", weight = 4.0 });
+        weighted.StatusCode.Should().Be(HttpStatusCode.OK, await weighted.Content.ReadAsStringAsync());
+        var negative = await _client.PostAsJsonAsync("/feedback", new { predictionId = id, actualValue = "bird", weight = -1.0 });
+        negative.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var listed = JsonSerializer.Deserialize<JsonElement>(await _client.GetStringAsync($"/feedback?name={modelName}"));
+        listed.GetProperty("feedback").EnumerateArray()
+            .Where(f => f.TryGetProperty("weight", out var w) && w.ValueKind == JsonValueKind.Number)
+            .Select(f => f.GetProperty("weight").GetDouble())
+            .Should().Equal(4.0);
+
         var trigger = JsonSerializer.Deserialize<JsonElement>(await _client.GetStringAsync($"/trigger?name={modelName}"));
         trigger.GetProperty("conditions").EnumerateArray().Select(c => c.GetProperty("type").GetString())
             .Should().BeEquivalentTo(MLoop.Ops.Services.RetrainingDefaults.All.Select(c => c.Type.ToString()),

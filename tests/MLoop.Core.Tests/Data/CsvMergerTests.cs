@@ -28,6 +28,40 @@ public class CsvMergerTests : IDisposable
     }
 
     [Fact]
+    public async Task MergeAsync_FileLackingADefaultedColumn_TakesTheDefault()
+    {
+        // Training data without weights merged with weighted feedback: the unweighted rows count 1.
+        var train = Path.Combine(_tempDirectory, "train.csv");
+        var feedback = Path.Combine(_tempDirectory, "feedback.csv");
+        await File.WriteAllTextAsync(train, "x,label\n1,a\n2,b");
+        await File.WriteAllTextAsync(feedback, "x,label,weight\n3,a,4");
+        var defaults = new Dictionary<string, string> { ["weight"] = "1" };
+
+        var validation = await _csvMerger.ValidateSchemaCompatibilityAsync([train, feedback], defaults);
+        var output = Path.Combine(_tempDirectory, "merged.csv");
+        var result = await _csvMerger.MergeAsync([train, feedback], output, defaults);
+
+        Assert.True(validation.IsCompatible, validation.Message);
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(["x,label,weight", "1,a,1", "2,b,1", "3,a,4"], await File.ReadAllLinesAsync(output));
+    }
+
+    [Fact]
+    public async Task MergeAsync_ColumnWithoutADefault_IsStillAMismatch()
+    {
+        var a = Path.Combine(_tempDirectory, "a.csv");
+        var b = Path.Combine(_tempDirectory, "b.csv");
+        await File.WriteAllTextAsync(a, "x,label\n1,a");
+        await File.WriteAllTextAsync(b, "x,label,weight,extra\n3,a,4,z");
+
+        var validation = await _csvMerger.ValidateSchemaCompatibilityAsync(
+            [a, b], new Dictionary<string, string> { ["weight"] = "1" });
+
+        Assert.False(validation.IsCompatible);
+        Assert.Equal(["extra"], validation.MismatchedColumns["b.csv"]);
+    }
+
+    [Fact]
     public async Task DiscoverMergeableCsvsAsync_WithSameSchemaFiles_ReturnsGroup()
     {
         // Arrange

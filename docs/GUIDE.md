@@ -1171,16 +1171,20 @@ mloop logs --json
 ```
 ── Prediction Logs ─────────────────────────────────────────────────────────────
 
-╭─────────────────────┬─────────┬────────────┬────────────────────┬────────────╮
-│ Timestamp (+09:00)  │ Model   │ Experiment │ Input (summary)    │ Output     │
-├─────────────────────┼─────────┼────────────┼────────────────────┼────────────┤
-│ 2026-09-20 15:27:17 │ default │ exp-001    │ x1=6.229 (+2 more) │ 11.75718   │
-│ 2026-09-20 15:27:17 │ default │ exp-001    │ x1=7.399 (+2 more) │ 15.946222  │
-│ 2026-09-20 15:27:17 │ default │ exp-001    │ x1=0.290 (+2 more) │ -2.1653776 │
-╰─────────────────────┴─────────┴────────────┴────────────────────┴────────────╯
+╭──────────────────┬─────────────┬─────────┬────────────┬─────────────┬────────╮
+│ ID               │ Timestamp   │ Model   │ Experiment │ Input       │ Output │
+│                  │ (+09:00)    │         │            │ (summary)   │        │
+├──────────────────┼─────────────┼─────────┼────────────┼─────────────┼────────┤
+│ 2869808376524814 │ 2026-10-21  │ default │ exp-001    │ x1=0.899    │ yes    │
+│                  │ 21:45:51    │         │            │ (+1 more)   │        │
+│ 8dc968cd6ec741b0 │ 2026-10-21  │ default │ exp-001    │ x1=0.846    │ yes    │
+│                  │ 21:45:51    │         │            │ (+1 more)   │        │
+╰──────────────────┴─────────────┴─────────┴────────────┴─────────────┴────────╯
 
-Showing 3 entries
+Showing 2 entries
 ```
+
+The ID column is the prediction's id — what `mloop feedback add --prediction-id` takes.
 
 The timestamps are in your own zone, named once in the column heading rather than repeated on
 every row. With nothing logged yet the command says so and exits 0:
@@ -1189,6 +1193,62 @@ every row. With nothing logged yet the command says so and exits 0:
 No prediction logs found.
 Use mloop predict --log to log predictions.
 ```
+
+---
+
+### `mloop feedback`
+
+Once the actual value of a logged prediction is known, record it. Feedback is what `mloop feedback
+metrics` and `mloop trigger check` measure the model with, and what a retraining dataset is built from.
+
+```bash
+mloop feedback add -p 2869808376524814 -v no -s reviewer-llm -w 4   # the actual value, where it came from, its weight
+mloop feedback list [--model <name>] [--json]
+mloop feedback metrics [--model <name>] [--json]
+```
+
+| Option (`add`) | Short | Description |
+|--------|-------|-------------|
+| `--prediction-id` | `-p` | The prediction's id (the ID column of `mloop logs`) |
+| `--actual-value` | `-v` | The actual value |
+| `--source` | `-s` | Where the value came from — free text (`human`, `reviewer-llm`, …) |
+| `--weight` | `-w` | How much the row counts in training and evaluation built from feedback: for a row reviewed with probability *p*, 1/*p*. Default 1; finite and not negative |
+
+Recording feedback again for the same prediction corrects it — the latest entry stands. When any entry
+carries a weight, `feedback metrics` counts each prediction by its weight (`Accuracy (weighted)`, `weighted`
+in `--json`): when some answers are checked more often than others, counting the checked rows alike misstates the
+model's accuracy.
+
+---
+
+### `mloop sample`
+
+`mloop sample create --model <name>` turns the logged predictions and their feedback into a training file:
+
+```bash
+mloop sample create --model default --rows 1000 --strategy feedback-priority -o feedback.csv
+mloop train --data datasets/train.csv feedback.csv --weight weight   # the original rows count 1
+```
+
+```
+x1,x2,churn,weight
+0.846,0.383,yes,1
+0.899,0.925,no,4
+0.373,0.749,,1
+```
+
+- The logged inputs are the features, and the actual value is written under the **model's label column** (from its
+  production experiment, else `label:` in `mloop.yaml`). A row without feedback has an empty label, and training drops it.
+- The model's own answer and the feedback source are **not** written. Every column in the file is a feature to the
+  next training, and a model given its own previous answer learns to copy it.
+- A weight column is written when the model trains weighted (its own column name), or when any feedback carries a
+  weight (`weight`, or `feedback_weight` if an input already has that name). Train with `--weight <column>`.
+- `train --data a.csv b.csv` merges the files. A file without the weight column counts its rows 1, so the original
+  training data and weighted feedback merge without editing either file.
+- Strategies: `random` (default), `recent`, `feedback-priority` (rows with feedback first), `stratified` (by the
+  model's answer), `low-confidence` (the least confident answers — the rows most worth labeling next).
+- `mloop sample create --from <csv>` samples a plain CSV instead (`random`, `head`, `stratified --label <col>`);
+  `mloop sample stats --model <name>` reports how many logged predictions have feedback.
 
 ---
 

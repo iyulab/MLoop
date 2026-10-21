@@ -1398,6 +1398,7 @@ app.MapGet("/feedback", async (
                 predictedValue = f.PredictedValue,
                 actualValue = f.ActualValue,
                 source = f.Source,
+                weight = f.Weight,
                 timestamp = f.Timestamp
             })
         });
@@ -1432,7 +1433,7 @@ app.MapPost("/feedback", async (
         logger.LogInformation("Recording feedback for prediction '{PredictionId}'", request.PredictionId);
 
         await feedbackCollector.RecordFeedbackAsync(
-            request.PredictionId, request.ActualValue, request.Source, ct);
+            request.PredictionId, request.ActualValue, request.Source, request.Weight, ct);
 
         logger.LogInformation("Feedback recorded in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
 
@@ -1765,7 +1766,8 @@ public record EvaluateRequest(
 public record FeedbackRequest(
     string PredictionId,
     object ActualValue,
-    string? Source = null);
+    string? Source = null,
+    double? Weight = null);
 
 namespace MLoop.API
 {

@@ -27,8 +27,6 @@ public class GuideCoverageContractTests
     /// </summary>
     private static readonly HashSet<string> Undocumented = new(StringComparer.Ordinal)
     {
-        "feedback",
-        "sample",
         "trigger",
         "prep",
         "features",

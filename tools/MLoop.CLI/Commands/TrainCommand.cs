@@ -503,8 +503,14 @@ public static class TrainCommand
                     }
                     string Given(string name) => givenName.GetValueOrDefault(name, name);
 
+                    // A file without the weight column is unweighted: its rows count 1. That is how
+                    // the original training data merges with weighted feedback (`sample create --model`).
+                    IReadOnlyDictionary<string, string>? columnDefaults = string.IsNullOrEmpty(effectiveDefinition.Weight)
+                        ? null
+                        : new Dictionary<string, string> { [effectiveDefinition.Weight] = "1" };
+
                     // Validate schemas
-                    var validation = await csvMerger.ValidateSchemaCompatibilityAsync(tables);
+                    var validation = await csvMerger.ValidateSchemaCompatibilityAsync(tables, columnDefaults);
                     if (!validation.IsCompatible)
                     {
                         // validation.Message only counts the mismatch; the columns that actually
@@ -526,7 +532,7 @@ public static class TrainCommand
                     }
 
                     var mergedPath = Path.Combine(datasetsPath, "merged_train.csv");
-                    var mergeResult = await csvMerger.MergeAsync(tables, mergedPath);
+                    var mergeResult = await csvMerger.MergeAsync(tables, mergedPath, columnDefaults);
 
                     if (!mergeResult.Success)
                     {

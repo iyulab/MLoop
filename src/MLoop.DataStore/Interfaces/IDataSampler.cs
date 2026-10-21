@@ -6,18 +6,24 @@ namespace MLoop.DataStore.Interfaces;
 public interface IDataSampler
 {
     /// <summary>
-    /// Creates a sample dataset from logged predictions and feedback.
+    /// Creates a training dataset from logged predictions and their feedback: each row is the logged
+    /// input with the feedback's actual value under the model's label column (empty when the prediction
+    /// has none), plus a weight column when the model trains weighted or any feedback carries a weight.
+    /// The model's own answer and the feedback source are not written — a column in the file is a
+    /// feature to the next training, and the prediction would teach the model to copy itself.
     /// </summary>
     /// <param name="modelName">Model to sample data for</param>
     /// <param name="sampleSize">Number of samples to collect</param>
     /// <param name="strategy">Sampling strategy</param>
     /// <param name="outputPath">Path to save the sampled dataset</param>
+    /// <param name="columns">The model's label column, and its weight column if it trains weighted</param>
     /// <param name="cancellationToken">Cancellation token</param>
     Task<SamplingResult> SampleAsync(
         string modelName,
         int sampleSize,
         SamplingStrategy strategy,
         string outputPath,
+        RetrainingColumns columns,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -50,14 +56,30 @@ public enum SamplingStrategy
 }
 
 /// <summary>
-/// Result of a sampling operation.
+/// The columns a retraining dataset is written with: the model's label, and the weight column it trains
+/// with (<c>null</c> when it trains unweighted — a weight column is then written only if feedback carries
+/// weights, under <see cref="DefaultWeight"/>).
+/// </summary>
+public sealed record RetrainingColumns(string Label, string? Weight = null)
+{
+    /// <summary>The weight column's name when the model declares none.</summary>
+    public const string DefaultWeight = "weight";
+}
+
+/// <summary>
+/// Result of a sampling operation. <see cref="LabeledCount"/> rows carry an actual value — the rest
+/// have an empty label, which training drops. <see cref="WeightColumn"/> is the column the rows were
+/// weighted under, or <c>null</c> when none was written.
 /// </summary>
 public record SamplingResult(
     string OutputPath,
     int SampledCount,
     int TotalAvailable,
     SamplingStrategy StrategyUsed,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    int LabeledCount = 0,
+    string? LabelColumn = null,
+    string? WeightColumn = null);
 
 /// <summary>
 /// Statistics about available data for sampling.

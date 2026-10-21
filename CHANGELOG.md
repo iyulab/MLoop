@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `mloop feedback add --weight <w>` (and `weight` on `POST /feedback`) records how much the row counts — for a
+  row reviewed with probability *p*, 1/*p*. Finite and not negative; absent counts 1. `feedback list` and
+  `GET /feedback` show it, and `feedback metrics` counts each prediction by its weight when any entry has one
+  (`weighted` in `--json`).
+- `mloop sample create --model` strategies `stratified` and `low-confidence` — the sampler had both, the command
+  did not accept them.
+
+### Changed
+
+- **`mloop sample create --model` writes a training file.** The feedback's actual value goes under the model's
+  label column (from its production experiment, else `mloop.yaml`), with a weight column when the model trains
+  weighted or any feedback carries a weight. The `Output` (the model's own answer) and `ActualValue` columns are
+  gone: every column in the file is a feature to the next training, and a model given its previous answer learns
+  to copy it. To migrate, train on the file with the model's label — no `--label ActualValue`, and no `Output`
+  column to drop.
+- `IFeedbackCollector.RecordFeedbackAsync` takes `weight` before the cancellation token; `FeedbackEntry` carries
+  `Weight`; `IDataSampler.SampleAsync` takes the `RetrainingColumns` to write under.
+- `ICsvMerger.MergeAsync` and `ValidateSchemaCompatibilityAsync` take `columnDefaults` — columns a file may lack,
+  with the value its rows take — before the cancellation token.
+
+### Fixed
+
+- `mloop train --data a.csv b.csv --weight w` refused to merge when only some files had the weight column. A file
+  without it is unweighted: its rows now count 1, so original training data and weighted feedback merge as they are.
+- A column was excluded as constant when its first 200 rows agreed, and as sparse when its first 200 rows were
+  mostly empty — even when the rest of the file said otherwise (rows appended after the original data). Both rules
+  now read every row; the constant rule stops once each column has shown two values.
+- A weight column of mostly 1s was removed from the data as a constant feature, and weighted training then failed
+  with «The test data has no weight column». No feature-exclusion rule removes a column claimed for a role (weight,
+  ranking group, recommendation user and item, pre-featurizer inputs, typed overrides) — before, only the
+  structured and identifier rules respected that.
+- MCP `mloop_feedback` and `mloop_sample` passed options the CLI does not have (`--value`, `--name`, a data-file
+  positional), so `add`, `list` and `create` failed. They now pass the CLI's own options, and gain `source`, `weight`
+  (feedback) and `modelName`, `output`, `label` (sample).
+- `mloop feedback list` printed the feedback's own text (prediction, actual value, source) as console markup — a
+  `[` in a label broke the table.
+
 ## [0.40.0] - 2026-10-21
 
 ### Added

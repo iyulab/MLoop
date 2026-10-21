@@ -210,6 +210,65 @@ public class FileFeedbackCollectorTests : IDisposable
         feedback[0].ActualValue.ToString().Should().Be("actual_label");
     }
 
+    [Fact]
+    public async Task RecordFeedbackAsync_Weight_IsKeptWithTheEntry()
+    {
+        var weighted = await CreatePredictionLog("model", "a");
+        var plain = await CreatePredictionLog("model", "b");
+        await _collector.RecordFeedbackAsync(weighted, "a", source: "reviewer", weight: 2.5);
+        await _collector.RecordFeedbackAsync(plain, "b");
+
+        var feedback = await _collector.GetFeedbackAsync("model");
+
+        var w = feedback.Single(f => f.PredictionId == weighted);
+        w.Weight.Should().Be(2.5);
+        w.Source.Should().Be("reviewer");
+        feedback.Single(f => f.PredictionId == plain).Weight.Should().BeNull();
+        feedback.Single(f => f.PredictionId == plain).EffectiveWeight.Should().Be(1.0);
+    }
+
+    [Theory]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public async Task RecordFeedbackAsync_WeightThatCannotWeightARow_IsRefused_AndNothingIsWritten(double weight)
+    {
+        var id = await CreatePredictionLog("model", "a");
+
+        var act = () => _collector.RecordFeedbackAsync(id, "a", weight: weight);
+
+        (await act.Should().ThrowAsync<ArgumentOutOfRangeException>()).Which.ParamName.Should().Be("weight");
+        (await _collector.GetFeedbackAsync("model")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CalculateMetricsAsync_WithWeights_CountsEachPredictionByItsWeight()
+    {
+        // One right answer reviewed with probability 1/3 stands for three rows; one wrong answer
+        // reviewed with certainty stands for one. Counted alike the accuracy would read 0.5.
+        var right = await CreatePredictionLog("model", "yes");
+        var wrong = await CreatePredictionLog("model", "yes");
+        await _collector.RecordFeedbackAsync(right, "yes", weight: 3);
+        await _collector.RecordFeedbackAsync(wrong, "no", weight: 1);
+
+        var metrics = await _collector.CalculateMetricsAsync("model");
+
+        metrics.Weighted.Should().BeTrue();
+        metrics.Accuracy.Should().BeApproximately(0.75, 1e-12);
+        metrics.TotalFeedback.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task CalculateMetricsAsync_AllWeightsZero_HasNoAccuracy()
+    {
+        var id = await CreatePredictionLog("model", "yes");
+        await _collector.RecordFeedbackAsync(id, "yes", weight: 0);
+
+        var metrics = await _collector.CalculateMetricsAsync("model");
+
+        metrics.Accuracy.Should().BeNull();
+    }
+
     /// <summary>
     /// Helper to create a prediction log and return its ID.
     /// </summary>

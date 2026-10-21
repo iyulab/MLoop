@@ -238,7 +238,7 @@ public class TrainingEngine : ITrainingEngine
                 // Capture input schema before training (using enhanced detection).
                 // Deliberately from the full dataset, not the train split — the schema must describe
                 // every category the model may be asked to predict on.
-                inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides, featureExclusions, config.CategoryColumns);
+                inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides, featureExclusions, config.CategoryColumns, config.WeightColumn);
 
                 // Stratify the train/test split for classification. The unstratified alternative is
                 // ML.NET's TrainTestSplit (DataProviderBase.SplitData), which draws rows uniformly and
@@ -874,7 +874,8 @@ public class TrainingEngine : ITrainingEngine
     }
 
     private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn, string? taskType = null, Dictionary<string, string>? columnOverrides = null,
-        IReadOnlyList<ExcludedColumn>? featureExclusions = null, IReadOnlyCollection<string>? categoryColumns = null)
+        IReadOnlyList<ExcludedColumn>? featureExclusions = null, IReadOnlyCollection<string>? categoryColumns = null,
+        string? weightColumn = null)
     {
         try
         {
@@ -1022,7 +1023,11 @@ public class TrainingEngine : ITrainingEngine
 
                     if (dataType != originalType || purpose != originalPurpose)
                     {
-                        Console.WriteLine($"[Info] Column '{colName}' overridden: {originalType}/{originalPurpose} → {dataType}/{purpose} (mloop.yaml)");
+                        // The weight joins the overrides as `ignore` (TrainingConfig.ColumnOverrides) whether
+                        // it came from mloop.yaml or --weight; name it for what it is, not where it was not.
+                        var origin = string.Equals(colName, weightColumn, StringComparison.OrdinalIgnoreCase)
+                            ? "weight column" : "mloop.yaml";
+                        Console.WriteLine($"[Info] Column '{colName}' overridden: {originalType}/{originalPurpose} → {dataType}/{purpose} ({origin})");
                     }
                 }
 

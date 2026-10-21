@@ -34,10 +34,12 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         string predictionId,
         object actualValue,
         string? source = null,
+        double? weight = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(predictionId);
         ArgumentNullException.ThrowIfNull(actualValue);
+        FeedbackEntry.ValidateWeight(weight);
 
         // Find the original prediction to get modelName and predictedValue
         var prediction = await FindPredictionByIdAsync(predictionId, cancellationToken).ConfigureAwait(false);
@@ -52,6 +54,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             PredictedValue = prediction.Value.Output,
             ActualValue = actualValue,
             Source = source,
+            Weight = weight,
             Timestamp = DateTimeOffset.UtcNow
         };
 
@@ -118,23 +121,21 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         }
 
         // Recording feedback again for a prediction corrects it — the latest actual value stands, as
-        // sampling already reads it — so each prediction is counted once.
-        feedback = feedback
-            .GroupBy(e => e.PredictionId)
-            .Select(g => g.OrderByDescending(e => e.Timestamp).First())
-            .ToList();
+        // sampling reads it too — so each prediction is counted once.
+        feedback = FeedbackEntry.LatestPerPrediction(feedback);
 
-        // Calculate accuracy for classification tasks
-        int correctCount = 0;
+        // Each prediction counts by its weight: a sample reviewed with unequal probabilities misstates
+        // accuracy when its rows are counted alike. Without weights every row counts 1 — plain accuracy.
+        var weighted = feedback.Any(e => e.Weight is not null);
+        double total = 0, correct = 0;
         foreach (var entry in feedback)
         {
+            total += entry.EffectiveWeight;
             if (FeedbackValueComparer.ValuesMatch(entry.PredictedValue, entry.ActualValue))
-            {
-                correctCount++;
-            }
+                correct += entry.EffectiveWeight;
         }
 
-        var accuracy = (double)correctCount / feedback.Count;
+        double? accuracy = total > 0 ? correct / total : null;
 
         return new FeedbackMetrics(
             modelName,
@@ -143,7 +144,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             Accuracy: accuracy,
             Precision: null, // Would require class-specific calculation
             Recall: null,    // Would require class-specific calculation
-            CalculatedAt: DateTimeOffset.UtcNow);
+            CalculatedAt: DateTimeOffset.UtcNow,
+            Weighted: weighted);
     }
 
     private async Task WriteEntryAsync(SerializableFeedbackEntry entry, CancellationToken cancellationToken)
@@ -249,7 +251,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                             serializable.PredictedValue ?? new object(),
                             serializable.ActualValue ?? new object(),
                             serializable.Source,
-                            serializable.Timestamp);
+                            serializable.Timestamp,
+                            serializable.Weight);
 
                         if (entry.Timestamp >= from && entry.Timestamp <= to)
                         {
@@ -332,6 +335,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         public object? PredictedValue { get; set; }
         public object? ActualValue { get; set; }
         public string? Source { get; set; }
+        public double? Weight { get; set; }
         public DateTimeOffset Timestamp { get; set; }
     }
 }

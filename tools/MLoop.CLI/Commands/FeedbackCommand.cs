@@ -1,4 +1,5 @@
 ﻿using System.CommandLine;
+using System.Globalization;
 using System.CommandLine.Parsing;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure;
@@ -45,20 +46,28 @@ public static class FeedbackCommand
 
         var sourceOption = new Option<string?>("--source", "-s")
         {
-            Description = "Feedback source (e.g., 'user', 'system', 'manual')"
+            Description = "Where the value came from (e.g., 'user', 'reviewer-llm', 'system')"
+        };
+
+        var weightOption = new Option<double?>("--weight", "-w")
+        {
+            Description = "How much this row counts in training and evaluation built from feedback "
+                + "(for a row reviewed with probability p, 1/p). Default 1"
         };
 
         var command = new Command("add", "Record feedback for a prediction");
         command.Options.Add(predictionIdOption);
         command.Options.Add(actualValueOption);
         command.Options.Add(sourceOption);
+        command.Options.Add(weightOption);
 
         command.SetAction((parseResult) =>
         {
             var predictionId = parseResult.GetValue(predictionIdOption)!;
             var actualValue = parseResult.GetValue(actualValueOption)!;
             var source = parseResult.GetValue(sourceOption);
-            return ExecuteAddAsync(predictionId, actualValue, source);
+            var weight = parseResult.GetValue(weightOption);
+            return ExecuteAddAsync(predictionId, actualValue, source, weight);
         });
 
         return command;
@@ -157,7 +166,8 @@ public static class FeedbackCommand
     private static async Task<int> ExecuteAddAsync(
         string predictionId,
         string actualValue,
-        string? source)
+        string? source,
+        double? weight)
     {
         try
         {
@@ -169,16 +179,28 @@ public static class FeedbackCommand
             await collector.RecordFeedbackAsync(
                 predictionId,
                 actualValue,
-                source);
+                source,
+                weight);
 
-            AnsiConsole.MarkupLine($"[green]✓[/] Feedback recorded for prediction [cyan]{predictionId}[/]");
-            AnsiConsole.MarkupLine($"  Actual value: [yellow]{actualValue}[/]");
+            AnsiConsole.MarkupLine($"[green]✓[/] Feedback recorded for prediction [cyan]{Markup.Escape(predictionId)}[/]");
+            AnsiConsole.MarkupLine($"  Actual value: [yellow]{Markup.Escape(actualValue)}[/]");
             if (source != null)
             {
-                AnsiConsole.MarkupLine($"  Source: [grey]{source}[/]");
+                AnsiConsole.MarkupLine($"  Source: [grey]{Markup.Escape(source)}[/]");
+            }
+            if (weight is { } w)
+            {
+                AnsiConsole.MarkupLine($"  Weight: [grey]{w.ToString(CultureInfo.InvariantCulture)}[/]");
             }
 
             return 0;
+        }
+        catch (ArgumentOutOfRangeException ex) when (ex.ParamName == "weight")
+        {
+            ErrorConsole.Error(
+                $"--weight {weight?.ToString(CultureInfo.InvariantCulture)} cannot weight a row.",
+                "A weight is a finite number that is not negative — for a row reviewed with probability p, 1/p.");
+            return 1;
         }
         catch (PredictionNotFoundException ex)
         {
@@ -332,6 +354,7 @@ public static class FeedbackCommand
             f.PredictedValue,
             f.ActualValue,
             f.Source,
+            f.Weight,
             Timestamp = f.Timestamp.ToString("o")
         });
 
@@ -351,6 +374,9 @@ public static class FeedbackCommand
         table.AddColumn("Actual");
         table.AddColumn("Match");
         table.AddColumn("Source");
+        var weighted = feedback.Any(e => e.Weight is not null);
+        if (weighted)
+            table.AddColumn(new TableColumn("Weight").RightAligned());
 
         foreach (var entry in feedback)
         {
@@ -359,14 +385,19 @@ public static class FeedbackCommand
             var isMatch = FeedbackValueComparer.ValuesMatch(entry.PredictedValue, entry.ActualValue);
             var matchStr = isMatch ? "[green]✓[/]" : "[red]✗[/]";
 
-            table.AddRow(
+            // Values are the caller's text — escaped, or a '[' in a label is read as markup.
+            var cells = new List<string>
+            {
                 TimestampDisplay.LocalWithoutZone(entry.Timestamp),
-                entry.PredictionId.Length > 12 ? entry.PredictionId[..12] + "..." : entry.PredictionId,
-                predictedStr.Length > 20 ? predictedStr[..20] + "..." : predictedStr,
-                actualStr.Length > 20 ? actualStr[..20] + "..." : actualStr,
+                Markup.Escape(entry.PredictionId.Length > 12 ? entry.PredictionId[..12] + "..." : entry.PredictionId),
+                Markup.Escape(predictedStr.Length > 20 ? predictedStr[..20] + "..." : predictedStr),
+                Markup.Escape(actualStr.Length > 20 ? actualStr[..20] + "..." : actualStr),
                 matchStr,
-                entry.Source ?? "-"
-            );
+                Markup.Escape(entry.Source ?? "-")
+            };
+            if (weighted)
+                cells.Add(entry.EffectiveWeight.ToString("0.###", CultureInfo.CurrentCulture));
+            table.AddRow(cells.ToArray());
         }
 
         AnsiConsole.Write(table);
@@ -390,6 +421,7 @@ public static class FeedbackCommand
             metrics.Accuracy,
             metrics.Precision,
             metrics.Recall,
+            metrics.Weighted,
             CalculatedAt = metrics.CalculatedAt.ToString("o")
         }, options));
     }
@@ -410,7 +442,8 @@ public static class FeedbackCommand
             var accuracyColor = metrics.Accuracy.Value >= 0.9 ? "green"
                 : metrics.Accuracy.Value >= 0.7 ? "yellow"
                 : "red";
-            grid.AddRow("[grey]Accuracy:[/]", $"[{accuracyColor}]{metrics.Accuracy.Value:P2}[/]");
+            grid.AddRow(metrics.Weighted ? "[grey]Accuracy (weighted):[/]" : "[grey]Accuracy:[/]",
+                $"[{accuracyColor}]{metrics.Accuracy.Value:P2}[/]");
         }
         else
         {

@@ -10,12 +10,19 @@ public interface IFeedbackCollector
     /// </summary>
     /// <param name="predictionId">ID of the original prediction</param>
     /// <param name="actualValue">The ground truth value</param>
-    /// <param name="source">Feedback source (user, system, etc.)</param>
+    /// <param name="source">Where the value came from (a person, a reviewing model, a system) — free text, the caller's vocabulary</param>
+    /// <param name="weight">
+    /// How much this row counts when the feedback becomes training or evaluation data: the relative
+    /// frequency it stands for (for a row reviewed with probability π, 1/π). Finite and not negative;
+    /// <c>null</c> counts as 1.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="weight"/> is negative, NaN or infinite.</exception>
     Task RecordFeedbackAsync(
         string predictionId,
         object actualValue,
         string? source = null,
+        double? weight = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -47,10 +54,35 @@ public record FeedbackEntry(
     object PredictedValue,
     object ActualValue,
     string? Source,
-    DateTimeOffset Timestamp);
+    DateTimeOffset Timestamp,
+    double? Weight = null)
+{
+    /// <summary>The weight this entry counts with — 1 when none was recorded.</summary>
+    public double EffectiveWeight => Weight ?? 1.0;
+
+    /// <summary>
+    /// The entry that stands for each prediction. Feedback is append-only, so recording it again for a
+    /// prediction corrects it: the most recent entry wins, and each prediction is counted once.
+    /// </summary>
+    public static IReadOnlyList<FeedbackEntry> LatestPerPrediction(IEnumerable<FeedbackEntry> entries) =>
+        entries
+            .GroupBy(e => e.PredictionId)
+            .Select(g => g.OrderByDescending(e => e.Timestamp).First())
+            .ToList();
+
+    /// <summary>Throws when <paramref name="weight"/> cannot weight a row: negative, NaN or infinite.</summary>
+    public static void ValidateWeight(double? weight)
+    {
+        if (weight is { } w && (double.IsNaN(w) || double.IsInfinity(w) || w < 0))
+            throw new ArgumentOutOfRangeException(nameof(weight), w,
+                "A feedback weight is a finite number that is not negative (for a row reviewed with probability π, 1/π).");
+    }
+}
 
 /// <summary>
-/// Aggregated feedback metrics for model monitoring.
+/// Aggregated feedback metrics for model monitoring. When any entry carries a weight, <see cref="Accuracy"/>
+/// counts each prediction by its weight (<see cref="Weighted"/>) — the estimate a sample drawn with unequal
+/// probabilities needs; counts stay row counts.
 /// </summary>
 public record FeedbackMetrics(
     string ModelName,
@@ -59,4 +91,5 @@ public record FeedbackMetrics(
     double? Accuracy,
     double? Precision,
     double? Recall,
-    DateTimeOffset CalculatedAt);
+    DateTimeOffset CalculatedAt,
+    bool Weighted = false);

@@ -49,7 +49,7 @@ public static class SampleCommand
 
         var strategyOption = new Option<string>("--strategy", "-s")
         {
-            Description = "Sampling strategy: random, head, stratified (CSV) / recent, feedback-priority (logs)",
+            Description = "Sampling strategy: random, head, stratified (CSV) / random, recent, feedback-priority, stratified, low-confidence (logs)",
             DefaultValueFactory = _ => "random"
         };
 
@@ -193,7 +193,18 @@ public static class SampleCommand
             var strategy = ParseStrategy(strategyName);
             if (strategy == null)
             {
-                ErrorConsole.Error($"Unknown strategy '{strategyName}'", "Valid strategies: random, recent, feedback-priority");
+                ErrorConsole.Error($"Unknown strategy '{Markup.Escape(strategyName)}'",
+                    "Valid strategies: random, recent, feedback-priority, stratified, low-confidence");
+                return 1;
+            }
+
+            var columns = await ResolveRetrainingColumnsAsync(modelName.ToLowerInvariant());
+            if (columns is null)
+            {
+                ErrorConsole.Error(
+                    $"No label column is known for model '{Markup.Escape(modelName)}'.",
+                    "The dataset is written under the label the model trains on — read from its production experiment, "
+                    + "or from `label:` under the model in mloop.yaml.");
                 return 1;
             }
 
@@ -214,7 +225,8 @@ public static class SampleCommand
                         modelName.ToLowerInvariant(),
                         sampleSize,
                         strategy.Value,
-                        outputPath);
+                        outputPath,
+                        columns);
 
                     OutputCreateResult(result);
                 });
@@ -282,6 +294,8 @@ public static class SampleCommand
             "random" => SamplingStrategy.Random,
             "recent" => SamplingStrategy.Recent,
             "feedback-priority" or "feedbackpriority" => SamplingStrategy.FeedbackPriority,
+            "stratified" => SamplingStrategy.Stratified,
+            "low-confidence" or "lowconfidence" => SamplingStrategy.LowConfidence,
             _ => null
         };
     }
@@ -328,13 +342,24 @@ public static class SampleCommand
 
         grid.AddRow("[grey]Output File:[/]", $"[white]{result.OutputPath}[/]");
         grid.AddRow("[grey]Samples Created:[/]", $"[green]{result.SampledCount:N0}[/]");
+        grid.AddRow("[grey]With Feedback:[/]", $"[white]{result.LabeledCount:N0}[/]");
         grid.AddRow("[grey]Total Available:[/]", $"[white]{result.TotalAvailable:N0}[/]");
         grid.AddRow("[grey]Strategy Used:[/]", $"[yellow]{result.StrategyUsed}[/]");
+        if (result.LabelColumn is not null)
+            grid.AddRow("[grey]Label Column:[/]", $"[white]{Markup.Escape(result.LabelColumn)}[/]");
+        if (result.WeightColumn is not null)
+            grid.AddRow("[grey]Weight Column:[/]", $"[white]{Markup.Escape(result.WeightColumn)}[/]");
         grid.AddRow("[grey]Created At:[/]", $"[grey]{TimestampDisplay.Local(result.CreatedAt)}[/]");
 
         AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();
         ValueLine.Write("[green]✓[/] Dataset ready for retraining at ", result.OutputPath);
+        if (result.LabeledCount < result.SampledCount)
+            AnsiConsole.MarkupLine(
+                $"[grey]{result.SampledCount - result.LabeledCount:N0} rows have no feedback yet — their label is empty, and training drops them.[/]");
+        if (result.WeightColumn is not null)
+            AnsiConsole.MarkupLine(
+                $"[grey]Rows are weighted: train with [blue]--weight {Markup.Escape(result.WeightColumn)}[/] (or `weight:` in mloop.yaml) so they count as recorded.[/]");
     }
 
     private static void OutputStatsAsJson(SamplingStatistics stats)
@@ -393,6 +418,31 @@ public static class SampleCommand
 
         AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();
+    }
+
+    /// <summary>
+    /// The columns the model trains with: its production experiment's label and weight, else the model's
+    /// definition in mloop.yaml. <c>null</c> when neither names a label.
+    /// </summary>
+    private static async Task<RetrainingColumns?> ResolveRetrainingColumnsAsync(string modelName)
+    {
+        var fileSystem = new FileSystemManager();
+        var discovery = new ProjectDiscovery(fileSystem);
+        var store = new ExperimentStore(fileSystem, discovery);
+        var registry = new ModelRegistry(fileSystem, discovery, store);
+
+        var production = await registry.GetProductionAsync(modelName, CancellationToken.None);
+        if (production?.ExperimentId is { } id && store.ExperimentExists(modelName, id))
+        {
+            var experiment = await store.LoadAsync(modelName, id, CancellationToken.None);
+            if (!string.IsNullOrWhiteSpace(experiment.Config.LabelColumn))
+                return new RetrainingColumns(experiment.Config.LabelColumn, experiment.Config.WeightColumn);
+        }
+
+        var config = await new ConfigLoader(fileSystem, discovery).LoadUserConfigAsync();
+        return config.Models.TryGetValue(modelName, out var definition) && !string.IsNullOrWhiteSpace(definition.Label)
+            ? new RetrainingColumns(definition.Label, definition.Weight)
+            : null;
     }
 
     private static string? FindProjectRoot()

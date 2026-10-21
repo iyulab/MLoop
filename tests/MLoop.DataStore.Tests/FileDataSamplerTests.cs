@@ -12,6 +12,9 @@ public class FileDataSamplerTests : IDisposable
     private readonly FilePredictionLogger _logger;
     private readonly FileFeedbackCollector _feedbackCollector;
 
+    // The model's label column — the feedback's actual value is written under it.
+    private static readonly RetrainingColumns Columns = new("label");
+
     public FileDataSamplerTests()
     {
         _testDir = Path.Combine(Path.GetTempPath(), $"mloop-test-{Guid.NewGuid():N}");
@@ -47,7 +50,7 @@ public class FileDataSamplerTests : IDisposable
             "nonexistent-model",
             100,
             SamplingStrategy.Random,
-            outputPath);
+            outputPath, Columns);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*No predictions*");
@@ -65,7 +68,7 @@ public class FileDataSamplerTests : IDisposable
             "test-model",
             5,
             SamplingStrategy.Random,
-            outputPath);
+            outputPath, Columns);
 
         // Assert
         result.SampledCount.Should().Be(5);
@@ -89,7 +92,7 @@ public class FileDataSamplerTests : IDisposable
             "test-model",
             100, // request more than available
             SamplingStrategy.Random,
-            outputPath);
+            outputPath, Columns);
 
         // Assert
         result.SampledCount.Should().Be(5);
@@ -118,16 +121,14 @@ public class FileDataSamplerTests : IDisposable
             "test-model",
             2,
             SamplingStrategy.Recent,
-            outputPath);
+            outputPath, Columns);
 
         // Assert
         result.SampledCount.Should().Be(2);
         result.StrategyUsed.Should().Be(SamplingStrategy.Recent);
 
-        var content = await File.ReadAllTextAsync(outputPath);
-        // Most recent entries should have higher indices
-        content.Should().Contain("output_4");
-        content.Should().Contain("output_3");
+        // Most recent entries have the higher indices (no feedback: empty label)
+        (await File.ReadAllLinesAsync(outputPath)).Skip(1).Should().BeEquivalentTo("4,", "3,");
     }
 
     [Fact]
@@ -152,7 +153,7 @@ public class FileDataSamplerTests : IDisposable
             "test-model",
             3,
             SamplingStrategy.FeedbackPriority,
-            outputPath);
+            outputPath, Columns);
 
         // Assert
         result.SampledCount.Should().Be(3);
@@ -175,7 +176,7 @@ public class FileDataSamplerTests : IDisposable
         await _feedbackCollector.RecordFeedbackAsync(id, "corrected");
 
         var outputPath = Path.Combine(_testDir, "output.csv");
-        var result = await _sampler.SampleAsync("test-model", 10, SamplingStrategy.FeedbackPriority, outputPath);
+        var result = await _sampler.SampleAsync("test-model", 10, SamplingStrategy.FeedbackPriority, outputPath, Columns);
 
         result.SampledCount.Should().Be(1);
         var content = await File.ReadAllTextAsync(outputPath);
@@ -184,25 +185,98 @@ public class FileDataSamplerTests : IDisposable
     }
 
     [Fact]
-    public async Task SampleAsync_IncludesActualValueColumn_WhenFeedbackExists()
+    public async Task SampleAsync_WritesFeedbackUnderTheModelsLabel_AndNotTheModelsAnswer()
     {
-        // Arrange
+        // The file is the next training's input: every column in it is a feature, so the model's own
+        // answer must not be one (it would learn to copy itself), and the actual value is the label.
         var id = await CreatePredictionAndGetId("test-model", "predicted");
-        await _feedbackCollector.RecordFeedbackAsync(id, "actual");
+        await _feedbackCollector.RecordFeedbackAsync(id, "actual", source: "reviewer");
 
         var outputPath = Path.Combine(_testDir, "output.csv");
+        var result = await _sampler.SampleAsync("test-model", 10, SamplingStrategy.Random, outputPath, Columns);
 
-        // Act
-        await _sampler.SampleAsync(
-            "test-model",
-            10,
-            SamplingStrategy.Random,
-            outputPath);
-
-        // Assert
         var lines = await File.ReadAllLinesAsync(outputPath);
-        lines[0].Should().Contain("ActualValue"); // header should have ActualValue
-        lines[1].Should().Contain("actual");
+        lines[0].Should().Be("feature,label");
+        lines[1].Should().Be("value,actual");
+        result.LabeledCount.Should().Be(1);
+        result.LabelColumn.Should().Be("label");
+        result.WeightColumn.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task SampleAsync_RowWithoutFeedback_HasAnEmptyLabel()
+    {
+        await CreatePredictionAndGetId("test-model", "predicted");
+
+        var outputPath = Path.Combine(_testDir, "output.csv");
+        var result = await _sampler.SampleAsync("test-model", 10, SamplingStrategy.Random, outputPath, Columns);
+
+        (await File.ReadAllLinesAsync(outputPath)).Should().Equal("feature,label", "value,");
+        result.LabeledCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SampleAsync_FeedbackWeights_AreWrittenAsAWeightColumn_UnweightedRowsCountOne()
+    {
+        var weighted = await CreatePredictionAndGetId("test-model", "a");
+        var plain = await CreatePredictionAndGetId("test-model", "b");
+        await CreatePredictionAndGetId("test-model", "c");
+        await _feedbackCollector.RecordFeedbackAsync(weighted, "x", weight: 4.0);
+        await _feedbackCollector.RecordFeedbackAsync(plain, "y");
+
+        var outputPath = Path.Combine(_testDir, "output.csv");
+        var result = await _sampler.SampleAsync("test-model", 10, SamplingStrategy.Recent, outputPath, Columns);
+
+        result.WeightColumn.Should().Be(RetrainingColumns.DefaultWeight);
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        lines[0].Should().Be("feature,label,weight");
+        lines.Skip(1).Should().BeEquivalentTo("value,x,4", "value,y,1", "value,,1");
+    }
+
+    [Fact]
+    public async Task SampleAsync_ModelThatTrainsWeighted_GetsItsWeightColumn_EvenWithoutFeedbackWeights()
+    {
+        // A model declared with `weight: w` needs the column in every file it retrains on.
+        var id = await CreatePredictionAndGetId("test-model", "a");
+        await _feedbackCollector.RecordFeedbackAsync(id, "x");
+
+        var outputPath = Path.Combine(_testDir, "output.csv");
+        var result = await _sampler.SampleAsync("test-model", 10, SamplingStrategy.Random, outputPath,
+            new RetrainingColumns("label", "w"));
+
+        result.WeightColumn.Should().Be("w");
+        (await File.ReadAllLinesAsync(outputPath)).Should().Equal("feature,label,w", "value,x,1");
+    }
+
+    [Fact]
+    public async Task SampleAsync_DefaultWeightName_StepsAsideForALoggedInputOfThatName()
+    {
+        await _logger.LogPredictionAsync("test-model", "exp-001",
+            new Dictionary<string, object> { ["weight"] = 70 }, "a", 0.9);
+        var logFile = Directory.GetFiles(Path.Combine(_testDir, ".mloop", "logs", "test-model"), "*.jsonl")[0];
+        using var doc = JsonDocument.Parse((await File.ReadAllLinesAsync(logFile)).Last());
+        await _feedbackCollector.RecordFeedbackAsync(doc.RootElement.GetProperty("id").GetString()!, "x", weight: 2);
+
+        var outputPath = Path.Combine(_testDir, "output.csv");
+        var result = await _sampler.SampleAsync("test-model", 10, SamplingStrategy.Random, outputPath, Columns);
+
+        result.WeightColumn.Should().Be("feedback_weight");
+        (await File.ReadAllLinesAsync(outputPath)).Should().Equal("weight,label,feedback_weight", "70,x,2");
+    }
+
+    [Fact]
+    public async Task SampleAsync_LoggedLabelColumn_IsReplacedByFeedback_NotDuplicated()
+    {
+        await _logger.LogPredictionAsync("test-model", "exp-001",
+            new Dictionary<string, object> { ["feature"] = "v", ["label"] = "stale" }, "a", 0.9);
+        var logFile = Directory.GetFiles(Path.Combine(_testDir, ".mloop", "logs", "test-model"), "*.jsonl")[0];
+        using var doc = JsonDocument.Parse((await File.ReadAllLinesAsync(logFile)).Last());
+        await _feedbackCollector.RecordFeedbackAsync(doc.RootElement.GetProperty("id").GetString()!, "fresh");
+
+        var outputPath = Path.Combine(_testDir, "output.csv");
+        await _sampler.SampleAsync("test-model", 10, SamplingStrategy.Random, outputPath, Columns);
+
+        (await File.ReadAllLinesAsync(outputPath)).Should().Equal("feature,label", "v,fresh");
     }
 
     [Fact]
@@ -241,17 +315,18 @@ public class FileDataSamplerTests : IDisposable
             "test-model",
             5,
             SamplingStrategy.Stratified,
-            outputPath);
+            outputPath, Columns);
 
         // Assert
         result.SampledCount.Should().Be(5);
         result.StrategyUsed.Should().Be(SamplingStrategy.Stratified);
 
-        var content = await File.ReadAllTextAsync(outputPath);
-        // Should have roughly proportional distribution
-        // At minimum, should include at least one of each class that has enough samples
-        content.Should().Contain("class_A");
-        content.Should().Contain("class_B");
+        // Strata are the predicted classes: A is indices 0-5, B 6-8. At minimum, at least one row
+        // of each class that has enough samples.
+        var indices = (await File.ReadAllLinesAsync(outputPath)).Skip(1)
+            .Select(line => int.Parse(line.Split(',')[0])).ToList();
+        indices.Should().Contain(i => i <= 5);
+        indices.Should().Contain(i => i >= 6 && i <= 8);
         // class_C might be included (10% of 5 = 0.5, rounds to 1)
     }
 
@@ -277,17 +352,14 @@ public class FileDataSamplerTests : IDisposable
             "test-model",
             2,
             SamplingStrategy.LowConfidence,
-            outputPath);
+            outputPath, Columns);
 
         // Assert
         result.SampledCount.Should().Be(2);
         result.StrategyUsed.Should().Be(SamplingStrategy.LowConfidence);
 
-        var content = await File.ReadAllTextAsync(outputPath);
-        // Should contain the lowest confidence predictions (0.35 and 0.45)
-        content.Should().Contain("output_4"); // 0.35
-        content.Should().Contain("output_3"); // 0.45
-        content.Should().NotContain("output_0"); // 0.95 should not be included
+        // The lowest confidence predictions: index 4 (0.35) and 3 (0.45)
+        (await File.ReadAllLinesAsync(outputPath)).Skip(1).Should().BeEquivalentTo("4,", "3,");
     }
 
     [Fact]

@@ -104,6 +104,7 @@ public class CsvMerger : ICsvMerger
     public async Task<CsvMergeResult> MergeAsync(
         IEnumerable<string> sourcePaths,
         string outputPath,
+        IReadOnlyDictionary<string, string>? columnDefaults = null,
         CancellationToken cancellationToken = default)
     {
         var paths = sourcePaths.ToList();
@@ -119,7 +120,7 @@ public class CsvMerger : ICsvMerger
         try
         {
             // Validate schema compatibility first
-            var validation = await ValidateSchemaCompatibilityAsync(paths, cancellationToken).ConfigureAwait(false);
+            var validation = await ValidateSchemaCompatibilityAsync(paths, columnDefaults, cancellationToken).ConfigureAwait(false);
             if (!validation.IsCompatible)
             {
                 return new CsvMergeResult
@@ -141,6 +142,7 @@ public class CsvMerger : ICsvMerger
 
                 var data = await _csvHelper.ReadAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
                 rowsPerFile[Path.GetFileName(path)] = data.Count;
+                FillMissingColumns(data, columnDefaults);
 
                 if (columnOrder == null && data.Count > 0)
                 {
@@ -184,6 +186,7 @@ public class CsvMerger : ICsvMerger
     /// <inheritdoc />
     public async Task<CsvSchemaValidation> ValidateSchemaCompatibilityAsync(
         IEnumerable<string> paths,
+        IReadOnlyDictionary<string, string>? columnDefaults = null,
         CancellationToken cancellationToken = default)
     {
         var pathList = paths.ToList();
@@ -204,7 +207,8 @@ public class CsvMerger : ICsvMerger
             try
             {
                 var headers = await _csvHelper.ReadHeadersAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
-                allHeaders[path] = headers;
+                // A column with a default is one every file has: those that lack it will be given it.
+                allHeaders[path] = headers.Concat(MissingDefaults(headers, columnDefaults).Select(kv => kv.Key)).ToList();
             }
             catch (Exception ex)
             {
@@ -254,6 +258,23 @@ public class CsvMerger : ICsvMerger
         };
     }
 
+    private static IEnumerable<KeyValuePair<string, string>> MissingDefaults(
+        IEnumerable<string> headers, IReadOnlyDictionary<string, string>? columnDefaults) =>
+        columnDefaults is null
+            ? []
+            : columnDefaults.Where(kv => !headers.Contains(kv.Key, StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>Gives each row of one file the default of every column the file lacks.</summary>
+    private static void FillMissingColumns(List<Dictionary<string, string>> rows, IReadOnlyDictionary<string, string>? columnDefaults)
+    {
+        if (rows.Count == 0)
+            return;
+        var missing = MissingDefaults(rows[0].Keys, columnDefaults).ToList();
+        foreach (var row in rows)
+            foreach (var (column, value) in missing)
+                row[column] = value;
+    }
+
     /// <summary>
     /// Computes a schema identifier from column headers.
     /// </summary>
@@ -285,7 +306,7 @@ public class CsvMerger : ICsvMerger
         try
         {
             // Validate schema compatibility first
-            var validation = await ValidateSchemaCompatibilityAsync(paths, cancellationToken).ConfigureAwait(false);
+            var validation = await ValidateSchemaCompatibilityAsync(paths, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (!validation.IsCompatible)
             {
                 return new CsvMergeResult
