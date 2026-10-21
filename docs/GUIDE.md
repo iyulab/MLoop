@@ -1606,7 +1606,7 @@ starts (and cached). `mloop train` and `POST /train` run the same hooks, each on
 | Stage | What the hook gets | `HookResult.Abort` |
 |-------|--------------------|--------------------|
 | `pre-train` | `DataView` (the training data) · `Metadata["DataFile"]` · `LabelColumn` · `TaskType` · `ModelName` · `ExperimentId` | stops the run before training |
-| `post-train` | `Metrics` (name → value, as the run reports them) · `Model` · `Metadata["ModelPath"]` · `BestTrainer` | reported as a warning; the model is already saved |
+| `post-train` | `Metrics` (name → value, as the run reports them) · `Model` · `Metadata["ModelPath"]` · `BestTrainer` | the model is saved but kept in staging — not promoted automatically; `mloop promote <exp-id>` promotes it anyway |
 
 A script that does not compile is reported with the compiler's errors and skipped.
 

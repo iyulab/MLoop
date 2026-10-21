@@ -154,9 +154,12 @@ public class TrainingJobRunner : BackgroundService
 
             _jobStore.SetResult(job.JobId, result.ExperimentId, result.Metrics, result.BestTrainer);
             _jobStore.UpdateStatus(job.JobId, JobStatus.Completed,
-                $"Training completed: {result.BestTrainer} ({result.TrainingTimeSeconds:F1}s)");
+                $"Training completed: {result.BestTrainer} ({result.TrainingTimeSeconds:F1}s)"
+                + (result.HookRefusal is { } hookRefusal ? $" — not promoted: a post-train hook refused it ({hookRefusal})" : ""));
 
-            await PromoteIfBetterAsync(registry, config, result, stoppingToken);
+            // A post-train hook that refused the model keeps it from being promoted, as in `mloop train`.
+            if (result.HookRefusal is null)
+                await PromoteIfBetterAsync(registry, config, result, stoppingToken);
 
             _logger.LogInformation("Training job '{JobId}' completed: {BestTrainer}, exp={ExperimentId}",
                 job.JobId, result.BestTrainer, result.ExperimentId);

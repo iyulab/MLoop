@@ -107,13 +107,20 @@ public class HookEngine
     /// </returns>
     /// <exception cref="InvalidOperationException">Thrown when hook execution fails critically</exception>
     public async Task<bool> ExecuteHooksAsync(HookType hookType, HookContext context)
+        => await RefusalAsync(hookType, context).ConfigureAwait(false) is null;
+
+    /// <summary>
+    /// Runs the hooks as <see cref="ExecuteHooksAsync"/> does and says which one refused, if any:
+    /// <c>null</c> when every hook let the run go on, otherwise <c>"{hook}: {its message}"</c>.
+    /// </summary>
+    public async Task<string?> RefusalAsync(HookType hookType, HookContext context)
     {
         var hookPath = GetHookDirectory(hookType);
 
         // Zero-overhead check: if directory doesn't exist, return immediately
         if (!Directory.Exists(hookPath))
         {
-            return true;  // No hooks = success (< 1ms performance)
+            return null;  // No hooks = success (< 1ms performance)
         }
 
         try
@@ -125,7 +132,7 @@ public class HookEngine
 
             if (scriptFiles.Count == 0)
             {
-                return true;  // No hooks = success
+                return null;  // No hooks = success
             }
 
             _logger.Info($"🔗 Executing {scriptFiles.Count} {hookType} hook(s)...");
@@ -190,7 +197,7 @@ public class HookEngine
                         case HookAction.Abort:
                             _logger.Error($"    ❌ {hook.Name}: {result.Message}");
                             _logger.Error($"    🛑 Pipeline execution aborted by hook");
-                            return false;  // Abort pipeline
+                            return $"{hook.Name}: {result.Message}";  // Abort pipeline
 
                         case HookAction.ModifyConfig:
                             _logger.Info($"    🔧 {hook.Name}: Configuration modified");
@@ -233,7 +240,7 @@ public class HookEngine
             }
 
             _logger.Info($"✅ All {hookType} hooks completed");
-            return true;
+            return null;
         }
         catch (Exception ex)
         {

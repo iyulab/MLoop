@@ -370,6 +370,7 @@ public class TrainingEngine : ITrainingEngine
             await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config, modelPath, cancellationToken);
 
             // Execute PostTrain hooks
+            string? hookRefusal = null;
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PostTrain))
             {
                 var hookContext = new HookContext
@@ -395,12 +396,8 @@ public class TrainingEngine : ITrainingEngine
                     }
                 };
 
-                var hooksPassed = await _hookEngine.ExecuteHooksAsync(HookType.PostTrain, hookContext);
-                if (!hooksPassed)
-                {
-                    // PostTrain hooks can't abort (model already trained), just warn
-                    WarningConsole.Warn("PostTrain hook requested abort, but model is already trained");
-                }
+                // The model is trained and will be saved; a refusal keeps it from being promoted.
+                hookRefusal = await _hookEngine.RefusalAsync(HookType.PostTrain, hookContext);
             }
 
             WarnIfAccuracyDoesNotBeatTheMajorityClass(config, autoMLResult.Metrics, inputSchema);
@@ -459,7 +456,8 @@ public class TrainingEngine : ITrainingEngine
                 ModelPath = modelPath,
                 ReportPath = _fileSystem.FileExists(reportPath) ? reportPath : null,
                 Schema = inputSchema ?? autoMLResult.Schema,
-                RowCount = autoMLResult.RowCount
+                RowCount = autoMLResult.RowCount,
+                HookRefusal = hookRefusal
             };
         }
         catch (Exception ex)

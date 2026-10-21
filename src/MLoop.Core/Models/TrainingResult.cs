@@ -25,6 +25,12 @@ public class TrainingResult
     public string? ReportPath { get; init; }
 
     public long RowCount { get; init; }
+
+    /// <summary>
+    /// Which post-train hook refused this model, and why — <c>null</c> when none did. The model is
+    /// saved, but a refused model is not promoted automatically (<c>mloop train</c>, <c>POST /train</c>).
+    /// </summary>
+    public string? HookRefusal { get; init; }
     public InputSchemaInfo? Schema { get; init; }
 }
 

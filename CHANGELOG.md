@@ -23,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- A post-train hook that returns `HookResult.Abort` keeps the model out of production: it is saved in staging and not
+  promoted automatically, by `mloop train` and `POST /train` alike (the job's status says why). It used to be a
+  warning while the model was promoted anyway, which made a performance-gate hook a no-op.
 - `mloop serve` no longer takes `-h` for `--host`: `-h` is help on every command, and `mloop serve -h` failed with
   "Required argument missing for option: '-h'". Write `--host <address>`.
 

@@ -1008,8 +1008,16 @@ public static class TrainCommand
 
             TrainPresenter.DisplayDiagnostics(diagnosticResult);
 
+            // A post-train hook that refused the model keeps it from being promoted automatically.
+            if (!noPromote && result.HookRefusal is { } hookRefusal)
+            {
+                AnsiConsole.WriteLine();
+                WarningConsole.Warn(
+                    $"Kept in staging: a post-train hook refused it — {Markup.Escape(hookRefusal)}. " +
+                    $"[blue]mloop promote {result.ExperimentId}[/] promotes it anyway.");
+            }
             // Auto-promote to production if enabled
-            if (!noPromote)
+            else if (!noPromote)
             {
                 AnsiConsole.WriteLine();
                 var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
