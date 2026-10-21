@@ -817,6 +817,9 @@ mloop evaluate exp-003 datasets/test.csv --slice-by site
 
 # Rows weighted by a column of the test file (e.g. 1/π of a recheck sample)
 mloop evaluate exp-003 datasets/rechecked.csv --weight inv_pi
+
+# A staging candidate against production, on the same rows and weights
+mloop evaluate exp-004 datasets/rechecked.csv --weight inv_pi --against production
 ```
 
 `--weight <column>` counts each test row by that column, scored as weighted training scores its own
@@ -831,6 +834,23 @@ overall ones mean; a slice under 30 rows is marked, because its metrics move a l
 A slice holding one class still gets accuracy, precision and recall from its counts — AUC is not
 defined there and is shown as `-`. More than 50 values is refused. `--json` adds `sliceBy` and
 `slices` (`value`, `rows`, `metrics`, `error`, `small`).
+
+`--against <experiment|production>` scores a second model on the same rows, with the same weights,
+and compares the two. Its metrics go beside the candidate's, and — for a classifier or a regressor —
+the two are paired row by row: each row's loss (a wrong class counts 1, or the squared error) under
+both models, the weighted mean of each, their difference (candidate − baseline, so negative favors
+the candidate) and a 95% paired bootstrap interval for it. Two models' metrics on one sample say how
+good each is there; the interval says whether the gap between them is more than which rows happened
+to be drawn. The verdict follows the interval:
+
+```
+Paired over 1,200 rows, by error rate: 0.0810 vs 0.0950 — difference -0.0140 (95% interval -0.0240 to -0.0042) — this experiment is better on these rows.
+```
+
+A model trained for another task or label is refused, as is the candidate itself. `--json` adds
+`comparison` — `against`, `metrics`, and `paired` (`measure`, `rows`, `candidate`, `baseline`,
+`difference`, `low`, `high`, `verdict`: `CandidateBetter`, `BaselineBetter` or `Indistinguishable`),
+`null` with a reason in `notPaired` for tasks with no per-row loss.
 
 ### `mloop validate`
 

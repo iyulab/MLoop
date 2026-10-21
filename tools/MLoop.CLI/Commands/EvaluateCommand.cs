@@ -45,6 +45,10 @@ public static class EvaluateCommand
         {
             Description = "Column that weights the test rows (e.g. 1/π of a recheck sample). Defaults to the column the experiment was trained with, when the file has it"
         };
+        var againstOption = new Option<string?>("--against")
+        {
+            Description = "Also evaluate this experiment (or 'production') on the same rows and weights, and compare the two row by row"
+        };
         var sliceByOption = new Option<string?>("--slice-by")
         {
             Description = "Also report the metrics separately for each value of this column of the test data"
@@ -57,6 +61,7 @@ public static class EvaluateCommand
         command.Options.Add(jsonOption);
         command.Options.Add(sliceByOption);
         command.Options.Add(weightOption);
+        command.Options.Add(againstOption);
         var recordsOption = DataFileOptions.Records();
         command.Options.Add(recordsOption);
 
@@ -67,7 +72,7 @@ public static class EvaluateCommand
             var name = parseResult.GetValue(nameOption);
             var json = parseResult.GetValue(jsonOption);
             return ExecuteAsync(experimentId, testDataFile, name, json, parseResult.GetValue(recordsOption),
-                parseResult.GetValue(sliceByOption), parseResult.GetValue(weightOption));
+                parseResult.GetValue(sliceByOption), parseResult.GetValue(weightOption), parseResult.GetValue(againstOption));
         });
 
         return command;
@@ -94,11 +99,13 @@ public static class EvaluateCommand
         string? skipped = null,
         string? sliceBy = null,
         IReadOnlyList<SliceResult>? slices = null,
-        string? weightColumn = null)
+        string? weightColumn = null,
+        Comparison? comparison = null)
     {
         var payload = new
         {
             WeightColumn = weightColumn,
+            Comparison = comparison,
             Model = model,
             Skipped = skipped,
             ExperimentId = experimentId,
@@ -125,7 +132,8 @@ public static class EvaluateCommand
         bool jsonOutput = false,
         string? records = null,
         string? sliceBy = null,
-        string? weight = null)
+        string? weight = null,
+        string? against = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -440,9 +448,27 @@ public static class EvaluateCommand
                 ShowSlices(sliceBy.Trim(), slices, testMetrics!.Keys.ToList());
             }
 
+            Comparison? comparison = null;
+            if (!string.IsNullOrWhiteSpace(against))
+            {
+                var baseline = await ResolveBaselineAsync(against.Trim(), resolvedModelName, resolvedExperimentId, experimentData,
+                    experimentStore, modelRegistry, fileSystem);
+                if (baseline.Error is { } error)
+                {
+                    ErrorConsole.Error(error);
+                    if (jsonOutput)
+                        JsonError.Emit(error);
+                    return 1;
+                }
+                comparison = await CompareAsync(resolvedExperimentId, resolvedModelPath, experimentData,
+                    baseline.ExperimentId!, baseline.ModelPath!, baseline.Data!, resolvedTestDataFile, weightColumn, testMetrics!);
+                ShowComparison(comparison, testMetrics!);
+            }
+
             if (jsonOutput)
                 EmitJson(resolvedModelName, resolvedExperimentId, resolvedTestDataFile,
-                    trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices, weightColumn: weightColumn);
+                    trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices, weightColumn: weightColumn,
+                    comparison: comparison);
 
             return 0;
         }
@@ -467,6 +493,112 @@ public static class EvaluateCommand
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// The baseline a candidate was compared with on the same rows: its metrics there, and the paired
+    /// per-row comparison when the task has a per-row measure (<c>null</c> otherwise, or when the two
+    /// models did not answer the same number of rows).
+    /// </summary>
+    internal sealed record Comparison(string Against, Dictionary<string, double> Metrics, PairedResult? Paired, string? NotPaired);
+
+    private sealed record Baseline(string? ExperimentId, string? ModelPath, ExperimentData? Data, string? Error);
+
+    /// <summary>
+    /// <c>production</c> or an experiment id → the model to compare with. Refused when it is the candidate
+    /// itself, or when it was trained for another task or label: the same rows would then be asking the
+    /// two models different questions.
+    /// </summary>
+    private static async Task<Baseline> ResolveBaselineAsync(
+        string against, string modelName, string candidateId, ExperimentData candidate,
+        ExperimentStore store, ModelRegistry registry, FileSystemManager fileSystem)
+    {
+        string id;
+        if (against.Equals("production", StringComparison.OrdinalIgnoreCase))
+        {
+            var production = await registry.GetProductionAsync(modelName, CancellationToken.None);
+            if (production is null)
+                return new Baseline(null, null, null, $"--against production: no model is in production for '{modelName}'.");
+            id = production.ExperimentId;
+        }
+        else
+        {
+            id = against;
+            if (!store.ExperimentExists(modelName, id))
+                return new Baseline(null, null, null, $"--against: experiment not found: {id} for model '{modelName}'.");
+        }
+        if (string.Equals(id, candidateId, StringComparison.OrdinalIgnoreCase))
+            return new Baseline(null, null, null, $"--against {against}: that is {candidateId}, the experiment being evaluated — name another one.");
+
+        var data = await store.LoadAsync(modelName, id, CancellationToken.None);
+        if (!string.Equals(data.Task, candidate.Task, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(data.Config.LabelColumn, candidate.Config.LabelColumn, StringComparison.OrdinalIgnoreCase))
+            return new Baseline(null, null, null,
+                $"--against {id}: it was trained for {data.Task} on '{data.Config.LabelColumn}', {candidateId} for {candidate.Task} on " +
+                $"'{candidate.Config.LabelColumn}' — the two cannot be compared on the same rows.");
+        var modelPath = fileSystem.CombinePath(store.GetExperimentPath(modelName, id), ExperimentLayout.ModelFileName);
+        return File.Exists(modelPath)
+            ? new Baseline(id, modelPath, data, null)
+            : new Baseline(null, null, null, $"--against {id}: model file not found: {modelPath}");
+    }
+
+    private static async Task<Comparison> CompareAsync(
+        string candidateId, string candidateModel, ExperimentData candidate,
+        string baselineId, string baselineModel, ExperimentData baseline,
+        string testDataFile, string? weightColumn, Dictionary<string, double> candidateMetrics)
+    {
+        var engine = new EvaluationEngine();
+        var task = candidate.Task;
+        var label = candidate.Config.LabelColumn;
+        var metrics = await engine.EvaluateAsync(baselineModel, testDataFile, label, task, CancellationToken.None,
+            baseline.Config.InputSchema, baseline.Config.GroupColumn, baseline.Config.UserColumn, baseline.Config.ItemColumn, weightColumn);
+
+        if (PairedComparison.MeasureOf(task) is not { } measure)
+            return new Comparison(baselineId, metrics, null, $"{task} has no per-row measure to pair — compare the metrics above.");
+        var c = await engine.RowLossesAsync(candidateModel, testDataFile, label, task, candidate.Config.InputSchema, weightColumn);
+        var b = await engine.RowLossesAsync(baselineModel, testDataFile, label, task, baseline.Config.InputSchema, weightColumn);
+        if (c is not { } cl || b is not { } bl)
+            return new Comparison(baselineId, metrics, null, "The models' outputs do not carry the columns a per-row comparison reads.");
+        if (cl.Losses.Length != bl.Losses.Length)
+            return new Comparison(baselineId, metrics, null,
+                $"{candidateId} answered {cl.Losses.Length} rows and {baselineId} {bl.Losses.Length} — they were not read as the same rows.");
+        return new Comparison(baselineId, metrics, PairedComparison.Compare(measure, cl.Losses, bl.Losses, cl.Weights), null);
+    }
+
+    private static void ShowComparison(Comparison comparison, Dictionary<string, double> candidateMetrics)
+    {
+        AnsiConsole.Write(new Rule($"[green]Against {Markup.Escape(comparison.Against)}[/]").LeftJustified());
+        var table = new Table().Border(TableBorder.Rounded)
+            .AddColumn("Metric")
+            .AddColumn(new TableColumn("This experiment").RightAligned())
+            .AddColumn(new TableColumn(Markup.Escape(comparison.Against)).RightAligned())
+            .AddColumn(new TableColumn("Difference").RightAligned());
+        foreach (var (name, value) in candidateMetrics)
+        {
+            if (!comparison.Metrics.TryGetValue(name, out var other))
+                continue;
+            table.AddRow(Markup.Escape(name), value.ToString("F4", CultureInfo.InvariantCulture),
+                other.ToString("F4", CultureInfo.InvariantCulture), FormatMetricDifference(name, value - other));
+        }
+        AnsiConsole.Write(table);
+        if (comparison.Paired is { Rows: > 0 } p)
+        {
+            var measure = p.Measure == PairedComparison.ErrorRate ? "error rate" : "squared error";
+            var verdict = p.Verdict switch
+            {
+                PairedVerdict.CandidateBetter => "[green]this experiment is better on these rows[/]",
+                PairedVerdict.BaselineBetter => $"[red]{Markup.Escape(comparison.Against)} is better on these rows[/]",
+                _ => "[yellow]the two cannot be told apart on these rows[/]",
+            };
+            AnsiConsole.MarkupLine(
+                $"Paired over {p.Rows:N0} rows, by {measure}: {p.Candidate:F4} vs {p.Baseline:F4} — difference {p.Difference:+0.0000;-0.0000;0.0000} " +
+                $"(95% interval {p.Low:+0.0000;-0.0000;0.0000} to {p.High:+0.0000;-0.0000;0.0000}) — {verdict}.");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[grey]Not paired: {Markup.Escape(comparison.NotPaired ?? "no row both models answered with a label.")}[/]");
+        }
+        AnsiConsole.WriteLine();
     }
 
     /// <summary>One value of the slicing column: its rows, and its metrics or why there are none.</summary>

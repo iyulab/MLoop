@@ -15,6 +15,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **Answers** line. It is kept apart from the inputs' level, which still alone decides
   `input_drift`. `prediction` is `null` for models trained earlier and for tasks whose answer is
   neither a class nor a value.
+- **`mloop evaluate --against <experiment|production>` compares two models on the same rows.** The
+  other model is scored on the same test file with the same weights; its metrics are shown beside
+  the candidate's, and a classifier or regressor is paired row by row — the weighted mean per-row
+  loss (wrong class, or squared error) of each, their difference, and a 95% paired bootstrap
+  interval with a verdict (`CandidateBetter`, `BaselineBetter`, `Indistinguishable`). `--json`
+  carries it as `comparison`. A model trained for another task or label, and the candidate itself,
+  are refused. `MLoop.Core.Evaluation.PairedComparison` holds the measure.
 
 ## [0.38.0] - 2026-10-21
 

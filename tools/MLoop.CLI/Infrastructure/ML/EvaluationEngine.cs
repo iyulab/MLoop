@@ -198,6 +198,45 @@ public class EvaluationEngine
         }, cancellationToken);
     }
 
+    /// <summary>
+    /// Each test row's loss under this model, in file order — what a paired comparison of two models
+    /// on the same rows reads (<see cref="PairedComparison"/>) — with each row's weight when
+    /// <paramref name="weightColumn"/> is given. <c>null</c> when the task has no per-row measure.
+    /// </summary>
+    public async Task<(double[] Losses, double[]? Weights)?> RowLossesAsync(
+        string modelPath,
+        string testDataPath,
+        string labelColumn,
+        string taskType,
+        InputSchemaInfo? trainedSchema,
+        string? weightColumn = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (PairedComparison.MeasureOf(taskType) is null)
+            return null;
+        return await Task.Run<(double[] Losses, double[]? Weights)?>(() =>
+        {
+            List<string> tempFiles = new();
+            try
+            {
+                var model = _mlContext.Model.Load(modelPath, out _);
+                var keep = string.IsNullOrEmpty(weightColumn) ? null : new[] { weightColumn };
+                var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, keep, out tempFiles, keepColumns: keep);
+                var scored = model.Transform(testData);
+                if (PairedComparison.RowLosses(scored, taskType, labelColumn) is not { } losses)
+                    return null;
+                var weights = string.IsNullOrEmpty(weightColumn) ? null : WeightedResampling.ReadWeights(scored, weightColumn);
+                return (losses, weights);
+            }
+            finally
+            {
+                foreach (var tempFile in tempFiles)
+                    if (File.Exists(tempFile))
+                        try { File.Delete(tempFile); } catch (IOException) { }
+            }
+        }, cancellationToken);
+    }
+
     private IDataView LoadTestData(string testDataPath, string labelColumn, string taskType, InputSchemaInfo? trainedSchema, IReadOnlyList<string>? preserveColumns, out List<string> tempFiles,
         IReadOnlyCollection<string>? keepColumns = null)
     {

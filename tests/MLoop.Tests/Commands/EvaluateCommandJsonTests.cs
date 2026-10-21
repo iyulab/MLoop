@@ -77,7 +77,7 @@ public class EvaluateCommandJsonTests : IDisposable
     /// <see cref="ExperimentStore"/> so <c>ExperimentExists</c>/<c>LoadAsync</c> resolve it exactly
     /// as a real trained experiment would. Returns the test CSV path to evaluate against.
     /// </summary>
-    private async Task<string> CreateRegressionFixtureAsync(string modelName, string experimentId)
+    private async Task<string> CreateRegressionFixtureAsync(string modelName, string experimentId, bool scrambled = false)
     {
         // Train from a CSV loaded exactly the way the product loads it: AutoML column inference
         // folds the non-label numerics into a single "Features" vector, and the fitted pipeline
@@ -85,6 +85,15 @@ public class EvaluateCommandJsonTests : IDisposable
         // produce a model no MLoop command could feed, so the fixture would prove nothing.
         var trainCsvPath = Path.Combine(_testProjectRoot, "train.csv");
         WriteLinearCsv(trainCsvPath, rowCount: 50, seed: 42);
+        if (scrambled)
+        {
+            // The same rows with the labels shuffled: a model fitted on them has learned nothing.
+            var lines = File.ReadAllLines(trainCsvPath);
+            var labels = lines.Skip(1).Select(l => l[(l.LastIndexOf(',') + 1)..]).ToList();
+            var random = new Random(5);
+            labels = labels.OrderBy(_ => random.Next()).ToList();
+            File.WriteAllLines(trainCsvPath, lines.Take(1).Concat(lines.Skip(1).Select((l, i) => l[..(l.LastIndexOf(',') + 1)] + labels[i])));
+        }
 
         var mlContext = new MLContext(seed: 42);
         var inference = mlContext.Auto().InferColumns(trainCsvPath, labelColumnName: LabelColumn, separatorChar: ',');
@@ -185,5 +194,49 @@ public class EvaluateCommandJsonTests : IDisposable
         Assert.True(exitCode == 0, stdout + stderr);
         Assert.Contains("Evaluation Results", stdout);
         Assert.DoesNotContain("{", stdout); // no JSON leaked into the human report
+    }
+
+    [Fact]
+    public async Task Evaluate_Against_ComparesBothModelsOnTheSameRows_AndPairsThem()
+    {
+        await CreateRegressionFixtureAsync("default", "exp-001");
+        var testCsvPath = await CreateRegressionFixtureAsync("default", "exp-002", scrambled: true);
+
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("evaluate", "exp-002", testCsvPath, "--against", "exp-001", "--json");
+
+        Assert.True(exitCode == 0, stdout + stderr);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var comparison = doc.RootElement.GetProperty("comparison");
+        Assert.Equal("exp-001", comparison.GetProperty("against").GetString());
+        Assert.True(comparison.GetProperty("metrics").GetProperty("r_squared").GetDouble() > 0.9);
+        var paired = comparison.GetProperty("paired");
+        Assert.Equal("squared_error", paired.GetProperty("measure").GetString());
+        Assert.Equal(10, paired.GetProperty("rows").GetInt32());
+        Assert.True(paired.GetProperty("difference").GetDouble() > 0); // the scrambled candidate errs more
+        Assert.Equal("BaselineBetter", paired.GetProperty("verdict").GetString());
+        Assert.True(paired.GetProperty("low").GetDouble() > 0);
+    }
+
+    [Fact]
+    public async Task Evaluate_AgainstItself_IsRefused()
+    {
+        var testCsvPath = await CreateRegressionFixtureAsync("default", "exp-001");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("evaluate", "exp-001", testCsvPath, "--against", "exp-001", "--json");
+
+        Assert.Equal(1, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Contains("the experiment being evaluated", doc.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task Evaluate_AgainstAnUnknownExperiment_IsRefused()
+    {
+        var testCsvPath = await CreateRegressionFixtureAsync("default", "exp-001");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("evaluate", "exp-001", testCsvPath, "--against", "exp-404", "--json");
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("experiment not found: exp-404", stdout);
     }
 }
