@@ -146,6 +146,7 @@ public class PredictJsonContractTests : IDisposable
 
         var payload = ParsePayload(stdout);
         Assert.Equal("default", payload.GetProperty("model").GetString());
+        Assert.Equal("exp-001", payload.GetProperty("experimentId").GetString());
         Assert.Equal("multiclass-classification", payload.GetProperty("task").GetString());
         Assert.Equal(2, payload.GetProperty("count").GetInt32());
 
@@ -173,6 +174,52 @@ public class PredictJsonContractTests : IDisposable
             Assert.False(row.TryGetProperty("clusterId", out _));
             Assert.False(row.TryGetProperty("scoreLowerBound", out _));
         }
+    }
+
+    /// <summary>
+    /// A shadow prediction: a candidate that was never promoted answers the same rows, the document
+    /// names it, and production is not created or moved by asking.
+    /// </summary>
+    [Fact]
+    public async Task Predict_Experiment_AnswersWithTheCandidateAndLeavesProductionAlone()
+    {
+        var predictCsv = await SeedMulticlassAsync();
+
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", predictCsv, "--experiment", "exp-001", "--json");
+        Assert.True(exitCode == 0, stdout + stderr);
+
+        var payload = ParsePayload(stdout);
+        Assert.Equal("exp-001", payload.GetProperty("experimentId").GetString());
+        Assert.Equal(2, payload.GetProperty("count").GetInt32());
+        foreach (var row in payload.GetProperty("predictions").EnumerateArray())
+            Assert.Contains(row.GetProperty("predictedLabel").GetString(), new[] { "cat", "dog", "bird" });
+
+        Assert.False(Directory.Exists(Path.Combine(
+            _testProjectRoot, ExperimentLayout.ModelsDirectory, "default", ExperimentLayout.ProductionDirectory)));
+    }
+
+    [Fact]
+    public async Task Predict_Experiment_Unknown_FailsWithADocument()
+    {
+        var predictCsv = await SeedMulticlassAsync();
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("predict", predictCsv, "--experiment", "exp-099", "--json");
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("exp-099", ParsePayload(stdout).GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task Predict_ExperimentAndModelPath_IsRefused()
+    {
+        var predictCsv = await SeedMulticlassAsync();
+        var modelFile = Path.Combine(_testProjectRoot, "mc.zip");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(
+            "predict", predictCsv, "--experiment", "exp-001", "--model", modelFile, "--json");
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("--experiment", ParsePayload(stdout).GetProperty("error").GetString());
     }
 
     /// <summary>

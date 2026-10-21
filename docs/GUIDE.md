@@ -412,9 +412,16 @@ Run predictions with trained models.
 mloop predict
 
 # Custom paths
-mloop predict <model-path> <data-file> [options]
+mloop predict [data-file] [options]
 
 # Options:
+#   --name <model>               Model name (default: 'default')
+#   --experiment <exp-id>        Predict with this experiment instead of production — a shadow
+#                                prediction: a staging candidate answers the same rows, production
+#                                does not move. --json names it in `experimentId`; --log records
+#                                its rows under its own id, so `mloop drift` (production's rows)
+#                                and feedback keep the two apart
+#   --model <path>               Predict with a model file (outside the project's experiments)
 #   --json                       Emit pure JSON to stdout (progress on stderr) — use this for
 #                                machine/automation consumption. The default output mixes a
 #                                human-readable summary into stdout.
@@ -431,7 +438,8 @@ mloop predict <model-path> <data-file> [options]
 
 # Examples
 mloop predict                                          # Auto mode
-mloop predict data/test.csv --model models/staging/exp-003/model.zip
+mloop predict data/test.csv --experiment exp-003      # Candidate's answers, production untouched
+mloop predict data/test.csv --model ../other/model.zip
 mloop predict --output results/forecast.csv
 mloop predict --unknown-strategy use-most-frequent     # Handle unseen categorical values
 ```

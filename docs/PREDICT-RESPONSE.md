@@ -12,12 +12,18 @@ envelope around the rows.
 ```json
 {
   "model": "default",
+  "experimentId": "exp-001",
   "task": "multiclass-classification",
   "count": 3,
   "predictions": [ /* rows */ ],
   "warnings": ["…"]
 }
 ```
+
+`experimentId` names the model that answered — production's experiment by default, the one you asked
+for with `--experiment <exp-id>` (a shadow prediction: a staging candidate answers, production stays
+where it is), and absent for a `--model <path>` file outside the project's experiments. Comparing a
+candidate with production is two calls on the same file, keyed by it.
 
 `POST /predict` returns the same rows with more about where they came from:
 
@@ -34,7 +40,8 @@ envelope around the rows.
 ```
 
 One difference worth knowing before you write a parser: the model's name is `model` on the CLI and
-`modelName` over HTTP, and only the HTTP response names the experiment the prediction came from.
+`modelName` over HTTP, and only the HTTP response carries `predictedAt`. HTTP predicts with
+production only.
 
 🔴 **A field without a value is absent — on both surfaces, in the envelope and in every row.** The
 same multiclass row is `{"predictedLabel":"cat","probabilities":{…},"confidence":0.5}` whichever way

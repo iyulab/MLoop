@@ -47,6 +47,11 @@ public static class PredictCommand
             Description = "Path to model file (overrides production model)"
         };
 
+        var experimentOption = new Option<string?>("--experiment", "-e")
+        {
+            Description = "Predict with this experiment (e.g. a staging candidate) instead of production — a shadow prediction; production is unchanged"
+        };
+
         var outputOption = new Option<string?>("--output", "-o")
         {
             Description = "Output path for predictions (defaults to predictions/predictions.csv)"
@@ -81,6 +86,7 @@ public static class PredictCommand
         command.Arguments.Add(dataFileArg);
         command.Options.Add(nameOption);
         command.Options.Add(modelPathOption);
+        command.Options.Add(experimentOption);
         command.Options.Add(outputOption);
         command.Options.Add(unknownStrategyOption);
         command.Options.Add(logOption);
@@ -99,7 +105,7 @@ public static class PredictCommand
             var logPredictions = parseResult.GetValue(logOption);
             var includeFeatures = parseResult.GetValue(includeFeaturesOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures, json, parseResult.GetValue(recordsOption));
+            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures, json, parseResult.GetValue(recordsOption), parseResult.GetValue(experimentOption));
         });
 
         return command;
@@ -123,7 +129,8 @@ public static class PredictCommand
         bool logPredictions,
         bool includeFeatures,
         bool json = false,
-        string? records = null)
+        string? records = null,
+        string? experiment = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -172,7 +179,70 @@ public static class PredictCommand
             // in the CSV for regression models (same single source the serve /predict path uses).
             RegressionInterval? interval = null;
 
-            if (string.IsNullOrEmpty(modelPath))
+            // What the model was trained on (schema · label · task · band) comes from its experiment
+            // record, whichever way the model was named. A record that does not load leaves these
+            // null and the predict path continues without categorical preprocessing.
+            async Task<bool> ReadExperimentAsync(string id)
+            {
+                try
+                {
+                    var experimentData = await experimentStore.LoadAsync(resolvedModelName, id, CancellationToken.None);
+                    trainedSchema = experimentData?.Config?.InputSchema;
+                    configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
+                    taskType = experimentData?.Task;
+                    preserveColumns = BuildPreserveColumns(experimentData?.Config);
+                    interval = RegressionInterval.FromMetrics(experimentData?.Task, experimentData?.Metrics);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(experiment) && !string.IsNullOrEmpty(modelPath))
+            {
+                ErrorConsole.Error(
+                    "--experiment and --model both name the model to predict with.",
+                    "Give one: --experiment <exp-id> for an experiment of this project, --model <path> for a model file.");
+                return 1;
+            }
+
+            if (!string.IsNullOrEmpty(experiment))
+            {
+                // A shadow prediction: the candidate answers the same rows production would, and
+                // production stays where it is. Logged rows carry this experiment's id, so drift
+                // (which reads production's rows only) and feedback keep the two apart.
+                experimentId = experiment.Trim();
+                if (!experimentStore.ExperimentExists(resolvedModelName, experimentId))
+                {
+                    ErrorConsole.Error(
+                        $"Experiment not found: {Markup.Escape(experimentId)} for model '{resolvedModelName}'",
+                        $"Run [blue]mloop list --name {resolvedModelName}[/] to see all experiments.");
+                    return 1;
+                }
+
+                resolvedModelPath = fileSystem.CombinePath(
+                    experimentStore.GetExperimentPath(resolvedModelName, experimentId), ExperimentLayout.ModelFileName);
+                if (!File.Exists(resolvedModelPath))
+                {
+                    ErrorConsole.Error(
+                        $"'{Markup.Escape(experimentId)}' has no trained model ({ExperimentLayout.ModelFileName}).",
+                        "A failed or interrupted experiment keeps its record but not a model.");
+                    return 1;
+                }
+
+                var production = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
+                var isProduction = string.Equals(production?.ExperimentId, experimentId, StringComparison.OrdinalIgnoreCase);
+
+                AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
+                AnsiConsole.MarkupLine(isProduction
+                    ? $"[green]>[/] Using experiment: [cyan]{Markup.Escape(experimentId)}[/] (the production model)"
+                    : $"[green]>[/] Using experiment: [cyan]{Markup.Escape(experimentId)}[/] (not production — production is {(production is null ? "not set" : $"[cyan]{production.ExperimentId}[/]")})");
+
+                await ReadExperimentAsync(experimentId);
+            }
+            else if (string.IsNullOrEmpty(modelPath))
             {
                 // Auto-load production model for the specified model name
                 var productionModel = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
@@ -181,7 +251,7 @@ public static class PredictCommand
                 {
                     ErrorConsole.Error(
                         $"No production model found for '[cyan]{resolvedModelName}[/]'.",
-                        $"Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/]");
+                        $"Train and promote a model first: [blue]mloop train --name {resolvedModelName}[/] — or predict with a candidate: [blue]--experiment <exp-id>[/]");
                     return 1;
                 }
 
@@ -191,20 +261,7 @@ public static class PredictCommand
                 AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
                 AnsiConsole.MarkupLine($"[green]>[/] Using production model: [cyan]{productionModel.ExperimentId}[/]");
 
-                // Load experiment data to get schema and label column
-                try
-                {
-                    var experimentData = await experimentStore.LoadAsync(resolvedModelName, experimentId, CancellationToken.None);
-                    trainedSchema = experimentData?.Config?.InputSchema;
-                    configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
-                    taskType = experimentData?.Task;
-                    preserveColumns = BuildPreserveColumns(experimentData?.Config);
-                    interval = RegressionInterval.FromMetrics(experimentData?.Task, experimentData?.Metrics);
-                }
-                catch
-                {
-                    // Continue without schema - will skip categorical preprocessing
-                }
+                await ReadExperimentAsync(experimentId);
             }
             else
             {
@@ -228,22 +285,10 @@ public static class PredictCommand
                 {
                     var possibleExpId = Path.GetFileName(modelDir);
 
-                    if (experimentStore.ExperimentExists(resolvedModelName, possibleExpId))
+                    if (experimentStore.ExperimentExists(resolvedModelName, possibleExpId)
+                        && await ReadExperimentAsync(possibleExpId))
                     {
-                        try
-                        {
-                            var experimentData = await experimentStore.LoadAsync(resolvedModelName, possibleExpId, CancellationToken.None);
-                            trainedSchema = experimentData?.Config?.InputSchema;
-                            configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
-                            taskType = experimentData?.Task;
-                            preserveColumns = BuildPreserveColumns(experimentData?.Config);
-                            interval = RegressionInterval.FromMetrics(experimentData?.Task, experimentData?.Metrics);
-                            experimentId = possibleExpId;
-                        }
-                        catch
-                        {
-                            // Continue without schema
-                        }
+                        experimentId = possibleExpId;
                     }
                 }
             }
@@ -524,6 +569,9 @@ public static class PredictCommand
                 var payload = new
                 {
                     model = resolvedModelName,
+                    // Which model answered: the consumer comparing a candidate with production keys
+                    // the two documents by it.
+                    experimentId,
                     task = jsonResult.TaskType,
                     count = jsonResult.Rows.Count,
                     predictions = jsonResult.Rows,

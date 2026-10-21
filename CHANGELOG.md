@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `mloop predict --experiment <exp-id>` predicts with a given experiment — a staging candidate
+  answers the same rows production would, and production does not move. Rows logged with `--log`
+  carry the candidate's id, so `mloop drift` (which reads production's rows) and feedback keep the
+  two apart.
+- `mloop predict --json` names the model that answered in `experimentId` (production's experiment
+  by default).
+
+### Fixed
+
+- The guide's `mloop predict` synopsis showed the model as a positional argument and a staging path
+  without the model name; the model is named with `--experiment` or `--model`.
+
 ## [0.39.0] - 2026-10-21
 
 ### Added
