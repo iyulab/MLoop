@@ -1087,19 +1087,13 @@ public class TrainingEngine : ITrainingEngine
             return (SchemaDataTypes.Numeric, null, null);
         }
 
-        // Low unique count relative to total = likely Categorical
-        // But text-like content should be treated as Text even with low unique ratio
-        if (uniqueCount <= 100 || (numericRatio < 0.5 && uniqueCount < totalCount * 0.1))
+        // A category or text — the rule training featurizes by (CategoryColumns), not a copy of it.
+        if (CategoryColumns.IsCategory(Sample(colIndex, dataLines), uniqueCount, totalCount))
         {
-            if (totalCount > 0 && LooksLikeText(colIndex, dataLines, uniqueCount))
-            {
-                return (SchemaDataTypes.Text, null, uniqueCount);
-            }
             var categoricalValues = uniqueValues.OrderBy(v => v).ToList();
             return (SchemaDataTypes.Categorical, categoricalValues, uniqueCount);
         }
 
-        // High cardinality text
         return (SchemaDataTypes.Text, null, uniqueCount);
     }
 
@@ -1141,11 +1135,17 @@ public class TrainingEngine : ITrainingEngine
     /// text rather than categorical codes — <see cref="TextLikeness"/> decides; this only pulls the
     /// column's values out of CSV lines.
     /// </summary>
-    internal static bool LooksLikeText(int colIndex, string[] dataLines, int uniqueCount)
+    internal static bool LooksLikeText(int colIndex, string[] dataLines, int uniqueCount) =>
+        TextLikeness.LooksLikeText(Sample(colIndex, dataLines), uniqueCount, dataLines.Length);
+
+    /// <summary>The first non-empty values of a column, as many as <see cref="TextLikeness"/> reads.</summary>
+    private static List<string> Sample(int colIndex, string[] dataLines)
     {
         var sample = new List<string>();
-        foreach (var line in dataLines.Take(TextLikeness.SampleSize))
+        foreach (var line in dataLines)
         {
+            if (sample.Count >= TextLikeness.SampleSize)
+                break;
             var fields = CsvFieldParser.ParseFields(line);
             if (colIndex >= fields.Length)
                 continue;
@@ -1153,8 +1153,7 @@ public class TrainingEngine : ITrainingEngine
             if (!string.IsNullOrEmpty(value))
                 sample.Add(value);
         }
-
-        return TextLikeness.LooksLikeText(sample, uniqueCount, dataLines.Length);
+        return sample;
     }
 
     /// <summary>
