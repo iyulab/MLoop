@@ -432,16 +432,7 @@ public class EvaluationEngine
             return counts;
         }
 
-        var result = new Dictionary<string, double>
-        {
-            { "accuracy", metrics.Accuracy },
-            { "auc", metrics.AreaUnderRocCurve },
-            { "f1_score", metrics.F1Score },
-            { "precision", metrics.PositivePrecision },
-            { "recall", metrics.PositiveRecall },
-            { "negative_precision", metrics.NegativePrecision },
-            { "negative_recall", metrics.NegativeRecall }
-        };
+        var result = BinaryMetrics.Describe(metrics);
         if (CalibrationError.Binary(predictions, labelColumn) is { } ece)
             result[CalibrationError.MetricName] = ece;
         return result;

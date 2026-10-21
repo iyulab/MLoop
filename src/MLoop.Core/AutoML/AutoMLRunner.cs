@@ -680,32 +680,11 @@ public partial class AutoMLRunner
         // Use EvaluateNonCalibrated when Probability column is missing.
         var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
 
-        var metricsDict = new Dictionary<string, double>();
-
-        if (hasProbability)
-        {
-            var metrics = _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn);
-            metricsDict["accuracy"] = metrics.Accuracy;
-            metricsDict["f1_score"] = metrics.F1Score;
-            metricsDict["precision"] = metrics.PositivePrecision;
-            metricsDict["recall"] = metrics.PositiveRecall;
-            metricsDict["negative_recall"] = metrics.NegativeRecall;
-
-            if (!double.IsNaN(metrics.AreaUnderRocCurve))
-                metricsDict["auc"] = metrics.AreaUnderRocCurve;
-        }
-        else
-        {
-            var metrics = _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn);
-            metricsDict["accuracy"] = metrics.Accuracy;
-            metricsDict["f1_score"] = metrics.F1Score;
-            metricsDict["precision"] = metrics.PositivePrecision;
-            metricsDict["recall"] = metrics.PositiveRecall;
-            metricsDict["negative_recall"] = metrics.NegativeRecall;
-
-            if (!double.IsNaN(metrics.AreaUnderRocCurve))
-                metricsDict["auc"] = metrics.AreaUnderRocCurve;
-        }
+        // One mapping from ML.NET's fields to MLoop's names (BinaryMetrics): a name the optimizer
+        // accepts is a name this result carries.
+        var metricsDict = BinaryMetrics.Describe(hasProbability
+            ? _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn)
+            : _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn));
 
         if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
             metricsDict[CalibrationError.MetricName] = binaryEce;
@@ -1091,30 +1070,11 @@ public partial class AutoMLRunner
         var predictions = model.Transform(testSet);
         var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
 
-        var metricsDict = new Dictionary<string, double>();
-
-        if (hasProbability)
-        {
-            var metrics = _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn);
-            metricsDict["accuracy"] = metrics.Accuracy;
-            metricsDict["f1_score"] = metrics.F1Score;
-            metricsDict["precision"] = metrics.PositivePrecision;
-            metricsDict["recall"] = metrics.PositiveRecall;
-            metricsDict["negative_recall"] = metrics.NegativeRecall;
-            if (!double.IsNaN(metrics.AreaUnderRocCurve))
-                metricsDict["auc"] = metrics.AreaUnderRocCurve;
-        }
-        else
-        {
-            var metrics = _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn);
-            metricsDict["accuracy"] = metrics.Accuracy;
-            metricsDict["f1_score"] = metrics.F1Score;
-            metricsDict["precision"] = metrics.PositivePrecision;
-            metricsDict["recall"] = metrics.PositiveRecall;
-            metricsDict["negative_recall"] = metrics.NegativeRecall;
-            if (!double.IsNaN(metrics.AreaUnderRocCurve))
-                metricsDict["auc"] = metrics.AreaUnderRocCurve;
-        }
+        // One mapping from ML.NET's fields to MLoop's names (BinaryMetrics): a name the optimizer
+        // accepts is a name this result carries.
+        var metricsDict = BinaryMetrics.Describe(hasProbability
+            ? _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn)
+            : _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn));
 
         if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
             metricsDict[CalibrationError.MetricName] = binaryEce;
@@ -2350,16 +2310,7 @@ public partial class AutoMLRunner
     // The full metric set per trial, in MLoop's own vocabulary — the same keys the final
     // AutoMLResult.Metrics uses, so a trial row and the results table name the same things.
 
-    private static Dictionary<string, double> DescribeAllBinaryMetrics(BinaryClassificationMetrics m) => new()
-    {
-        ["accuracy"] = m.Accuracy,
-        ["auc"] = m.AreaUnderRocCurve,
-        ["auprc"] = m.AreaUnderPrecisionRecallCurve,
-        ["f1_score"] = m.F1Score,
-        ["precision"] = m.PositivePrecision,
-        ["recall"] = m.PositiveRecall,
-        ["negative_recall"] = m.NegativeRecall
-    };
+    private static Dictionary<string, double> DescribeAllBinaryMetrics(BinaryClassificationMetrics m) => BinaryMetrics.Describe(m);
 
     private static Dictionary<string, double> DescribeAllMulticlassMetrics(MulticlassClassificationMetrics m) => new()
     {

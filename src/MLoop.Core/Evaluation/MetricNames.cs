@@ -43,6 +43,12 @@ public static class MetricNames
     private static readonly string[] Other =
         ["average_distance", "davies_bouldin_index", "ndcg", "detection_rate", "mape", "exact_match", "char_f1", CalibrationError.MetricName];
 
+    /// <summary>
+    /// The binary classifier's metric names — what <c>train --metric</c> can optimize, and so what
+    /// every binary evaluation reports (<see cref="BinaryMetrics.Describe"/>).
+    /// </summary>
+    public static IReadOnlyList<string> BinaryFamily { get; } = Binary;
+
     /// <summary>Every canonical metric name, in a stable order.</summary>
     public static IReadOnlyList<string> All { get; } = [.. Binary, .. Multiclass, .. Regression, .. Other];
 

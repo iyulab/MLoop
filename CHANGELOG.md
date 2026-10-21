@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A binary model trained with `--metric auprc` or `--metric negative_precision` recorded no value for
+  the metric it optimized: training reported neither (and `evaluate` did not report `auprc`). Every
+  binary result — training, each trial, the small-data fallback and `evaluate` — now reports the same
+  set, the metrics `train --metric` accepts for a binary model.
 - The guide's `mloop predict` synopsis showed the model as a positional argument and a staging path
   without the model name; the model is named with `--experiment` or `--model`.
 
