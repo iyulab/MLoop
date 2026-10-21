@@ -42,6 +42,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A model whose only input is free text wrote no drift profile at all, so `mloop drift` said "no
+  profile" and its answer distribution — the one drift signal it has — was never recorded. The
+  answers are now profiled whenever they can be.
 - `POST /evaluate` for an experiment without a trained model evaluated the production model and
   reported it under the experiment's id; it is now `404` with the reason.
 - Commands and endpoints that take an experiment to score with (`predict --experiment`, `evaluate`,

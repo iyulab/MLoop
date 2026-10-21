@@ -1200,7 +1200,8 @@ numeric columns by decile, categorical ones by their most common values, missing
 for a classifier or a regressor, the distribution of the model's own answers over the same rows
 (the predicted class, or the predicted value by decile). This compares the production model's own
 logged predictions with both, by the population stability index (PSI). Nothing runs in the
-background — it is computed when you ask.
+background — it is computed when you ask. Free-text columns are not profiled, so a model whose only
+input is text is measured by its answers alone: no `features`, and `input_drift` does not fire for it.
 
 ```bash
 mloop drift                         # the most recent 5,000 logged predictions

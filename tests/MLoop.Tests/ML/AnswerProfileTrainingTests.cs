@@ -80,6 +80,32 @@ public class AnswerProfileTrainingTests : IDisposable
         AssertTheLoggedAnswersDoNotDrift(profile, experimentPath, schema, csv, "price", "regression");
     }
 
+    /// <summary>
+    /// A model whose only input is free text has no column to profile; its answers are still recorded,
+    /// since they are the one drift signal such a model has. The profile used to be skipped whole.
+    /// </summary>
+    [Fact]
+    public async Task A_text_only_classifier_still_profiles_its_answers()
+    {
+        var csv = Path.Combine(_tempDir, "logs.csv");
+        var rnd = new Random(5);
+        string[] fine = ["disk ok", "service started normally", "heartbeat received", "backup completed fine"];
+        string[] risky = ["disk failure detected", "service crashed with error", "heartbeat lost timeout", "backup failed corrupted"];
+        var lines = new List<string> { "Content,Label" };
+        for (var i = 0; i < 300; i++)
+        {
+            var risk = rnd.NextDouble() < 0.4;
+            lines.Add($"\"{(risk ? risky : fine)[rnd.Next(4)]} id{i}\",{(risk ? 1 : 0)}");
+        }
+        await File.WriteAllLinesAsync(csv, lines);
+
+        var (profile, experimentPath, schema) = await TrainAsync(csv, "Label", "binary-classification");
+
+        Assert.Empty(profile.Features);
+        Assert.NotNull(profile.Prediction);
+        AssertTheLoggedAnswersDoNotDrift(profile, experimentPath, schema, csv, "Label", "binary-classification");
+    }
+
     private async Task<(DriftProfile Profile, string ExperimentPath, InputSchemaInfo Schema)> TrainAsync(string csv, string label, string task)
     {
         var fs = new FileSystemManager();
