@@ -71,6 +71,18 @@ public sealed class FileDataSampler : IDataSampler
         var weightColumn = columns.Weight
             ?? (sampled.Any(s => s.Feedback?.Weight is not null) ? DefaultWeightColumn(sampled, columns.Label) : null);
 
+        // Logged inputs carry the client's spelling; the file is written in the model's.
+        var spelling = columns.Inputs.Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(c => c, c => c, StringComparer.OrdinalIgnoreCase);
+        sampled = sampled
+            .Select(s => s with
+            {
+                Input = s.Input
+                    .GroupBy(kv => spelling.GetValueOrDefault(kv.Key, kv.Key))
+                    .ToDictionary(g => g.Key, g => g.First().Value)
+            })
+            .ToList();
+
         await WriteCsvAsync(sampled, outputPath, columns.Label, weightColumn, cancellationToken).ConfigureAwait(false);
 
         return new SamplingResult(

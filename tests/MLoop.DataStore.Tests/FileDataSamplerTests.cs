@@ -265,6 +265,20 @@ public class FileDataSamplerTests : IDisposable
     }
 
     [Fact]
+    public async Task SampleAsync_WritesInputsInTheModelsSpelling()
+    {
+        // A client sent `feature`; the model was trained on `Feature`. The file must merge with the training data.
+        var id = await CreatePredictionAndGetId("test-model", "a");
+        await _feedbackCollector.RecordFeedbackAsync(id, "x");
+
+        var outputPath = Path.Combine(_testDir, "output.csv");
+        await _sampler.SampleAsync("test-model", 10, SamplingStrategy.Random, outputPath,
+            Columns with { Inputs = ["Feature", "label"] });
+
+        (await File.ReadAllLinesAsync(outputPath)).Should().Equal("Feature,label", "value,x");
+    }
+
+    [Fact]
     public async Task SampleAsync_LoggedLabelColumn_IsReplacedByFeedback_NotDuplicated()
     {
         await _logger.LogPredictionAsync("test-model", "exp-001",

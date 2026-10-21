@@ -62,6 +62,13 @@ public enum SamplingStrategy
 /// </summary>
 public sealed record RetrainingColumns(string Label, string? Weight = null)
 {
+    /// <summary>
+    /// The model's input columns as it was trained on them. A logged input is written under the spelling found
+    /// here when the two differ only in case — a client that sent <c>x1</c> to a model trained on <c>X1</c> was
+    /// answered, and its rows must merge with the original training data. Empty when unknown.
+    /// </summary>
+    public IReadOnlyList<string> Inputs { get; init; } = [];
+
     /// <summary>The weight column's name when the model declares none.</summary>
     public const string DefaultWeight = "weight";
 }

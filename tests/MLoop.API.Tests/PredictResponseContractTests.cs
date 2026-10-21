@@ -169,7 +169,8 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
         sampled.GetProperty("labelColumn").GetString().Should().Be("Label");
         sampled.GetProperty("weightColumn").GetString().Should().Be("weight");
         var sampleFile = File.ReadAllLines(Path.Combine(_factory.TestProjectRoot, sampled.GetProperty("path").GetString()!));
-        sampleFile[0].Should().Be("x1,x2,Label,weight");   // the inputs as the client named them
+        // The client sent x1/x2 (camelCase JSON); the file is in the model's spelling, so it merges with its training data.
+        sampleFile[0].Should().Be("X1,X2,Label,weight");
         sampleFile[1].Should().EndWith(",bird,4");
 
         (await _client.PostAsJsonAsync("/samples", new { name = modelName, strategy = "sideways" }))

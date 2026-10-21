@@ -25,7 +25,10 @@ public static class FeedbackSamples
         {
             var experiment = await store.LoadAsync(modelName, id, cancellationToken);
             if (!string.IsNullOrWhiteSpace(experiment.Config.LabelColumn))
-                return new RetrainingColumns(experiment.Config.LabelColumn, experiment.Config.WeightColumn);
+                return new RetrainingColumns(experiment.Config.LabelColumn, experiment.Config.WeightColumn)
+                {
+                    Inputs = experiment.Config.InputSchema?.Columns.Select(c => c.Name).ToList() ?? [],
+                };
         }
 
         var config = await new ConfigLoader(fileSystem, discovery).LoadUserConfigAsync(cancellationToken);
