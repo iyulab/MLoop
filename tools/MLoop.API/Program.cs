@@ -408,6 +408,7 @@ app.MapGet("/info", async (
 // Prediction endpoint (secured)
 app.MapPost("/predict", async (
     [FromQuery] string? name,
+    [FromQuery] string? experiment,
     JsonElement input,
     IModelRegistry registry,
     IExperimentStore experimentStore,
@@ -426,15 +427,36 @@ app.MapPost("/predict", async (
     {
         logger.LogInformation("Prediction request for '{ModelName}' with {Count} input(s)", modelName, predictionCount);
 
-        var productionModel = await registry.GetProductionAsync(modelName, ct);
-
-        if (productionModel == null)
+        // The model that answers: production by default, or ?experiment= — a shadow prediction by a
+        // candidate, as `mloop predict --experiment`. Production does not move, and logged rows carry
+        // the candidate's id, so drift (production's rows) and feedback keep the two apart.
+        string answeringId;
+        string modelPath;
+        string? taskOfModel;
+        if (!string.IsNullOrWhiteSpace(experiment))
         {
-            logger.LogWarning("Prediction failed: No production model found for '{ModelName}'", modelName);
-            return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first." });
+            answeringId = experiment.Trim();
+            if (!experimentStore.ExperimentExists(modelName, answeringId))
+                return Results.NotFound(new { error = $"Experiment not found: {answeringId} for model '{modelName}'." });
+            modelPath = Path.Combine(experimentStore.GetExperimentPath(modelName, answeringId), ExperimentLayout.ModelFileName);
+            if (!File.Exists(modelPath))
+                return Results.NotFound(new { error = $"'{answeringId}' has no trained model ({ExperimentLayout.ModelFileName})." });
+            taskOfModel = (await experimentStore.LoadAsync(modelName, answeringId, ct))?.Task;
         }
+        else
+        {
+            var productionModel = await registry.GetProductionAsync(modelName, ct);
 
-        var modelPath = Path.Combine(registry.GetProductionPath(modelName), ExperimentLayout.ModelFileName);
+            if (productionModel == null)
+            {
+                logger.LogWarning("Prediction failed: No production model found for '{ModelName}'", modelName);
+                return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first, or predict with a candidate: ?experiment=<exp-id>." });
+            }
+
+            answeringId = productionModel.ExperimentId;
+            taskOfModel = productionModel.Task;
+            modelPath = Path.Combine(registry.GetProductionPath(modelName), ExperimentLayout.ModelFileName);
+        }
 
         if (!File.Exists(modelPath))
         {
@@ -442,7 +464,7 @@ app.MapPost("/predict", async (
             return Results.NotFound(new { error = $"Model file not found: {modelPath}" });
         }
 
-        var taskType = productionModel.Task ?? "regression";
+        var taskType = taskOfModel ?? "regression";
 
         // Forecasting is horizon-based (stateful SSA replaying its training series), not
         // row-based — PredictionService.Predict rejects it outright. Body is an optional
@@ -459,7 +481,7 @@ app.MapPost("/predict", async (
             }
 
             var (forecast, forecastError) = await ForecastReplayService.ComputeForecastAsync(
-                mlContext, modelPath, productionModel.ExperimentId, requestedHorizon);
+                mlContext, modelPath, answeringId, requestedHorizon);
 
             if (forecast is null)
             {
@@ -478,7 +500,7 @@ app.MapPost("/predict", async (
             return Results.Ok(new
             {
                 modelName,
-                experimentId = productionModel.ExperimentId,
+                experimentId = answeringId,
                 predictedAt = DateTime.UtcNow,
                 task = "forecasting",
                 count = forecastRows.Count,
@@ -488,17 +510,17 @@ app.MapPost("/predict", async (
         }
 
         // Load experiment data to get InputSchema
-        var expData = await experimentStore.LoadAsync(modelName, productionModel.ExperimentId, ct);
+        var expData = await experimentStore.LoadAsync(modelName, answeringId, ct);
         var schema = expData?.Config?.InputSchema;
 
         if (schema == null)
         {
             logger.LogError("InputSchema not available for '{ModelName}' experiment {ExperimentId}. " +
                 "This model was trained before schema capture was implemented. Please retrain.",
-                modelName, productionModel.ExperimentId);
+                modelName, answeringId);
             return Results.Problem(
                 title: "Schema not available",
-                detail: $"InputSchema not found for model '{modelName}' experiment {productionModel.ExperimentId}. " +
+                detail: $"InputSchema not found for model '{modelName}' experiment {answeringId}. " +
                     "This model was trained before schema capture was implemented. Please retrain the model.",
                 statusCode: StatusCodes.Status500InternalServerError
             );
@@ -551,9 +573,9 @@ app.MapPost("/predict", async (
                 var ids = predictions.Select(_ => PredictionIds.New()).ToArray();
                 await predictionLogger.LogBatchAsync(
                     modelName,
-                    productionModel.ExperimentId,
+                    answeringId,
                     predictions.Select((row, i) => new PredictionLogEntry(
-                        modelName, productionModel.ExperimentId, rows[i], PredictionLogOutput.Of(row), row.Confidence,
+                        modelName, answeringId, rows[i], PredictionLogOutput.Of(row), row.Confidence,
                         loggedAt, ids[i])),
                     ct);
                 predictions = predictions.Select((row, i) => row with { PredictionId = ids[i] }).ToList();
@@ -568,7 +590,7 @@ app.MapPost("/predict", async (
         return Results.Ok(new
         {
             modelName,
-            experimentId = productionModel.ExperimentId,
+            experimentId = answeringId,
             predictedAt = DateTime.UtcNow,
             task = result.TaskType,
             count = predictions.Count,

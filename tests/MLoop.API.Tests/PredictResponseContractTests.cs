@@ -154,6 +154,41 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
                 "the API checks the same default conditions as `mloop trigger check`");
     }
 
+    /// <summary>
+    /// A shadow prediction over HTTP, as `mloop predict --experiment`: a candidate in staging answers,
+    /// the response names it, its logged rows carry its id, and production stays where it was.
+    /// </summary>
+    [Fact]
+    public async Task Predict_WithAnExperiment_AnswersWithTheCandidate_AndLeavesProductionAlone()
+    {
+        var modelName = SeedMulticlassProductionModel();
+        var modelsDir = Path.Combine(_factory.TestProjectRoot, "models", modelName);
+        var candidate = Path.Combine(modelsDir, "staging", "exp-002");
+        Directory.CreateDirectory(candidate);
+        foreach (var file in new[] { "config.json", "metrics.json" })
+            File.Copy(Path.Combine(modelsDir, "staging", "exp-001", file), Path.Combine(candidate, file), overwrite: true);
+        File.WriteAllText(Path.Combine(candidate, "metadata.json"),
+            File.ReadAllText(Path.Combine(modelsDir, "staging", "exp-001", "metadata.json")).Replace("exp-001", "exp-002"));
+        File.Copy(Path.Combine(modelsDir, "production", "model.zip"), Path.Combine(candidate, "model.zip"), overwrite: true);
+
+        var response = await _client.PostAsJsonAsync($"/predict?name={modelName}&experiment=exp-002", new[] { new { X1 = 9.0, X2 = 9.0 } });
+        var raw = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, raw);
+        var body = JsonSerializer.Deserialize<JsonElement>(raw);
+        body.GetProperty("experimentId").GetString().Should().Be("exp-002");
+        var id = body.GetProperty("predictions")[0].GetProperty("predictionId").GetString();
+
+        var logs = JsonSerializer.Deserialize<JsonElement>(await _client.GetStringAsync($"/logs?name={modelName}"));
+        logs.GetProperty("logs").EnumerateArray().Single(l => l.GetProperty("id").GetString() == id)
+            .GetProperty("experimentId").GetString().Should().Be("exp-002");
+
+        var production = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(Path.Combine(modelsDir, "production", "metadata.json")));
+        production.GetProperty("experimentId").GetString().Should().Be("exp-001");
+
+        var unknown = await _client.PostAsJsonAsync($"/predict?name={modelName}&experiment=exp-099", new[] { new { X1 = 1.0, X2 = 1.0 } });
+        unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     [Fact]
     public async Task Predict_Multiclass_MatchesTheDocumentedResponseContract()
     {

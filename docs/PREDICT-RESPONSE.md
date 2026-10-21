@@ -40,8 +40,9 @@ candidate with production is two calls on the same file, keyed by it.
 ```
 
 One difference worth knowing before you write a parser: the model's name is `model` on the CLI and
-`modelName` over HTTP, and only the HTTP response carries `predictedAt`. HTTP predicts with
-production only.
+`modelName` over HTTP, and only the HTTP response carries `predictedAt`. A shadow prediction over
+HTTP is `POST /predict?name=<model>&experiment=<exp-id>` — `404` when the experiment does not exist
+or has no trained model.
 
 🔴 **A field without a value is absent — on both surfaces, in the envelope and in every row.** The
 same multiclass row is `{"predictedLabel":"cat","probabilities":{…},"confidence":0.5}` whichever way

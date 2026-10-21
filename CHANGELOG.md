@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   two apart.
 - `mloop predict --json` names the model that answered in `experimentId` (production's experiment
   by default).
+- `POST /predict?experiment=<exp-id>` — the same shadow prediction over HTTP; logged rows carry the
+  candidate's id. `404` for an unknown experiment or one without a trained model.
 - `mloop threshold --precision-of <class>` targets the precision of a named class — the negative
   one included, for when a wrong «no» is the costly answer. The threshold is then the highest one at
   which that class's answers reach the precision; the class is recorded in `decision-threshold.json`

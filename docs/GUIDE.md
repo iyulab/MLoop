@@ -990,7 +990,8 @@ mloop serve --detach
 # GET  /health              - Health check
 # GET  /info                - Production model information
 # GET  /models              - List all models
-# POST /predict             - Make predictions
+# POST /predict             - Make predictions (?experiment=<exp-id>: a candidate answers instead
+#                              of production — a shadow prediction; production does not move)
 
 # Authentication: every endpoint except /health requires a JWT bearer token. Mint one with the
 # CLI (it signs with the same dev defaults the server validates out of the box), then attach it:
