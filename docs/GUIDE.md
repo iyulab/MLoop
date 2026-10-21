@@ -1490,7 +1490,19 @@ mloop prep run -i datasets/train.csv -o datasets/train_prep.csv
 
 Step types: `fill-missing` (mean · median · mode · constant · forward · backward), `normalize`, `scale`,
 `remove-columns`, `rename-columns`, `drop-duplicates`, `extract-date`, `parse-datetime`, `filter-rows`,
-`add-column`, `parse-korean-time`, `parse-excel-date`, `rolling`, `resample`, `sample`.
+`add-column`, `parse-korean-time`, `parse-excel-date`, `rolling`, `resample`, `sample`, `explode`, `split-list`.
+
+`explode` and `split-list` reshape list columns — a list per cell, the way a Parquet or JSON list is read. A file
+holding a group per row (a query with its documents' grades and feature vectors) becomes one row per document with
+one column per feature:
+
+```yaml
+prep:
+  - type: explode          # one row per element; the lists of a row are paired by position
+    columns: [labels, features]
+  - type: split-list       # features holding [0.5, 1] becomes features.0, features.1
+    column: features
+```
 
 The **Leakage** column says where a step runs. A statistic learned from the data (`normalize`, `scale`,
 `fill-missing:mean`) is fitted inside training on the training rows only, when the task supports it

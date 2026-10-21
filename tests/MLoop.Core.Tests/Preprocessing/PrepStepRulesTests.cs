@@ -22,12 +22,15 @@ public class PrepStepRulesTests : IDisposable
     [InlineData("fill_missing", "fill-missing")]
     [InlineData("Scale", "normalize")]
     [InlineData("data_sampling", "sample")]
+    [InlineData("SPLIT_LIST", "split-list")]
+    [InlineData("explode", "explode")]
     public void Spellings_and_aliases_resolve_to_one_name(string type, string canonical)
         => Assert.Equal(canonical, PrepStepRules.Canonical(type));
 
     [Theory]
     [InlineData("")]
     [InlineData("unpivot")]
+    [InlineData("explodes")]
     public void An_unknown_type_has_no_canonical_name(string type)
         => Assert.Null(PrepStepRules.Canonical(type));
 
@@ -70,6 +73,31 @@ public class PrepStepRulesTests : IDisposable
             .ExecuteAsync(input, [new PrepStep { Type = "unpivot" }], Path.Combine(_dir, "out.csv")));
 
         Assert.Contains("Unknown prep step type 'unpivot'", ex.Message);
+    }
+
+    [Fact]
+    public void List_steps_need_their_columns()
+    {
+        Assert.Contains("'explode' requires 'columns' or 'column'", PrepStepRules.Problems(new PrepStep { Type = "explode" }));
+        Assert.Empty(PrepStepRules.Problems(new PrepStep { Type = "split-list", Columns = ["f"] }));
+    }
+
+    [Fact]
+    public async Task Explode_then_split_list_turn_a_group_row_into_rows_with_feature_columns()
+    {
+        var input = Path.Combine(_dir, "q.csv");
+        await File.WriteAllTextAsync(input, "query,label,features\n7,\"[2,0]\",\"[[0.5,1],[0.25,0]]\"\n");
+        var output = Path.Combine(_dir, "docs.csv");
+
+        await new DataPipelineExecutor(new TestLogger()).ExecuteAsync(input,
+        [
+            new PrepStep { Type = "explode", Columns = ["label", "features"] },
+            new PrepStep { Type = "split-list", Column = "features" },
+        ], output);
+
+        Assert.Equal(
+            ["query,label,features.0,features.1", "7,2,0.5,1", "7,0,0.25,0"],
+            (await File.ReadAllLinesAsync(output)).Select(l => l.TrimStart('﻿')));
     }
 
     private sealed class TestLogger : ILogger

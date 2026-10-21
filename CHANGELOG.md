@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `explode` and `split-list` prep steps: list columns (a list per cell, as Parquet and JSON lists are read) become one
+  row per element, and a list column of one length becomes one column per position (`features.0`, `features.1`, …).
+  A file holding a group per row — a query with its documents' grades and feature vectors — can now be trained on.
+
 - NER models report `entity_precision`, `entity_recall` and `entity_f1` beside the word accuracies, in training
   and `mloop evaluate` — whole entities with their type, the score NER is usually reported by. A model that finds
   half of every entity no longer reads as half right. Tags are read as the IOB family (`B-`/`I-`, BIOES, bare types).
