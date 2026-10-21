@@ -123,7 +123,7 @@ public class PairedComparisonTests
             new BinaryRow { Label = false, PredictedLabel = false },
         });
 
-        Assert.Equal([0.0, 1.0, 1.0, 0.0], PairedComparison.RowLosses(scored, "binary-classification", "Label"));
+        Assert.Equal([0.0, 1.0, 1.0, 0.0], PairedComparison.RowLosses(scored, "binary-classification", "Label")!);
     }
 
     private sealed class MulticlassRow
@@ -145,7 +145,7 @@ public class PairedComparisonTests
         });
         var scored = ml.Transforms.Conversion.MapValueToKey("Label").Fit(raw).Transform(raw);
 
-        Assert.Equal([0.0, 1.0, 0.0], PairedComparison.RowLosses(scored, "multiclass-classification", "Label"));
+        Assert.Equal([0.0, 1.0, 0.0], PairedComparison.RowLosses(scored, "multiclass-classification", "Label")!);
     }
 
     [Fact]

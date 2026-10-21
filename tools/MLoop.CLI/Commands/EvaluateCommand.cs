@@ -354,17 +354,9 @@ public static class EvaluateCommand
             // The weight the test rows count by: the one asked for, else the one the experiment was
             // trained with when this file carries it. Training metrics recorded under a weight and test
             // metrics without one describe different distributions; saying so is the least owed.
-            var weightColumn = string.IsNullOrWhiteSpace(weight) ? null : weight.Trim();
-            var trainedWeight = experimentData!.Config.WeightColumn;
-            if (weightColumn is null && !string.IsNullOrEmpty(trainedWeight))
-            {
-                if (HeaderHas(resolvedTestDataFile, trainedWeight))
-                    weightColumn = trainedWeight;
-                else
-                    WarningConsole.Warn(Markup.Escape(
-                        $"The training metrics are weighted by '{trainedWeight}' and this file has no such column, so the test " +
-                        "metrics are unweighted — the two columns below describe different distributions."));
-            }
+            var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(weight, experimentData!, resolvedTestDataFile);
+            if (weightWarning is not null)
+                WarningConsole.Warn(Markup.Escape(weightWarning));
 
             // Perform evaluation with progress indicator
             Dictionary<string, double>? testMetrics = null;
@@ -451,8 +443,8 @@ public static class EvaluateCommand
             Comparison? comparison = null;
             if (!string.IsNullOrWhiteSpace(against))
             {
-                var baseline = await ResolveBaselineAsync(against.Trim(), resolvedModelName, resolvedExperimentId, experimentData,
-                    experimentStore, modelRegistry, fileSystem);
+                var baseline = await ModelComparison.ResolveBaselineAsync(against.Trim(), resolvedModelName, resolvedExperimentId, experimentData,
+                    experimentStore, modelRegistry);
                 if (baseline.Error is { } error)
                 {
                     ErrorConsole.Error(error);
@@ -460,8 +452,8 @@ public static class EvaluateCommand
                         JsonError.Emit(error);
                     return 1;
                 }
-                comparison = await CompareAsync(resolvedExperimentId, resolvedModelPath, experimentData,
-                    baseline.ExperimentId!, baseline.ModelPath!, baseline.Data!, resolvedTestDataFile, weightColumn, testMetrics!);
+                comparison = await ModelComparison.CompareAsync(new EvaluationEngine(), resolvedExperimentId, resolvedModelPath, experimentData,
+                    baseline, resolvedTestDataFile, weightColumn);
                 ShowComparison(comparison, testMetrics!);
             }
 
@@ -477,92 +469,6 @@ public static class EvaluateCommand
             ErrorSuggestions.DisplayError(ex, "evaluate");
             return 1;
         }
-    }
-
-    // Whether the CSV header names the column (case-insensitive, as the loaders match names).
-    private static bool HeaderHas(string csvPath, string column)
-    {
-        try
-        {
-            using var reader = new StreamReader(csvPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            var header = reader.ReadLine();
-            return header is not null && MLoop.Core.Prediction.CsvFieldParser.ParseFields(header)
-                .Any(f => string.Equals(f.Trim(), column, StringComparison.OrdinalIgnoreCase));
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// The baseline a candidate was compared with on the same rows: its metrics there, and the paired
-    /// per-row comparison when the task has a per-row measure (<c>null</c> otherwise, or when the two
-    /// models did not answer the same number of rows).
-    /// </summary>
-    internal sealed record Comparison(string Against, Dictionary<string, double> Metrics, PairedResult? Paired, string? NotPaired);
-
-    private sealed record Baseline(string? ExperimentId, string? ModelPath, ExperimentData? Data, string? Error);
-
-    /// <summary>
-    /// <c>production</c> or an experiment id → the model to compare with. Refused when it is the candidate
-    /// itself, or when it was trained for another task or label: the same rows would then be asking the
-    /// two models different questions.
-    /// </summary>
-    private static async Task<Baseline> ResolveBaselineAsync(
-        string against, string modelName, string candidateId, ExperimentData candidate,
-        ExperimentStore store, ModelRegistry registry, FileSystemManager fileSystem)
-    {
-        string id;
-        if (against.Equals("production", StringComparison.OrdinalIgnoreCase))
-        {
-            var production = await registry.GetProductionAsync(modelName, CancellationToken.None);
-            if (production is null)
-                return new Baseline(null, null, null, $"--against production: no model is in production for '{modelName}'.");
-            id = production.ExperimentId;
-        }
-        else
-        {
-            id = against;
-            if (!store.ExperimentExists(modelName, id))
-                return new Baseline(null, null, null, $"--against: experiment not found: {id} for model '{modelName}'.");
-        }
-        if (string.Equals(id, candidateId, StringComparison.OrdinalIgnoreCase))
-            return new Baseline(null, null, null, $"--against {against}: that is {candidateId}, the experiment being evaluated — name another one.");
-
-        var data = await store.LoadAsync(modelName, id, CancellationToken.None);
-        if (!string.Equals(data.Task, candidate.Task, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(data.Config.LabelColumn, candidate.Config.LabelColumn, StringComparison.OrdinalIgnoreCase))
-            return new Baseline(null, null, null,
-                $"--against {id}: it was trained for {data.Task} on '{data.Config.LabelColumn}', {candidateId} for {candidate.Task} on " +
-                $"'{candidate.Config.LabelColumn}' — the two cannot be compared on the same rows.");
-        var modelPath = fileSystem.CombinePath(store.GetExperimentPath(modelName, id), ExperimentLayout.ModelFileName);
-        return File.Exists(modelPath)
-            ? new Baseline(id, modelPath, data, null)
-            : new Baseline(null, null, null, $"--against {id}: model file not found: {modelPath}");
-    }
-
-    private static async Task<Comparison> CompareAsync(
-        string candidateId, string candidateModel, ExperimentData candidate,
-        string baselineId, string baselineModel, ExperimentData baseline,
-        string testDataFile, string? weightColumn, Dictionary<string, double> candidateMetrics)
-    {
-        var engine = new EvaluationEngine();
-        var task = candidate.Task;
-        var label = candidate.Config.LabelColumn;
-        var metrics = await engine.EvaluateAsync(baselineModel, testDataFile, label, task, CancellationToken.None,
-            baseline.Config.InputSchema, baseline.Config.GroupColumn, baseline.Config.UserColumn, baseline.Config.ItemColumn, weightColumn);
-
-        if (PairedComparison.MeasureOf(task) is not { } measure)
-            return new Comparison(baselineId, metrics, null, $"{task} has no per-row measure to pair — compare the metrics above.");
-        var c = await engine.RowLossesAsync(candidateModel, testDataFile, label, task, candidate.Config.InputSchema, weightColumn);
-        var b = await engine.RowLossesAsync(baselineModel, testDataFile, label, task, baseline.Config.InputSchema, weightColumn);
-        if (c is not { } cl || b is not { } bl)
-            return new Comparison(baselineId, metrics, null, "The models' outputs do not carry the columns a per-row comparison reads.");
-        if (cl.Losses.Length != bl.Losses.Length)
-            return new Comparison(baselineId, metrics, null,
-                $"{candidateId} answered {cl.Losses.Length} rows and {baselineId} {bl.Losses.Length} — they were not read as the same rows.");
-        return new Comparison(baselineId, metrics, PairedComparison.Compare(measure, cl.Losses, bl.Losses, cl.Weights), null);
     }
 
     private static void ShowComparison(Comparison comparison, Dictionary<string, double> candidateMetrics)

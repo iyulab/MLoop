@@ -852,6 +852,10 @@ A model trained for another task or label is refused, as is the candidate itself
 `difference`, `low`, `high`, `verdict`: `CandidateBetter`, `BaselineBetter` or `Indistinguishable`),
 `null` with a reason in `notPaired` for tasks with no per-row loss.
 
+`POST /evaluate` (admin) takes the same choices — `{ "testDataPath", "experimentId", "name", "weight",
+"against" }` — weighs the rows the same way (the experiment's training weight by default, and a
+`warnings` entry when the file lacks it) and returns `weightColumn`, `metrics` and `comparison`.
+
 ### `mloop validate`
 
 Validate `mloop.yaml` — task types, column types, metrics, and prep steps.

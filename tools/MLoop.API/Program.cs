@@ -1194,10 +1194,27 @@ app.MapPost("/evaluate", async (
         var labelColumn = experiment.Config.LabelColumn;
         var taskType = experiment.Task;
 
+        // The rows count by the same weight `mloop evaluate` would give them — the one asked for, else
+        // the column the experiment was trained with when the file has it.
+        var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(request.Weight, experiment, resolvedTestPath);
+
+        ComparisonBaseline? baseline = null;
+        if (!string.IsNullOrWhiteSpace(request.Against))
+        {
+            baseline = await ModelComparison.ResolveBaselineAsync(request.Against.Trim(), modelName, experimentId, experiment,
+                experimentStore, registry, ct);
+            if (baseline.Error is { } error)
+                return baseline.NotFound ? Results.NotFound(new { error }) : Results.BadRequest(new { error });
+        }
+
         var metrics = await evaluationEngine.EvaluateAsync(
-            modelPath, testDataPath, labelColumn, taskType, ct,
+            modelPath, resolvedTestPath, labelColumn, taskType, ct,
             experiment.Config.InputSchema, experiment.Config.GroupColumn,
-            experiment.Config.UserColumn, experiment.Config.ItemColumn);
+            experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn);
+
+        var comparison = baseline is null
+            ? null
+            : await ModelComparison.CompareAsync(evaluationEngine, experimentId, modelPath, experiment, baseline, resolvedTestPath, weightColumn, ct);
 
         logger.LogInformation("Evaluation completed in {ElapsedMs}ms with {MetricCount} metrics",
             stopwatch.ElapsedMilliseconds, metrics.Count);
@@ -1208,7 +1225,10 @@ app.MapPost("/evaluate", async (
             experimentId,
             task = taskType,
             testDataPath,
-            metrics
+            weightColumn,
+            metrics,
+            comparison,
+            warnings = weightWarning is null ? null : new[] { weightWarning },
         });
     }
     catch (Exception ex)
@@ -1684,7 +1704,9 @@ public record RollbackRequest(
 public record EvaluateRequest(
     string TestDataPath,
     string? ExperimentId = null,
-    string? Name = null);
+    string? Name = null,
+    string? Weight = null,
+    string? Against = null);
 
 public record FeedbackRequest(
     string PredictionId,

@@ -22,6 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   interval with a verdict (`CandidateBetter`, `BaselineBetter`, `Indistinguishable`). `--json`
   carries it as `comparison`. A model trained for another task or label, and the candidate itself,
   are refused. `MLoop.Core.Evaluation.PairedComparison` holds the measure.
+  `POST /evaluate` takes `against` too.
+
+### Fixed
+- **`POST /evaluate` scores a weighted experiment by its weight.** It took no weight and evaluated
+  every experiment unweighted — a model trained on weighted rows was judged on the distribution it
+  was trained away from, and the response did not say so. It now takes `weight`, defaults to the
+  experiment's training weight when the test file has that column, says in `warnings` when it does
+  not, and returns `weightColumn` — the same choices `mloop evaluate` makes, from one place.
 
 ## [0.38.0] - 2026-10-21
 
