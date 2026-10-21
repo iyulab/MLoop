@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   failed; it shows `-`, and `currentValue` is `null` in `--json` and `GET /trigger` for every condition that could
   not be measured (no feedback, too few logged predictions, a condition the trigger does not evaluate).
 - `mloop prep plan` showed a step's columns in doubled brackets (`columns: [[x]]`).
+- The prep leakage warnings, a `validate` note and a `train` line were in Korean while the rest of the output is
+  English; they are in English.
 - `mloop runtime install` / `remove` help listed `tf, torch` and not `onnxruntime`; it lists what the registry knows.
 - `mloop train --balance` with a value that is not `auto`, `none` or a positive ratio trained unbalanced after a
   grey note; it is now refused before training. So is `--balance` on a task that is not classification (it was a

@@ -28,9 +28,9 @@ public class PrepRouterTests
 
         // Task-aware message: must NOT tell user to "replace normalize with normalize"
         var warning = result.Warnings[0];
-        Assert.DoesNotContain("대체하세요", warning);                         // no self-contradictory advice
-        Assert.Contains("preFeaturizer", warning);                           // explains WHY (task limitation)
-        Assert.Contains("누수", warning);                                    // still warns about leakage
+        Assert.DoesNotContain("Where possible use", warning);                 // no self-contradictory advice
+        Assert.Contains("for this task", warning);                           // explains WHY (task limitation)
+        Assert.Contains("leak", warning);                                    // still warns about leakage
     }
 
     [Fact]
@@ -48,9 +48,9 @@ public class PrepRouterTests
 
         Assert.Single(result.Warnings);
         var warning = result.Warnings[0];
-        // Original LeakageWarning contains the "대체하세요" advice — still correct for median
-        Assert.Contains("대체하세요", warning);
-        Assert.Contains("누수", warning);
+        // Original LeakageWarning carries the advice to switch — still correct for median
+        Assert.Contains("Where possible use", warning);
+        Assert.Contains("leak", warning);
     }
 
     [Fact]

@@ -470,9 +470,8 @@ public static class ValidateCommand
         {
             if (PrepStepClassifier.Classify(step) == PrepCategory.PreFeaturizer)
             {
-                notes.Add($"prep '{step.Type}'({step.Method}): AutoML이 트레이너를 자동선택합니다 — " +
-                          "선형/거리 기반(예: SDCA, Lbfgs) 선택 시 유효하고, 트리 기반 선택 시 영향이 적습니다. " +
-                          "금지가 아니라 맥락 정보입니다.");
+                notes.Add($"prep '{step.Type}'({step.Method}): AutoML picks the trainer — this matters when it picks a " +
+                          "linear or distance-based one (e.g. SDCA, L-BFGS) and little for a tree. Context, not a prohibition.");
             }
         }
         return notes;

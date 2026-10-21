@@ -39,9 +39,9 @@ public static class PrepStepClassifier
     /// consistent wording (DRY). The advice to switch to normalize/fill-mean remains valid here.
     /// </summary>
     public static string LeakageWarning(PrepStep step) =>
-        $"prep '{step.Type}'({step.Method}) 는 train/test 분할 전 전역 통계로 적용되어 " +
-        "평가에 데이터 누수가 남습니다. 가능하면 normalize(min-max/z-score) 또는 " +
-        "fill-missing(mean)으로 대체하세요.";
+        $"prep '{step.Type}'({step.Method}) is applied with statistics of the whole file, before the train/test " +
+        "split, so the evaluation keeps a leak. Where possible use normalize (min-max/z-score) or " +
+        "fill-missing (mean), which are fitted on the training rows only.";
 
     /// <summary>
     /// Returns a task-aware leakage warning for a step that IS a PreFeaturizer-category transform
@@ -52,8 +52,8 @@ public static class PrepStepClassifier
     /// self-contradictory. This message explains WHY without giving misleading advice.
     /// </summary>
     public static string UnsupportedTaskLeakageWarning(PrepStep step) =>
-        $"prep '{step.Type}'({step.Method}) 는 이 태스크가 preFeaturizer(fold-내 fit)를 지원하지 않아 " +
-        "train/test 분할 전 CSV 단계에서 전역 적용됩니다 — 평가에 데이터 누수가 남습니다.";
+        $"prep '{step.Type}'({step.Method}) cannot be fitted inside training for this task, so it is applied to the " +
+        "whole file before the train/test split — the evaluation keeps a leak.";
 
     /// <summary>
     /// Classifies a preparation step into PreFeaturizer, CsvStage, or UnsupportedLeakageWarn category.

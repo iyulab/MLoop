@@ -757,7 +757,7 @@ public static class TrainCommand
                         AnsiConsole.MarkupLine($"[yellow]![/] {w}");
                     ValueLine.Write("[green]>[/] Preprocessed data: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
                     if (preFeaturizer != null)
-                        AnsiConsole.MarkupLine("[green]>[/] 통계 변환은 학습 중 fold-내 fit으로 적용됩니다(누수 안전).");
+                        AnsiConsole.MarkupLine("[green]>[/] Statistical steps are fitted inside training on the training rows (no leak).");
                     AnsiConsole.WriteLine();
                 }
                 catch (Exception ex)

@@ -19,7 +19,7 @@ public class ValidatePrepLeakageWarnTests
         var warnings = ValidateCommand.InspectPrepLeakage(prep, "regression");
 
         Assert.Equal(2, warnings.Count); // median fill + rolling
-        Assert.All(warnings, w => Assert.Contains("누수", w));
+        Assert.All(warnings, w => Assert.Contains("leak", w));
     }
 
     [Fact]
@@ -36,8 +36,8 @@ public class ValidatePrepLeakageWarnTests
         var warnings = ValidateCommand.InspectPrepLeakage(prep, "clustering");
 
         Assert.Equal(2, warnings.Count); // median fill + normalize
-        Assert.All(warnings, w => Assert.Contains("누수", w));
+        Assert.All(warnings, w => Assert.Contains("leak", w));
         // the normalize warning is the task-aware variant, not the "replace with normalize" advice
-        Assert.Contains(warnings, w => w.Contains("preFeaturizer(fold-내 fit)를 지원하지 않아"));
+        Assert.Contains(warnings, w => w.Contains("cannot be fitted inside training for this task"));
     }
 }
