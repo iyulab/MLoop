@@ -153,7 +153,7 @@ public sealed class ModelCache : IModelCache
         if (!File.Exists(modelPath))
             throw new FileNotFoundException($"Model file not found: {modelPath}", modelPath);
 
-        return MLoop.Core.Models.DecisionThreshold.Load(_loaderContext, modelPath);
+        return MLoop.Core.Models.ScoringModel.Load(_loaderContext, modelPath);
     }
 
     private void EnsureCapacity()

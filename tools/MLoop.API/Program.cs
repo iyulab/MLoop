@@ -549,7 +549,7 @@ app.MapPost("/predict", async (
         ITransformer? residualModel = null;
         if (interval?.IsHeteroscedastic == true)
         {
-            var residualPath = Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.ResidualModelFileName);
+            var residualPath = MLoop.Core.Models.ScoringModel.ResidualPathBeside(modelPath);
             if (File.Exists(residualPath))
                 residualModel = modelCache.GetOrLoad(residualPath);
         }

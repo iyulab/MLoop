@@ -342,10 +342,7 @@ public class PredictionEngine
     {
         // Load the trained model — with its decision threshold, unless the caller converts the saved model
         // itself (ONNX export: the graph carries the trained model, the manifest names the threshold).
-        DataViewSchema modelSchema;
-        var trainedModel = _mlContext.Model.Load(modelPath, out modelSchema);
-        if (withDecisionThreshold)
-            trainedModel = DecisionThreshold.ApplyBeside(_mlContext, trainedModel, modelPath);
+        var trainedModel = ScoringModel.Load(_mlContext, modelPath, out var modelSchema, withDecisionThreshold: withDecisionThreshold);
 
         // Find the label column: prefer override, then trained schema
         // Treat empty string as null (unsupervised tasks like anomaly-detection have no label)
@@ -789,12 +786,11 @@ public class PredictionEngine
     /// </summary>
     private IDataView ApplyConformalBand(IDataView predictions, RegressionInterval interval, string modelPath)
     {
-        var residualPath = Path.Combine(Path.GetDirectoryName(modelPath) ?? ".", ExperimentLayout.ResidualModelFileName);
-        if (interval.IsHeteroscedastic && File.Exists(residualPath))
+        if (interval.IsHeteroscedastic && File.Exists(ScoringModel.ResidualPathBeside(modelPath)))
         {
             try
             {
-                var aux = _mlContext.Model.Load(residualPath, out _);
+                var aux = ScoringModel.LoadResidual(_mlContext, modelPath)!;
 
                 var withPoint = _mlContext.Transforms.CopyColumns("PointScore", "Score").Fit(predictions).Transform(predictions);
                 var withSigma = aux.Transform(withPoint); // aux "Score" = σ(x), shadows the point Score (preserved as PointScore)

@@ -9,8 +9,8 @@ namespace MLoop.Core.Models;
 /// The probability from which a binary classifier answers its positive class, chosen on an evaluation
 /// set for a target precision — the lowest threshold whose precision reaches the target, which keeps
 /// the most recall. It lives beside the model (<see cref="ExperimentLayout.DecisionThresholdFileName"/>)
-/// and every path that loads the model applies it through <see cref="Load"/>, so predict, serve,
-/// evaluate and the gate all read the same answers.
+/// and every path that loads the model applies it through <see cref="ScoringModel.Load(MLContext, string, string?, bool)"/>,
+/// so predict, serve, evaluate and the gate all read the same answers.
 /// </summary>
 /// <param name="Threshold">The probability from which the answer is the positive class.</param>
 /// <param name="TargetPrecision">The precision it was chosen for.</param>
@@ -57,16 +57,6 @@ public sealed record DecisionThreshold(
     /// <summary>Where the threshold beside <paramref name="modelPath"/> lives.</summary>
     public static string PathBeside(string modelPath)
         => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(modelPath)) ?? ".", ExperimentLayout.DecisionThresholdFileName);
-
-    /// <summary>
-    /// Loads the model at <paramref name="modelPath"/> with its decision threshold applied, when it has
-    /// one — the one way a scoring path loads a model, so no path answers at a threshold another does not.
-    /// </summary>
-    public static ITransformer Load(MLContext mlContext, string modelPath)
-    {
-        ArgumentNullException.ThrowIfNull(mlContext);
-        return ApplyBeside(mlContext, mlContext.Model.Load(modelPath, out _), modelPath);
-    }
 
     /// <summary><paramref name="model"/>, loaded from <paramref name="modelPath"/>, with the threshold beside it applied when there is one.</summary>
     public static ITransformer ApplyBeside(MLContext mlContext, ITransformer model, string modelPath)

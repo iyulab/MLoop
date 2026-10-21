@@ -1163,7 +1163,7 @@ public static class PredictCommand
                 await Task.Run(() =>
                 {
                     var mlContext = new MLContext(seed: 42);
-                    var model = mlContext.Model.Load(modelPath, out _);
+                    var model = ScoringModel.Load(mlContext, modelPath, "object-detection");
 
                     var data = new ObjectDetectionDataLoader(mlContext)
                         .LoadData(resolvedDataDir, labelColumn: null, taskType: "object-detection");

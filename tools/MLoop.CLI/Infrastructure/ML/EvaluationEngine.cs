@@ -45,12 +45,9 @@ public class EvaluationEngine
             List<string> tempFiles = new();
             try
             {
-                // DL tasks need their native runtime loaded before deserializing the model.
-                MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
-
-                // Load the trained model
-                // Scored at the model's decision threshold, when one was chosen: the answers it gives in production.
-                var trainedModel = DecisionThreshold.ApplyBeside(_mlContext, _mlContext.Model.Load(modelPath, out var modelSchema), modelPath);
+                // Runtime ensured, and scored at the model's decision threshold when one was chosen: the
+                // answers it gives in production.
+                var trainedModel = ScoringModel.Load(_mlContext, modelPath, out var modelSchema, taskType);
 
                 // Directory-based tasks (image classification, object detection) consume an image
                 // directory, not a CSV — load via the matching directory loader and score before the
@@ -270,7 +267,7 @@ public class EvaluationEngine
             List<string> tempFiles = new();
             try
             {
-                var model = DecisionThreshold.Load(_mlContext, modelPath);
+                var model = ScoringModel.Load(_mlContext, modelPath, taskType);
                 var keep = string.IsNullOrEmpty(weightColumn) ? null : new[] { weightColumn };
                 var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, keep, out tempFiles, keepColumns: keep);
                 var scored = model.Transform(testData);

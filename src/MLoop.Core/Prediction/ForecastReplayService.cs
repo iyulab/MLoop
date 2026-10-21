@@ -40,7 +40,7 @@ public static class ForecastReplayService
     public static async Task<(ForecastOutput? Forecast, string? Error)> ComputeForecastAsync(
         MLContext mlContext, string modelPath, string? experimentId, int? requestedHorizon = null)
     {
-        var model = mlContext.Model.Load(modelPath, out var modelSchema);
+        var model = Models.ScoringModel.Load(mlContext, modelPath, out var modelSchema);
 
         // SSA model needs data with the correct value column to transform.
         // Read config to find original training data and value column.

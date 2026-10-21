@@ -46,21 +46,12 @@ public class PredictionService
             };
         }
 
-        // DL tasks need their native runtime loaded before deserializing the model.
-        RuntimeManager.EnsureRuntimeForTask(taskType);
+        // Runtime ensured and decision threshold applied — the answer predict, serve and evaluate all give.
+        var model = ScoringModel.Load(_mlContext, modelPath, taskType);
 
-        // With its decision threshold, when one was chosen — the answer predict, serve and evaluate all give.
-        var model = DecisionThreshold.Load(_mlContext, modelPath);
-
-        // ② regression wave (heteroscedastic): load the sibling σ-model for per-row band widths when the
+        // ② regression wave (heteroscedastic): the sibling σ-model for per-row band widths, when the
         // interval carries the normalized-conformal parameters and the file was promoted alongside.
-        ITransformer? residualModel = null;
-        if (interval?.IsHeteroscedastic == true)
-        {
-            var residualPath = Path.Combine(Path.GetDirectoryName(modelPath) ?? ".", ExperimentLayout.ResidualModelFileName);
-            if (File.Exists(residualPath))
-                residualModel = _mlContext.Model.Load(residualPath, out _);
-        }
+        var residualModel = interval?.IsHeteroscedastic == true ? ScoringModel.LoadResidual(_mlContext, modelPath) : null;
 
         return Predict(rows, schema, model, taskType, labelColumn, interval, residualModel);
     }
