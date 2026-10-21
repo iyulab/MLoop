@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-10-21
+
 ### Added
 - **A drift reference is saved with every model.** Training writes `drift-profile.json` beside
   `model.zip`: for each numeric, categorical and boolean feature, how the training inputs were
