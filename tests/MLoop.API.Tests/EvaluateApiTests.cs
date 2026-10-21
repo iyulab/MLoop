@@ -106,6 +106,50 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
     }
 
     [Fact]
+    public async Task SliceBy_MeasuresEachValue_AsMloopEvaluateSliceByDoes()
+    {
+        // The test rows tagged by site: the endpoint reports each site's metrics beside the overall ones.
+        var lines = await File.ReadAllLinesAsync(_withWeight);
+        var sited = Path.Combine(_factory.TestProjectRoot, "datasets", "sited.csv");
+        await File.WriteAllLinesAsync(sited, lines.Select((l, i) => l + "," + (i == 0 ? "site" : i % 2 == 0 ? "east" : "west")));
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = sited, sliceBy = "site" });
+
+        status.Should().Be(HttpStatusCode.OK, body.ToString());
+        body.GetProperty("sliceBy").GetString().Should().Be("site");
+        var slices = body.GetProperty("slices").EnumerateArray().ToList();
+        slices.Select(s => s.GetProperty("value").GetString()).Should().BeEquivalentTo("east", "west");
+        slices.Sum(s => s.GetProperty("rows").GetInt32()).Should().Be(200);
+        slices.Should().AllSatisfy(s => s.GetProperty("metrics").TryGetProperty("accuracy", out _).Should().BeTrue());
+    }
+
+    [Fact]
+    public async Task AFileMissingTheModelsColumns_IsTheCallersError_NotAServerError()
+    {
+        var path = Path.Combine(_factory.TestProjectRoot, "datasets", "no-x.csv");
+        await File.WriteAllLinesAsync(path, (await File.ReadAllLinesAsync(_withWeight)).Select(l => string.Join(',', l.Split(',').Skip(1))));
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = path });
+
+        status.Should().Be(HttpStatusCode.BadRequest, body.ToString());
+        body.GetProperty("error").GetString().Should().Contain("Schema validation failed");
+        body.GetProperty("missingColumns").EnumerateArray().Select(c => c.GetString()).Should().Contain("x");
+    }
+
+    [Fact]
+    public async Task ATabSeparatedFile_IsReadAsATable_AndARelativePathIsTheProjects()
+    {
+        var tsv = Path.Combine(_factory.TestProjectRoot, "datasets", "weighted.tsv");
+        await File.WriteAllLinesAsync(tsv, (await File.ReadAllLinesAsync(_withWeight)).Select(l => l.Replace(',', '\t')));
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = Path.Combine("datasets", "weighted.tsv") });
+
+        status.Should().Be(HttpStatusCode.OK, body.ToString());
+        body.GetProperty("weightColumn").GetString().Should().Be("w");
+        body.GetProperty("metrics").TryGetProperty("accuracy", out _).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task AWeightedExperiment_OnAFileWithoutItsWeight_SaysTheMetricsAreUnweighted()
     {
         var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = _withoutWeight });

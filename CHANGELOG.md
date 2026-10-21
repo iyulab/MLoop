@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   --model` (admin). `POST /train` takes `additionalDataFiles`, merged after `dataFile` as `mloop train --data a b`
   (a file without the weight column counts 1), and `weight` — the column that weights the rows, as `--weight` (the
   `weightColumn` `POST /samples` answers with); `GET /jobs/{id}` shows both. A relative path is the project's.
+- `POST /evaluate` takes `sliceBy` — per-value metrics, as `mloop evaluate --slice-by`.
 - `mloop sample create --model` strategies `stratified` and `low-confidence` — the sampler had both, the command
   did not accept them.
 
@@ -37,6 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A `POST /train` job trained on its file as given: `maxRows` was recorded and never applied, and rows with an empty
   label were trained on (an empty label a class of its own). A job now prepares its data as `mloop train` does —
   read as a table, sampled to `maxRows`, rows without a label dropped where the task drops them.
+- `POST /evaluate` read the test file as CSV whatever it was and skipped the schema check `mloop evaluate` makes: a
+  Parquet or JSON file was taken as text, and a file missing the model's columns failed as a server error (500). It now
+  reads the file as a table and refuses a schema mismatch with `400`, naming the missing columns. A relative
+  `testDataPath` is the project's, not the server's working directory.
 - `POST /train` without `timeLimitSeconds` or `testSplit` used 300 s and 0.2 over what `mloop.yaml` set. Both are
   optional now, and an absent one is left to `mloop.yaml`, then the default — as an absent `--time` is.
 

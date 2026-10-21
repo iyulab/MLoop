@@ -988,8 +988,11 @@ A model trained for another task or label is refused, as is the candidate itself
 `null` with a reason in `notPaired` for tasks with no per-row loss.
 
 `POST /evaluate` (admin) takes the same choices — `{ "testDataPath", "experimentId", "name", "weight",
-"against" }` — weighs the rows the same way (the experiment's training weight by default, and a
-`warnings` entry when the file lacks it) and returns `weightColumn`, `metrics` and `comparison`.
+"against", "sliceBy" }` — and prepares the file the same way: read as a table (Parquet, Excel, JSON, TSV), checked
+against the experiment's schema (a file missing the model's columns is a `400` naming them in `missingColumns`), the
+rows weighed the same way (the experiment's training weight by default, and a `warnings` entry when the file lacks
+it). It returns `weightColumn`, `metrics`, `confusion`, `comparison`, and with `sliceBy` the per-value `slices`. A
+relative `testDataPath` is the project's.
 
 ### `mloop validate`
 

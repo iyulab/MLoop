@@ -98,7 +98,7 @@ public static class EvaluateCommand
         bool? possibleOverfitting,
         string? skipped = null,
         string? sliceBy = null,
-        IReadOnlyList<SliceResult>? slices = null,
+        IReadOnlyList<EvaluationSlices.Slice>? slices = null,
         string? weightColumn = null,
         Comparison? comparison = null,
         ConfusionCounts? confusion = null)
@@ -441,10 +441,10 @@ public static class EvaluateCommand
             AnsiConsole.MarkupLine("[green]>[/] Evaluation complete!");
             AnsiConsole.WriteLine();
 
-            IReadOnlyList<SliceResult>? slices = null;
+            IReadOnlyList<EvaluationSlices.Slice>? slices = null;
             if (!string.IsNullOrWhiteSpace(sliceBy))
             {
-                slices = await EvaluateSlicesAsync(sliceBy.Trim(), resolvedTestDataFile, resolvedModelPath, experimentData, weightColumn);
+                slices = await EvaluationSlices.EvaluateAsync(new EvaluationEngine(), sliceBy.Trim(), resolvedTestDataFile, resolvedModelPath, experimentData, weightColumn);
                 ShowSlices(sliceBy.Trim(), slices, testMetrics!.Keys.ToList());
             }
 
@@ -548,54 +548,7 @@ public static class EvaluateCommand
         AnsiConsole.WriteLine();
     }
 
-    /// <summary>One value of the slicing column: its rows, and its metrics or why there are none.</summary>
-    internal sealed record SliceResult(string Value, int Rows, Dictionary<string, double>? Metrics, string? Error, bool Small,
-        ConfusionCounts? Confusion = null);
-
-    /// <summary>Below this many rows a slice's metrics are printed but marked: they move a lot from one sample to the next.</summary>
-    internal const int SmallSliceRows = 30;
-
-    /// <summary>
-    /// Each slice is evaluated as a test file of its own — the path the whole file took — so a
-    /// slice's numbers mean what the overall numbers mean. A slice the evaluator cannot score (one
-    /// class only, for AUC) reports why instead of failing the command.
-    /// </summary>
-    private static async Task<IReadOnlyList<SliceResult>> EvaluateSlicesAsync(
-        string sliceBy, string testDataFile, string modelPath, ExperimentData experiment, string? weightColumn)
-    {
-        var directory = Path.Combine(Path.GetTempPath(), "mloop-slices-" + Guid.NewGuid().ToString("N"));
-        try
-        {
-            var parts = await MLoop.Core.Data.CsvPartition.ByColumnAsync(testDataFile, sliceBy, directory);
-            var engine = new EvaluationEngine();
-            var results = new List<SliceResult>();
-            foreach (var part in parts)
-            {
-                try
-                {
-                    var metrics = await engine.EvaluateAsync(
-                        modelPath, part.Path, experiment.Config.LabelColumn, experiment.Task,
-                        CancellationToken.None, experiment.Config.InputSchema,
-                        experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn,
-                        weightColumn);
-                    var confusion = await engine.ConfusionAsync(modelPath, part.Path, experiment.Config.LabelColumn, experiment.Task,
-                        experiment.Config.InputSchema, weightColumn);
-                    results.Add(new SliceResult(part.Value, part.Rows, metrics, null, part.Rows < SmallSliceRows, confusion));
-                }
-                catch (Exception ex)
-                {
-                    results.Add(new SliceResult(part.Value, part.Rows, null, ex.Message, part.Rows < SmallSliceRows));
-                }
-            }
-            return results;
-        }
-        finally
-        {
-            try { Directory.Delete(directory, recursive: true); } catch { /* temp files; the OS reclaims them */ }
-        }
-    }
-
-    private static void ShowSlices(string sliceBy, IReadOnlyList<SliceResult> slices, IReadOnlyList<string> metricNames)
+    private static void ShowSlices(string sliceBy, IReadOnlyList<EvaluationSlices.Slice> slices, IReadOnlyList<string> metricNames)
     {
         var table = new Table().Border(TableBorder.Rounded);
         table.AddColumn(Markup.Escape(sliceBy));
@@ -620,7 +573,7 @@ public static class EvaluateCommand
         AnsiConsole.Write(new Rule($"[green]By {Markup.Escape(sliceBy)}[/]").LeftJustified());
         AnsiConsole.Write(table);
         if (slices.Any(s => s.Small))
-            AnsiConsole.MarkupLine($"[grey]* fewer than {SmallSliceRows} rows — these metrics vary a lot between samples[/]");
+            AnsiConsole.MarkupLine($"[grey]* fewer than {EvaluationSlices.SmallRows} rows — these metrics vary a lot between samples[/]");
         foreach (var failed in slices.Where(s => s.Error != null))
             AnsiConsole.MarkupLineInterpolated($"[grey]{failed.Value}: not scored — {failed.Error}[/]");
         AnsiConsole.WriteLine();

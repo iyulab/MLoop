@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
 using MLoop.Core.Storage;
@@ -1199,6 +1200,8 @@ app.MapPost("/evaluate", async (
     IModelRegistry registry,
     ProjectRootPath projectRootPath,
     EvaluationEngine evaluationEngine,
+    IFileSystemManager fileSystem,
+    IProjectDiscovery projectDiscovery,
     ILogger<Program> logger,
     CancellationToken ct) =>
 {
@@ -1233,13 +1236,28 @@ app.MapPost("/evaluate", async (
         if (string.IsNullOrWhiteSpace(testDataPath))
             return Results.BadRequest(new { error = "testDataPath is required." });
 
-        var evalProjectRoot = projectRootPath.Value;
-        var resolvedTestPath = Path.GetFullPath(testDataPath);
-        if (!resolvedTestPath.StartsWith(Path.GetFullPath(evalProjectRoot), StringComparison.OrdinalIgnoreCase))
+        // A relative path is the project's, as for POST /train.
+        var evalProjectRoot = Path.GetFullPath(projectRootPath.Value);
+        var resolvedTestPath = Path.GetFullPath(Path.IsPathRooted(testDataPath) ? testDataPath : Path.Combine(evalProjectRoot, testDataPath));
+        if (!resolvedTestPath.StartsWith(evalProjectRoot, StringComparison.OrdinalIgnoreCase))
             return Results.BadRequest(new { error = "Test data file must be within the project directory." });
 
-        if (!File.Exists(resolvedTestPath))
+        if (!TabularDataFile.Exists(resolvedTestPath))
             return Results.BadRequest(new { error = $"Test data file not found: {testDataPath}" });
+
+        // What `mloop evaluate` does before it measures: the file read as a table (Parquet, Excel, JSON, TSV),
+        // then checked against the experiment's schema — a refused file is the caller's to fix, not a 500.
+        resolvedTestPath = await TabularDataFile.AsCsvAsync(resolvedTestPath);
+        var validation = await new SchemaValidator(fileSystem, projectDiscovery).ValidateAsync(resolvedTestPath, modelName, experimentId);
+        if (!validation.IsValid)
+            return Results.BadRequest(new
+            {
+                error = "Schema validation failed. " + (validation.ErrorMessage
+                    ?? "Missing columns: " + string.Join(", ", validation.MissingColumns)),
+                missingColumns = validation.MissingColumns,
+                suggestions = validation.Suggestions,
+            });
+        var warnings = new List<string>(validation.Warnings);
 
         var labelColumn = experiment.Config.LabelColumn;
         var taskType = experiment.Task;
@@ -1247,6 +1265,8 @@ app.MapPost("/evaluate", async (
         // The rows count by the same weight `mloop evaluate` would give them — the one asked for, else
         // the column the experiment was trained with when the file has it.
         var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(request.Weight, experiment, resolvedTestPath);
+        if (weightWarning is not null)
+            warnings.Add(weightWarning);
 
         ComparisonBaseline? baseline = null;
         if (!string.IsNullOrWhiteSpace(request.Against))
@@ -1269,6 +1289,11 @@ app.MapPost("/evaluate", async (
             ? null
             : await ModelComparison.CompareAsync(evaluationEngine, experimentId, modelPath, experiment, baseline, resolvedTestPath, weightColumn, ct);
 
+        var sliceBy = string.IsNullOrWhiteSpace(request.SliceBy) ? null : request.SliceBy.Trim();
+        var slices = sliceBy is null
+            ? null
+            : await EvaluationSlices.EvaluateAsync(evaluationEngine, sliceBy, resolvedTestPath, modelPath, experiment, weightColumn, ct);
+
         logger.LogInformation("Evaluation completed in {ElapsedMs}ms with {MetricCount} metrics",
             stopwatch.ElapsedMilliseconds, metrics.Count);
 
@@ -1282,7 +1307,9 @@ app.MapPost("/evaluate", async (
             metrics,
             confusion,
             comparison,
-            warnings = weightWarning is null ? null : new[] { weightWarning },
+            sliceBy,
+            slices,
+            warnings = warnings.Count == 0 ? null : warnings,
         });
     }
     catch (Exception ex)
@@ -1822,12 +1849,14 @@ public record RollbackRequest(
     string? Name = null,
     string? To = null);
 
+/// <summary>A <c>POST /evaluate</c> body — the options of <c>mloop evaluate</c>; <c>SliceBy</c> is <c>--slice-by</c>.</summary>
 public record EvaluateRequest(
     string TestDataPath,
     string? ExperimentId = null,
     string? Name = null,
     string? Weight = null,
-    string? Against = null);
+    string? Against = null,
+    string? SliceBy = null);
 
 /// <summary>A <c>POST /samples</c> body — the options of <c>mloop sample create --model</c>.</summary>
 public record SampleRequest(string? Name = null, int? Rows = null, string? Strategy = null);
