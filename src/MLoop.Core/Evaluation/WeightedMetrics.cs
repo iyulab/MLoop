@@ -70,6 +70,7 @@ public static class WeightedMetrics
         if (tp + fp > 0) metrics["precision"] = tp / (tp + fp);
         if (tp + fn > 0) metrics["recall"] = tp / (tp + fn);
         if (tn + fp > 0) metrics["negative_recall"] = tn / (tn + fp);
+        if (tn + fn > 0) metrics["negative_precision"] = tn / (tn + fn);
         if (metrics.TryGetValue("precision", out var pr) && metrics.TryGetValue("recall", out var rc))
             metrics["f1_score"] = pr + rc > 0 ? 2 * pr * rc / (pr + rc) : 0;
         if (Auc(rows.Where(r => !float.IsNaN(r.S)).Select(r => (r.Y, (double)r.S, r.W)).ToList()) is { } auc)

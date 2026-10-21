@@ -51,6 +51,7 @@ public static class BinaryCounts
         if (tp + fp > 0) metrics["precision"] = (double)tp / (tp + fp);
         if (tp + fn > 0) metrics["recall"] = (double)tp / (tp + fn);
         if (tn + fp > 0) metrics["negative_recall"] = (double)tn / (tn + fp);
+        if (tn + fn > 0) metrics["negative_precision"] = (double)tn / (tn + fn);
         if (metrics.TryGetValue("precision", out var pr) && metrics.TryGetValue("recall", out var rc))
             metrics["f1_score"] = pr + rc > 0 ? 2 * pr * rc / (pr + rc) : 0;
         return metrics;

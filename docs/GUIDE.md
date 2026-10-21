@@ -549,9 +549,16 @@ A binary classifier answers its positive class from a probability of 0.5 unless 
 a wrong positive costs more than a missed one, choose the threshold on labeled rows for the precision
 you need: the lowest threshold that reaches it, which keeps the most recall.
 
+The precision can be the **other** class's. When a «no» lets a row skip a check — «safe», «not a
+defect» — a wrong «no» is the costly one, and the precision to reach is that class's: name it with
+`--precision-of`. The threshold is then the highest one at which the rows answered «no» are right
+that often, which keeps the most of their recall. Which class is positive is the training's
+decision; `--precision-of` takes the label value either way.
+
 ```bash
 mloop threshold --precision 0.95 --data datasets/recheck.csv           # the production model
 mloop threshold exp-004 --precision 0.95 --data datasets/recheck.csv --weight inv_pi
+mloop threshold --precision 0.99 --precision-of safe --data datasets/recheck.csv   # «safe» must be right 99%
 mloop threshold                                                       # show the current one
 mloop threshold --clear                                               # back to 0.5
 ```
@@ -559,7 +566,8 @@ mloop threshold --clear                                               # back to 
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--name` | `-n` | Model name (default: `default`) |
-| `--precision` | | Target positive precision, above 0 and at most 1 |
+| `--precision` | | Target precision of the positive class (or of `--precision-of`), above 0 and at most 1 |
+| `--precision-of` | | The class whose precision `--precision` targets, by its label value (default: the positive class) |
 | `--data` | | Labeled evaluation file to choose on (required with `--precision`) |
 | `--weight` | | Column that weights the rows (defaults as `evaluate --weight` does) |
 | `--clear` | | Remove the threshold |
@@ -569,7 +577,7 @@ The threshold is written beside the model (`decision-threshold.json`, with the p
 it reached and the file it was chosen on) — on the experiment, and on production too when the
 experiment is in production. From then on every path that loads the model answers at it: `predict`
 (CSV and `--json`), `mloop serve` (its model cache reloads), `evaluate` (accuracy, precision, recall,
-F1 and the confusion matrix — AUC does not depend on it) and the gate policy. `promote` carries it
+`negative_precision`, `negative_recall`, F1 and the confusion matrix — AUC does not depend on it) and the gate policy. `promote` carries it
 with the model, and a promoted model without one answers at 0.5 again. Rows of one probability are
 answered alike, so a threshold never splits them; when not even the rows the model is most confident
 about reach the precision, the command says so and changes nothing. A model whose trainer gives no

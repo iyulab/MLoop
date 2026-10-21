@@ -90,6 +90,26 @@ public sealed class ThresholdCommandTests : IDisposable
             (await JsonAsync("evaluate", "exp-001", "datasets/recheck.csv")).GetProperty("testMetrics").GetProperty("precision").GetDouble(), 9);
     }
 
+    /// <summary>
+    /// The precision asked for is the negative class's — the side whose wrong answers are costly
+    /// when «no» means «safe, skip the check». evaluate then reports that precision at the threshold.
+    /// </summary>
+    [Fact]
+    public async Task AThresholdForTheNegativeClass_ReachesItsPrecision_AndEvaluateReportsIt()
+    {
+        await TrainAsync();
+
+        var chosen = await JsonAsync("threshold", "--precision", "0.8", "--precision-of", "NO", "--data", "datasets/recheck.csv");
+
+        var threshold = chosen.GetProperty("threshold");
+        Assert.Equal("no", threshold.GetProperty("precisionOf").GetString());   // recorded as the label wrote it
+        Assert.True(threshold.GetProperty("precision").GetDouble() >= 0.8);
+
+        var after = (await JsonAsync("evaluate", "exp-001", "datasets/recheck.csv")).GetProperty("testMetrics");
+        Assert.Equal(threshold.GetProperty("precision").GetDouble(), after.GetProperty("negative_precision").GetDouble(), 9);
+        Assert.Equal(threshold.GetProperty("recall").GetDouble(), after.GetProperty("negative_recall").GetDouble(), 9);
+    }
+
     [Fact]
     public async Task APromotedModelWithoutAThreshold_DropsTheOneProductionHad()
     {
@@ -107,6 +127,8 @@ public sealed class ThresholdCommandTests : IDisposable
     [InlineData("--precision", "0.9")]                     // no --data
     [InlineData("--precision", "1.5", "--data", "x.csv")]  // not a share
     [InlineData("--clear", "--precision", "0.9")]          // both
+    [InlineData("--precision-of", "no")]                    // a class without a precision
+    [InlineData("--precision", "0.9", "--precision-of", "maybe", "--data", "datasets/recheck.csv")]  // not a class
     public async Task AnAskThatCannotBeAnswered_IsRefused(params string[] args)
     {
         await TrainAsync();

@@ -48,6 +48,32 @@ public class DecisionThresholdTests : IDisposable
     }
 
     [Fact]
+    public void ForTheNegativeClass_TheHighestThresholdThatReachesItsPrecision_IsChosen()
+    {
+        // Ascending: 0.1- 0.2- 0.3+ 0.4- 0.5- 0.6+ — negative precision 1, 1, .67, .75, .8, .67
+        var rows = new[] { R(0.1, false), R(0.2, false), R(0.3, true), R(0.4, false), R(0.5, false), R(0.6, true) };
+
+        // At 1.0 only 0.1 and 0.2 can be answered negative: the threshold is the next probability up.
+        Assert.Equal((0.3, 1.0, 0.5), DecisionThreshold.Choose(rows, 1.0, ofPositive: false));
+        var chosen = DecisionThreshold.Choose(rows, 0.75, ofPositive: false)!.Value;
+        Assert.Equal(0.6, chosen.Threshold);       // .8 below 0.6 keeps all 4 negatives
+        Assert.Equal(1.0, chosen.Recall);
+        Assert.Equal(0.8, chosen.Precision, 9);
+    }
+
+    [Fact]
+    public void ForTheNegativeClass_AnsweringEveryRowNegative_PutsTheThresholdAboveTheTop()
+    {
+        var rows = new[] { R(0.2, false), R(0.7, false) };
+
+        var chosen = DecisionThreshold.Choose(rows, 1.0, ofPositive: false)!.Value;
+
+        Assert.True(chosen.Threshold > 0.7);
+        Assert.True((float)0.7 < (float)chosen.Threshold);   // the answer rule compares floats
+        Assert.Null(DecisionThreshold.Choose([R(0.9, true)], 0.5, ofPositive: false));   // no negative at all
+    }
+
+    [Fact]
     public void WhenNoThresholdReachesThePrecision_ThereIsNone()
     {
         Assert.Null(DecisionThreshold.Choose([R(0.9, false), R(0.8, true)], 0.9));

@@ -128,7 +128,7 @@ public class EvaluationEngine
                     // and ignores PredictedLabel. A model given a decision threshold answers otherwise, so
                     // the metrics that depend on the answer are counted from the answers it gives.
                     if (DecisionThreshold.ReadBeside(modelPath) is not null && BinaryCounts.Metrics(predictions, labelColumn) is { } answered)
-                        foreach (var key in new[] { "accuracy", "precision", "recall", "negative_recall", "f1_score" })
+                        foreach (var key in new[] { "accuracy", "precision", "recall", "negative_precision", "negative_recall", "f1_score" })
                             if (answered.TryGetValue(key, out var value)) metrics[key] = value;
                 }
                 else if (taskType.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase))
@@ -438,7 +438,9 @@ public class EvaluationEngine
             { "auc", metrics.AreaUnderRocCurve },
             { "f1_score", metrics.F1Score },
             { "precision", metrics.PositivePrecision },
-            { "recall", metrics.PositiveRecall }
+            { "recall", metrics.PositiveRecall },
+            { "negative_precision", metrics.NegativePrecision },
+            { "negative_recall", metrics.NegativeRecall }
         };
         if (CalibrationError.Binary(predictions, labelColumn) is { } ece)
             result[CalibrationError.MetricName] = ece;

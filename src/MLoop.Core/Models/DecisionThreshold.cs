@@ -14,12 +14,18 @@ namespace MLoop.Core.Models;
 /// </summary>
 /// <param name="Threshold">The probability from which the answer is the positive class.</param>
 /// <param name="TargetPrecision">The precision it was chosen for.</param>
-/// <param name="Precision">The positive precision it reached on <paramref name="ChosenOn"/>.</param>
-/// <param name="Recall">The positive recall it kept there.</param>
+/// <param name="Precision">The precision of <paramref name="PrecisionOf"/> it reached on <paramref name="ChosenOn"/>.</param>
+/// <param name="Recall">The recall of <paramref name="PrecisionOf"/> it kept there.</param>
 /// <param name="Rows">Labeled rows it was chosen on.</param>
 /// <param name="ChosenOn">The evaluation file's name.</param>
 /// <param name="WeightColumn">The column the rows were weighted by, if any.</param>
 /// <param name="ChosenAt">When.</param>
+/// <param name="PrecisionOf">
+/// The class whose precision was targeted, by the name the label used. <c>null</c> is the positive
+/// class — every threshold chosen before a class could be named. The answer rule is the same either
+/// way (positive from <paramref name="Threshold"/> on); which class the precision belongs to decides
+/// only which side of it was asked to be trustworthy.
+/// </param>
 public sealed record DecisionThreshold(
     double Threshold,
     double TargetPrecision,
@@ -28,7 +34,8 @@ public sealed record DecisionThreshold(
     int Rows,
     string ChosenOn,
     string? WeightColumn,
-    DateTimeOffset ChosenAt)
+    DateTimeOffset ChosenAt,
+    string? PrecisionOf = null)
 {
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -81,29 +88,43 @@ public sealed record DecisionThreshold(
     }
 
     /// <summary>
-    /// The lowest threshold at which the positive precision of <paramref name="rows"/> reaches
-    /// <paramref name="targetPrecision"/>, or why none does. Rows are (probability, label, weight).
+    /// The threshold at which the precision of one class of <paramref name="rows"/> reaches
+    /// <paramref name="targetPrecision"/> while keeping the most of that class's recall, or <c>null</c>
+    /// when none does. Rows are (probability, label, weight).
     /// </summary>
+    /// <remarks>
+    /// For the positive class that is the <b>lowest</b> such threshold — every row from it upward is
+    /// answered positive. For the negative class (<paramref name="ofPositive"/> false) it is the
+    /// <b>highest</b>: every row below it is answered negative, so the threshold sits at the next
+    /// probability above the last row answered negative. A class with no rows has no precision to reach.
+    /// </remarks>
     public static (double Threshold, double Precision, double Recall)? Choose(
-        IReadOnlyList<(double Probability, bool Positive, double Weight)> rows, double targetPrecision)
+        IReadOnlyList<(double Probability, bool Positive, double Weight)> rows, double targetPrecision, bool ofPositive = true)
     {
         ArgumentNullException.ThrowIfNull(rows);
-        var usable = rows.Where(r => double.IsFinite(r.Probability) && r.Weight > 0).OrderByDescending(r => r.Probability).ToList();
-        var positives = usable.Where(r => r.Positive).Sum(r => r.Weight);
-        if (positives <= 0)
+        var finite = rows.Where(r => double.IsFinite(r.Probability) && r.Weight > 0);
+        // Walk from the rows answered as the class first: down from the top for positive, up from the bottom for negative.
+        var usable = (ofPositive ? finite.OrderByDescending(r => r.Probability) : finite.OrderBy(r => r.Probability)).ToList();
+        var ofClass = usable.Where(r => r.Positive == ofPositive).Sum(r => r.Weight);
+        if (ofClass <= 0)
             return null;
 
         (double, double, double)? best = null;
-        double tp = 0, fp = 0;
+        double hit = 0, miss = 0;
         for (var i = 0; i < usable.Count; i++)
         {
-            if (usable[i].Positive) tp += usable[i].Weight; else fp += usable[i].Weight;
+            if (usable[i].Positive == ofPositive) hit += usable[i].Weight; else miss += usable[i].Weight;
             // A threshold sits only where the probability changes: rows of one probability are answered alike.
             if (i + 1 < usable.Count && usable[i + 1].Probability == usable[i].Probability)
                 continue;
-            var precision = tp / (tp + fp);
-            if (precision >= targetPrecision)
-                best = (usable[i].Probability, precision, tp / positives);
+            var precision = hit / (hit + miss);
+            if (precision < targetPrecision)
+                continue;
+            var threshold = ofPositive
+                ? usable[i].Probability
+                // The next probability up answers positive; past the last row, the next float does.
+                : i + 1 < usable.Count ? usable[i + 1].Probability : MathF.BitIncrement((float)usable[i].Probability);
+            best = (threshold, precision, hit / ofClass);
         }
         return best;
     }

@@ -175,8 +175,10 @@ public class EvaluationEngineTests : IDisposable
         Assert.Contains("f1_score", metrics.Keys);
         Assert.Contains("precision", metrics.Keys);
         Assert.Contains("recall", metrics.Keys);
+        Assert.Contains("negative_precision", metrics.Keys);
+        Assert.Contains("negative_recall", metrics.Keys);
         Assert.Contains("ece", metrics.Keys); // the fixture's model outputs probabilities
-        Assert.Equal(6, metrics.Count);
+        Assert.Equal(8, metrics.Count);
     }
 
     [Fact]
