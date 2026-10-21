@@ -470,6 +470,7 @@ mloop promote exp-002              # Promote to production
 mloop promote --latest             # Auto-select the most recent experiment
 mloop promote --best               # Auto-select the best-scoring experiment
 mloop promote exp-002 --force      # Promote even though the quality gate refuses it
+mloop promote --history            # Every change of production so far (--json for machines)
 ```
 
 `promote` applies the quality gate training applies before it promotes. A model no better than a
@@ -494,6 +495,14 @@ is refused on that metric as before.
 `mloop list --json` carries each experiment's `metrics`, the gate's verdict as `qualityGate` (`null`
 when it passes) and `qualityWarning` (`null` unless the gate passed it with the warning above).
 `POST /promote` applies the same gate and answers 422; send `"force": true` to override.
+
+Every change of the production slot — `promote`, a training run promoting its own result,
+`rollback`, and the same through the REST API — is recorded in `models/<name>/promotion-history.json`,
+and `mloop promote --history` lists it: when, which experiment, how (`promote`, `auto-promote`,
+`rollback`), the quality gate's outcome at that moment (`passed`, `forced` with the refusal, or
+`not-applied` for a rollback) and the project metric's value. `--json` returns it as `promotions`,
+each with the experiment it replaced (`previousExperimentId`); `GET /promotions?name=` returns the same. Entries written
+before the gate was recorded carry `null` there.
 
 ### `mloop rollback`
 

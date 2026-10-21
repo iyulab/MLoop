@@ -80,12 +80,12 @@ public class FilePromotionManagerTests : IDisposable
 
     #endregion
 
-    #region RecordPromotionAsync Tests
+    #region RecordAsync Tests
 
     [Fact]
     public async Task RecordPromotionAsync_WritesHistoryRecord()
     {
-        await _manager.RecordPromotionAsync("test-model", "exp-002", "exp-001", "promote");
+        await _manager.RecordAsync(new PromotionRecord("test-model", "exp-002", "exp-001", "promote", null, DateTimeOffset.UtcNow));
 
         var historyPath = Path.Combine(_testDir, "models", "test-model", "promotion-history.json");
         File.Exists(historyPath).Should().BeTrue();
@@ -103,8 +103,8 @@ public class FilePromotionManagerTests : IDisposable
     [Fact]
     public async Task RecordPromotionAsync_AppendsToExistingHistory()
     {
-        await _manager.RecordPromotionAsync("test-model", "exp-001", null, "promote");
-        await _manager.RecordPromotionAsync("test-model", "exp-002", "exp-001", "promote");
+        await _manager.RecordAsync(new PromotionRecord("test-model", "exp-001", null, "promote", null, DateTimeOffset.UtcNow));
+        await _manager.RecordAsync(new PromotionRecord("test-model", "exp-002", "exp-001", "promote", null, DateTimeOffset.UtcNow));
 
         var historyPath = Path.Combine(_testDir, "models", "test-model", "promotion-history.json");
         var records = JsonSerializer.Deserialize<List<PromotionRecord>>(

@@ -18,6 +18,18 @@ public interface IModelRegistry
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Promotes <paramref name="experimentId"/> and records it in the model's promotion history as
+    /// <paramref name="action"/> (<see cref="MLoop.Ops.Interfaces.PromotionActions"/>), with what it
+    /// replaced and the quality gate's outcome. Every change of the production slot goes through here,
+    /// so the history a rollback reads has no gaps.
+    /// </summary>
+    Task PromoteAsync(
+        string modelName,
+        string experimentId,
+        string action,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets the current production model for a specific model name.
     /// </summary>
     /// <param name="modelName">The model name</param>

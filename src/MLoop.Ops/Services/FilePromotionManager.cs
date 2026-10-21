@@ -27,17 +27,24 @@ public sealed class FilePromotionManager : IPromotionManager
         _projectRoot = projectRoot ?? throw new ArgumentNullException(nameof(projectRoot));
     }
 
-    public async Task RecordPromotionAsync(
-        string modelName,
-        string experimentId,
-        string? previousExpId,
-        string action,
-        string? reason = null,
-        CancellationToken cancellationToken = default)
+    public async Task RecordAsync(PromotionRecord record, CancellationToken cancellationToken = default)
     {
-        await RecordHistoryAsync(modelName, experimentId, previousExpId, action,
-            reason ?? $"{action}: {experimentId} (previous: {previousExpId ?? "none"})",
-            cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(record);
+        var historyPath = GetHistoryPath(record.ModelName);
+        Directory.CreateDirectory(Path.GetDirectoryName(historyPath)!);
+
+        var records = new List<PromotionRecord>();
+        if (File.Exists(historyPath))
+        {
+            var json = await File.ReadAllTextAsync(historyPath, cancellationToken).ConfigureAwait(false);
+            records = JsonSerializer.Deserialize<List<PromotionRecord>>(json, JsonOptions)
+                ?? new List<PromotionRecord>();
+        }
+
+        records.Add(record);
+
+        await File.WriteAllTextAsync(historyPath,
+            JsonSerializer.Serialize(records, JsonOptions), cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<string?> BackupProductionAsync(
@@ -78,31 +85,6 @@ public sealed class FilePromotionManager : IPromotionManager
 
         var json = await File.ReadAllTextAsync(historyPath, cancellationToken).ConfigureAwait(false);
         return JsonSerializer.Deserialize<List<PromotionRecord>>(json, JsonOptions) ?? [];
-    }
-
-    private async Task RecordHistoryAsync(
-        string modelName,
-        string experimentId,
-        string? previousExpId,
-        string action,
-        string reason,
-        CancellationToken cancellationToken)
-    {
-        var historyPath = GetHistoryPath(modelName);
-        Directory.CreateDirectory(Path.GetDirectoryName(historyPath)!);
-
-        var records = new List<PromotionRecord>();
-        if (File.Exists(historyPath))
-        {
-            var json = await File.ReadAllTextAsync(historyPath, cancellationToken).ConfigureAwait(false);
-            records = JsonSerializer.Deserialize<List<PromotionRecord>>(json, JsonOptions)
-                ?? new List<PromotionRecord>();
-        }
-
-        records.Add(new PromotionRecord(modelName, experimentId, previousExpId, action, reason, DateTimeOffset.UtcNow));
-
-        await File.WriteAllTextAsync(historyPath,
-            JsonSerializer.Serialize(records, JsonOptions), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

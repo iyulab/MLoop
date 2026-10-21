@@ -109,5 +109,12 @@ public class PromoteQualityGateApiTests : IClassFixture<TestWebApplicationFactor
 
         var refused = await _client.PostAsJsonAsync("/rollback", new { name = "rb", to = "exp-009" });
         refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Every change is in the history, with how it happened and what the gate said.
+        var history = System.Text.Json.JsonDocument.Parse(await _client.GetStringAsync("/promotions?name=rb")).RootElement
+            .GetProperty("promotions").EnumerateArray().ToList();
+        history.Select(p => p.GetProperty("action").GetString()).Should().Equal("promote", "promote", "rollback");
+        history.Select(p => p.GetProperty("gate").GetString()).Should().Equal("passed", "passed", "not-applied");
+        history[2].GetProperty("previousExperimentId").GetString().Should().Be("exp-002");
     }
 }

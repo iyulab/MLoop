@@ -23,8 +23,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carries it as `comparison`. A model trained for another task or label, and the candidate itself,
   are refused. `MLoop.Core.Evaluation.PairedComparison` holds the measure.
   `POST /evaluate` takes `against` too.
+- **`mloop promote --history` lists every change of production**, with what each one replaced, how
+  it happened (`promote`, `auto-promote`, `rollback`) and the quality gate's outcome at that moment
+  (`passed`, `forced` with the refusal, `not-applied`) beside the project metric's value. `--json`
+  returns it as `promotions`, and `GET /promotions?name=` returns the same.
 
 ### Fixed
+- **A model promoted by a training run is in the promotion history.** Only `promote`, `rollback`
+  and their REST twins recorded an entry, so after `mloop train` (or `POST /train`) replaced the
+  production model, `mloop rollback` answered that the history did not record what production held
+  before. The production slot now records every change where it happens — the registry's
+  promotion — so the history has no gaps.
 - **`POST /evaluate` scores a weighted experiment by its weight.** It took no weight and evaluated
   every experiment unweighted — a model trained on weighted rows was judged on the distribution it
   was trained away from, and the response did not say so. It now takes `weight`, defaults to the

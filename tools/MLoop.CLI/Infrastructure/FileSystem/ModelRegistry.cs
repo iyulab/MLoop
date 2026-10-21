@@ -40,12 +40,21 @@ public class ModelRegistry : IModelRegistry
     }
 
     /// <inheritdoc />
-    public async Task PromoteAsync(
+    public Task PromoteAsync(
         string modelName,
         string experimentId,
         CancellationToken cancellationToken = default)
+        => PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.Promote, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task PromoteAsync(
+        string modelName,
+        string experimentId,
+        string action,
+        CancellationToken cancellationToken = default)
     {
         var resolvedName = ResolveModelName(modelName);
+        var previous = (await ProductionMetadata.ReadAsync(GetProductionPath(resolvedName), cancellationToken))?.ExperimentId;
 
         // Verify experiment exists
         if (!_experimentStore.ExperimentExists(resolvedName, experimentId))
@@ -108,6 +117,43 @@ public class ModelRegistry : IModelRegistry
             BestTrainer = experiment.Result?.BestTrainer,
             LabelColumn = experiment.Config.LabelColumn
         }, cancellationToken);
+
+        await new MLoop.Ops.Services.FilePromotionManager(_projectRoot)
+            .RecordAsync(HistoryRecord(resolvedName, experiment, previous, action), cancellationToken);
+    }
+
+    /// <summary>
+    /// The history entry for <paramref name="experiment"/> taking production from <paramref name="previous"/>:
+    /// the gate's outcome is judged here, at the moment of the change, by the same rule <c>promote</c> applies.
+    /// A gate refusal on a promotion that went ahead means it was forced; a rollback is not gated.
+    /// </summary>
+    internal static MLoop.Ops.Interfaces.PromotionRecord HistoryRecord(
+        string modelName, ExperimentData experiment, string? previous, string action)
+    {
+        var metric = experiment.Metrics is { Count: > 0 } metrics
+            ? MetricPolicy.ResolveCanonicalMetricKey(experiment.Config?.Metric ?? MetricNames.Auto, experiment.Task, metrics.Keys)
+            : null;
+        double? value = metric is not null && experiment.Metrics!.TryGetValue(metric, out var v) ? v : null;
+
+        string gate;
+        string? detail;
+        if (action == MLoop.Ops.Interfaces.PromotionActions.Rollback)
+        {
+            (gate, detail) = (MLoop.Ops.Interfaces.PromotionGate.NotApplied, null);
+        }
+        else if (QualityGateRefusal(experiment, experiment.Config?.Metric) is { } refusal)
+        {
+            (gate, detail) = (MLoop.Ops.Interfaces.PromotionGate.Forced, refusal);
+        }
+        else
+        {
+            (gate, detail) = (MLoop.Ops.Interfaces.PromotionGate.Passed, QualityGateWarning(experiment));
+        }
+
+        return new MLoop.Ops.Interfaces.PromotionRecord(
+            modelName, experiment.ExperimentId, previous, action,
+            $"{action}: {experiment.ExperimentId} (previous: {previous ?? "none"})",
+            DateTimeOffset.UtcNow, gate, detail, metric, value);
     }
 
     /// <inheritdoc />
@@ -408,7 +454,7 @@ public class ModelRegistry : IModelRegistry
     {
         if (await ShouldPromoteAsync(modelName, experimentId, primaryMetric, cancellationToken))
         {
-            await PromoteAsync(modelName, experimentId, cancellationToken);
+            await PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.AutoPromote, cancellationToken);
             return true;
         }
 

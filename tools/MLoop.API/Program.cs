@@ -994,12 +994,8 @@ app.MapPost("/promote", async (
             }
         }
 
-        // Promote
-        await registry.PromoteAsync(modelName, experimentId, ct);
-
-        // Record promotion history
-        await promotionManager.RecordPromotionAsync(
-            modelName, experimentId, previousExpId, "api-promote", cancellationToken: ct);
+        // Promote — the registry records it in the promotion history, gate outcome included.
+        await registry.PromoteAsync(modelName, experimentId, PromotionActions.Promote, ct);
 
         logger.LogInformation("Promoted experiment '{ExperimentId}' to production for model '{ModelName}' in {ElapsedMs}ms",
             experimentId, modelName, stopwatch.ElapsedMilliseconds);
@@ -1036,6 +1032,35 @@ app.MapPost("/promote", async (
 .RequireAuthorization("Admin");
 
 // Rollback (admin): production back to the experiment it held before — same target rule as `mloop rollback`
+// Promotion history: every change of the production slot, oldest first, with the gate's outcome.
+app.MapGet("/promotions", async (
+    [FromQuery] string? name,
+    IPromotionManager promotionManager,
+    CancellationToken ct) =>
+{
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
+    var history = await promotionManager.GetHistoryAsync(modelName, ct);
+    return Results.Ok(new
+    {
+        modelName,
+        promotions = history.Select(r => new
+        {
+            experimentId = r.ExperimentId,
+            previousExperimentId = r.PreviousExperimentId,
+            action = r.Action,
+            timestamp = r.Timestamp.ToUniversalTime(),
+            gate = r.Gate,
+            gateDetail = r.GateDetail,
+            metric = r.Metric,
+            metricValue = r.MetricValue,
+        }),
+    });
+})
+.WithName("PromotionHistory")
+.WithTags("Model")
+.Produces<object>(StatusCodes.Status200OK)
+.RequireAuthorization();
+
 app.MapPost("/rollback", async (
     [FromBody] RollbackRequest request,
     IModelRegistry registry,
@@ -1056,8 +1081,7 @@ app.MapPost("/rollback", async (
             statusCode: StatusCodes.Status409Conflict);
 
     var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
-    await registry.PromoteAsync(modelName, target, ct);
-    await promotionManager.RecordPromotionAsync(modelName, target, current, "api-rollback", cancellationToken: ct);
+    await registry.PromoteAsync(modelName, target, PromotionActions.Rollback, ct);
     logger.LogInformation("Rolled back '{ModelName}' from {Previous} to {Target}", modelName, current, target);
 
     return Results.Ok(new { modelName, experimentId = target, previousExperimentId = current, backupPath });

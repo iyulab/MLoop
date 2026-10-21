@@ -58,6 +58,7 @@ public class TrainingJobPromotionTests
         }
 
         public Task PromoteAsync(string modelName, string experimentId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task PromoteAsync(string modelName, string experimentId, string action, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<ModelInfo?> GetProductionAsync(string modelName, CancellationToken cancellationToken = default) => Task.FromResult<ModelInfo?>(null);
         public Task<IEnumerable<ModelInfo>> ListAsync(string? modelName = null, CancellationToken cancellationToken = default) => Task.FromResult(Enumerable.Empty<ModelInfo>());
         public string GetProductionPath(string modelName) => "";

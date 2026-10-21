@@ -25,7 +25,7 @@ public class PromoteCommandTests : IDisposable
         return new FilePromotionManager(_tempDir);
     }
 
-    #region RecordPromotionAsync
+    #region RecordAsync
 
     [Fact]
     public async Task RecordPromotion_CreatesNewFile()
@@ -34,7 +34,7 @@ public class PromoteCommandTests : IDisposable
         Directory.CreateDirectory(modelsDir);
         var manager = CreateManager();
 
-        await manager.RecordPromotionAsync("default", "exp-001", null, "promote");
+        await manager.RecordAsync(new PromotionRecord("default", "exp-001", null, "promote", null, DateTimeOffset.UtcNow));
 
         var historyPath = Path.Combine(modelsDir, "promotion-history.json");
         Assert.True(File.Exists(historyPath));
@@ -55,8 +55,8 @@ public class PromoteCommandTests : IDisposable
         Directory.CreateDirectory(modelsDir);
         var manager = CreateManager();
 
-        await manager.RecordPromotionAsync("default", "exp-001", null, "promote");
-        await manager.RecordPromotionAsync("default", "exp-002", "exp-001", "promote");
+        await manager.RecordAsync(new PromotionRecord("default", "exp-001", null, "promote", null, DateTimeOffset.UtcNow));
+        await manager.RecordAsync(new PromotionRecord("default", "exp-002", "exp-001", "promote", null, DateTimeOffset.UtcNow));
 
         var historyPath = Path.Combine(modelsDir, "promotion-history.json");
         var json = await File.ReadAllTextAsync(historyPath);
@@ -76,7 +76,7 @@ public class PromoteCommandTests : IDisposable
         Directory.CreateDirectory(modelsDir);
         var manager = CreateManager();
 
-        await manager.RecordPromotionAsync("mymodel", "exp-003", "exp-002", "promote");
+        await manager.RecordAsync(new PromotionRecord("mymodel", "exp-003", "exp-002", "promote", null, DateTimeOffset.UtcNow));
 
         var historyPath = Path.Combine(modelsDir, "promotion-history.json");
         var json = await File.ReadAllTextAsync(historyPath);
@@ -92,7 +92,7 @@ public class PromoteCommandTests : IDisposable
     {
         var manager = CreateManager();
 
-        await manager.RecordPromotionAsync("newmodel", "exp-001", null, "promote");
+        await manager.RecordAsync(new PromotionRecord("newmodel", "exp-001", null, "promote", null, DateTimeOffset.UtcNow));
 
         var historyPath = Path.Combine(_tempDir, "models", "newmodel", "promotion-history.json");
         Assert.True(File.Exists(historyPath));

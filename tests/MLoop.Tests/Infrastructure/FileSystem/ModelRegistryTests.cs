@@ -735,6 +735,60 @@ public class ModelRegistryTests : IDisposable
         Assert.False(File.Exists(production));
     }
 
+    private async Task<IReadOnlyList<MLoop.Ops.Interfaces.PromotionRecord>> HistoryAsync()
+        => await new MLoop.Ops.Services.FilePromotionManager(_testProjectRoot).GetHistoryAsync(DefaultModelName);
+
+    [Fact]
+    public async Task AnAutomaticPromotion_IsInTheHistory_SoARollbackFindsWhatItReplaced()
+    {
+        // A training run's promotion used to leave no history entry, so after `train` replaced a
+        // model, `rollback` answered that the history did not record what production held before.
+        var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+        var second = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double> { ["r_squared"] = 0.9 });
+
+        Assert.True(await _modelRegistry.AutoPromoteAsync(DefaultModelName, first, "r_squared"));
+        Assert.True(await _modelRegistry.AutoPromoteAsync(DefaultModelName, second, "r_squared"));
+
+        var history = await HistoryAsync();
+        Assert.Equal(["exp-001", "exp-002"], history.Select(r => r.ExperimentId));
+        Assert.All(history, r => Assert.Equal(MLoop.Ops.Interfaces.PromotionActions.AutoPromote, r.Action));
+        Assert.Null(history[0].PreviousExperimentId);
+        Assert.Equal("exp-001", history[1].PreviousExperimentId);
+        Assert.Equal(MLoop.Ops.Interfaces.PromotionGate.Passed, history[1].Gate);
+        Assert.Equal("r_squared", history[1].Metric);
+        Assert.Equal(0.9, history[1].MetricValue);
+        Assert.Equal(("exp-001", (string?)null), MLoop.Ops.Interfaces.RollbackTarget.Resolve(history, "exp-002"));
+    }
+
+    [Fact]
+    public async Task APromotionTheGateRefuses_IsRecordedAsForced_WithTheRefusal()
+    {
+        var refused = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = -0.3 });
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, refused, CancellationToken.None);
+
+        var record = Assert.Single(await HistoryAsync());
+        Assert.Equal(MLoop.Ops.Interfaces.PromotionActions.Promote, record.Action);
+        Assert.Equal(MLoop.Ops.Interfaces.PromotionGate.Forced, record.Gate);
+        Assert.Contains("r_squared", record.GateDetail);
+    }
+
+    [Fact]
+    public async Task ARollback_IsRecordedWithoutTheGate()
+    {
+        var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+        var second = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double> { ["r_squared"] = 0.9 });
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, second, CancellationToken.None);
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, MLoop.Ops.Interfaces.PromotionActions.Rollback);
+
+        var last = (await HistoryAsync())[^1];
+        Assert.Equal(("exp-001", "exp-002"), (last.ExperimentId, last.PreviousExperimentId));
+        Assert.Equal(MLoop.Ops.Interfaces.PromotionGate.NotApplied, last.Gate);
+        Assert.Null(last.GateDetail);
+    }
+
     private async Task<string> CreateDummyExperimentAsync(
         string modelName,
         string experimentId,

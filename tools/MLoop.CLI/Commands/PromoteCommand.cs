@@ -64,6 +64,12 @@ public static class PromoteCommand
             DefaultValueFactory = _ => false
         };
 
+        var historyOption = new Option<bool>("--history")
+        {
+            Description = "List every change of the production slot — what took it, what it replaced, how, and the quality gate's outcome — instead of promoting",
+            DefaultValueFactory = _ => false
+        };
+
         var command = new Command("promote", "Promote an experiment to production");
         command.Arguments.Add(experimentIdArg);
         command.Options.Add(nameOption);
@@ -73,6 +79,7 @@ public static class PromoteCommand
         command.Options.Add(noBackupOption);
         command.Options.Add(jsonOption);
         command.Options.Add(decideOnlyOption);
+        command.Options.Add(historyOption);
 
         command.SetAction((parseResult) =>
         {
@@ -84,6 +91,10 @@ public static class PromoteCommand
             var noBackup = parseResult.GetValue(noBackupOption);
             var json = parseResult.GetValue(jsonOption);
             var decideOnly = parseResult.GetValue(decideOnlyOption);
+            if (parseResult.GetValue(historyOption))
+                return experimentId != null || latest || best || force || decideOnly
+                    ? Task.FromResult(HistoryConflict(json))
+                    : ShowHistoryAsync(name, json);
             return ExecuteAsync(experimentId, name, latest, best, force, noBackup, json, decideOnly);
         });
 
@@ -273,11 +284,6 @@ public static class PromoteCommand
                         ctx.Status("[green]Promotion complete![/]");
                     });
             }
-
-            // Record promotion history
-            await promotionManager.RecordPromotionAsync(
-                resolvedModelName, experimentId,
-                currentProduction?.ExperimentId, "promote");
 
             if (jsonOutput)
             {
@@ -501,6 +507,92 @@ public static class PromoteCommand
             AnsiConsole.MarkupLine($"[green]>[/] Already in production.");
         AnsiConsole.MarkupLine($"[grey]  Run without [blue]--decide-only[/] to apply.[/]");
         AnsiConsole.WriteLine();
+    }
+
+    private static int HistoryConflict(bool jsonOutput)
+    {
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
+        WriteError("--history lists the promotions and changes nothing: it takes no experiment, --latest, --best, --force or --decide-only.", jsonOutput);
+        return 1;
+    }
+
+    /// <summary>
+    /// <c>promote --history</c>: the production slot's changes, oldest first — the history
+    /// <c>rollback</c> reads, with the quality gate's outcome at each change.
+    /// </summary>
+    private static async Task<int> ShowHistoryAsync(string? modelName, bool jsonOutput)
+    {
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
+        string projectRoot;
+        try
+        {
+            projectRoot = new ProjectDiscovery(new FileSystemManager()).FindRoot();
+        }
+        catch (InvalidOperationException)
+        {
+            WriteError("Not inside a MLoop project. Run 'mloop init' to create a new project.", jsonOutput);
+            return 1;
+        }
+
+        var name = CommandContext.ResolveModelName(modelName);
+        var history = await new FilePromotionManager(projectRoot).GetHistoryAsync(name);
+        if (jsonOutput)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                modelName = name,
+                promotions = history.Select(r => new
+                {
+                    experimentId = r.ExperimentId,
+                    previousExperimentId = r.PreviousExperimentId,
+                    action = r.Action,
+                    timestamp = r.Timestamp.ToUniversalTime(),
+                    gate = r.Gate,
+                    gateDetail = r.GateDetail,
+                    metric = r.Metric,
+                    metricValue = r.MetricValue,
+                }),
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        if (history.Count == 0)
+        {
+            AnsiConsole.MarkupLineInterpolated($"[grey]No promotion recorded for '{name}'.[/]");
+            return 0;
+        }
+        // What each change replaced is the row above it, so the table leaves it to --json
+        // (previousExperimentId) — with it the rows no longer fit 80 columns.
+        // One metric for the whole history is the usual case: it goes in the heading, and the cells keep
+        // only values — with the name in every cell the table outgrew 80 columns and rows split in two.
+        var metrics = history.Select(r => r.Metric).Where(m => m is not null).Distinct().ToList();
+        var oneMetric = metrics.Count == 1 ? metrics[0] : null;
+        var table = new Table().Border(TableBorder.Rounded)
+            .Title($"[bold]Promotions — {Markup.Escape(name)}[/]")
+            .AddColumn(Markup.Escape(TimestampDisplay.ZoneHeading("When")))
+            .AddColumn("Experiment")
+            .AddColumn("How")
+            .AddColumn("Gate")
+            .AddColumn(new TableColumn(Markup.Escape(oneMetric ?? "Metric")).RightAligned());
+        foreach (var r in history)
+            table.AddRow(
+                Markup.Escape(TimestampDisplay.LocalWithoutZone(r.Timestamp)),
+                Markup.Escape(r.ExperimentId),
+                Markup.Escape(r.Action),
+                r.Gate switch
+                {
+                    PromotionGate.Forced => "[red]forced[/]",
+                    PromotionGate.Passed when r.GateDetail is not null => "[yellow]passed*[/]",
+                    PromotionGate.Passed => "[green]passed[/]",
+                    PromotionGate.NotApplied => "[grey]not applied[/]",
+                    _ => "[grey]-[/]",
+                },
+                Markup.Escape((oneMetric is null && r.Metric is not null ? r.Metric + " " : "")
+                    + (r.MetricValue?.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) ?? "-")));
+        AnsiConsole.Write(table);
+        foreach (var r in history.Where(r => r.GateDetail is not null))
+            AnsiConsole.MarkupLineInterpolated($"[grey]{r.ExperimentId}: {r.GateDetail}[/]");
+        return 0;
     }
 
     private static void WriteError(string message, bool jsonOutput)
