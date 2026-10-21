@@ -717,6 +717,24 @@ public class ModelRegistryTests : IDisposable
         Assert.True(result); // passes 1/N gate, no production → promote
     }
 
+    [Fact]
+    public async Task PromoteAsync_CarriesTheDriftProfile_AndDropsAStaleOne()
+    {
+        var withProfile = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.8 });
+        await File.WriteAllTextAsync(
+            Path.Combine(_experimentStore.GetExperimentPath(DefaultModelName, withProfile), MLoop.Core.Storage.ExperimentLayout.DriftProfileFileName),
+            "{\"rows\":1,\"features\":[]}");
+        var withoutProfile = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double> { ["r_squared"] = 0.9 });
+        var production = Path.Combine(_modelRegistry.GetProductionPath(DefaultModelName), MLoop.Core.Storage.ExperimentLayout.DriftProfileFileName);
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, withProfile, CancellationToken.None);
+        Assert.True(File.Exists(production));
+
+        // The next model has no profile: the slot must not keep the previous model's.
+        await _modelRegistry.PromoteAsync(DefaultModelName, withoutProfile, CancellationToken.None);
+        Assert.False(File.Exists(production));
+    }
+
     private async Task<string> CreateDummyExperimentAsync(
         string modelName,
         string experimentId,

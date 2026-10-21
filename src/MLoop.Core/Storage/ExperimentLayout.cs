@@ -31,6 +31,14 @@ public static class ExperimentLayout
     /// promoted <c>production/</c> slot. The single most-duplicated layout literal before this.</summary>
     public const string ModelFileName = "model.zip";
 
+    /// <summary>
+    /// The training inputs' distribution, column by column (<c>MLoop.Core.Monitoring.DriftProfile</c>) —
+    /// the reference drift is measured against. Written at training beside <see cref="ModelFileName"/>
+    /// and copied on promote when present; absent for directory-based tasks and models trained
+    /// before it existed.
+    /// </summary>
+    public const string DriftProfileFileName = "drift-profile.json";
+
     /// <summary>② regression wave (heteroscedastic): the optional auxiliary σ(x) model that gives the
     /// conformal band its per-row width. Sits beside <see cref="ModelFileName"/> in <c>staging/{expId}/</c>
     /// and the promoted <c>production/</c> slot, and is copied on promote when present. Absent for

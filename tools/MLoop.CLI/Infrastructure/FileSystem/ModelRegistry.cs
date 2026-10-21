@@ -81,6 +81,15 @@ public class ModelRegistry : IModelRegistry
             await _fileSystem.CopyFileAsync(sourceResidualPath, targetResidualPath, overwrite: true, cancellationToken);
         }
 
+        // The drift reference travels with the model it describes. A production slot promoted from an
+        // experiment without one must not keep the previous model's.
+        var sourceDriftPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.DriftProfileFileName);
+        var targetDriftPath = _fileSystem.CombinePath(targetPath, ExperimentLayout.DriftProfileFileName);
+        if (_fileSystem.FileExists(sourceDriftPath))
+            await _fileSystem.CopyFileAsync(sourceDriftPath, targetDriftPath, overwrite: true, cancellationToken);
+        else if (_fileSystem.FileExists(targetDriftPath))
+            File.Delete(targetDriftPath);
+
         // Load experiment metadata
         var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
 

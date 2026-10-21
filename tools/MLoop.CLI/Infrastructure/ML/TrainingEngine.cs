@@ -369,6 +369,8 @@ public class TrainingEngine : ITrainingEngine
                 _mlContext.Model.Save(autoMLResult.ResidualModel, null, residualPath);
             }
 
+            await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config.Task, cancellationToken);
+
             // Execute PostTrain hooks
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PostTrain))
             {
@@ -801,6 +803,31 @@ public class TrainingEngine : ITrainingEngine
             CapturedAt = DateTime.UtcNow,
             Columns = columns
         };
+    }
+
+    /// <summary>
+    /// Writes the training inputs' distribution beside the model — the reference drift is measured
+    /// against (<see cref="ExperimentLayout.DriftProfileFileName"/>). Only for models that read feature
+    /// columns from a file; a failure is a warning, never a failed training.
+    /// </summary>
+    private async Task SaveDriftProfileAsync(
+        string experimentPath, string dataFilePath, InputSchemaInfo? inputSchema, string task, CancellationToken cancellationToken)
+    {
+        if (inputSchema is null || !File.Exists(dataFilePath) || !AutoMLRunner.ReadsFeatureColumns(task))
+            return;
+        var columns = MLoop.Core.Monitoring.DriftProfile.ColumnsOf(inputSchema);
+        if (columns.Count == 0)
+            return;
+        try
+        {
+            var profile = await MLoop.Core.Monitoring.DriftProfile.FromCsvAsync(dataFilePath, columns, cancellationToken: cancellationToken);
+            await _fileSystem.WriteJsonAsync(
+                _fileSystem.CombinePath(experimentPath, ExperimentLayout.DriftProfileFileName), profile, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException or FormatException)
+        {
+            WarningConsole.Warn($"Could not write {ExperimentLayout.DriftProfileFileName}: {Markup.Escape(ex.Message)} — drift cannot be measured for this model.");
+        }
     }
 
     private InputSchemaInfo? CaptureInputSchemaEnhanced(string dataFile, string labelColumn, string? taskType = null, Dictionary<string, string>? columnOverrides = null,

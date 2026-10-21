@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **A drift reference is saved with every model.** Training writes `drift-profile.json` beside
+  `model.zip`: for each numeric, categorical and boolean feature, how the training inputs were
+  distributed — numeric columns cut at their deciles (a repeated value stays in one bin),
+  categorical ones by their 20 most common values plus an "other" bin, missing values in a bin of
+  their own; built from a fixed-seed sample of up to 20,000 rows, so a large file costs flat memory
+  and the same file gives the same profile. `promote` carries it to production (and drops the
+  previous model's when the new one has none). `MLoop.Core.Monitoring` holds the profile and the
+  population stability index (`DriftMeasure` — under 0.1 stable, 0.1–0.25 moderate, 0.25 and
+  above significant), which reads logged JSON inputs the way the training file was read.
+
 ### Fixed
 - **`mloop status` and `GET /status` ranked weighted and unweighted experiments against each other.**
   The best-metric value is now the best among experiments measured like the newest one — the same
