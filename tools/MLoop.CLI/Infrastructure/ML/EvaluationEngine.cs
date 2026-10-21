@@ -21,10 +21,15 @@ public class EvaluationEngine
         _mlContext = new MLContext(seed: 42);
     }
 
+    /// <summary>What one evaluation measured: the metrics, and for a classifier how its answers fell (<see cref="ConfusionCounts"/>).</summary>
+    public sealed record Evaluation(Dictionary<string, double> Metrics, ConfusionCounts? Confusion);
+
     /// <summary>
-    /// Evaluates a trained model on test data
+    /// Evaluates a trained model on test data — the metrics and, for a classifier, the confusion counts, from one
+    /// scoring of the file. They used to be two calls, each preparing the file, inferring its columns, loading
+    /// the model and scoring every row again; a sliced evaluation paid that twice per slice.
     /// </summary>
-    public async Task<Dictionary<string, double>> EvaluateAsync(
+    public async Task<Evaluation> EvaluateAsync(
         string modelPath,
         string testDataPath,
         string labelColumn,
@@ -61,9 +66,9 @@ public class EvaluationEngine
                     var dirScored = trainedModel.Transform(dirData);
 
                     if (taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
-                        return MetricSanitizer.SanitizeAndReturn(MLoop.Core.Evaluation.ObjectDetectionEvaluator.Evaluate(_mlContext, dirScored));
+                        return new Evaluation(MetricSanitizer.SanitizeAndReturn(MLoop.Core.Evaluation.ObjectDetectionEvaluator.Evaluate(_mlContext, dirScored)), null);
 
-                    return MetricSanitizer.SanitizeAndReturn(EvaluateMulticlassClassification(dirScored, "Label"));
+                    return new Evaluation(MetricSanitizer.SanitizeAndReturn(EvaluateMulticlassClassification(dirScored, "Label")), null);
                 }
 
                 // ranking/recommendation models reference the group/user/item columns
@@ -97,6 +102,12 @@ public class EvaluationEngine
                         $"Ensure the test data has the same columns (names and types) as the training data. " +
                         $"Original error: {ex.Message}", ex);
                 }
+
+                // A classifier's rows are read twice — metrics, then confusion — so the scored rows are kept in
+                // memory rather than read from the file and scored a second time.
+                var classifier = MLoop.Core.Models.TaskTypes.Canonical(taskType) is "binary-classification" or "multiclass-classification";
+                if (classifier)
+                    predictions = _mlContext.Data.Cache(predictions);
 
                 // Evaluate based on task type using the original label column name
                 // After model.Transform, classification labels are in Key type (via MapValueToKey)
@@ -185,10 +196,15 @@ public class EvaluationEngine
                     throw new NotSupportedException($"Task type '{taskType}' is not supported for evaluation.");
                 }
 
+                var confusion = classifier
+                    ? ConfusionCounts.Of(predictions, taskType, labelColumn,
+                        string.IsNullOrEmpty(weightColumn) ? null : WeightedResampling.ReadWeights(predictions, weightColumn), trainedSchema)
+                    : null;
+
                 // Single-authority guard: normalize any non-finite metric (NaN/±∞) to the
                 // direction-aware worst before it is returned/persisted (mirrors the training
                 // path in AutoMLRunner.RunAsync). System.Text.Json cannot serialize non-finite.
-                return MetricSanitizer.SanitizeAndReturn(metrics);
+                return new Evaluation(MetricSanitizer.SanitizeAndReturn(metrics), confusion);
             }
             finally
             {
@@ -228,7 +244,7 @@ public class EvaluationEngine
     /// <summary>
     /// How this classifier's answers fell against the test labels (<see cref="ConfusionCounts"/>), each row
     /// counting by <paramref name="weightColumn"/> when given; <c>null</c> for a task that is not binary or
-    /// multiclass classification.
+    /// multiclass classification. For the metrics too, <see cref="EvaluateAsync"/> gives both from one scoring.
     /// </summary>
     public async Task<ConfusionCounts?> ConfusionAsync(
         string modelPath,

@@ -154,7 +154,7 @@ public class EvaluationEngineTests : IDisposable
         // Train a simple regression model
         var (modelPath, testDataPath) = TrainSimpleRegressionModel();
 
-        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "regression");
+        var metrics = (await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "regression")).Metrics;
 
         Assert.Contains("r_squared", metrics.Keys);
         Assert.Contains("rmse", metrics.Keys);
@@ -164,11 +164,32 @@ public class EvaluationEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task EvaluateAsync_GivesTheConfusionCounts_FromTheSameScoring()
+    {
+        // One scoring for both — and the counts it gives are the ones a separate confusion pass gives.
+        var (modelPath, testDataPath) = TrainSimpleBinaryModel();
+
+        var evaluation = await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "binary-classification");
+        var separately = await _engine.ConfusionAsync(modelPath, testDataPath, "Label", "binary-classification", trainedSchema: null);
+
+        Assert.NotNull(evaluation.Confusion);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(separately), System.Text.Json.JsonSerializer.Serialize(evaluation.Confusion));
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_ARegressor_HasNoConfusionCounts()
+    {
+        var (modelPath, testDataPath) = TrainSimpleRegressionModel();
+
+        Assert.Null((await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "regression")).Confusion);
+    }
+
+    [Fact]
     public async Task EvaluateAsync_BinaryClassification_ReturnsMetrics()
     {
         var (modelPath, testDataPath) = TrainSimpleBinaryModel();
 
-        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "binary-classification");
+        var metrics = (await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "binary-classification")).Metrics;
 
         Assert.Contains("accuracy", metrics.Keys);
         Assert.Contains("auc", metrics.Keys);
@@ -190,7 +211,7 @@ public class EvaluationEngineTests : IDisposable
         var (modelPath, _) = TrainSimpleBinaryModel();
         var onlyPositives = CreateBomCsv("positives.csv", BuildCsv("Feature1,Label", ["9.1,true", "8.2,true", "1.5,true"]));
 
-        var metrics = await _engine.EvaluateAsync(modelPath, onlyPositives, "Label", "binary-classification");
+        var metrics = (await _engine.EvaluateAsync(modelPath, onlyPositives, "Label", "binary-classification")).Metrics;
 
         Assert.DoesNotContain("auc", metrics.Keys);
         Assert.DoesNotContain("negative_recall", metrics.Keys); // no negatives: undefined, not 0
@@ -203,7 +224,7 @@ public class EvaluationEngineTests : IDisposable
     {
         var (modelPath, testDataPath) = TrainSimpleMulticlassModel();
 
-        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "multiclass-classification");
+        var metrics = (await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "multiclass-classification")).Metrics;
 
         Assert.Contains("macro_accuracy", metrics.Keys);
         Assert.Contains("micro_accuracy", metrics.Keys);
@@ -252,7 +273,7 @@ public class EvaluationEngineTests : IDisposable
             System.Text.Encoding.GetEncoding(949));
 
         // Act + Assert: label is found, metrics returned (pre-fix this threw "label not found").
-        var metrics = await _engine.EvaluateAsync(modelPath, testCsv, korLabel, "regression");
+        var metrics = (await _engine.EvaluateAsync(modelPath, testCsv, korLabel, "regression")).Metrics;
         Assert.Contains("r_squared", metrics.Keys);
         Assert.Equal(4, metrics.Count);
     }
@@ -266,7 +287,7 @@ public class EvaluationEngineTests : IDisposable
         // clusters must yield a finite, positive DBI plus the cluster-distribution metrics.
         var (modelPath, testDataPath) = TrainSimpleClusteringModel();
 
-        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Feature1", "clustering");
+        var metrics = (await _engine.EvaluateAsync(modelPath, testDataPath, "Feature1", "clustering")).Metrics;
 
         Assert.Contains("davies_bouldin_index", metrics.Keys);
         Assert.True(metrics["davies_bouldin_index"] > 0,
@@ -286,8 +307,8 @@ public class EvaluationEngineTests : IDisposable
         // silently swallowed into an empty metric dict — the silent evaluate twin of that.
         var (modelPath, testDataPath) = TrainSimpleRankingModel();
 
-        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "ranking",
-            groupColumn: "QueryId");
+        var metrics = (await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "ranking",
+            groupColumn: "QueryId")).Metrics;
 
         Assert.NotEmpty(metrics);
         Assert.Contains("ndcg", metrics.Keys);
@@ -302,8 +323,8 @@ public class EvaluationEngineTests : IDisposable
         // to ApplyColumnPreservation so MatrixFactorization evaluation works end-to-end.
         var (modelPath, testDataPath) = TrainSimpleRecommendationModel();
 
-        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Rating", "recommendation",
-            userColumn: "UserId", itemColumn: "ItemId");
+        var metrics = (await _engine.EvaluateAsync(modelPath, testDataPath, "Rating", "recommendation",
+            userColumn: "UserId", itemColumn: "ItemId")).Metrics;
 
         Assert.NotEmpty(metrics);
         Assert.Contains("rmse", metrics.Keys);
@@ -319,7 +340,7 @@ public class EvaluationEngineTests : IDisposable
         // last tabular task family against regression.
         var (modelPath, testDataPath) = TrainSimpleAnomalyModel();
 
-        var metrics = await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "anomaly-detection");
+        var metrics = (await _engine.EvaluateAsync(modelPath, testDataPath, "Label", "anomaly-detection")).Metrics;
 
         Assert.NotEmpty(metrics);
         Assert.Contains("total_count", metrics.Keys);

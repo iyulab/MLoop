@@ -94,8 +94,8 @@ public static class ModelComparison
         var task = candidate.Task;
         var label = candidate.Config.LabelColumn;
         var b = baseline.Data;
-        var metrics = await engine.EvaluateAsync(baseline.ModelPath, testDataFile, label, task, cancellationToken,
-            b.Config.InputSchema, b.Config.GroupColumn, b.Config.UserColumn, b.Config.ItemColumn, weightColumn);
+        var metrics = (await engine.EvaluateAsync(baseline.ModelPath, testDataFile, label, task, cancellationToken,
+            b.Config.InputSchema, b.Config.GroupColumn, b.Config.UserColumn, b.Config.ItemColumn, weightColumn)).Metrics;
 
         if (PairedComparison.MeasureOf(task) is not { } measure)
             return new Comparison(baseline.ExperimentId, metrics, null, $"{task} has no per-row measure to pair — compare the metrics.");

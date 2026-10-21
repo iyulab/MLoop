@@ -370,7 +370,7 @@ public static class EvaluateCommand
                 {
                     var evaluationEngine = new EvaluationEngine();
 
-                    testMetrics = await evaluationEngine.EvaluateAsync(
+                    var evaluation = await evaluationEngine.EvaluateAsync(
                         resolvedModelPath,
                         resolvedTestDataFile,
                         experimentData!.Config.LabelColumn,
@@ -381,9 +381,7 @@ public static class EvaluateCommand
                         experimentData.Config.UserColumn,
                         experimentData.Config.ItemColumn,
                         weightColumn);
-
-                    confusion = await evaluationEngine.ConfusionAsync(resolvedModelPath, resolvedTestDataFile,
-                        experimentData.Config.LabelColumn, experimentData.Task, experimentData.Config.InputSchema, weightColumn);
+                    (testMetrics, confusion) = (evaluation.Metrics, evaluation.Confusion);
 
                     ctx.Status("[green]Evaluation complete![/]");
                 });

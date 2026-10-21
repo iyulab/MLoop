@@ -1277,13 +1277,10 @@ app.MapPost("/evaluate", async (
                 return baseline.NotFound ? Results.NotFound(new { error }) : Results.BadRequest(new { error });
         }
 
-        var metrics = await evaluationEngine.EvaluateAsync(
+        var (metrics, confusion) = await evaluationEngine.EvaluateAsync(
             modelPath, resolvedTestPath, labelColumn, taskType, ct,
             experiment.Config.InputSchema, experiment.Config.GroupColumn,
             experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn);
-
-        var confusion = await evaluationEngine.ConfusionAsync(modelPath, resolvedTestPath, labelColumn, taskType,
-            experiment.Config.InputSchema, weightColumn, ct);
 
         var comparison = baseline is null
             ? null

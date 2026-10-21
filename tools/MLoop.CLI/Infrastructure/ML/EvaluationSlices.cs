@@ -35,14 +35,12 @@ public static class EvaluationSlices
             {
                 try
                 {
-                    var metrics = await engine.EvaluateAsync(
+                    var evaluation = await engine.EvaluateAsync(
                         modelPath, part.Path, experiment.Config.LabelColumn, experiment.Task,
                         cancellationToken, experiment.Config.InputSchema,
                         experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn,
                         weightColumn);
-                    var confusion = await engine.ConfusionAsync(modelPath, part.Path, experiment.Config.LabelColumn, experiment.Task,
-                        experiment.Config.InputSchema, weightColumn, cancellationToken);
-                    results.Add(new Slice(part.Value, part.Rows, metrics, null, part.Rows < SmallRows, confusion));
+                    results.Add(new Slice(part.Value, part.Rows, evaluation.Metrics, null, part.Rows < SmallRows, evaluation.Confusion));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
