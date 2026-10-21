@@ -73,6 +73,22 @@ public sealed class ExportCommandTests : IDisposable
         Assert.Equal(["no", "yes"], manifest.Label.Classes);
         Assert.Contains(manifest.Outputs, o => o.Column == "Probability");
         Assert.NotNull(manifest.Metrics);
+        Assert.Null(manifest.Verification); // not asked for
+
+        // --verify either compares the graph with the model or, without ONNX Runtime, refuses and
+        // says how to install it — never exports silently unverified.
+        var (vExit, vOutput, vError) = await CliRunner.RunAsync("export", "onnx", "--json", "--verify");
+        if (vExit == 0)
+        {
+            var verified = OnnxManifest.FromJson(await File.ReadAllTextAsync(manifestPath));
+            Assert.NotNull(verified.Verification);
+            Assert.True(verified.Verification!.Passed);
+            Assert.True(verified.Verification.Rows > 0);
+        }
+        else
+        {
+            Assert.Contains("mloop runtime install onnxruntime", vOutput + vError);
+        }
     }
 
     [Fact]

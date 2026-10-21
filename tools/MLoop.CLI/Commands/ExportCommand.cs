@@ -62,25 +62,32 @@ public static class ExportCommand
             Description = "Output the result as JSON (machine-readable, non-interactive)"
         };
 
+        var verifyOption = new Option<bool>("--verify")
+        {
+            Description = $"Run the graph in ONNX Runtime on up to {OnnxVerification.DefaultRows} rows of the data and compare it with the model; a graph that disagrees is not kept (needs: mloop runtime install onnxruntime)"
+        };
+
         var command = new Command("onnx", "Export a model as ONNX, with a manifest describing its inputs, outputs and classes");
         command.Arguments.Add(experimentIdArg);
         command.Options.Add(nameOption);
         command.Options.Add(dataOption);
         command.Options.Add(outputOption);
         command.Options.Add(jsonOption);
+        command.Options.Add(verifyOption);
 
         command.SetAction(parseResult => ExecuteAsync(
             parseResult.GetValue(experimentIdArg),
             parseResult.GetValue(nameOption),
             parseResult.GetValue(dataOption),
             parseResult.GetValue(outputOption),
-            parseResult.GetValue(jsonOption)));
+            parseResult.GetValue(jsonOption),
+            parseResult.GetValue(verifyOption)));
 
         return command;
     }
 
     private static async Task<int> ExecuteAsync(
-        string? experimentId, string? modelName, string? dataFile, string? outputDir, bool jsonOutput)
+        string? experimentId, string? modelName, string? dataFile, string? outputDir, bool jsonOutput, bool verify = false)
     {
         using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
         var tempFiles = new List<string>();
@@ -124,6 +131,13 @@ public static class ExportCommand
             {
                 WriteError($"Experiment '{experimentId}' not found for model '{resolvedModelName}'. "
                            + $"Run 'mloop list --name {resolvedModelName}' to see all experiments.", jsonOutput);
+                return 1;
+            }
+
+            // Checked before any work: a verification that cannot run is a refusal, not a skipped step.
+            if (verify && OnnxVerification.Unavailable() is { } unavailable)
+            {
+                WriteError($"--verify needs ONNX Runtime. {unavailable}", jsonOutput);
                 return 1;
             }
 
@@ -189,10 +203,22 @@ public static class ExportCommand
                     File.Delete(partial);
             }
 
+            OnnxVerificationResult? verification = null;
+            if (verify)
+            {
+                verification = OnnxVerification.Compare(input.Model, input.Data, result, onnxPath);
+                if (!verification.Passed)
+                {
+                    // A graph that answers differently from the model is not left where a consumer
+                    // would pick it up; the manifest stays, recording why.
+                    File.Delete(onnxPath);
+                }
+            }
+
             var manifest = new OnnxManifest
             {
                 OnnxFile = Path.GetFileName(onnxPath),
-                OnnxSha256 = OnnxManifest.Sha256Of(onnxPath),
+                OnnxSha256 = File.Exists(onnxPath) ? OnnxManifest.Sha256Of(onnxPath) : "",
                 SourceModelSha256 = OnnxManifest.Sha256Of(modelPath),
                 ModelName = resolvedModelName,
                 ExperimentId = experimentId,
@@ -205,8 +231,18 @@ public static class ExportCommand
                 Label = LabelInfo(task, labelColumn, experiment, input, result),
                 Metrics = experiment.Metrics,
                 WeightColumn = experiment.Config?.WeightColumn,
+                Portable = experiment.Config?.Portable == true,
+                Verification = verification,
             };
             await File.WriteAllTextAsync(manifestPath, manifest.ToJson());
+
+            if (verification is { Passed: false })
+            {
+                WriteError(
+                    $"The exported graph disagrees with the model on {verification.Rows} rows checked "
+                    + $"({Describe(verification)}); it was not kept. The comparison is in {manifestPath}.", jsonOutput);
+                return 1;
+            }
 
             if (jsonOutput)
             {
@@ -219,6 +255,7 @@ public static class ExportCommand
                     manifest.OnnxSha256,
                     Inputs = result.Inputs,
                     Outputs = result.Outputs,
+                    Verification = verification,
                 }, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
             }
             else
@@ -232,6 +269,9 @@ public static class ExportCommand
                         $"  input  [cyan]{tensor.Name}[/] {tensor.ElementType}[[{tensor.Width}]] ← {string.Join(", ", tensor.SourceColumns)}");
                 foreach (var tensor in result.Outputs)
                     AnsiConsole.MarkupLineInterpolated($"  output [cyan]{tensor.Name}[/] {tensor.ElementType}[[{tensor.Width}]]");
+                if (verification is not null)
+                    AnsiConsole.MarkupLineInterpolated(
+                        $"[green]>[/] Verified on {verification.Rows} rows with {verification.Runtime ?? "ONNX Runtime"}: {Describe(verification)}");
                 foreach (var tensor in result.UnusedInputs)
                     AnsiConsole.MarkupLineInterpolated(
                         $"  [grey]input  {tensor.Name} {tensor.ElementType}[[{tensor.Width}]] is not used by any output; feed any value[/]");
@@ -307,6 +347,15 @@ public static class ExportCommand
             default:
                 return new OnnxLabelInfo { Column = labelColumn, Decision = "Score is the predicted value" };
         }
+    }
+
+    private static string Describe(OnnxVerificationResult verification)
+    {
+        var parts = verification.MaxAbsDifference
+            .Select(kv => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{kv.Key} max |difference| {kv.Value:G3}"))
+            .ToList();
+        parts.Add($"{verification.LabelMismatches} label mismatch(es)");
+        return string.Join(", ", parts);
     }
 
     private static List<string>? PreserveColumns(ExperimentConfig? config)

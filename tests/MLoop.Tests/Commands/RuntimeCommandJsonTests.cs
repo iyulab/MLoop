@@ -14,16 +14,17 @@ namespace MLoop.Tests.Commands;
 public class RuntimeCommandJsonTests
 {
     [Fact]
-    public async Task Runtime_List_Json_ListsBothKnownRuntimes()
+    public async Task Runtime_List_Json_ListsEveryKnownRuntime()
     {
         var (exitCode, stdout, _) = await CliRunner.RunAsync("runtime", "list", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = System.Text.Json.JsonDocument.Parse(stdout);
-        var runtimes = doc.RootElement.GetProperty("runtimes").EnumerateArray().ToList();
-        Assert.Equal(2, runtimes.Count);
-        Assert.Contains(runtimes, r => r.GetProperty("id").GetString() == "tf");
-        Assert.Contains(runtimes, r => r.GetProperty("id").GetString() == "torch");
+        var ids = doc.RootElement.GetProperty("runtimes").EnumerateArray()
+            .Select(r => r.GetProperty("id").GetString())
+            .ToList();
+        Assert.Equal(MLoop.Core.Runtime.RuntimeRegistry.All.Select(r => r.Id), ids);
+        Assert.Equal(["tf", "torch", "onnxruntime"], ids);
     }
 
     [Fact]

@@ -213,6 +213,52 @@ public sealed class OnnxExportTests : IDisposable
         AssertClose(Floats(model.Transform(data), "Probability"), outputs["Probability.output"].Floats);
     }
 
+    [Theory]
+    [InlineData(true)]   // the portable featurizer: one extractor per length
+    [InlineData(false)]  // one all-lengths extractor: exported wrongly once reloaded
+    public void Verification_PassesAFaithfulGraph_AndFailsAWrongOne(bool portable)
+    {
+        string[] ham = ["see you at the station at six", "ok thanks, call me later", "lunch tomorrow?"];
+        string[] spam = ["WIN a FREE prize now!! call 0800 123", "URGENT: claim your cash reward", "Txt STOP to opt out of offers"];
+        var rng = new Random(13);
+        var path = WriteCsv("text,label", Enumerable.Range(0, 240).Select(i =>
+        {
+            var isSpam = i % 3 == 0;
+            var pool = isSpam ? spam : ham;
+            return Row($"\"{pool[rng.Next(pool.Length)]} {rng.Next(100)}\"", isSpam ? "true" : "false");
+        }));
+        var loader = new TextLoader.Options
+        {
+            HasHeader = true, Separators = [','], AllowQuoting = true,
+            Columns =
+            [
+                new TextLoader.Column("text", DataKind.String, 0),
+                new TextLoader.Column("label", DataKind.Boolean, 1),
+            ],
+        };
+        var data = _ml.Data.CreateTextLoader(loader).Load(path);
+        IEstimator<ITransformer> featurizer = portable
+            ? MLoop.Core.AutoML.PortableTextFeaturizer.For(_ml, "text")
+            : _ml.Transforms.Text.TokenizeIntoCharactersAsKeys("chars", "text")
+                .Append(_ml.Transforms.Text.ProduceNgrams("text", "chars", ngramLength: 4, useAllLengths: true,
+                    weighting: Microsoft.ML.Transforms.Text.NgramExtractingEstimator.WeightingCriteria.Tf));
+        var trained = featurizer
+            .Append(_ml.Transforms.Concatenate("Features", "text"))
+            .Append(_ml.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression("label"))
+            .Fit(data);
+        var zip = Path.Combine(_dir, $"model-{portable}.zip");
+        _ml.Model.Save(trained, data.Schema, zip);
+        var model = _ml.Model.Load(zip, out _);
+        var (result, onnx) = Export(model, data, loader, ["text", "label"], "label");
+
+        var verification = OnnxVerification.Compare(model, data, result, onnx);
+
+        Assert.Equal(240, verification.Rows);
+        Assert.Equal(portable, verification.Passed);
+        if (!portable)
+            Assert.True(verification.MaxAbsDifference["Probability"] > 1e-3, $"{verification.MaxAbsDifference["Probability"]}");
+    }
+
     [Fact]
     public void Manifest_RoundTrips()
     {

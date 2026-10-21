@@ -1028,6 +1028,7 @@ mloop export onnx                      # the production model
 mloop export onnx exp-004 --name churn # a named experiment
 mloop export onnx --data sample.csv    # read the input columns from another file
 mloop export onnx -o ./edge --json     # write elsewhere; machine-readable result
+mloop export onnx --verify             # run the graph and compare it with the model
 ```
 
 Two files land in the experiment's directory (or `--output`):
@@ -1045,6 +1046,14 @@ The model was saved without an input schema, so the export reads one from data �
 experiment's training file, through the same loader prediction uses. A column the model does not read
 (an identifier, a weight) is not an input. An input the graph declares but no output needs — a
 multiclass label — is listed under `unusedInputs`: a runtime still requires it, so feed any value.
+
+**`--verify`** runs the graph in ONNX Runtime on up to 1,000 rows of the data and compares every
+output with the model's: `Score` and `Probability` within 1e-4, `PredictedLabel` exactly. A graph
+that disagrees is deleted and the command exits 1; the manifest keeps the comparison under
+`verification`. Use it: ML.NET's converter can report success and write a wrong graph — a text
+n-gram step loaded from a saved model exports counting only its longest n-grams, which answered
+differently on every row. ONNX Runtime's native library is not part of MLoop; install it once with
+`mloop runtime install onnxruntime` (about 120 MB download).
 
 Binary classification, multiclass classification and regression are supported. Numeric columns
 and category columns (one-hot encoded) export; **a text column does not** — ML.NET's text

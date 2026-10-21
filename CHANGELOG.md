@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   cannot express — a string column featurized as free text — is refused with its string columns
   named and nothing is written.
   `MLoop.Core` carries the conversion (`MLoop.Core.Export.OnnxExport`, `OnnxManifest`).
+- **`mloop export onnx --verify`** runs the exported graph in ONNX Runtime on up to 1,000 rows and
+  compares it with the model (`Score` / `Probability` within 1e-4, `PredictedLabel` exactly); a graph
+  that disagrees is not kept, and the manifest records the comparison. ONNX Runtime's native library
+  is an on-demand runtime: `mloop runtime install onnxruntime` (`MLoop.Core.Export.OnnxVerification`).
 - **Portable training** — `mloop train --portable`, or `portable: true` under the model in `mloop.yaml`:
   train only with steps an ONNX runtime computes exactly, so the model exports. Text columns are
   featurized as counts of character n-grams (lengths 1–4, case-sensitive) instead of ML.NET's text

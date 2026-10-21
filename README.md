@@ -177,7 +177,7 @@ mloop predict [model] [data]          # Run predictions
 mloop list [--json]                    # View experiments
 mloop promote [exp-id] [--latest|--best] [--json] [--decide-only]  # Promote to production (auto-select newest/best; --decide-only reports the pick without moving the pointer)
 mloop rollback [--to <exp-id>] [--json]                              # Production back to the experiment it held before
-mloop export onnx [exp-id] [--data <file>] [-o <dir>] [--json]       # Model as ONNX + manifest, for runtimes without ML.NET
+mloop export onnx [exp-id] [--data <file>] [-o <dir>] [--verify]     # Model as ONNX + manifest, for runtimes without ML.NET
 mloop detect <data> [--column <col>]   # One-shot TS-anomaly detection with control limits (no training)
 mloop evaluate <model> <test> <label> # Evaluate performance
 mloop info <data>                      # Dataset profiling with encoding detection
@@ -367,7 +367,7 @@ The section above shows the ones a first project uses. This is the whole surface
 | `evaluate` | Evaluate model performance on test data |
 | `promote` | Promote an experiment to production |
 | `rollback` | Return production to the experiment it held before |
-| `export` | Export a model as ONNX with a manifest, for runtimes without ML.NET (`export onnx`) |
+| `export` | Export a model as ONNX with a manifest, for runtimes without ML.NET (`export onnx [--verify]`) |
 | `list` | List all experiments |
 | `compare` | Compare experiments side by side |
 | `status` | Show project status at a glance |

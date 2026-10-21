@@ -71,7 +71,51 @@ public static class RuntimeRegistry
         RequiredByTasks = ["object-detection", "text-classification", "sentence-similarity", "ner", "question-answering"]
     };
 
-    public static IReadOnlyList<RuntimeDefinition> All { get; } = [TensorFlow, Torch];
+    /// <summary>
+    /// ONNX Runtime, for checking an exported graph against the model it came from
+    /// (<c>mloop export onnx --verify</c>). The managed half already ships with MLoop (through
+    /// ML.NET AutoML); only the native library is downloaded.
+    /// </summary>
+    public static readonly RuntimeDefinition OnnxRuntime = new()
+    {
+        Id = "onnxruntime",
+        DisplayName = "ONNX Runtime CPU",
+        Description = "ONNX Runtime native library, to verify models exported with 'mloop export onnx'",
+        NuGetPackages = new Dictionary<string, string>
+        {
+            ["win-x64"] = "Microsoft.ML.OnnxRuntime",
+            ["win-arm64"] = "Microsoft.ML.OnnxRuntime",
+            ["linux-x64"] = "Microsoft.ML.OnnxRuntime",
+            ["linux-arm64"] = "Microsoft.ML.OnnxRuntime",
+            ["osx-x64"] = "Microsoft.ML.OnnxRuntime",
+            ["osx-arm64"] = "Microsoft.ML.OnnxRuntime",
+        },
+        // Must match the Microsoft.ML.OnnxRuntime.Managed that ML.NET AutoML brings in (the managed
+        // half binds to this native version's API).
+        Version = "1.23.2",
+        NativeLibraries = new Dictionary<string, string[]>
+        {
+            ["win-x64"] = ["onnxruntime.dll"],
+            ["win-arm64"] = ["onnxruntime.dll"],
+            ["linux-x64"] = ["libonnxruntime.so"],
+            ["linux-arm64"] = ["libonnxruntime.so"],
+            ["osx-x64"] = ["libonnxruntime.dylib"],
+            ["osx-arm64"] = ["libonnxruntime.dylib"],
+        },
+        NativeSearchPaths = new Dictionary<string, string>
+        {
+            ["win-x64"] = "runtimes/win-x64/native",
+            ["win-arm64"] = "runtimes/win-arm64/native",
+            ["linux-x64"] = "runtimes/linux-x64/native",
+            ["linux-arm64"] = "runtimes/linux-arm64/native",
+            ["osx-x64"] = "runtimes/osx-x64/native",
+            ["osx-arm64"] = "runtimes/osx-arm64/native",
+        },
+        ApproximateSizeMB = 120,
+        RequiredByTasks = []
+    };
+
+    public static IReadOnlyList<RuntimeDefinition> All { get; } = [TensorFlow, Torch, OnnxRuntime];
 
     public static RuntimeDefinition? GetById(string id) =>
         All.FirstOrDefault(r => r.Id.Equals(id, StringComparison.OrdinalIgnoreCase));

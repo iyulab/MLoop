@@ -52,6 +52,15 @@ public sealed record OnnxManifest
     /// <summary>The column that weighted the rows in training and in the metrics, if any.</summary>
     public string? WeightColumn { get; init; }
 
+    /// <summary>
+    /// Whether the model was trained portable — with text featurized by character n-gram counts,
+    /// which are case-sensitive and take the text as it is (no normalization).
+    /// </summary>
+    public bool Portable { get; init; }
+
+    /// <summary>How the graph compared with the model on data rows (<c>--verify</c>); null when not checked.</summary>
+    public OnnxVerificationResult? Verification { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
