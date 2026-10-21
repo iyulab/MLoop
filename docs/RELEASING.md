@@ -100,7 +100,23 @@ build output before its code: `rm -rf tests/<project>/bin tests/<project>/obj` a
 A half-updated `bin/` (a test host killed mid-run, two builds overlapping) has wedged ML.NET's
 internal thread pool at the first `Fit`, with every test blocked behind it and CPU at zero.
 
-## 4. Version and changelog
+## 4. Push the work, then wait for CI on it
+
+Push everything **except** the version change first:
+
+```bash
+git push origin main
+gh run list --branch main --limit 3          # the CI run for the commit you just pushed
+```
+
+Do not continue until **CI is green on the pushed commit, on every OS it runs**. The `Release`
+workflow starts on any push that changes `Directory.Build.props`, so a version commit pushed
+together with untested work starts the release and CI at the same moment — and the release does
+not wait for CI. A version once went out while CI was red on Windows for that very commit, and the
+fix needed a second release. A release pipeline also once sat red for three days because the last
+CI signal anyone looked at belonged to an older commit.
+
+## 5. Version and changelog
 
 - `Directory.Build.props` carries the single version. Pre-1.0: bump **minor** for features and
   breaking changes, **patch** for fixes. No prerelease suffixes.
@@ -109,20 +125,19 @@ internal thread pool at the first `Fit`, with every test blocked behind it and C
 - **Confirm the release heading's date is today's.** A version that is prepared and then published
   days later keeps whatever date it was first written with, and the date is a claim about when the
   release happened — not when its first entry was drafted.
-
-## 5. Push, then wait for CI on that commit
-
-```bash
-git push origin main
-gh run list --branch main --limit 3          # the CI run for the commit you just pushed
-```
-
-Do not continue until **CI is green on the pushed commit**. A release pipeline once sat red for
-three days because the last CI signal anyone looked at belonged to an older commit.
+- Commit the two files alone, so the version commit carries no code CI has not already seen.
 
 ## 6. Publish
 
-The `Release` workflow runs on a push that changes `Directory.Build.props`. If the version was
+Push the version commit; the `Release` workflow runs on it because it changes
+`Directory.Build.props`:
+
+```bash
+git push origin main
+gh run watch
+```
+
+If the version was
 already on `main` — a release that failed and was then fixed — that path filter is no longer
 satisfied and the push only runs CI. Trigger the release by hand:
 
@@ -132,7 +147,7 @@ gh run watch
 ```
 
 A published version is permanent: a bad one is **unlisted** on NuGet, never replaced. That is
-why step 2 comes before step 5.
+why steps 2 and 4 come before step 5.
 
 ## 7. After the tag exists
 
