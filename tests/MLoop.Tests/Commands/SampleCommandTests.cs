@@ -1,3 +1,4 @@
+using MLoop.CLI.Infrastructure.ML;
 using MLoop.CLI.Commands;
 using MLoop.Core.Data;
 using MLoop.DataStore.Interfaces;
@@ -17,7 +18,7 @@ public class SampleCommandTests
     [InlineData("feedbackpriority", SamplingStrategy.FeedbackPriority)]
     public void ParseStrategy_ValidStrategies_ReturnsParsed(string input, SamplingStrategy expected)
     {
-        Assert.Equal(expected, SampleCommand.ParseStrategy(input));
+        Assert.Equal(expected, FeedbackSamples.ParseStrategy(input));
     }
 
     [Theory]
@@ -26,7 +27,7 @@ public class SampleCommandTests
     [InlineData("head")]
     public void ParseStrategy_InvalidStrategies_ReturnsNull(string input)
     {
-        Assert.Null(SampleCommand.ParseStrategy(input));
+        Assert.Null(FeedbackSamples.ParseStrategy(input));
     }
 
     #endregion

@@ -160,6 +160,23 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
             .Select(f => f.GetProperty("weight").GetDouble())
             .Should().Equal(4.0);
 
+        // The feedback becomes a retraining set over HTTP, as `mloop sample create --model`: the actual value
+        // under the model's label, and the weight the feedback carried.
+        var sample = await _client.PostAsJsonAsync("/samples", new { name = modelName, rows = 10, strategy = "feedback-priority" });
+        sample.StatusCode.Should().Be(HttpStatusCode.OK, await sample.Content.ReadAsStringAsync());
+        var sampled = JsonSerializer.Deserialize<JsonElement>(await sample.Content.ReadAsStringAsync());
+        sampled.GetProperty("labeledCount").GetInt32().Should().Be(1);
+        sampled.GetProperty("labelColumn").GetString().Should().Be("Label");
+        sampled.GetProperty("weightColumn").GetString().Should().Be("weight");
+        var sampleFile = File.ReadAllLines(Path.Combine(_factory.TestProjectRoot, sampled.GetProperty("path").GetString()!));
+        sampleFile[0].Should().Be("x1,x2,Label,weight");   // the inputs as the client named them
+        sampleFile[1].Should().EndWith(",bird,4");
+
+        (await _client.PostAsJsonAsync("/samples", new { name = modelName, strategy = "sideways" }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.PostAsJsonAsync("/samples", new { name = "never-predicted" }))
+            .StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.NotFound);
+
         var trigger = JsonSerializer.Deserialize<JsonElement>(await _client.GetStringAsync($"/trigger?name={modelName}"));
         trigger.GetProperty("conditions").EnumerateArray().Select(c => c.GetProperty("type").GetString())
             .Should().BeEquivalentTo(MLoop.Ops.Services.RetrainingDefaults.All.Select(c => c.Type.ToString()),

@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   row reviewed with probability *p*, 1/*p*. Finite and not negative; absent counts 1. `feedback list` and
   `GET /feedback` show it, and `feedback metrics` counts each prediction by its weight when any entry has one
   (`weighted` in `--json`).
+- `POST /samples` — a retraining set from logged predictions and feedback over HTTP, as `mloop sample create
+  --model` (admin). `POST /train` takes `additionalDataFiles`, merged after `dataFile` as `mloop train --data a b`
+  (a file without the weight column counts 1); `GET /jobs/{id}` shows them.
 - `mloop sample create --model` strategies `stratified` and `low-confidence` — the sampler had both, the command
   did not accept them.
 
@@ -29,6 +32,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with the value its rows take — before the cancellation token.
 
 ### Fixed
+
+- A `POST /train` job trained on its file as given: `maxRows` was recorded and never applied, and rows with an empty
+  label were trained on (an empty label a class of its own). A job now prepares its data as `mloop train` does —
+  read as a table, sampled to `maxRows`, rows without a label dropped where the task drops them.
+- `POST /train` without `timeLimitSeconds` or `testSplit` used 300 s and 0.2 over what `mloop.yaml` set. Both are
+  optional now, and an absent one is left to `mloop.yaml`, then the default — as an absent `--time` is.
 
 - `mloop train --data a.csv b.csv --weight w` refused to merge when only some files had the weight column. A file
   without it is unweighted: its rows now count 1, so original training data and weighted feedback merge as they are.

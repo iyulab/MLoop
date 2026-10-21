@@ -457,8 +457,6 @@ public static class TrainCommand
             // T4.3: Handle --data option for external data paths
             else if (dataPaths is { Length: > 0 })
             {
-                var csvHelper = new CsvHelperImpl();
-
                 // Resolve all paths (support relative and absolute)
                 var resolvedPaths = new List<string>();
                 foreach (var path in dataPaths)
@@ -488,42 +486,6 @@ public static class TrainCommand
                         ValueLine.Write("    [grey]• [/]", Path.GetFileName(file));
                     }
 
-                    var csvMerger = new CsvMerger(csvHelper);
-
-                    // Each file is read as a table before the merge reads it as CSV — a JSON, Parquet or
-                    // Excel file otherwise had its raw text taken for a header. Reports keep naming the
-                    // files the user gave.
-                    var tables = new List<string>();
-                    var givenName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var file in resolvedPaths)
-                    {
-                        var table = await TabularDataFile.AsCsvAsync(file, records);
-                        tables.Add(table);
-                        givenName[Path.GetFileName(table)] = Path.GetFileName(file);
-                    }
-                    string Given(string name) => givenName.GetValueOrDefault(name, name);
-
-                    // A file without the weight column is unweighted: its rows count 1. That is how
-                    // the original training data merges with weighted feedback (`sample create --model`).
-                    IReadOnlyDictionary<string, string>? columnDefaults = string.IsNullOrEmpty(effectiveDefinition.Weight)
-                        ? null
-                        : new Dictionary<string, string> { [effectiveDefinition.Weight] = "1" };
-
-                    // Validate schemas
-                    var validation = await csvMerger.ValidateSchemaCompatibilityAsync(tables, columnDefaults);
-                    if (!validation.IsCompatible)
-                    {
-                        // validation.Message only counts the mismatch; the columns that actually
-                        // differ per file live in MismatchedColumns and were computed regardless —
-                        // surface them instead of making the user re-diff the files by hand.
-                        var perFile = string.Join("; ", validation.MismatchedColumns
-                            .Select(kv => $"{Markup.Escape(Given(kv.Key))}: {Markup.Escape(string.Join(", ", kv.Value))}"));
-                        ErrorConsole.Error(
-                            $"Schema mismatch between files: {validation.Message}",
-                            $"Columns unique to each file — {perFile}. Keep only the {validation.CommonColumns.Count} shared columns across files, or merge files with matching schemas.");
-                        return 1;
-                    }
-
                     // Merge to temp file in datasets directory
                     var datasetsPath = datasetDiscovery.GetDatasetsPath(projectRoot);
                     if (!Directory.Exists(datasetsPath))
@@ -531,25 +493,22 @@ public static class TrainCommand
                         Directory.CreateDirectory(datasetsPath);
                     }
 
-                    var mergedPath = Path.Combine(datasetsPath, "merged_train.csv");
-                    var mergeResult = await csvMerger.MergeAsync(tables, mergedPath, columnDefaults);
-
-                    if (!mergeResult.Success)
+                    var merge = await TrainingDataFiles.MergeAsync(
+                        resolvedPaths, effectiveDefinition.Weight, Path.Combine(datasetsPath, "merged_train.csv"), records);
+                    if (merge.Path is null)
                     {
-                        ErrorConsole.Error(
-                            $"Failed to merge files: {mergeResult.Error}",
-                            "Check that each file is a valid, non-empty CSV with a header row.");
+                        ErrorConsole.Error(Markup.Escape(merge.Error!), Markup.Escape(merge.Guidance!));
                         return 1;
                     }
 
-                    AnsiConsole.MarkupLine($"[green]✓[/] Merged [cyan]{mergeResult.TotalRows}[/] rows from {resolvedPaths.Count} files");
-                    foreach (var (fileName, rowCount) in mergeResult.RowsPerFile)
+                    AnsiConsole.MarkupLine($"[green]✓[/] Merged [cyan]{merge.TotalRows}[/] rows from {resolvedPaths.Count} files");
+                    foreach (var (fileName, rowCount) in merge.RowsPerFile)
                     {
-                        AnsiConsole.MarkupLine($"    [grey]• {Markup.Escape(Given(fileName))}: {rowCount} rows[/]");
+                        AnsiConsole.MarkupLine($"    [grey]• {Markup.Escape(fileName)}: {rowCount} rows[/]");
                     }
                     AnsiConsole.WriteLine();
 
-                    resolvedDataFile = mergedPath;
+                    resolvedDataFile = merge.Path;
                 }
             }
             // Auto-merge if requested and no specific data file provided
@@ -672,7 +631,7 @@ public static class TrainCommand
                 && !DataLoaderFactory.IsDirectoryBased(effectiveDefinition.Task);
 
             // Use explicit parameter if provided, otherwise the task's default (see DropsMissingLabelsByDefault)
-            var shouldDropMissingLabels = dropMissingLabels ?? DropsMissingLabelsByDefault(effectiveDefinition.Task);
+            var shouldDropMissingLabels = dropMissingLabels ?? TrainingInput.DropsMissingLabelsByDefault(effectiveDefinition.Task);
 
             if (shouldDropMissingLabels && !string.IsNullOrEmpty(effectiveDefinition.Label))
             {
@@ -1259,19 +1218,6 @@ public static class TrainCommand
     /// object detection uses <c>datasets/coco</c>, image classification uses <c>datasets/images</c>,
     /// both finally falling back to <c>datasets</c>. Returns null if no directory exists.
     /// </summary>
-    /// <summary>
-    /// Whether rows whose label is empty are dropped when the user has not said. A row without a target
-    /// can neither teach a supervised model nor score it. This was the default for classification only,
-    /// and a recommendation set whose unrated visits (22% of rows) stayed in trained and scored a model
-    /// at R² 0.54 — 0.54 that was not there: with those rows dropped the same model scored −0.64, below
-    /// the quality gate. A time series is the exception — its label is the series, and dropping a row
-    /// would close up the time between its neighbours — as are unsupervised tasks and image directories.
-    /// </summary>
-    internal static bool DropsMissingLabelsByDefault(string? task) =>
-        AutoMLRunner.RequiresLabel(task)
-        && !AutoMLRunner.IsTimeSeriesTask(task)
-        && !DataLoaderFactory.IsDirectoryBased(task);
-
     private static string? ResolveDirectoryDataset(string task, string? dataFile, string[]? dataPaths, string projectRoot)
     {
         static string Full(string root, string p) =>

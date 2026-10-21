@@ -1419,6 +1419,60 @@ app.MapGet("/feedback", async (
 .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
 .RequireAuthorization();
 
+// A retraining set from logged predictions and their feedback — `mloop sample create --model` over HTTP.
+// The file it writes is what POST /train takes in additionalDataFiles.
+app.MapPost("/samples", async (
+    [FromBody] SampleRequest request,
+    ProjectRootPath projectRootPath,
+    IFileSystemManager fileSystem,
+    IProjectDiscovery discovery,
+    ILogger<Program> logger,
+    CancellationToken ct) =>
+{
+    var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
+    var strategy = FeedbackSamples.ParseStrategy(request.Strategy ?? "random");
+    if (strategy is null)
+        return Results.BadRequest(new { error = $"Unknown strategy '{request.Strategy}'. {FeedbackSamples.StrategyGuidance}." });
+    if (request.Rows is <= 0)
+        return Results.BadRequest(new { error = "rows is a positive number of rows." });
+
+    var columns = await FeedbackSamples.ColumnsAsync(fileSystem, discovery, modelName, ct);
+    if (columns is null)
+        return Results.BadRequest(new { error = FeedbackSamples.NoLabelError(modelName) });
+
+    var projectRoot = projectRootPath.Value;
+    var outputPath = FeedbackSamples.DefaultPath(projectRoot, modelName);
+    try
+    {
+        var result = await new FileDataSampler(projectRoot).SampleAsync(
+            modelName, request.Rows ?? 1000, strategy.Value, outputPath, columns, ct);
+        logger.LogInformation("Sampled {Count} rows ({Labeled} with feedback) for model '{ModelName}'",
+            result.SampledCount, result.LabeledCount, modelName);
+        return Results.Ok(new
+        {
+            modelName,
+            path = Path.GetRelativePath(projectRoot, result.OutputPath),
+            sampledCount = result.SampledCount,
+            labeledCount = result.LabeledCount,
+            totalAvailable = result.TotalAvailable,
+            strategy = result.StrategyUsed.ToString(),
+            labelColumn = result.LabelColumn,
+            weightColumn = result.WeightColumn,
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        // No logged predictions for the model: nothing to sample, said as the CLI says it.
+        return Results.NotFound(new { error = ex.Message });
+    }
+})
+.WithName("CreateSample")
+.WithTags("Monitoring")
+.Produces<object>(StatusCodes.Status200OK)
+.Produces<object>(StatusCodes.Status400BadRequest)
+.Produces<object>(StatusCodes.Status404NotFound)
+.RequireAuthorization("Admin");
+
 // Submit feedback endpoint (secured)
 app.MapPost("/feedback", async (
     [FromBody] FeedbackRequest request,
@@ -1575,13 +1629,16 @@ app.MapPost("/train", async (
     if (metricRejection != null)
         return Results.BadRequest(new { error = metricRejection });
 
-    // Validate data file exists and is within project root
+    // Validate every data file exists and is within project root
     var trainProjectRoot = projectRootPath.Value;
-    var resolvedDataFile = Path.GetFullPath(request.DataFile);
-    if (!resolvedDataFile.StartsWith(Path.GetFullPath(trainProjectRoot), StringComparison.OrdinalIgnoreCase))
-        return Results.BadRequest(new { error = "Data file must be within the project directory." });
-    if (!File.Exists(resolvedDataFile))
-        return Results.BadRequest(new { error = $"Data file not found: {request.DataFile}" });
+    foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
+    {
+        var resolvedDataFile = Path.GetFullPath(file);
+        if (!resolvedDataFile.StartsWith(Path.GetFullPath(trainProjectRoot), StringComparison.OrdinalIgnoreCase))
+            return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
+        if (!File.Exists(resolvedDataFile))
+            return Results.BadRequest(new { error = $"Data file not found: {file}" });
+    }
 
     // Refused now, not inside the job: what the project's mloop.yaml asks for that this run could
     // not honour (a weight on a task it does not reach, prep steps the API does not run).
@@ -1655,6 +1712,7 @@ app.MapGet("/jobs/{id}", (
         jobId = job.JobId,
         modelName = job.ModelName,
         dataFile = job.DataFile,
+        additionalDataFiles = job.AdditionalDataFiles,
         labelColumn = job.LabelColumn,
         task = job.Task,
         timeLimitSeconds = job.TimeLimitSeconds,
@@ -1762,6 +1820,9 @@ public record EvaluateRequest(
     string? Name = null,
     string? Weight = null,
     string? Against = null);
+
+/// <summary>A <c>POST /samples</c> body — the options of <c>mloop sample create --model</c>.</summary>
+public record SampleRequest(string? Name = null, int? Rows = null, string? Strategy = null);
 
 public record FeedbackRequest(
     string PredictionId,

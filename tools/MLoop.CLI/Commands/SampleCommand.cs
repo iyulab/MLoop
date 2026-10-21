@@ -4,6 +4,7 @@ using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
@@ -190,31 +191,25 @@ public static class SampleCommand
             var projectRoot = FindProjectRoot();
             if (projectRoot == null) return 1;
 
-            var strategy = ParseStrategy(strategyName);
+            var strategy = FeedbackSamples.ParseStrategy(strategyName);
             if (strategy == null)
             {
                 ErrorConsole.Error($"Unknown strategy '{Markup.Escape(strategyName)}'",
-                    "Valid strategies: random, recent, feedback-priority, stratified, low-confidence");
+                    FeedbackSamples.StrategyGuidance);
                 return 1;
             }
 
-            var columns = await ResolveRetrainingColumnsAsync(modelName.ToLowerInvariant());
+            var fileSystem = new FileSystemManager();
+            var columns = await FeedbackSamples.ColumnsAsync(fileSystem, new ProjectDiscovery(fileSystem), modelName.ToLowerInvariant());
             if (columns is null)
             {
-                ErrorConsole.Error(
-                    $"No label column is known for model '{Markup.Escape(modelName)}'.",
-                    "The dataset is written under the label the model trains on — read from its production experiment, "
-                    + "or from `label:` under the model in mloop.yaml.");
+                ErrorConsole.Error(Markup.Escape(FeedbackSamples.NoLabelError(modelName)), FeedbackSamples.NoLabelGuidance);
                 return 1;
             }
 
             // Generate default output path if not provided
             if (string.IsNullOrEmpty(outputPath))
-            {
-                var samplesDir = Path.Combine(projectRoot, ".mloop", "samples");
-                var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                outputPath = Path.Combine(samplesDir, $"{modelName.ToLowerInvariant()}_{timestamp}.csv");
-            }
+                outputPath = FeedbackSamples.DefaultPath(projectRoot, modelName);
 
             var sampler = new FileDataSampler(projectRoot);
 
@@ -285,19 +280,6 @@ public static class SampleCommand
             ErrorSuggestions.DisplayError(ex, "sample");
             return 1;
         }
-    }
-
-    internal static SamplingStrategy? ParseStrategy(string name)
-    {
-        return name.ToLowerInvariant() switch
-        {
-            "random" => SamplingStrategy.Random,
-            "recent" => SamplingStrategy.Recent,
-            "feedback-priority" or "feedbackpriority" => SamplingStrategy.FeedbackPriority,
-            "stratified" => SamplingStrategy.Stratified,
-            "low-confidence" or "lowconfidence" => SamplingStrategy.LowConfidence,
-            _ => null
-        };
     }
 
     internal static CsvSamplingStrategy? ParseCsvStrategy(string name)
@@ -418,31 +400,6 @@ public static class SampleCommand
 
         AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();
-    }
-
-    /// <summary>
-    /// The columns the model trains with: its production experiment's label and weight, else the model's
-    /// definition in mloop.yaml. <c>null</c> when neither names a label.
-    /// </summary>
-    private static async Task<RetrainingColumns?> ResolveRetrainingColumnsAsync(string modelName)
-    {
-        var fileSystem = new FileSystemManager();
-        var discovery = new ProjectDiscovery(fileSystem);
-        var store = new ExperimentStore(fileSystem, discovery);
-        var registry = new ModelRegistry(fileSystem, discovery, store);
-
-        var production = await registry.GetProductionAsync(modelName, CancellationToken.None);
-        if (production?.ExperimentId is { } id && store.ExperimentExists(modelName, id))
-        {
-            var experiment = await store.LoadAsync(modelName, id, CancellationToken.None);
-            if (!string.IsNullOrWhiteSpace(experiment.Config.LabelColumn))
-                return new RetrainingColumns(experiment.Config.LabelColumn, experiment.Config.WeightColumn);
-        }
-
-        var config = await new ConfigLoader(fileSystem, discovery).LoadUserConfigAsync();
-        return config.Models.TryGetValue(modelName, out var definition) && !string.IsNullOrWhiteSpace(definition.Label)
-            ? new RetrainingColumns(definition.Label, definition.Weight)
-            : null;
     }
 
     private static string? FindProjectRoot()

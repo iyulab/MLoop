@@ -1,3 +1,5 @@
+using MLoop.API;
+using MLoop.CLI.Infrastructure.ML;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Models;
@@ -89,7 +91,27 @@ public class TrainingJobRunner : BackgroundService
                 job.ModelName, job.Task, job.LabelColumn, job.TimeLimitSeconds, job.Metric, job.TestSplit, stoppingToken);
             if (definition is null)
                 throw new InvalidOperationException(refusal);
-            var config = ModelTrainingConfig.From(definition, job.ModelName, job.DataFile, job.TimeLimitSeconds, job.TestSplit);
+            // The data the job trains on, prepared as `mloop train` prepares its own: more files merged after
+            // the first (a file without the weight column counts 1), then read as a table, sampled to
+            // MaxRows, rows without a label dropped.
+            var projectRoot = scope.ServiceProvider.GetRequiredService<ProjectRootPath>().Value;
+            var dataFile = job.DataFile;
+            if (job.AdditionalDataFiles.Count > 0)
+            {
+                var merge = await TrainingDataFiles.MergeAsync(
+                    [Path.GetFullPath(job.DataFile), .. job.AdditionalDataFiles.Select(Path.GetFullPath)],
+                    definition.Weight,
+                    Path.Combine(projectRoot, ".mloop", "merged", $"{job.JobId}.csv"));
+                dataFile = merge.Path ?? throw new InvalidOperationException($"{merge.Error} {merge.Guidance}");
+            }
+            var prepared = await TrainingInput.PrepareAsync(dataFile, definition, job.MaxRows, projectRoot);
+            if (prepared.DroppedMissingLabels > 0)
+                _jobStore.UpdateStatus(job.JobId, JobStatus.Running,
+                    $"Training started — {prepared.DroppedMissingLabels} rows without a label dropped");
+
+            var config = ModelTrainingConfig.From(definition, job.ModelName, prepared.DataFile,
+                definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
+                definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit);
 
             var result = await trainingEngine.TrainAsync(config, cancellationToken: stoppingToken);
 

@@ -1,4 +1,4 @@
-using MLoop.CLI.Commands;
+using MLoop.CLI.Infrastructure.ML;
 
 namespace MLoop.Tests.Commands;
 
@@ -18,7 +18,7 @@ public class MissingLabelDefaultTests
     [InlineData("ner")]
     [InlineData("question-answering")]
     public void A_task_whose_label_is_a_target_drops_rows_without_one(string task) =>
-        Assert.True(TrainCommand.DropsMissingLabelsByDefault(task));
+        Assert.True(TrainingInput.DropsMissingLabelsByDefault(task));
 
     [Theory]
     [InlineData("forecasting")]
@@ -28,5 +28,5 @@ public class MissingLabelDefaultTests
     [InlineData("image-classification")]
     [InlineData("object-detection")]
     public void A_series_an_unsupervised_task_or_an_image_directory_keeps_its_rows(string task) =>
-        Assert.False(TrainCommand.DropsMissingLabelsByDefault(task));
+        Assert.False(TrainingInput.DropsMissingLabelsByDefault(task));
 }

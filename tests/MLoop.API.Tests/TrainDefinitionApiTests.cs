@@ -92,4 +92,66 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         experiment.Config.InputSchema!.Columns.Single(c => c.Name == "z").Purpose.Should().Be("Exclude");
         experiment.Config.InputSchema.Columns.Single(c => c.Name == "w").Purpose.Should().Be("Exclude");
     }
+
+    [Fact]
+    public async Task AJob_MergesAdditionalFiles_UnweightedRowsCountOne_UnlabeledRowsDropped_BudgetFromTheYaml()
+    {
+        // The original training data and a retraining set from feedback: the second has no weight column
+        // (its rows count 1) and rows nobody gave feedback on (empty label — dropped, not a class).
+        var data = WriteData();
+        var extra = Path.Combine(_factory.TestProjectRoot, "datasets", "feedback.csv");
+        File.WriteAllText(extra, "x,z,y\n0.9,0.1,true\n0.1,0.2,false\n0.5,0.3,\n");
+        WriteYaml("wmerge", "    task: binary-classification\n    label: y\n    weight: w\n    training:\n      time_limit_seconds: 5\n");
+
+        // No timeLimitSeconds in the request: mloop.yaml's 5 s decides, as an absent --time does.
+        var response = await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = data, labelColumn = "y", task = "binary-classification", name = "wmerge",
+            additionalDataFiles = new[] { extra },
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        var jobId = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("jobId").GetString();
+
+        JsonElement job = default;
+        string? status = null;
+        for (var i = 0; i < 240 && status is not ("Completed" or "Failed"); i++)
+        {
+            await Task.Delay(500);
+            job = JsonDocument.Parse(await _client.GetStringAsync($"/jobs/{jobId}")).RootElement;
+            status = job.GetProperty("status").GetString();
+        }
+        status.Should().Be("Completed", job.GetRawText());
+        job.TryGetProperty("timeLimitSeconds", out var limit).Should().Be(false, "an absent budget is left to mloop.yaml");
+        job.GetProperty("additionalDataFiles").EnumerateArray().Select(f => f.GetString()).Should().Equal(extra);
+
+        var merged = File.ReadAllLines(Path.Combine(_factory.TestProjectRoot, ".mloop", "merged", $"{jobId}.csv"));
+        merged.Should().HaveCount(1 + 200 + 3);
+        merged.TakeLast(3).Should().AllSatisfy(line => line.Split(',')[2].Should().Be("1"));
+
+        var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();
+        var experiment = await store.LoadAsync("wmerge", "exp-001", CancellationToken.None);
+        experiment.Config.WeightColumn.Should().Be("w");
+        experiment.Config.InputSchema!.Columns.Single(c => c.Name == "y").CategoricalValues
+            .Should().BeEquivalentTo(["true", "false"], "an empty label is not a class");
+    }
+
+    [Fact]
+    public async Task AnAdditionalFileOutsideTheProjectOrMissing_IsRefusedBeforeAJobExists()
+    {
+        var data = WriteData();
+        var missing = await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = data, labelColumn = "y", task = "binary-classification",
+            additionalDataFiles = new[] { Path.Combine(_factory.TestProjectRoot, "datasets", "nope.csv") },
+        });
+        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await missing.Content.ReadAsStringAsync()).Should().Contain("nope.csv");
+
+        var outside = await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = data, labelColumn = "y", task = "binary-classification",
+            additionalDataFiles = new[] { Path.Combine(Path.GetTempPath(), "elsewhere.csv") },
+        });
+        outside.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

@@ -16,6 +16,7 @@ public class TrainingJobStore
             JobId = jobId,
             ModelName = request.ModelName,
             DataFile = request.DataFile,
+            AdditionalDataFiles = request.AdditionalDataFiles ?? [],
             LabelColumn = request.LabelColumn,
             Task = request.Task,
             TimeLimitSeconds = request.TimeLimitSeconds,
@@ -70,11 +71,12 @@ public class TrainingJob
     public required string JobId { get; init; }
     public required string ModelName { get; init; }
     public required string DataFile { get; init; }
+    public IReadOnlyList<string> AdditionalDataFiles { get; init; } = [];
     public required string LabelColumn { get; init; }
     public required string Task { get; init; }
-    public int TimeLimitSeconds { get; set; }
+    public int? TimeLimitSeconds { get; set; }
     public string Metric { get; set; } = "auto";
-    public double TestSplit { get; set; } = 0.2;
+    public double? TestSplit { get; set; }
     public int? MaxRows { get; set; }
 
     public JobStatus Status { get; set; }
@@ -88,15 +90,29 @@ public class TrainingJob
     public string? BestTrainer { get; set; }
 }
 
+/// <summary>A <c>POST /train</c> body.</summary>
+/// <param name="DataFile">The training data, within the project.</param>
+/// <param name="LabelColumn">The label column (the request's, in the place of <c>--label</c>).</param>
+/// <param name="Task">The task (in the place of <c>--task</c>).</param>
+/// <param name="Name">The model; <c>default</c> when absent.</param>
+/// <param name="Metric">The metric to optimize; <c>auto</c> leaves it to mloop.yaml, then the task.</param>
+/// <param name="MaxRows">Rows to sample the data down to, as <c>--max-rows</c>.</param>
+/// <param name="TimeLimitSeconds">The training budget; null leaves it to mloop.yaml, then the default — as an absent <c>--time</c> does.</param>
+/// <param name="TestSplit">The held-out share; null leaves it to mloop.yaml, then the default.</param>
+/// <param name="AdditionalDataFiles">
+/// Files merged after <paramref name="DataFile"/>, as <c>mloop train --data a.csv b.csv</c> — a retraining set from
+/// <c>POST /samples</c>, say. A file without the model's weight column counts its rows 1.
+/// </param>
 public record TrainingJobRequest(
     string DataFile,
     string LabelColumn,
     string Task,
     string? Name = null,
-    int TimeLimitSeconds = 300,
+    int? TimeLimitSeconds = null,
     string Metric = "auto",
-    double TestSplit = 0.2,
-    int? MaxRows = null)
+    double? TestSplit = null,
+    int? MaxRows = null,
+    IReadOnlyList<string>? AdditionalDataFiles = null)
 {
     public string ModelName => string.IsNullOrWhiteSpace(Name) ? "default" : Name.Trim().ToLowerInvariant();
 }

@@ -10,8 +10,8 @@ public static class TrainingDefinition
 {
     /// <summary>The definition, or why the request cannot be trained as asked.</summary>
     public static async Task<(ModelDefinition? Definition, string? Error)> ResolveAsync(
-        ConfigLoader configLoader, string modelName, string task, string label, int timeLimitSeconds,
-        string metric, double testSplit, CancellationToken cancellationToken = default)
+        ConfigLoader configLoader, string modelName, string task, string label, int? timeLimitSeconds,
+        string metric, double? testSplit, CancellationToken cancellationToken = default)
     {
         var config = await configLoader.LoadUserConfigAsync(cancellationToken);
         ModelDefinition definition;
