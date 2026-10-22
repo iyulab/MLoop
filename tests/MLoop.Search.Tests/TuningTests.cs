@@ -110,6 +110,30 @@ public sealed class TuningTests
     }
 
     [Fact]
+    public void Eci_AdmittingEverySchema_DrawsAsAnUnrestrictedProposal()
+    {
+        var plain = new EciSchemaProposer([("lbfgs", 11.513), ("fasttree", 3.701), ("lightgbm", 4.765)], seed: 3);
+        var admitting = new EciSchemaProposer([("lbfgs", 11.513), ("fasttree", 3.701), ("lightgbm", 4.765)], seed: 3);
+        plain.Update("fasttree", loss: -0.80, cost: 2);
+        admitting.Update("fasttree", loss: -0.80, cost: 2);
+
+        Assert.Equal(
+            Enumerable.Range(0, 200).Select(_ => plain.Propose()),
+            Enumerable.Range(0, 200).Select(_ => admitting.Propose(_ => true)));
+    }
+
+    [Fact]
+    public void Eci_ProposesOnlyAdmittedSchemas_AndNothingWhenNoneIs()
+    {
+        var proposer = new EciSchemaProposer([("lbfgs", 11.513), ("fasttree", 3.701), ("lightgbm", 4.765)], seed: 0);
+
+        Assert.Equal("lightgbm", proposer.Propose(id => id != "fasttree"));   // the cheapest admitted one first
+        proposer.Update("lightgbm", loss: -0.80, cost: 2);
+        Assert.All(Enumerable.Range(0, 500).Select(_ => proposer.Propose(id => id != "lbfgs")), id => Assert.NotEqual("lbfgs", id));
+        Assert.Null(proposer.Propose(_ => false));
+    }
+
+    [Fact]
     public void Eci_AFailedTrial_DoublesTheLargestEci()
     {
         var proposer = new EciSchemaProposer([("a", 1), ("b", 5)], seed: 0);

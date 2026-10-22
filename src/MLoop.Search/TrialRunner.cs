@@ -65,17 +65,19 @@ public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, str
 /// <item><b>The refit is budgeted</b>: the search stops starting trials once the time left is what refitting
 /// the best is expected to take (its mean fold fit × folds ⁄ (folds − 1)), and a trial still running at that
 /// point stops at its next fold and is dropped — it is neither a result nor a failure.</item>
-/// <item><b>A trial that cannot finish is not started.</b> Past the first success, the search ends rather than
-/// start a trial whose schema's last trial took longer than the time left before the refit — the tuner grows
-/// a schema's settings from there, so the new one would take at least as long, run past the deadline by
-/// up to a fold, and be dropped. The trials that do run are the seed's, in its order; the end comes sooner.</item>
+/// <item><b>A trial that cannot finish is not started.</b> Past the first success, a schema whose last trial
+/// took longer than the time left before the refit is not proposed — the tuner grows a schema's settings
+/// from there, so its next trial would take at least as long, run past the deadline by up to a fold, and be
+/// dropped. The draw goes to the schemas that still fit, so the tail of the budget is spent on cheaper
+/// trainers; the search ends when none fits.</item>
 /// <item><b>A failed trial is recorded and the search goes on</b>; the tuner reads it as the worst loss.</item>
 /// <item><b>Cancellation by the caller stops at once</b> and throws; budget expiry keeps the best.</item>
 /// <item><b>A seed fixes the search; the clock only ends it.</b> The tuners and the schema proposer read each
 /// trial's loss and its schema's relative cost (<see cref="TrainerCandidate.InitialCost"/>), never its measured
 /// time — so the same seed on the same data proposes the same trials in the same order on any machine, and a
-/// budget decides only how many of them run. Measured time goes to <see cref="TrialResult.RuntimeSeconds"/>
-/// and the refit reserve.</item>
+/// budget decides how many of them run. Measured time goes to <see cref="TrialResult.RuntimeSeconds"/>, the
+/// refit reserve, and — near the end of a budget — which schemas still fit; there, and only there, a busy
+/// machine can draw differently from an idle one.</item>
 /// </list>
 /// </remarks>
 public sealed class TrialRunner
@@ -124,11 +126,12 @@ public sealed class TrialRunner
             if (_request.MaxTrials is { } max && trialId >= max && best is not null)
                 break;
 
-            var schemaId = proposer.Propose();
-            var schema = schemas.First(s => s.Id == schemaId);
-            if (best is not null && lastSeconds.TryGetValue(schemaId, out var expected)
-                && clock.Elapsed.TotalSeconds + expected > deadline)
+            // Past the first success, only a schema whose last trial fits the time left may run next.
+            var left = deadline - clock.Elapsed.TotalSeconds;
+            var schemaId = proposer.Propose(id => best is null || !lastSeconds.TryGetValue(id, out var expected) || expected <= left);
+            if (schemaId is null)
                 break;
+            var schema = schemas.First(s => s.Id == schemaId);
             var point = tuners[schemaId].Propose(trialId);
             var trialContext = new MLContext(settings.Seed);
             var featurizer = Featurizer.Build(trialContext, train.Schema, roles, schema.Encoding, columns.Features)

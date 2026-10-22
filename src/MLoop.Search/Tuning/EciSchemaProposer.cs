@@ -45,27 +45,39 @@ public sealed class EciSchemaProposer
     public IReadOnlyDictionary<string, double> Eci => _eci;
 
     /// <summary>The schema for the next trial.</summary>
-    public string Propose()
+    public string Propose() => Propose(_ => true)!;
+
+    /// <summary>
+    /// The schema for the next trial among those <paramref name="allowed"/> admits, with the others' share
+    /// spread over them — or <see langword="null"/> when it admits none. One draw either way, so the same
+    /// admitted sets give the same schemas.
+    /// </summary>
+    public string? Propose(Func<string, bool> allowed)
     {
+        ArgumentNullException.ThrowIfNull(allowed);
+        var candidates = _schemas.Where(allowed).ToArray();
+        if (candidates.Length == 0)
+            return null;
+
         if (!_initialized)
         {
             _initialized = true;
-            return _eci.OrderBy(kv => kv.Value).First().Key;
+            return candidates.OrderBy(id => _eci[id]).First();
         }
 
-        var probabilities = _schemas.Select(id => (1 / _eci[id]) + double.Epsilon).ToArray();
+        var probabilities = candidates.Select(id => (1 / _eci[id]) + double.Epsilon).ToArray();
         var total = probabilities.Sum();
         var draw = _rand.NextDouble();
         var sum = 0.0;
         int i;
-        for (i = 0; i != _schemas.Length; ++i)
+        for (i = 0; i != candidates.Length; ++i)
         {
             sum += probabilities[i] / total;
             if (sum > draw)
                 break;
         }
         // Rounding can leave the cumulative sum a hair under the draw; the last schema then takes it.
-        return _schemas[Math.Min(i, _schemas.Length - 1)];
+        return candidates[Math.Min(i, candidates.Length - 1)];
     }
 
     /// <summary>Takes a trial's result for <paramref name="schema"/>: its <paramref name="loss"/> (to minimize) and <paramref name="cost"/>.</summary>

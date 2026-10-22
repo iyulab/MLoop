@@ -31,6 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   column's purpose (`ColumnLayout`). It gives the layout ML.NET AutoML's `InferColumns` gives, field for field,
   except that a file over 8 MB is sampled from fixed positions (the same file always gives the same layout) and no
   column is read as an image path. Every command reads its layout from it (`train`, `predict`, `evaluate`, `info`).
+- `EciSchemaProposer.Propose(allowed)`: a proposal among the schemas a predicate admits (`null` when it admits
+  none). `TrialRunner` uses it near the end of a budget — a schema whose last trial no longer fits the time left is
+  passed over for one that does, instead of the search ending with the budget unspent.
 
 ### Changed
 

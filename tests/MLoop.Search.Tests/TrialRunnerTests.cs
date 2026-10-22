@@ -195,6 +195,39 @@ public sealed class TrialRunnerTests
         Assert.Equal(2, builds);
     }
 
+    /// <summary>
+    /// When the slow schema no longer fits the time left, the search goes on with the one that does, rather
+    /// than end with budget unspent: the slow trainer takes about 2 s a trial, the fast one a fraction, under
+    /// a 6 s budget.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Slow")]   // rests on wall-clock margins, so it measures the runner too
+    public void WhenOneSchemaNoLongerFits_TheTimeLeftGoesToOneThatDoes()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, _) = Data(ml);
+        var lbfgs = CandidateCatalog.Binary(name => name == "LbfgsLogisticRegression").Single();
+        var slow = lbfgs with
+        {
+            Name = "Slow",
+            InitialCost = 0.1,   // the cheapest by estimate, so it is drawn first
+            Build = (context, point, columns, settings) =>
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(2));
+                return lbfgs.Build(context, point, columns, settings);
+            },
+        };
+        var numeric = new ColumnRoles("Label", [new("X", ColumnRole.Numeric), new("Z", ColumnRole.Numeric)]);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = new TrialRunner(Request(ml, TimeSpan.FromSeconds(6), candidates: [slow, lbfgs])).Run(data, numeric);
+
+        var lastSlow = result.Trials.ToList().FindLastIndex(t => t.Trainer == "Slow");
+        Assert.True(lastSlow >= 0);
+        Assert.Contains(result.Trials.Skip(lastSlow + 1), t => t.Trainer == lbfgs.Name);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(9), $"took {clock.Elapsed.TotalSeconds:0.0} s");
+    }
+
     [Fact]
     public void AFailedTrial_IsRecorded_AndTheSearchGoesOn()
     {
