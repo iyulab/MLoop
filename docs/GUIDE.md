@@ -1726,10 +1726,11 @@ Validation passed
 
 Business metrics of your own, computed after training over the held-out rows the run's metrics were measured on,
 and recorded with them — in `metrics.json`, the results table, `report.md`, `mloop list --json` and
-`mloop compare`. A post-train hook sees them in `Metrics`.
+`mloop compare`. A post-train hook sees them in `Metrics`. `mloop evaluate` (and `POST /evaluate`) computes them
+again over the file it evaluates, beside the standard metrics.
 
-**Script Location**: `.mloop/scripts/metrics/` — one metric per file. Ready-made examples (profit, churn value, ROI)
-are in `docs/examples/metrics/`.
+**Script Location**: `.mloop/scripts/metrics/` — every `IMLoopMetric` in every file, files in name order.
+Ready-made examples (profit, churn value, ROI) are in `docs/examples/metrics/`.
 
 ```csharp
 using System.Threading.Tasks;

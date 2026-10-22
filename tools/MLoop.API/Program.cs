@@ -1272,7 +1272,8 @@ app.MapPost("/evaluate", async (
         var (metrics, confusion) = await evaluationEngine.EvaluateAsync(
             modelPath, resolvedTestPath, labelColumn, taskType, ct,
             experiment.Config.InputSchema, experiment.Config.GroupColumn,
-            experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn);
+            experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn,
+            new MLoop.Core.Metrics.MetricEngine(projectRootPath.Value, new MLoop.CLI.Infrastructure.ML.ScriptConsoleLogger()));
 
         var comparison = baseline is null
             ? null

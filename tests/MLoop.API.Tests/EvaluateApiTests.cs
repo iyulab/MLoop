@@ -137,6 +137,35 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
     }
 
     [Fact]
+    public async Task TheProjectsMetricScripts_AreComputedOverTheEvaluatedRows()
+    {
+        var scripts = Directory.CreateDirectory(Path.Combine(_factory.TestProjectRoot, ".mloop", "scripts", "metrics")).FullName;
+        var script = Path.Combine(scripts, "RowCount.cs");
+        await File.WriteAllTextAsync(script, """
+            using System.Threading.Tasks;
+            using MLoop.Extensibility.Metrics;
+            public class RowCountMetric : IMLoopMetric
+            {
+                public string Name => "evaluated_rows";
+                public string Description => "";
+                public Task<MetricResult> CalculateAsync(MetricContext ctx)
+                    => Task.FromResult(new MetricResult { Name = Name, Value = ((bool[])ctx.Labels).Length });
+            }
+            """);
+        try
+        {
+            var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = _withoutWeight });
+
+            status.Should().Be(HttpStatusCode.OK, body.ToString());
+            body.GetProperty("metrics").GetProperty("evaluated_rows").GetDouble().Should().Be(200);
+        }
+        finally
+        {
+            File.Delete(script);
+        }
+    }
+
+    [Fact]
     public async Task ATabSeparatedFile_IsReadAsATable_AndARelativePathIsTheProjects()
     {
         var tsv = Path.Combine(_factory.TestProjectRoot, "datasets", "weighted.tsv");

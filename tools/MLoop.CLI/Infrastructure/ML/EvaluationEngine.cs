@@ -39,13 +39,14 @@ public class EvaluationEngine
         string? groupColumn = null,
         string? userColumn = null,
         string? itemColumn = null,
-        string? weightColumn = null)
+        string? weightColumn = null,
+        MLoop.Core.Metrics.MetricEngine? metricScripts = null)
     {
         if (!string.IsNullOrEmpty(weightColumn) && !WeightedResampling.Supports(taskType))
             throw new NotSupportedException(
                 $"Weighted evaluation (weight '{weightColumn}') applies to binary-classification, multiclass-classification and regression, not '{taskType}'.");
 
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             List<string> tempFiles = new();
             try
@@ -199,6 +200,10 @@ public class EvaluationEngine
                     ? ConfusionCounts.Of(predictions, taskType, labelColumn,
                         string.IsNullOrEmpty(weightColumn) ? null : WeightedResampling.ReadWeights(predictions, weightColumn), trainedSchema)
                     : null;
+
+                // The project's metric scripts over the same scored rows, as training computes them.
+                if (metricScripts is not null)
+                    await metricScripts.AddToAsync(metrics, _mlContext, predictions, taskType, labelColumn).ConfigureAwait(false);
 
                 // Single-authority guard: normalize any non-finite metric (NaN/±∞) to the
                 // direction-aware worst before it is returned/persisted (mirrors the training

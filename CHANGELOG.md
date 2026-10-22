@@ -56,10 +56,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Metric scripts in `.mloop/scripts/metrics/` were never computed — nothing ran them, although `mloop init` scaffolds
   the folder and the guide describes them. Training now computes each over the held-out rows and records it with the
-  run's metrics (`metrics.json`, results table, `list --json`, post-train hooks). A name the run already reports, or
-  a non-finite value, is skipped with a warning. The shipped examples (`docs/examples/metrics/`) did not compile
+  run's metrics (`metrics.json`, results table, `list --json`, post-train hooks), and `mloop evaluate` / `POST
+  /evaluate` compute them over the evaluated file. A name the run already reports, or a non-finite value, is skipped
+  with a warning. A script that did not compile used to vanish without a word when loaded through `ScriptDiscovery`;
+  the compiler's message is reported now. The shipped examples (`docs/examples/metrics/`) did not compile
   (missing `using` directives) and checked a task name MLoop never passes (`BinaryClassification` →
   `binary-classification`); the guide's and `mloop init`'s examples showed an interface that does not exist.
+- What a hook or metric script logs (`ctx.Logger`) reached stdout under `--json`, ahead of the document — `mloop
+  evaluate --json` with a metric script, `mloop train --json` with a hook that logs, could not be parsed. It goes
+  where the command's other narration goes.
 - The hooks README `mloop init` writes told users to put hooks in `.mloop/scripts/hooks/` itself; it names the stage
   folders now.
 

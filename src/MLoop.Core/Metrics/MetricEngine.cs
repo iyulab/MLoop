@@ -119,7 +119,7 @@ public class MetricEngine
 
     /// <summary>
     /// Executes all custom metrics and returns results.
-    /// Metrics are executed in alphabetical order.
+    /// Metrics run in the order of their files' names.
     /// </summary>
     /// <param name="context">Metric calculation context with predictions and labels</param>
     /// <returns>List of metric results from all executed metrics</returns>
@@ -127,51 +127,30 @@ public class MetricEngine
     public async Task<List<MetricResult>> ExecuteMetricsAsync(MetricContext context)
     {
         var results = new List<MetricResult>();
-        var metricsPath = GetMetricsDirectory();
-
-        // Zero-overhead check: if directory doesn't exist, return immediately
-        if (!Directory.Exists(metricsPath))
-        {
+        if (!HasMetrics())
             return results;  // No metrics = empty list (< 1ms performance)
+
+        // Found the way every script kind is found — every implementation in every file, files in name order.
+        var metrics = await new ScriptDiscovery(_projectRoot, Loader, _logger.Debug).DiscoverMetricsAsync().ConfigureAwait(false);
+        if (metrics.Count == 0)
+        {
+            _logger.Warning("⚠️  No metric implementations found in .mloop/scripts/metrics/");
+            return results;
         }
 
-        var scriptFiles = Directory.GetFiles(metricsPath, "*.cs", SearchOption.TopDirectoryOnly);
-
-        if (scriptFiles.Length == 0)
+        foreach (var metric in metrics)
         {
-            return results;  // No metrics found
-        }
-
-        // Execute metrics in alphabetical order
-        Array.Sort(scriptFiles, StringComparer.Ordinal);
-
-        foreach (var scriptFile in scriptFiles)
-        {
-            var scriptName = Path.GetFileName(scriptFile);
-
             try
             {
-                // Load and execute metric
-                var metrics = await Loader.LoadScriptAsync<IMLoopMetric>(scriptFile).ConfigureAwait(false);
-
-                if (metrics.Count == 0)
-                {
-                    _logger.Warning($"⚠️  No metric implementations found in {scriptName}");
-                    continue;
-                }
-
-                var metric = metrics[0];  // Use first implementation
                 _logger.Info($"📊 Calculating metric: {metric.Name}");
-
                 var result = await metric.CalculateAsync(context).ConfigureAwait(false);
                 results.Add(result);
-
                 _logger.Info($"   {result}");
             }
             catch (Exception ex)
             {
                 // Graceful degradation: Log error and continue with remaining metrics
-                _logger.Warning($"⚠️  Metric {scriptName} failed: {ex.Message}");
+                _logger.Warning($"⚠️  Metric '{metric.Name}' failed: {ex.Message}");
                 _logger.Debug($"Stack trace: {ex.StackTrace}");
             }
         }

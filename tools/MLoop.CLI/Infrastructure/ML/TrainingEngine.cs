@@ -58,8 +58,8 @@ public class TrainingEngine : ITrainingEngine
         // The one place training runs the project's hooks — for `mloop train` and `POST /train` alike.
         if (!string.IsNullOrEmpty(projectRoot))
         {
-            _hookEngine = new HookEngine(projectRoot, logger ?? new TrainingEngineLogger());
-            _metricEngine = new MLoop.Core.Metrics.MetricEngine(projectRoot, logger ?? new TrainingEngineLogger());
+            _hookEngine = new HookEngine(projectRoot, logger ?? new ScriptConsoleLogger());
+            _metricEngine = new MLoop.Core.Metrics.MetricEngine(projectRoot, logger ?? new ScriptConsoleLogger());
         }
     }
 
@@ -302,7 +302,7 @@ public class TrainingEngine : ITrainingEngine
                     ExperimentResult = null,
                     Metrics = null,
                     ProjectRoot = _projectRoot!,
-                    Logger = new TrainingEngineLogger(),
+                    Logger = new ScriptConsoleLogger(),
                     Metadata = new Dictionary<string, object>
                     {
                         ["DataFile"] = dataFilePath,
@@ -392,7 +392,7 @@ public class TrainingEngine : ITrainingEngine
                     ExperimentResult = autoMLResult,
                     Metrics = autoMLResult.Metrics,
                     ProjectRoot = _projectRoot!,
-                    Logger = new TrainingEngineLogger(),
+                    Logger = new ScriptConsoleLogger(),
                     Metadata = new Dictionary<string, object>
                     {
                         ["LabelColumn"] = config.LabelColumn,
@@ -1437,22 +1437,5 @@ public class TrainingEngine : ITrainingEngine
             $"({majorityShare:P1} of rows). The model is judged on {judgedOn ?? "another metric"}, " +
             "so the promotion gate's accuracy floor does not apply here — read the accuracy figure " +
             "against that baseline, not against 0."));
-    }
-
-    private class TrainingEngineLogger : ILogger
-    {
-        public void Debug(string message) { } // Silent during training
-        public void Info(string message) => Console.WriteLine(message);
-        // Through the warning seam. This logger reaches Core only via the hook engine; the runner's
-        // own warnings arrive through the warningSink handed to AutoMLRunner in the constructor.
-        // (This comment used to claim it was "the one place" Core warnings surface — it was not:
-        // the runner built its own console logger and never saw this one.)
-        public void Warning(string message) => WarningConsole.Warn(Markup.Escape(message));
-        public void Error(string message) => Console.WriteLine($"[Error] {message}");
-        public void Error(string message, Exception exception)
-        {
-            Console.WriteLine($"[Error] {message}");
-            Console.WriteLine($"  {exception.Message}");
-        }
     }
 }

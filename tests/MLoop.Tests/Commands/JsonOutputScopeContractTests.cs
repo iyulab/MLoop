@@ -137,6 +137,38 @@ public class JsonOutputScopeContractTests : IDisposable
     }
 
     [Fact]
+    public void WhatAProjectsScriptLogs_StaysOffTheDocument()
+    {
+        // A hook's or metric script's ctx.Logger.Info used to reach stdout through Console.WriteLine,
+        // ahead of `mloop evaluate --json`'s document.
+        var buffer = new StringWriter();
+        var originalOut = Console.Out;
+        var originalError = Console.Error;
+        var originalAnsiConsole = AnsiConsole.Console;
+        try
+        {
+            Console.SetOut(buffer);
+            Console.SetError(TextWriter.Null);
+            using (new JsonOutputScope())
+            {
+                var logger = new MLoop.CLI.Infrastructure.ML.ScriptConsoleLogger();
+                logger.Info("📊 Calculating metric: profit");
+                logger.Error("a script failed");
+                Console.WriteLine("""{"ok":true}""");
+            }
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            Console.SetError(originalError);
+            AnsiConsole.Console = originalAnsiConsole;
+        }
+
+        using var doc = JsonDocument.Parse(buffer.ToString());
+        Assert.True(doc.RootElement.GetProperty("ok").GetBoolean());
+    }
+
+    [Fact]
     public void Scope_WhenCommandWroteItsOwnPayload_AddsNothing()
     {
         var buffer = new StringWriter();

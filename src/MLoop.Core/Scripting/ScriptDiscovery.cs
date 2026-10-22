@@ -24,8 +24,9 @@ public class ScriptDiscovery
     public ScriptDiscovery(string? projectRoot = null, ScriptLoader? scriptLoader = null, Action<string>? log = null)
     {
         _projectRoot = projectRoot ?? Directory.GetCurrentDirectory();
-        _scriptLoader = scriptLoader ?? new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot));
         _log = log ?? Data.CsvDataLoader.NoLog;
+        // The loader reports what does not compile; without the log it said nothing and a broken script just vanished.
+        _scriptLoader = scriptLoader ?? new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot), _log);
     }
 
     /// <summary>
@@ -69,7 +70,8 @@ public class ScriptDiscovery
 
         try
         {
-            var scriptFiles = Directory.GetFiles(searchPath, "*.cs", SearchOption.TopDirectoryOnly);
+            var scriptFiles = Directory.GetFiles(searchPath, "*.cs", SearchOption.TopDirectoryOnly)
+                .Order(StringComparer.Ordinal).ToArray();
 
             if (scriptFiles.Length == 0)
             {
