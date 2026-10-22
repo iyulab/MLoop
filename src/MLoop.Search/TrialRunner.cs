@@ -16,6 +16,11 @@ namespace MLoop.Search;
 /// <param name="Weight">The column that weights rows, if any — trained on, never a feature.</param>
 /// <param name="Stratify">Whether folds keep the label's proportions (classification).</param>
 /// <param name="MaxTrials">At most this many trials — for comparing two searches trial for trial; <see langword="null"/> for the budget alone.</param>
+/// <param name="Preprocess">
+/// Steps fitted ahead of the featurizer in every trial — on each fold's training rows only, so a statistic
+/// such as a column's mean never sees the rows that score it — and kept in the refit model. They transform
+/// columns in place: a column keeps its name and its type.
+/// </param>
 public sealed record SearchRequest(
     IReadOnlyList<TrainerCandidate> Candidates,
     IMetricPolicy Metric,
@@ -24,7 +29,8 @@ public sealed record SearchRequest(
     SearchSettings Settings,
     string? Weight = null,
     bool Stratify = true,
-    int? MaxTrials = null);
+    int? MaxTrials = null,
+    IEstimator<ITransformer>? Preprocess = null);
 
 /// <summary>A finished search: every trial, the best, and the best refit on the whole partition.</summary>
 /// <param name="Trials">Every trial in the order it finished, failures included.</param>
@@ -133,7 +139,8 @@ public sealed class TrialRunner
             try
             {
                 // Built inside the trial: a trainer that cannot even be constructed is a failed trial, not a failed search.
-                pipeline = featurizer.Append(schema.Candidate.Build(trialContext, point, columns, settings));
+                var featurized = _request.Preprocess is { } preprocess ? preprocess.Append(featurizer) : featurizer;
+                pipeline = featurized.Append(schema.Candidate.Build(trialContext, point, columns, settings));
                 var score = Validator.Validate(trialContext, train, plan, pipeline, _request.Score, budgetCut.Token);
                 var seconds = (clock.Elapsed - started).TotalSeconds;
                 var trial = new TrialResult

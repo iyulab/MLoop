@@ -172,8 +172,10 @@ public class PrepLeakageRegressionTests : IDisposable
     /// into the preserveColumns set, so CsvDataLoader keeps them individually addressable.
     /// This test must pass WITHOUT throwing "Could not find input column".
     /// </summary>
-    [Fact]
-    public async Task RealLoader_training_with_prefeaturizer_normalize_preserves_columns()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]   // MLoop's own search: the steps go ahead of every trial's featurizer
+    public async Task RealLoader_training_with_prefeaturizer_normalize_preserves_columns(bool mloopSearch)
     {
         // Arrange ─────────────────────────────────────────────────────────────────
         // Write a real CSV with two numeric feature columns (age, score) + label, the
@@ -211,7 +213,8 @@ public class PrepLeakageRegressionTests : IDisposable
             Task = "binary-classification",
             TimeLimitSeconds = 10,
             PreFeaturizer = route.PreFeaturizer,
-            PreFeaturizerColumns = route.PreFeaturizerColumns
+            PreFeaturizerColumns = route.PreFeaturizerColumns,
+            Engine = mloopSearch ? SearchEngine.MLoop : SearchEngine.AutoML
         };
 
         // Act ──────────────────────────────────────────────────────────────────────
@@ -227,5 +230,10 @@ public class PrepLeakageRegressionTests : IDisposable
         Assert.True(result.Metrics.ContainsKey("accuracy"),
             $"Expected 'accuracy' key in metrics. Actual keys: [{string.Join(", ", result.Metrics.Keys)}]");
         Assert.InRange(result.Metrics["accuracy"], 0.0, 1.0);
+        if (mloopSearch)
+        {
+            Assert.NotNull(result.Search);
+            Assert.DoesNotContain(result.Trials, t => t.Error is not null);
+        }
     }
 }

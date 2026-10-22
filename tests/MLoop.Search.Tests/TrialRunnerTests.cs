@@ -127,6 +127,43 @@ public sealed class TrialRunnerTests
         Assert.Equal(Run(TimeSpan.Zero), Run(TimeSpan.FromMilliseconds(400)));
     }
 
+    /// <summary>
+    /// The preprocessing steps are fitted inside each fold, on its training rows, and once more on the
+    /// whole partition for the refit — never on the whole partition before a fold is scored.
+    /// </summary>
+    [Fact]
+    public void PreprocessSteps_AreFittedOnEachFoldsTrainingRows_ThenOnTheWholePartition()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+        var recorder = new FitRecorder(ml.Transforms.NormalizeMinMax("X", "X"));
+
+        var result = new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 2) with { Preprocess = recorder }).Run(data, roles);
+
+        var total = data.GetRowCount()!.Value;
+        Assert.Equal(result.Trials.Count * result.BestValidation.Folds + 1, recorder.Rows.Count);
+        Assert.All(recorder.Rows.Take(recorder.Rows.Count - 1), rows => Assert.InRange(rows, 1, total - 1));
+        Assert.Equal(total, recorder.Rows[^1]);
+        Assert.Contains("X", result.Model.Transform(data).Schema.Select(c => c.Name));
+    }
+
+    private sealed class FitRecorder(IEstimator<ITransformer> inner) : IEstimator<ITransformer>
+    {
+        public List<long> Rows { get; } = [];
+
+        public ITransformer Fit(IDataView input)
+        {
+            long n = 0;
+            using (var cursor = input.GetRowCursor([]))
+                while (cursor.MoveNext())
+                    n++;
+            Rows.Add(n);
+            return inner.Fit(input);
+        }
+
+        public SchemaShape GetOutputSchema(SchemaShape inputSchema) => inner.GetOutputSchema(inputSchema);
+    }
+
     [Fact]
     public void AFailedTrial_IsRecorded_AndTheSearchGoesOn()
     {

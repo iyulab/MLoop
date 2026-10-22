@@ -486,12 +486,11 @@ public partial class AutoMLRunner
                 $"The test data has no weight column '{config.WeightColumn}'; a weighted model is judged on weighted test rows.");
     }
 
-    // Whether MLoop's own search runs this training. It covers binary classification without a prep
-    // featurizer so far. TODO(AutoML removal): the prep featurizer, then multiclass and regression.
+    // Whether MLoop's own search runs this training. It covers binary classification so far.
+    // TODO(AutoML removal): multiclass and regression.
     private static bool SearchesWithMLoop(TrainingConfig config)
         => config.Engine == SearchEngine.MLoop
-           && config.Task.Equals("binary-classification", StringComparison.OrdinalIgnoreCase)
-           && config.PreFeaturizer is null;
+           && config.Task.Equals("binary-classification", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Re-scores the test partition with the final model and replaces the task's evaluator metrics
@@ -699,7 +698,8 @@ public partial class AutoMLRunner
             scored => ScoreFold(scored, config),
             TimeSpan.FromSeconds(config.TimeLimitSeconds),
             Settings,
-            Weight: string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn);
+            Weight: string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn,
+            Preprocess: config.PreFeaturizer);
 
         SearchResult search;
         try
