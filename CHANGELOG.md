@@ -37,6 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The trainer search scales features to [0, 1] ahead of its linear trainers (L-BFGS and SDCA, every task); trees read
+  them as before. Unscaled, a wide column next to narrow ones made those solvers crawl and learn little — on a
+  16,730-row four-class table three linear trials took half of a 60-second budget at macro accuracy 0.25. Measured on
+  six tabular sets at 60 s: four better (macro accuracy 0.80 → 0.97 on that table), the rest equal.
 - `log_loss_reduction` can be the optimizing metric of multiclass classification. It was refused while ML.NET AutoML
   searched — AutoML minimized it although higher is better, and chose the model that had learned least; MLoop's
   search ranks it the right way.

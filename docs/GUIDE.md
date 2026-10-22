@@ -1539,6 +1539,9 @@ The **Leakage** column says where a step runs. A statistic learned from the data
 keeps a leak (`⚠ leak`). Steps that learn nothing (renames, filters, date parts) run on the CSV
 (`ℹ csv-stage`). `POST /train` refuses a model whose `prep:` it would have to skip.
 
+You do not need `normalize` or `scale` for the model's sake: the trainer search already scales the features ahead of
+its linear trainers, and its trees do not need it. Declare them when the scaled values themselves matter to you.
+
 ### `mloop features`
 
 Declares which columns are features — policy in `mloop.yaml` (`columns: {name: {type: ignore}}`), no data

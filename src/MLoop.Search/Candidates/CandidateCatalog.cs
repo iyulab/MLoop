@@ -94,7 +94,7 @@ public static class CandidateCatalog
                 ExampleWeightColumnName = c.Weight,
             })),
         ];
-        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true)];
+        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true).Select(ScaledIfLinear)];
     }
 
     /// <summary>
@@ -196,7 +196,7 @@ public static class CandidateCatalog
                     ExampleWeightColumnName = c.Weight,
                 }), c.Label))),
         ];
-        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true)];
+        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true).Select(ScaledIfLinear)];
     }
 
     /// <summary>
@@ -273,8 +273,35 @@ public static class CandidateCatalog
                 ExampleWeightColumnName = c.Weight,
             })),
         ];
-        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true)];
+        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true).Select(ScaledIfLinear)];
     }
+
+    /// <summary>The trainers that fit a weight per feature — the ones whose features are scaled first.</summary>
+    internal static readonly IReadOnlySet<string> LinearTrainers = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "LbfgsLogisticRegression", "SdcaLogisticRegression",
+        "LbfgsMaximumEntropy", "SdcaMaximumEntropy", "LbfgsLogisticRegressionOva", "SdcaLogisticRegressionOva",
+        "Sdca", "LbfgsPoissonRegression",
+    };
+
+    /// <summary>
+    /// A linear trainer reads its features scaled to [0, 1] (<c>NormalizeMinMax</c>, fitted inside each fold with
+    /// the rest of the pipeline); a tree reads them as they are.
+    /// </summary>
+    /// <remarks>
+    /// Unscaled, one wide column sets the step size for every other, and the solvers crawl: on a 16,730-row
+    /// table with a row-number column next to voltages and currents, three linear trials took 31 s of a
+    /// 60-second budget and learned nothing (macro accuracy 0.25 over four classes) — the budget the trees
+    /// that won needed. AutoML's pipelines did not scale either; the search reproduced that for parity first
+    /// and scales now, measured.
+    /// </remarks>
+    private static TrainerCandidate ScaledIfLinear(TrainerCandidate candidate) =>
+        LinearTrainers.Contains(candidate.Name)
+            ? candidate with
+            {
+                Build = (ml, p, c, s) => ml.Transforms.NormalizeMinMax(c.Features).Append(candidate.Build(ml, p, c, s)),
+            }
+            : candidate;
 
     // The label as a key for the trainer, and the predicted key back as the label's value.
     private static IEstimator<ITransformer> KeyedLabel<TTransformer>(MLContext ml, TrainerColumns columns, IEstimator<TTransformer> trainer)
