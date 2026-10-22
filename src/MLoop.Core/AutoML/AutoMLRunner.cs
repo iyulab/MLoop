@@ -249,10 +249,16 @@ public partial class AutoMLRunner
             mergedColumnGroups = loader.GetMergedColumnGroups();
         }
 
-        // Weighted training: fitted and chosen on weighted resamples of two disjoint partitions.
+        // Weighted training: AutoML fits and chooses on weighted resamples of two disjoint partitions;
+        // MLoop's own search gives the trainers the weights and scores its folds by them.
         IDataView? validationSet = null;
         if (!string.IsNullOrEmpty(config.WeightColumn))
-            (trainSet, validationSet) = PrepareWeightedPartitions(trainSet, testSet, config);
+        {
+            if (SearchesWithMLoop(config))
+                CheckWeightedTask(testSet, config);
+            else
+                (trainSet, validationSet) = PrepareWeightedPartitions(trainSet, testSet, config);
+        }
 
         // Ensure the task's on-demand native runtime is installed and loaded (no-op for tabular tasks).
         Runtime.RuntimeManager.EnsureRuntimeForTask(config.Task);
@@ -459,6 +465,17 @@ public partial class AutoMLRunner
     /// </summary>
     private (IDataView Train, IDataView Validation) PrepareWeightedPartitions(IDataView trainSet, IDataView testSet, TrainingConfig config)
     {
+        CheckWeightedTask(testSet, config);
+        var split = _mlContext.Data.TrainTestSplit(trainSet, testFraction: WeightedValidationFraction, seed: WeightedSeed);
+        var train = WeightedResampling.Resample(_mlContext, split.TrainSet, config.WeightColumn!, WeightedSeed + 1);
+        var validation = WeightedResampling.Resample(_mlContext, split.TestSet, config.WeightColumn!, WeightedSeed + 2);
+        _logger.Info($"Weighted by '{config.WeightColumn}': models are fitted and chosen on weighted resamples " +
+                     $"({train.GetRowCount()} + {validation.GetRowCount()} rows).");
+        return (train, validation);
+    }
+
+    private static void CheckWeightedTask(IDataView testSet, TrainingConfig config)
+    {
         if (!WeightedResampling.Supports(config.Task))
             throw new NotSupportedException(
                 $"Weighted training (weight column '{config.WeightColumn}') applies to binary-classification, " +
@@ -467,14 +484,14 @@ public partial class AutoMLRunner
         if (testSet.Schema.GetColumnOrNull(config.WeightColumn!) is null)
             throw new InvalidOperationException(
                 $"The test data has no weight column '{config.WeightColumn}'; a weighted model is judged on weighted test rows.");
-
-        var split = _mlContext.Data.TrainTestSplit(trainSet, testFraction: WeightedValidationFraction, seed: WeightedSeed);
-        var train = WeightedResampling.Resample(_mlContext, split.TrainSet, config.WeightColumn!, WeightedSeed + 1);
-        var validation = WeightedResampling.Resample(_mlContext, split.TestSet, config.WeightColumn!, WeightedSeed + 2);
-        _logger.Info($"Weighted by '{config.WeightColumn}': models are fitted and chosen on weighted resamples " +
-                     $"({train.GetRowCount()} + {validation.GetRowCount()} rows).");
-        return (train, validation);
     }
+
+    // Whether MLoop's own search runs this training. It covers binary classification without a prep
+    // featurizer so far. TODO(AutoML removal): the prep featurizer, then multiclass and regression.
+    private static bool SearchesWithMLoop(TrainingConfig config)
+        => config.Engine == SearchEngine.MLoop
+           && config.Task.Equals("binary-classification", StringComparison.OrdinalIgnoreCase)
+           && config.PreFeaturizer is null;
 
     /// <summary>
     /// Re-scores the test partition with the final model and replaces the task's evaluator metrics
@@ -484,22 +501,29 @@ public partial class AutoMLRunner
     /// </summary>
     private void ReplaceWithWeightedMetrics(AutoMLResult result, IDataView testSet, TrainingConfig config)
     {
-        var weight = config.WeightColumn!;
-        var predictions = result.Model.Transform(testSet);
-        var (family, weighted) = config.Task.ToLowerInvariant() switch
+        OverlayWeighted(result.Metrics, result.Model.Transform(testSet), config.Task, config.LabelColumn, config.WeightColumn!);
+    }
+
+    /// <summary>
+    /// Replaces the task's evaluator metrics in <paramref name="metrics"/> with their counterparts
+    /// weighted by <paramref name="weight"/> — the test partition's and, on MLoop's search, each fold's.
+    /// </summary>
+    private static void OverlayWeighted(Dictionary<string, double> metrics, IDataView predictions, string task, string label, string weight)
+    {
+        var (family, weighted) = task.ToLowerInvariant() switch
         {
-            "binary-classification" => (WeightedBinaryKeys, WeightedMetrics.Binary(predictions, config.LabelColumn, weight)),
-            "multiclass-classification" => (WeightedMulticlassKeys, WeightedMetrics.Multiclass(predictions, config.LabelColumn, weight)),
-            _ => (WeightedRegressionKeys, WeightedMetrics.Regression(predictions, config.LabelColumn, weight)),
+            "binary-classification" => (WeightedBinaryKeys, WeightedMetrics.Binary(predictions, label, weight)),
+            "multiclass-classification" => (WeightedMulticlassKeys, WeightedMetrics.Multiclass(predictions, label, weight)),
+            _ => (WeightedRegressionKeys, WeightedMetrics.Regression(predictions, label, weight)),
         };
         if (weighted is null)
             throw new InvalidOperationException(
-                $"The test predictions could not be scored by weight '{weight}' — the columns the {config.Task} metrics need are missing.");
+                $"The predictions could not be scored by weight '{weight}' — the columns the {task} metrics need are missing.");
 
         foreach (var key in family)
-            result.Metrics.Remove(key);
+            metrics.Remove(key);
         foreach (var (key, value) in weighted)
-            result.Metrics[key] = value;
+            metrics[key] = value;
     }
 
     private static readonly string[] WeightedBinaryKeys =
@@ -573,9 +597,7 @@ public partial class AutoMLRunner
         string? metricFallbackNote = null,
         IDataView? validationSet = null)
     {
-        // The MLoop search covers the plain path so far: no given validation set (pre-split or weighted)
-        // and no prep featurizer. TODO(AutoML removal): those, then multiclass and regression.
-        if (config.Engine == SearchEngine.MLoop && validationSet is null && config.PreFeaturizer is null)
+        if (SearchesWithMLoop(config))
         {
             return await RunBinaryWithMLoopSearchAsync(trainSet, testSet, config, optimizingMetric, progress, cancellationToken)
                 .ConfigureAwait(false);
@@ -674,9 +696,10 @@ public partial class AutoMLRunner
         var request = new SearchRequest(
             CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
             RankingPolicy.For(metric),
-            scored => ScoreBinary(scored, config.LabelColumn),
+            scored => ScoreFold(scored, config),
             TimeSpan.FromSeconds(config.TimeLimitSeconds),
-            Settings);
+            Settings,
+            Weight: string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn);
 
         SearchResult search;
         try
@@ -715,6 +738,15 @@ public partial class AutoMLRunner
 
     // The seed and threads the MLoop search runs with, recorded with the experiment (AutoMLResult.Search).
     private static readonly SearchSettings Settings = new(Seed: 1, Threads: 1);
+
+    // A fold's metrics: weighted by the run's weight column when it has one, as the test partition's are.
+    private Dictionary<string, double> ScoreFold(IDataView scored, TrainingConfig config)
+    {
+        var metrics = ScoreBinary(scored, config.LabelColumn);
+        if (!string.IsNullOrEmpty(config.WeightColumn))
+            OverlayWeighted(metrics, scored, config.Task, config.LabelColumn, config.WeightColumn);
+        return metrics;
+    }
 
     private Dictionary<string, double> ScoreBinary(IDataView scored, string labelColumn)
         => WithoutUndefinedRanking(MetricReport.Describe(scored.Schema.GetColumnOrNull("Probability") != null

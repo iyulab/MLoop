@@ -67,6 +67,12 @@ public class WeightedTrainingTests : IDisposable
 
     private async Task<(float High, float Low, Dictionary<string, double> Metrics)> TrainAndScore(string? weightColumn)
     {
+        var (high, low, result) = await TrainAndScoreOn(weightColumn, SearchEngine.AutoML);
+        return (high, low, result.Metrics);
+    }
+
+    private async Task<(float High, float Low, AutoMLResult Result)> TrainAndScoreOn(string? weightColumn, SearchEngine engine)
+    {
         var ctx = new MLContext(seed: 42);
         var data = ctx.Data.LoadFromEnumerable(Fixture());
         var config = new TrainingConfig
@@ -80,6 +86,7 @@ public class WeightedTrainingTests : IDisposable
             WeightColumn = weightColumn,
             // The control keeps W out of the features too, so the only difference is the weighting.
             ColumnOverrides = weightColumn is null ? new() { ["W"] = "ignore" } : null,
+            Engine = engine,
         };
 
         var result = await new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
@@ -90,7 +97,7 @@ public class WeightedTrainingTests : IDisposable
             new Row { X = 0.1f, Y = 0.5f, W = 0, Label = true },
         });
         var probabilities = result.Model.Transform(probe).GetColumn<float>("Probability").ToArray();
-        return (probabilities[0], probabilities[1], result.Metrics);
+        return (probabilities[0], probabilities[1], result);
     }
 
     [Fact]
@@ -104,6 +111,23 @@ public class WeightedTrainingTests : IDisposable
         // scores above 0.5; weighted, the right side of 0.5 is right ten times in eleven.
         Assert.True(metrics["accuracy"] > 0.8, $"weighted accuracy {metrics["accuracy"]}");
         Assert.True(metrics["auc"] > 0.8, $"weighted auc {metrics["auc"]}");
+    }
+
+    /// <summary>
+    /// MLoop's own search gives the trainers the weights — no resampling — and scores its folds by
+    /// them: unweighted, every fold's AUC would sit near 0.5 on this fixture.
+    /// </summary>
+    [Fact]
+    public async Task TheWeightReachesTheModel_OnMLoopsSearch_AndItsFoldsAreScoredByIt()
+    {
+        var (high, low, result) = await TrainAndScoreOn("W", SearchEngine.MLoop);
+
+        Assert.True(high > 0.7f, $"P(true | x=0.9) = {high}, expected the weighted 0.9");
+        Assert.True(low < 0.3f, $"P(true | x=0.1) = {low}, expected the weighted 0.1");
+        Assert.True(result.Metrics["auc"] > 0.8, $"weighted test auc {result.Metrics["auc"]}");
+        Assert.NotNull(result.Search);
+        var best = result.Trials.Where(t => t.Error is null).Max(t => t.Metrics["auc"]);
+        Assert.True(best > 0.8, $"best fold-mean auc {best}, expected weighted scoring");
     }
 
     [Fact]
