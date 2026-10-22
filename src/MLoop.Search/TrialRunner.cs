@@ -64,11 +64,10 @@ public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, str
 /// <item><b>The first trial always finishes</b>, whatever the budget — a search returns a model.</item>
 /// <item><b>The refit is budgeted</b>: the search stops starting trials once the time left is what refitting
 /// the best is expected to take (its mean fold fit × folds ⁄ (folds − 1)), and a trial still running at that
-/// point stops at its next fold and is dropped — it is neither a result nor a failure.</item>
+/// point stops inside its fit and is dropped — it is neither a result nor a failure.</item>
 /// <item><b>A trial that cannot finish is not started.</b> Past the first success, a schema whose last trial
 /// took longer than the time left before the refit is not proposed — the tuner grows a schema's settings
-/// from there, so its next trial would take at least as long, run past the deadline by up to a fold, and be
-/// dropped. The draw goes to the schemas that still fit, so the tail of the budget is spent on cheaper
+/// from there, so its next trial would take at least as long, be cut at the deadline, and be dropped. The draw goes to the schemas that still fit, so the tail of the budget is spent on cheaper
 /// trainers; the search ends when none fits.</item>
 /// <item><b>A failed trial is recorded and the search goes on</b>; the tuner reads it as the worst loss.</item>
 /// <item><b>Cancellation by the caller stops at once</b> and throws; budget expiry keeps the best.</item>
@@ -114,7 +113,7 @@ public sealed class TrialRunner
 
         var trials = new List<TrialResult>();
         var lastSeconds = new Dictionary<string, double>(StringComparer.Ordinal);
-        (TrialResult Trial, double Value, ValidationScore Score, IEstimator<ITransformer> Pipeline, double FitSeconds)? best = null;
+        (TrialResult Trial, double Value, ValidationScore Score, IEstimator<ITransformer> Pipeline, MLContext Context, double FitSeconds)? best = null;
 
         for (var trialId = 0; ; trialId++)
         {
@@ -137,9 +136,8 @@ public sealed class TrialRunner
             var featurizer = Featurizer.Build(trialContext, train.Schema, roles, schema.Encoding, columns.Features)
                 ?? throw new InvalidOperationException("No column is a feature: every column is the label or ignored.");
 
-            // Past the first success, a trial that would eat the refit's time stops at its next fold. ML.NET
-            // cancels a fit in progress only from inside (MLContext.CancelExecution is internal), so a trial
-            // can run over by at most one fold's fit.
+            // Past the first success, a trial that would eat the refit's time stops inside its fit
+            // (FitCancellation): one fit can be most of a budget, so stopping between folds is not enough.
             using var budgetCut = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             if (best is not null)
                 budgetCut.CancelAfter(TimeSpan.FromSeconds(Math.Max(deadline - clock.Elapsed.TotalSeconds, 0)));
@@ -173,7 +171,7 @@ public sealed class TrialRunner
                     tuners[schemaId].Update(trialId, point, loss, schema.Candidate.InitialCost);
                     proposer.Update(schemaId, loss, schema.Candidate.InitialCost);
                     if (best is null || _request.Metric.IsBetter(value, best.Value.Value))
-                        best = (trial, value, score, pipeline, seconds / plan.Folds);
+                        best = (trial, value, score, pipeline, trialContext, seconds / plan.Folds);
                 }
                 else
                 {
@@ -214,6 +212,8 @@ public sealed class TrialRunner
         cancellationToken.ThrowIfCancellationRequested();
         string? fallback = null;
         ITransformer model;
+        // The caller's cancellation stops the refit too; the budget does not — the refit was reserved for.
+        using var stopRefit = FitCancellation.Register(winner.Context, cancellationToken);
         try
         {
             model = winner.Pipeline.Fit(train);

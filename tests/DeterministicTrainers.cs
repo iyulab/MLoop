@@ -56,6 +56,24 @@ internal static class DeterministicTrainers
             MaximumNumberOfIterations = MaximumIterations
         });
 
+    /// <summary>
+    /// The opposite of the helpers above, for a test about stopping a fit: one thread, a million passes and
+    /// no convergence exit, so the fit runs for seconds whatever the rows — the shape of SDCA's own
+    /// 30,000-pass default on rows it does not converge on, without depending on which rows those are.
+    /// </summary>
+    public static SdcaLogisticRegressionBinaryTrainer UnendingSdcaLogisticRegression(
+        this BinaryClassificationCatalog.BinaryClassificationTrainers trainers,
+        string labelColumnName = "Label",
+        string featureColumnName = "Features")
+        => trainers.SdcaLogisticRegression(new SdcaLogisticRegressionBinaryTrainer.Options
+        {
+            LabelColumnName = labelColumnName,
+            FeatureColumnName = featureColumnName,
+            NumberOfThreads = 1,
+            MaximumNumberOfIterations = 1_000_000,
+            ConvergenceTolerance = 1e-30f,
+        });
+
     public static SdcaMaximumEntropyMulticlassTrainer SingleThreadSdcaMaximumEntropy(
         this MulticlassClassificationCatalog.MulticlassClassificationTrainers trainers,
         string labelColumnName = "Label",

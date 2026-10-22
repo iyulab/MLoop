@@ -74,6 +74,35 @@ public sealed class ValidationAndCatalogTests
     }
 
     [Fact]
+    public void TheSwitchThatStopsAFitInProgress_IsFound()
+    {
+        // ML.NET keeps it non-public; an upgrade that moves it must fail here rather than leave every
+        // search stopping only between folds.
+        Assert.True(FitCancellation.IsSupported);
+    }
+
+    [Fact]
+    public void Validate_StopsAFitInProgress_WhenCancelled()
+    {
+        // A fit that cannot end on its own soon (UnendingSdcaLogisticRegression). Cancelled well before the
+        // end, the fit itself must stop: a check between folds would let the first fold run on.
+        var ml = new MLContext(seed: 1);
+        var data = Data(ml, 60);
+        var plan = FoldPlan.For(data, "Label", stratify: true, seed: 4);
+        var pipeline = ml.BinaryClassification.Trainers.UnendingSdcaLogisticRegression();
+        using var cut = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+
+        var scoredFolds = 0;
+
+        Assert.ThrowsAny<OperationCanceledException>(() => Validator.Validate(ml, data, plan, pipeline, scored =>
+        {
+            scoredFolds++;
+            return new Dictionary<string, double> { ["accuracy"] = ml.BinaryClassification.Evaluate(scored).Accuracy };
+        }, cut.Token));
+        Assert.Equal(0, scoredFolds);   // the first fold's fit was stopped, not waited out
+    }
+
+    [Fact]
     public void ALargePartition_IsScoredOnOneHoldoutOfATenth()
     {
         var ml = new MLContext(seed: 1);

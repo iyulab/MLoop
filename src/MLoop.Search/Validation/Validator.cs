@@ -29,7 +29,7 @@ public static class Validator
     /// <param name="plan">Its folds.</param>
     /// <param name="pipeline">The pipeline to fit — featurization and trainer together, so no fold sees its own rows in the fit.</param>
     /// <param name="score">The metrics of a scored validation part — the host's metric authority, weights included.</param>
-    /// <param name="cancellationToken">Stops between folds.</param>
+    /// <param name="cancellationToken">Stops the fit in progress (<see cref="FitCancellation"/>) — and with it every later use of <paramref name="mlContext"/>.</param>
     public static ValidationScore Validate(
         MLContext mlContext,
         IDataView data,
@@ -44,6 +44,7 @@ public static class Validator
         ArgumentNullException.ThrowIfNull(pipeline);
         ArgumentNullException.ThrowIfNull(score);
 
+        using var stop = FitCancellation.Register(mlContext, cancellationToken);
         var folds = new List<IReadOnlyDictionary<string, double>>();
         foreach (var part in plan.Validated)
         {
