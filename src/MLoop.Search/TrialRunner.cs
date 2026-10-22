@@ -136,7 +136,15 @@ public sealed class TrialRunner
                 pipeline = featurizer.Append(schema.Candidate.Build(trialContext, point, columns, settings));
                 var score = Validator.Validate(trialContext, train, plan, pipeline, _request.Score, budgetCut.Token);
                 var seconds = (clock.Elapsed - started).TotalSeconds;
-                var trial = new TrialResult { Trainer = schema.Candidate.Name, Parameters = parameters, Metrics = score.Mean, RuntimeSeconds = seconds };
+                var trial = new TrialResult
+                {
+                    Trainer = schema.Candidate.Name,
+                    Parameters = parameters,
+                    Metrics = score.Mean,
+                    Folds = score.Folds,
+                    StandardDeviation = score.StandardDeviation,
+                    RuntimeSeconds = seconds,
+                };
                 trials.Add(trial);
                 if (_request.Metric.TryScore(trial, out var value))
                 {

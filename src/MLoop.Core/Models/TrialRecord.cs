@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MLoop.Core.Models;
 
 /// <summary>
@@ -7,9 +9,9 @@ namespace MLoop.Core.Models;
 /// <remarks>
 /// ML.NET's <c>ExperimentResult.RunDetails</c> holds every trial's trainer, validation metrics and
 /// runtime — and MLoop used to read <c>BestRun</c> off it and drop the rest, so each run threw away
-/// the only record of what else was tried and how it scored. Trials that threw carry no metrics and
-/// are not recorded: there is nothing to rank them by, and the terminal exception already reports
-/// the failure.
+/// the only record of what else was tried and how it scored. A trial that failed is recorded when the
+/// search reports it (MLoop's own search does; AutoML does not), with <see cref="Error"/> and no
+/// metrics — it ranks below every trial that scored.
 /// </remarks>
 public sealed class TrialRecord
 {
@@ -45,4 +47,18 @@ public sealed class TrialRecord
 
     /// <summary>Seconds this one trial took (AutoML's <c>RunDetail.RuntimeInSeconds</c>).</summary>
     public required double RuntimeSeconds { get; init; }
+
+    /// <summary>
+    /// How the trial's metrics were validated, when they are a mean over folds: the fold count and each
+    /// metric's spread. Absent on paths that score one split.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TrialValidation? Validation { get; init; }
+
+    /// <summary>Why the trial failed; absent when it scored. A failed trial has no <see cref="Metrics"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Error { get; init; }
 }
+
+/// <summary>A trial's validation over folds: how many, and each metric's standard deviation across them.</summary>
+public sealed record TrialValidation(int Folds, IReadOnlyDictionary<string, double> StandardDeviation);

@@ -21,8 +21,8 @@ namespace MLoop.Core.AutoML;
 /// </para>
 /// <para>
 /// Hence the contract: <b>a trial is reported when it completes, carrying the metric it actually
-/// produced.</b> A trial with no metric is not reported at all — there is nothing truthful to show,
-/// and the terminal exception already carries the failure.
+/// produced</b> — or, when it failed and the search says why, its error and no metric
+/// (<see cref="TrainingProgress.Error"/>). A trial with neither is not reported at all.
 /// </para>
 /// </remarks>
 public sealed class TrialProgressChannel : ITrialSink
@@ -102,6 +102,30 @@ public sealed class TrialProgressChannel : ITrialSink
         string metricName,
         double metric,
         IReadOnlyDictionary<string, double>? allMetrics = null)
+        => Report(trainer, metricName, metric, error: null,
+            (ordinal, runtime) => new TrialRecord
+            {
+                TrialNumber = ordinal,
+                Trainer = trainer,
+                Metrics = TrialLedger.OnlyFinite(allMetrics ?? new Dictionary<string, double> { [metricName] = metric }),
+                RuntimeSeconds = runtime
+            });
+
+    /// <summary>
+    /// A search's finished trial, recorded and reported like any other — a failed one too, with its
+    /// error and no metric (it ranks below every scored trial). The search's own runtime, fold count
+    /// and spread go into the record.
+    /// </summary>
+    void ITrialSink.Completed(TrialResult trial, string rankingMetric)
+    {
+        if (!TrialLedger.IsReportable(trial))
+            return;
+        var value = trial.Metrics is { } metrics && metrics.TryGetValue(rankingMetric, out var v) ? v : double.NaN;
+        Report(TrialLedger.Descriptor(trial), rankingMetric, value, trial.Metrics is null ? trial.Error : null,
+            (ordinal, runtime) => TrialLedger.ToRecord(trial with { RuntimeSeconds = trial.RuntimeSeconds ?? runtime }, ordinal));
+    }
+
+    private void Report(TrainerDescriptor trainer, string metricName, double metric, string? error, Func<int, double, TrialRecord> record)
     {
         var ordinal = Interlocked.Increment(ref _completedTrials);
         var elapsed = _clock.Elapsed;
@@ -109,19 +133,13 @@ public sealed class TrialProgressChannel : ITrialSink
         lock (_gate)
         {
             // A hand-rolled search runs its candidates one after another, so the gap since the
-            // previous completion is that candidate's duration. AutoML's own runtime is more exact
-            // but only its RunDetails knows it, and those paths do not read this list.
+            // previous completion is that candidate's duration — used when the trial does not carry
+            // its own. AutoML's own runtime is more exact but only its RunDetails knows it, and those
+            // paths do not read this list.
             var runtime = elapsed - _previousCompletion;
             _previousCompletion = elapsed;
             _rankingMetric = metricName;
-
-            _records.Add(new TrialRecord
-            {
-                TrialNumber = ordinal,
-                Trainer = trainer,
-                Metrics = TrialLedger.OnlyFinite(allMetrics ?? new Dictionary<string, double> { [metricName] = metric }),
-                RuntimeSeconds = runtime.TotalSeconds
-            });
+            _records.Add(record(ordinal, runtime.TotalSeconds));
         }
 
         _sink?.Report(new TrainingProgress
@@ -130,18 +148,8 @@ public sealed class TrialProgressChannel : ITrialSink
             TrainerName = trainer.Display,
             MetricName = metricName,
             Metric = metric,
+            Error = error,
             ElapsedSeconds = elapsed.TotalSeconds
         });
-    }
-
-    /// <summary>
-    /// A search's finished trial, recorded and reported like any other. A trial that produced no
-    /// metrics is not shown: there is no result to show.
-    /// </summary>
-    void ITrialSink.Completed(TrialResult trial, string rankingMetric)
-    {
-        if (trial.Metrics is not { } metrics || !metrics.TryGetValue(rankingMetric, out var value))
-            return;
-        ReportCompleted(TrialLedger.Descriptor(trial), rankingMetric, value, metrics);
     }
 }

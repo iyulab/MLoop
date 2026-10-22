@@ -142,6 +142,27 @@ public class TrainingProgressTrackerTests
         Assert.Contains("accuracy=0.8000", text);
     }
 
+    [Fact]
+    public void A_failed_trial_says_failed_and_why_rather_than_a_number()
+    {
+        var p = new TrainingProgress
+        {
+            TrialNumber = 2,
+            TrainerName = "LightGbm",
+            MetricName = "auc",
+            Metric = double.NaN,
+            Error = "native [lib] missing",
+            ElapsedSeconds = 1
+        };
+
+        var description = TrainingProgressTracker.TrialDescription(p);
+        _ = new Spectre.Console.Markup(description);
+        var text = Spectre.Console.Markup.Remove(description);
+
+        Assert.Contains("failed: native [lib] missing", text);
+        Assert.DoesNotContain("NaN", text);
+    }
+
     [Theory]
     [InlineData("my[model]")]
     [InlineData("plain")]

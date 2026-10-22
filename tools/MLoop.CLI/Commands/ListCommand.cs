@@ -144,12 +144,14 @@ public static class ListCommand
             foreach (var trial in leaderboard.Trials)
             {
                 rank++;
-                var metricDisplay = leaderboard.Metric != null && trial.Metrics.TryGetValue(leaderboard.Metric, out var v)
+                var metricDisplay = trial.Error is not null
+                    ? "[yellow]failed[/]"
+                    : leaderboard.Metric != null && trial.Metrics.TryGetValue(leaderboard.Metric, out var v)
                     ? v.ToString("F4")
                     : "[grey]-[/]";
                 var rankDisplay = rank == 1 ? "[green bold]1[/]" : rank.ToString();
 
-                var note = TrainerDisplay.Footnote($"[{rank}]", trial.Trainer);
+                var note = TrainerDisplay.Footnote($"[{rank}]", trial.Trainer, trial.Error);
                 if (note != null)
                     trialNotes.Add(note);
 

@@ -104,4 +104,54 @@ public class TrialProgressChannelTests
         Assert.Equal("KMeans (k=3)", record.TrainerName);
         Assert.Equal("KMeans (k=3)", Assert.Single(reported).TrainerName);
     }
+
+    /// <summary>
+    /// A search reports its failed trials. They are trials like any other — counted, numbered,
+    /// recorded — with the error and no metric, so the trials file and the event stream agree.
+    /// </summary>
+    [Fact]
+    public void A_search_trial_that_failed_is_recorded_and_reported_with_its_error()
+    {
+        var (channel, reported) = Build();
+        MLoop.Search.ITrialSink sink = channel;
+
+        sink.Completed(new MLoop.Search.TrialResult
+        {
+            Trainer = "LightGbm",
+            RuntimeSeconds = 0.25,
+            Error = "lib_lightgbm not found",
+        }, "auc");
+
+        var record = Assert.Single(channel.Records);
+        Assert.Equal("lib_lightgbm not found", record.Error);
+        Assert.Empty(record.Metrics);
+        Assert.Equal(0.25, record.RuntimeSeconds);
+        var progress = Assert.Single(reported);
+        Assert.Equal("lib_lightgbm not found", progress.Error);
+        Assert.True(double.IsNaN(progress.Metric));
+        Assert.Equal(1, channel.CompletedTrials);
+    }
+
+    /// <summary>A search trial's record keeps its own runtime and its spread over folds.</summary>
+    [Fact]
+    public void A_search_trial_keeps_its_runtime_and_validation()
+    {
+        var (channel, _) = Build();
+        MLoop.Search.ITrialSink sink = channel;
+
+        sink.Completed(new MLoop.Search.TrialResult
+        {
+            Trainer = "FastTree",
+            Metrics = new Dictionary<string, double> { ["auc"] = 0.9 },
+            Folds = 5,
+            StandardDeviation = new Dictionary<string, double> { ["auc"] = 0.02, ["auprc"] = double.NaN },
+            RuntimeSeconds = 1.5,
+        }, "auc");
+
+        var record = Assert.Single(channel.Records);
+        Assert.Null(record.Error);
+        Assert.Equal(1.5, record.RuntimeSeconds);
+        Assert.Equal(5, record.Validation!.Folds);
+        Assert.Equal(new Dictionary<string, double> { ["auc"] = 0.02 }, record.Validation.StandardDeviation);
+    }
 }

@@ -207,14 +207,16 @@ internal static class ExperimentReport
             // The column shows the trainer alone; the pipeline in front of it and any fallback
             // reason go under the table as a footnote — the same split the terminal leaderboard makes.
             var shown = Escape(TrainerDisplay.Short(trial.Trainer));
-            var footnote = TrainerDisplay.Footnote($"[^{rank}]:", trial.Trainer);
+            var footnote = TrainerDisplay.Footnote($"[^{rank}]:", trial.Trainer, trial.Error);
             if (footnote is not null)
             {
                 shown += $"[^{rank}]";
                 footnotes.Add(footnote);
             }
 
-            var value = metric is not null && trial.Metrics.TryGetValue(metric, out var v)
+            var value = trial.Error is not null
+                ? "failed"
+                : metric is not null && trial.Metrics.TryGetValue(metric, out var v)
                 ? Number(v)
                 : NoValue;
 

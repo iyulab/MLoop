@@ -676,7 +676,7 @@ public partial class AutoMLRunner
             RankingPolicy.For(metric),
             scored => ScoreBinary(scored, config.LabelColumn),
             TimeSpan.FromSeconds(config.TimeLimitSeconds),
-            new SearchSettings(Seed: SearchSeed));
+            Settings);
 
         SearchResult search;
         try
@@ -708,12 +708,13 @@ public partial class AutoMLRunner
             Metrics = metricsDict,
             RowCount = trainSet.GetRowCount() ?? 0,
             Trials = [.. channel.Records],
-            RankingMetric = metric
+            RankingMetric = metric,
+            Search = request.Settings
         };
     }
 
-    // The seed the MLoop search draws from. TODO(AutoML removal): record it (and the thread count) in config.json, so a run can be repeated.
-    private const int SearchSeed = 1;
+    // The seed and threads the MLoop search runs with, recorded with the experiment (AutoMLResult.Search).
+    private static readonly SearchSettings Settings = new(Seed: 1, Threads: 1);
 
     private Dictionary<string, double> ScoreBinary(IDataView scored, string labelColumn)
         => WithoutUndefinedRanking(MetricReport.Describe(scored.Schema.GetColumnOrNull("Probability") != null
@@ -2285,8 +2286,7 @@ public partial class AutoMLRunner
 
     /// <summary>
     /// Turns AutoML's per-trial run details into the records persisted with the experiment. Trials
-    /// that threw carry no validation metrics and are skipped — there is nothing to rank them by,
-    /// and the terminal exception already reports the failure.
+    /// that threw carry no validation metrics and are skipped, as AutoML's live stream skips them.
     /// </summary>
     private static List<TrialRecord> CollectTrials<TMetrics>(
         IEnumerable<RunDetail<TMetrics>> runDetails,
@@ -2296,9 +2296,10 @@ public partial class AutoMLRunner
 
         foreach (var run in runDetails)
         {
-            // Same membership rule the live channel applies, from one definition — the two
-            // productions of this list have to count the same trials.
-            if (!TrialLedger.IsReportable(run.ValidationMetrics))
+            // AutoML's live stream never shows a trial that threw (TrialProgressReporter), so this list
+            // leaves them out too — the two productions of it have to count the same trials. MLoop's
+            // own search reports and records its failures.
+            if (run.ValidationMetrics is null)
                 continue;
 
             // AutoML names an assembled pipeline and exposes no hyperparameters to separate out, so
@@ -2627,6 +2628,12 @@ public record AutoMLResult
     /// undefined. Null when nothing was ranked.
     /// </summary>
     public string? RankingMetric { get; init; }
+
+    /// <summary>
+    /// The seed and thread count MLoop's own search ran with — what repeats it: one seed on the same
+    /// data proposes the same trials in the same order. Null when AutoML searched.
+    /// </summary>
+    public SearchSettings? Search { get; init; }
 
     /// <summary>
     /// The held-out rows <see cref="Metrics"/> were measured on, unscored — what the project's own

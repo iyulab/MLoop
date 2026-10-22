@@ -82,7 +82,10 @@ public sealed class SearchEngineSwitchTests : IDisposable
         // At least AutoML's metric set on the test rows (AutoML's FastForest pipeline gives no Probability, so it has no ece).
         Assert.Subset(mloop.Metrics.Keys.ToHashSet(), automl.Metrics.Keys.ToHashSet());
         Assert.NotEmpty(mloop.Trials);
-        Assert.All(mloop.Trials, t => Assert.Contains("auc", t.Metrics!.Keys));
+        Assert.All(mloop.Trials.Where(t => t.Error is null), t => Assert.Contains("auc", t.Metrics.Keys));
+        Assert.All(mloop.Trials.Where(t => t.Error is null), t => Assert.True(t.Validation!.Folds >= 1));
+        Assert.Equal(new MLoop.Search.Candidates.SearchSettings(Seed: 1, Threads: 1), mloop.Search);   // what config.json records
+        Assert.Null(automl.Search);
         Assert.Contains("ece", mloop.Metrics.Keys);                                  // there is a Probability to calibrate against
         // Not the parity gate — a floor: the data separates well, so a working search clears it.
         Assert.True(mloop.Metrics["auc"] > 0.8, $"MLoop search auc {mloop.Metrics["auc"]}");

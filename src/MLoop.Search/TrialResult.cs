@@ -14,6 +14,12 @@ public sealed record TrialResult
     /// <summary>The trial's validation metrics by name; null when it produced none.</summary>
     public IReadOnlyDictionary<string, double>? Metrics { get; init; }
 
+    /// <summary>How many folds <see cref="Metrics"/> is the mean of; null when the trial was not validated over folds.</summary>
+    public int? Folds { get; init; }
+
+    /// <summary>Each metric's standard deviation over the <see cref="Folds"/>; null with them.</summary>
+    public IReadOnlyDictionary<string, double>? StandardDeviation { get; init; }
+
     /// <summary>How long the trial ran, when that is known.</summary>
     public double? RuntimeSeconds { get; init; }
 

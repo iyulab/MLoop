@@ -192,6 +192,86 @@ public class ExperimentTrialHistoryTests : IDisposable
         Assert.Equal(["A", "NoMetric"], names);
     }
 
+    /// <summary>
+    /// A failed trial is a row with its error and no metrics, ranked below every scored one; a scored
+    /// trial validated over folds carries their count and spread. Neither field appears where it has
+    /// nothing to say, so rows from paths that know neither keep their shape.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_trial_is_a_row_with_its_error_ranked_last_and_fold_spread_rides_along()
+    {
+        var failed = new TrialRecord
+        {
+            TrialNumber = 1,
+            Trainer = TrainerDescriptor.Of("LightGbm"),
+            Metrics = new Dictionary<string, double>(),
+            RuntimeSeconds = 0.1,
+            Error = "lib_lightgbm not found"
+        };
+        var scored = new TrialRecord
+        {
+            TrialNumber = 2,
+            Trainer = TrainerDescriptor.Of("FastTree"),
+            Metrics = new Dictionary<string, double> { ["auc"] = 0.9 },
+            RuntimeSeconds = 1.2,
+            Validation = new TrialValidation(5, new Dictionary<string, double> { ["auc"] = 0.02 })
+        };
+
+        var path = await SaveAsync([failed, scored, Trial(3, "Lbfgs", "auc", 0.8)], rankingMetric: "auc", task: "binary-classification");
+
+        var rows = (await File.ReadAllLinesAsync(Path.Combine(path, "trials.ndjson")))
+            .Select(l => JsonDocument.Parse(l).RootElement).ToList();
+        Assert.Equal("lib_lightgbm not found", rows[0].GetProperty("error").GetString());
+        Assert.False(rows[0].TryGetProperty("validation", out _));
+        Assert.Equal(5, rows[1].GetProperty("validation").GetProperty("folds").GetInt32());
+        Assert.Equal(0.02, rows[1].GetProperty("validation").GetProperty("standardDeviation").GetProperty("auc").GetDouble());
+        Assert.False(rows[1].TryGetProperty("error", out _));
+        Assert.False(rows[2].TryGetProperty("validation", out _));
+
+        var leaderboard = ReadLeaderboard(path);
+        Assert.Equal(3, leaderboard.GetProperty("trialCount").GetInt32());
+        Assert.Equal(["FastTree", "Lbfgs", "LightGbm"],
+            leaderboard.GetProperty("trials").EnumerateArray().Select(t => t.GetProperty("trainerName").GetString()));
+        Assert.Contains("failed: lib_lightgbm not found", await File.ReadAllTextAsync(Path.Combine(path, "report.md")));
+    }
+
+    /// <summary>The seed and threads of MLoop's own search are recorded with the run, and absent otherwise.</summary>
+    [Fact]
+    public async Task The_search_settings_are_recorded_in_config_json_only_when_there_are_some()
+    {
+        var id = await _experimentStore.GenerateIdAsync(ModelName, CancellationToken.None);
+        var withSearch = Experiment(id, [Trial(1, "FastTree", "auc", 0.9)], "auc", "binary-classification");
+        withSearch = new ExperimentData
+        {
+            ModelName = withSearch.ModelName,
+            ExperimentId = withSearch.ExperimentId,
+            Timestamp = withSearch.Timestamp,
+            Status = withSearch.Status,
+            Task = withSearch.Task,
+            Config = new ExperimentConfig
+            {
+                DataFile = "test.csv",
+                LabelColumn = "label",
+                TimeLimitSeconds = 60,
+                Metric = "auc",
+                TestSplit = 0.2,
+                Search = new MLoop.Search.Candidates.SearchSettings(Seed: 7, Threads: 1)
+            },
+            Trials = withSearch.Trials,
+            RankingMetric = withSearch.RankingMetric
+        };
+        await _experimentStore.SaveAsync(ModelName, withSearch, CancellationToken.None);
+        var withoutPath = await SaveAsync([Trial(1, "A", "r_squared", 0.4)], rankingMetric: "r_squared");
+
+        var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(_experimentStore.GetExperimentPath(ModelName, id), "config.json"))).RootElement;
+        Assert.Equal(7, config.GetProperty("search").GetProperty("seed").GetInt32());
+        Assert.Equal(1, config.GetProperty("search").GetProperty("threads").GetInt32());
+        Assert.False(JsonDocument.Parse(File.ReadAllText(Path.Combine(withoutPath, "config.json"))).RootElement.TryGetProperty("search", out _));
+
+        var loaded = await _experimentStore.LoadAsync(ModelName, id, CancellationToken.None);
+        Assert.Equal(new MLoop.Search.Candidates.SearchSettings(Seed: 7, Threads: 1), loaded.Config!.Search);
+    }
+
     [Fact]
     public async Task A_run_that_reported_no_trial_writes_no_trial_files_at_all()
     {

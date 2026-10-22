@@ -18,12 +18,12 @@ namespace MLoop.Core.AutoML;
 public static class TrialLedger
 {
     /// <summary>
-    /// Whether a trial produced something worth recording. A trial that threw has no validation
-    /// metrics: there is nothing to rank it by, and the terminal exception already reports the
-    /// failure. Such a trial is neither reported live nor persisted — that is what keeps the event
-    /// stream, <c>phase(complete).trials</c> and <c>trials.ndjson</c> counting the same things.
+    /// Whether a trial is recorded: it produced metrics, or it failed and says why. A trial with
+    /// neither — AutoML's live stream never shows one that threw — has nothing to record. One rule for
+    /// the live channel and the after-the-fact records is what keeps the event stream,
+    /// <c>phase(complete).trials</c> and <c>trials.ndjson</c> counting the same things.
     /// </summary>
-    public static bool IsReportable(object? validationMetrics) => validationMetrics is not null;
+    public static bool IsReportable(TrialResult trial) => trial.Succeeded || trial.Error is not null;
 
     /// <summary>
     /// Drops non-finite metric values and copies the rest. A trial that failed to produce a usable
@@ -55,15 +55,23 @@ public static class TrialLedger
 
     /// <summary>
     /// A search's trial as the record kept with the experiment, numbered <paramref name="number"/>.
-    /// Only a trial with metrics has a record (<see cref="IsReportable"/>); its non-finite values are
-    /// dropped (<see cref="OnlyFinite"/>).
+    /// A scored trial keeps its finite metrics (<see cref="OnlyFinite"/>) and, when they are a mean over
+    /// folds, their spread; a failed one keeps its error and no metrics.
     /// </summary>
-    public static TrialRecord ToRecord(TrialResult trial, int number) => new()
+    public static TrialRecord ToRecord(TrialResult trial, int number)
     {
-        TrialNumber = number,
-        Trainer = Descriptor(trial),
-        Metrics = OnlyFinite(trial.Metrics
-            ?? throw new ArgumentException("A trial without metrics has no record.", nameof(trial))),
-        RuntimeSeconds = trial.RuntimeSeconds ?? 0
-    };
+        if (!IsReportable(trial))
+            throw new ArgumentException("A trial with neither metrics nor an error has no record.", nameof(trial));
+        return new TrialRecord
+        {
+            TrialNumber = number,
+            Trainer = Descriptor(trial),
+            Metrics = trial.Metrics is { } metrics ? OnlyFinite(metrics) : new Dictionary<string, double>(),
+            RuntimeSeconds = trial.RuntimeSeconds ?? 0,
+            Validation = trial is { Folds: { } folds, StandardDeviation: { } spread }
+                ? new TrialValidation(folds, OnlyFinite(spread))
+                : null,
+            Error = trial.Metrics is null ? trial.Error : null,
+        };
+    }
 }

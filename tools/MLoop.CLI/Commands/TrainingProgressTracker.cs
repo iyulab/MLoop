@@ -146,7 +146,8 @@ public sealed class TrainingProgressTracker
     };
 
     /// <summary>The progress description for a completed trial.</summary>
-    public static string TrialDescription(TrainingProgress p) =>
-        $"[green]Trial {p.TrialNumber}:[/] {Markup.Escape(ShortTrainerName(p.TrainerName))} - "
-        + $"{Markup.Escape(p.MetricName ?? "")}={p.Metric.ToString("F4", CultureInfo.InvariantCulture)}";
+    public static string TrialDescription(TrainingProgress p) => p.Error is { } error
+        ? $"[yellow]Trial {p.TrialNumber}:[/] {Markup.Escape(ShortTrainerName(p.TrainerName))} - failed: {Markup.Escape(error)}"
+        : $"[green]Trial {p.TrialNumber}:[/] {Markup.Escape(ShortTrainerName(p.TrainerName))} - "
+          + $"{Markup.Escape(p.MetricName ?? "")}={p.Metric.ToString("F4", CultureInfo.InvariantCulture)}";
 }

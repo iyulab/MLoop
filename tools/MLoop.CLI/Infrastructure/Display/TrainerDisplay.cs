@@ -90,12 +90,14 @@ internal static class TrainerDisplay
     /// wording becomes a change of behaviour — the same thing the descriptor's own documentation
     /// warns against.
     /// </remarks>
-    internal static string? Footnote(string marker, TrainerDescriptor? trainer)
+    internal static string? Footnote(string marker, TrainerDescriptor? trainer, string? error = null)
     {
         if (trainer is null)
-            return null;
+            return error is null ? null : $"{marker} failed: {error}";
 
-        var parts = new List<string>(2);
+        var parts = new List<string>(3);
+        if (error is not null)
+            parts.Add($"failed: {error}");
         if (WasShortened(trainer.Name))
             parts.Add(trainer.Name);
         if (!string.IsNullOrEmpty(trainer.FallbackReason))

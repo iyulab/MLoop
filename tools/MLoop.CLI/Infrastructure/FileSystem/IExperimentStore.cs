@@ -160,6 +160,11 @@ public class ExperimentConfig
     // Trained with ONNX-expressible steps only (TrainingConfig.Portable). Absent when false.
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool Portable { get; init; }
+
+    // The seed and threads MLoop's own trainer search ran with — enough to repeat it. Absent when
+    // AutoML searched, or the task runs no search.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public MLoop.Search.Candidates.SearchSettings? Search { get; init; }
 }
 
 /// <summary>

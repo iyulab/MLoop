@@ -18,6 +18,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `EciSchemaProposer` (estimated cost for improvement across trainers). A trial's cost is in whatever unit one
   search keeps to — the search passes each trainer's relative cost rather than measured seconds, so one seed
   proposes the same trials in the same order on a busy machine as on an idle one. Not used by training yet.
+- A trial record (`TrialRecord`, a row of `trials.ndjson`) can carry `error` — a trial that failed, with no
+  metrics, ranked below every trial that scored — and `validation` (`folds` and each metric's
+  `standardDeviation`) when its metrics are a mean over folds. Both are absent where they say nothing, so
+  existing rows keep their shape. The `train --json` `trial` event carries `error` and no `value` for such a
+  trial, and it counts among the `trials` like any other. Only MLoop's own trainer search reports failures;
+  AutoML's does not. `TrainingProgress.Error` carries it in process.
+- `AutoMLResult.Search`: the seed and thread count MLoop's own trainer search ran with, recorded as `search` in
+  the experiment's `config.json` — what repeats the run.
 
 ### Changed
 
@@ -34,6 +42,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `MLoop.Core` declares the ML.NET components it calls — FastTree, LightGbm, TimeSeries, Recommender, ImageAnalytics
   and the ONNX Runtime managed API — instead of receiving them only through `Microsoft.ML.AutoML`. An in-process
   consumer gets the same assemblies; the package's dependency list now names them.
+
+- **Breaking (in-process API):** `TrialLedger.IsReportable` takes the search's `TrialResult` (a trial is
+  recorded when it scored or failed with a reason) instead of AutoML's metrics object.
 
 ### Fixed
 

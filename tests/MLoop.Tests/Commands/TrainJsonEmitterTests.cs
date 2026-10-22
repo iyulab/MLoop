@@ -47,6 +47,31 @@ public class TrainJsonEmitterTests
     }
 
     /// <summary>
+    /// A failed trial is a trial event too — it counts among <c>trials</c> — carrying its error and no
+    /// value: NaN has no JSON form, and a zero would read as a score.
+    /// </summary>
+    [Fact]
+    public void A_failed_trial_carries_its_error_and_no_value()
+    {
+        var (emitter, sink) = Build();
+
+        emitter.Trial(new TrainingProgress
+        {
+            TrialNumber = 3,
+            TrainerName = "LightGbm",
+            MetricName = "auc",
+            Metric = double.NaN,
+            Error = "lib_lightgbm not found",
+            ElapsedSeconds = 2
+        });
+
+        var e = Assert.Single(Events(sink));
+        Assert.Equal(3, e.GetProperty("n").GetInt32());
+        Assert.False(e.TryGetProperty("value", out _));
+        Assert.Equal("lib_lightgbm not found", e.GetProperty("error").GetString());
+    }
+
+    /// <summary>
     /// Each boundary carries exactly the facts it has — a field the phase cannot know (a probe
     /// time on a fixed-budget run, a metric before training starts) is omitted, never zero-filled.
     /// The name column doubles as the shared-vocabulary pin: a fixed budget's MainStart and

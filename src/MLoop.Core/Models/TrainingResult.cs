@@ -79,8 +79,12 @@ public class TrainingProgress
 {
     public required int TrialNumber { get; init; }
     public required string TrainerName { get; init; }
+    /// <summary>The trial's value of <see cref="MetricName"/>; <see cref="double.NaN"/> when it failed (<see cref="Error"/>).</summary>
     public required double Metric { get; init; }
     public required string MetricName { get; init; }
+
+    /// <summary>Why the trial failed; null for a trial that scored and for phase reports.</summary>
+    public string? Error { get; init; }
     public required double ElapsedSeconds { get; init; }
 
     // Auto-time phase reporting (null = normal trial update)

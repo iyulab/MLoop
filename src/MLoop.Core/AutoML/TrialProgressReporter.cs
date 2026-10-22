@@ -67,7 +67,7 @@ internal sealed class TrialProgressReporter<TMetrics> : IProgress<RunDetail<TMet
     /// </param>
     public void ReportTrial(string? trainerName, TMetrics? metrics)
     {
-        if (!TrialLedger.IsReportable(metrics))
+        if (metrics is null)
             return;
 
         // AutoML names a whole assembled pipeline (…=>FastTreeBinary) and exposes no hyperparameters
@@ -76,7 +76,7 @@ internal sealed class TrialProgressReporter<TMetrics> : IProgress<RunDetail<TMet
         sink.Completed(new TrialResult
         {
             Trainer = trainerName ?? string.Empty,
-            Metrics = new Dictionary<string, double> { [_metricName] = _selectMetric(metrics!) }
+            Metrics = new Dictionary<string, double> { [_metricName] = _selectMetric(metrics) }
         }, _metricName);
     }
 }

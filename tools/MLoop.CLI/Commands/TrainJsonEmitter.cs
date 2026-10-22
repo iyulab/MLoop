@@ -117,14 +117,18 @@ public sealed class TrainJsonEmitter(TextWriter output)
         });
     }
 
-    /// <summary>One completed trial, as the progress channel reported it.</summary>
+    /// <summary>
+    /// One completed trial, as the progress channel reported it. A failed trial carries <c>error</c>
+    /// and no <c>value</c>; it counts among the <c>trials</c> like any other.
+    /// </summary>
     public void Trial(TrainingProgress progress) => Write(new
     {
         @event = "trial",
         n = progress.TrialNumber,
         trainer = progress.TrainerName,
         metric = progress.MetricName,
-        value = progress.Metric,
+        value = double.IsFinite(progress.Metric) ? progress.Metric : (double?)null,
+        error = progress.Error,
         elapsedMs = (long)(progress.ElapsedSeconds * 1000),
         ts = Now()
     });
