@@ -17,6 +17,13 @@ package for you. It is versioned with them.
   options as a unit cube, ranges and log scales), `CostFrugalTuner` (CFO with the FLOW2 local search,
   starting from cheap settings and growing them) and `EciSchemaProposer` (which trainer to try next, by
   estimated cost for improvement). Seeded, a search proposes the same settings in the same order.
+- `CandidateCatalog` and `Featurizer` — the trainers a search tries per task with their search spaces,
+  and the feature vector they train on.
+- `FoldPlan` and `Validator` — stratified, seeded folds (a single holdout on large data) and a trial's
+  score as the mean over them.
+- `TrialRunner` — the search: schema by ECI, settings by the tuner, score by the validator, the best
+  refit on the whole partition. The first trial always finishes; a failed trial is recorded and the
+  search goes on.
 
 ## License
 
