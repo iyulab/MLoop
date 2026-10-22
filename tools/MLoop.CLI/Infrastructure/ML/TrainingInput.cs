@@ -1,5 +1,6 @@
 using MLoop.CLI.Commands;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using MLoop.Extensibility.Preprocessing;
@@ -52,7 +53,7 @@ public static class TrainingInput
         if (!DropsMissingLabelsByDefault(definition.Task) || string.IsNullOrEmpty(definition.Label))
             return new Prepared(file, 0);
 
-        var handler = new LabelValueHandler(new CsvHelperImpl(), new SilentLogger());
+        var handler = new LabelValueHandler(new CsvHelperImpl(), SilentLogger.Instance);
         var analysis = await handler.AnalyzeLabelColumnAsync(file, definition.Label);
         if (!string.IsNullOrEmpty(analysis.Error) || !analysis.HasMissingValues)
             return new Prepared(file, 0);
@@ -119,13 +120,4 @@ public static class TrainingInput
     /// <summary>The class distribution of <paramref name="dataFile"/>'s <paramref name="label"/> — what both entry points warn on.</summary>
     public static Task<MLoop.Core.Diagnostics.ClassDistributionResult> ClassesAsync(string dataFile, string label)
         => new MLoop.Core.Diagnostics.ClassDistributionAnalyzer(new CsvHelperImpl()).AnalyzeAsync(dataFile, label);
-
-    private sealed class SilentLogger : ILogger
-    {
-        public void Debug(string message) { }
-        public void Info(string message) { }
-        public void Warning(string message) { }
-        public void Error(string message) { }
-        public void Error(string message, Exception exception) { }
-    }
 }

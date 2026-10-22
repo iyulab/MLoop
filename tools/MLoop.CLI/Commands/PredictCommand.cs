@@ -507,7 +507,7 @@ public static class PredictCommand
                 {
                     AnsiConsole.MarkupLine($"[green]>[/] Applying {modelDef.Prep.Count} preprocessing step(s)...");
 
-                    var prepLogger = new PredictPrepLogger();
+                    var prepLogger = new ConsoleLogger();
                     var pipelineExecutor = new DataPipelineExecutor(prepLogger);
                     var prepOutputPath = Path.Combine(
                         Path.GetDirectoryName(resolvedDataFile)!,
@@ -1229,14 +1229,5 @@ public static class PredictCommand
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
-    }
-
-    private class PredictPrepLogger : ILogger
-    {
-        public void Debug(string message) { }
-        public void Info(string message) => AnsiConsole.MarkupLine($"[grey]  {Markup.Escape(message)}[/]");
-        public void Warning(string message) => AnsiConsole.MarkupLine($"[yellow]  {Markup.Escape(message)}[/]");
-        public void Error(string message) => AnsiConsole.MarkupLine($"[red]  {Markup.Escape(message)}[/]");
-        public void Error(string message, Exception ex) => AnsiConsole.MarkupLine($"[red]  {Markup.Escape(message)}: {Markup.Escape(ex.Message)}[/]");
     }
 }

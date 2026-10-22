@@ -76,7 +76,7 @@ public static class NewHookCommand
             }
 
             // Initialize hook engine
-            var hookEngine = new HookEngine(projectRoot, new NullLogger());
+            var hookEngine = new HookEngine(projectRoot, SilentLogger.Instance);
             var hookDir = hookEngine.GetHookDirectory(hookTypeEnum.Value);
 
             // Ensure directory exists
@@ -399,14 +399,5 @@ public static class NewHookCommand
         return string.Join(" ",
             text.Split(new[] { '-', '_' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(word => char.ToUpperInvariant(word[0]) + word.Substring(1).ToLowerInvariant()));
-    }
-
-    private class NullLogger : ILogger
-    {
-        public void Debug(string message) { }
-        public void Info(string message) { }
-        public void Warning(string message) { }
-        public void Error(string message) { }
-        public void Error(string message, Exception exception) { }
     }
 }

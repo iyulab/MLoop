@@ -197,7 +197,7 @@ public static class PrepRunCommand
             AnsiConsole.WriteLine();
 
             // Execute pipeline
-            var logger = new PrepRunLogger();
+            var logger = new ConsoleLogger();
             var executor = new DataPipelineExecutor(logger);
 
             await AnsiConsole.Status()
@@ -303,14 +303,5 @@ public static class PrepRunCommand
         // rendered — escape only this branch. The empty-case sentinel below is deliberately
         // literal Spectre markup, not user data, so it stays un-escaped.
         return parts.Count > 0 ? Markup.Escape(string.Join(", ", parts)) : "[grey]-[/]";
-    }
-
-    private class PrepRunLogger : ILogger
-    {
-        public void Debug(string message) { }
-        public void Info(string message) => AnsiConsole.MarkupLine($"[grey]  {Markup.Escape(message)}[/]");
-        public void Warning(string message) => AnsiConsole.MarkupLine($"[yellow]  {Markup.Escape(message)}[/]");
-        public void Error(string message) => AnsiConsole.MarkupLine($"[red]  {Markup.Escape(message)}[/]");
-        public void Error(string message, Exception ex) => AnsiConsole.MarkupLine($"[red]  {Markup.Escape(message)}: {Markup.Escape(ex.Message)}[/]");
     }
 }

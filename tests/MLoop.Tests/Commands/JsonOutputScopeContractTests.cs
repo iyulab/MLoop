@@ -151,7 +151,7 @@ public class JsonOutputScopeContractTests : IDisposable
             Console.SetError(TextWriter.Null);
             using (new JsonOutputScope())
             {
-                var logger = new MLoop.CLI.Infrastructure.ML.ScriptConsoleLogger();
+                var logger = new MLoop.CLI.Infrastructure.Diagnostics.ConsoleLogger();
                 logger.Info("📊 Calculating metric: profit");
                 logger.Error("a script failed");
                 Console.WriteLine("""{"ok":true}""");

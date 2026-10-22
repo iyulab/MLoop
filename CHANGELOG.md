@@ -48,6 +48,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop prep run` and the prep step of `mloop predict` reported warnings straight to the console, so with
+  `--json` they never became `warning` events; `mloop preprocess` and `mloop train` passed messages into console
+  markup unescaped, so a message with a bracket in it (a file name such as `[train].csv`) threw instead of
+  printing. Every command now logs through one console logger: information as narration, warnings through the
+  warning channel, errors to stderr, each printed as written. `mloop train` no longer prints debug detail (a
+  hook's metadata values, the clean-up of preprocessing files), as no other command did.
 - A weighted run could report an unweighted `negative_precision` beside weighted metrics. When no row was
   predicted negative, the weighted value is undefined and the unweighted one stayed under the same name; it is now
   left out, as the other undefined weighted metrics are.

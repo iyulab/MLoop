@@ -1273,7 +1273,7 @@ try
                 modelPath, resolvedTestPath, labelColumn, taskType, ct,
                 experiment.Config.InputSchema, experiment.Config.GroupColumn,
                 experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn,
-                new MLoop.Core.Metrics.MetricEngine(projectRootPath.Value, new MLoop.CLI.Infrastructure.ML.ScriptConsoleLogger()));
+                new MLoop.Core.Metrics.MetricEngine(projectRootPath.Value, new MLoop.CLI.Infrastructure.Diagnostics.ConsoleLogger()));
 
             var comparison = baseline is null
                 ? null

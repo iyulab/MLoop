@@ -668,7 +668,7 @@ public static class TrainCommand
                 if (shouldDropMissingLabels && !string.IsNullOrEmpty(effectiveDefinition.Label))
                 {
                     var csvHelper = new CsvHelperImpl();
-                    var labelHandler = new LabelValueHandler(csvHelper, new TrainCommandLogger());
+                    var labelHandler = new LabelValueHandler(csvHelper, new ConsoleLogger());
 
                     var labelAnalysis = await labelHandler.AnalyzeLabelColumnAsync(
                         resolvedDataFile,
@@ -738,7 +738,7 @@ public static class TrainCommand
                 // Data quality analysis if requested
                 if (analyzeData || !string.IsNullOrEmpty(generateScript))
                 {
-                    var analyzer = new DataQualityAnalyzer(new TrainCommandLogger());
+                    var analyzer = new DataQualityAnalyzer(new ConsoleLogger());
                     var issues = await analyzer.AnalyzeAsync(resolvedDataFile, effectiveDefinition.Label);
 
                     TrainPresenter.DisplayDataQualityIssues(issues);
@@ -746,7 +746,7 @@ public static class TrainCommand
                     // Generate preprocessing script if requested
                     if (!string.IsNullOrEmpty(generateScript))
                     {
-                        var scriptGenerator = new PreprocessingScriptGenerator(new TrainCommandLogger());
+                        var scriptGenerator = new PreprocessingScriptGenerator(new ConsoleLogger());
                         var generated = await scriptGenerator.AnalyzeAndGenerateAsync(
                             resolvedDataFile,
                             generateScript,
@@ -773,7 +773,7 @@ public static class TrainCommand
                 // Execute preprocessing scripts if available (Roslyn .cs scripts)
                 var preprocessingEngine = new PreprocessingEngine(
                     projectRoot,
-                    new TrainCommandLogger());
+                    new ConsoleLogger());
 
                 if (preprocessingEngine.HasPreprocessingScripts())
                 {
@@ -870,7 +870,7 @@ public static class TrainCommand
                 fileSystem,
                 experimentStore,
                 projectRoot,
-                new TrainCommandLogger());
+                new ConsoleLogger());
 
             // Ensure model directory structure exists
             await modelNameResolver.EnsureModelDirectoryAsync(resolvedModelName);
@@ -1238,33 +1238,10 @@ public static class TrainCommand
         var outFile = dataFile;
         if (route.CsvSteps.Count > 0)
         {
-            var executor = new DataPipelineExecutor(new TrainCommandLogger());
+            var executor = new DataPipelineExecutor(new ConsoleLogger());
             outFile = await executor.ExecuteAsync(dataFile, route.CsvSteps, prepOutputPath);
         }
 
         return (outFile, route.PreFeaturizer, route.Warnings, route.PreFeaturizerColumns);
-    }
-
-    private class TrainCommandLogger : ILogger
-    {
-        public void Debug(string message) => AnsiConsole.MarkupLine($"[grey]{message}[/]");
-        public void Info(string message) => AnsiConsole.WriteLine(message);
-
-        // Through the warning seam, not straight to the ambient console. Core raises real findings on
-        // this logger — LabelValueHandler's "Dropped N/M rows with missing labels" among them — and
-        // rendering them here directly meant machine mode silenced them with the rest of the
-        // narration: no `Warning:` line and, worse, no `warning` event. Label-drop was listed as one
-        // of the wired warning sources, and it was not one.
-        public void Warning(string message) => WarningConsole.Warn(Markup.Escape(message));
-
-        // Errors go to stderr: they surface while training is already streaming progress to stdout,
-        // and a subprocess consumer reading stderr on a non-zero exit must find the cause there.
-        // Debug/Info stay on stdout — they are narration, not diagnostics.
-        public void Error(string message) => ErrorConsole.Out.MarkupLine($"[red]{message}[/]");
-        public void Error(string message, Exception exception)
-        {
-            ErrorConsole.Out.MarkupLine($"[red]{message}[/]");
-            ErrorConsole.Out.WriteException(exception);
-        }
     }
 }

@@ -58,8 +58,8 @@ public class TrainingEngine : ITrainingEngine
         // The one place training runs the project's hooks — for `mloop train` and `POST /train` alike.
         if (!string.IsNullOrEmpty(projectRoot))
         {
-            _hookEngine = new HookEngine(projectRoot, logger ?? new ScriptConsoleLogger());
-            _metricEngine = new MLoop.Core.Metrics.MetricEngine(projectRoot, logger ?? new ScriptConsoleLogger());
+            _hookEngine = new HookEngine(projectRoot, logger ?? new ConsoleLogger());
+            _metricEngine = new MLoop.Core.Metrics.MetricEngine(projectRoot, logger ?? new ConsoleLogger());
         }
     }
 
@@ -302,7 +302,7 @@ public class TrainingEngine : ITrainingEngine
                     ExperimentResult = null,
                     Metrics = null,
                     ProjectRoot = _projectRoot!,
-                    Logger = new ScriptConsoleLogger(),
+                    Logger = new ConsoleLogger(),
                     Metadata = new Dictionary<string, object>
                     {
                         ["DataFile"] = dataFilePath,
@@ -399,7 +399,7 @@ public class TrainingEngine : ITrainingEngine
                     ExperimentResult = autoMLResult,
                     Metrics = autoMLResult.Metrics,
                     ProjectRoot = _projectRoot!,
-                    Logger = new ScriptConsoleLogger(),
+                    Logger = new ConsoleLogger(),
                     Metadata = new Dictionary<string, object>
                     {
                         ["LabelColumn"] = config.LabelColumn,

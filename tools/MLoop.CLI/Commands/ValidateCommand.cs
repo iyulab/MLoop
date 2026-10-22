@@ -659,7 +659,7 @@ public static class ValidateCommand
         if (!Directory.Exists(scripts))
             return;
 
-        var hooks = new MLoop.Core.Hooks.HookEngine(projectRoot, new ScriptConsoleLogger());
+        var hooks = new MLoop.Core.Hooks.HookEngine(projectRoot, new ConsoleLogger());
         foreach (var unplaced in hooks.UnplacedHooks())
             warnings.Add(new ValidationWarning(ScriptPath(Path.Combine(scripts, "hooks", unplaced)),
                 "In .mloop/scripts/hooks/ itself, so it runs at no stage — move it into the folder of its stage (pre-train/, post-train/, …)"));

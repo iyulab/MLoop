@@ -146,7 +146,7 @@ public static class PreprocessCommand
         string? labelColumn)
     {
         // Initialize preprocessing engine
-        var logger = new SpectreLogger();
+        var logger = new ConsoleLogger();
         var preprocessingEngine = new PreprocessingEngine(projectRoot, logger);
 
         // Check if preprocessing scripts exist
@@ -398,38 +398,6 @@ public static class PreprocessCommand
 }
 
 /// <summary>
-/// Logger implementation using Spectre.Console
-/// </summary>
-internal class SpectreLogger : MLoop.Extensibility.Preprocessing.ILogger
-{
-    public void Debug(string message)
-    {
-        AnsiConsole.MarkupLine($"[grey]{message}[/]");
-    }
-
-    public void Info(string message)
-    {
-        AnsiConsole.WriteLine(message);
-    }
-
-    public void Warning(string message)
-    {
-        AnsiConsole.MarkupLine($"[yellow]{message}[/]");
-    }
-
-    public void Error(string message)
-    {
-        AnsiConsole.MarkupLine($"[red]{message}[/]");
-    }
-
-    public void Error(string message, Exception exception)
-    {
-        AnsiConsole.MarkupLine($"[red]{message}[/]");
-        AnsiConsole.WriteException(exception);
-    }
-}
-
-/// <summary>
 /// Generic logger implementation for incremental workflow using Microsoft.Extensions.Logging
 /// </summary>
 internal class SpectreGenericLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
@@ -451,17 +419,17 @@ internal class SpectreGenericLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
         {
             case LogLevel.Trace:
             case LogLevel.Debug:
-                AnsiConsole.MarkupLine($"[grey]{message}[/]");
+                AnsiConsole.MarkupLine($"[grey]{Markup.Escape(message)}[/]");
                 break;
             case LogLevel.Information:
-                AnsiConsole.MarkupLine($"[blue]{message}[/]");
+                AnsiConsole.MarkupLine($"[blue]{Markup.Escape(message)}[/]");
                 break;
             case LogLevel.Warning:
-                AnsiConsole.MarkupLine($"[yellow]{message}[/]");
+                AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(message)}[/]");
                 break;
             case LogLevel.Error:
             case LogLevel.Critical:
-                AnsiConsole.MarkupLine($"[red]{message}[/]");
+                AnsiConsole.MarkupLine($"[red]{Markup.Escape(message)}[/]");
                 if (exception != null)
                 {
                     AnsiConsole.WriteException(exception);

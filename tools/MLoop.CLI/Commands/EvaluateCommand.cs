@@ -381,7 +381,7 @@ public static class EvaluateCommand
                         experimentData.Config.UserColumn,
                         experimentData.Config.ItemColumn,
                         weightColumn,
-                        new MLoop.Core.Metrics.MetricEngine(projectRoot, new ScriptConsoleLogger()));
+                        new MLoop.Core.Metrics.MetricEngine(projectRoot, new ConsoleLogger()));
                     (testMetrics, confusion) = (evaluation.Metrics, evaluation.Confusion);
 
                     ctx.Status("[green]Evaluation complete![/]");

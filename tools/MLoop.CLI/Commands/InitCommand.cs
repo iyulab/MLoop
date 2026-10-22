@@ -366,7 +366,7 @@ public static class InitCommand
 
         // Extensibility: scripts/ folder structure for hooks and metrics
         // Initialize hook directories (pre-train, post-train, pre-predict, post-evaluate)
-        var hookEngine = new MLoop.Core.Hooks.HookEngine(projectPath, new NullLogger());
+        var hookEngine = new MLoop.Core.Hooks.HookEngine(projectPath, SilentLogger.Instance);
         hookEngine.InitializeDirectories();
 
         await fileSystem.CreateDirectoryAsync(fileSystem.CombinePath(mloopPath, "scripts", "metrics"));
@@ -708,13 +708,4 @@ data:
 
     private static void CopyDirectory(string sourceDir, string destDir)
         => MLoop.Ops.Services.FilePromotionManager.CopyDirectory(sourceDir, destDir);
-
-    private class NullLogger : MLoop.Extensibility.Preprocessing.ILogger
-    {
-        public void Debug(string message) { }
-        public void Info(string message) { }
-        public void Warning(string message) { }
-        public void Error(string message) { }
-        public void Error(string message, Exception exception) { }
-    }
 }
