@@ -106,7 +106,7 @@ public class ClusteringKSearchRegressionTests : IDisposable
             NumClusters = 0           // auto-search k=2..maxK
         };
 
-        var runner = new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, dataView), _tmpDir);
+        var runner = new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, dataView));
         var result = await runner.RunAsync(config, cancellationToken: CancellationToken.None);
 
         Assert.NotNull(result);

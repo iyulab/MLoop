@@ -82,7 +82,7 @@ public class WeightedTrainingTests : IDisposable
             ColumnOverrides = weightColumn is null ? new() { ["W"] = "ignore" } : null,
         };
 
-        var result = await new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, data), _tmpDir).RunAsync(config);
+        var result = await new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
 
         var probe = ctx.Data.LoadFromEnumerable(new[]
         {
@@ -130,7 +130,7 @@ public class WeightedTrainingTests : IDisposable
         };
 
         var ex = await Assert.ThrowsAsync<NotSupportedException>(
-            () => new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, data), _tmpDir).RunAsync(config));
+            () => new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config));
         Assert.Contains("would ignore the weights", ex.Message);
     }
 }

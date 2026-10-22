@@ -1,7 +1,6 @@
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models;
 using MLoop.Core.Scripting;
 using MLoop.Extensibility;
-using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Metrics;
 
 namespace MLoop.Core.Tests.Scripting;
@@ -57,15 +56,8 @@ public class ScriptDiscoveryTests : IDisposable
         _discovery.InitializeDirectories();
 
         // Assert
-        Assert.True(Directory.Exists(_discovery.GetHooksDirectory()));
+        Assert.True(Directory.Exists(_discovery.GetDetectorsDirectory()));
         Assert.True(Directory.Exists(_discovery.GetMetricsDirectory()));
-    }
-
-    [Fact]
-    public async Task DiscoverHooksAsync_WithNoHooksDirectory_ReturnsEmptyList()
-    {
-        var hooks = await _discovery.DiscoverHooksAsync();
-        Assert.Empty(hooks);
     }
 
     [Fact]
@@ -73,31 +65,6 @@ public class ScriptDiscoveryTests : IDisposable
     {
         var metrics = await _discovery.DiscoverMetricsAsync();
         Assert.Empty(metrics);
-    }
-
-    [Fact]
-    public async Task DiscoverHooksAsync_WithValidHookScript_ReturnsHook()
-    {
-        _discovery.InitializeDirectories();
-        var hookScript = Path.Combine(_discovery.GetHooksDirectory(), "TestHook.cs");
-        var scriptContent = @"
-using System.Threading.Tasks;
-using MLoop.Extensibility.Hooks;
-
-public class TestDiscoveryHook : IMLoopHook
-{
-    public string Name => ""Test Discovery Hook"";
-    public Task<HookResult> ExecuteAsync(HookContext context)
-    {
-        return Task.FromResult(HookResult.Continue());
-    }
-}";
-        await File.WriteAllTextAsync(hookScript, scriptContent);
-
-        var hooks = await _discovery.DiscoverHooksAsync();
-
-        Assert.Single(hooks);
-        Assert.Equal("Test Discovery Hook", hooks[0].Name);
     }
 
     [Fact]
@@ -129,59 +96,62 @@ public class TestDiscoveryMetric : IMLoopMetric
     }
 
     [Fact]
-    public async Task DiscoverHooksAsync_WithMultipleScripts_ReturnsAllHooks()
+    public async Task DiscoverMetricsAsync_WithMultipleScripts_ReturnsAll()
     {
         _discovery.InitializeDirectories();
 
-        var hook1 = Path.Combine(_discovery.GetHooksDirectory(), "Hook1.cs");
-        await File.WriteAllTextAsync(hook1, @"
+        var metric1x = Path.Combine(_discovery.GetMetricsDirectory(), "Metric1.cs");
+        await File.WriteAllTextAsync(metric1x, @"
 using System.Threading.Tasks;
-using MLoop.Extensibility.Hooks;
-public class Hook1 : IMLoopHook
+using MLoop.Extensibility.Metrics;
+public class Metric1 : IMLoopMetric
 {
-    public string Name => ""Hook 1"";
-    public Task<HookResult> ExecuteAsync(HookContext context) => Task.FromResult(HookResult.Continue());
+    public string Name => ""Metric 1"";
+    public string Description => ""Metric 1"";
+    public Task<MetricResult> CalculateAsync(MetricContext context) => Task.FromResult(new MetricResult { Name = Name, Value = 0.5 });
 }");
 
-        var hook2 = Path.Combine(_discovery.GetHooksDirectory(), "Hook2.cs");
-        await File.WriteAllTextAsync(hook2, @"
+        var metric2x = Path.Combine(_discovery.GetMetricsDirectory(), "Metric2.cs");
+        await File.WriteAllTextAsync(metric2x, @"
 using System.Threading.Tasks;
-using MLoop.Extensibility.Hooks;
-public class Hook2 : IMLoopHook
+using MLoop.Extensibility.Metrics;
+public class Metric2 : IMLoopMetric
 {
-    public string Name => ""Hook 2"";
-    public Task<HookResult> ExecuteAsync(HookContext context) => Task.FromResult(HookResult.Continue());
+    public string Name => ""Metric 2"";
+    public string Description => ""Metric 2"";
+    public Task<MetricResult> CalculateAsync(MetricContext context) => Task.FromResult(new MetricResult { Name = Name, Value = 0.5 });
 }");
 
-        var hooks = await _discovery.DiscoverHooksAsync();
+        var metrics = await _discovery.DiscoverMetricsAsync();
 
-        Assert.Equal(2, hooks.Count);
-        Assert.Contains(hooks, h => h.Name == "Hook 1");
-        Assert.Contains(hooks, h => h.Name == "Hook 2");
+        Assert.Equal(2, metrics.Count);
+        Assert.Contains(metrics, h => h.Name == "Metric 1");
+        Assert.Contains(metrics, h => h.Name == "Metric 2");
     }
 
     [Fact]
-    public async Task DiscoverHooksAsync_WithInvalidScript_ContinuesWithOtherScripts()
+    public async Task DiscoverMetricsAsync_WithInvalidScript_ContinuesWithOtherScripts()
     {
         _discovery.InitializeDirectories();
 
-        var validHook = Path.Combine(_discovery.GetHooksDirectory(), "ValidHook.cs");
-        await File.WriteAllTextAsync(validHook, @"
+        var validMetric = Path.Combine(_discovery.GetMetricsDirectory(), "ValidMetric.cs");
+        await File.WriteAllTextAsync(validMetric, @"
 using System.Threading.Tasks;
-using MLoop.Extensibility.Hooks;
-public class ValidHook : IMLoopHook
+using MLoop.Extensibility.Metrics;
+public class ValidMetric : IMLoopMetric
 {
-    public string Name => ""Valid Hook"";
-    public Task<HookResult> ExecuteAsync(HookContext context) => Task.FromResult(HookResult.Continue());
+    public string Name => ""Valid Metric"";
+    public string Description => ""Valid Metric"";
+    public Task<MetricResult> CalculateAsync(MetricContext context) => Task.FromResult(new MetricResult { Name = Name, Value = 0.5 });
 }");
 
-        var invalidHook = Path.Combine(_discovery.GetHooksDirectory(), "InvalidHook.cs");
-        await File.WriteAllTextAsync(invalidHook, "public class InvalidHook { }");
+        var invalidMetric = Path.Combine(_discovery.GetMetricsDirectory(), "InvalidMetric.cs");
+        await File.WriteAllTextAsync(invalidMetric, "public class InvalidMetric { }");
 
-        var hooks = await _discovery.DiscoverHooksAsync();
+        var metrics = await _discovery.DiscoverMetricsAsync();
 
-        Assert.Single(hooks);
-        Assert.Equal("Valid Hook", hooks[0].Name);
+        Assert.Single(metrics);
+        Assert.Equal("Valid Metric", metrics[0].Name);
     }
 
     [Fact]
@@ -218,26 +188,27 @@ public class Metric2 : IMLoopMetric
     }
 
     [Fact]
-    public async Task DiscoverHooksAsync_IgnoresNonCsFiles()
+    public async Task DiscoverMetricsAsync_IgnoresNonCsFiles()
     {
         _discovery.InitializeDirectories();
 
-        var hookScript = Path.Combine(_discovery.GetHooksDirectory(), "ValidHook.cs");
-        await File.WriteAllTextAsync(hookScript, @"
+        var metricScript = Path.Combine(_discovery.GetMetricsDirectory(), "ValidMetric.cs");
+        await File.WriteAllTextAsync(metricScript, @"
 using System.Threading.Tasks;
-using MLoop.Extensibility.Hooks;
-public class ValidHook : IMLoopHook
+using MLoop.Extensibility.Metrics;
+public class ValidMetric : IMLoopMetric
 {
-    public string Name => ""Valid Hook"";
-    public Task<HookResult> ExecuteAsync(HookContext context) => Task.FromResult(HookResult.Continue());
+    public string Name => ""Valid Metric"";
+    public string Description => ""Valid Metric"";
+    public Task<MetricResult> CalculateAsync(MetricContext context) => Task.FromResult(new MetricResult { Name = Name, Value = 0.5 });
 }");
 
-        var textFile = Path.Combine(_discovery.GetHooksDirectory(), "README.txt");
+        var textFile = Path.Combine(_discovery.GetMetricsDirectory(), "README.txt");
         await File.WriteAllTextAsync(textFile, "Some documentation");
 
-        var hooks = await _discovery.DiscoverHooksAsync();
+        var metrics = await _discovery.DiscoverMetricsAsync();
 
-        Assert.Single(hooks);
+        Assert.Single(metrics);
     }
 
     [Fact]
@@ -254,10 +225,10 @@ public class ValidHook : IMLoopHook
     public void GetHooksDirectory_ReturnsCorrectPath()
     {
         // Act
-        var path = _discovery.GetHooksDirectory();
+        var path = _discovery.GetMetricsDirectory();
 
         // Assert
-        Assert.Equal(Path.Combine(_testProjectRoot, ".mloop", "scripts", "hooks"), path);
+        Assert.Equal(Path.Combine(_testProjectRoot, ".mloop", "scripts", "metrics"), path);
     }
 
     [Fact]
@@ -330,11 +301,11 @@ public class TestDiscoveryDetector : IPatternDetector
     /// not used" that holds on any machine, at any load, and so is the half that runs everywhere.
     /// </summary>
     [Fact]
-    public async Task DiscoverHooksAsync_NoDirectory_DiscoversNothing()
+    public async Task DiscoverMetricsAsync_NoDirectory_DiscoversNothing()
     {
-        Assert.Empty(await _discovery.DiscoverHooksAsync());
+        Assert.Empty(await _discovery.DiscoverMetricsAsync());
         // Repeated: a probe that found nothing must not have left something behind for the next one.
-        Assert.Empty(await _discovery.DiscoverHooksAsync());
+        Assert.Empty(await _discovery.DiscoverMetricsAsync());
     }
 
     /// <summary>
@@ -345,16 +316,16 @@ public class TestDiscoveryDetector : IPatternDetector
     /// </summary>
     [Fact]
     [Trait("Category", "Slow")]
-    public async Task DiscoverHooksAsync_Performance_FastWhenNoDirectory()
+    public async Task DiscoverMetricsAsync_Performance_FastWhenNoDirectory()
     {
         // Warmup: JIT compile the code path
-        await _discovery.DiscoverHooksAsync();
+        await _discovery.DiscoverMetricsAsync();
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var hooks = await _discovery.DiscoverHooksAsync();
+        var metrics = await _discovery.DiscoverMetricsAsync();
         stopwatch.Stop();
 
-        Assert.Empty(hooks);
+        Assert.Empty(metrics);
         Assert.True(stopwatch.ElapsedMilliseconds < 50,
             $"Discovery took {stopwatch.ElapsedMilliseconds}ms, expected < 50ms");
     }

@@ -1673,7 +1673,8 @@ MLoop supports code-based extensibility through hooks and custom metrics.
 
 Custom logic before and after training. A hook is a C# file in a folder named for its stage —
 `.mloop/scripts/hooks/pre-train/` or `.mloop/scripts/hooks/post-train/` — compiled when training
-starts (and cached). `mloop train` and `POST /train` run the same hooks, each once.
+starts (and cached). `mloop train` and `POST /train` run the same hooks, each once. A file directly in
+`.mloop/scripts/hooks/` belongs to no stage and does not run — training warns and names it.
 
 | Stage | What the hook gets | `HookResult.Abort` |
 |-------|--------------------|--------------------|

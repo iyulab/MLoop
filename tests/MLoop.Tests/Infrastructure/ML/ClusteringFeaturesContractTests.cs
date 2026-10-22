@@ -75,7 +75,7 @@ public class ClusteringFeaturesContractTests : IDisposable
         var trainCsv = WriteLabellessCsv(dir, "train.csv", 60);
 
         var loader = new CsvDataLoader(ctx);
-        var runner = new AutoMLRunner(ctx, loader, dir);
+        var runner = new AutoMLRunner(ctx, loader);
         var config = new TrainingConfig
         {
             ModelName = "test",

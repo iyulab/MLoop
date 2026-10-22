@@ -57,7 +57,7 @@ public class TabularTrialProgressTests : IDisposable
         string csvPath, string task, string label, string? metric = null, int timeLimitSeconds = 10)
     {
         var ctx = new MLContext(seed: 42);
-        var runner = new AutoMLRunner(ctx, new CsvDataLoader(ctx), _tmpDir);
+        var runner = new AutoMLRunner(ctx, new CsvDataLoader(ctx));
         var config = new TrainingConfig
         {
             ModelName = "trialprogress",
@@ -225,7 +225,7 @@ public class TabularTrialProgressTests : IDisposable
         var csv = await WriteCsvAsync("regression_noprogress.csv", lines);
 
         var ctx = new MLContext(seed: 42);
-        var runner = new AutoMLRunner(ctx, new CsvDataLoader(ctx), _tmpDir);
+        var runner = new AutoMLRunner(ctx, new CsvDataLoader(ctx));
         var config = new TrainingConfig
         {
             ModelName = "trialprogress",

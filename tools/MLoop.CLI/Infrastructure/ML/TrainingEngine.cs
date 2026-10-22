@@ -272,6 +272,7 @@ public class TrainingEngine : ITrainingEngine
             }
 
             // Execute PreTrain hooks
+            _hookEngine?.WarnAboutUnplacedHooks();
             if (_hookEngine != null && _hookEngine.HasHooks(HookType.PreTrain))
             {
                 // The training data for the hook, read by the loader training itself uses. A text

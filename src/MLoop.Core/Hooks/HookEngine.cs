@@ -68,6 +68,29 @@ public class HookEngine
     }
 
     /// <summary>
+    /// Hook scripts directly in <c>.mloop/scripts/hooks/</c>, outside every stage folder. Nothing runs
+    /// them: a hook runs from the folder of its stage. Training used to run these at both stages (a
+    /// second discovery inside the AutoML runner), and the guide once placed hooks there.
+    /// </summary>
+    public IReadOnlyList<string> UnplacedHooks()
+    {
+        var root = Path.Combine(_projectRoot, ".mloop", "scripts", "hooks");
+        return Directory.Exists(root)
+            ? Directory.GetFiles(root, "*.cs", SearchOption.TopDirectoryOnly).Select(Path.GetFileName).OfType<string>().Order().ToList()
+            : [];
+    }
+
+    /// <summary>Warns about <see cref="UnplacedHooks"/>, naming the files and where they go; says nothing when there are none.</summary>
+    public void WarnAboutUnplacedHooks()
+    {
+        var unplaced = UnplacedHooks();
+        if (unplaced.Count > 0)
+            _logger.Warning(
+                $"{string.Join(", ", unplaced)} {(unplaced.Count == 1 ? "is" : "are")} in .mloop/scripts/hooks/ itself and will not run — " +
+                $"move each into the folder of its stage: {string.Join(", ", HookDirectories.Values.Select(d => d + "/"))}.");
+    }
+
+    /// <summary>
     /// Checks if any hooks exist for the specified type.
     /// </summary>
     /// <param name="hookType">Type of hook to check</param>

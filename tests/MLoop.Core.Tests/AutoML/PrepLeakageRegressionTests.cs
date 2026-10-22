@@ -144,7 +144,7 @@ public class PrepLeakageRegressionTests : IDisposable
         // (Task 5 Execute sites). If PreFeaturizer was silently dropped, the normalizer
         // would be skipped but no error would occur; if wiring is broken, an exception fires.
         var dataProvider = new InMemoryDataProvider(ctx, dataView);
-        var runner = new AutoMLRunner(ctx, dataProvider, _tmpDir);
+        var runner = new AutoMLRunner(ctx, dataProvider);
         var result = await runner.RunAsync(config, cancellationToken: CancellationToken.None);
 
         // Assert ───────────────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ public class PrepLeakageRegressionTests : IDisposable
         // Act ──────────────────────────────────────────────────────────────────────
         // Real CsvDataLoader + real AutoMLRunner: the full production loader path.
         var loader = new CsvDataLoader(ctx);
-        var runner = new AutoMLRunner(ctx, loader, _tmpDir);
+        var runner = new AutoMLRunner(ctx, loader);
         var result = await runner.RunAsync(config, cancellationToken: CancellationToken.None);
 
         // Assert ───────────────────────────────────────────────────────────────────

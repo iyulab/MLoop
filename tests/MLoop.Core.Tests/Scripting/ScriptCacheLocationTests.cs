@@ -39,23 +39,24 @@ public class ScriptCacheLocationTests : IDisposable
     [Fact]
     public async Task DiscoveryCachesIntoTheProjectItWasGiven()
     {
-        var hooks = Path.Combine(_projectRoot, ".mloop", "scripts", "hooks");
-        Directory.CreateDirectory(hooks);
-        await File.WriteAllTextAsync(Path.Combine(hooks, "Noop.cs"), """
+        var metrics = Path.Combine(_projectRoot, ".mloop", "scripts", "metrics");
+        Directory.CreateDirectory(metrics);
+        await File.WriteAllTextAsync(Path.Combine(metrics, "Noop.cs"), """
             using System.Threading.Tasks;
-            using MLoop.Extensibility.Hooks;
+            using MLoop.Extensibility.Metrics;
 
-            public class NoopHook : IMLoopHook
+            public class NoopMetric : IMLoopMetric
             {
                 public string Name => "noop";
-                public Task<HookResult> ExecuteAsync(HookContext context) =>
-                    Task.FromResult(HookResult.Continue());
+                public string Description => "noop";
+                public Task<MetricResult> CalculateAsync(MetricContext context) =>
+                    Task.FromResult(new MetricResult { Name = Name, Value = 0 });
             }
             """);
 
         // No working-directory change: the point is that the project root alone decides where the
         // cache lands, and the runner's own directory is not the project.
-        var discovered = await new ScriptDiscovery(_projectRoot, log: _ => { }).DiscoverHooksAsync();
+        var discovered = await new ScriptDiscovery(_projectRoot, log: _ => { }).DiscoverMetricsAsync();
 
         Assert.Single(discovered);
         Assert.True(

@@ -20,8 +20,6 @@ public partial class AutoMLRunner
 {
     private readonly MLContext _mlContext;
     private readonly IDataProvider _dataLoader;
-    private readonly string? _projectRoot;
-    private readonly ScriptDiscovery _scriptDiscovery;
     private readonly SinkLogger _logger;
 
     // What a run has already said. A run can try more than one search (another metric, then a
@@ -30,7 +28,6 @@ public partial class AutoMLRunner
 
     /// <param name="mlContext">ML.NET context shared with the loader and the fitted pipelines.</param>
     /// <param name="dataLoader">Format-specific loader for the task's data.</param>
-    /// <param name="projectRoot">Project root, for script discovery. Defaults to the current directory.</param>
     /// <param name="warningSink">
     /// Where this runner's warnings go. Supplied by a host that has a warning channel of its own —
     /// the CLI routes them through its warning seam, which renders a <c>Warning:</c> line and, in
@@ -52,14 +49,11 @@ public partial class AutoMLRunner
     public AutoMLRunner(
         MLContext mlContext,
         IDataProvider dataLoader,
-        string? projectRoot = null,
         Action<string>? warningSink = null,
         Action<string>? narrationSink = null)
     {
         _mlContext = mlContext ?? throw new ArgumentNullException(nameof(mlContext));
         _dataLoader = dataLoader ?? throw new ArgumentNullException(nameof(dataLoader));
-        _projectRoot = projectRoot ?? Directory.GetCurrentDirectory();
-        _scriptDiscovery = new ScriptDiscovery(_projectRoot);
         _logger = new SinkLogger(warningSink, narrationSink);
     }
 
@@ -256,39 +250,6 @@ public partial class AutoMLRunner
         if (!string.IsNullOrEmpty(config.WeightColumn))
             (trainSet, validationSet) = PrepareWeightedPartitions(trainSet, testSet, config);
 
-        // Discover hooks (zero-overhead if .mloop/scripts/hooks/ doesn't exist)
-        var hooks = await _scriptDiscovery.DiscoverHooksAsync().ConfigureAwait(false);
-
-        // Execute pre-train hooks
-        if (hooks.Count > 0)
-        {
-            var preTrainContext = new HookContext
-            {
-                HookType = HookType.PreTrain,
-                HookName = "pre-train",
-                MLContext = _mlContext,
-                DataView = trainSet,
-                ProjectRoot = _projectRoot!,
-                Logger = _logger,
-                Metadata = new Dictionary<string, object>
-                {
-                    ["LabelColumn"] = config.LabelColumn,
-                    ["TaskType"] = config.Task,
-                    ["TimeLimitSeconds"] = config.TimeLimitSeconds
-                }
-            };
-
-            foreach (var hook in hooks)
-            {
-                var hookResult = await hook.ExecuteAsync(preTrainContext).ConfigureAwait(false);
-                if (hookResult.Action == HookAction.Abort)
-                {
-                    throw new InvalidOperationException(
-                        $"Hook '{hook.Name}' aborted training: {hookResult.Message}");
-                }
-            }
-        }
-
         // Ensure the task's on-demand native runtime is installed and loaded (no-op for tabular tasks).
         Runtime.RuntimeManager.EnsureRuntimeForTask(config.Task);
 
@@ -331,40 +292,6 @@ public partial class AutoMLRunner
                 $"{undefinedMetrics.Count} metric(s) were undefined (NaN/Infinity), most likely because the " +
                 $"test split has too few samples (near-zero variance). Recorded as worst-case so they cannot be " +
                 $"mistaken for a good model: {string.Join(", ", undefinedMetrics)}. Provide more data for reliable metrics.");
-
-        // Execute post-train hooks
-        if (hooks.Count > 0)
-        {
-            var postTrainContext = new HookContext
-            {
-                HookType = HookType.PostTrain,
-                HookName = "post-train",
-                MLContext = _mlContext,
-                DataView = testSet,
-                Model = result.Model,
-                ProjectRoot = _projectRoot!,
-                Logger = _logger,
-                Metadata = new Dictionary<string, object>
-                {
-                    ["LabelColumn"] = config.LabelColumn,
-                    ["TaskType"] = config.Task,
-                    ["BestTrainer"] = result.BestTrainer,
-                    ["Metrics"] = result.Metrics
-                }
-            };
-
-            foreach (var hook in hooks)
-            {
-                try
-                {
-                    await hook.ExecuteAsync(postTrainContext).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Post-train hook '{hook.Name}' failed: {ex.Message}");
-                }
-            }
-        }
 
         // Capture input schema from training data for prediction use.
         // `with` rather than a hand-written copy: this rewrap used to list every property, so each

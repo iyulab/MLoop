@@ -1,13 +1,13 @@
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
 using MLoop.Extensibility;
-using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Metrics;
 
 namespace MLoop.Core.Scripting;
 
 /// <summary>
-/// Discovers hooks, metrics, and pattern detectors from filesystem using convention-based patterns.
-/// Searches .mloop/scripts/hooks/*.cs, .mloop/scripts/metrics/*.cs, and .mloop/scripts/detectors/*.cs
+/// Discovers metrics and pattern detectors from filesystem using convention-based patterns.
+/// Searches .mloop/scripts/metrics/*.cs and .mloop/scripts/detectors/*.cs. Hooks are
+/// <see cref="Hooks.HookEngine"/>'s: they run from a stage folder under .mloop/scripts/hooks/.
 /// </summary>
 public class ScriptDiscovery
 {
@@ -26,16 +26,6 @@ public class ScriptDiscovery
         _projectRoot = projectRoot ?? Directory.GetCurrentDirectory();
         _scriptLoader = scriptLoader ?? new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot));
         _log = log ?? Data.CsvDataLoader.NoLog;
-    }
-
-    /// <summary>
-    /// Discovers all hooks from .mloop/scripts/hooks/*.cs
-    /// </summary>
-    /// <returns>List of discovered hook instances</returns>
-    public async Task<List<IMLoopHook>> DiscoverHooksAsync()
-    {
-        var hooksPath = Path.Combine(_projectRoot, ".mloop", "scripts", "hooks");
-        return await DiscoverScriptsAsync<IMLoopHook>(hooksPath, "hooks").ConfigureAwait(false);
     }
 
     /// <summary>
@@ -122,13 +112,12 @@ public class ScriptDiscovery
     }
 
     /// <summary>
-    /// Gets the display name of a hook or metric instance.
+    /// Gets the display name of a metric or detector instance.
     /// </summary>
     private string GetInstanceName(object instance)
     {
         return instance switch
         {
-            IMLoopHook hook => hook.Name,
             IMLoopMetric metric => metric.Name,
             IPatternDetector detector => $"{detector.GetType().Name} ({detector.PatternType})",
             _ => instance.GetType().Name
@@ -155,14 +144,6 @@ public class ScriptDiscovery
     }
 
     /// <summary>
-    /// Gets the full path to the hooks directory.
-    /// </summary>
-    public string GetHooksDirectory()
-    {
-        return Path.Combine(_projectRoot, ".mloop", "scripts", "hooks");
-    }
-
-    /// <summary>
     /// Gets the full path to the metrics directory.
     /// </summary>
     public string GetMetricsDirectory()
@@ -183,11 +164,9 @@ public class ScriptDiscovery
     /// </summary>
     public void InitializeDirectories()
     {
-        Directory.CreateDirectory(GetHooksDirectory());
         Directory.CreateDirectory(GetMetricsDirectory());
         Directory.CreateDirectory(GetDetectorsDirectory());
         _log($"✅ Created extensibility directories:");
-        _log($"  📁 {GetHooksDirectory()}");
         _log($"  📁 {GetMetricsDirectory()}");
         _log($"  📁 {GetDetectorsDirectory()}");
     }

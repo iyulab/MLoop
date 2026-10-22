@@ -121,7 +121,7 @@ public class DeepLearningThrowPathTests
         DeepLearningRegistry.Register(new NarratingLoaderDeepLearningModule(data));
         try
         {
-            var runner = new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, data), tmpDir,
+            var runner = new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, data),
                 warningSink: narration.Add, narrationSink: narration.Add);
             var config = new TrainingConfig
             {
@@ -266,7 +266,7 @@ public class DeepLearningThrowPathTests
         Directory.CreateDirectory(tmpDir);
         try
         {
-            var runner = new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, dataView), tmpDir);
+            var runner = new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, dataView));
 
             var ex = await Assert.ThrowsAsync<NotSupportedException>(
                 () => runner.RunAsync(config, cancellationToken: CancellationToken.None));

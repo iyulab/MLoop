@@ -77,7 +77,7 @@ public class SchemaRoundTripTests : IDisposable
     private async Task<AutoMLResult> TrainAsync(MLContext ctx, string csvPath, string task, string label)
     {
         var loader = new CsvDataLoader(ctx);
-        var runner = new AutoMLRunner(ctx, loader, _tmpDir);
+        var runner = new AutoMLRunner(ctx, loader);
         var config = new TrainingConfig
         {
             ModelName = "test",

@@ -370,6 +370,30 @@ public class TestFailingHook : IMLoopHook
         };
     }
 
+    [Fact]
+    public void AHookOutsideEveryStageFolder_IsNamedWithWhereItGoes_AndAStagedOneIsNot()
+    {
+        var root = Path.Combine(_tempProjectRoot, ".mloop", "scripts", "hooks");
+        _engine.InitializeDirectories();
+        File.WriteAllText(Path.Combine(root, "check.cs"), "// unplaced");
+        File.WriteAllText(Path.Combine(_engine.GetHookDirectory(HookType.PreTrain), "staged.cs"), "// placed");
+
+        Assert.Equal(["check.cs"], _engine.UnplacedHooks());
+        _engine.WarnAboutUnplacedHooks();
+
+        var warning = Assert.Single(_logger.WarningMessages);
+        Assert.Contains("check.cs is in .mloop/scripts/hooks/ itself and will not run", warning);
+        Assert.Contains("pre-train/", warning);
+        Assert.DoesNotContain("staged.cs", warning);
+    }
+
+    [Fact]
+    public void NoHooksFolder_NoWarning()
+    {
+        _engine.WarnAboutUnplacedHooks();
+        Assert.Empty(_logger.WarningMessages);
+    }
+
     private class TestLogger : ILogger
     {
         public List<string> InfoMessages { get; } = new();

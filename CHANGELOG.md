@@ -37,6 +37,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Hooks run only from their stage folder (`hooks/pre-train/`, `hooks/post-train/`). A hook directly in
+  `.mloop/scripts/hooks/` used to run at both stages, from a second discovery inside training; it no longer runs, and
+  `mloop train` warns with its name and the folders to move it to. `AutoMLRunner` no longer takes a project root (it
+  was used only for that discovery), and `ScriptDiscovery.DiscoverHooksAsync` / `GetHooksDirectory` are gone —
+  `HookEngine` is where hooks are found and run.
+
 - A training job reads `Completed` only after its promotion is decided; before, a client that polled to completion
   could read production before the job's experiment had been promoted.
 

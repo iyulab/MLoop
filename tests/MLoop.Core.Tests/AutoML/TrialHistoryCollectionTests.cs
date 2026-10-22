@@ -37,7 +37,7 @@ public class TrialHistoryCollectionTests : IDisposable
         await File.WriteAllLinesAsync(path, lines);
 
         var ctx = new MLContext(seed: 42);
-        var runner = new AutoMLRunner(ctx, new CsvDataLoader(ctx), _tmpDir);
+        var runner = new AutoMLRunner(ctx, new CsvDataLoader(ctx));
         return await runner.RunAsync(new TrainingConfig
         {
             ModelName = "trialhistory",
