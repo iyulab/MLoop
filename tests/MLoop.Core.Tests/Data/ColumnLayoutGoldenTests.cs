@@ -2,24 +2,31 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.Core.Data;
 
 namespace MLoop.Core.Tests.Data;
 
 /// <summary>
-/// The column layout a saved model's input contract rests on, pinned byte for byte: what ML.NET AutoML's
-/// <c>InferColumns</c> — called as MLoop calls it at every site (a file, the label's name, <c>','</c>) —
-/// infers for a corpus of tables, rendered field by field into <c>Golden/column-layout.txt</c>. A model
-/// reads its input through the <c>TextLoader.Options</c> this produces, so the inference that replaces
-/// AutoML's must reproduce this file exactly. Each table exercises one rule: adjacent numbers folded into
-/// one vector, the boolean label, quoting, rows over several lines, empty and special numbers, a type that
-/// changes only past the sampled rows, the purpose a text column is given.
+/// The column layout a saved model's input contract rests on, pinned byte for byte: what
+/// <see cref="ColumnLayoutInference"/> infers for a corpus of tables, rendered field by field. A model reads
+/// its input through the <c>TextLoader.Options</c> this produces, so a change here changes every saved
+/// model's input contract. Each table exercises one rule: adjacent numbers folded into one vector, the
+/// boolean label, quoting, rows over several lines, empty and special numbers, a type that changes only past
+/// the sampled rows, the purpose a text column is given.
 /// </summary>
 /// <remarks>
-/// <c>MLOOP_UPDATE_GOLDEN=1</c> rewrites the file from the current inference. Do that only when the
-/// layout is meant to change — and then every saved model's input contract changes with it.
+/// <para>
+/// Both golden files were written by ML.NET AutoML's <c>InferColumns</c> — the inference this one replaced, and
+/// matched on every table before AutoML was removed: <c>column-layout.txt</c> for the corpus, and
+/// <c>column-layout-edges.txt</c> for the values at the edges of what reads as a number or a boolean. They are
+/// the layouts saved models were trained with, so they are checked against, not regenerated from, the
+/// inference.
+/// </para>
+/// <para>
+/// <c>MLOOP_UPDATE_GOLDEN=1</c> rewrites them from the current inference. Do that only when the layout is
+/// meant to change — and then every saved model's input contract changes with it.
+/// </para>
 /// </remarks>
 [Collection("FileSystem")]
 public sealed class ColumnLayoutGoldenTests : IDisposable
@@ -124,29 +131,26 @@ public sealed class ColumnLayoutGoldenTests : IDisposable
     }
 
     [Fact]
-    public void AutoMLInference_MatchesTheGoldenFile()
+    public void InferredLayouts_MatchTheGoldenFile() => AssertGolden("column-layout.txt", Corpus());
+
+    [Fact]
+    public void InferredLayouts_AtTheParserEdges_MatchTheGoldenFile() => AssertGolden("column-layout-edges.txt", ParserEdges());
+
+    private void AssertGolden(string file, IEnumerable<Table> tables)
     {
-        var rendered = Render(Corpus(), DescribeAutoML);
+        var rendered = Render(tables, Describe);
 
         if (Environment.GetEnvironmentVariable("MLOOP_UPDATE_GOLDEN") == "1")
         {
-            File.WriteAllText(SourceGoldenPath(), rendered);
+            File.WriteAllText(SourceGoldenPath(file), rendered);
             return;
         }
 
-        Assert.Equal(Golden(), rendered);
-    }
-
-    [Fact]
-    public void MLoopInference_MatchesTheGoldenFile()
-    {
-        Assert.Equal(Golden(), Render(Corpus(), DescribeMLoop));
-    }
-
-    [Fact]
-    public void MLoopInference_MatchesAutoML_AtTheParserEdges()
-    {
-        Assert.Equal(Render(ParserEdges(), DescribeAutoML), Render(ParserEdges(), DescribeMLoop));
+        // Read from the build output, where the project copies it: a deterministic build (CI) maps the
+        // source path a test could name to /_/, which does not exist.
+        var golden = Path.Combine(AppContext.BaseDirectory, "Golden", file);
+        Assert.True(File.Exists(golden), $"No golden file at {golden} — run once with MLOOP_UPDATE_GOLDEN=1.");
+        Assert.Equal(File.ReadAllText(golden).ReplaceLineEndings("\n"), rendered);
     }
 
     // The loader drops white space before an unquoted field, so only a quoted value keeps it — and then
@@ -164,11 +168,9 @@ public sealed class ColumnLayoutGoldenTests : IDisposable
         var path = Path.Combine(_dir, "leading.csv");
         File.WriteAllText(path, "v,label\n" + string.Concat(Enumerable.Range(0, 10).Select(i => $"{value},{(i % 2 == 0 ? "true" : "false")}\n")));
 
-        var autoML = new MLContext(seed: 1).Auto().InferColumns(path, labelColumnName: "label", separatorChar: ',');
-        var mloop = ColumnLayoutInference.Infer(new MLContext(seed: 1), path, "label");
+        var layout = ColumnLayoutInference.Infer(new MLContext(seed: 1), path, "label");
 
-        Assert.Equal(kind, autoML.TextLoaderOptions.Columns.Single(c => c.Name == "v").DataKind.ToString());
-        Assert.Equal(kind, mloop.Options.Columns.Single(c => c.Name == "v").DataKind.ToString());
+        Assert.Equal(kind, layout.Options.Columns.Single(c => c.Name == "v").DataKind.ToString());
     }
 
     [Fact]
@@ -187,25 +189,16 @@ public sealed class ColumnLayoutGoldenTests : IDisposable
         }
         Assert.True(new FileInfo(path).Length > 8 << 20);
 
-        string Describe()
+        string Rendered()
         {
             var text = new StringBuilder();
-            DescribeMLoop(text, path, "label");
+            Describe(text, path, "label");
             return text.ToString();
         }
 
-        var first = Describe();
-        Assert.Equal(first, Describe());
+        var first = Rendered();
+        Assert.Equal(first, Rendered());
         Assert.Contains("column late: String [1]", first);
-    }
-
-    // Read from the build output, where the project copies it: a deterministic build (CI) maps the
-    // source path a test could name to /_/, which does not exist.
-    private static string Golden()
-    {
-        var golden = Path.Combine(AppContext.BaseDirectory, "Golden", "column-layout.txt");
-        Assert.True(File.Exists(golden), $"No golden file at {golden} — run once with MLOOP_UPDATE_GOLDEN=1.");
-        return File.ReadAllText(golden).ReplaceLineEndings("\n");
     }
 
     private string Render(IEnumerable<Table> tables, Action<StringBuilder, string, string> describe)
@@ -230,25 +223,7 @@ public sealed class ColumnLayoutGoldenTests : IDisposable
         return text.ToString();
     }
 
-    private static void DescribeAutoML(StringBuilder text, string path, string label)
-    {
-        var inference = new MLContext(seed: 1).Auto().InferColumns(path, labelColumnName: label, separatorChar: ',');
-        DescribeOptions(text, inference.TextLoaderOptions);
-
-        var info = inference.ColumnInformation;
-        text.Append("label: ").Append(info.LabelColumnName).Append('\n');
-        Roles(text, "numeric", info.NumericColumnNames);
-        Roles(text, "categorical", info.CategoricalColumnNames);
-        Roles(text, "text", info.TextColumnNames);
-        Roles(text, "ignored", info.IgnoredColumnNames);
-        Roles(text, "image", info.ImagePathColumnNames);
-        if (info.ExampleWeightColumnName is { } weight)
-            text.Append("weight: ").Append(weight).Append('\n');
-        if (info.SamplingKeyColumnName is { } key)
-            text.Append("sampling key: ").Append(key).Append('\n');
-    }
-
-    private static void DescribeMLoop(StringBuilder text, string path, string label)
+    private static void Describe(StringBuilder text, string path, string label)
     {
         var layout = ColumnLayoutInference.Infer(new MLContext(seed: 1), path, label);
         DescribeOptions(text, layout.Options);
@@ -281,6 +256,6 @@ public sealed class ColumnLayoutGoldenTests : IDisposable
 
 
     // Where an update writes: the source tree, on a machine that builds from it.
-    private static string SourceGoldenPath([CallerFilePath] string source = "")
-        => Path.Combine(Path.GetDirectoryName(source)!, "Golden", "column-layout.txt");
+    private static string SourceGoldenPath(string file = "column-layout.txt", [CallerFilePath] string source = "")
+        => Path.Combine(Path.GetDirectoryName(source)!, "Golden", file);
 }

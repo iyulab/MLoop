@@ -1,0 +1,342 @@
+## edge-00 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-01 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-02 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-03 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-04 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-05 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: String [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: n
+categorical: v
+
+## edge-06 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: String [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: n
+categorical: v
+
+## edge-07 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-08 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-09 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-10 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: Boolean [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v, n
+
+## edge-11 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: Boolean [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v, n
+
+## edge-12 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-13 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: String [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: n
+categorical: v
+
+## edge-14 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: String [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: n
+categorical: v
+
+## edge-15 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-16 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-17 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-18 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-19 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-20 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-21 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-22 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: String [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: n
+categorical: v
+
+## edge-23 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-24 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: String [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: n
+categorical: v
+
+## edge-25 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-26 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-27 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: String [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: n
+categorical: v
+
+## edge-28 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: String [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: n
+categorical: v
+
+## edge-29 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: Boolean [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v, n
+
+## edge-30 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: Boolean [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v, n
+
+## edge-31 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: Boolean [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v, n
+
+## edge-32 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: Boolean [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v, n
+
+## edge-33 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: Boolean [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v, n
+
+## edge-34 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-35 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-36 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## edge-37 (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column v: String [0]
+column n: Single [1]
+column label: Boolean [2]
+label: label
+numeric: n
+categorical: v
+
+## duplicate-and-blank-headers (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0 2]
+column a_00: String [1]
+column label: Boolean [3]
+label: label
+numeric: Features
+categorical: a_00
+
+## two-boolean-features (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column BooleanFeatures: Boolean [0-1]
+column v: Single [2]
+column label: Single [3]
+label: label
+numeric: BooleanFeatures, v
+
+## long-text-low-spaces (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column code: String [0]
+column v: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v
+text: code
+
+## one-feature-distinct (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column code: String [0]
+column label: Boolean [1]
+label: label
+text: code
+
+## between-categorical-and-text (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column code: String [0]
+column v: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v
+ignored: code
+
+## ragged-rows (label: label)
+throws: Unable to split the file provided into multiple, consistent columns. Readable formats include delimited files such as CSV/TSV. Check for a consistent number of columns and proper escaping and quoting.
+
+## semicolons (label: label)
+throws: Unable to split the file provided into multiple, consistent columns. Readable formats include delimited files such as CSV/TSV. Check for a consistent number of columns and proper escaping and quoting.
+
+## missing-label (label: nope)
+throws: Specified label column 'nope' was not found.
+
