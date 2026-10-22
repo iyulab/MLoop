@@ -37,6 +37,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `log_loss_reduction` can be the optimizing metric of multiclass classification. It was refused while ML.NET AutoML
+  searched — AutoML minimized it although higher is better, and chose the model that had learned least; MLoop's
+  search ranks it the right way.
 - **MLoop no longer depends on ML.NET AutoML** (`Microsoft.ML.AutoML`). With it go the transitive TorchSharp,
   `Microsoft.ML.TorchSharp` and `Microsoft.ML.Vision` a tabular-only consumer of `MLoop.Core` used to receive —
   nothing to exclude any more (`docs/EMBEDDING.md`). **Breaking (in-process API):** `AutoMLRunner.BuildManualBinaryPipeline`

@@ -29,7 +29,7 @@ namespace MLoop.Core.Evaluation;
 /// </remarks>
 public static class MetricNames
 {
-    /// <summary>The value that asks AutoML to choose — resolved to the task's primary metric by <see cref="Canonical(string?, string?)"/>.</summary>
+    /// <summary>The value that asks for the task's default — resolved to its primary metric by <see cref="Canonical(string?, string?)"/>.</summary>
     public const string Auto = "auto";
 
     // Canonical names, grouped by the task family whose optimizer accepts them. The families are
@@ -37,26 +37,21 @@ public static class MetricNames
     private static readonly string[] Binary =
         ["accuracy", "auc", "auprc", "f1_score", "precision", "recall", "negative_precision", "negative_recall"];
     private static readonly string[] Multiclass =
-        ["macro_accuracy", "micro_accuracy", "log_loss"];
+        ["macro_accuracy", "micro_accuracy", "log_loss", "log_loss_reduction"];
     private static readonly string[] Regression =
         ["r_squared", "rmse", "mae", "mse"];
     private static readonly string[] Other =
-        ["average_distance", "davies_bouldin_index", "ndcg", "detection_rate", "mape", "exact_match", "char_f1", "log_loss_reduction", CalibrationError.MetricName];
+        ["average_distance", "davies_bouldin_index", "ndcg", "detection_rate", "mape", "exact_match", "char_f1", CalibrationError.MetricName];
 
     // Names that will not be optimized, with why — each was accepted once and optimized the wrong
-    // thing. top_k_accuracy needs a K, and AutoML scores trials with ML.NET's default of none, which
+    // thing. top_k_accuracy needs a K, and trials are scored with ML.NET's default of none, which
     // reports 0 for every model (measured: micro accuracy 1, top-k accuracy 0), so a run compared
-    // constants. log_loss_reduction is higher-better, but ML.NET's AutoML minimizes it
-    // (MultiClassMetricManager.IsMaximize: LogLossReduction => false), so a run converged on the
-    // model that had learned nothing (measured: trials up to 0.96, the result 0.0). It stays a
-    // reported metric; log_loss orders models on the same rows exactly as its reduction does.
+    // constants. (log_loss_reduction was here too while ML.NET AutoML searched: it minimized the
+    // metric although higher is better. MLoop's search ranks by MetricDirection, which has it right.)
     private static readonly IReadOnlyDictionary<string, string> NotOptimizable = new Dictionary<string, string>
     {
         [Fold("top_k_accuracy")] =
             "top-k accuracy needs a K, and trials are scored without one, so it is 0 for every model.",
-        [Fold("log_loss_reduction")] =
-            "the AutoML engine minimizes it although higher is better, and would choose the model that learned least. " +
-            "log_loss ranks models on the same rows exactly as its reduction does — optimize that.",
     };
 
     /// <summary>Every canonical metric name, in a stable order.</summary>

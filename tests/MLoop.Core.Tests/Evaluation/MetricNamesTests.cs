@@ -163,18 +163,17 @@ public class MetricNamesTests
     }
 
     /// <summary>
-    /// log_loss_reduction is higher-better and the AutoML engine minimizes it, so a run chose the model
-    /// that learned least. It is refused as an optimizing metric and stays a known, reported name.
+    /// log_loss_reduction was refused while ML.NET AutoML searched — it minimized the metric although
+    /// higher is better. MLoop's search ranks by <see cref="MetricDirection"/>, so a multiclass run may
+    /// optimize it; it still does not apply to another task.
     /// </summary>
     [Theory]
     [InlineData("log_loss_reduction")]
     [InlineData("LogLossReduction")]
-    public void LogLossReduction_IsRefusedAsTheOptimizingMetric_AndStaysKnown(string name)
+    public void LogLossReduction_IsAMulticlassOptimizingMetric(string name)
     {
-        var refusal = MetricNames.Rejection("multiclass-classification", name);
-
-        Assert.NotNull(refusal);
-        Assert.Contains("log_loss", refusal);
-        Assert.Equal("log_loss_reduction", MetricNames.Canonical(name));
+        Assert.Null(MetricNames.Rejection("multiclass-classification", name));
+        Assert.Equal("log_loss_reduction", MetricNames.Canonical("multiclass-classification", name));
+        Assert.NotNull(MetricNames.Rejection("binary-classification", name));
     }
 }

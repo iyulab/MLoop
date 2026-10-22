@@ -135,15 +135,32 @@ public class TabularTrialProgressTests : IDisposable
         }
         var csv = await WriteCsvAsync("multiclass.csv", lines);
 
-        // 30s, not the 10s the other two use: measured on this fixture, multiclass completes no
-        // trial at all inside 10s and the run ends in NoSuccessfulTrialException. Verified against
-        // the pre-change code, so it is a property of multiclass AutoML on a small budget rather
-        // than anything this change introduced.
-        var (result, progress) = await TrainAsync(
-            csv, "multiclass-classification", "label", metric: "micro_accuracy", timeLimitSeconds: 30);
+        var (result, progress) = await TrainAsync(csv, "multiclass-classification", "label", metric: "micro_accuracy");
 
         Assert.NotNull(result.Model);
         AssertTrialsWereReported(result, progress, expectedMetricName: "micro_accuracy");
+    }
+
+    /// <summary>
+    /// log_loss_reduction is higher-better: a search optimizing it keeps the trial that scored highest. ML.NET
+    /// AutoML minimized it and returned the model that had learned least, so it was refused until AutoML went.
+    /// </summary>
+    [Fact]
+    public async Task Multiclass_optimizing_log_loss_reduction_keeps_the_highest()
+    {
+        var lines = new List<string> { "f1,f2,label" };
+        for (int i = 0; i < 150; i++)
+            lines.Add($"{i % 37},{i % 17},class{(i % 37 + i % 17) % 3}");
+        var csv = await WriteCsvAsync("multiclass-llr.csv", lines);
+
+        var (result, _) = await TrainAsync(csv, "multiclass-classification", "label", metric: "log_loss_reduction");
+
+        Assert.Equal("log_loss_reduction", result.RankingMetric);
+        var scored = result.Trials.Where(t => t.Metrics.ContainsKey("log_loss_reduction")).ToList();
+        Assert.True(scored.Count > 1, "the search needs more than one trial to show which way it ranks");
+        var highest = scored.Max(t => t.Metrics["log_loss_reduction"]);
+        Assert.True(highest > scored.Min(t => t.Metrics["log_loss_reduction"]), "every trial scored the same, so the order shows nothing");
+        Assert.Contains(scored, t => t.Trainer.Name == result.Trainer.Name && t.Metrics["log_loss_reduction"] == highest);
     }
 
     [Fact]

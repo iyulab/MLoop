@@ -29,7 +29,6 @@ public class MetricVocabularyRoundTripTests
             "davies_bouldin_index",  // clustering's second metric
             "mape",                  // forecasting's second metric
             "exact_match",           // question answering's second metric
-            "log_loss_reduction",    // refused as an optimizing metric (MetricNames.Rejection)
             CalibrationError.MetricName,
         ];
         var optimizable = new[] { "binary-classification", "multiclass-classification", "regression" }
