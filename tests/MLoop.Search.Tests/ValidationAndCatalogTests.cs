@@ -159,4 +159,52 @@ public sealed class ValidationAndCatalogTests
                 "LbfgsLogisticRegressionOva", "SdcaLogisticRegressionOva"],
             CandidateCatalog.Multiclass().Select(c => c.Name));
     }
+
+    private sealed class WeightedClassRow
+    {
+        public string Label { get; set; } = "";
+        public float W { get; set; }
+
+        [VectorType(2)]
+        public float[] Features { get; set; } = [];
+    }
+
+    /// <summary>
+    /// Every multiclass candidate trains on the row weights — one-versus-all included, whose binary trainers
+    /// carry the weight column. Each point appears once per class, so only the weights tell the classes apart.
+    /// </summary>
+    [Fact]
+    public void EveryMulticlassCandidate_TrainsOnTheWeights()
+    {
+        var ml = new MLContext(seed: 1);
+        var random = new Random(7);
+        string[] classes = ["a", "b", "c"];
+        var rows = new List<WeightedClassRow>();
+        for (var i = 0; i < 300; i++)
+        {
+            var x = (float)random.NextDouble();
+            var region = x < 1f / 3 ? 0 : x < 2f / 3 ? 1 : 2;
+            foreach (var (label, k) in classes.Select((c, k) => (c, k)))
+                rows.Add(new WeightedClassRow { Label = label, W = k == region ? 20f : 1f, Features = [x, (float)random.NextDouble()] });
+        }
+        var data = ml.Data.LoadFromEnumerable(rows);
+        var probe = ml.Data.LoadFromEnumerable(new[]
+        {
+            new WeightedClassRow { Label = "a", Features = [0.1f, 0.5f] },
+            new WeightedClassRow { Label = "a", Features = [0.9f, 0.5f] },
+        });
+        var columns = new TrainerColumns("Label", "Features", "W");
+
+        foreach (var candidate in CandidateCatalog.Multiclass(name => name != "LightGbm" || LightGbmLoads()))
+        {
+            if (candidate.Name.StartsWith("Sdca", StringComparison.Ordinal))
+                continue;   // SDCA's start (L1 = 1) barely learns anything, weighted or not
+            var model = candidate.Build(ml, candidate.Space.PointAt(candidate.Space.Default), columns, new SearchSettings()).Fit(data);
+            var answers = model.Transform(probe).GetColumn<ReadOnlyMemory<char>>("PredictedLabel").Select(v => v.ToString()).ToArray();
+            Assert.True(answers is ["a", "c"], $"{candidate.Name}: answered {string.Join(", ", answers)} for the low and high regions");
+        }
+    }
+
+    private static bool LightGbmLoads() => System.Runtime.InteropServices.NativeLibrary.TryLoad(
+        "lib_lightgbm", typeof(Microsoft.ML.Trainers.LightGbm.LightGbmMulticlassTrainer).Assembly, null, out _);
 }
