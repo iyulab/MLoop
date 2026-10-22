@@ -144,6 +144,11 @@ jobs:
       run: |
         dotnet restore MLoop.slnx
         dotnet list MLoop.slnx package --vulnerable --include-transitive 2>&1 | tee vulnerability-report.txt
-        if grep -q "has the following vulnerable packages" vulnerability-report.txt; then
-          echo "::warning::Vulnerable packages detected. Review vulnerability-report.txt"
+        # A High or Critical advisory fails the job; Moderate and Low are reported. A warning alone was
+        # read by no one: a High advisory reached a published package that way.
+        if grep -Eq '^\s*>.*\b(High|Critical)\b' vulnerability-report.txt; then
+          echo "::error::High or Critical vulnerable package. See the report above."
+          exit 1
+        elif grep -q "has the following vulnerable packages" vulnerability-report.txt; then
+          echo "::warning::Vulnerable packages detected (Moderate or Low). See the report above."
         fi
