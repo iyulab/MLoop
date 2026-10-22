@@ -87,10 +87,43 @@ public class PerformanceDiagnostics
                 break;
         }
 
+        WarnIfNearPerfect(result, normalizedTask);
+
         // Add general suggestions based on data characteristics
         AddDataBasedSuggestions(result);
 
         return result;
+    }
+
+    /// <summary>The held-out score past which a model is more likely reading the answer than learning it.</summary>
+    internal const double NearPerfectScore = 0.999;
+
+    /// <summary>Rows below which a perfect held-out score is ordinary — a handful of test rows is easy to get all right.</summary>
+    internal const int NearPerfectMinimumRows = 500;
+
+    /// <summary>
+    /// A held-out score at the ceiling, on enough rows, is the signature of a leak: a feature computed
+    /// from the label, or recorded after it. Such a model scores the same on its own test rows and fails
+    /// on new data, where the leaked column is not there yet — so the warning is raised before promotion,
+    /// not after. It cannot tell a leak from a genuinely deterministic process; it says what to check.
+    /// </summary>
+    private static void WarnIfNearPerfect(PerformanceDiagnosticResult result, string? task)
+    {
+        if (result.RowCount < NearPerfectMinimumRows)
+            return;
+
+        var metric = task switch
+        {
+            "regression" => "r_squared",
+            "binary-classification" => "auc",
+            "multiclass-classification" => "macro_accuracy",
+            _ => null,
+        };
+        if (metric is null || !TryMetric(result.Metrics, metric, out var value) || value < NearPerfectScore)
+            return;
+
+        result.Warnings.Add($"Near-perfect on held-out rows ({metric} {value:F4})");
+        result.Suggestions.Add("Check that no feature is computed from the label or recorded after it — a leaked column scores like this and is missing from new data");
     }
 
     /// <summary>
@@ -783,9 +816,11 @@ public class PerformanceDiagnosticResult
     public List<string> Suggestions { get; set; } = new();
 
     /// <summary>
-    /// Whether the performance needs attention.
+    /// Whether the result is worth a reader's attention: low performance, or any warning. A warning on a
+    /// high score — a near-perfect one that may be a leak, an accuracy that hides one class — is the case
+    /// a reader most needs to see and least expects, so it is not held back by the score.
     /// </summary>
-    public bool NeedsAttention => OverallAssessment <= PerformanceLevel.Low;
+    public bool NeedsAttention => OverallAssessment <= PerformanceLevel.Low || Warnings.Count > 0;
 }
 
 /// <summary>

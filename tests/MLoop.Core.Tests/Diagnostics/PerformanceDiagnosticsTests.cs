@@ -704,4 +704,37 @@ public class PerformanceDiagnosticsTests
     }
 
     #endregion
+
+    #region Near-perfect held-out score
+
+    [Theory]
+    [InlineData("regression", "r_squared", 0.9998)]
+    [InlineData("binary-classification", "auc", 1.0)]
+    [InlineData("multiclass-classification", "macro_accuracy", 0.9995)]
+    public void Analyze_NearPerfectOnEnoughRows_WarnsOfALeak(string task, string metric, double value)
+    {
+        var result = _diagnostics.Analyze(task, new Dictionary<string, double> { [metric] = value }, rowCount: 1628);
+
+        Assert.Contains(result.Warnings, w => w.Contains("Near-perfect on held-out rows"));
+        Assert.Contains(result.Suggestions, s => s.Contains("computed from the label"));
+    }
+
+    [Fact]
+    public void Analyze_NearPerfectOnAHandfulOfRows_IsOrdinary()
+    {
+        // Fifty rows leave ten to test; getting all ten right is not evidence of anything.
+        var result = _diagnostics.Analyze("binary-classification", new Dictionary<string, double> { ["auc"] = 1.0 }, rowCount: 50);
+
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("Near-perfect"));
+    }
+
+    [Fact]
+    public void Analyze_AStrongButImperfectScore_IsNotALeak()
+    {
+        var result = _diagnostics.Analyze("regression", new Dictionary<string, double> { ["r_squared"] = 0.99 }, rowCount: 93_509);
+
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("Near-perfect"));
+    }
+
+    #endregion
 }

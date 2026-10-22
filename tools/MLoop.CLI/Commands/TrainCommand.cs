@@ -1003,7 +1003,8 @@ public static class TrainCommand
             var performanceDiagnostics = new PerformanceDiagnostics();
             var diagnosticResult = performanceDiagnostics.Analyze(
                 trainingConfig.Task,
-                result.Metrics);
+                result.Metrics,
+                rowCount: (int)Math.Min(result.RowCount, int.MaxValue));
 
             TrainPresenter.DisplayDiagnostics(diagnosticResult);
 

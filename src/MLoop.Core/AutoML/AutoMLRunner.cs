@@ -100,6 +100,21 @@ public partial class AutoMLRunner
     /// nowhere, so a text classifier got an unstratified split, no class-count estimate and no
     /// per-class minimum check.</para>
     /// </remarks>
+    /// <summary>
+    /// The rows a view holds. A view read from a file does not know its length
+    /// (<see cref="IDataView.GetRowCount"/> is null), so it is counted with a cursor that reads no column.
+    /// </summary>
+    internal static long RowsIn(IDataView data)
+    {
+        if (data.GetRowCount() is { } known)
+            return known;
+        long rows = 0;
+        using var cursor = data.GetRowCursor(Array.Empty<DataViewSchema.Column>());
+        while (cursor.MoveNext())
+            rows++;
+        return rows;
+    }
+
     public static bool IsClassification(string? task) =>
         Models.TaskTypes.Canonical(task)
             is "binary-classification"
@@ -578,7 +593,7 @@ public partial class AutoMLRunner
             Model = model,
             Metrics = metrics,
             ResidualModel = residualModel,
-            RowCount = trainSet.GetRowCount() ?? 0,
+            RowCount = RowsIn(trainSet),
             Trials = [.. channel.Records],
             RankingMetric = metric,
             Search = request.Settings
@@ -1164,7 +1179,7 @@ public partial class AutoMLRunner
                 Trainer = trainer,
                 Model = model,
                 Metrics = metricsDict,
-                RowCount = trainSet.GetRowCount() ?? 0,
+                RowCount = RowsIn(trainSet),
                 Trials = trialChannel.Records,
                 RankingMetric = trialChannel.RankingMetric
             };
@@ -1307,7 +1322,7 @@ public partial class AutoMLRunner
                 Trainer = TrainerDescriptor.Of("KMeans", ("k", bestK)),
                 Model = bestModel!,
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
-                RowCount = trainSet.GetRowCount() ?? 0,
+                RowCount = RowsIn(trainSet),
                 Trials = trialChannel.Records,
                 RankingMetric = trialChannel.RankingMetric
             };
@@ -1439,7 +1454,7 @@ public partial class AutoMLRunner
                 Trainer = TrainerDescriptor.Of(bestTrainerName),
                 Model = bestModel,
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
-                RowCount = trainSet.GetRowCount() ?? 0,
+                RowCount = RowsIn(trainSet),
                 Trials = trialChannel.Records,
                 RankingMetric = trialChannel.RankingMetric
             };
@@ -1807,7 +1822,7 @@ public partial class AutoMLRunner
                 Trainer = TrainerDescriptor.Of("MatrixFactorization", ("rank", 32), ("iter", 20)),
                 Model = model,
                 Metrics = metricsDict,
-                RowCount = trainSet.GetRowCount() ?? 0,
+                RowCount = RowsIn(trainSet),
                 Trials = trialChannel.Records,
                 RankingMetric = trialChannel.RankingMetric
             };

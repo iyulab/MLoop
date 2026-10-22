@@ -111,6 +111,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own first rows: the training partition, all class `0` there, read it as text; the test partition, reaching `1`
   and `2`, as a number. Every load of a run — both partitions, `mloop evaluate`, `mloop predict` — now types the
   label as the saved schema recorded it (`LabelKinds`).
+- **`mloop train` showed its performance diagnostics only for a weak model**, so a warning about a strong one never
+  appeared — and the training row count the diagnostics read was always 0, from a file-backed view that does not
+  know its length. Both are fixed, and a new warning says when a held-out score is near-perfect on 500 rows or more
+  (`r_squared`, `auc` or `macro_accuracy` ≥ 0.999): check that no feature is computed from the label or recorded
+  after it.
 - **Each column dropped from the features was announced twice** during `mloop train`; it is announced once, with
   what the reason means (`Excluded from features (Identifier): customerID — a distinct value in every row`).
 - **`mloop init .` replaced a project's own `mloop.yaml`, README and `.gitignore` with the template** — in a cloned
