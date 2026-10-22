@@ -21,6 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.ML" />
+    <PackageReference Include="Microsoft.ML.FastTree" />
+    <PackageReference Include="Microsoft.ML.LightGbm" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="MLoop.Search.Tests" />
     <!-- The trace tests run the upstream tuner beside this one, and only MLoop.Core.Tests can still reach it. -->
     <InternalsVisibleTo Include="MLoop.Core.Tests" />
