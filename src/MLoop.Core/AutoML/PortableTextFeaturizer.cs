@@ -1,5 +1,5 @@
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
+using MLoop.Search;
 using Microsoft.ML.Data;
 using Microsoft.ML.Transforms.Text;
 
@@ -66,40 +66,38 @@ public static class PortableTextFeaturizer
     private static string LengthColumn(string textColumn, int length) => $"{textColumn}__{length}grams";
 
     /// <summary>
-    /// Fits the portable featurization of <paramref name="columnInfo"/>'s text columns on the
-    /// training rows and applies it: each text column becomes a numeric vector under its own name
-    /// and is listed as a numeric feature; the intermediate columns are ignored. AutoML then searches
-    /// over numeric data, and <see cref="Prepend"/> puts the fitted featurizer in front of the model
-    /// it picks.
+    /// Fits the portable featurization of <paramref name="roles"/>' text columns on the training
+    /// rows and applies it: each text column becomes a numeric vector under its own name and takes
+    /// the numeric role; the intermediate columns are ignored. The search then runs over numeric
+    /// data, and <see cref="Prepend"/> puts the fitted featurizer in front of the model it picks.
     /// </summary>
     /// <remarks>
-    /// Fitted once, outside AutoML, rather than handed to AutoML as its pre-featurizer. As a
+    /// Fitted once, outside the search, rather than handed to it as its pre-featurizer. As a
     /// pre-featurizer it was refitted for every trial and the search came out worse — on the UCI SMS
     /// spam data, test AUC 0.9867 against 0.9952 fitted once (and 0.9874 for the default text
     /// featurization), with the same 40-second budget.
     /// </remarks>
     /// <returns>Unchanged inputs and a null featurizer when there is no text column.</returns>
-    public static (ColumnInformation? ColumnInfo, ITransformer? Featurizer, IDataView Train, IDataView? Validation) FitAndApply(
-        MLContext mlContext, ColumnInformation? columnInfo, IDataView train, IDataView? validation)
+    public static (ColumnRoles Roles, ITransformer? Featurizer, IDataView Train, IDataView? Validation) FitAndApply(
+        MLContext mlContext, ColumnRoles roles, IDataView train, IDataView? validation)
     {
-        if (columnInfo is null || columnInfo.TextColumnNames.Count == 0)
-            return (columnInfo, null, train, validation);
+        var textColumns = roles.Of(ColumnRole.Text);
+        if (textColumns.Count == 0)
+            return (roles, null, train, validation);
 
         IEstimator<ITransformer>? chain = null;
-        foreach (var text in columnInfo.TextColumnNames.ToList())
+        foreach (var text in textColumns)
         {
             var steps = For(mlContext, text);
             chain = chain is null ? steps : chain.Append(steps);
 
-            columnInfo.TextColumnNames.Remove(text);
-            columnInfo.NumericColumnNames.Add(text);
-            columnInfo.IgnoredColumnNames.Add(KeysColumn(text));
+            roles = roles.With(text, ColumnRole.Numeric).With(KeysColumn(text), ColumnRole.Ignored);
             for (var n = 1; n <= NgramLength; n++)
-                columnInfo.IgnoredColumnNames.Add(LengthColumn(text, n));
+                roles = roles.With(LengthColumn(text, n), ColumnRole.Ignored);
         }
 
         var featurizer = chain!.Fit(train);
-        return (columnInfo, featurizer, featurizer.Transform(train), validation is null ? null : featurizer.Transform(validation));
+        return (roles, featurizer, featurizer.Transform(train), validation is null ? null : featurizer.Transform(validation));
     }
 
     /// <summary>The model that reads raw text: <paramref name="featurizer"/> (if any) followed by <paramref name="model"/>.</summary>

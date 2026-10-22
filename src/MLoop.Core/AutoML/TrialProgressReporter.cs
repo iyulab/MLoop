@@ -1,5 +1,8 @@
 using Microsoft.ML.AutoML;
 using MLoop.Core.Models;
+using MLoop.Search;
+// Microsoft.ML.AutoML has a TrialResult of its own; this is the search's.
+using TrialResult = MLoop.Search.TrialResult;
 
 namespace MLoop.Core.AutoML;
 
@@ -23,7 +26,7 @@ namespace MLoop.Core.AutoML;
 /// the bar jump backwards on every fast trial.
 /// </para>
 /// </remarks>
-public sealed class TrialProgressReporter<TMetrics> : IProgress<RunDetail<TMetrics>>
+internal sealed class TrialProgressReporter<TMetrics> : IProgress<RunDetail<TMetrics>>
     where TMetrics : class
 {
     private readonly TrialProgressChannel _channel;
@@ -68,9 +71,12 @@ public sealed class TrialProgressReporter<TMetrics> : IProgress<RunDetail<TMetri
             return;
 
         // AutoML names a whole assembled pipeline (…=>FastTreeBinary) and exposes no hyperparameters
-        // to separate out, so the name is the descriptor. A blank name is labelled by the descriptor
-        // itself, so no call site has to remember to.
-        _channel.ReportCompleted(
-            TrainerDescriptor.Of(trainerName!), _metricName, _selectMetric(metrics!));
+        // to separate out, so the name is the whole trial description.
+        ITrialSink sink = _channel;
+        sink.Completed(new TrialResult
+        {
+            Trainer = trainerName ?? string.Empty,
+            Metrics = new Dictionary<string, double> { [_metricName] = _selectMetric(metrics!) }
+        }, _metricName);
     }
 }

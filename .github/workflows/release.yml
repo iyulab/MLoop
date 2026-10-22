@@ -258,6 +258,7 @@ jobs:
     - name: Pack in-process library
       run: |
         dotnet pack src/MLoop.Extensibility/MLoop.Extensibility.csproj --configuration Release -o ./nupkg
+        dotnet pack src/MLoop.Search/MLoop.Search.csproj --configuration Release -o ./nupkg
         dotnet pack src/MLoop.Core/MLoop.Core.csproj --configuration Release -o ./nupkg
 
     - name: Push to NuGet.org

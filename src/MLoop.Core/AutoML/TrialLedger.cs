@@ -1,3 +1,6 @@
+using MLoop.Core.Models;
+using MLoop.Search;
+
 namespace MLoop.Core.AutoML;
 
 /// <summary>
@@ -42,4 +45,25 @@ public static class TrialLedger
         }
         return finite;
     }
+
+    /// <summary>The trainer of a search's trial, as MLoop records trainers.</summary>
+    public static TrainerDescriptor Descriptor(TrialResult trial) => new()
+    {
+        Name = trial.Trainer,
+        Parameters = trial.Parameters
+    };
+
+    /// <summary>
+    /// A search's trial as the record kept with the experiment, numbered <paramref name="number"/>.
+    /// Only a trial with metrics has a record (<see cref="IsReportable"/>); its non-finite values are
+    /// dropped (<see cref="OnlyFinite"/>).
+    /// </summary>
+    public static TrialRecord ToRecord(TrialResult trial, int number) => new()
+    {
+        TrialNumber = number,
+        Trainer = Descriptor(trial),
+        Metrics = OnlyFinite(trial.Metrics
+            ?? throw new ArgumentException("A trial without metrics has no record.", nameof(trial))),
+        RuntimeSeconds = trial.RuntimeSeconds ?? 0
+    };
 }

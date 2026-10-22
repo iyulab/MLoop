@@ -20,8 +20,10 @@
   <Project Path="src/MLoop.Core/MLoop.Core.csproj" />
   <Project Path="src/MLoop.Core.DeepLearning/MLoop.Core.DeepLearning.csproj" />
   <Project Path="src/MLoop.Extensibility/MLoop.Extensibility.csproj" />
+  <Project Path="src/MLoop.Search/MLoop.Search.csproj" />
   <Project Path="tests/MLoop.API.Tests/MLoop.API.Tests.csproj" />
   <Project Path="tests/MLoop.Core.Tests/MLoop.Core.Tests.csproj" />
   <Project Path="tests/MLoop.Core.DeepLearning.Tests/MLoop.Core.DeepLearning.Tests.csproj" />
+  <Project Path="tests/MLoop.Search.Tests/MLoop.Search.Tests.csproj" />
   <Project Path="tests/MLoop.Tests/MLoop.Tests.csproj" />
 </Solution>

@@ -5,6 +5,8 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.AutoML;
 
+using MLoop.Search;
+
 namespace MLoop.Core.Tests.AutoML;
 
 /// <summary>
@@ -27,9 +29,9 @@ public class ManualBinaryPipelineTests
     public void Fit_ReadsTheSourceABoundedNumberOfTimes()
     {
         var source = new CountingDataView(_mlContext.Data.LoadFromEnumerable(Rows(40)));
-        var columnInfo = AutoMLRunner.BuildColumnInformation(source, "Label");
+        var columnInfo = AutoMLRunner.BuildColumnRoles(source, "Label");
         Assert.NotNull(columnInfo);
-        Assert.Equal(12, columnInfo!.TextColumnNames.Count);
+        Assert.Equal(12, columnInfo.Of(ColumnRole.Text).Count);
 
         var pipeline = AutoMLRunner.BuildManualBinaryPipeline(_mlContext, source, "Label", columnInfo);
         var model = pipeline.Fit(source);
@@ -55,7 +57,7 @@ public class ManualBinaryPipelineTests
             A = i, B = i % 3, Label = i % 2 == 0,
         }));
 
-        var model = AutoMLRunner.BuildManualBinaryPipeline(_mlContext, data, "Label", columnInfo: null).Fit(data);
+        var model = AutoMLRunner.BuildManualBinaryPipeline(_mlContext, data, "Label", AutoMLRunner.BuildColumnRoles(data, "Label")).Fit(data);
 
         Assert.NotNull(model.Transform(data).Schema.GetColumnOrNull("PredictedLabel"));
     }

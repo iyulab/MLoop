@@ -2,6 +2,8 @@ using Microsoft.ML;
 using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 
+using MLoop.Search;
+
 namespace MLoop.Core.Tests.Data;
 
 /// <summary>
@@ -54,7 +56,7 @@ public sealed class CategoryColumnsTests : IDisposable
         => Assert.Equal(expected, CategoryColumns.IsCategory(sample, unique, rows));
 
     [Fact]
-    public void BuildColumnInformation_OneHotsTheDecidedCategories_AndTextsTheRest()
+    public void BuildColumnRoles_OneHotsTheDecidedCategories_AndTextsTheRest()
     {
         var ml = new MLContext(seed: 1);
         var data = ml.Data.LoadFromEnumerable(new[]
@@ -63,16 +65,16 @@ public sealed class CategoryColumnsTests : IDisposable
             new Row { Level = "WARN", Message = "disk almost full on the data volume", X = 2, Label = false },
         });
 
-        var info = AutoMLRunner.BuildColumnInformation(data, "Label", categoryColumns: ["Level"]);
+        var info = AutoMLRunner.BuildColumnRoles(data, "Label", categoryColumns: ["Level"]);
 
         Assert.NotNull(info);
-        Assert.Contains("Level", info!.CategoricalColumnNames);
-        Assert.DoesNotContain("Level", info.TextColumnNames);
-        Assert.Contains("Message", info.TextColumnNames);
+        Assert.Contains("Level", info.Of(ColumnRole.Categorical));
+        Assert.DoesNotContain("Level", info.Of(ColumnRole.Text));
+        Assert.Contains("Message", info.Of(ColumnRole.Text));
     }
 
     [Fact]
-    public void BuildColumnInformation_ATypedColumnKeepsItsDeclaredType()
+    public void BuildColumnRoles_ATypedColumnKeepsItsDeclaredType()
     {
         var ml = new MLContext(seed: 1);
         var data = ml.Data.LoadFromEnumerable(new[]
@@ -80,11 +82,11 @@ public sealed class CategoryColumnsTests : IDisposable
             new Row { Level = "INFO", Message = "m", X = 1, Label = true },
         });
 
-        var info = AutoMLRunner.BuildColumnInformation(data, "Label",
+        var info = AutoMLRunner.BuildColumnRoles(data, "Label",
             columnOverrides: new() { ["Level"] = "text" }, categoryColumns: ["Level"]);
 
-        Assert.Contains("Level", info!.TextColumnNames);
-        Assert.DoesNotContain("Level", info.CategoricalColumnNames);
+        Assert.Contains("Level", info.Of(ColumnRole.Text));
+        Assert.DoesNotContain("Level", info.Of(ColumnRole.Categorical));
     }
 
     private sealed class Row

@@ -35,6 +35,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MLoop.Extensibility\MLoop.Extensibility.csproj" />
+    <!-- The trainer search: column roles, trial results, the metric policy. Packed as its own
+         package at the same version, so the published MLoop.Core depends on MLoop.Search. -->
+    <ProjectReference Include="..\MLoop.Search\MLoop.Search.csproj" />
   </ItemGroup>
 
   <ItemGroup>

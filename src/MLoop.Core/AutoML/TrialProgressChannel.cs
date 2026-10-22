@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using MLoop.Core.Models;
+using MLoop.Search;
 
 namespace MLoop.Core.AutoML;
 
@@ -24,7 +25,7 @@ namespace MLoop.Core.AutoML;
 /// and the terminal exception already carries the failure.
 /// </para>
 /// </remarks>
-public sealed class TrialProgressChannel
+public sealed class TrialProgressChannel : ITrialSink
 {
     private readonly IProgress<TrainingProgress>? _sink;
     private readonly Stopwatch _clock;
@@ -131,5 +132,16 @@ public sealed class TrialProgressChannel
             Metric = metric,
             ElapsedSeconds = elapsed.TotalSeconds
         });
+    }
+
+    /// <summary>
+    /// A search's finished trial, recorded and reported like any other. A trial that produced no
+    /// metrics is not shown: there is no result to show.
+    /// </summary>
+    void ITrialSink.Completed(TrialResult trial, string rankingMetric)
+    {
+        if (trial.Metrics is not { } metrics || !metrics.TryGetValue(rankingMetric, out var value))
+            return;
+        ReportCompleted(TrialLedger.Descriptor(trial), rankingMetric, value, metrics);
     }
 }

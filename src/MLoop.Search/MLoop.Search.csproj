@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Published with MLoop.Core at the same version: MLoop.Core depends on it. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>MLoop.Search</PackageId>
+    <Description>MLoop Search - the trainer search behind MLoop: column roles, trial results and the metric policy a search ranks by, on ML.NET</Description>
+    <PackageTags>automl;mlnet;machine-learning;hyperparameter-search</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!-- Nothing else of MLoop: MLoop.Core depends on this assembly, never the reverse, and the search
+       may reference ML.NET and nothing beyond it. DependencyBoundaryTests holds both lines. -->
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MLoop.Search.Tests" />
+  </ItemGroup>
+
+</Project>

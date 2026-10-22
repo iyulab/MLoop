@@ -6,7 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `MLoop.Search` package, published with `MLoop.Core` at the same version and a dependency of it: the trainer
+  search's own types — `ColumnRoles` (one role per column: numeric, categorical, text or ignored, and the label),
+  `TrialResult` and `ITrialSink` (a finished trial and where it is reported), and `IMetricPolicy` (the metric trials
+  are ranked by and which way is better). It depends on nothing else of MLoop. `MLoop.Core` supplies
+  `RankingPolicy`, MLoop's metric names and directions as an `IMetricPolicy`.
+
 ### Changed
+
+- **Breaking (in-process API):** `MLoop.Core` no longer hands out ML.NET AutoML column types.
+  `AutoMLRunner.BuildColumnInformation` is `AutoMLRunner.BuildColumnRoles` and returns a `ColumnRoles` for every
+  table — read a role's columns with `roles.Of(ColumnRole.Text)` where you read `info.TextColumnNames`, and the label
+  with `roles.Label`. It no longer returns null for a table of numeric columns: such a table is all
+  `ColumnRole.Numeric`. `AutoMLRunner.BuildManualBinaryPipeline` and `PortableTextFeaturizer.FitAndApply` take and
+  return `ColumnRoles`. `TrialProgressReporter<TMetrics>` is internal.
 
 - ONNX Runtime moves to 1.31.0 (from 1.23.2). `mloop export onnx --verify` needs the native library at the same
   version, so an installed 1.23.2 runtime now reads as needing reinstall: `mloop runtime list` shows the version on

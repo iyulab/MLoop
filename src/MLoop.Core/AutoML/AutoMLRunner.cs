@@ -1,5 +1,8 @@
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
+using MLoop.Search;
+// Microsoft.ML.AutoML has a TrialResult of its own; this is the search's.
+using TrialResult = MLoop.Search.TrialResult;
 using Microsoft.ML.Data;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
@@ -580,11 +583,12 @@ public partial class AutoMLRunner
 
         // Build explicit ColumnInformation to ensure text columns get
         // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
+        var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         var preFeaturizer = config.PreFeaturizer;
         ITransformer? portableText = null;
         if (config.Portable)
-            (columnInfo, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, columnInfo, trainSet, validationSet);
+            (roles, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, validationSet);
+        var columnInfo = AutoMLColumns.ToColumnInformation(roles);
 
         var trialReporter = CreateTrialReporter(progress, DescribeBinaryMetric(optimizingMetric));
 
@@ -975,17 +979,17 @@ public partial class AutoMLRunner
         // report (see TrialProgressChannel — reporting up front meant sending accuracy=0).
         var trialChannel = CreateTrialChannel(progress);
 
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
+        var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
 
         // The pre-featurizer (statistical prep, portable text) belongs in front of this pipeline as it
         // does in front of AutoML's — without it the fallback trained on columns prep never touched.
         var preFeaturizer = config.PreFeaturizer;
         ITransformer? portableText = null;
         if (config.Portable)
-            (columnInfo, portableText, trainSet, _) = PortableTextFeaturizer.FitAndApply(_mlContext, columnInfo, trainSet, null);
+            (roles, portableText, trainSet, _) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, null);
         var manualPipeline = BuildManualBinaryPipeline(_mlContext,
             preFeaturizer is null ? trainSet : preFeaturizer.Fit(trainSet).Transform(trainSet),
-            config.LabelColumn, columnInfo);
+            config.LabelColumn, roles);
         var trainingPipeline = preFeaturizer is null ? manualPipeline : preFeaturizer.Append(manualPipeline);
 
         var fittedPipeline = await Task.Run(
@@ -1044,9 +1048,9 @@ public partial class AutoMLRunner
     /// Public so the shape can be pinned by test without training end-to-end.
     /// </remarks>
     public static IEstimator<ITransformer> BuildManualBinaryPipeline(
-        MLContext mlContext, IDataView trainSet, string labelColumn, ColumnInformation? columnInfo)
+        MLContext mlContext, IDataView trainSet, string labelColumn, ColumnRoles roles)
     {
-        var featurePipeline = BuildFeaturePipeline(mlContext, trainSet, labelColumn, columnInfo);
+        var featurePipeline = BuildFeaturePipeline(mlContext, trainSet, labelColumn, roles);
 
         // One thread: this fallback runs on small data, where multi-threaded SDCA does not converge
         // — it runs to its iteration limit and its model differs between runs of the same seed.
@@ -1066,15 +1070,17 @@ public partial class AutoMLRunner
     /// Used by manual training fallback when AutoML is unavailable.
     /// </summary>
     private static IEstimator<ITransformer> BuildFeaturePipeline(
-        MLContext mlContext, IDataView data, string labelColumn, ColumnInformation? columnInfo)
+        MLContext mlContext, IDataView data, string labelColumn, ColumnRoles roles)
     {
         var featureColumns = new List<string>();
         IEstimator<ITransformer>? pipeline = null;
 
-        if (columnInfo != null)
+        // The same split the AutoML path makes: roles naming only numeric columns read every
+        // non-label column as a feature.
+        if (AutoMLColumns.NeedsExplicitRoles(roles))
         {
             // Text columns → FeaturizeText
-            foreach (var textCol in columnInfo.TextColumnNames)
+            foreach (var textCol in roles.Of(ColumnRole.Text))
             {
                 var outputCol = $"_Text_{textCol}";
                 var textEstimator = mlContext.Transforms.Text.FeaturizeText(outputCol, textCol);
@@ -1085,13 +1091,13 @@ public partial class AutoMLRunner
             }
 
             // Numeric columns pass through directly
-            foreach (var numCol in columnInfo.NumericColumnNames)
+            foreach (var numCol in roles.Of(ColumnRole.Numeric))
             {
                 featureColumns.Add(numCol);
             }
 
             // Categorical columns → OneHotEncoding
-            foreach (var catCol in columnInfo.CategoricalColumnNames)
+            foreach (var catCol in roles.Of(ColumnRole.Categorical))
             {
                 var outputCol = $"_Cat_{catCol}";
                 var catEstimator = mlContext.Transforms.Categorical.OneHotEncoding(outputCol, catCol);
@@ -1103,7 +1109,7 @@ public partial class AutoMLRunner
         }
         else
         {
-            // No column info — use all non-label columns as numeric features
+            // Only numeric roles — use all non-label columns as numeric features
             foreach (var col in data.Schema)
             {
                 if (col.IsHidden) continue;
@@ -1140,11 +1146,12 @@ public partial class AutoMLRunner
         var experiment = _mlContext.Auto().CreateMulticlassClassificationExperiment(settings);
 
         // Explicit ColumnInformation for text column featurization
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
+        var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         var preFeaturizer = config.PreFeaturizer;
         ITransformer? portableText = null;
         if (config.Portable)
-            (columnInfo, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, columnInfo, trainSet, validationSet);
+            (roles, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, validationSet);
+        var columnInfo = AutoMLColumns.ToColumnInformation(roles);
 
         var trialReporter = CreateTrialReporter(progress, DescribeMulticlassMetric(optimizingMetric));
 
@@ -1221,11 +1228,12 @@ public partial class AutoMLRunner
         var experiment = _mlContext.Auto().CreateRegressionExperiment(settings);
 
         // Explicit ColumnInformation for text column featurization
-        var columnInfo = BuildColumnInformation(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
+        var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         var preFeaturizer = config.PreFeaturizer;
         ITransformer? portableText = null;
         if (config.Portable)
-            (columnInfo, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, columnInfo, trainSet, validationSet);
+            (roles, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, validationSet);
+        var columnInfo = AutoMLColumns.ToColumnInformation(roles);
 
         var trialReporter = CreateTrialReporter(progress, DescribeRegressionMetric(optimizingMetric));
 
@@ -2209,15 +2217,15 @@ public partial class AutoMLRunner
             if (!TrialLedger.IsReportable(run.ValidationMetrics))
                 continue;
 
-            trials.Add(new TrialRecord
+            // AutoML names an assembled pipeline and exposes no hyperparameters to separate out, so
+            // the name is the whole trial description.
+            var trial = new TrialResult
             {
-                TrialNumber = trials.Count + 1,
-                // AutoML names an assembled pipeline and exposes no hyperparameters to separate
-                // out, so the name is the whole descriptor; a blank one is labelled by the descriptor.
-                Trainer = TrainerDescriptor.Of(run.TrainerName),
-                Metrics = TrialLedger.OnlyFinite(describeAll(run.ValidationMetrics)),
+                Trainer = run.TrainerName ?? string.Empty,
+                Metrics = describeAll(run.ValidationMetrics),
                 RuntimeSeconds = run.RuntimeInSeconds
-            });
+            };
+            trials.Add(TrialLedger.ToRecord(trial, trials.Count + 1));
         }
 
         return trials;
@@ -2306,12 +2314,12 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
-    /// Builds explicit ColumnInformation when text columns are present.
-    /// ML.NET's InferColumns may classify text columns as Ignored (especially in text-only datasets),
-    /// causing AutoML to generate an empty __Features__ pipeline and crash.
-    /// Returns null if no text columns are found (existing behavior sufficient).
+    /// Decides the role of every non-label column the search may read: an override in the
+    /// configuration wins, then a string column the run decided holds categories is categorical,
+    /// any other string column is text, and numbers, booleans and numeric vectors are numeric.
+    /// Columns of any other type get no role.
     /// </summary>
-    public static ColumnInformation? BuildColumnInformation(
+    public static ColumnRoles BuildColumnRoles(
         IDataView data, string labelColumn,
         Action<string>? log = null,
         Dictionary<string, string>? columnOverrides = null,
@@ -2385,23 +2393,12 @@ public partial class AutoMLRunner
             }
         }
 
-        // If no text columns and no overrides applied, return null (default behavior)
-        if (textColumns.Count == 0 && categoricalColumns.Count == 0 && ignoredColumns.Count == 0)
-            return null;
-
-        var columnInfo = new ColumnInformation { LabelColumnName = labelColumn };
-
-        foreach (var tc in textColumns)
-            columnInfo.TextColumnNames.Add(tc);
-
-        foreach (var nc in numericColumns)
-            columnInfo.NumericColumnNames.Add(nc);
-
-        foreach (var cc in categoricalColumns)
-            columnInfo.CategoricalColumnNames.Add(cc);
-
-        foreach (var ic in ignoredColumns)
-            columnInfo.IgnoredColumnNames.Add(ic);
+        // One role per column; the order within a role is the order the columns were met in.
+        var roles = new ColumnRoles(labelColumn,
+            textColumns.Select(c => KeyValuePair.Create(c, ColumnRole.Text))
+                .Concat(numericColumns.Select(c => KeyValuePair.Create(c, ColumnRole.Numeric)))
+                .Concat(categoricalColumns.Select(c => KeyValuePair.Create(c, ColumnRole.Categorical)))
+                .Concat(ignoredColumns.Select(c => KeyValuePair.Create(c, ColumnRole.Ignored))));
 
         var write = log ?? Data.CsvDataLoader.NoLog;
         if (textColumns.Count > 0)
@@ -2414,7 +2411,7 @@ public partial class AutoMLRunner
         if (ignoredColumns.Count > 0)
             write($"[Info] Ignored column(s) (override): {string.Join(", ", ignoredColumns)}");
 
-        return columnInfo;
+        return roles;
     }
 
     /// <summary>

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- The search knows nothing of MLoop.Core, and neither do its tests: the shared test helpers
+         that read MLoop.Core are not linked here (tests/Directory.Build.props). -->
+    <MLoopCoreTestHelpers>false</MLoopCoreTestHelpers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MLoop.Search\MLoop.Search.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- For the linked DeterministicTrainers helper every test assembly carries. -->
+    <PackageReference Include="Microsoft.ML" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

@@ -4,16 +4,18 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.Core.AutoML;
 
+using MLoop.Search;
+
 namespace MLoop.Core.Tests.AutoML;
 
 public class AutoMLRunnerTests
 {
     private readonly MLContext _mlContext = new MLContext(seed: 42);
 
-    #region BuildColumnInformation Tests
+    #region BuildColumnRoles Tests
 
     [Fact]
-    public void BuildColumnInformation_TextOnlyDataset_ReturnsWithTextColumns()
+    public void BuildColumnRoles_TextOnlyDataset_ReturnsWithTextColumns()
     {
         // Arrange: text-only dataset (Content + Label)
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -24,18 +26,18 @@ public class AutoMLRunnerTests
         });
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label");
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label");
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal("Label", result.LabelColumnName);
-        Assert.Contains("Content", result.TextColumnNames);
-        Assert.Empty(result.NumericColumnNames);
-        Assert.Empty(result.IgnoredColumnNames);
+        Assert.Equal("Label", result.Label);
+        Assert.Contains("Content", result.Of(ColumnRole.Text));
+        Assert.Empty(result.Of(ColumnRole.Numeric));
+        Assert.Empty(result.Of(ColumnRole.Ignored));
     }
 
     [Fact]
-    public void BuildColumnInformation_NumericOnlyDataset_ReturnsNull()
+    public void BuildColumnRoles_NumericOnlyDataset_AllNumeric_AndAutoMLInfersTheRest()
     {
         // Arrange: numeric-only dataset
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -45,14 +47,16 @@ public class AutoMLRunnerTests
         });
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label");
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label");
 
-        // Assert: null means use existing behavior (no text columns)
-        Assert.Null(result);
+        // Assert: every column numeric — and such a table reaches AutoML as its label alone, which
+        // is what kept AutoML from building an empty feature vector.
+        Assert.Equal(["Feature1", "Feature2"], result.Of(ColumnRole.Numeric));
+        Assert.Null(AutoMLColumns.ToColumnInformation(result));
     }
 
     [Fact]
-    public void BuildColumnInformation_MixedTextAndNumeric_ReturnsBothClassified()
+    public void BuildColumnRoles_MixedTextAndNumeric_ReturnsBothClassified()
     {
         // Arrange: mixed dataset
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -62,17 +66,17 @@ public class AutoMLRunnerTests
         });
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label");
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label");
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("Description", result.TextColumnNames);
-        Assert.Contains("Price", result.NumericColumnNames);
-        Assert.Equal("Label", result.LabelColumnName);
+        Assert.Contains("Description", result.Of(ColumnRole.Text));
+        Assert.Contains("Price", result.Of(ColumnRole.Numeric));
+        Assert.Equal("Label", result.Label);
     }
 
     [Fact]
-    public void BuildColumnInformation_LabelColumnExcluded_NotInAnyFeatureList()
+    public void BuildColumnRoles_LabelColumnExcluded_NotInAnyFeatureList()
     {
         // Arrange
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -81,17 +85,17 @@ public class AutoMLRunnerTests
         });
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label");
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label");
 
         // Assert
         Assert.NotNull(result);
-        Assert.DoesNotContain("Label", result.TextColumnNames);
-        Assert.DoesNotContain("Label", result.NumericColumnNames);
-        Assert.DoesNotContain("Label", result.IgnoredColumnNames);
+        Assert.DoesNotContain("Label", result.Of(ColumnRole.Text));
+        Assert.DoesNotContain("Label", result.Of(ColumnRole.Numeric));
+        Assert.DoesNotContain("Label", result.Of(ColumnRole.Ignored));
     }
 
     [Fact]
-    public void BuildColumnInformation_MultipleTextColumns_AllClassified()
+    public void BuildColumnRoles_MultipleTextColumns_AllClassified()
     {
         // Arrange: multiple text columns
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -101,17 +105,17 @@ public class AutoMLRunnerTests
         });
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label");
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label");
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("Title", result.TextColumnNames);
-        Assert.Contains("Body", result.TextColumnNames);
-        Assert.Equal(2, result.TextColumnNames.Count);
+        Assert.Contains("Title", result.Of(ColumnRole.Text));
+        Assert.Contains("Body", result.Of(ColumnRole.Text));
+        Assert.Equal(2, result.Of(ColumnRole.Text).Count);
     }
 
     [Fact]
-    public void BuildColumnInformation_CaseInsensitiveLabelMatch()
+    public void BuildColumnRoles_CaseInsensitiveLabelMatch()
     {
         // Arrange
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -120,12 +124,12 @@ public class AutoMLRunnerTests
         });
 
         // Act — label column name case doesn't match property name exactly
-        var result = AutoMLRunner.BuildColumnInformation(data, "label");
+        var result = AutoMLRunner.BuildColumnRoles(data, "label");
 
         // Assert: Label should still be excluded from features
         Assert.NotNull(result);
-        Assert.Single(result.TextColumnNames);
-        Assert.Contains("Content", result.TextColumnNames);
+        Assert.Single(result.Of(ColumnRole.Text));
+        Assert.Contains("Content", result.Of(ColumnRole.Text));
     }
 
     #endregion
@@ -133,7 +137,7 @@ public class AutoMLRunnerTests
     #region ColumnOverride Tests
 
     [Fact]
-    public void BuildColumnInformation_WithTextOverride_ForcesTextClassification()
+    public void BuildColumnRoles_WithTextOverride_ForcesTextClassification()
     {
         // Arrange: numeric-only dataset, but override Feature1 as text
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -144,16 +148,16 @@ public class AutoMLRunnerTests
         var overrides = new Dictionary<string, string> { ["Feature1"] = "text" };
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label", columnOverrides: overrides);
 
         // Assert: non-null because override was applied
         Assert.NotNull(result);
-        Assert.Contains("Feature1", result.TextColumnNames);
-        Assert.Contains("Feature2", result.NumericColumnNames);
+        Assert.Contains("Feature1", result.Of(ColumnRole.Text));
+        Assert.Contains("Feature2", result.Of(ColumnRole.Numeric));
     }
 
     [Fact]
-    public void BuildColumnInformation_WithIgnoreOverride_ExcludesColumn()
+    public void BuildColumnRoles_WithIgnoreOverride_ExcludesColumn()
     {
         // Arrange: text dataset, but override Content as ignore
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -163,16 +167,16 @@ public class AutoMLRunnerTests
         var overrides = new Dictionary<string, string> { ["Content"] = "ignore" };
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label", columnOverrides: overrides);
 
         // Assert
         Assert.NotNull(result);
-        Assert.DoesNotContain("Content", result.TextColumnNames);
-        Assert.Contains("Content", result.IgnoredColumnNames);
+        Assert.DoesNotContain("Content", result.Of(ColumnRole.Text));
+        Assert.Contains("Content", result.Of(ColumnRole.Ignored));
     }
 
     [Fact]
-    public void BuildColumnInformation_WithCategoricalOverride_ClassifiesAsCategorical()
+    public void BuildColumnRoles_WithCategoricalOverride_ClassifiesAsCategorical()
     {
         // Arrange: text dataset, but override Content as categorical
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -182,16 +186,16 @@ public class AutoMLRunnerTests
         var overrides = new Dictionary<string, string> { ["Content"] = "categorical" };
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label", columnOverrides: overrides);
 
         // Assert
         Assert.NotNull(result);
-        Assert.DoesNotContain("Content", result.TextColumnNames);
-        Assert.Contains("Content", result.CategoricalColumnNames);
+        Assert.DoesNotContain("Content", result.Of(ColumnRole.Text));
+        Assert.Contains("Content", result.Of(ColumnRole.Categorical));
     }
 
     [Fact]
-    public void BuildColumnInformation_WithNumericOverride_ClassifiesAsNumeric()
+    public void BuildColumnRoles_WithNumericOverride_ClassifiesAsNumeric()
     {
         // Arrange: text dataset, but override Description as numeric
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -201,15 +205,16 @@ public class AutoMLRunnerTests
         var overrides = new Dictionary<string, string> { ["Description"] = "numeric" };
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label", columnOverrides: overrides);
 
-        // Assert: Description forced to numeric — no text columns remain,
-        // so ColumnInformation is null (AutoML default behavior handles numeric fine)
-        Assert.Null(result);
+        // Assert: Description forced to numeric — no text column remains, so AutoML is left to
+        // infer the columns itself (it handles numeric ones fine)
+        Assert.Equal(ColumnRole.Numeric, result.RoleOf("Description"));
+        Assert.Null(AutoMLColumns.ToColumnInformation(result));
     }
 
     [Fact]
-    public void BuildColumnInformation_WithMixedOverrides_AllClassifiedCorrectly()
+    public void BuildColumnRoles_WithMixedOverrides_AllClassifiedCorrectly()
     {
         // Arrange: dataset with text + numeric, apply mixed overrides
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -223,17 +228,17 @@ public class AutoMLRunnerTests
         };
 
         // Act
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: overrides);
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label", columnOverrides: overrides);
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("Title", result.CategoricalColumnNames);
-        Assert.Contains("Body", result.TextColumnNames);
-        Assert.DoesNotContain("Title", result.TextColumnNames);
+        Assert.Contains("Title", result.Of(ColumnRole.Categorical));
+        Assert.Contains("Body", result.Of(ColumnRole.Text));
+        Assert.DoesNotContain("Title", result.Of(ColumnRole.Text));
     }
 
     [Fact]
-    public void BuildColumnInformation_NoOverrides_BehavesAsOriginal()
+    public void BuildColumnRoles_NoOverrides_BehavesAsOriginal()
     {
         // Arrange
         var data = _mlContext.Data.LoadFromEnumerable(new[]
@@ -242,10 +247,11 @@ public class AutoMLRunnerTests
         });
 
         // Act: pass empty overrides
-        var result = AutoMLRunner.BuildColumnInformation(data, "Label", columnOverrides: new Dictionary<string, string>());
+        var result = AutoMLRunner.BuildColumnRoles(data, "Label", columnOverrides: new Dictionary<string, string>());
 
-        // Assert: same as no overrides — returns null for numeric-only
-        Assert.Null(result);
+        // Assert: same as no overrides — numeric only, AutoML infers
+        Assert.Empty(result.Of(ColumnRole.Text));
+        Assert.Null(AutoMLColumns.ToColumnInformation(result));
     }
 
     #endregion

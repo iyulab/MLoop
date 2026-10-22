@@ -708,6 +708,8 @@ MLoop/
 ```
 MLoop.Extensibility  ← (interfaces only, no dependencies)
         ↑
+        │      MLoop.Search  ← trainer search: column roles, trials, metric policy (ML.NET only)
+        │           ↑
     MLoop.Core       ← ML.NET, FilePrepper
         ↑
     ┌───┼───────────┐
@@ -725,7 +727,8 @@ Note: DataStore/Ops are MLOps extensions (separate from core CLI)
 | Project | Role | Key Dependencies |
 |---------|------|------------------|
 | MLoop.Extensibility | Extension interfaces | None |
-| MLoop.Core | ML engine | ML.NET, FilePrepper |
+| MLoop.Search | Trainer search types — column roles, trial results, metric policy | None of MLoop (ML.NET at most) |
+| MLoop.Core | ML engine | ML.NET, FilePrepper, MLoop.Search |
 | MLoop.CLI | CLI tool (`mloop`) | System.CommandLine, Spectre.Console |
 | MLoop.API | REST API server | ASP.NET Core, Serilog |
 | MLoop.DataStore | Prediction logging & feedback | MLoop.Core |
