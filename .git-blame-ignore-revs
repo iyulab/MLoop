@@ -1,0 +1,3 @@
+# Formatting-only commits (git blame --ignore-revs-file .git-blame-ignore-revs)
+# dotnet format: whitespace, import order, charset
+43afbdf484a956e0a0c87d6ac2adc3c2ee4d7ebf

@@ -27,6 +27,7 @@ env:
 jobs:
   build-and-test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       matrix:
         # Cost diet: PRs validate on ubuntu only (fast, cheap feedback); pushes to
@@ -86,6 +87,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
@@ -111,10 +113,10 @@ jobs:
 
     - name: Check formatting
       run: dotnet format MLoop.slnx --verify-no-changes --verbosity diagnostic
-      continue-on-error: true
 
   security-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       security-events: write
       contents: read
