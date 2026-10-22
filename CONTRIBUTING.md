@@ -88,7 +88,7 @@ experiments/exp-001/
 ### Before You Start
 
 1. **Check Alignment**: Does your contribution reduce cost (dev/knowledge/ops)?
-2. **Check Roadmap**: Is this feature on the [ROADMAP.md](ROADMAP.md)? If not, propose it first.
+2. **Check Issues**: Is this feature already discussed in an issue? If not, propose it first.
 3. **Check Scope**: Start small, iterate based on feedback.
 
 ### Language

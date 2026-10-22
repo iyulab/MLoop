@@ -1,79 +1,30 @@
 # Customer Churn Prediction Example
 
-This example demonstrates using MLoop AI Agents to build a customer churn prediction model.
+A binary-classification project: predict whether a customer cancels their subscription.
 
-## Overview
+**Dataset**: `datasets/customers.csv` — 50 synthetic customers (14 churned) with tenure, charges, contract
+type and services. It is small on purpose, so a walk-through runs in seconds; expect MLoop to warn about
+the size, and do not read much into the metrics.
 
-**Goal**: Predict which customers are likely to churn (cancel their subscription)
-
-**Dataset**: Synthetic customer data with features like tenure, monthly charges, contract type
-
-**Task Type**: Binary Classification
-
-## Prerequisites
-
-1. MLoop CLI installed
-2. LLM provider configured (see `.env.example`)
-
-## Quick Start
-
-### Step 1: Setup LLM Provider
+## Walk-through
 
 ```bash
-# Copy and edit environment file
-cp .env.example .env
-# Edit .env with your API key
+cp -r examples/customer-churn ~/churn && cd ~/churn
+
+# The folder already has its mloop.yaml (task, label, metric); init adds the .mloop/ marker and keeps it.
+mloop init .
+
+# Train the default model on data.train from mloop.yaml — 300 s; pass --time 30 for a quick run
+mloop train --time 30
+
+# Look at the experiment, then score rows with the production model
+mloop list
+mloop predict datasets/customers.csv
 ```
 
-### Step 2: Analyze Dataset
-
-```bash
-# Use Data Analyst Agent to understand the data
-mloop agent chat data-analyst "Analyze datasets/customers.csv. What preprocessing is needed?"
-```
-
-Expected output:
-- Dataset overview (7,043 rows, 21 columns)
-- Feature types and distributions
-- Missing value analysis
-- ML readiness assessment
-
-### Step 3: Generate Preprocessing Scripts (if needed)
-
-```bash
-# Use Preprocessing Expert to handle any data issues
-mloop agent chat preprocessing-expert "Handle missing values in TotalCharges column"
-```
-
-### Step 4: Get Model Recommendations
-
-```bash
-# Use Model Architect for configuration guidance
-mloop agent chat model-architect "Binary classification for churn prediction, 7K rows, 27% churn rate"
-```
-
-### Step 5: Initialize and Train
-
-```bash
-# Use MLOps Manager for end-to-end workflow
-mloop agent chat mlops-manager "Initialize project and train model on datasets/customers.csv with target 'Churn'"
-```
-
-Or use CLI directly:
-```bash
-mloop init customer-churn --task binary-classification --label Churn
-mloop train datasets/customers.csv --label Churn --time 300 --metric F1Score
-```
-
-### Step 6: Evaluate and Deploy
-
-```bash
-# Evaluate model performance
-mloop agent chat mlops-manager "Evaluate the latest experiment and show metrics"
-
-# Promote to production
-mloop agent chat mlops-manager "Promote exp-001 to production"
-```
+The first trained model is promoted to production. Train again (for example with a longer `--time`) and
+MLoop promotes the new experiment only when it beats production on the project's metric (`f1_score` here);
+`mloop compare exp-001 exp-002` shows the two side by side.
 
 ## Dataset Description
 
@@ -101,73 +52,13 @@ mloop agent chat mlops-manager "Promote exp-001 to production"
 | TotalCharges | float | Total payment to date |
 | Churn | string | Yes/No (TARGET) |
 
-## Expected Results
+## What to look at
 
-With 5 minutes training time:
-- **F1 Score**: 0.55-0.65
-- **Accuracy**: 0.78-0.82
-- **AUC**: 0.82-0.87
-
-Key predictors:
-1. Contract type (month-to-month highest churn)
-2. Tenure (shorter tenure = higher churn)
-3. Monthly charges (higher charges = higher churn)
-4. Internet service type (fiber optic higher churn)
-
-## File Structure
-
-```
-customer-churn/
-├── README.md               # This file
-├── .env.example            # LLM configuration template
-├── mloop.yaml              # MLoop project configuration
-├── .gitignore              # Git ignore rules
-├── datasets/
-│   └── customers.csv       # Training data
-└── .mloop/
-    └── scripts/
-        └── preprocess/     # Preprocessing scripts
-```
-
-## Troubleshooting
-
-**Issue**: "TotalCharges has missing values"
-```bash
-# Solution: Use preprocessing script or let agent handle it
-mloop agent chat preprocessing-expert "Fill missing TotalCharges with 0 for new customers"
-```
-
-**Issue**: "Class imbalance (27% churn)"
-```bash
-# Solution: Use F1 or AUC metric instead of accuracy
-mloop train datasets/customers.csv --label Churn --metric F1Score
-```
-
-**Issue**: "Low recall on churn class"
-```bash
-# Solution: Ask Model Architect for advice
-mloop agent chat model-architect "How to improve recall for minority class?"
-```
-
-## Next Steps
-
-1. **Feature Engineering**: Create interaction features
-   ```bash
-   mloop agent chat preprocessing-expert "Create feature: charges_per_month = TotalCharges / tenure"
-   ```
-
-2. **Hyperparameter Tuning**: Increase training time
-   ```bash
-   mloop train datasets/customers.csv --label Churn --time 600
-   ```
-
-3. **Model Comparison**: Try different experiments
-   ```bash
-   mloop agent chat mlops-manager "Compare all experiments and recommend best model"
-   ```
+- `customerID` is excluded from the features automatically — every value is distinct, so it is an identifier.
+- The label is imbalanced (28% churn), which is why `mloop.yaml` optimizes `f1_score` rather than accuracy.
+- `models/default/staging/exp-001/report.md` is the one-page summary of the run.
 
 ## Related Documentation
 
-- [AI Agent Usage Guide](../../docs/AI-AGENT-USAGE.md)
-- [AI Agent Architecture](../../docs/AI-AGENT-ARCHITECTURE.md)
 - [MLoop User Guide](../../docs/GUIDE.md)
+- [Using MLoop from AI agents](../../docs/AI-AGENTS.md)

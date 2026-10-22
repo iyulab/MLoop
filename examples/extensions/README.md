@@ -189,8 +189,7 @@ public class ProfitMetric : IMLoopMetric
 ## 📖 Learning Resources
 
 ### Documentation
-- [EXTENSIBILITY.md](../../docs/EXTENSIBILITY.md) - Complete extensibility guide
-- [EXTENSIBILITY_ROADMAP.md](../../docs/EXTENSIBILITY_ROADMAP.md) - Implementation roadmap
+- [GUIDE.md](../../docs/GUIDE.md) - Hooks, metrics and preprocessing scripts in the user guide
 - [ARCHITECTURE.md](../../docs/ARCHITECTURE.md#14-extensibility-system) - Architecture details
 
 ### API Reference
@@ -289,4 +288,4 @@ Have a useful extension? Consider contributing!
 
 ---
 
-**Questions?** See [EXTENSIBILITY.md](../../docs/EXTENSIBILITY.md) for complete documentation.
+**Questions?** See the [user guide](../../docs/GUIDE.md) for complete documentation.

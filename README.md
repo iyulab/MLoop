@@ -427,13 +427,12 @@ mloop promote -- --lastest     # '--lastest' is the experiment id
 
 ### Getting Started
 - **[User Guide](docs/GUIDE.md)** - Complete usage guide with concurrent job management
-- **[AI Agents](docs/AI-AGENTS.md)** - Multi-provider LLM agents for interactive ML assistance
+- **[Using MLoop from AI agents](docs/AI-AGENTS.md)** - MCP (mloop-mcp), CLI `--json` and HTTP
 - **[Examples](examples/)** - Sample workflows
 - **[Job Management Scripts](examples/scripts/)** - Sequential and parallel execution tools
 
-### Project Philosophy & Roadmap
+### Project Philosophy
 - **[Philosophy & Design](README.md#philosophy-excellent-mlops-with-minimum-cost)** - Core mission and design principles
-- **[Roadmap](ROADMAP.md)** - Feature roadmap aligned with mission
 
 ### Technical Documentation
 - **[Architecture](docs/ARCHITECTURE.md)** - System design and technical decisions

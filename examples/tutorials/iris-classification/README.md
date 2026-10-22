@@ -45,19 +45,21 @@ This is a classic **multiclass classification** problem - predicting one of mult
 # Navigate to tutorial directory
 cd examples/tutorials/iris-classification
 
-# Initialize MLoop project
-mloop init
+# Initialize MLoop project (keeps the tutorial's mloop.yaml and adds the .mloop/ marker)
+mloop init .
 
 # Verify structure
 ls -la .mloop/
 ```
 
-You should see:
+You should see the project marker with its configuration and script folders:
 ```
 .mloop/
-├── models/
-└── temp/
+├── config.json
+└── scripts/
 ```
+
+Trained models go to `models/` next to it, one folder per model name.
 
 ---
 
@@ -287,11 +289,7 @@ mloop train --analyze-data
    # Add hooks (see docs/examples/hooks/)
    ```
 
-4. **AI Agent**: Get intelligent assistance
-   ```bash
-   mloop agent
-   # Ask: "How can I improve my Iris model?"
-   ```
+4. **AI agents**: Drive MLoop from an AI assistant through mloop-mcp — see `docs/AI-AGENTS.md`
 
 ### Learn More
 

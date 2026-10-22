@@ -246,56 +246,8 @@ public class ProfitMetric : IMLoopMetric
 
 ## 🤖 AI Agents
 
-Intelligent assistants for ML guidance and automation.
-
-**Path**: `examples/mloop-agents/.mloop/agents/`
-**Usage**: Pre-installed, use `mloop agent` to interact
-
-### Available Agents
-
-| Agent | Purpose | Capabilities | When to Use |
-|-------|---------|--------------|-------------|
-| `data-analyst` | Dataset analysis | Quality issues, preprocessing recommendations | Before training |
-| `model-architect` | Configuration | Time budgets, metric selection | Planning phase |
-| `preprocessing-expert` | Feature engineering | Datetime features, encoding strategies | Data preparation |
-| `experiment-explainer` | Result interpretation | Algorithm explanation, metric analysis | After training |
-| `ml-tutor` | Learning assistant | ML concepts, Q&A, tutorials | Learning ML |
-
-### Usage Example
-
-```bash
-# Start agent conversation
-mloop agent
-
-# Ask for help
-> How can I improve my model accuracy?
-
-# Agent provides specific recommendations based on:
-# - Your dataset characteristics
-# - Current metrics
-# - Training configuration
-# - Domain best practices
-```
-
-### Agent Conversation Flows
-
-**Data Analysis Flow**:
-```
-User: "Analyze my dataset"
-Agent (data-analyst):
-  - Detects 15% missing values in "Age" column
-  - Identifies class imbalance (80/20 split)
-  - Recommends: Median imputation + SMOTE oversampling
-```
-
-**Model Tuning Flow**:
-```
-User: "My F1 score is only 0.65"
-Agent (model-architect):
-  - Analyzes feature count (5) vs dataset size (100 rows)
-  - Recommends: Increase time_limit to 120s
-  - Suggests: Try --metric f1_score instead of accuracy
-```
+MLoop has no built-in agent. An AI agent drives it through [mloop-mcp](https://github.com/iyulab/mloop-mcp)
+(one MCP tool per command), the CLI with `--json`, or `mloop serve` — see `docs/AI-AGENTS.md`.
 
 ---
 
@@ -432,7 +384,7 @@ mloop evaluate test.csv
 - **Preprocessing Guide**: `examples/preprocessing-scripts/README.md`
 - **Hooks Guide**: `docs/examples/hooks/README.md`
 - **Metrics Guide**: `docs/examples/metrics/README.md`
-- **AI Agent Usage**: `docs/AI-AGENT-USAGE.md`
+- **Using MLoop from AI agents**: `docs/AI-AGENTS.md`
 
 ### Community Recipes
 

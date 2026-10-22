@@ -1,89 +1,46 @@
-# AI Agents
+# Using MLoop from AI agents
 
-> ⚠️ **Notice**: The `mloop agent` command was removed as part of the "Zero AI Dependency" refactoring.
->
-> AI integration is now provided through **mloop-mcp**, a separate MCP (Model Context Protocol) server.
+MLoop has no AI dependency of its own. An agent drives it from outside, through one of three
+process boundaries — each runs the same commands a person runs.
 
----
+| Surface | Use it when | What the agent sees |
+|---------|-------------|---------------------|
+| **MCP** — [mloop-mcp](https://github.com/iyulab/mloop-mcp) | The agent runs in an MCP client (Claude Desktop, Cursor, an agent framework with MCP support) | One tool per command: `mloop_train`, `mloop_predict`, `mloop_evaluate`, `mloop_promote`, `mloop_drift`, … |
+| **CLI** | The agent can run shell commands | The `mloop` commands, with `--json` for a machine-readable answer |
+| **HTTP** — `mloop serve` | The agent or application is a long-running service | The REST endpoints listed in [GUIDE.md](GUIDE.md) |
 
-## Current Architecture
+## MCP
 
-```
-Before (removed):                 Current:
-──────────────                    ──────────────
-MLoop.AIAgent (embedded)    →     mloop-mcp (external)
-
-"MLoop이 AI를 품는다"        →     "AI가 MLoop을 사용한다"
-```
-
-## Using AI with MLoop
-
-### Option 1: mloop-mcp (Recommended)
-
-MLoop provides an MCP server that exposes CLI functionality to AI clients:
-
-**Repository**: https://github.com/iyulab/mloop-mcp
+mloop-mcp calls the `mloop` CLI, so install the CLI first, then add the server to the client:
 
 ```bash
-# Install mloop-mcp
-npm install -g @iyulab/mloop-mcp
-
-# Configure in Claude Desktop, Cursor, etc.
+dotnet tool install -g mloop
 ```
 
-**Available Tools**:
-- `train`: Train ML models using AutoML
-- `predict`: Make predictions with trained models
-- `list`: List experiments and models
-- `promote`: Promote models to production
+```json
+{
+  "mcpServers": {
+    "mloop": {
+      "command": "npx",
+      "args": ["@iyulab/mloop-mcp"]
+    }
+  }
+}
+```
 
-### Option 2: Direct CLI Integration
+## CLI
 
-Any AI agent can use MLoop through standard CLI:
+Every command that reports something takes `--json`, writes one JSON document to stdout and keeps
+human-readable progress on stderr. An agent reads stdout and the exit code (`0` done, `1` could not
+do what was asked — the reason is in `{"error": "..."}`):
 
 ```bash
-# AI agents can invoke MLoop commands directly
-mloop train datasets/train.csv --label Churn --time 300
-mloop predict --name churn --input new-data.csv
+mloop train datasets/train.csv --label Churn --time 300 --json
+mloop predict datasets/predict.csv --json
+mloop evaluate --json
 ```
 
----
+## See also
 
-## Why This Change?
-
-| Before (MLoop.AIAgent) | After (mloop-mcp) |
-|------------------------|-------------------|
-| AI embedded in CLI | AI accesses CLI externally |
-| Tight coupling | Loose coupling |
-| MLoop depends on AI providers | MLoop has zero AI dependencies |
-| Complex CLI | Simple, focused CLI |
-
-See [ECOSYSTEM.md](./ECOSYSTEM.md) for the full ecosystem architecture.
-
----
-
-## Migration Guide
-
-If you were using `mloop agent` commands:
-
-```bash
-# OLD (removed)
-mloop agent "Analyze my dataset" --agent data-analyst
-
-# CURRENT
-# 1. Install mloop-mcp
-# 2. Configure your AI client (Claude, Cursor, etc.)
-# 3. The AI will use MLoop through MCP protocol
-```
-
----
-
-**See Also**:
-- [mloop-mcp Repository](https://github.com/iyulab/mloop-mcp)
-- [ECOSYSTEM.md](./ECOSYSTEM.md) - Full ecosystem overview
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - Technical architecture
-
----
-
-**Last Updated**: February 2026
-**Version**: Deprecated (archived)
+- [ECOSYSTEM.md](ECOSYSTEM.md) — how MLoop, mloop-mcp and the data libraries fit together
+- [ARCHITECTURE.md](ARCHITECTURE.md) — technical architecture

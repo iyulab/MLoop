@@ -187,9 +187,7 @@ dotnet build -c Release
 
 ## 📖 추가 문서
 
-- [FilePrepper 통합 가이드](../../docs/FILEPREPPER_INTEGRATION.md)
-- [Phase 1 개선 요약](../../docs/FILEPREPPER_ENHANCEMENTS_SUMMARY.md)
-- [Phase 2 개선 요약](../../docs/FILEPREPPER_PHASE2_SUMMARY.md)
+- [FilePrepper](https://github.com/iyulab/FilePrepper)
 - [MLoop 아키텍처](../../docs/ARCHITECTURE.md)
 
 ---

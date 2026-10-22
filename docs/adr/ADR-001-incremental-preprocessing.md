@@ -166,7 +166,6 @@ public enum PreprocessingRuleType
 
 ## References
 
-- [MLoop Philosophy](../README.md#philosophy-excellent-mlops-with-minimum-cost)
+- [MLoop Philosophy](../../README.md#philosophy-excellent-mlops-with-minimum-cost)
 - [Ironbees Workflow Documentation](https://github.com/iyulab/ironbees)
 - [FilePrepper Pipeline API](https://github.com/iyulab/FilePrepper)
-- [Internal Design Meeting Notes](./internal/preprocessing-agent-design.md)

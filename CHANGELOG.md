@@ -106,6 +106,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   answers are unchanged and another runtime's rounding keeps them. A threshold chosen before stays as written.
 - `mloop runtime install` and every runtime check counted native libraries of any version as installed. A runtime
   is installed only at the version this mloop needs; reinstalling over another version replaces its files.
+- **`mloop init .` replaced a project's own `mloop.yaml`, README and `.gitignore` with the template** — in a cloned
+  repository, which carries those files but not the `.mloop/` marker, the first command run wiped the project's
+  models, tasks and labels without a word. `init` now writes only files that are missing and lists the ones it kept;
+  `--force` rebuilds `.mloop/` and leaves the project's files alone too. COCO annotations already under
+  `datasets/coco/` are kept the same way.
+
+### Removed
+
+- The unpublished `agent/` package, the agent example and its prompt files, and documents describing the
+  `mloop agent` command, which was removed earlier — AI agents use MLoop through [mloop-mcp](https://github.com/iyulab/mloop-mcp),
+  the CLI or `mloop serve` ([docs/AI-AGENTS.md](docs/AI-AGENTS.md)). The `.env.example` now lists the variables
+  MLoop reads.
 
 ## [0.42.0] - 2026-10-22
 
