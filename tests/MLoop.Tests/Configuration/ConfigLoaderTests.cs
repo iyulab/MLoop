@@ -305,7 +305,7 @@ models:
             Models = new Dictionary<string, ModelDefinition>
             {
                 ["default"] = new() { Task = "regression", Label = "Price" },
-                ["other"]   = new() { Task = "binary-classification", Label = "IsChurn" }
+                ["other"] = new() { Task = "binary-classification", Label = "IsChurn" }
             }
         };
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using MLoop.CLI;
@@ -5,7 +6,6 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using Spectre.Console;
-using System.Text.Json;
 
 namespace MLoop.Tests.Commands;
 

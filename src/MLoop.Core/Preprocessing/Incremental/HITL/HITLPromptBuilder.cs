@@ -1,8 +1,8 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using MLoop.Core.Preprocessing.Incremental.HITL.Contracts;
 using MLoop.Core.Preprocessing.Incremental.HITL.Models;
 using Spectre.Console;
-using System.Diagnostics;
 
 namespace MLoop.Core.Preprocessing.Incremental.HITL;
 

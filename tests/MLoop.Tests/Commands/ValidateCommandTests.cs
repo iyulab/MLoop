@@ -192,7 +192,10 @@ public class ValidateCommandTests
     {
         var model = new ModelDefinition
         {
-            Task = "recommendation", Label = "rating", UserColumn = "user_id", ItemColumn = "item_id"
+            Task = "recommendation",
+            Label = "rating",
+            UserColumn = "user_id",
+            ItemColumn = "item_id"
         };
         var (errors, _) = RunValidateModel("test", model);
 

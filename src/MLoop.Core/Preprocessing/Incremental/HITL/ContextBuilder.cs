@@ -1,7 +1,7 @@
+using System.Text;
 using Microsoft.Data.Analysis;
 using MLoop.Core.Preprocessing.Incremental.Models;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models;
-using System.Text;
 
 namespace MLoop.Core.Preprocessing.Incremental.HITL;
 

@@ -2,9 +2,9 @@ using System.Linq;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.AutoML;
+using MLoop.Core.Detection;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
-using MLoop.Core.Detection;
 
 namespace MLoop.Core.Tests.Prediction;
 

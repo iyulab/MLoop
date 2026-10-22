@@ -1,4 +1,6 @@
 using System.CommandLine;
+using DataLens;
+using DataLens.Models;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
@@ -8,8 +10,6 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using MLoop.Core.Prediction;
-using DataLens;
-using DataLens.Models;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;

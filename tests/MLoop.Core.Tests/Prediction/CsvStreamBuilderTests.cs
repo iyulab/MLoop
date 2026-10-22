@@ -11,7 +11,9 @@ public class CsvStreamBuilderTests
         {
             Columns = cols.Select(c => new ColumnSchema
             {
-                Name = c.name, DataType = c.dataType, Purpose = c.purpose
+                Name = c.name,
+                DataType = c.dataType,
+                Purpose = c.purpose
             }).ToList(),
             CapturedAt = DateTime.UtcNow
         };

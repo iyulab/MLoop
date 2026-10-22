@@ -1,5 +1,5 @@
-using MLoop.Core.Models;
 using MLoop.Core.AutoML;
+using MLoop.Core.Models;
 using Xunit;
 
 namespace MLoop.Core.Tests.AutoML;

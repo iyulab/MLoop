@@ -1,7 +1,7 @@
-﻿using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using Spectre.Console;
-using MLoop.CLI.Infrastructure.Diagnostics;
 
 namespace MLoop.CLI.Commands;
 

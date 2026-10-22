@@ -162,10 +162,18 @@ public sealed class GatePolicyTests : IDisposable
         ml.Model.Save(model, null, Path.Combine(path, ExperimentLayout.ModelFileName));
         await store.SaveAsync("default", new ExperimentData
         {
-            ModelName = "default", ExperimentId = experimentId, Timestamp = DateTime.UtcNow, Status = "Completed", Task = "regression",
+            ModelName = "default",
+            ExperimentId = experimentId,
+            Timestamp = DateTime.UtcNow,
+            Status = "Completed",
+            Task = "regression",
             Config = new ExperimentConfig
             {
-                DataFile = train, LabelColumn = "Y", Metric = "r_squared", TimeLimitSeconds = 10, TestSplit = 0.2,
+                DataFile = train,
+                LabelColumn = "Y",
+                Metric = "r_squared",
+                TimeLimitSeconds = 10,
+                TestSplit = 0.2,
                 InputSchema = new InputSchemaInfo
                 {
                     CapturedAt = DateTime.UtcNow,

@@ -107,8 +107,14 @@ public class TrainJsonEmitterTests
 
         emitter.Phase(new TrainingProgress
         {
-            TrialNumber = 0, TrainerName = "Image classification (TensorFlow)", MetricName = "", Metric = 0,
-            ElapsedSeconds = 30, Phase = TrainingPhase.Featurize, Step = 120, Steps = 776
+            TrialNumber = 0,
+            TrainerName = "Image classification (TensorFlow)",
+            MetricName = "",
+            Metric = 0,
+            ElapsedSeconds = 30,
+            Phase = TrainingPhase.Featurize,
+            Step = 120,
+            Steps = 776
         });
 
         var e = Assert.Single(Events(sink));
@@ -124,8 +130,15 @@ public class TrainJsonEmitterTests
 
         emitter.Phase(new TrainingProgress
         {
-            TrialNumber = 0, TrainerName = "Image classification (TensorFlow)", MetricName = "", Metric = 0,
-            ElapsedSeconds = 30, Phase = TrainingPhase.Epoch, Epoch = 12, MaxEpochs = 200, StopsEarly = true
+            TrialNumber = 0,
+            TrainerName = "Image classification (TensorFlow)",
+            MetricName = "",
+            Metric = 0,
+            ElapsedSeconds = 30,
+            Phase = TrainingPhase.Epoch,
+            Epoch = 12,
+            MaxEpochs = 200,
+            StopsEarly = true
         });
 
         var e = Assert.Single(Events(sink));
@@ -140,8 +153,14 @@ public class TrainJsonEmitterTests
 
         emitter.Phase(new TrainingProgress
         {
-            TrialNumber = 0, TrainerName = "NER (NAS-BERT)", MetricName = "", Metric = 0, ElapsedSeconds = 90,
-            Phase = TrainingPhase.Epoch, Epoch = 3, MaxEpochs = 10
+            TrialNumber = 0,
+            TrainerName = "NER (NAS-BERT)",
+            MetricName = "",
+            Metric = 0,
+            ElapsedSeconds = 90,
+            Phase = TrainingPhase.Epoch,
+            Epoch = 3,
+            MaxEpochs = 10
         });
 
         var e = Assert.Single(Events(sink));

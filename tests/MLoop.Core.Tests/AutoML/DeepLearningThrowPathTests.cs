@@ -125,8 +125,11 @@ public class DeepLearningThrowPathTests
                 warningSink: narration.Add, narrationSink: narration.Add);
             var config = new TrainingConfig
             {
-                ModelName = "test", DataFile = tmpDir, LabelColumn = "Label",
-                Task = "image-classification", TimeLimitSeconds = 5
+                ModelName = "test",
+                DataFile = tmpDir,
+                LabelColumn = "Label",
+                Task = "image-classification",
+                TimeLimitSeconds = 5
             };
 
             await Assert.ThrowsAnyAsync<Exception>(() => runner.RunAsync(config));

@@ -1,7 +1,7 @@
 using Microsoft.ML;
-using MLoop.Search;
 using Microsoft.ML.Data;
 using Microsoft.ML.Transforms.Text;
+using MLoop.Search;
 
 namespace MLoop.Core.AutoML;
 

@@ -12,11 +12,11 @@ using MLoop.Core.Evaluation;
 using MLoop.Core.Hooks;
 using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
+using MLoop.Core.Storage;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
-using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Commands;
 
@@ -600,244 +600,244 @@ public static class TrainCommand
             // a directory and skips this entire block.
             if (!isDirectoryBased)
             {
-            // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
-            resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);
+                // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
+                resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);
 
-            // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
-            resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink);
+                // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
+                resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink);
 
-            // Auto-sampling for large datasets (--max-rows)
-            if (maxRows.HasValue && maxRows.Value > 0)
-            {
-                resolvedDataFile = await TrainDataValidator.ApplySamplingIfNeededAsync(
-                    resolvedDataFile,
-                    maxRows.Value,
-                    effectiveDefinition.Task,
-                    effectiveDefinition.Label,
-                    samplingStrategy,
-                    seed ?? 42,
-                    projectRoot);
-            }
-
-            // (allDataFilesUsed is declared above so it survives the directory-based bypass.)
-
-            // Execute YAML-defined preprocessing pipeline (누수 안전: 통계 변환은 preFeaturizer로 이전).
-            // It runs before the label checks below: a step can drop, add or reshape rows (filter-rows,
-            // sample, explode), so missing labels and classes are counted on the rows training gets.
-            if (effectiveDefinition.Prep is { Count: > 0 })
-            {
-                AnsiConsole.WriteLine();
-                AnsiConsole.Write(new Rule("[blue]Preprocessing Pipeline[/]").LeftJustified());
-                AnsiConsole.WriteLine();
-                try
+                // Auto-sampling for large datasets (--max-rows)
+                if (maxRows.HasValue && maxRows.Value > 0)
                 {
-                    var mlCtxForPrep = new MLContext(seed: 42);
-                    List<string> prepWarnings;
-                    (resolvedDataFile, preFeaturizer, prepWarnings, preFeaturizerColumns) =
-                        await ApplyPrepAsync(resolvedDataFile, effectiveDefinition.Prep, mlCtxForPrep, effectiveDefinition.Task);
-
-                    allDataFilesUsed.Add(resolvedDataFile);
-                    foreach (var w in prepWarnings)
-                        AnsiConsole.MarkupLine($"[yellow]![/] {w}");
-                    ValueLine.Write("[green]>[/] Preprocessed data: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
-                    if (preFeaturizer != null)
-                        AnsiConsole.MarkupLine("[green]>[/] Statistical steps are fitted inside training on the training rows (no leak).");
-                    AnsiConsole.WriteLine();
-                }
-                catch (Exception ex)
-                {
-                    ErrorConsole.Out.MarkupLine("[red]Preprocessing pipeline failed:[/]");
-                    ErrorConsole.Out.WriteLine(ex.Message);
-                    return 1;
-                }
-            }
-
-            // Handle missing label values (T4.2)
-            // Default behavior: drop rows without a target wherever the label is one (DropsMissingLabelsByDefault)
-            // The legacy spellings this used to list are folded before they get here
-            // (TaskTypes.Canonical, applied in the config merge), so the question left is the
-            // composed one: classes that live in a column, which is what dropping rows with a
-            // missing label and balancing both act on.
-            var isClassificationTask =
-                AutoMLRunner.IsClassification(effectiveDefinition.Task)
-                && !DataLoaderFactory.IsDirectoryBased(effectiveDefinition.Task);
-
-            // Use explicit parameter if provided, otherwise the task's default (see DropsMissingLabelsByDefault)
-            var shouldDropMissingLabels = dropMissingLabels ?? TrainingInput.DropsMissingLabelsByDefault(effectiveDefinition.Task);
-
-            if (shouldDropMissingLabels && !string.IsNullOrEmpty(effectiveDefinition.Label))
-            {
-                var csvHelper = new CsvHelperImpl();
-                var labelHandler = new LabelValueHandler(csvHelper, new TrainCommandLogger());
-
-                var labelAnalysis = await labelHandler.AnalyzeLabelColumnAsync(
-                    resolvedDataFile,
-                    effectiveDefinition.Label);
-
-                if (!string.IsNullOrEmpty(labelAnalysis.Error))
-                {
-                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label analysis error: {labelAnalysis.Error}");
-                }
-                else if (labelAnalysis.HasMissingValues)
-                {
-                    WarningConsole.Warn($"Found {labelAnalysis.MissingCount}/{labelAnalysis.TotalRows} rows ({labelAnalysis.MissingPercentage:F1}%) with missing labels");
-
-                    // Create cleaned data file
-                    var cleanedDataPath = Path.Combine(
-                        Path.GetDirectoryName(resolvedDataFile)!,
-                        $"{Path.GetFileNameWithoutExtension(resolvedDataFile)}_cleaned{Path.GetExtension(resolvedDataFile)}");
-
-                    var cleanResult = await labelHandler.DropMissingLabelsAsync(
+                    resolvedDataFile = await TrainDataValidator.ApplySamplingIfNeededAsync(
                         resolvedDataFile,
-                        cleanedDataPath,
+                        maxRows.Value,
+                        effectiveDefinition.Task,
+                        effectiveDefinition.Label,
+                        samplingStrategy,
+                        seed ?? 42,
+                        projectRoot);
+                }
+
+                // (allDataFilesUsed is declared above so it survives the directory-based bypass.)
+
+                // Execute YAML-defined preprocessing pipeline (누수 안전: 통계 변환은 preFeaturizer로 이전).
+                // It runs before the label checks below: a step can drop, add or reshape rows (filter-rows,
+                // sample, explode), so missing labels and classes are counted on the rows training gets.
+                if (effectiveDefinition.Prep is { Count: > 0 })
+                {
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.Write(new Rule("[blue]Preprocessing Pipeline[/]").LeftJustified());
+                    AnsiConsole.WriteLine();
+                    try
+                    {
+                        var mlCtxForPrep = new MLContext(seed: 42);
+                        List<string> prepWarnings;
+                        (resolvedDataFile, preFeaturizer, prepWarnings, preFeaturizerColumns) =
+                            await ApplyPrepAsync(resolvedDataFile, effectiveDefinition.Prep, mlCtxForPrep, effectiveDefinition.Task);
+
+                        allDataFilesUsed.Add(resolvedDataFile);
+                        foreach (var w in prepWarnings)
+                            AnsiConsole.MarkupLine($"[yellow]![/] {w}");
+                        ValueLine.Write("[green]>[/] Preprocessed data: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
+                        if (preFeaturizer != null)
+                            AnsiConsole.MarkupLine("[green]>[/] Statistical steps are fitted inside training on the training rows (no leak).");
+                        AnsiConsole.WriteLine();
+                    }
+                    catch (Exception ex)
+                    {
+                        ErrorConsole.Out.MarkupLine("[red]Preprocessing pipeline failed:[/]");
+                        ErrorConsole.Out.WriteLine(ex.Message);
+                        return 1;
+                    }
+                }
+
+                // Handle missing label values (T4.2)
+                // Default behavior: drop rows without a target wherever the label is one (DropsMissingLabelsByDefault)
+                // The legacy spellings this used to list are folded before they get here
+                // (TaskTypes.Canonical, applied in the config merge), so the question left is the
+                // composed one: classes that live in a column, which is what dropping rows with a
+                // missing label and balancing both act on.
+                var isClassificationTask =
+                    AutoMLRunner.IsClassification(effectiveDefinition.Task)
+                    && !DataLoaderFactory.IsDirectoryBased(effectiveDefinition.Task);
+
+                // Use explicit parameter if provided, otherwise the task's default (see DropsMissingLabelsByDefault)
+                var shouldDropMissingLabels = dropMissingLabels ?? TrainingInput.DropsMissingLabelsByDefault(effectiveDefinition.Task);
+
+                if (shouldDropMissingLabels && !string.IsNullOrEmpty(effectiveDefinition.Label))
+                {
+                    var csvHelper = new CsvHelperImpl();
+                    var labelHandler = new LabelValueHandler(csvHelper, new TrainCommandLogger());
+
+                    var labelAnalysis = await labelHandler.AnalyzeLabelColumnAsync(
+                        resolvedDataFile,
                         effectiveDefinition.Label);
 
-                    if (cleanResult.Success)
+                    if (!string.IsNullOrEmpty(labelAnalysis.Error))
                     {
-                        AnsiConsole.MarkupLine($"[green]>[/] Dropped {cleanResult.DroppedRowCount} rows with missing labels");
-                        ValueLine.Write("[green]>[/] Using cleaned data: ", Path.GetRelativePath(projectRoot, cleanResult.OutputPath!));
-                        resolvedDataFile = cleanResult.OutputPath!;
-                        allDataFilesUsed.Add(resolvedDataFile);
+                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label analysis error: {labelAnalysis.Error}");
+                    }
+                    else if (labelAnalysis.HasMissingValues)
+                    {
+                        WarningConsole.Warn($"Found {labelAnalysis.MissingCount}/{labelAnalysis.TotalRows} rows ({labelAnalysis.MissingPercentage:F1}%) with missing labels");
+
+                        // Create cleaned data file
+                        var cleanedDataPath = Path.Combine(
+                            Path.GetDirectoryName(resolvedDataFile)!,
+                            $"{Path.GetFileNameWithoutExtension(resolvedDataFile)}_cleaned{Path.GetExtension(resolvedDataFile)}");
+
+                        var cleanResult = await labelHandler.DropMissingLabelsAsync(
+                            resolvedDataFile,
+                            cleanedDataPath,
+                            effectiveDefinition.Label);
+
+                        if (cleanResult.Success)
+                        {
+                            AnsiConsole.MarkupLine($"[green]>[/] Dropped {cleanResult.DroppedRowCount} rows with missing labels");
+                            ValueLine.Write("[green]>[/] Using cleaned data: ", Path.GetRelativePath(projectRoot, cleanResult.OutputPath!));
+                            resolvedDataFile = cleanResult.OutputPath!;
+                            allDataFilesUsed.Add(resolvedDataFile);
+                        }
+                        else
+                        {
+                            ErrorConsole.Error(
+                                $"Failed to clean label data: {cleanResult.Error}",
+                                $"Run [blue]mloop info {Markup.Escape(Path.GetRelativePath(projectRoot, resolvedDataFile))}[/] to check the label column '{Markup.Escape(effectiveDefinition.Label)}' exists and has values.");
+                            return 1;
+                        }
                     }
                     else
                     {
-                        ErrorConsole.Error(
-                            $"Failed to clean label data: {cleanResult.Error}",
-                            $"Run [blue]mloop info {Markup.Escape(Path.GetRelativePath(projectRoot, resolvedDataFile))}[/] to check the label column '{Markup.Escape(effectiveDefinition.Label)}' exists and has values.");
-                        return 1;
+                        AnsiConsole.MarkupLine($"[green]✓[/] Label column '{effectiveDefinition.Label}' has no missing values ({labelAnalysis.ValidCount} rows, {labelAnalysis.UniqueValueCount} unique values)");
                     }
                 }
-                else
+
+                // T4.5: Class distribution analysis for classification tasks
+                if (isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
                 {
-                    AnsiConsole.MarkupLine($"[green]✓[/] Label column '{effectiveDefinition.Label}' has no missing values ({labelAnalysis.ValidCount} rows, {labelAnalysis.UniqueValueCount} unique values)");
-                }
-            }
-
-            // T4.5: Class distribution analysis for classification tasks
-            if (isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
-            {
-                try
-                {
-                    var distributionResult = await TrainingInput.ClassesAsync(resolvedDataFile, effectiveDefinition.Label);
-
-                    TrainPresenter.DisplayClassDistribution(distributionResult);
-
-                    // Single-class early termination: cannot train a classifier with one class
-                    if (distributionResult.ClassCount <= 1)
+                    try
                     {
-                        ErrorConsole.Error(TrainingInput.SingleClassRefusal, TrainingInput.SingleClassGuidance);
-                        return 1;
+                        var distributionResult = await TrainingInput.ClassesAsync(resolvedDataFile, effectiveDefinition.Label);
+
+                        TrainPresenter.DisplayClassDistribution(distributionResult);
+
+                        // Single-class early termination: cannot train a classifier with one class
+                        if (distributionResult.ClassCount <= 1)
+                        {
+                            ErrorConsole.Error(TrainingInput.SingleClassRefusal, TrainingInput.SingleClassGuidance);
+                            return 1;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Class distribution analysis failed: {ex.Message}");
                     }
                 }
-                catch (Exception ex)
+
+                // Data quality analysis if requested
+                if (analyzeData || !string.IsNullOrEmpty(generateScript))
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] Class distribution analysis failed: {ex.Message}");
-                }
-            }
+                    var analyzer = new DataQualityAnalyzer(new TrainCommandLogger());
+                    var issues = await analyzer.AnalyzeAsync(resolvedDataFile, effectiveDefinition.Label);
 
-            // Data quality analysis if requested
-            if (analyzeData || !string.IsNullOrEmpty(generateScript))
-            {
-                var analyzer = new DataQualityAnalyzer(new TrainCommandLogger());
-                var issues = await analyzer.AnalyzeAsync(resolvedDataFile, effectiveDefinition.Label);
+                    TrainPresenter.DisplayDataQualityIssues(issues);
 
-                TrainPresenter.DisplayDataQualityIssues(issues);
-
-                // Generate preprocessing script if requested
-                if (!string.IsNullOrEmpty(generateScript))
-                {
-                    var scriptGenerator = new PreprocessingScriptGenerator(new TrainCommandLogger());
-                    var generated = await scriptGenerator.AnalyzeAndGenerateAsync(
-                        resolvedDataFile,
-                        generateScript,
-                        effectiveDefinition.Label);
-
-                    if (generated)
+                    // Generate preprocessing script if requested
+                    if (!string.IsNullOrEmpty(generateScript))
                     {
-                        AnsiConsole.MarkupLine($"[green]✓[/] Generated preprocessing script: [cyan]{generateScript}[/]");
-                        AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
-                        AnsiConsole.MarkupLine($"  1. Review the generated script: {generateScript}");
-                        AnsiConsole.MarkupLine($"  2. Move it to .mloop/scripts/preprocess/ directory");
-                        AnsiConsole.MarkupLine($"  3. Run 'mloop train' again to apply preprocessing automatically");
+                        var scriptGenerator = new PreprocessingScriptGenerator(new TrainCommandLogger());
+                        var generated = await scriptGenerator.AnalyzeAndGenerateAsync(
+                            resolvedDataFile,
+                            generateScript,
+                            effectiveDefinition.Label);
+
+                        if (generated)
+                        {
+                            AnsiConsole.MarkupLine($"[green]✓[/] Generated preprocessing script: [cyan]{generateScript}[/]");
+                            AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
+                            AnsiConsole.MarkupLine($"  1. Review the generated script: {generateScript}");
+                            AnsiConsole.MarkupLine($"  2. Move it to .mloop/scripts/preprocess/ directory");
+                            AnsiConsole.MarkupLine($"  3. Run 'mloop train' again to apply preprocessing automatically");
+                            AnsiConsole.WriteLine();
+                        }
+                    }
+
+                    // If only analyzing (not training), exit here
+                    if (analyzeData)
+                    {
+                        return 0;
+                    }
+                }
+
+                // Execute preprocessing scripts if available (Roslyn .cs scripts)
+                var preprocessingEngine = new PreprocessingEngine(
+                    projectRoot,
+                    new TrainCommandLogger());
+
+                if (preprocessingEngine.HasPreprocessingScripts())
+                {
+                    AnsiConsole.WriteLine();
+
+                    try
+                    {
+                        resolvedDataFile = await preprocessingEngine.ExecuteAsync(resolvedDataFile, effectiveDefinition.Label);
                         AnsiConsole.WriteLine();
                     }
+                    catch (InvalidOperationException ex)
+                    {
+                        ErrorConsole.Out.MarkupLine("[red]Preprocessing failed:[/]");
+                        ErrorConsole.Out.WriteLine(ex.Message);
+                        return 1;
+                    }
                 }
 
-                // If only analyzing (not training), exit here
-                if (analyzeData)
+                // Apply class balancing if requested (classification only — BalanceConflict refused the rest).
+                // Split BEFORE balancing to prevent data leakage
+                if (!string.IsNullOrEmpty(balance) && isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
                 {
-                    return 0;
+                    var balanced = TrainingInput.Balance(resolvedDataFile, effectiveDefinition.Label, balance,
+                        effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit);
+                    var balanceResult = balanced.Result;
+
+                    if (balanced.Split is { } splitResult)
+                    {
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.Write(new Rule("[blue]Pre-Balance Split[/]").LeftJustified());
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.MarkupLine($"[green]✓[/] Stratified split: train={splitResult.TrainRows}, test={splitResult.TestRows}");
+                        AnsiConsole.MarkupLine("[grey]  Test set is isolated from balancing to prevent data leakage.[/]");
+                        AnsiConsole.WriteLine();
+
+                        allDataFilesUsed.Add(splitResult.TrainFile);
+                        allDataFilesUsed.Add(splitResult.TestFile);
+                        testDataFile = splitResult.TestFile;
+                    }
+
+                    if (balanceResult.Applied && balanceResult.BalancedFilePath != null)
+                    {
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.Write(new Rule(balanced.Split is null ? "[blue]Class Balancing[/]" : "[blue]Class Balancing (train only)[/]").LeftJustified());
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
+                        ValueLine.Write(balanced.Split is null ? "[green]>[/] Using balanced data: " : "[green]>[/] Balanced train: ",
+                            Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath));
+                        if (balanced.TestFile is { } cleanTest)
+                            ValueLine.Write("[green]>[/] Clean test: ", Path.GetRelativePath(projectRoot, cleanTest));
+
+                        var replicationRatio = (double)balanceResult.NewMinorityCount / balanceResult.OriginalMinorityCount;
+                        if (replicationRatio > 10)
+                            AnsiConsole.MarkupLine($"[yellow]Warning:[/] Minority class replicated {replicationRatio:F0}x in train set.");
+                        AnsiConsole.WriteLine();
+
+                        allDataFilesUsed.Add(balanceResult.BalancedFilePath);
+                    }
+                    else if (!string.IsNullOrEmpty(balanceResult.Message))
+                    {
+                        AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
+                    }
+                    resolvedDataFile = balanced.TrainFile;
                 }
-            }
-
-            // Execute preprocessing scripts if available (Roslyn .cs scripts)
-            var preprocessingEngine = new PreprocessingEngine(
-                projectRoot,
-                new TrainCommandLogger());
-
-            if (preprocessingEngine.HasPreprocessingScripts())
-            {
-                AnsiConsole.WriteLine();
-
-                try
-                {
-                    resolvedDataFile = await preprocessingEngine.ExecuteAsync(resolvedDataFile, effectiveDefinition.Label);
-                    AnsiConsole.WriteLine();
-                }
-                catch (InvalidOperationException ex)
-                {
-                    ErrorConsole.Out.MarkupLine("[red]Preprocessing failed:[/]");
-                    ErrorConsole.Out.WriteLine(ex.Message);
-                    return 1;
-                }
-            }
-
-            // Apply class balancing if requested (classification only — BalanceConflict refused the rest).
-            // Split BEFORE balancing to prevent data leakage
-            if (!string.IsNullOrEmpty(balance) && isClassificationTask && !string.IsNullOrEmpty(effectiveDefinition.Label))
-            {
-                var balanced = TrainingInput.Balance(resolvedDataFile, effectiveDefinition.Label, balance,
-                    effectiveDefinition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit);
-                var balanceResult = balanced.Result;
-
-                if (balanced.Split is { } splitResult)
-                {
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.Write(new Rule("[blue]Pre-Balance Split[/]").LeftJustified());
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine($"[green]✓[/] Stratified split: train={splitResult.TrainRows}, test={splitResult.TestRows}");
-                    AnsiConsole.MarkupLine("[grey]  Test set is isolated from balancing to prevent data leakage.[/]");
-                    AnsiConsole.WriteLine();
-
-                    allDataFilesUsed.Add(splitResult.TrainFile);
-                    allDataFilesUsed.Add(splitResult.TestFile);
-                    testDataFile = splitResult.TestFile;
-                }
-
-                if (balanceResult.Applied && balanceResult.BalancedFilePath != null)
-                {
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.Write(new Rule(balanced.Split is null ? "[blue]Class Balancing[/]" : "[blue]Class Balancing (train only)[/]").LeftJustified());
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
-                    ValueLine.Write(balanced.Split is null ? "[green]>[/] Using balanced data: " : "[green]>[/] Balanced train: ",
-                        Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath));
-                    if (balanced.TestFile is { } cleanTest)
-                        ValueLine.Write("[green]>[/] Clean test: ", Path.GetRelativePath(projectRoot, cleanTest));
-
-                    var replicationRatio = (double)balanceResult.NewMinorityCount / balanceResult.OriginalMinorityCount;
-                    if (replicationRatio > 10)
-                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Minority class replicated {replicationRatio:F0}x in train set.");
-                    AnsiConsole.WriteLine();
-
-                    allDataFilesUsed.Add(balanceResult.BalancedFilePath);
-                }
-                else if (!string.IsNullOrEmpty(balanceResult.Message))
-                {
-                    AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
-                }
-                resolvedDataFile = balanced.TrainFile;
-            }
             } // end if (!isDirectoryBased) — CSV preprocessing block
 
             // Display data summary (CSV row/column counts — not applicable to an image directory)

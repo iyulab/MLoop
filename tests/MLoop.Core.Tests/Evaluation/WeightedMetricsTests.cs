@@ -32,8 +32,11 @@ public class WeightedMetricsTests
             score = MathF.Round(score, 1); // ties, so the tie rule is exercised
             rows.Add(new BinaryRow
             {
-                Label = y, Score = score, PredictedLabel = score > 0,
-                Probability = 1 / (1 + MathF.Exp(-score)), W = 1,
+                Label = y,
+                Score = score,
+                PredictedLabel = score > 0,
+                Probability = 1 / (1 + MathF.Exp(-score)),
+                W = 1,
             });
         }
         return rows;

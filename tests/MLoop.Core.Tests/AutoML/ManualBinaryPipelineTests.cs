@@ -54,7 +54,9 @@ public class ManualBinaryPipelineTests
         // column is a feature, and the same cache → SDCA tail applies.
         var data = _mlContext.Data.LoadFromEnumerable(Enumerable.Range(0, 40).Select(i => new NumericRow
         {
-            A = i, B = i % 3, Label = i % 2 == 0,
+            A = i,
+            B = i % 3,
+            Label = i % 2 == 0,
         }));
 
         var model = AutoMLRunner.BuildManualBinaryPipeline(_mlContext, data, "Label", AutoMLRunner.BuildColumnRoles(data, "Label")).Fit(data);
@@ -71,8 +73,17 @@ public class ManualBinaryPipelineTests
             yield return new TextHeavyRow
             {
                 Id = $"{1000 + i}-{Word().ToUpperInvariant()}",
-                T1 = Word(), T2 = Word(), T3 = Word(), T4 = Word(), T5 = Word(), T6 = Word(),
-                T7 = Word(), T8 = Word(), T9 = Word(), T10 = Word(), T11 = Word(),
+                T1 = Word(),
+                T2 = Word(),
+                T3 = Word(),
+                T4 = Word(),
+                T5 = Word(),
+                T6 = Word(),
+                T7 = Word(),
+                T8 = Word(),
+                T9 = Word(),
+                T10 = Word(),
+                T11 = Word(),
                 Amount = (float)rng.NextDouble() * 100,
                 Label = i % 3 == 0,
             };

@@ -36,7 +36,8 @@ public sealed class OnnxExportTests : IDisposable
         }));
         var loader = new TextLoader.Options
         {
-            HasHeader = true, Separators = [','],
+            HasHeader = true,
+            Separators = [','],
             Columns =
             [
                 new TextLoader.Column("Features", DataKind.Single, 0, 1),
@@ -77,7 +78,8 @@ public sealed class OnnxExportTests : IDisposable
         }));
         var loader = new TextLoader.Options
         {
-            HasHeader = true, Separators = [','],
+            HasHeader = true,
+            Separators = [','],
             Columns =
             [
                 new TextLoader.Column("a", DataKind.Single, 0),
@@ -120,7 +122,8 @@ public sealed class OnnxExportTests : IDisposable
         }));
         var loader = new TextLoader.Options
         {
-            HasHeader = true, Separators = [','],
+            HasHeader = true,
+            Separators = [','],
             Columns =
             [
                 new TextLoader.Column("a", DataKind.Single, 0),
@@ -155,7 +158,8 @@ public sealed class OnnxExportTests : IDisposable
         }));
         var loader = new TextLoader.Options
         {
-            HasHeader = true, Separators = [','],
+            HasHeader = true,
+            Separators = [','],
             Columns =
             [
                 new TextLoader.Column("Features", DataKind.Single, 0, 1),
@@ -181,7 +185,8 @@ public sealed class OnnxExportTests : IDisposable
             Row(i % 2 == 0 ? "disk failure on volume" : "backup completed", i % 3 == 0 ? "WARN" : "INFO", i % 2 == 0 ? "true" : "false")));
         var loader = new TextLoader.Options
         {
-            HasHeader = true, Separators = [','],
+            HasHeader = true,
+            Separators = [','],
             Columns =
             [
                 new TextLoader.Column("note", DataKind.String, 0),
@@ -225,7 +230,9 @@ public sealed class OnnxExportTests : IDisposable
         }));
         var loader = new TextLoader.Options
         {
-            HasHeader = true, Separators = [','], AllowQuoting = true,
+            HasHeader = true,
+            Separators = [','],
+            AllowQuoting = true,
             Columns =
             [
                 new TextLoader.Column("text", DataKind.String, 0),
@@ -266,7 +273,9 @@ public sealed class OnnxExportTests : IDisposable
         }));
         var loader = new TextLoader.Options
         {
-            HasHeader = true, Separators = [','], AllowQuoting = true,
+            HasHeader = true,
+            Separators = [','],
+            AllowQuoting = true,
             Columns =
             [
                 new TextLoader.Column("text", DataKind.String, 0),
@@ -362,29 +371,29 @@ public sealed class OnnxExportTests : IDisposable
         switch (spec.ElementType)
         {
             case "float32" when column.Type is VectorDataViewType:
-            {
-                var values = data.GetColumn<VBuffer<float>>(column).Select(b => b.DenseValues().ToArray()).ToList();
-                var tensor = new DenseTensor<float>([rows, spec.Width]);
-                for (int r = 0; r < rows; r++)
-                    for (int j = 0; j < spec.Width; j++)
-                        tensor[r, j] = values[r][j];
-                return NamedOnnxValue.CreateFromTensor(spec.Name, tensor);
-            }
+                {
+                    var values = data.GetColumn<VBuffer<float>>(column).Select(b => b.DenseValues().ToArray()).ToList();
+                    var tensor = new DenseTensor<float>([rows, spec.Width]);
+                    for (int r = 0; r < rows; r++)
+                        for (int j = 0; j < spec.Width; j++)
+                            tensor[r, j] = values[r][j];
+                    return NamedOnnxValue.CreateFromTensor(spec.Name, tensor);
+                }
             case "float32":
-            {
-                var values = data.GetColumn<float>(column).ToArray();
-                return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<float>(values, [rows, 1]));
-            }
+                {
+                    var values = data.GetColumn<float>(column).ToArray();
+                    return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<float>(values, [rows, 1]));
+                }
             case "bool":
-            {
-                var values = data.GetColumn<bool>(column).ToArray();
-                return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<bool>(values, [rows, 1]));
-            }
+                {
+                    var values = data.GetColumn<bool>(column).ToArray();
+                    return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<bool>(values, [rows, 1]));
+                }
             case "string":
-            {
-                var values = data.GetColumn<ReadOnlyMemory<char>>(column).Select(v => v.ToString()).ToArray();
-                return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<string>(values, [rows, 1]));
-            }
+                {
+                    var values = data.GetColumn<ReadOnlyMemory<char>>(column).Select(v => v.ToString()).ToArray();
+                    return NamedOnnxValue.CreateFromTensor(spec.Name, new DenseTensor<string>(values, [rows, 1]));
+                }
             default:
                 throw new NotSupportedException(spec.ElementType);
         }

@@ -125,8 +125,12 @@ public class WeightedTrainingTests : IDisposable
         var data = ctx.Data.LoadFromEnumerable(Fixture());
         var config = new TrainingConfig
         {
-            ModelName = "w", DataFile = "synthetic", LabelColumn = "", Task = "clustering",
-            TimeLimitSeconds = 5, WeightColumn = "W",
+            ModelName = "w",
+            DataFile = "synthetic",
+            LabelColumn = "",
+            Task = "clustering",
+            TimeLimitSeconds = 5,
+            WeightColumn = "W",
         };
 
         var ex = await Assert.ThrowsAsync<NotSupportedException>(
@@ -211,8 +215,12 @@ public class WeightedResamplingTests
     {
         var config = new TrainingConfig
         {
-            ModelName = "m", DataFile = "d", LabelColumn = "y", Task = "regression",
-            WeightColumn = "w", ColumnOverrides = new() { ["note"] = "text" },
+            ModelName = "m",
+            DataFile = "d",
+            LabelColumn = "y",
+            Task = "regression",
+            WeightColumn = "w",
+            ColumnOverrides = new() { ["note"] = "text" },
         };
 
         Assert.Equal("ignore", config.ColumnOverrides!["W"]);  // case-insensitive, as the schema matches it

@@ -1,14 +1,14 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text.Json;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.CLI.Infrastructure.Display;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.DataStore.Services;
 using MLoop.Ops.Interfaces;
 using MLoop.Ops.Services;
 using Spectre.Console;
-using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 

@@ -1,8 +1,5 @@
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
-using MLoop.Search;
-// Microsoft.ML.AutoML has a TrialResult of its own; this is the search's.
-using TrialResult = MLoop.Search.TrialResult;
 using Microsoft.ML.Data;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
@@ -13,6 +10,9 @@ using MLoop.Core.Scripting;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
+using MLoop.Search;
+// Microsoft.ML.AutoML has a TrialResult of its own; this is the search's.
+using TrialResult = MLoop.Search.TrialResult;
 
 namespace MLoop.Core.AutoML;
 

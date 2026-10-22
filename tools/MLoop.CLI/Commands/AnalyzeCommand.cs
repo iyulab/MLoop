@@ -296,9 +296,15 @@ public static class AnalyzeCommand
 
             var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
             {
-                IncludeProfiling = false, IncludeDescriptive = false, IncludeCorrelation = true,
-                IncludeDistribution = false, IncludeOutliers = false, IncludeFeatures = false,
-                IncludeRegression = false, IncludeClustering = false, IncludePca = false
+                IncludeProfiling = false,
+                IncludeDescriptive = false,
+                IncludeCorrelation = true,
+                IncludeDistribution = false,
+                IncludeOutliers = false,
+                IncludeFeatures = false,
+                IncludeRegression = false,
+                IncludeClustering = false,
+                IncludePca = false
             });
 
             var env = AnalyzeJson.MapCorrelation(result?.Correlation);
@@ -362,9 +368,15 @@ public static class AnalyzeCommand
 
             var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
             {
-                IncludeProfiling = false, IncludeDescriptive = false, IncludeCorrelation = false,
-                IncludeDistribution = false, IncludeOutliers = false, IncludeFeatures = true,
-                IncludeRegression = false, IncludeClustering = false, IncludePca = false,
+                IncludeProfiling = false,
+                IncludeDescriptive = false,
+                IncludeCorrelation = false,
+                IncludeDistribution = false,
+                IncludeOutliers = false,
+                IncludeFeatures = true,
+                IncludeRegression = false,
+                IncludeClustering = false,
+                IncludePca = false,
                 TargetColumn = ctx.Value.Label
             });
 
@@ -433,9 +445,15 @@ public static class AnalyzeCommand
 
             var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
             {
-                IncludeProfiling = false, IncludeDescriptive = false, IncludeCorrelation = false,
-                IncludeDistribution = false, IncludeOutliers = true, IncludeFeatures = false,
-                IncludeRegression = false, IncludeClustering = false, IncludePca = false
+                IncludeProfiling = false,
+                IncludeDescriptive = false,
+                IncludeCorrelation = false,
+                IncludeDistribution = false,
+                IncludeOutliers = true,
+                IncludeFeatures = false,
+                IncludeRegression = false,
+                IncludeClustering = false,
+                IncludePca = false
             });
 
             var env = AnalyzeJson.MapOutliers(result?.Outliers);
@@ -493,9 +511,15 @@ public static class AnalyzeCommand
 
             var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
             {
-                IncludeProfiling = false, IncludeDescriptive = true, IncludeCorrelation = false,
-                IncludeDistribution = true, IncludeOutliers = false, IncludeFeatures = false,
-                IncludeRegression = false, IncludeClustering = false, IncludePca = false
+                IncludeProfiling = false,
+                IncludeDescriptive = true,
+                IncludeCorrelation = false,
+                IncludeDistribution = true,
+                IncludeOutliers = false,
+                IncludeFeatures = false,
+                IncludeRegression = false,
+                IncludeClustering = false,
+                IncludePca = false
             });
 
             // Per-column cardinality (MLoop's own scan, same as `profile`) lets MapDistribution

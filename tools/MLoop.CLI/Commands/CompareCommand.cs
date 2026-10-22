@@ -1,12 +1,12 @@
 using System.CommandLine;
 using System.Text.Json;
-using MLoop.Core.Evaluation;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.CLI.Infrastructure.Display;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Evaluation;
 using Spectre.Console;
-using MLoop.CLI.Infrastructure.Display;
 
 namespace MLoop.CLI.Commands;
 

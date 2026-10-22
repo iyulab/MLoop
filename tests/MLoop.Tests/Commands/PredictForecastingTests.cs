@@ -2,8 +2,8 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Commands;
 using MLoop.Core.AutoML;
-using MLoop.Core.Prediction;
 using MLoop.Core.Detection;
+using MLoop.Core.Prediction;
 
 namespace MLoop.Tests.Commands;
 

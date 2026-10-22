@@ -20,8 +20,12 @@ public sealed class PromoteQualityGateTests : IDisposable
     // Answers "negative" for every row and ranks no better than chance: it learned nothing.
     private static readonly Dictionary<string, double> SingleClassModel = new()
     {
-        ["accuracy"] = 0.993, ["f1_score"] = 0, ["precision"] = 0, ["recall"] = 0,
-        ["negative_recall"] = 1, ["auc"] = 0.5,
+        ["accuracy"] = 0.993,
+        ["f1_score"] = 0,
+        ["precision"] = 0,
+        ["recall"] = 0,
+        ["negative_recall"] = 1,
+        ["auc"] = 0.5,
     };
 
     // Also answers "negative" for every row at the default threshold, but ranks the classes well:
@@ -29,14 +33,22 @@ public sealed class PromoteQualityGateTests : IDisposable
     // month by a consumer deciding by score.
     private static readonly Dictionary<string, double> RanksButSitsOnOneClass = new()
     {
-        ["accuracy"] = 0.969, ["f1_score"] = 0, ["precision"] = 0, ["recall"] = 0,
-        ["negative_recall"] = 1, ["auc"] = 0.968,
+        ["accuracy"] = 0.969,
+        ["f1_score"] = 0,
+        ["precision"] = 0,
+        ["recall"] = 0,
+        ["negative_recall"] = 1,
+        ["auc"] = 0.968,
     };
 
     private static readonly Dictionary<string, double> LearnedModel = new()
     {
-        ["accuracy"] = 0.91, ["f1_score"] = 0.88, ["precision"] = 0.9, ["recall"] = 0.86,
-        ["negative_recall"] = 0.94, ["auc"] = 0.95,
+        ["accuracy"] = 0.91,
+        ["f1_score"] = 0.88,
+        ["precision"] = 0.9,
+        ["recall"] = 0.86,
+        ["negative_recall"] = 0.94,
+        ["auc"] = 0.95,
     };
 
     public PromoteQualityGateTests()

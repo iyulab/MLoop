@@ -151,7 +151,11 @@ public class TrainingProgressTrackerTests
         var finalize = TrainingProgressTracker.PhaseDescription(
             new MLoop.Core.Models.TrainingProgress
             {
-                TrialNumber = 0, TrainerName = "", Metric = 0, MetricName = "", ElapsedSeconds = 0,
+                TrialNumber = 0,
+                TrainerName = "",
+                Metric = 0,
+                MetricName = "",
+                ElapsedSeconds = 0,
                 Phase = MLoop.Core.Models.TrainingPhase.Complete
             }, name);
 
@@ -161,8 +165,14 @@ public class TrainingProgressTrackerTests
 
     private static TrainingProgress Epoch(int epoch, int max, double elapsed) => new()
     {
-        TrialNumber = 0, TrainerName = "NER (NAS-BERT)", Metric = 0, MetricName = "", ElapsedSeconds = elapsed,
-        Phase = TrainingPhase.Epoch, Epoch = epoch, MaxEpochs = max
+        TrialNumber = 0,
+        TrainerName = "NER (NAS-BERT)",
+        Metric = 0,
+        MetricName = "",
+        ElapsedSeconds = elapsed,
+        Phase = TrainingPhase.Epoch,
+        Epoch = epoch,
+        MaxEpochs = max
     };
 
     [Fact]
@@ -187,8 +197,14 @@ public class TrainingProgressTrackerTests
 
     private static TrainingProgress Featurized(int step, int steps, double elapsed) => new()
     {
-        TrialNumber = 0, TrainerName = "Image classification (TensorFlow)", Metric = 0, MetricName = "",
-        ElapsedSeconds = elapsed, Phase = TrainingPhase.Featurize, Step = step, Steps = steps
+        TrialNumber = 0,
+        TrainerName = "Image classification (TensorFlow)",
+        Metric = 0,
+        MetricName = "",
+        ElapsedSeconds = elapsed,
+        Phase = TrainingPhase.Featurize,
+        Step = step,
+        Steps = steps
     };
 
     [Fact]
@@ -210,8 +226,15 @@ public class TrainingProgressTrackerTests
         // 200 is a cap the fit usually stops far short of; dividing by it would promise hours.
         var p = new TrainingProgress
         {
-            TrialNumber = 0, TrainerName = "Image classification (TensorFlow)", Metric = 0, MetricName = "",
-            ElapsedSeconds = 60, Phase = TrainingPhase.Epoch, Epoch = 12, MaxEpochs = 200, StopsEarly = true
+            TrialNumber = 0,
+            TrainerName = "Image classification (TensorFlow)",
+            Metric = 0,
+            MetricName = "",
+            ElapsedSeconds = 60,
+            Phase = TrainingPhase.Epoch,
+            Epoch = 12,
+            MaxEpochs = 200,
+            StopsEarly = true
         };
 
         var text = TrainingProgressTracker.PhaseDescription(p, "default")!;

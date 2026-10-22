@@ -1,12 +1,12 @@
+using System.Text;
+using FilePrepper.Pipeline;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
-using FilePrepper.Pipeline;
 using Spectre.Console;
-using System.Text;
-using MLoop.CLI.Infrastructure.Diagnostics;
-using MLoop.Core.AutoML;
 
 namespace MLoop.CLI.Commands;
 

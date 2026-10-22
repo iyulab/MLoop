@@ -1,8 +1,8 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Analysis;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
 using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Models;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Detectors;
 

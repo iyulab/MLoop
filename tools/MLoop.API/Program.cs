@@ -1,9 +1,17 @@
+using System.Diagnostics;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using AspNetCoreRateLimit;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML;
 using MLoop.API;
 using MLoop.API.Caching;
-using MLoop.CLI.Infrastructure.FileSystem;
-using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure;
+using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
@@ -13,16 +21,8 @@ using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using MLoop.Ops.Interfaces;
 using MLoop.Ops.Services;
-using System.Text.Json;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using AspNetCoreRateLimit;
 using Serilog;
 using Serilog.Events;
-using System.Diagnostics;
-using System.Reflection;
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -42,1729 +42,1729 @@ try
 {
     Log.Information("Starting MLoop.API application");
 
-// Numbers in responses and logs must not change shape with the host locale.
-MLoop.Core.Globalization.OutputCulture.Pin();
+    // Numbers in responses and logs must not change shape with the host locale.
+    MLoop.Core.Globalization.OutputCulture.Pin();
 
-var builder = WebApplication.CreateBuilder(args);
+    var builder = WebApplication.CreateBuilder(args);
 
-// Register the DeepLearning module for object-detection etc. tasks.
-// Production wiring: only apps that reference + register MLoop.Core.DeepLearning
-// get DL support; tabular-only consumers never pull it in.
-MLoop.Core.AutoML.DeepLearningRegistry.Register(new MLoop.Core.DeepLearning.DeepLearningModule());
+    // Register the DeepLearning module for object-detection etc. tasks.
+    // Production wiring: only apps that reference + register MLoop.Core.DeepLearning
+    // get DL support; tabular-only consumers never pull it in.
+    MLoop.Core.AutoML.DeepLearningRegistry.Register(new MLoop.Core.DeepLearning.DeepLearningModule());
 
-// Replace default logging with Serilog
-builder.Host.UseSerilog();
+    // Replace default logging with Serilog
+    builder.Host.UseSerilog();
 
-// Configure JSON serialization
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
-    // A field without a value is absent, on every endpoint — the same rule every `--json` emitter in
-    // the CLI applies. Until 0.32.0 the server wrote such fields as null, so the one response a
-    // consumer might read from both surfaces (a prediction row) had two shapes and the response
-    // contract had to spend a paragraph telling readers to treat "absent" and "null" as the same
-    // thing. One rule per product, not one per surface. See docs/PREDICT-RESPONSE.md.
-    options.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
-});
-
-// Add Swagger services
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new()
+    // Configure JSON serialization
+    builder.Services.ConfigureHttpJsonOptions(options =>
     {
-        Title = "MLoop MLOps API",
-        Version = "v1",
-        Description = "Full MLOps REST API for ML.NET models trained with MLoop. " +
-            "Supports training, prediction, evaluation, model management, and monitoring. " +
-            "All data endpoints require JWT Bearer authentication. " +
-            "Use the 'name' query parameter to target specific models (defaults to 'default')."
+        options.SerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
+        // A field without a value is absent, on every endpoint — the same rule every `--json` emitter in
+        // the CLI applies. Until 0.32.0 the server wrote such fields as null, so the one response a
+        // consumer might read from both surfaces (a prediction row) had two shapes and the response
+        // contract had to spend a paragraph telling readers to treat "absent" and "null" as the same
+        // thing. One rule per product, not one per surface. See docs/PREDICT-RESPONSE.md.
+        options.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 
-    const string bearerSchemeId = "bearer";
-    c.AddSecurityDefinition(bearerSchemeId, new Microsoft.OpenApi.OpenApiSecurityScheme
+    // Add Swagger services
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen(c =>
     {
-        Type = Microsoft.OpenApi.SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        Description = "Enter your JWT token. Admin endpoints (promote, evaluate, train) require 'admin' role claim."
+        c.SwaggerDoc("v1", new()
+        {
+            Title = "MLoop MLOps API",
+            Version = "v1",
+            Description = "Full MLOps REST API for ML.NET models trained with MLoop. " +
+                "Supports training, prediction, evaluation, model management, and monitoring. " +
+                "All data endpoints require JWT Bearer authentication. " +
+                "Use the 'name' query parameter to target specific models (defaults to 'default')."
+        });
+
+        const string bearerSchemeId = "bearer";
+        c.AddSecurityDefinition(bearerSchemeId, new Microsoft.OpenApi.OpenApiSecurityScheme
+        {
+            Type = Microsoft.OpenApi.SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "Enter your JWT token. Admin endpoints (promote, evaluate, train) require 'admin' role claim."
+        });
+
+        c.AddSecurityRequirement(document => new Microsoft.OpenApi.OpenApiSecurityRequirement
+        {
+            [new Microsoft.OpenApi.OpenApiSecuritySchemeReference(bearerSchemeId, document)] = []
+        });
     });
 
-    c.AddSecurityRequirement(document => new Microsoft.OpenApi.OpenApiSecurityRequirement
-    {
-        [new Microsoft.OpenApi.OpenApiSecuritySchemeReference(bearerSchemeId, document)] = []
-    });
-});
+    // Add JWT Authentication. The default key/issuer/audience live in MLoop.Core.Security.DevJwtDefaults
+    // so the validator here and the issuer (`mloop token`) share one authority and cannot drift.
+    var jwtKey = builder.Configuration["Jwt:Key"];
+    var isDefaultKey = string.IsNullOrEmpty(jwtKey) || jwtKey == MLoop.Core.Security.DevJwtDefaults.Key;
 
-// Add JWT Authentication. The default key/issuer/audience live in MLoop.Core.Security.DevJwtDefaults
-// so the validator here and the issuer (`mloop token`) share one authority and cannot drift.
-var jwtKey = builder.Configuration["Jwt:Key"];
-var isDefaultKey = string.IsNullOrEmpty(jwtKey) || jwtKey == MLoop.Core.Security.DevJwtDefaults.Key;
-
-if (isDefaultKey)
-{
-    if (builder.Environment.IsProduction())
+    if (isDefaultKey)
     {
-        Log.Fatal("JWT key is not configured. Set Jwt:Key in environment variables or appsettings.json.");
-        Log.Fatal("Example: Jwt__Key=your-secure-random-key-at-least-32-characters");
-        throw new InvalidOperationException(
-            "Cannot start in Production with default JWT key. Set Jwt:Key in configuration.");
+        if (builder.Environment.IsProduction())
+        {
+            Log.Fatal("JWT key is not configured. Set Jwt:Key in environment variables or appsettings.json.");
+            Log.Fatal("Example: Jwt__Key=your-secure-random-key-at-least-32-characters");
+            throw new InvalidOperationException(
+                "Cannot start in Production with default JWT key. Set Jwt:Key in configuration.");
+        }
+
+        jwtKey = MLoop.Core.Security.DevJwtDefaults.Key;
+        Log.Warning("Using default JWT key — NOT SAFE for production. Set Jwt:Key in configuration.");
     }
 
-    jwtKey = MLoop.Core.Security.DevJwtDefaults.Key;
-    Log.Warning("Using default JWT key — NOT SAFE for production. Set Jwt:Key in configuration.");
-}
-
-if (jwtKey!.Length < 32)
-{
-    Log.Fatal("JWT key must be at least 32 characters. Current length: {Length}", jwtKey.Length);
-    throw new InvalidOperationException(
-        "JWT key must be at least 32 characters. Set Jwt:Key in configuration.");
-}
-
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? MLoop.Core.Security.DevJwtDefaults.Issuer;
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? MLoop.Core.Security.DevJwtDefaults.Audience;
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+    if (jwtKey!.Length < 32)
     {
-        // Read claims verbatim (no legacy URI remapping) so tokens issued by `mloop token` —
-        // which carry short 'sub'/'role' claims — validate and authorize without drift.
-        options.MapInboundClaims = false;
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer,
-            ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-            NameClaimType = "sub",
-            RoleClaimType = "role"
-        };
+        Log.Fatal("JWT key must be at least 32 characters. Current length: {Length}", jwtKey.Length);
+        throw new InvalidOperationException(
+            "JWT key must be at least 32 characters. Set Jwt:Key in configuration.");
+    }
 
-        // Replace the default empty 401 body with an actionable hint. A programmatic caller
-        // embedding `mloop serve` otherwise gets a bare 401 with no clue that a token is
-        // required nor how to mint one — the token-issuance surface is the CLI (`mloop token`),
-        // not the server, so it isn't self-evident from the API alone.
-        options.Events = new JwtBearerEvents
+    var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? MLoop.Core.Security.DevJwtDefaults.Issuer;
+    var jwtAudience = builder.Configuration["Jwt:Audience"] ?? MLoop.Core.Security.DevJwtDefaults.Audience;
+
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
         {
-            OnChallenge = async context =>
+            // Read claims verbatim (no legacy URI remapping) so tokens issued by `mloop token` —
+            // which carry short 'sub'/'role' claims — validate and authorize without drift.
+            options.MapInboundClaims = false;
+            options.TokenValidationParameters = new TokenValidationParameters
             {
-                context.HandleResponse(); // suppress the default challenge (empty body)
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = jwtIssuer,
+                ValidAudience = jwtAudience,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+                NameClaimType = "sub",
+                RoleClaimType = "role"
+            };
+
+            // Replace the default empty 401 body with an actionable hint. A programmatic caller
+            // embedding `mloop serve` otherwise gets a bare 401 with no clue that a token is
+            // required nor how to mint one — the token-issuance surface is the CLI (`mloop token`),
+            // not the server, so it isn't self-evident from the API alone.
+            options.Events = new JwtBearerEvents
+            {
+                OnChallenge = async context =>
                 {
-                    error = "Unauthorized",
-                    hint = "This endpoint requires a JWT bearer token. Issue one with the CLI — " +
-                           "`mloop token` for read endpoints (/predict, /info, /logs …), or " +
-                           "`mloop token --role admin` for write endpoints (/promote, /train, /evaluate) — " +
-                           "then send it as the `Authorization: Bearer <token>` header. See `mloop token --help`."
-                });
-            }
-        };
+                    context.HandleResponse(); // suppress the default challenge (empty body)
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        error = "Unauthorized",
+                        hint = "This endpoint requires a JWT bearer token. Issue one with the CLI — " +
+                               "`mloop token` for read endpoints (/predict, /info, /logs …), or " +
+                               "`mloop token --role admin` for write endpoints (/promote, /train, /evaluate) — " +
+                               "then send it as the `Authorization: Bearer <token>` header. See `mloop token --help`."
+                    });
+                }
+            };
+        });
+
+    builder.Services.AddAuthorization(options =>
+    {
+        // Admin policy: for destructive/write operations (promote, train, feedback)
+        options.AddPolicy("Admin", policy =>
+            policy.RequireRole("admin"));
+
+        // ReadOnly policy: for monitoring/read operations (default for all authenticated users)
+        options.AddPolicy("ReadOnly", policy =>
+            policy.RequireAuthenticatedUser());
     });
 
-builder.Services.AddAuthorization(options =>
-{
-    // Admin policy: for destructive/write operations (promote, train, feedback)
-    options.AddPolicy("Admin", policy =>
-        policy.RequireRole("admin"));
-
-    // ReadOnly policy: for monitoring/read operations (default for all authenticated users)
-    options.AddPolicy("ReadOnly", policy =>
-        policy.RequireAuthenticatedUser());
-});
-
-// Add Rate Limiting (configurable via appsettings.json "IpRateLimiting" section)
-builder.Services.AddMemoryCache();
-var rateLimitSection = builder.Configuration.GetSection("IpRateLimiting");
-if (rateLimitSection.Exists())
-{
-    builder.Services.Configure<IpRateLimitOptions>(rateLimitSection);
-}
-else
-{
-    builder.Services.Configure<IpRateLimitOptions>(options =>
+    // Add Rate Limiting (configurable via appsettings.json "IpRateLimiting" section)
+    builder.Services.AddMemoryCache();
+    var rateLimitSection = builder.Configuration.GetSection("IpRateLimiting");
+    if (rateLimitSection.Exists())
     {
-        options.EnableEndpointRateLimiting = true;
-        options.StackBlockedRequests = false;
-        options.HttpStatusCode = 429;
-        options.RealIpHeader = "X-Real-IP";
-        options.GeneralRules =
-        [
-            new() { Endpoint = "POST:/predict", Period = "1m", Limit = 60 },
+        builder.Services.Configure<IpRateLimitOptions>(rateLimitSection);
+    }
+    else
+    {
+        builder.Services.Configure<IpRateLimitOptions>(options =>
+        {
+            options.EnableEndpointRateLimiting = true;
+            options.StackBlockedRequests = false;
+            options.HttpStatusCode = 429;
+            options.RealIpHeader = "X-Real-IP";
+            options.GeneralRules =
+            [
+                new() { Endpoint = "POST:/predict", Period = "1m", Limit = 60 },
             new() { Endpoint = "*", Period = "1m", Limit = 100 }
-        ];
-    });
-}
-builder.Services.AddInMemoryRateLimiting();
-builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
-
-// Add CORS (configurable via Cors:Origins in appsettings.json)
-var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>();
-builder.Services.AddCors(options =>
-{
-    options.AddDefaultPolicy(policy =>
-    {
-        if (corsOrigins is { Length: > 0 })
-        {
-            policy.WithOrigins(corsOrigins)
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
-        }
-        else
-        {
-            // Default: allow all (development-friendly, non-production)
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
-        }
-    });
-});
-
-// Register MLoop services
-builder.Services.AddSingleton<IFileSystemManager, FileSystemManager>();
-builder.Services.AddSingleton<IProjectDiscovery, ProjectDiscovery>();
-// The project root is one fact for the life of the process. Register the answer, not the question,
-// so it is resolved once — and so a deployment that cannot find its project fails at startup.
-builder.Services.AddSingleton(sp =>
-    new ProjectRootPath(sp.GetRequiredService<IProjectDiscovery>().FindRoot()));
-builder.Services.AddSingleton<ConfigLoader>();
-builder.Services.AddSingleton<IModelNameResolver, ModelNameResolver>();
-builder.Services.AddSingleton<IExperimentStore, ExperimentStore>();
-builder.Services.AddSingleton<IModelRegistry, ModelRegistry>();
-builder.Services.AddSingleton<MLContext>();
-builder.Services.AddSingleton<EvaluationEngine>();
-builder.Services.Configure<ModelCacheOptions>(builder.Configuration.GetSection(ModelCacheOptions.SectionName));
-builder.Services.AddSingleton<IModelCache, ModelCache>();
-builder.Services.AddHostedService<ModelCachePreloader>();
-builder.Services.AddHostedService<RetentionService>();
-builder.Services.AddSingleton<TrainingJobStore>();
-builder.Services.AddSingleton<MLoop.CLI.Infrastructure.ML.ITrainingEngine>(sp =>
-{
-    var fileSystem = sp.GetRequiredService<IFileSystemManager>();
-    var experimentStore = sp.GetRequiredService<IExperimentStore>();
-    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
-    return new TrainingEngine(fileSystem, experimentStore, projectRoot);
-});
-builder.Services.AddSingleton<TrainingJobRunner>();
-builder.Services.AddHostedService<TrainingJobRunner>(sp => sp.GetRequiredService<TrainingJobRunner>());
-
-// Register MLoop.Ops services
-builder.Services.AddSingleton<IModelComparer>(sp =>
-{
-    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
-    return new FileModelComparer(projectRoot);
-});
-builder.Services.AddSingleton<IPromotionManager>(sp =>
-{
-    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
-    return new FilePromotionManager(projectRoot);
-});
-builder.Services.AddSingleton<IRetrainingTrigger>(sp =>
-{
-    // The same trigger and default conditions `mloop trigger check` uses.
-    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
-    return new CompositeRetrainingTrigger(projectRoot, sp.GetRequiredService<IFeedbackCollector>(), sp.GetRequiredService<IPredictionLogger>());
-});
-
-// Register MLoop.DataStore services
-builder.Services.AddSingleton<IPredictionLogger>(sp =>
-{
-    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
-    return new FilePredictionLogger(projectRoot);
-});
-builder.Services.AddSingleton<IFeedbackCollector>(sp =>
-{
-    var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
-    return new FileFeedbackCollector(projectRoot);
-});
-
-var app = builder.Build();
-
-// Resolve the project once, here, at startup. Eight service registrations and three endpoints used
-// to each resolve it themselves, and each of those carried a `?? Directory.GetCurrentDirectory()`
-// that could never run — FindRoot throws rather than returning null. So a deployment that could not
-// find its project did not fall back to anything: it started cleanly and then failed with a 500 on
-// whichever request first touched a service that needed the root. Failing here says the same thing
-// while an operator is still watching the log.
-app.Logger.LogInformation(
-    "Project root: {ProjectRoot}",
-    app.Services.GetRequiredService<ProjectRootPath>().Value);
-
-// Add request logging middleware
-app.UseSerilogRequestLogging(options =>
-{
-    options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000}ms";
-    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
-    {
-        diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value ?? "unknown");
-        diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
-        diagnosticContext.Set("UserAgent", httpContext.Request.Headers["User-Agent"].ToString());
-        diagnosticContext.Set("ClientIP", httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
-    };
-});
-
-// Configure Swagger UI
-app.UseSwagger();
-app.UseSwaggerUI(options =>
-{
-    options.SwaggerEndpoint("/swagger/v1/swagger.json", "MLoop API v1");
-    options.RoutePrefix = string.Empty; // Serve Swagger UI at root
-});
-
-app.UseCors();
-
-app.UseIpRateLimiting();
-
-app.UseAuthentication();
-app.UseAuthorization();
-
-// Health check endpoint. HEAD is mapped alongside GET because probes send it: wget --spider,
-// and most load balancers, issue HEAD, and a GET-only route answers those 405 while the service
-// is perfectly healthy. RFC 9110 makes HEAD identical to GET minus the body, so ASP.NET returning
-// the same result here is exactly right — it drops the body itself.
-app.MapMethods("/health", ["GET", "HEAD"], (ILogger<Program> logger) =>
-{
-    logger.LogInformation("Health check requested");
-    return Results.Ok(new
-    {
-        status = "healthy",
-        timestamp = DateTime.UtcNow,
-        version = typeof(Program).Assembly
-            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown"
-    });
-})
-.WithName("HealthCheck")
-.WithTags("Health")
-.Produces<object>(StatusCodes.Status200OK);
-
-// Model info endpoint (secured)
-app.MapGet("/info", async (
-    [FromQuery] string? name,
-    IModelRegistry registry,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
-
-    try
-    {
-        logger.LogInformation("Retrieving model information for '{ModelName}'", modelName);
-        var productionModel = await registry.GetProductionAsync(modelName, ct);
-
-        if (productionModel == null)
-        {
-            logger.LogWarning("No production model found for '{ModelName}'", modelName);
-            return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first." });
-        }
-
-        var modelPath = registry.GetProductionPath(modelName);
-        var modelFile = Path.Combine(modelPath, ExperimentLayout.ModelFileName);
-        var metadataFile = Path.Combine(modelPath, ExperimentLayout.MetadataFileName);
-
-        object? metadata = null;
-        if (File.Exists(metadataFile))
-        {
-            var json = await File.ReadAllTextAsync(metadataFile, ct);
-            metadata = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
-        }
-
-        logger.LogInformation("Model information retrieved for '{ModelName}' experiment {ExperimentId} in {ElapsedMs}ms",
-            modelName, productionModel.ExperimentId, stopwatch.ElapsedMilliseconds);
-
-        return Results.Ok(new
-        {
-            modelName = modelName,
-            experimentId = productionModel.ExperimentId,
-            promotedAt = productionModel.PromotedAt,
-            metrics = productionModel.Metrics,
-            task = productionModel.Task,
-            bestTrainer = productionModel.BestTrainer,
-            metadata
+            ];
         });
     }
-    catch (Exception ex)
+    builder.Services.AddInMemoryRateLimiting();
+    builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+
+    // Add CORS (configurable via Cors:Origins in appsettings.json)
+    var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>();
+    builder.Services.AddCors(options =>
     {
-        logger.LogError(ex, "Failed to retrieve model information for '{ModelName}' after {ElapsedMs}ms",
-            modelName, stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Failed to retrieve model information",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("GetModelInfo")
-.WithTags("Model")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<object>(StatusCodes.Status404NotFound)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
+        options.AddDefaultPolicy(policy =>
+        {
+            if (corsOrigins is { Length: > 0 })
+            {
+                policy.WithOrigins(corsOrigins)
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            }
+            else
+            {
+                // Default: allow all (development-friendly, non-production)
+                policy.AllowAnyOrigin()
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            }
+        });
+    });
 
-// Prediction endpoint (secured)
-app.MapPost("/predict", async (
-    [FromQuery] string? name,
-    [FromQuery] string? experiment,
-    JsonElement input,
-    IModelRegistry registry,
-    IExperimentStore experimentStore,
-    MLContext mlContext,
-    IModelCache modelCache,
-    IPredictionLogger predictionLogger,
-    IConfiguration configuration,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
-    var predictionCount = input.ValueKind == JsonValueKind.Array ? input.GetArrayLength() : 1;
-
-    try
+    // Register MLoop services
+    builder.Services.AddSingleton<IFileSystemManager, FileSystemManager>();
+    builder.Services.AddSingleton<IProjectDiscovery, ProjectDiscovery>();
+    // The project root is one fact for the life of the process. Register the answer, not the question,
+    // so it is resolved once — and so a deployment that cannot find its project fails at startup.
+    builder.Services.AddSingleton(sp =>
+        new ProjectRootPath(sp.GetRequiredService<IProjectDiscovery>().FindRoot()));
+    builder.Services.AddSingleton<ConfigLoader>();
+    builder.Services.AddSingleton<IModelNameResolver, ModelNameResolver>();
+    builder.Services.AddSingleton<IExperimentStore, ExperimentStore>();
+    builder.Services.AddSingleton<IModelRegistry, ModelRegistry>();
+    builder.Services.AddSingleton<MLContext>();
+    builder.Services.AddSingleton<EvaluationEngine>();
+    builder.Services.Configure<ModelCacheOptions>(builder.Configuration.GetSection(ModelCacheOptions.SectionName));
+    builder.Services.AddSingleton<IModelCache, ModelCache>();
+    builder.Services.AddHostedService<ModelCachePreloader>();
+    builder.Services.AddHostedService<RetentionService>();
+    builder.Services.AddSingleton<TrainingJobStore>();
+    builder.Services.AddSingleton<MLoop.CLI.Infrastructure.ML.ITrainingEngine>(sp =>
     {
-        logger.LogInformation("Prediction request for '{ModelName}' with {Count} input(s)", modelName, predictionCount);
+        var fileSystem = sp.GetRequiredService<IFileSystemManager>();
+        var experimentStore = sp.GetRequiredService<IExperimentStore>();
+        var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
+        return new TrainingEngine(fileSystem, experimentStore, projectRoot);
+    });
+    builder.Services.AddSingleton<TrainingJobRunner>();
+    builder.Services.AddHostedService<TrainingJobRunner>(sp => sp.GetRequiredService<TrainingJobRunner>());
 
-        // The model that answers: production by default, or ?experiment= — a shadow prediction by a
-        // candidate, as `mloop predict --experiment`. Production does not move, and logged rows carry
-        // the candidate's id, so drift (production's rows) and feedback keep the two apart.
-        string answeringId;
-        string modelPath;
-        string? taskOfModel;
-        if (!string.IsNullOrWhiteSpace(experiment))
+    // Register MLoop.Ops services
+    builder.Services.AddSingleton<IModelComparer>(sp =>
+    {
+        var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
+        return new FileModelComparer(projectRoot);
+    });
+    builder.Services.AddSingleton<IPromotionManager>(sp =>
+    {
+        var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
+        return new FilePromotionManager(projectRoot);
+    });
+    builder.Services.AddSingleton<IRetrainingTrigger>(sp =>
+    {
+        // The same trigger and default conditions `mloop trigger check` uses.
+        var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
+        return new CompositeRetrainingTrigger(projectRoot, sp.GetRequiredService<IFeedbackCollector>(), sp.GetRequiredService<IPredictionLogger>());
+    });
+
+    // Register MLoop.DataStore services
+    builder.Services.AddSingleton<IPredictionLogger>(sp =>
+    {
+        var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
+        return new FilePredictionLogger(projectRoot);
+    });
+    builder.Services.AddSingleton<IFeedbackCollector>(sp =>
+    {
+        var projectRoot = sp.GetRequiredService<ProjectRootPath>().Value;
+        return new FileFeedbackCollector(projectRoot);
+    });
+
+    var app = builder.Build();
+
+    // Resolve the project once, here, at startup. Eight service registrations and three endpoints used
+    // to each resolve it themselves, and each of those carried a `?? Directory.GetCurrentDirectory()`
+    // that could never run — FindRoot throws rather than returning null. So a deployment that could not
+    // find its project did not fall back to anything: it started cleanly and then failed with a 500 on
+    // whichever request first touched a service that needed the root. Failing here says the same thing
+    // while an operator is still watching the log.
+    app.Logger.LogInformation(
+        "Project root: {ProjectRoot}",
+        app.Services.GetRequiredService<ProjectRootPath>().Value);
+
+    // Add request logging middleware
+    app.UseSerilogRequestLogging(options =>
+    {
+        options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000}ms";
+        options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
         {
-            answeringId = experiment.Trim();
-            var (candidatePath, refusal) = ExperimentModels.Find(experimentStore, modelName, answeringId);
-            if (candidatePath is null)
-                return Results.NotFound(new { error = refusal });
-            modelPath = candidatePath;
-            taskOfModel = (await experimentStore.LoadAsync(modelName, answeringId, ct))?.Task;
-        }
-        else
+            diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value ?? "unknown");
+            diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
+            diagnosticContext.Set("UserAgent", httpContext.Request.Headers["User-Agent"].ToString());
+            diagnosticContext.Set("ClientIP", httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+        };
+    });
+
+    // Configure Swagger UI
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "MLoop API v1");
+        options.RoutePrefix = string.Empty; // Serve Swagger UI at root
+    });
+
+    app.UseCors();
+
+    app.UseIpRateLimiting();
+
+    app.UseAuthentication();
+    app.UseAuthorization();
+
+    // Health check endpoint. HEAD is mapped alongside GET because probes send it: wget --spider,
+    // and most load balancers, issue HEAD, and a GET-only route answers those 405 while the service
+    // is perfectly healthy. RFC 9110 makes HEAD identical to GET minus the body, so ASP.NET returning
+    // the same result here is exactly right — it drops the body itself.
+    app.MapMethods("/health", ["GET", "HEAD"], (ILogger<Program> logger) =>
+    {
+        logger.LogInformation("Health check requested");
+        return Results.Ok(new
         {
+            status = "healthy",
+            timestamp = DateTime.UtcNow,
+            version = typeof(Program).Assembly
+                .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown"
+        });
+    })
+    .WithName("HealthCheck")
+    .WithTags("Health")
+    .Produces<object>(StatusCodes.Status200OK);
+
+    // Model info endpoint (secured)
+    app.MapGet("/info", async (
+        [FromQuery] string? name,
+        IModelRegistry registry,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
+
+        try
+        {
+            logger.LogInformation("Retrieving model information for '{ModelName}'", modelName);
             var productionModel = await registry.GetProductionAsync(modelName, ct);
 
             if (productionModel == null)
             {
-                logger.LogWarning("Prediction failed: No production model found for '{ModelName}'", modelName);
-                return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first, or predict with a candidate: ?experiment=<exp-id>." });
+                logger.LogWarning("No production model found for '{ModelName}'", modelName);
+                return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first." });
             }
 
-            answeringId = productionModel.ExperimentId;
-            taskOfModel = productionModel.Task;
-            modelPath = Path.Combine(registry.GetProductionPath(modelName), ExperimentLayout.ModelFileName);
-        }
+            var modelPath = registry.GetProductionPath(modelName);
+            var modelFile = Path.Combine(modelPath, ExperimentLayout.ModelFileName);
+            var metadataFile = Path.Combine(modelPath, ExperimentLayout.MetadataFileName);
 
-        if (!File.Exists(modelPath))
-        {
-            logger.LogError("Model file not found at {ModelPath}", modelPath);
-            return Results.NotFound(new { error = $"Model file not found: {modelPath}" });
-        }
-
-        var taskType = taskOfModel ?? "regression";
-
-        // Forecasting is horizon-based (stateful SSA replaying its training series), not
-        // row-based — PredictionService.Predict rejects it outright. Body is an optional
-        // {"horizon":N}; omitted (or a non-object/no body) uses the model's trained horizon.
-        // Bypasses InputSchema/row-parsing entirely — neither applies to a horizon replay.
-        if (string.Equals(taskType, "forecasting", StringComparison.OrdinalIgnoreCase))
-        {
-            int? requestedHorizon = null;
-            if (input.ValueKind == JsonValueKind.Object &&
-                input.TryGetProperty("horizon", out var horizonProp) &&
-                horizonProp.ValueKind == JsonValueKind.Number)
+            object? metadata = null;
+            if (File.Exists(metadataFile))
             {
-                requestedHorizon = horizonProp.GetInt32();
+                var json = await File.ReadAllTextAsync(metadataFile, ct);
+                metadata = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
             }
 
-            var (forecast, forecastError) = await ForecastReplayService.ComputeForecastAsync(
-                mlContext, modelPath, answeringId, requestedHorizon);
+            logger.LogInformation("Model information retrieved for '{ModelName}' experiment {ExperimentId} in {ElapsedMs}ms",
+                modelName, productionModel.ExperimentId, stopwatch.ElapsedMilliseconds);
 
-            if (forecast is null)
+            return Results.Ok(new
             {
-                logger.LogWarning("Forecast failed for '{ModelName}': {Error}", modelName, forecastError);
+                modelName = modelName,
+                experimentId = productionModel.ExperimentId,
+                promotedAt = productionModel.PromotedAt,
+                metrics = productionModel.Metrics,
+                task = productionModel.Task,
+                bestTrainer = productionModel.BestTrainer,
+                metadata
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to retrieve model information for '{ModelName}' after {ElapsedMs}ms",
+                modelName, stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Failed to retrieve model information",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("GetModelInfo")
+    .WithTags("Model")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status404NotFound)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
+
+    // Prediction endpoint (secured)
+    app.MapPost("/predict", async (
+        [FromQuery] string? name,
+        [FromQuery] string? experiment,
+        JsonElement input,
+        IModelRegistry registry,
+        IExperimentStore experimentStore,
+        MLContext mlContext,
+        IModelCache modelCache,
+        IPredictionLogger predictionLogger,
+        IConfiguration configuration,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
+        var predictionCount = input.ValueKind == JsonValueKind.Array ? input.GetArrayLength() : 1;
+
+        try
+        {
+            logger.LogInformation("Prediction request for '{ModelName}' with {Count} input(s)", modelName, predictionCount);
+
+            // The model that answers: production by default, or ?experiment= — a shadow prediction by a
+            // candidate, as `mloop predict --experiment`. Production does not move, and logged rows carry
+            // the candidate's id, so drift (production's rows) and feedback keep the two apart.
+            string answeringId;
+            string modelPath;
+            string? taskOfModel;
+            if (!string.IsNullOrWhiteSpace(experiment))
+            {
+                answeringId = experiment.Trim();
+                var (candidatePath, refusal) = ExperimentModels.Find(experimentStore, modelName, answeringId);
+                if (candidatePath is null)
+                    return Results.NotFound(new { error = refusal });
+                modelPath = candidatePath;
+                taskOfModel = (await experimentStore.LoadAsync(modelName, answeringId, ct))?.Task;
+            }
+            else
+            {
+                var productionModel = await registry.GetProductionAsync(modelName, ct);
+
+                if (productionModel == null)
+                {
+                    logger.LogWarning("Prediction failed: No production model found for '{ModelName}'", modelName);
+                    return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first, or predict with a candidate: ?experiment=<exp-id>." });
+                }
+
+                answeringId = productionModel.ExperimentId;
+                taskOfModel = productionModel.Task;
+                modelPath = Path.Combine(registry.GetProductionPath(modelName), ExperimentLayout.ModelFileName);
+            }
+
+            if (!File.Exists(modelPath))
+            {
+                logger.LogError("Model file not found at {ModelPath}", modelPath);
+                return Results.NotFound(new { error = $"Model file not found: {modelPath}" });
+            }
+
+            var taskType = taskOfModel ?? "regression";
+
+            // Forecasting is horizon-based (stateful SSA replaying its training series), not
+            // row-based — PredictionService.Predict rejects it outright. Body is an optional
+            // {"horizon":N}; omitted (or a non-object/no body) uses the model's trained horizon.
+            // Bypasses InputSchema/row-parsing entirely — neither applies to a horizon replay.
+            if (string.Equals(taskType, "forecasting", StringComparison.OrdinalIgnoreCase))
+            {
+                int? requestedHorizon = null;
+                if (input.ValueKind == JsonValueKind.Object &&
+                    input.TryGetProperty("horizon", out var horizonProp) &&
+                    horizonProp.ValueKind == JsonValueKind.Number)
+                {
+                    requestedHorizon = horizonProp.GetInt32();
+                }
+
+                var (forecast, forecastError) = await ForecastReplayService.ComputeForecastAsync(
+                    mlContext, modelPath, answeringId, requestedHorizon);
+
+                if (forecast is null)
+                {
+                    logger.LogWarning("Forecast failed for '{ModelName}': {Error}", modelName, forecastError);
+                    return Results.Problem(
+                        title: "Forecast failed",
+                        detail: forecastError ?? "Forecast failed.",
+                        statusCode: StatusCodes.Status400BadRequest
+                    );
+                }
+
+                var forecastRows = ForecastReplayService.BuildForecastRows(forecast);
+                logger.LogInformation("Forecast completed for '{ModelName}': {Count} steps in {ElapsedMs}ms",
+                    modelName, forecastRows.Count, stopwatch.ElapsedMilliseconds);
+
+                return Results.Ok(new
+                {
+                    modelName,
+                    experimentId = answeringId,
+                    predictedAt = DateTime.UtcNow,
+                    task = "forecasting",
+                    count = forecastRows.Count,
+                    predictions = forecastRows,
+                    warnings = new List<string>()
+                });
+            }
+
+            // Load experiment data to get InputSchema
+            var expData = await experimentStore.LoadAsync(modelName, answeringId, ct);
+            var schema = expData?.Config?.InputSchema;
+
+            if (schema == null)
+            {
+                logger.LogError("InputSchema not available for '{ModelName}' experiment {ExperimentId}. " +
+                    "This model was trained before schema capture was implemented. Please retrain.",
+                    modelName, answeringId);
                 return Results.Problem(
-                    title: "Forecast failed",
-                    detail: forecastError ?? "Forecast failed.",
-                    statusCode: StatusCodes.Status400BadRequest
+                    title: "Schema not available",
+                    detail: $"InputSchema not found for model '{modelName}' experiment {answeringId}. " +
+                        "This model was trained before schema capture was implemented. Please retrain the model.",
+                    statusCode: StatusCodes.Status500InternalServerError
                 );
             }
 
-            var forecastRows = ForecastReplayService.BuildForecastRows(forecast);
-            logger.LogInformation("Forecast completed for '{ModelName}': {Count} steps in {ElapsedMs}ms",
-                modelName, forecastRows.Count, stopwatch.ElapsedMilliseconds);
+            // Parse JSON input to dictionary rows
+            var rows = ParseJsonInput(input);
+
+            // Run prediction through shared PredictionService
+            var labelColumn = expData?.Config?.LabelColumn;
+            var predictionService = new PredictionService(mlContext);
+
+            logger.LogDebug("Running prediction for '{ModelName}' with task '{TaskType}', label '{LabelColumn}'",
+                modelName, taskType, labelColumn);
+
+            // DL tasks need their native runtime loaded before the cache deserializes the model.
+            MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
+
+            var transformer = modelCache.GetOrLoad(modelPath);
+
+            // ② regression wave: surface the conformal prediction interval around each Score when the
+            // model stored a band at train time (regression only, primary 90% level). Heteroscedastic
+            // models also carry a sibling σ-model (residual-model.zip) for per-row widths — load it through
+            // the same cache so the band narrows/widens per prediction.
+            var interval = RegressionInterval.FromMetrics(taskType, expData?.Metrics);
+            ITransformer? residualModel = null;
+            if (interval?.IsHeteroscedastic == true)
+            {
+                var residualPath = MLoop.Core.Models.ScoringModel.ResidualPathBeside(modelPath);
+                if (File.Exists(residualPath))
+                    residualModel = modelCache.GetOrLoad(residualPath);
+            }
+
+            var result = predictionService.Predict(rows, schema, transformer, taskType, labelColumn, interval, residualModel);
+
+            logger.LogInformation("Predictions completed for '{ModelName}': {Count} predictions in {ElapsedMs}ms (avg: {AvgMs}ms/prediction)",
+                modelName, result.Rows.Count, stopwatch.ElapsedMilliseconds,
+                stopwatch.ElapsedMilliseconds / Math.Max(1.0, result.Rows.Count));
+
+            // Served predictions are logged like `mloop predict --log`, so logs, feedback and the
+            // retraining triggers see the traffic the model actually answers. Each row carries the id it
+            // was logged under — the id feedback names. A failure to log never fails the prediction.
+            var predictions = result.Rows;
+            var warnings = result.Warnings;
+            if (configuration.GetValue("Serve:LogPredictions", true) && predictions.Count == rows.Length)
+            {
+                try
+                {
+                    var loggedAt = DateTimeOffset.UtcNow;
+                    var ids = predictions.Select(_ => PredictionIds.New()).ToArray();
+                    await predictionLogger.LogBatchAsync(
+                        modelName,
+                        answeringId,
+                        predictions.Select((row, i) => new PredictionLogEntry(
+                            modelName, answeringId, rows[i], PredictionLogOutput.Of(row), row.Confidence,
+                            loggedAt, ids[i])),
+                        ct);
+                    predictions = predictions.Select((row, i) => row with { PredictionId = ids[i] }).ToList();
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(ex, "Predictions for '{ModelName}' were served but not logged", modelName);
+                    warnings = [.. warnings ?? [], "These predictions were not logged, so they carry no predictionId: " + ex.Message];
+                }
+            }
 
             return Results.Ok(new
             {
                 modelName,
                 experimentId = answeringId,
                 predictedAt = DateTime.UtcNow,
-                task = "forecasting",
-                count = forecastRows.Count,
-                predictions = forecastRows,
-                warnings = new List<string>()
+                task = result.TaskType,
+                count = predictions.Count,
+                predictions,
+                warnings
             });
         }
-
-        // Load experiment data to get InputSchema
-        var expData = await experimentStore.LoadAsync(modelName, answeringId, ct);
-        var schema = expData?.Config?.InputSchema;
-
-        if (schema == null)
+        catch (ArgumentException ex)
         {
-            logger.LogError("InputSchema not available for '{ModelName}' experiment {ExperimentId}. " +
-                "This model was trained before schema capture was implemented. Please retrain.",
-                modelName, answeringId);
+            // Caller error (e.g. rows share no column with the trained schema — the silent-GIGO guard):
+            // 400 with the actionable message, not a 500.
+            logger.LogWarning(ex, "Prediction rejected for '{ModelName}': invalid input rows", modelName);
             return Results.Problem(
-                title: "Schema not available",
-                detail: $"InputSchema not found for model '{modelName}' experiment {answeringId}. " +
-                    "This model was trained before schema capture was implemented. Please retrain the model.",
+                title: "Invalid prediction input",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status400BadRequest
+            );
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Prediction failed for '{ModelName}' with {Count} input(s) after {ElapsedMs}ms",
+                modelName, predictionCount, stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Prediction failed",
+                detail: ex.Message,
                 statusCode: StatusCodes.Status500InternalServerError
             );
         }
+    })
+    .WithName("Predict")
+    .WithTags("Prediction")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status404NotFound)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
 
-        // Parse JSON input to dictionary rows
-        var rows = ParseJsonInput(input);
-
-        // Run prediction through shared PredictionService
-        var labelColumn = expData?.Config?.LabelColumn;
-        var predictionService = new PredictionService(mlContext);
-
-        logger.LogDebug("Running prediction for '{ModelName}' with task '{TaskType}', label '{LabelColumn}'",
-            modelName, taskType, labelColumn);
-
-        // DL tasks need their native runtime loaded before the cache deserializes the model.
-        MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
-
-        var transformer = modelCache.GetOrLoad(modelPath);
-
-        // ② regression wave: surface the conformal prediction interval around each Score when the
-        // model stored a band at train time (regression only, primary 90% level). Heteroscedastic
-        // models also carry a sibling σ-model (residual-model.zip) for per-row widths — load it through
-        // the same cache so the band narrows/widens per prediction.
-        var interval = RegressionInterval.FromMetrics(taskType, expData?.Metrics);
-        ITransformer? residualModel = null;
-        if (interval?.IsHeteroscedastic == true)
-        {
-            var residualPath = MLoop.Core.Models.ScoringModel.ResidualPathBeside(modelPath);
-            if (File.Exists(residualPath))
-                residualModel = modelCache.GetOrLoad(residualPath);
-        }
-
-        var result = predictionService.Predict(rows, schema, transformer, taskType, labelColumn, interval, residualModel);
-
-        logger.LogInformation("Predictions completed for '{ModelName}': {Count} predictions in {ElapsedMs}ms (avg: {AvgMs}ms/prediction)",
-            modelName, result.Rows.Count, stopwatch.ElapsedMilliseconds,
-            stopwatch.ElapsedMilliseconds / Math.Max(1.0, result.Rows.Count));
-
-        // Served predictions are logged like `mloop predict --log`, so logs, feedback and the
-        // retraining triggers see the traffic the model actually answers. Each row carries the id it
-        // was logged under — the id feedback names. A failure to log never fails the prediction.
-        var predictions = result.Rows;
-        var warnings = result.Warnings;
-        if (configuration.GetValue("Serve:LogPredictions", true) && predictions.Count == rows.Length)
-        {
-            try
-            {
-                var loggedAt = DateTimeOffset.UtcNow;
-                var ids = predictions.Select(_ => PredictionIds.New()).ToArray();
-                await predictionLogger.LogBatchAsync(
-                    modelName,
-                    answeringId,
-                    predictions.Select((row, i) => new PredictionLogEntry(
-                        modelName, answeringId, rows[i], PredictionLogOutput.Of(row), row.Confidence,
-                        loggedAt, ids[i])),
-                    ct);
-                predictions = predictions.Select((row, i) => row with { PredictionId = ids[i] }).ToList();
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning(ex, "Predictions for '{ModelName}' were served but not logged", modelName);
-                warnings = [.. warnings ?? [], "These predictions were not logged, so they carry no predictionId: " + ex.Message];
-            }
-        }
-
-        return Results.Ok(new
-        {
-            modelName,
-            experimentId = answeringId,
-            predictedAt = DateTime.UtcNow,
-            task = result.TaskType,
-            count = predictions.Count,
-            predictions,
-            warnings
-        });
-    }
-    catch (ArgumentException ex)
+    // Model cache stats (admin)
+    app.MapGet("/cache/stats", (IModelCache modelCache) =>
     {
-        // Caller error (e.g. rows share no column with the trained schema — the silent-GIGO guard):
-        // 400 with the actionable message, not a 500.
-        logger.LogWarning(ex, "Prediction rejected for '{ModelName}': invalid input rows", modelName);
-        return Results.Problem(
-            title: "Invalid prediction input",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status400BadRequest
-        );
-    }
-    catch (Exception ex)
+        var stats = modelCache.GetStats();
+        return Results.Ok(stats);
+    })
+    .WithName("GetModelCacheStats")
+    .WithTags("Cache")
+    .Produces<ModelCacheStats>(StatusCodes.Status200OK)
+    .RequireAuthorization("Admin");
+
+    // Clear all cached models (admin)
+    app.MapPost("/cache/clear", (IModelCache modelCache, ILogger<Program> logger) =>
     {
-        logger.LogError(ex, "Prediction failed for '{ModelName}' with {Count} input(s) after {ElapsedMs}ms",
-            modelName, predictionCount, stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Prediction failed",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("Predict")
-.WithTags("Prediction")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<object>(StatusCodes.Status404NotFound)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
+        modelCache.Clear();
+        logger.LogInformation("Model cache cleared by admin request");
+        return Results.NoContent();
+    })
+    .WithName("ClearModelCache")
+    .WithTags("Cache")
+    .Produces(StatusCodes.Status204NoContent)
+    .RequireAuthorization("Admin");
 
-// Model cache stats (admin)
-app.MapGet("/cache/stats", (IModelCache modelCache) =>
-{
-    var stats = modelCache.GetStats();
-    return Results.Ok(stats);
-})
-.WithName("GetModelCacheStats")
-.WithTags("Cache")
-.Produces<ModelCacheStats>(StatusCodes.Status200OK)
-.RequireAuthorization("Admin");
-
-// Clear all cached models (admin)
-app.MapPost("/cache/clear", (IModelCache modelCache, ILogger<Program> logger) =>
-{
-    modelCache.Clear();
-    logger.LogInformation("Model cache cleared by admin request");
-    return Results.NoContent();
-})
-.WithName("ClearModelCache")
-.WithTags("Cache")
-.Produces(StatusCodes.Status204NoContent)
-.RequireAuthorization("Admin");
-
-// List all models endpoint (secured)
-app.MapGet("/models", async (
-    [FromQuery] string? name,
-    IModelRegistry registry,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
-
-    try
+    // List all models endpoint (secured)
+    app.MapGet("/models", async (
+        [FromQuery] string? name,
+        IModelRegistry registry,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
     {
-        logger.LogInformation("Listing models (filter: '{ModelName}')", modelName ?? "all");
-        var models = await registry.ListAsync(modelName, ct);
-        var modelList = models.ToList();
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
 
-        logger.LogInformation("Retrieved {Count} model(s) in {ElapsedMs}ms", modelList.Count, stopwatch.ElapsedMilliseconds);
-
-        return Results.Ok(new
-        {
-            count = modelList.Count,
-            filter = modelName,
-            models = modelList.Select(m => new
-            {
-                modelName = m.ModelName,
-                experimentId = m.ExperimentId,
-                promotedAt = m.PromotedAt,
-                task = m.Task,
-                bestTrainer = m.BestTrainer,
-                metrics = m.Metrics
-            })
-        });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to list models after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Failed to list models",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("ListModels")
-.WithTags("Model")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
-
-// List experiments endpoint (secured)
-app.MapGet("/experiments", async (
-    [FromQuery] string? name,
-    IExperimentStore experimentStore,
-    IModelRegistry registry,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
-
-    try
-    {
-        logger.LogInformation("Listing experiments (filter: '{ModelName}')", modelName ?? "all");
-        // The rows of `mloop list --json --all`: each experiment's metrics, gate verdict and production flag.
-        var (rows, production) = await ExperimentListing.ListAsync(experimentStore, registry, modelName, completedOnly: false, ct);
-
-        logger.LogInformation("Retrieved {Count} experiment(s) in {ElapsedMs}ms",
-            rows.Count, stopwatch.ElapsedMilliseconds);
-
-        return Results.Ok(new
-        {
-            count = rows.Count,
-            filter = modelName,
-            experiments = rows,
-            production,
-        });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to list experiments after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Failed to list experiments",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("ListExperiments")
-.WithTags("Experiments")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
-
-// Get experiment detail endpoint (secured)
-app.MapGet("/experiments/{id}", async (
-    string id,
-    [FromQuery] string? name,
-    IExperimentStore experimentStore,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
-
-    try
-    {
-        logger.LogInformation("Loading experiment '{ExperimentId}' for model '{ModelName}'", id, modelName);
-
-        if (!experimentStore.ExperimentExists(modelName, id))
-        {
-            logger.LogWarning("Experiment '{ExperimentId}' not found for model '{ModelName}'", id, modelName);
-            return Results.NotFound(new { error = $"Experiment '{id}' not found for model '{modelName}'." });
-        }
-
-        var experiment = await experimentStore.LoadAsync(modelName, id, ct);
-
-        logger.LogInformation("Loaded experiment '{ExperimentId}' in {ElapsedMs}ms",
-            id, stopwatch.ElapsedMilliseconds);
-
-        return Results.Ok(new
-        {
-            modelName = experiment.ModelName,
-            experimentId = experiment.ExperimentId,
-            timestamp = experiment.Timestamp,
-            status = experiment.Status,
-            task = experiment.Task,
-            config = new
-            {
-                dataFile = experiment.Config.DataFile,
-                dataFileHash = experiment.Config.DataFileHash,
-                labelColumn = experiment.Config.LabelColumn,
-                timeLimitSeconds = experiment.Config.TimeLimitSeconds,
-                autoTime = experiment.Config.AutoTime,
-                metric = experiment.Config.Metric,
-                testSplit = experiment.Config.TestSplit,
-                groupColumn = experiment.Config.GroupColumn,
-                hasSchema = experiment.Config.InputSchema != null
-            },
-            result = experiment.Result != null ? new
-            {
-                bestTrainer = experiment.Result.BestTrainer,
-                trainingTimeSeconds = experiment.Result.TrainingTimeSeconds
-            } : null,
-            metrics = experiment.Metrics
-        });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to load experiment '{ExperimentId}' after {ElapsedMs}ms",
-            id, stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Failed to load experiment",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("GetExperiment")
-.WithTags("Experiments")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<object>(StatusCodes.Status404NotFound)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
-
-// Project status endpoint (secured)
-app.MapGet("/status", async (
-    IModelRegistry registry,
-    IExperimentStore experimentStore,
-    ProjectRootPath projectRootPath,
-    ConfigLoader configLoader,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-
-    try
-    {
-        logger.LogInformation("Retrieving project status");
-
-        var projectRoot = projectRootPath.Value;
-        var projectName = Path.GetFileName(projectRoot);
-
-        // Get all experiments and production models
-        var allExperiments = (await experimentStore.ListAsync(null, ct)).ToList();
-        var productionModels = (await registry.ListAsync(null, ct)).ToList();
-
-        // Aggregate model statuses
-        var modelNames = allExperiments
-            .Select(e => e.ModelName ?? ConfigDefaults.DefaultModelName)
-            .Distinct()
-            .OrderBy(n => n)
-            .ToList();
-
-        var productionDict = productionModels.ToDictionary(m => m.ModelName, m => m);
-
-        var modelStatuses = modelNames.Select(modelName =>
-        {
-            var modelExps = allExperiments
-                .Where(e => (e.ModelName ?? ConfigDefaults.DefaultModelName) == modelName)
-                .ToList();
-
-            var completed = modelExps.Count(e =>
-                e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase));
-            var failed = modelExps.Count(e =>
-                e.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase));
-
-            productionDict.TryGetValue(modelName, out var prodModel);
-
-            // Ranked by metric direction, among experiments measured alike (one metric, one weighting).
-            var bestPick = MLoop.CLI.Infrastructure.FileSystem.ExperimentRanking.SelectBest(modelExps);
-
-            return new
-            {
-                modelName,
-                totalExperiments = modelExps.Count,
-                completed,
-                failed,
-                hasProduction = prodModel != null,
-                productionExperimentId = prodModel?.ExperimentId,
-                bestMetric = bestPick?.Best.BestMetric,
-                bestMetricName = bestPick?.Measurement.Metric,
-                bestMetricWeightColumn = bestPick?.Measurement.Weighting.Column,
-                bestExperimentId = bestPick?.Best.ExperimentId,
-                experimentsNotCompared = bestPick?.NotCompared ?? 0,
-                latestExperiment = modelExps
-                    .OrderByDescending(e => e.Timestamp)
-                    .FirstOrDefault()?.ExperimentId
-            };
-        }).ToList();
-
-        // Check data files
-        var datasetsDir = Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory);
-        var dataFiles = new
-        {
-            trainCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.TrainFileName)),
-            testCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.TestFileName)),
-            predictCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.PredictFileName))
-        };
-
-        // Load config if available
-        object? configSummary = null;
         try
         {
-            var config = await configLoader.LoadUserConfigAsync();
-            configSummary = config.Models.Select(kvp => new
+            logger.LogInformation("Listing models (filter: '{ModelName}')", modelName ?? "all");
+            var models = await registry.ListAsync(modelName, ct);
+            var modelList = models.ToList();
+
+            logger.LogInformation("Retrieved {Count} model(s) in {ElapsedMs}ms", modelList.Count, stopwatch.ElapsedMilliseconds);
+
+            return Results.Ok(new
             {
-                name = kvp.Key,
-                task = kvp.Value.Task,
-                label = kvp.Value.Label,
-                timeLimitSeconds = kvp.Value.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
-                metric = kvp.Value.Training?.Metric ?? ConfigDefaults.DefaultMetric
-            }).ToList();
-        }
-        catch { /* Config not available */ }
-
-        logger.LogInformation("Project status retrieved in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-
-        return Results.Ok(new
-        {
-            project = projectName,
-            projectRoot,
-            summary = new
-            {
-                totalModels = modelNames.Count,
-                totalExperiments = allExperiments.Count,
-                completedExperiments = allExperiments.Count(e =>
-                    e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)),
-                failedExperiments = allExperiments.Count(e =>
-                    e.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase)),
-                productionModels = productionModels.Count
-            },
-            models = modelStatuses,
-            dataFiles,
-            config = configSummary
-        });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to retrieve project status after {ElapsedMs}ms",
-            stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Failed to retrieve project status",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("GetStatus")
-.WithTags("Status")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
-
-// Promote experiment to production (secured)
-app.MapPost("/promote", async (
-    [FromBody] PromoteRequest request,
-    IModelRegistry registry,
-    IExperimentStore experimentStore,
-    IPromotionManager promotionManager,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
-    var experimentId = request.ExperimentId;
-
-    try
-    {
-        logger.LogInformation("Promoting experiment '{ExperimentId}' for model '{ModelName}'",
-            experimentId, modelName);
-
-        // Verify experiment exists
-        if (!experimentStore.ExperimentExists(modelName, experimentId))
-        {
-            return Results.NotFound(new { error = $"Experiment '{experimentId}' not found for model '{modelName}'." });
-        }
-
-        // Load and validate experiment
-        var experiment = await experimentStore.LoadAsync(modelName, experimentId, ct);
-
-        if (!experiment.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
-        {
-            return Results.BadRequest(new
-            {
-                error = $"Cannot promote experiment with status '{experiment.Status}'. Only completed experiments can be promoted."
-            });
-        }
-
-        // The same gate `mloop promote` and training apply; `force` is the deliberate override.
-        var refusal = MLoop.CLI.Infrastructure.FileSystem.ModelRegistry.QualityGateRefusal(experiment, experiment.Config?.Metric);
-        if (refusal != null && !request.Force)
-        {
-            return Results.Json(new
-            {
-                error = $"'{experimentId}' does not pass the quality gate: {refusal}. Send \"force\": true to promote it anyway."
-            }, statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        if (refusal != null)
-        {
-            logger.LogWarning("Promoting '{ExperimentId}' despite the quality gate (force): {Refusal}", experimentId, refusal);
-        }
-
-        // The project's own gate policy (mloop.yaml `gate:`), judged on its evaluation set; `force` overrides it too.
-        var policyRefusal = await registry.GatePolicyRefusalAsync(modelName, experimentId, ct);
-        if (policyRefusal != null && !request.Force)
-        {
-            return Results.Json(new
-            {
-                error = $"'{experimentId}' does not pass the gate policy: {policyRefusal}. Send \"force\": true to promote it anyway."
-            }, statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        if (policyRefusal != null)
-        {
-            logger.LogWarning("Promoting '{ExperimentId}' despite the gate policy (force): {Refusal}", experimentId, policyRefusal);
-        }
-        var qualityWarning = MLoop.CLI.Infrastructure.FileSystem.ModelRegistry.QualityGateWarning(experiment);
-
-        // Check current production for comparison
-        var currentProduction = await registry.GetProductionAsync(modelName, ct);
-        var previousExpId = currentProduction?.ExperimentId;
-
-        // Backup current production if exists
-        if (currentProduction != null && request.CreateBackup != false)
-        {
-            var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
-            if (backupPath != null)
-            {
-                logger.LogInformation("Backed up current production to {BackupPath}", backupPath);
-            }
-        }
-
-        // Promote — the registry records it in the promotion history, gate outcome included.
-        await registry.PromoteAsync(modelName, experimentId, PromotionActions.Promote, policyRefusal, ct);
-
-        logger.LogInformation("Promoted experiment '{ExperimentId}' to production for model '{ModelName}' in {ElapsedMs}ms",
-            experimentId, modelName, stopwatch.ElapsedMilliseconds);
-
-        return Results.Ok(new
-        {
-            modelName,
-            experimentId,
-            previousExperimentId = previousExpId,
-            promotedAt = DateTime.UtcNow,
-            task = experiment.Task,
-            metrics = experiment.Metrics,
-            bestTrainer = experiment.Result?.BestTrainer,
-            qualityWarning
-        });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Promotion failed for '{ModelName}/{ExperimentId}' after {ElapsedMs}ms",
-            modelName, experimentId, stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Promotion failed",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("PromoteExperiment")
-.WithTags("Model")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<object>(StatusCodes.Status400BadRequest)
-.Produces<object>(StatusCodes.Status404NotFound)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization("Admin");
-
-// Rollback (admin): production back to the experiment it held before — same target rule as `mloop rollback`
-// Promotion history: every change of the production slot, oldest first, with the gate's outcome.
-app.MapGet("/promotions", async (
-    [FromQuery] string? name,
-    IPromotionManager promotionManager,
-    CancellationToken ct) =>
-{
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
-    var history = await promotionManager.GetHistoryAsync(modelName, ct);
-    return Results.Ok(new
-    {
-        modelName,
-        promotions = history.Select(r => new
-        {
-            experimentId = r.ExperimentId,
-            previousExperimentId = r.PreviousExperimentId,
-            action = r.Action,
-            timestamp = r.Timestamp.ToUniversalTime(),
-            gate = r.Gate,
-            gateDetail = r.GateDetail,
-            metric = r.Metric,
-            metricValue = r.MetricValue,
-        }),
-    });
-})
-.WithName("PromotionHistory")
-.WithTags("Model")
-.Produces<object>(StatusCodes.Status200OK)
-.RequireAuthorization();
-
-app.MapPost("/rollback", async (
-    [FromBody] RollbackRequest request,
-    IModelRegistry registry,
-    IExperimentStore experimentStore,
-    IPromotionManager promotionManager,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
-    var current = (await registry.GetProductionAsync(modelName, ct))?.ExperimentId;
-    var history = await promotionManager.GetHistoryAsync(modelName, ct);
-    var (target, error) = MLoop.Ops.Interfaces.RollbackTarget.Resolve(history, current, request.To?.Trim());
-    if (target is null)
-        return Results.Json(new { error }, statusCode: StatusCodes.Status409Conflict);
-
-    if (!experimentStore.ExperimentExists(modelName, target))
-        return Results.Json(new { error = $"'{target}' is no longer in staging, so it cannot be restored from there." },
-            statusCode: StatusCodes.Status409Conflict);
-
-    var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
-    await registry.PromoteAsync(modelName, target, PromotionActions.Rollback, cancellationToken: ct);
-    logger.LogInformation("Rolled back '{ModelName}' from {Previous} to {Target}", modelName, current, target);
-
-    return Results.Ok(new { modelName, experimentId = target, previousExperimentId = current, backupPath });
-})
-.WithName("RollbackProduction")
-.WithTags("Model")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<object>(StatusCodes.Status409Conflict)
-.RequireAuthorization("Admin");
-
-// Compare experiments endpoint (secured)
-app.MapGet("/compare", async (
-    [FromQuery] string candidate,
-    [FromQuery] string baseline,
-    [FromQuery] string? name,
-    IModelComparer comparer,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
-
-    try
-    {
-        logger.LogInformation("Comparing experiments '{Candidate}' vs '{Baseline}' for model '{ModelName}'",
-            candidate, baseline, modelName);
-
-        var result = await comparer.CompareAsync(modelName, candidate, baseline, ct);
-
-        logger.LogInformation("Comparison completed in {ElapsedMs}ms: candidate is {Better}",
-            stopwatch.ElapsedMilliseconds, result.CandidateIsBetter ? "better" : "worse");
-
-        return Results.Ok(new
-        {
-            modelName,
-            candidateExpId = result.CandidateExpId,
-            baselineExpId = result.BaselineExpId,
-            candidateIsBetter = result.CandidateIsBetter,
-            candidateScore = result.CandidateScore,
-            baselineScore = result.BaselineScore,
-            improvement = result.Improvement,
-            recommendation = result.Recommendation,
-            metricDetails = result.MetricDetails.ToDictionary(
-                kvp => kvp.Key,
-                kvp => new
+                count = modelList.Count,
+                filter = modelName,
+                models = modelList.Select(m => new
                 {
-                    candidateValue = kvp.Value.CandidateValue,
-                    baselineValue = kvp.Value.BaselineValue,
-                    difference = kvp.Value.Difference,
-                    isBetter = kvp.Value.IsBetter
+                    modelName = m.ModelName,
+                    experimentId = m.ExperimentId,
+                    promotedAt = m.PromotedAt,
+                    task = m.Task,
+                    bestTrainer = m.BestTrainer,
+                    metrics = m.Metrics
                 })
-        });
-    }
-    catch (FileNotFoundException ex)
-    {
-        logger.LogWarning(ex, "Experiment not found for comparison");
-        return Results.NotFound(new { error = ex.Message });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Comparison failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Comparison failed",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("CompareExperiments")
-.WithTags("Experiments")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<object>(StatusCodes.Status404NotFound)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
-
-// Evaluate model endpoint (secured)
-app.MapPost("/evaluate", async (
-    [FromBody] EvaluateRequest request,
-    IExperimentStore experimentStore,
-    IModelRegistry registry,
-    ProjectRootPath projectRootPath,
-    EvaluationEngine evaluationEngine,
-    IFileSystemManager fileSystem,
-    IProjectDiscovery projectDiscovery,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
-    var experimentId = request.ExperimentId;
-
-    try
-    {
-        logger.LogInformation("Evaluating experiment '{ExperimentId}' for model '{ModelName}'",
-            experimentId, modelName);
-
-        // Resolve experiment: use specified or production
-        if (string.IsNullOrWhiteSpace(experimentId))
-        {
-            var prod = await registry.GetProductionAsync(modelName, ct);
-            if (prod == null)
-                return Results.Ok(new { status = "skipped", reason = "no_production_model", model = modelName });
-            experimentId = prod.ExperimentId;
-        }
-
-        // The named experiment's own model — never production's in its place: a report under the
-        // experiment's id must be that experiment's measurement.
-        var (modelPath, refusal) = ExperimentModels.Find(experimentStore, modelName, experimentId);
-        if (modelPath is null)
-            return Results.NotFound(new { error = refusal });
-
-        var experiment = await experimentStore.LoadAsync(modelName, experimentId, ct);
-
-        // Determine test data path (with path traversal protection)
-        var testDataPath = request.TestDataPath;
-        if (string.IsNullOrWhiteSpace(testDataPath))
-            return Results.BadRequest(new { error = "testDataPath is required." });
-
-        // A relative path is the project's, as for POST /train.
-        var evalProjectRoot = Path.GetFullPath(projectRootPath.Value);
-        var resolvedTestPath = Path.GetFullPath(Path.IsPathRooted(testDataPath) ? testDataPath : Path.Combine(evalProjectRoot, testDataPath));
-        if (!resolvedTestPath.StartsWith(evalProjectRoot, StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Test data file must be within the project directory." });
-
-        if (!TabularDataFile.Exists(resolvedTestPath))
-            return Results.BadRequest(new { error = $"Test data file not found: {testDataPath}" });
-
-        // What `mloop evaluate` does before it measures: the file read as a table (Parquet, Excel, JSON, TSV),
-        // then checked against the experiment's schema — a refused file is the caller's to fix, not a 500.
-        resolvedTestPath = await TabularDataFile.AsCsvAsync(resolvedTestPath);
-        var validation = await new SchemaValidator(fileSystem, projectDiscovery).ValidateAsync(resolvedTestPath, modelName, experimentId);
-        if (!validation.IsValid)
-            return Results.BadRequest(new
-            {
-                error = "Schema validation failed. " + (validation.ErrorMessage
-                    ?? "Missing columns: " + string.Join(", ", validation.MissingColumns)),
-                missingColumns = validation.MissingColumns,
-                suggestions = validation.Suggestions,
             });
-        var warnings = new List<string>(validation.Warnings);
-
-        var labelColumn = experiment.Config.LabelColumn;
-        var taskType = experiment.Task;
-
-        // The rows count by the same weight `mloop evaluate` would give them — the one asked for, else
-        // the column the experiment was trained with when the file has it.
-        var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(request.Weight, experiment, resolvedTestPath);
-        if (weightWarning is not null)
-            warnings.Add(weightWarning);
-
-        ComparisonBaseline? baseline = null;
-        if (!string.IsNullOrWhiteSpace(request.Against))
-        {
-            baseline = await ModelComparison.ResolveBaselineAsync(request.Against.Trim(), modelName, experimentId, experiment,
-                experimentStore, registry, ct);
-            if (baseline.Error is { } error)
-                return baseline.NotFound ? Results.NotFound(new { error }) : Results.BadRequest(new { error });
         }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to list models after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Failed to list models",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("ListModels")
+    .WithTags("Model")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
 
-        var (metrics, confusion) = await evaluationEngine.EvaluateAsync(
-            modelPath, resolvedTestPath, labelColumn, taskType, ct,
-            experiment.Config.InputSchema, experiment.Config.GroupColumn,
-            experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn,
-            new MLoop.Core.Metrics.MetricEngine(projectRootPath.Value, new MLoop.CLI.Infrastructure.ML.ScriptConsoleLogger()));
+    // List experiments endpoint (secured)
+    app.MapGet("/experiments", async (
+        [FromQuery] string? name,
+        IExperimentStore experimentStore,
+        IModelRegistry registry,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
 
-        var comparison = baseline is null
-            ? null
-            : await ModelComparison.CompareAsync(evaluationEngine, experimentId, modelPath, experiment, baseline, resolvedTestPath, weightColumn, ct);
+        try
+        {
+            logger.LogInformation("Listing experiments (filter: '{ModelName}')", modelName ?? "all");
+            // The rows of `mloop list --json --all`: each experiment's metrics, gate verdict and production flag.
+            var (rows, production) = await ExperimentListing.ListAsync(experimentStore, registry, modelName, completedOnly: false, ct);
 
-        var sliceBy = string.IsNullOrWhiteSpace(request.SliceBy) ? null : request.SliceBy.Trim();
-        var slices = sliceBy is null
-            ? null
-            : await EvaluationSlices.EvaluateAsync(evaluationEngine, sliceBy, resolvedTestPath, modelPath, experiment, weightColumn, ct);
+            logger.LogInformation("Retrieved {Count} experiment(s) in {ElapsedMs}ms",
+                rows.Count, stopwatch.ElapsedMilliseconds);
 
-        logger.LogInformation("Evaluation completed in {ElapsedMs}ms with {MetricCount} metrics",
-            stopwatch.ElapsedMilliseconds, metrics.Count);
+            return Results.Ok(new
+            {
+                count = rows.Count,
+                filter = modelName,
+                experiments = rows,
+                production,
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to list experiments after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Failed to list experiments",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("ListExperiments")
+    .WithTags("Experiments")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
 
+    // Get experiment detail endpoint (secured)
+    app.MapGet("/experiments/{id}", async (
+        string id,
+        [FromQuery] string? name,
+        IExperimentStore experimentStore,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
+
+        try
+        {
+            logger.LogInformation("Loading experiment '{ExperimentId}' for model '{ModelName}'", id, modelName);
+
+            if (!experimentStore.ExperimentExists(modelName, id))
+            {
+                logger.LogWarning("Experiment '{ExperimentId}' not found for model '{ModelName}'", id, modelName);
+                return Results.NotFound(new { error = $"Experiment '{id}' not found for model '{modelName}'." });
+            }
+
+            var experiment = await experimentStore.LoadAsync(modelName, id, ct);
+
+            logger.LogInformation("Loaded experiment '{ExperimentId}' in {ElapsedMs}ms",
+                id, stopwatch.ElapsedMilliseconds);
+
+            return Results.Ok(new
+            {
+                modelName = experiment.ModelName,
+                experimentId = experiment.ExperimentId,
+                timestamp = experiment.Timestamp,
+                status = experiment.Status,
+                task = experiment.Task,
+                config = new
+                {
+                    dataFile = experiment.Config.DataFile,
+                    dataFileHash = experiment.Config.DataFileHash,
+                    labelColumn = experiment.Config.LabelColumn,
+                    timeLimitSeconds = experiment.Config.TimeLimitSeconds,
+                    autoTime = experiment.Config.AutoTime,
+                    metric = experiment.Config.Metric,
+                    testSplit = experiment.Config.TestSplit,
+                    groupColumn = experiment.Config.GroupColumn,
+                    hasSchema = experiment.Config.InputSchema != null
+                },
+                result = experiment.Result != null ? new
+                {
+                    bestTrainer = experiment.Result.BestTrainer,
+                    trainingTimeSeconds = experiment.Result.TrainingTimeSeconds
+                } : null,
+                metrics = experiment.Metrics
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to load experiment '{ExperimentId}' after {ElapsedMs}ms",
+                id, stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Failed to load experiment",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("GetExperiment")
+    .WithTags("Experiments")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status404NotFound)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
+
+    // Project status endpoint (secured)
+    app.MapGet("/status", async (
+        IModelRegistry registry,
+        IExperimentStore experimentStore,
+        ProjectRootPath projectRootPath,
+        ConfigLoader configLoader,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            logger.LogInformation("Retrieving project status");
+
+            var projectRoot = projectRootPath.Value;
+            var projectName = Path.GetFileName(projectRoot);
+
+            // Get all experiments and production models
+            var allExperiments = (await experimentStore.ListAsync(null, ct)).ToList();
+            var productionModels = (await registry.ListAsync(null, ct)).ToList();
+
+            // Aggregate model statuses
+            var modelNames = allExperiments
+                .Select(e => e.ModelName ?? ConfigDefaults.DefaultModelName)
+                .Distinct()
+                .OrderBy(n => n)
+                .ToList();
+
+            var productionDict = productionModels.ToDictionary(m => m.ModelName, m => m);
+
+            var modelStatuses = modelNames.Select(modelName =>
+            {
+                var modelExps = allExperiments
+                    .Where(e => (e.ModelName ?? ConfigDefaults.DefaultModelName) == modelName)
+                    .ToList();
+
+                var completed = modelExps.Count(e =>
+                    e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase));
+                var failed = modelExps.Count(e =>
+                    e.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase));
+
+                productionDict.TryGetValue(modelName, out var prodModel);
+
+                // Ranked by metric direction, among experiments measured alike (one metric, one weighting).
+                var bestPick = MLoop.CLI.Infrastructure.FileSystem.ExperimentRanking.SelectBest(modelExps);
+
+                return new
+                {
+                    modelName,
+                    totalExperiments = modelExps.Count,
+                    completed,
+                    failed,
+                    hasProduction = prodModel != null,
+                    productionExperimentId = prodModel?.ExperimentId,
+                    bestMetric = bestPick?.Best.BestMetric,
+                    bestMetricName = bestPick?.Measurement.Metric,
+                    bestMetricWeightColumn = bestPick?.Measurement.Weighting.Column,
+                    bestExperimentId = bestPick?.Best.ExperimentId,
+                    experimentsNotCompared = bestPick?.NotCompared ?? 0,
+                    latestExperiment = modelExps
+                        .OrderByDescending(e => e.Timestamp)
+                        .FirstOrDefault()?.ExperimentId
+                };
+            }).ToList();
+
+            // Check data files
+            var datasetsDir = Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory);
+            var dataFiles = new
+            {
+                trainCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.TrainFileName)),
+                testCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.TestFileName)),
+                predictCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.PredictFileName))
+            };
+
+            // Load config if available
+            object? configSummary = null;
+            try
+            {
+                var config = await configLoader.LoadUserConfigAsync();
+                configSummary = config.Models.Select(kvp => new
+                {
+                    name = kvp.Key,
+                    task = kvp.Value.Task,
+                    label = kvp.Value.Label,
+                    timeLimitSeconds = kvp.Value.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
+                    metric = kvp.Value.Training?.Metric ?? ConfigDefaults.DefaultMetric
+                }).ToList();
+            }
+            catch { /* Config not available */ }
+
+            logger.LogInformation("Project status retrieved in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+
+            return Results.Ok(new
+            {
+                project = projectName,
+                projectRoot,
+                summary = new
+                {
+                    totalModels = modelNames.Count,
+                    totalExperiments = allExperiments.Count,
+                    completedExperiments = allExperiments.Count(e =>
+                        e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)),
+                    failedExperiments = allExperiments.Count(e =>
+                        e.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase)),
+                    productionModels = productionModels.Count
+                },
+                models = modelStatuses,
+                dataFiles,
+                config = configSummary
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to retrieve project status after {ElapsedMs}ms",
+                stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Failed to retrieve project status",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("GetStatus")
+    .WithTags("Status")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
+
+    // Promote experiment to production (secured)
+    app.MapPost("/promote", async (
+        [FromBody] PromoteRequest request,
+        IModelRegistry registry,
+        IExperimentStore experimentStore,
+        IPromotionManager promotionManager,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
+        var experimentId = request.ExperimentId;
+
+        try
+        {
+            logger.LogInformation("Promoting experiment '{ExperimentId}' for model '{ModelName}'",
+                experimentId, modelName);
+
+            // Verify experiment exists
+            if (!experimentStore.ExperimentExists(modelName, experimentId))
+            {
+                return Results.NotFound(new { error = $"Experiment '{experimentId}' not found for model '{modelName}'." });
+            }
+
+            // Load and validate experiment
+            var experiment = await experimentStore.LoadAsync(modelName, experimentId, ct);
+
+            if (!experiment.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"Cannot promote experiment with status '{experiment.Status}'. Only completed experiments can be promoted."
+                });
+            }
+
+            // The same gate `mloop promote` and training apply; `force` is the deliberate override.
+            var refusal = MLoop.CLI.Infrastructure.FileSystem.ModelRegistry.QualityGateRefusal(experiment, experiment.Config?.Metric);
+            if (refusal != null && !request.Force)
+            {
+                return Results.Json(new
+                {
+                    error = $"'{experimentId}' does not pass the quality gate: {refusal}. Send \"force\": true to promote it anyway."
+                }, statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+            if (refusal != null)
+            {
+                logger.LogWarning("Promoting '{ExperimentId}' despite the quality gate (force): {Refusal}", experimentId, refusal);
+            }
+
+            // The project's own gate policy (mloop.yaml `gate:`), judged on its evaluation set; `force` overrides it too.
+            var policyRefusal = await registry.GatePolicyRefusalAsync(modelName, experimentId, ct);
+            if (policyRefusal != null && !request.Force)
+            {
+                return Results.Json(new
+                {
+                    error = $"'{experimentId}' does not pass the gate policy: {policyRefusal}. Send \"force\": true to promote it anyway."
+                }, statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+            if (policyRefusal != null)
+            {
+                logger.LogWarning("Promoting '{ExperimentId}' despite the gate policy (force): {Refusal}", experimentId, policyRefusal);
+            }
+            var qualityWarning = MLoop.CLI.Infrastructure.FileSystem.ModelRegistry.QualityGateWarning(experiment);
+
+            // Check current production for comparison
+            var currentProduction = await registry.GetProductionAsync(modelName, ct);
+            var previousExpId = currentProduction?.ExperimentId;
+
+            // Backup current production if exists
+            if (currentProduction != null && request.CreateBackup != false)
+            {
+                var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
+                if (backupPath != null)
+                {
+                    logger.LogInformation("Backed up current production to {BackupPath}", backupPath);
+                }
+            }
+
+            // Promote — the registry records it in the promotion history, gate outcome included.
+            await registry.PromoteAsync(modelName, experimentId, PromotionActions.Promote, policyRefusal, ct);
+
+            logger.LogInformation("Promoted experiment '{ExperimentId}' to production for model '{ModelName}' in {ElapsedMs}ms",
+                experimentId, modelName, stopwatch.ElapsedMilliseconds);
+
+            return Results.Ok(new
+            {
+                modelName,
+                experimentId,
+                previousExperimentId = previousExpId,
+                promotedAt = DateTime.UtcNow,
+                task = experiment.Task,
+                metrics = experiment.Metrics,
+                bestTrainer = experiment.Result?.BestTrainer,
+                qualityWarning
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Promotion failed for '{ModelName}/{ExperimentId}' after {ElapsedMs}ms",
+                modelName, experimentId, stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Promotion failed",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("PromoteExperiment")
+    .WithTags("Model")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest)
+    .Produces<object>(StatusCodes.Status404NotFound)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization("Admin");
+
+    // Rollback (admin): production back to the experiment it held before — same target rule as `mloop rollback`
+    // Promotion history: every change of the production slot, oldest first, with the gate's outcome.
+    app.MapGet("/promotions", async (
+        [FromQuery] string? name,
+        IPromotionManager promotionManager,
+        CancellationToken ct) =>
+    {
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
+        var history = await promotionManager.GetHistoryAsync(modelName, ct);
         return Results.Ok(new
         {
             modelName,
-            experimentId,
-            task = taskType,
-            testDataPath,
-            weightColumn,
-            metrics,
-            confusion,
-            comparison,
+            promotions = history.Select(r => new
+            {
+                experimentId = r.ExperimentId,
+                previousExperimentId = r.PreviousExperimentId,
+                action = r.Action,
+                timestamp = r.Timestamp.ToUniversalTime(),
+                gate = r.Gate,
+                gateDetail = r.GateDetail,
+                metric = r.Metric,
+                metricValue = r.MetricValue,
+            }),
+        });
+    })
+    .WithName("PromotionHistory")
+    .WithTags("Model")
+    .Produces<object>(StatusCodes.Status200OK)
+    .RequireAuthorization();
+
+    app.MapPost("/rollback", async (
+        [FromBody] RollbackRequest request,
+        IModelRegistry registry,
+        IExperimentStore experimentStore,
+        IPromotionManager promotionManager,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
+        var current = (await registry.GetProductionAsync(modelName, ct))?.ExperimentId;
+        var history = await promotionManager.GetHistoryAsync(modelName, ct);
+        var (target, error) = MLoop.Ops.Interfaces.RollbackTarget.Resolve(history, current, request.To?.Trim());
+        if (target is null)
+            return Results.Json(new { error }, statusCode: StatusCodes.Status409Conflict);
+
+        if (!experimentStore.ExperimentExists(modelName, target))
+            return Results.Json(new { error = $"'{target}' is no longer in staging, so it cannot be restored from there." },
+                statusCode: StatusCodes.Status409Conflict);
+
+        var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
+        await registry.PromoteAsync(modelName, target, PromotionActions.Rollback, cancellationToken: ct);
+        logger.LogInformation("Rolled back '{ModelName}' from {Previous} to {Target}", modelName, current, target);
+
+        return Results.Ok(new { modelName, experimentId = target, previousExperimentId = current, backupPath });
+    })
+    .WithName("RollbackProduction")
+    .WithTags("Model")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status409Conflict)
+    .RequireAuthorization("Admin");
+
+    // Compare experiments endpoint (secured)
+    app.MapGet("/compare", async (
+        [FromQuery] string candidate,
+        [FromQuery] string baseline,
+        [FromQuery] string? name,
+        IModelComparer comparer,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
+
+        try
+        {
+            logger.LogInformation("Comparing experiments '{Candidate}' vs '{Baseline}' for model '{ModelName}'",
+                candidate, baseline, modelName);
+
+            var result = await comparer.CompareAsync(modelName, candidate, baseline, ct);
+
+            logger.LogInformation("Comparison completed in {ElapsedMs}ms: candidate is {Better}",
+                stopwatch.ElapsedMilliseconds, result.CandidateIsBetter ? "better" : "worse");
+
+            return Results.Ok(new
+            {
+                modelName,
+                candidateExpId = result.CandidateExpId,
+                baselineExpId = result.BaselineExpId,
+                candidateIsBetter = result.CandidateIsBetter,
+                candidateScore = result.CandidateScore,
+                baselineScore = result.BaselineScore,
+                improvement = result.Improvement,
+                recommendation = result.Recommendation,
+                metricDetails = result.MetricDetails.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new
+                    {
+                        candidateValue = kvp.Value.CandidateValue,
+                        baselineValue = kvp.Value.BaselineValue,
+                        difference = kvp.Value.Difference,
+                        isBetter = kvp.Value.IsBetter
+                    })
+            });
+        }
+        catch (FileNotFoundException ex)
+        {
+            logger.LogWarning(ex, "Experiment not found for comparison");
+            return Results.NotFound(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Comparison failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Comparison failed",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("CompareExperiments")
+    .WithTags("Experiments")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status404NotFound)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
+
+    // Evaluate model endpoint (secured)
+    app.MapPost("/evaluate", async (
+        [FromBody] EvaluateRequest request,
+        IExperimentStore experimentStore,
+        IModelRegistry registry,
+        ProjectRootPath projectRootPath,
+        EvaluationEngine evaluationEngine,
+        IFileSystemManager fileSystem,
+        IProjectDiscovery projectDiscovery,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
+        var experimentId = request.ExperimentId;
+
+        try
+        {
+            logger.LogInformation("Evaluating experiment '{ExperimentId}' for model '{ModelName}'",
+                experimentId, modelName);
+
+            // Resolve experiment: use specified or production
+            if (string.IsNullOrWhiteSpace(experimentId))
+            {
+                var prod = await registry.GetProductionAsync(modelName, ct);
+                if (prod == null)
+                    return Results.Ok(new { status = "skipped", reason = "no_production_model", model = modelName });
+                experimentId = prod.ExperimentId;
+            }
+
+            // The named experiment's own model — never production's in its place: a report under the
+            // experiment's id must be that experiment's measurement.
+            var (modelPath, refusal) = ExperimentModels.Find(experimentStore, modelName, experimentId);
+            if (modelPath is null)
+                return Results.NotFound(new { error = refusal });
+
+            var experiment = await experimentStore.LoadAsync(modelName, experimentId, ct);
+
+            // Determine test data path (with path traversal protection)
+            var testDataPath = request.TestDataPath;
+            if (string.IsNullOrWhiteSpace(testDataPath))
+                return Results.BadRequest(new { error = "testDataPath is required." });
+
+            // A relative path is the project's, as for POST /train.
+            var evalProjectRoot = Path.GetFullPath(projectRootPath.Value);
+            var resolvedTestPath = Path.GetFullPath(Path.IsPathRooted(testDataPath) ? testDataPath : Path.Combine(evalProjectRoot, testDataPath));
+            if (!resolvedTestPath.StartsWith(evalProjectRoot, StringComparison.OrdinalIgnoreCase))
+                return Results.BadRequest(new { error = "Test data file must be within the project directory." });
+
+            if (!TabularDataFile.Exists(resolvedTestPath))
+                return Results.BadRequest(new { error = $"Test data file not found: {testDataPath}" });
+
+            // What `mloop evaluate` does before it measures: the file read as a table (Parquet, Excel, JSON, TSV),
+            // then checked against the experiment's schema — a refused file is the caller's to fix, not a 500.
+            resolvedTestPath = await TabularDataFile.AsCsvAsync(resolvedTestPath);
+            var validation = await new SchemaValidator(fileSystem, projectDiscovery).ValidateAsync(resolvedTestPath, modelName, experimentId);
+            if (!validation.IsValid)
+                return Results.BadRequest(new
+                {
+                    error = "Schema validation failed. " + (validation.ErrorMessage
+                        ?? "Missing columns: " + string.Join(", ", validation.MissingColumns)),
+                    missingColumns = validation.MissingColumns,
+                    suggestions = validation.Suggestions,
+                });
+            var warnings = new List<string>(validation.Warnings);
+
+            var labelColumn = experiment.Config.LabelColumn;
+            var taskType = experiment.Task;
+
+            // The rows count by the same weight `mloop evaluate` would give them — the one asked for, else
+            // the column the experiment was trained with when the file has it.
+            var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(request.Weight, experiment, resolvedTestPath);
+            if (weightWarning is not null)
+                warnings.Add(weightWarning);
+
+            ComparisonBaseline? baseline = null;
+            if (!string.IsNullOrWhiteSpace(request.Against))
+            {
+                baseline = await ModelComparison.ResolveBaselineAsync(request.Against.Trim(), modelName, experimentId, experiment,
+                    experimentStore, registry, ct);
+                if (baseline.Error is { } error)
+                    return baseline.NotFound ? Results.NotFound(new { error }) : Results.BadRequest(new { error });
+            }
+
+            var (metrics, confusion) = await evaluationEngine.EvaluateAsync(
+                modelPath, resolvedTestPath, labelColumn, taskType, ct,
+                experiment.Config.InputSchema, experiment.Config.GroupColumn,
+                experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn,
+                new MLoop.Core.Metrics.MetricEngine(projectRootPath.Value, new MLoop.CLI.Infrastructure.ML.ScriptConsoleLogger()));
+
+            var comparison = baseline is null
+                ? null
+                : await ModelComparison.CompareAsync(evaluationEngine, experimentId, modelPath, experiment, baseline, resolvedTestPath, weightColumn, ct);
+
+            var sliceBy = string.IsNullOrWhiteSpace(request.SliceBy) ? null : request.SliceBy.Trim();
+            var slices = sliceBy is null
+                ? null
+                : await EvaluationSlices.EvaluateAsync(evaluationEngine, sliceBy, resolvedTestPath, modelPath, experiment, weightColumn, ct);
+
+            logger.LogInformation("Evaluation completed in {ElapsedMs}ms with {MetricCount} metrics",
+                stopwatch.ElapsedMilliseconds, metrics.Count);
+
+            return Results.Ok(new
+            {
+                modelName,
+                experimentId,
+                task = taskType,
+                testDataPath,
+                weightColumn,
+                metrics,
+                confusion,
+                comparison,
+                sliceBy,
+                slices,
+                warnings = warnings.Count == 0 ? null : warnings,
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Evaluation failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Evaluation failed",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("EvaluateModel")
+    .WithTags("Experiments")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest)
+    .Produces<object>(StatusCodes.Status404NotFound)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization("Admin");
+
+    // Prediction logs endpoint (secured)
+    app.MapGet("/logs", async (
+        [FromQuery] string? name,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] int? limit,
+        IPredictionLogger predictionLogger,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
+
+        try
+        {
+            logger.LogInformation("Retrieving prediction logs (filter: '{ModelName}')", modelName ?? "all");
+
+            if (!TryParseDateRange(from, to, out var fromDate, out var toDate, out var dateError))
+                return Results.BadRequest(new { error = dateError });
+            var maxEntries = limit ?? 1000;
+
+            var logs = await predictionLogger.GetLogsAsync(modelName, fromDate, toDate, maxEntries, ct);
+
+            logger.LogInformation("Retrieved {Count} log entries in {ElapsedMs}ms",
+                logs.Count, stopwatch.ElapsedMilliseconds);
+
+            return Results.Ok(new
+            {
+                count = logs.Count,
+                filter = modelName,
+                logs = logs.Select(l => new
+                {
+                    id = l.Id,
+                    modelName = l.ModelName,
+                    experimentId = l.ExperimentId,
+                    input = l.Input,
+                    output = l.Output,
+                    confidence = l.Confidence,
+                    timestamp = l.Timestamp
+                })
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to retrieve logs after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Failed to retrieve prediction logs",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("GetPredictionLogs")
+    .WithTags("Monitoring")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
+
+    // Get feedback endpoint (secured)
+    app.MapGet("/feedback", async (
+        [FromQuery] string? name,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] int? limit,
+        IFeedbackCollector feedbackCollector,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
+
+        try
+        {
+            logger.LogInformation("Retrieving feedback for model '{ModelName}'", modelName);
+
+            if (!TryParseDateRange(from, to, out var fromDate, out var toDate, out var dateError))
+                return Results.BadRequest(new { error = dateError });
+            var maxEntries = limit ?? 1000;
+
+            var feedback = await feedbackCollector.GetFeedbackAsync(modelName, fromDate, toDate, maxEntries, ct);
+
+            logger.LogInformation("Retrieved {Count} feedback entries in {ElapsedMs}ms",
+                feedback.Count, stopwatch.ElapsedMilliseconds);
+
+            return Results.Ok(new
+            {
+                count = feedback.Count,
+                modelName,
+                feedback = feedback.Select(f => new
+                {
+                    predictionId = f.PredictionId,
+                    modelName = f.ModelName,
+                    predictedValue = f.PredictedValue,
+                    actualValue = f.ActualValue,
+                    source = f.Source,
+                    weight = f.Weight,
+                    timestamp = f.Timestamp
+                })
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to retrieve feedback after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Failed to retrieve feedback",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("GetFeedback")
+    .WithTags("Monitoring")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
+
+    // A retraining set from logged predictions and their feedback — `mloop sample create --model` over HTTP.
+    // The file it writes is what POST /train takes in additionalDataFiles.
+    app.MapPost("/samples", async (
+        [FromBody] SampleRequest request,
+        ProjectRootPath projectRootPath,
+        IFileSystemManager fileSystem,
+        IProjectDiscovery discovery,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
+        var strategy = FeedbackSamples.ParseStrategy(request.Strategy ?? "random");
+        if (strategy is null)
+            return Results.BadRequest(new { error = $"Unknown strategy '{request.Strategy}'. {FeedbackSamples.StrategyGuidance}." });
+        if (request.Rows is <= 0)
+            return Results.BadRequest(new { error = "rows is a positive number of rows." });
+
+        var columns = await FeedbackSamples.ColumnsAsync(fileSystem, discovery, modelName, ct);
+        if (columns is null)
+            return Results.BadRequest(new { error = FeedbackSamples.NoLabelError(modelName) });
+
+        var projectRoot = projectRootPath.Value;
+        var outputPath = FeedbackSamples.DefaultPath(projectRoot, modelName);
+        try
+        {
+            var result = await new FileDataSampler(projectRoot).SampleAsync(
+                modelName, request.Rows ?? 1000, strategy.Value, outputPath, columns, ct);
+            logger.LogInformation("Sampled {Count} rows ({Labeled} with feedback) for model '{ModelName}'",
+                result.SampledCount, result.LabeledCount, modelName);
+            return Results.Ok(new
+            {
+                modelName,
+                path = Path.GetRelativePath(projectRoot, result.OutputPath),
+                sampledCount = result.SampledCount,
+                labeledCount = result.LabeledCount,
+                totalAvailable = result.TotalAvailable,
+                strategy = result.StrategyUsed.ToString(),
+                labelColumn = result.LabelColumn,
+                weightColumn = result.WeightColumn,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            // No logged predictions for the model: nothing to sample, said as the CLI says it.
+            return Results.NotFound(new { error = ex.Message });
+        }
+    })
+    .WithName("CreateSample")
+    .WithTags("Monitoring")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest)
+    .Produces<object>(StatusCodes.Status404NotFound)
+    .RequireAuthorization("Admin");
+
+    // Submit feedback endpoint (secured)
+    app.MapPost("/feedback", async (
+        [FromBody] FeedbackRequest request,
+        IFeedbackCollector feedbackCollector,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            logger.LogInformation("Recording feedback for prediction '{PredictionId}'", request.PredictionId);
+
+            await feedbackCollector.RecordFeedbackAsync(
+                request.PredictionId, request.ActualValue, request.Source, request.Weight, ct);
+
+            logger.LogInformation("Feedback recorded in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+
+            return Results.Ok(new
+            {
+                predictionId = request.PredictionId,
+                recorded = true,
+                timestamp = DateTime.UtcNow
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.Problem(title: "Invalid feedback", detail: ex.Message,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+        catch (PredictionNotFoundException ex)
+        {
+            return Results.Problem(title: "Prediction not found", detail: ex.Message,
+                statusCode: StatusCodes.Status404NotFound);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to record feedback after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Failed to record feedback",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("SubmitFeedback")
+    .WithTags("Monitoring")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+    .Produces<ProblemDetails>(StatusCodes.Status404NotFound)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
+
+    // Input drift: the production model's recent inputs against its training profile (secured)
+    app.MapGet("/drift", async (
+        [FromQuery] string? name,
+        [FromQuery] int? rows,
+        [FromQuery] string? sliceBy,
+        [FromServices] ProjectRootPath root,
+        IPredictionLogger predictionLogs,
+        CancellationToken ct) =>
+    {
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
+        var window = rows ?? MLoop.Ops.Services.DriftEvaluator.DefaultWindowRows;
+        if (window < MLoop.Ops.Services.DriftEvaluator.MinimumRows)
+            return Results.Problem(
+                title: "Invalid window",
+                detail: $"rows must be at least {MLoop.Ops.Services.DriftEvaluator.MinimumRows}.",
+                statusCode: StatusCodes.Status400BadRequest);
+        var check = await MLoop.Ops.Services.DriftEvaluator.CheckAsync(root.Value, predictionLogs, modelName, window, sliceBy, ct);
+        return Results.Ok(new
+        {
+            modelName,
+            status = check.Status.ToString(),
+            experimentId = check.ExperimentId,
+            message = check.Message,
+            drift = check.Report is { } r ? MLoop.Ops.Services.DriftEvaluator.Signal(r) : null,
             sliceBy,
-            slices,
-            warnings = warnings.Count == 0 ? null : warnings,
+            slices = check.Slices?.Select(sl => new { value = sl.Value, drift = MLoop.Ops.Services.DriftEvaluator.Signal(sl.Report) }),
         });
-    }
-    catch (Exception ex)
+    })
+    .WithName("Drift")
+    .WithTags("Monitoring")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+    .RequireAuthorization();
+
+    // Retraining trigger evaluation endpoint (secured)
+    app.MapGet("/trigger", async (
+        [FromQuery] string? name,
+        IRetrainingTrigger trigger,
+        ILogger<Program> logger,
+        CancellationToken ct) =>
     {
-        logger.LogError(ex, "Evaluation failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Evaluation failed",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("EvaluateModel")
-.WithTags("Experiments")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<object>(StatusCodes.Status400BadRequest)
-.Produces<object>(StatusCodes.Status404NotFound)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization("Admin");
+        var stopwatch = Stopwatch.StartNew();
+        var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
 
-// Prediction logs endpoint (secured)
-app.MapGet("/logs", async (
-    [FromQuery] string? name,
-    [FromQuery] string? from,
-    [FromQuery] string? to,
-    [FromQuery] int? limit,
-    IPredictionLogger predictionLogger,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
+        try
+        {
+            logger.LogInformation("Evaluating retraining triggers for model '{ModelName}'", modelName);
 
-    try
+            var conditions = await trigger.GetDefaultConditionsAsync(modelName, ct);
+            var evaluation = await trigger.EvaluateAsync(modelName, conditions, ct);
+
+            logger.LogInformation("Trigger evaluation completed in {ElapsedMs}ms: shouldRetrain={ShouldRetrain}",
+                stopwatch.ElapsedMilliseconds, evaluation.ShouldRetrain);
+
+            return Results.Ok(new
+            {
+                modelName,
+                shouldRetrain = evaluation.ShouldRetrain,
+                recommendedAction = evaluation.RecommendedAction,
+                evaluatedAt = evaluation.EvaluatedAt,
+                conditions = evaluation.ConditionResults.Select(cr => new
+                {
+                    type = cr.Condition.Type.ToString(),
+                    name = cr.Condition.Name,
+                    threshold = cr.Condition.Threshold,
+                    currentValue = cr.CurrentValue,
+                    isMet = cr.IsMet,
+                    details = cr.Details,
+                    drift = cr.Drift is { } d ? MLoop.Ops.Services.DriftEvaluator.Signal(d) : null
+                })
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Trigger evaluation failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+            return Results.Problem(
+                title: "Trigger evaluation failed",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status500InternalServerError
+            );
+        }
+    })
+    .WithName("EvaluateTrigger")
+    .WithTags("Monitoring")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
+    .RequireAuthorization();
+
+    // Start training job (async, secured)
+    app.MapPost("/train", async (
+        [FromBody] TrainingJobRequest request,
+        TrainingJobStore jobStore,
+        TrainingJobRunner jobRunner,
+        ProjectRootPath projectRootPath,
+        ConfigLoader configLoader,
+        ILogger<Program> logger) =>
     {
-        logger.LogInformation("Retrieving prediction logs (filter: '{ModelName}')", modelName ?? "all");
+        // Refuse a metric the task cannot optimize now, not minutes later inside the job — the job
+        // would otherwise fail (or, before this, quietly optimize the task default).
+        var metricRejection = MLoop.Core.Evaluation.MetricNames.Rejection(request.Task, request.Metric);
+        if (metricRejection != null)
+            return Results.BadRequest(new { error = metricRejection });
 
-        if (!TryParseDateRange(from, to, out var fromDate, out var toDate, out var dateError))
-            return Results.BadRequest(new { error = dateError });
-        var maxEntries = limit ?? 1000;
+        // Validate every data file exists and is within project root. A relative path is the project's — the
+        // form POST /samples answers with — not the server process's working directory.
+        var trainProjectRoot = Path.GetFullPath(projectRootPath.Value);
+        string InProject(string file) => Path.GetFullPath(Path.IsPathRooted(file) ? file : Path.Combine(trainProjectRoot, file));
+        foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
+        {
+            var resolvedDataFile = InProject(file);
+            if (!resolvedDataFile.StartsWith(trainProjectRoot, StringComparison.OrdinalIgnoreCase))
+                return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
+            if (!File.Exists(resolvedDataFile))
+                return Results.BadRequest(new { error = $"Data file not found: {file}" });
+        }
+        request = request with
+        {
+            DataFile = InProject(request.DataFile),
+            AdditionalDataFiles = request.AdditionalDataFiles?.Select(InProject).ToList(),
+        };
 
-        var logs = await predictionLogger.GetLogsAsync(modelName, fromDate, toDate, maxEntries, ct);
+        // Refused now, not inside the job: what the project's mloop.yaml asks for that this run could
+        // not honour (a weight on a task it does not reach, prep steps the API does not run).
+        var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
+            request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit, request.Weight);
+        if (definitionError != null)
+            return Results.BadRequest(new { error = definitionError });
+        if (TrainingInput.BalanceConflict(trainDefinition!, request.Balance) is { } balanceError)
+            return Results.BadRequest(new { error = balanceError });
 
-        logger.LogInformation("Retrieved {Count} log entries in {ElapsedMs}ms",
-            logs.Count, stopwatch.ElapsedMilliseconds);
+        // Create job and enqueue for background processing
+        var jobId = jobStore.CreateJob(request);
+        jobRunner.EnqueueJob(jobId);
+
+        logger.LogInformation("Training job '{JobId}' enqueued for model '{ModelName}' with task '{Task}'",
+            jobId, request.ModelName, request.Task);
+
+        return Results.Accepted($"/jobs/{jobId}", new
+        {
+            jobId,
+            modelName = request.ModelName,
+            status = "Queued",
+            message = "Training job created. Poll /jobs/{jobId} for status."
+        });
+    })
+    .WithName("StartTraining")
+    .WithTags("Training")
+    .Produces<object>(StatusCodes.Status202Accepted)
+    .Produces<object>(StatusCodes.Status400BadRequest)
+    .RequireAuthorization("Admin");
+
+    // List all jobs
+    app.MapGet("/jobs", (
+        TrainingJobStore jobStore,
+        ILogger<Program> logger) =>
+    {
+        var jobs = jobStore.GetAllJobs();
 
         return Results.Ok(new
         {
-            count = logs.Count,
-            filter = modelName,
-            logs = logs.Select(l => new
+            count = jobs.Count,
+            jobs = jobs.Select(j => new
             {
-                id = l.Id,
-                modelName = l.ModelName,
-                experimentId = l.ExperimentId,
-                input = l.Input,
-                output = l.Output,
-                confidence = l.Confidence,
-                timestamp = l.Timestamp
+                jobId = j.JobId,
+                modelName = j.ModelName,
+                task = j.Task,
+                status = j.Status.ToString(),
+                statusMessage = j.StatusMessage,
+                createdAt = j.CreatedAt,
+                completedAt = j.CompletedAt,
+                experimentId = j.ExperimentId,
+                bestTrainer = j.BestTrainer,
+                promoted = j.Promoted
             })
         });
-    }
-    catch (Exception ex)
+    })
+    .WithName("ListJobs")
+    .WithTags("Training")
+    .Produces<object>(StatusCodes.Status200OK)
+    .RequireAuthorization();
+
+    // Get job status
+    app.MapGet("/jobs/{id}", (
+        string id,
+        TrainingJobStore jobStore,
+        ILogger<Program> logger) =>
     {
-        logger.LogError(ex, "Failed to retrieve logs after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Failed to retrieve prediction logs",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("GetPredictionLogs")
-.WithTags("Monitoring")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
-
-// Get feedback endpoint (secured)
-app.MapGet("/feedback", async (
-    [FromQuery] string? name,
-    [FromQuery] string? from,
-    [FromQuery] string? to,
-    [FromQuery] int? limit,
-    IFeedbackCollector feedbackCollector,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
-
-    try
-    {
-        logger.LogInformation("Retrieving feedback for model '{ModelName}'", modelName);
-
-        if (!TryParseDateRange(from, to, out var fromDate, out var toDate, out var dateError))
-            return Results.BadRequest(new { error = dateError });
-        var maxEntries = limit ?? 1000;
-
-        var feedback = await feedbackCollector.GetFeedbackAsync(modelName, fromDate, toDate, maxEntries, ct);
-
-        logger.LogInformation("Retrieved {Count} feedback entries in {ElapsedMs}ms",
-            feedback.Count, stopwatch.ElapsedMilliseconds);
+        var job = jobStore.GetJob(id);
+        if (job == null)
+            return Results.NotFound(new { error = $"Job '{id}' not found." });
 
         return Results.Ok(new
         {
-            count = feedback.Count,
-            modelName,
-            feedback = feedback.Select(f => new
-            {
-                predictionId = f.PredictionId,
-                modelName = f.ModelName,
-                predictedValue = f.PredictedValue,
-                actualValue = f.ActualValue,
-                source = f.Source,
-                weight = f.Weight,
-                timestamp = f.Timestamp
-            })
+            jobId = job.JobId,
+            modelName = job.ModelName,
+            dataFile = job.DataFile,
+            additionalDataFiles = job.AdditionalDataFiles,
+            labelColumn = job.LabelColumn,
+            task = job.Task,
+            timeLimitSeconds = job.TimeLimitSeconds,
+            metric = job.Metric,
+            testSplit = job.TestSplit,
+            maxRows = job.MaxRows,
+            weight = job.Weight,
+            balance = job.Balance,
+            promote = job.Promote,
+            status = job.Status.ToString(),
+            statusMessage = job.StatusMessage,
+            createdAt = job.CreatedAt,
+            completedAt = job.CompletedAt,
+            experimentId = job.ExperimentId,
+            metrics = job.Metrics,
+            bestTrainer = job.BestTrainer,
+            promoted = job.Promoted,
+            keptInStagingReason = job.KeptInStagingReason
         });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to retrieve feedback after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Failed to retrieve feedback",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("GetFeedback")
-.WithTags("Monitoring")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
-
-// A retraining set from logged predictions and their feedback — `mloop sample create --model` over HTTP.
-// The file it writes is what POST /train takes in additionalDataFiles.
-app.MapPost("/samples", async (
-    [FromBody] SampleRequest request,
-    ProjectRootPath projectRootPath,
-    IFileSystemManager fileSystem,
-    IProjectDiscovery discovery,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
-    var strategy = FeedbackSamples.ParseStrategy(request.Strategy ?? "random");
-    if (strategy is null)
-        return Results.BadRequest(new { error = $"Unknown strategy '{request.Strategy}'. {FeedbackSamples.StrategyGuidance}." });
-    if (request.Rows is <= 0)
-        return Results.BadRequest(new { error = "rows is a positive number of rows." });
-
-    var columns = await FeedbackSamples.ColumnsAsync(fileSystem, discovery, modelName, ct);
-    if (columns is null)
-        return Results.BadRequest(new { error = FeedbackSamples.NoLabelError(modelName) });
-
-    var projectRoot = projectRootPath.Value;
-    var outputPath = FeedbackSamples.DefaultPath(projectRoot, modelName);
-    try
-    {
-        var result = await new FileDataSampler(projectRoot).SampleAsync(
-            modelName, request.Rows ?? 1000, strategy.Value, outputPath, columns, ct);
-        logger.LogInformation("Sampled {Count} rows ({Labeled} with feedback) for model '{ModelName}'",
-            result.SampledCount, result.LabeledCount, modelName);
-        return Results.Ok(new
-        {
-            modelName,
-            path = Path.GetRelativePath(projectRoot, result.OutputPath),
-            sampledCount = result.SampledCount,
-            labeledCount = result.LabeledCount,
-            totalAvailable = result.TotalAvailable,
-            strategy = result.StrategyUsed.ToString(),
-            labelColumn = result.LabelColumn,
-            weightColumn = result.WeightColumn,
-        });
-    }
-    catch (InvalidOperationException ex)
-    {
-        // No logged predictions for the model: nothing to sample, said as the CLI says it.
-        return Results.NotFound(new { error = ex.Message });
-    }
-})
-.WithName("CreateSample")
-.WithTags("Monitoring")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<object>(StatusCodes.Status400BadRequest)
-.Produces<object>(StatusCodes.Status404NotFound)
-.RequireAuthorization("Admin");
-
-// Submit feedback endpoint (secured)
-app.MapPost("/feedback", async (
-    [FromBody] FeedbackRequest request,
-    IFeedbackCollector feedbackCollector,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-
-    try
-    {
-        logger.LogInformation("Recording feedback for prediction '{PredictionId}'", request.PredictionId);
-
-        await feedbackCollector.RecordFeedbackAsync(
-            request.PredictionId, request.ActualValue, request.Source, request.Weight, ct);
-
-        logger.LogInformation("Feedback recorded in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-
-        return Results.Ok(new
-        {
-            predictionId = request.PredictionId,
-            recorded = true,
-            timestamp = DateTime.UtcNow
-        });
-    }
-    catch (ArgumentException ex)
-    {
-        return Results.Problem(title: "Invalid feedback", detail: ex.Message,
-            statusCode: StatusCodes.Status400BadRequest);
-    }
-    catch (PredictionNotFoundException ex)
-    {
-        return Results.Problem(title: "Prediction not found", detail: ex.Message,
-            statusCode: StatusCodes.Status404NotFound);
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to record feedback after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Failed to record feedback",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("SubmitFeedback")
-.WithTags("Monitoring")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
-.Produces<ProblemDetails>(StatusCodes.Status404NotFound)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
-
-// Input drift: the production model's recent inputs against its training profile (secured)
-app.MapGet("/drift", async (
-    [FromQuery] string? name,
-    [FromQuery] int? rows,
-    [FromQuery] string? sliceBy,
-    [FromServices] ProjectRootPath root,
-    IPredictionLogger predictionLogs,
-    CancellationToken ct) =>
-{
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
-    var window = rows ?? MLoop.Ops.Services.DriftEvaluator.DefaultWindowRows;
-    if (window < MLoop.Ops.Services.DriftEvaluator.MinimumRows)
-        return Results.Problem(
-            title: "Invalid window",
-            detail: $"rows must be at least {MLoop.Ops.Services.DriftEvaluator.MinimumRows}.",
-            statusCode: StatusCodes.Status400BadRequest);
-    var check = await MLoop.Ops.Services.DriftEvaluator.CheckAsync(root.Value, predictionLogs, modelName, window, sliceBy, ct);
-    return Results.Ok(new
-    {
-        modelName,
-        status = check.Status.ToString(),
-        experimentId = check.ExperimentId,
-        message = check.Message,
-        drift = check.Report is { } r ? MLoop.Ops.Services.DriftEvaluator.Signal(r) : null,
-        sliceBy,
-        slices = check.Slices?.Select(sl => new { value = sl.Value, drift = MLoop.Ops.Services.DriftEvaluator.Signal(sl.Report) }),
-    });
-})
-.WithName("Drift")
-.WithTags("Monitoring")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
-.RequireAuthorization();
-
-// Retraining trigger evaluation endpoint (secured)
-app.MapGet("/trigger", async (
-    [FromQuery] string? name,
-    IRetrainingTrigger trigger,
-    ILogger<Program> logger,
-    CancellationToken ct) =>
-{
-    var stopwatch = Stopwatch.StartNew();
-    var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
-
-    try
-    {
-        logger.LogInformation("Evaluating retraining triggers for model '{ModelName}'", modelName);
-
-        var conditions = await trigger.GetDefaultConditionsAsync(modelName, ct);
-        var evaluation = await trigger.EvaluateAsync(modelName, conditions, ct);
-
-        logger.LogInformation("Trigger evaluation completed in {ElapsedMs}ms: shouldRetrain={ShouldRetrain}",
-            stopwatch.ElapsedMilliseconds, evaluation.ShouldRetrain);
-
-        return Results.Ok(new
-        {
-            modelName,
-            shouldRetrain = evaluation.ShouldRetrain,
-            recommendedAction = evaluation.RecommendedAction,
-            evaluatedAt = evaluation.EvaluatedAt,
-            conditions = evaluation.ConditionResults.Select(cr => new
-            {
-                type = cr.Condition.Type.ToString(),
-                name = cr.Condition.Name,
-                threshold = cr.Condition.Threshold,
-                currentValue = cr.CurrentValue,
-                isMet = cr.IsMet,
-                details = cr.Details,
-                drift = cr.Drift is { } d ? MLoop.Ops.Services.DriftEvaluator.Signal(d) : null
-            })
-        });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Trigger evaluation failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-        return Results.Problem(
-            title: "Trigger evaluation failed",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError
-        );
-    }
-})
-.WithName("EvaluateTrigger")
-.WithTags("Monitoring")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
-.RequireAuthorization();
-
-// Start training job (async, secured)
-app.MapPost("/train", async (
-    [FromBody] TrainingJobRequest request,
-    TrainingJobStore jobStore,
-    TrainingJobRunner jobRunner,
-    ProjectRootPath projectRootPath,
-    ConfigLoader configLoader,
-    ILogger<Program> logger) =>
-{
-    // Refuse a metric the task cannot optimize now, not minutes later inside the job — the job
-    // would otherwise fail (or, before this, quietly optimize the task default).
-    var metricRejection = MLoop.Core.Evaluation.MetricNames.Rejection(request.Task, request.Metric);
-    if (metricRejection != null)
-        return Results.BadRequest(new { error = metricRejection });
-
-    // Validate every data file exists and is within project root. A relative path is the project's — the
-    // form POST /samples answers with — not the server process's working directory.
-    var trainProjectRoot = Path.GetFullPath(projectRootPath.Value);
-    string InProject(string file) => Path.GetFullPath(Path.IsPathRooted(file) ? file : Path.Combine(trainProjectRoot, file));
-    foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
-    {
-        var resolvedDataFile = InProject(file);
-        if (!resolvedDataFile.StartsWith(trainProjectRoot, StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
-        if (!File.Exists(resolvedDataFile))
-            return Results.BadRequest(new { error = $"Data file not found: {file}" });
-    }
-    request = request with
-    {
-        DataFile = InProject(request.DataFile),
-        AdditionalDataFiles = request.AdditionalDataFiles?.Select(InProject).ToList(),
-    };
-
-    // Refused now, not inside the job: what the project's mloop.yaml asks for that this run could
-    // not honour (a weight on a task it does not reach, prep steps the API does not run).
-    var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
-        request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit, request.Weight);
-    if (definitionError != null)
-        return Results.BadRequest(new { error = definitionError });
-    if (TrainingInput.BalanceConflict(trainDefinition!, request.Balance) is { } balanceError)
-        return Results.BadRequest(new { error = balanceError });
-
-    // Create job and enqueue for background processing
-    var jobId = jobStore.CreateJob(request);
-    jobRunner.EnqueueJob(jobId);
-
-    logger.LogInformation("Training job '{JobId}' enqueued for model '{ModelName}' with task '{Task}'",
-        jobId, request.ModelName, request.Task);
-
-    return Results.Accepted($"/jobs/{jobId}", new
-    {
-        jobId,
-        modelName = request.ModelName,
-        status = "Queued",
-        message = "Training job created. Poll /jobs/{jobId} for status."
-    });
-})
-.WithName("StartTraining")
-.WithTags("Training")
-.Produces<object>(StatusCodes.Status202Accepted)
-.Produces<object>(StatusCodes.Status400BadRequest)
-.RequireAuthorization("Admin");
-
-// List all jobs
-app.MapGet("/jobs", (
-    TrainingJobStore jobStore,
-    ILogger<Program> logger) =>
-{
-    var jobs = jobStore.GetAllJobs();
-
-    return Results.Ok(new
-    {
-        count = jobs.Count,
-        jobs = jobs.Select(j => new
-        {
-            jobId = j.JobId,
-            modelName = j.ModelName,
-            task = j.Task,
-            status = j.Status.ToString(),
-            statusMessage = j.StatusMessage,
-            createdAt = j.CreatedAt,
-            completedAt = j.CompletedAt,
-            experimentId = j.ExperimentId,
-            bestTrainer = j.BestTrainer,
-            promoted = j.Promoted
-        })
-    });
-})
-.WithName("ListJobs")
-.WithTags("Training")
-.Produces<object>(StatusCodes.Status200OK)
-.RequireAuthorization();
-
-// Get job status
-app.MapGet("/jobs/{id}", (
-    string id,
-    TrainingJobStore jobStore,
-    ILogger<Program> logger) =>
-{
-    var job = jobStore.GetJob(id);
-    if (job == null)
-        return Results.NotFound(new { error = $"Job '{id}' not found." });
-
-    return Results.Ok(new
-    {
-        jobId = job.JobId,
-        modelName = job.ModelName,
-        dataFile = job.DataFile,
-        additionalDataFiles = job.AdditionalDataFiles,
-        labelColumn = job.LabelColumn,
-        task = job.Task,
-        timeLimitSeconds = job.TimeLimitSeconds,
-        metric = job.Metric,
-        testSplit = job.TestSplit,
-        maxRows = job.MaxRows,
-        weight = job.Weight,
-        balance = job.Balance,
-        promote = job.Promote,
-        status = job.Status.ToString(),
-        statusMessage = job.StatusMessage,
-        createdAt = job.CreatedAt,
-        completedAt = job.CompletedAt,
-        experimentId = job.ExperimentId,
-        metrics = job.Metrics,
-        bestTrainer = job.BestTrainer,
-        promoted = job.Promoted,
-        keptInStagingReason = job.KeptInStagingReason
-    });
-})
-.WithName("GetJobStatus")
-.WithTags("Training")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces<object>(StatusCodes.Status404NotFound)
-.RequireAuthorization();
+    })
+    .WithName("GetJobStatus")
+    .WithTags("Training")
+    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status404NotFound)
+    .RequireAuthorization();
 
     Log.Information("MLoop.API started successfully");
     await app.RunAsync();

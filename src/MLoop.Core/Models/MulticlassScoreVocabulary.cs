@@ -1,6 +1,6 @@
+using System.Globalization;
 using Microsoft.ML;
 using Microsoft.ML.Data;
-using System.Globalization;
 
 namespace MLoop.Core.Models;
 

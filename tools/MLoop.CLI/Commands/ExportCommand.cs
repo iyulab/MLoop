@@ -311,40 +311,40 @@ public static class ExportCommand
         switch (task)
         {
             case "binary-classification":
-            {
-                var vocabulary = BinaryLabelVocabulary.Of(experiment.Config?.InputSchema);
-                return new OnnxLabelInfo
                 {
-                    Column = labelColumn,
-                    Classes = vocabulary is { } v ? [v.Negative, v.Positive] : null,
-                    Decision = recipe.Describe(),
-                };
-            }
+                    var vocabulary = BinaryLabelVocabulary.Of(experiment.Config?.InputSchema);
+                    return new OnnxLabelInfo
+                    {
+                        Column = labelColumn,
+                        Classes = vocabulary is { } v ? [v.Negative, v.Positive] : null,
+                        Decision = recipe.Describe(),
+                    };
+                }
             case "multiclass-classification":
-            {
-                IReadOnlyList<string>? classes = null;
-                try
                 {
-                    var scored = input.Model.GetOutputSchema(input.Data.Schema);
-                    if (scored.GetColumnOrNull("Score") is { } score && score.Type is Microsoft.ML.Data.VectorDataViewType vector)
-                        classes = MulticlassScoreVocabulary.Of(score, vector.Size);
+                    IReadOnlyList<string>? classes = null;
+                    try
+                    {
+                        var scored = input.Model.GetOutputSchema(input.Data.Schema);
+                        if (scored.GetColumnOrNull("Score") is { } score && score.Type is Microsoft.ML.Data.VectorDataViewType vector)
+                            classes = MulticlassScoreVocabulary.Of(score, vector.Size);
+                    }
+                    catch (Exception)
+                    {
+                        // No names is an honest answer; the manifest says so by leaving them out.
+                    }
+                    // The pipeline usually maps the key back to the class name; say what the graph gives.
+                    var predicted = result.Outputs.FirstOrDefault(o => o.Column == "PredictedLabel");
+                    var predictedReads = predicted?.ElementType == "string"
+                        ? "PredictedLabel is the name of the highest-scoring class"
+                        : "PredictedLabel is the 1-based index of the highest-scoring class in Classes (0 = none)";
+                    return new OnnxLabelInfo
+                    {
+                        Column = labelColumn,
+                        Classes = classes,
+                        Decision = recipe.Describe(predictedReads),
+                    };
                 }
-                catch (Exception)
-                {
-                    // No names is an honest answer; the manifest says so by leaving them out.
-                }
-                // The pipeline usually maps the key back to the class name; say what the graph gives.
-                var predicted = result.Outputs.FirstOrDefault(o => o.Column == "PredictedLabel");
-                var predictedReads = predicted?.ElementType == "string"
-                    ? "PredictedLabel is the name of the highest-scoring class"
-                    : "PredictedLabel is the 1-based index of the highest-scoring class in Classes (0 = none)";
-                return new OnnxLabelInfo
-                {
-                    Column = labelColumn,
-                    Classes = classes,
-                    Decision = recipe.Describe(predictedReads),
-                };
-            }
             default:
                 return new OnnxLabelInfo { Column = labelColumn, Decision = recipe.Describe() };
         }

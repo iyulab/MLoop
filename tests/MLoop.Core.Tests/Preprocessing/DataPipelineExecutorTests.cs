@@ -390,7 +390,7 @@ public class DataPipelineExecutorTests : IDisposable
         var lines = await File.ReadAllLinesAsync(outputPath);
         Assert.Equal(5, lines.Length); // header + 4 rows
         // Mean of 10,30 = 20, filled values should be 20
-        Assert.DoesNotContain(",," , string.Join(",", lines));
+        Assert.DoesNotContain(",,", string.Join(",", lines));
     }
 
     [Fact]

@@ -5,10 +5,10 @@ using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
-using MLoop.Core.Prediction;
 using MLoop.Core.Diagnostics;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
+using MLoop.Core.Prediction;
 using MLoop.Core.Storage;
 using Spectre.Console;
 

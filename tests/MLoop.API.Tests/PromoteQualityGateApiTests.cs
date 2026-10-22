@@ -38,11 +38,18 @@ public class PromoteQualityGateApiTests : IClassFixture<TestWebApplicationFactor
             Task = "binary-classification",
             Config = new MLoop.CLI.Infrastructure.FileSystem.ExperimentConfig
             {
-                DataFile = "train.csv", LabelColumn = "y", Metric = "f1_score", TimeLimitSeconds = 60, TestSplit = 0.2,
+                DataFile = "train.csv",
+                LabelColumn = "y",
+                Metric = "f1_score",
+                TimeLimitSeconds = 60,
+                TestSplit = 0.2,
             },
             Metrics = new Dictionary<string, double>
             {
-                ["accuracy"] = 0.993, ["f1_score"] = 0, ["negative_recall"] = 1, ["auc"] = 0.95,
+                ["accuracy"] = 0.993,
+                ["f1_score"] = 0,
+                ["negative_recall"] = 1,
+                ["auc"] = 0.95,
             },
         }, CancellationToken.None);
 
@@ -65,11 +72,18 @@ public class PromoteQualityGateApiTests : IClassFixture<TestWebApplicationFactor
         await File.WriteAllTextAsync(Path.Combine(path, "model.zip"), "model");
         await store.SaveAsync("ranks", new MLoop.CLI.Infrastructure.FileSystem.ExperimentData
         {
-            ModelName = "ranks", ExperimentId = "exp-001", Timestamp = DateTime.UtcNow, Status = "Completed",
+            ModelName = "ranks",
+            ExperimentId = "exp-001",
+            Timestamp = DateTime.UtcNow,
+            Status = "Completed",
             Task = "binary-classification",
             Config = new MLoop.CLI.Infrastructure.FileSystem.ExperimentConfig
             {
-                DataFile = "train.csv", LabelColumn = "y", Metric = "auc", TimeLimitSeconds = 60, TestSplit = 0.2,
+                DataFile = "train.csv",
+                LabelColumn = "y",
+                Metric = "auc",
+                TimeLimitSeconds = 60,
+                TestSplit = 0.2,
             },
             Metrics = new Dictionary<string, double> { ["accuracy"] = 0.969, ["f1_score"] = 0, ["negative_recall"] = 1, ["auc"] = 0.968 },
         }, CancellationToken.None);
@@ -91,11 +105,18 @@ public class PromoteQualityGateApiTests : IClassFixture<TestWebApplicationFactor
             await File.WriteAllTextAsync(Path.Combine(path, "model.zip"), "model");
             await store.SaveAsync("rb", new MLoop.CLI.Infrastructure.FileSystem.ExperimentData
             {
-                ModelName = "rb", ExperimentId = id, Timestamp = DateTime.UtcNow, Status = "Completed",
+                ModelName = "rb",
+                ExperimentId = id,
+                Timestamp = DateTime.UtcNow,
+                Status = "Completed",
                 Task = "binary-classification",
                 Config = new MLoop.CLI.Infrastructure.FileSystem.ExperimentConfig
                 {
-                    DataFile = "train.csv", LabelColumn = "y", Metric = "auc", TimeLimitSeconds = 60, TestSplit = 0.2,
+                    DataFile = "train.csv",
+                    LabelColumn = "y",
+                    Metric = "auc",
+                    TimeLimitSeconds = 60,
+                    TestSplit = 0.2,
                 },
                 Metrics = new Dictionary<string, double> { ["accuracy"] = 0.9, ["f1_score"] = 0.88, ["negative_recall"] = 0.9, ["auc"] = 0.95 },
             }, CancellationToken.None);

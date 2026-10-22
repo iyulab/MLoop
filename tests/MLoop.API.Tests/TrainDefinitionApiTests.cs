@@ -106,7 +106,10 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         // No timeLimitSeconds in the request: mloop.yaml's 5 s decides, as an absent --time does.
         var response = await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = data, labelColumn = "y", task = "binary-classification", name = "wmerge",
+            dataFile = data,
+            labelColumn = "y",
+            task = "binary-classification",
+            name = "wmerge",
             additionalDataFiles = new[] { Path.Combine("datasets", "feedback.csv") },   // the project's relative path, as POST /samples answers
         });
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
@@ -145,7 +148,12 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var response = await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = data, labelColumn = "y", task = "binary-classification", name = "wreq", timeLimitSeconds = 5, weight = "w",
+            dataFile = data,
+            labelColumn = "y",
+            task = "binary-classification",
+            name = "wreq",
+            timeLimitSeconds = 5,
+            weight = "w",
         });
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
         var jobId = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("jobId").GetString();
@@ -168,7 +176,9 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         var data = WriteData();
         var missing = await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = data, labelColumn = "y", task = "binary-classification",
+            dataFile = data,
+            labelColumn = "y",
+            task = "binary-classification",
             additionalDataFiles = new[] { Path.Combine(_factory.TestProjectRoot, "datasets", "nope.csv") },
         });
         missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -176,7 +186,9 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var outside = await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = data, labelColumn = "y", task = "binary-classification",
+            dataFile = data,
+            labelColumn = "y",
+            task = "binary-classification",
             additionalDataFiles = new[] { Path.Combine(Path.GetTempPath(), "elsewhere.csv") },
         });
         outside.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -222,7 +234,12 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var response = await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = data, labelColumn = task == "regression" ? "x" : "y", task, name = "bref", balance, weight,
+            dataFile = data,
+            labelColumn = task == "regression" ? "x" : "y",
+            task,
+            name = "bref",
+            balance,
+            weight,
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -237,7 +254,12 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = data, labelColumn = "y", task = "binary-classification", name = "bal", timeLimitSeconds = 5, balance = "2",
+            dataFile = data,
+            labelColumn = "y",
+            task = "binary-classification",
+            name = "bal",
+            timeLimitSeconds = 5,
+            balance = "2",
         }));
 
         job.GetProperty("status").GetString().Should().Be("Completed", job.GetRawText());
@@ -256,7 +278,12 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = data, labelColumn = "y", task = "binary-classification", name = "nopro", timeLimitSeconds = 5, promote = false,
+            dataFile = data,
+            labelColumn = "y",
+            task = "binary-classification",
+            name = "nopro",
+            timeLimitSeconds = 5,
+            promote = false,
         }));
 
         job.GetProperty("status").GetString().Should().Be("Completed", job.GetRawText());
@@ -276,7 +303,11 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = data, labelColumn = "y", task = "binary-classification", name = "pro", timeLimitSeconds = 5,
+            dataFile = data,
+            labelColumn = "y",
+            task = "binary-classification",
+            name = "pro",
+            timeLimitSeconds = 5,
         }));
 
         job.GetProperty("status").GetString().Should().Be("Completed", job.GetRawText());
@@ -297,7 +328,12 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         {
             var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
             {
-                dataFile = data, labelColumn = "y", task = "binary-classification", name = "lst", timeLimitSeconds = 5, promote,
+                dataFile = data,
+                labelColumn = "y",
+                task = "binary-classification",
+                name = "lst",
+                timeLimitSeconds = 5,
+                promote,
             }));
             job.GetProperty("status").GetString().Should().Be("Completed", job.GetRawText());
         }
@@ -319,7 +355,11 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
 
         var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = data, labelColumn = "y", task = "binary-classification", name = "one", timeLimitSeconds = 5,
+            dataFile = data,
+            labelColumn = "y",
+            task = "binary-classification",
+            name = "one",
+            timeLimitSeconds = 5,
         }));
 
         job.GetProperty("status").GetString().Should().Be("Failed");

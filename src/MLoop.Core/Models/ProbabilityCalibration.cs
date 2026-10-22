@@ -384,21 +384,21 @@ public sealed record ProbabilityCalibration(
         switch (annotation.Type)
         {
             case VectorDataViewType { ItemType: TextDataViewType }:
-            {
-                VBuffer<ReadOnlyMemory<char>> value = default;
-                source.Annotations.GetValue(annotation.Name, ref value);
-                target.AddAnnotation(annotation.Name, value, annotation.Type);
-                break;
-            }
+                {
+                    VBuffer<ReadOnlyMemory<char>> value = default;
+                    source.Annotations.GetValue(annotation.Name, ref value);
+                    target.AddAnnotation(annotation.Name, value, annotation.Type);
+                    break;
+                }
             case VectorDataViewType { ItemType: NumberDataViewType n } when n == NumberDataViewType.Single:
-            {
-                VBuffer<float> value = default;
-                source.Annotations.GetValue(annotation.Name, ref value);
-                target.AddAnnotation(annotation.Name, value, annotation.Type);
-                break;
-            }
-            // Other annotations (score kind, column set) describe the trainer's output; the vocabulary
-            // does not read them, and a scored column without them still scores.
+                {
+                    VBuffer<float> value = default;
+                    source.Annotations.GetValue(annotation.Name, ref value);
+                    target.AddAnnotation(annotation.Name, value, annotation.Type);
+                    break;
+                }
+                // Other annotations (score kind, column set) describe the trainer's output; the vocabulary
+                // does not read them, and a scored column without them still scores.
         }
     }
 

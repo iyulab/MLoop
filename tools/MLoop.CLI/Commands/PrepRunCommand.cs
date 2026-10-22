@@ -2,9 +2,9 @@ using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Preprocessing;
+using MLoop.Core.Storage;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
-using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Commands;
 

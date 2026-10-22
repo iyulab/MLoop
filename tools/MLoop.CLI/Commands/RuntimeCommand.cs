@@ -1,7 +1,7 @@
 using System.CommandLine;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Runtime;
 using Spectre.Console;
-using MLoop.CLI.Infrastructure.Diagnostics;
 
 namespace MLoop.CLI.Commands;
 

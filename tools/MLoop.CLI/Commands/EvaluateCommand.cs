@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.CommandLine;
+using System.Globalization;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;

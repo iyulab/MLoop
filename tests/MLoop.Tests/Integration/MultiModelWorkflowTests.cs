@@ -1,5 +1,5 @@
-using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.FileSystem;
 
 namespace MLoop.Tests.Integration;
 

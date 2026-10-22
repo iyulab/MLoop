@@ -1,6 +1,6 @@
 using System.Globalization;
-using Spectre.Console;
 using MLoop.Core.Models;
+using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
 
@@ -47,8 +47,8 @@ public sealed class TrainingProgressTracker
             case TrainingPhase.MainStart:
                 _budgetSeconds = phaseEvent.FinalTimeSeconds;
                 break;
-            // ProbeConverged, ProbeFellBack and Complete end training; the budget they would
-            // switch to is never used.
+                // ProbeConverged, ProbeFellBack and Complete end training; the budget they would
+                // switch to is never used.
         }
     }
 

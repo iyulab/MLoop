@@ -1,6 +1,6 @@
 using DataLens.Models;
-using Spectre.Console;
 using MLoop.CLI.Infrastructure.Display;
+using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
 

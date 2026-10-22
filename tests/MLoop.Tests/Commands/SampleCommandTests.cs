@@ -1,5 +1,5 @@
-using MLoop.CLI.Infrastructure.ML;
 using MLoop.CLI.Commands;
+using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using MLoop.DataStore.Interfaces;
 

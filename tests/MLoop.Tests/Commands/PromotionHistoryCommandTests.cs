@@ -34,7 +34,10 @@ public sealed class PromotionHistoryCommandTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(path, "model.zip"), "model");
         await store.SaveAsync("default", new ExperimentData
         {
-            ModelName = "default", ExperimentId = experimentId, Timestamp = DateTime.UtcNow, Status = "Completed",
+            ModelName = "default",
+            ExperimentId = experimentId,
+            Timestamp = DateTime.UtcNow,
+            Status = "Completed",
             Task = "regression",
             Config = new ExperimentConfig { DataFile = "train.csv", LabelColumn = "y", Metric = "r_squared", TimeLimitSeconds = 10, TestSplit = 0.2 },
             Metrics = new Dictionary<string, double> { ["r_squared"] = rSquared },

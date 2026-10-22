@@ -4,8 +4,8 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
 using MLoop.Core.Prediction;
-using Spectre.Console;
 using MLoop.Core.Storage;
+using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
 

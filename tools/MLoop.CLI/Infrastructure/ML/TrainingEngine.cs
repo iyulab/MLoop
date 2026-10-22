@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.AutoML;
 using MLoop.Core.Contracts;
@@ -12,7 +13,6 @@ using MLoop.Core.Hooks;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
 using MLoop.Core.Storage;
-using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
@@ -337,7 +337,11 @@ public class TrainingEngine : ITrainingEngine
                 // pre-training summary and the first completed trial.
                 progress?.Report(new TrainingProgress
                 {
-                    TrialNumber = 0, TrainerName = "", Metric = 0, MetricName = "", ElapsedSeconds = 0,
+                    TrialNumber = 0,
+                    TrainerName = "",
+                    Metric = 0,
+                    MetricName = "",
+                    ElapsedSeconds = 0,
                     Phase = TrainingPhase.MainStart,
                     FinalTimeSeconds = config.TimeLimitSeconds
                 });
@@ -352,7 +356,10 @@ public class TrainingEngine : ITrainingEngine
             // after this, so a consumer can tell "still training" from "finalizing".
             progress?.Report(new TrainingProgress
             {
-                TrialNumber = autoMLResult.Trials.Count, TrainerName = "", Metric = 0, MetricName = "",
+                TrialNumber = autoMLResult.Trials.Count,
+                TrainerName = "",
+                Metric = 0,
+                MetricName = "",
                 ElapsedSeconds = stopwatch.Elapsed.TotalSeconds,
                 Phase = TrainingPhase.Complete
             });
@@ -576,7 +583,11 @@ public class TrainingEngine : ITrainingEngine
         var probeTrialCount = 0;
         progress?.Report(new TrainingProgress
         {
-            TrialNumber = 0, TrainerName = "", Metric = 0, MetricName = "", ElapsedSeconds = 0,
+            TrialNumber = 0,
+            TrainerName = "",
+            Metric = 0,
+            MetricName = "",
+            ElapsedSeconds = 0,
             Phase = TrainingPhase.ProbeStart,
             ProbeTimeSeconds = probeTime
         });
@@ -616,7 +627,11 @@ public class TrainingEngine : ITrainingEngine
         {
             progress?.Report(new TrainingProgress
             {
-                TrialNumber = probeTrialCount, TrainerName = "", Metric = bestMetric, MetricName = "", ElapsedSeconds = 0,
+                TrialNumber = probeTrialCount,
+                TrainerName = "",
+                Metric = bestMetric,
+                MetricName = "",
+                ElapsedSeconds = 0,
                 Phase = TrainingPhase.ProbeFellBack,
                 ProbeTimeSeconds = probeTime
             });
@@ -628,7 +643,11 @@ public class TrainingEngine : ITrainingEngine
         {
             progress?.Report(new TrainingProgress
             {
-                TrialNumber = probeTrialCount, TrainerName = "", Metric = bestMetric, MetricName = "", ElapsedSeconds = 0,
+                TrialNumber = probeTrialCount,
+                TrainerName = "",
+                Metric = bestMetric,
+                MetricName = "",
+                ElapsedSeconds = 0,
                 Phase = TrainingPhase.ProbeConverged,
                 ProbeTimeSeconds = probeTime
             });
@@ -637,7 +656,11 @@ public class TrainingEngine : ITrainingEngine
 
         progress?.Report(new TrainingProgress
         {
-            TrialNumber = probeTrialCount, TrainerName = "", Metric = bestMetric, MetricName = "", ElapsedSeconds = 0,
+            TrialNumber = probeTrialCount,
+            TrainerName = "",
+            Metric = bestMetric,
+            MetricName = "",
+            ElapsedSeconds = 0,
             Phase = TrainingPhase.ProbeComplete,
             ProbeTimeSeconds = probeTime,
             FinalTimeSeconds = finalTime
@@ -826,7 +849,8 @@ public class TrainingEngine : ITrainingEngine
         {
             var sample = await MLoop.Core.Monitoring.DriftProfile.SampleCsvAsync(dataFilePath, cancellationToken: cancellationToken);
             var profile = MLoop.Core.Monitoring.DriftProfile.Of(sample, inputSchema)
-                with { Prediction = AnswerProfile(sample, inputSchema, config, modelPath) };
+                with
+            { Prediction = AnswerProfile(sample, inputSchema, config, modelPath) };
             if (profile.Features.Count == 0 && profile.Texts is not { Count: > 0 } && profile.Prediction is null)
                 return;
             await _fileSystem.WriteJsonAsync(
