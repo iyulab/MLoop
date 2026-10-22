@@ -526,7 +526,7 @@ public partial class AutoMLRunner
     }
 
     private static readonly string[] WeightedBinaryKeys =
-        ["accuracy", "precision", "recall", "negative_recall", "f1_score", "auc", "auprc", "ece"];
+        ["accuracy", "precision", "recall", "negative_precision", "negative_recall", "f1_score", "auc", "auprc", "ece"];
     private static readonly string[] WeightedMulticlassKeys =
         ["micro_accuracy", "macro_accuracy", "log_loss", "log_loss_reduction", "macro_f1", "ece"];
     private static readonly string[] WeightedRegressionKeys = ["r_squared", "rmse", "mae", "mse"];

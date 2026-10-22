@@ -48,6 +48,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A weighted run could report an unweighted `negative_precision` beside weighted metrics. When no row was
+  predicted negative, the weighted value is undefined and the unweighted one stayed under the same name; it is now
+  left out, as the other undefined weighted metrics are.
 - `mloop export onnx`: the manifest's `label.decision` left out a calibration (`mloop calibrate`) — it called the
   graph's probability "calibrated" and, with a threshold, told the consumer to compare it directly — so a consumer
   following it answered differently from `mloop predict`. The sentence now gives the whole rule in `mloop predict`'s
