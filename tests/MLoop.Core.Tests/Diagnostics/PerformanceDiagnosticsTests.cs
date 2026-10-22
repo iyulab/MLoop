@@ -715,8 +715,7 @@ public class PerformanceDiagnosticsTests
     {
         var result = _diagnostics.Analyze(task, new Dictionary<string, double> { [metric] = value }, rowCount: 1628);
 
-        Assert.Contains(result.Warnings, w => w.Contains("Near-perfect on held-out rows"));
-        Assert.Contains(result.Suggestions, s => s.Contains("computed from the label"));
+        Assert.Contains(result.Warnings, w => w.Contains("Near-perfect on held-out rows") && w.Contains("computed from the label"));
     }
 
     [Fact]

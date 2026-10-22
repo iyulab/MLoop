@@ -1075,6 +1075,9 @@ curl -X POST http://localhost:5000/predict \
   `POST /promote`. The completed job says which: `promoted`, and `keptInStagingReason` when it stayed in staging (the
   quality gate, the gate policy, production as good or better, a post-train hook, or `"promote": false`). The job
   reads `Completed` only after that decision, so production is in place by the time a poller sees it
+- The completed job's `warnings` are the performance diagnostics `mloop train` prints and reports as `--json`
+  warning events — a held-out score near-perfect on 500 rows or more (check for a leaked column), an accuracy that
+  hides one class; an empty list when there are none
 - Swagger/OpenAPI documentation at `/swagger`
 - Single and batch predictions
 - JSON request/response format

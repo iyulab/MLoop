@@ -296,6 +296,36 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AJobWithANearPerfectScore_CarriesTheDiagnosticsWarning()
+    {
+        // The label is the feature crossing a line: held out perfectly, on enough rows to mean something.
+        var path = Path.Combine(_factory.TestProjectRoot, "datasets", "leak.csv");
+        var random = new Random(5);
+        var lines = new List<string> { "x,noise,y" };
+        for (var i = 0; i < 800; i++)
+        {
+            var x = random.NextDouble();
+            lines.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{x:F4},{random.NextDouble():F4},{(x > 0.5 ? 1 : 0)}"));
+        }
+        File.WriteAllLines(path, lines);
+        WriteYaml("leak", "    task: binary-classification\n    label: y\n");
+
+        var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train", new
+        {
+            dataFile = path,
+            labelColumn = "y",
+            task = "binary-classification",
+            name = "leak",
+            timeLimitSeconds = 5,
+            promote = false,
+        }));
+
+        job.GetProperty("status").GetString().Should().Be("Completed", job.GetRawText());
+        job.GetProperty("warnings").EnumerateArray().Select(w => w.GetString())
+            .Should().Contain(w => w!.Contains("Near-perfect on held-out rows"), job.GetRawText());
+    }
+
+    [Fact]
     public async Task AJob_PromotesByDefault_AndTheCompletedJobSaysItWas()
     {
         var data = WriteImbalanced("promote.csv", 60);

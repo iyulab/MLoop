@@ -1757,7 +1757,8 @@ try
             metrics = job.Metrics,
             bestTrainer = job.BestTrainer,
             promoted = job.Promoted,
-            keptInStagingReason = job.KeptInStagingReason
+            keptInStagingReason = job.KeptInStagingReason,
+            warnings = job.Warnings
         });
     })
     .WithName("GetJobStatus")

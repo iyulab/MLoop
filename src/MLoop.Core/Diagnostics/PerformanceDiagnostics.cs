@@ -122,8 +122,8 @@ public class PerformanceDiagnostics
         if (metric is null || !TryMetric(result.Metrics, metric, out var value) || value < NearPerfectScore)
             return;
 
-        result.Warnings.Add($"Near-perfect on held-out rows ({metric} {value:F4})");
-        result.Suggestions.Add("Check that no feature is computed from the label or recorded after it — a leaked column scores like this and is missing from new data");
+        result.Warnings.Add($"Near-perfect on held-out rows ({metric} {value:F4}) — check that no feature is computed " +
+            "from the label or recorded after it: a leaked column scores like this and is missing from new data");
     }
 
     /// <summary>

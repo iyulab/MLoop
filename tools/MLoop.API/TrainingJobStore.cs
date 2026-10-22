@@ -110,7 +110,8 @@ public class TrainingJobStore
         }
     }
 
-    public void SetResult(string jobId, string experimentId, Dictionary<string, double>? metrics, string? bestTrainer)
+    public void SetResult(string jobId, string experimentId, Dictionary<string, double>? metrics, string? bestTrainer,
+        IReadOnlyList<string>? warnings = null)
     {
         if (_jobs.TryGetValue(jobId, out var job))
         {
@@ -119,6 +120,7 @@ public class TrainingJobStore
                 job.ExperimentId = experimentId;
                 job.Metrics = metrics;
                 job.BestTrainer = bestTrainer;
+                job.Warnings = warnings ?? [];
                 Save(job);
             }
         }
@@ -213,6 +215,12 @@ public class TrainingJob
     public bool? Promoted { get; set; }
     /// <summary>Why the experiment stayed in staging, when it did.</summary>
     public string? KeptInStagingReason { get; set; }
+    /// <summary>
+    /// The performance diagnostics' warnings about the trained model — the ones <c>mloop train</c> prints
+    /// and reports as <c>--json</c> warning events (a near-perfect held-out score that may be a leak, an
+    /// accuracy that hides a class). Empty when there are none; <c>null</c> until the job has a result.
+    /// </summary>
+    public IReadOnlyList<string>? Warnings { get; set; }
 }
 
 /// <summary>A <c>POST /train</c> body.</summary>

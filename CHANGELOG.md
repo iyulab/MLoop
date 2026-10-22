@@ -116,6 +116,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   know its length. Both are fixed, and a new warning says when a held-out score is near-perfect on 500 rows or more
   (`r_squared`, `auc` or `macro_accuracy` ≥ 0.999): check that no feature is computed from the label or recorded
   after it.
+- The performance diagnostics' warnings reached only a person at the terminal: a `--json` run now reports each as a
+  `warning` event, and a `POST /train` job carries them as `warnings` (`GET /jobs/{id}`).
 - **Each column dropped from the features was announced twice** during `mloop train`; it is announced once, with
   what the reason means (`Excluded from features (Identifier): customerID — a distinct value in every row`).
 - **`mloop init .` replaced a project's own `mloop.yaml`, README and `.gitignore` with the template** — in a cloned

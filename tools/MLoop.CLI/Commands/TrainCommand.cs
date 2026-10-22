@@ -1008,6 +1008,11 @@ public static class TrainCommand
 
             TrainPresenter.DisplayDiagnostics(diagnosticResult);
 
+            // The block above is narration, silent in machine mode; its warnings are not. A --json
+            // consumer gets each as a warning event, as it gets every other warning of the run.
+            foreach (var warning in diagnosticResult.Warnings)
+                MachineOutputScope.ReportWarning(Markup.Escape(warning));
+
             // A post-train hook that refused the model keeps it from being promoted automatically.
             if (!noPromote && result.HookRefusal is { } hookRefusal)
             {
