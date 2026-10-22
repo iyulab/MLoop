@@ -26,6 +26,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   AutoML's does not. `TrainingProgress.Error` carries it in process.
 - `AutoMLResult.Search`: the seed and thread count MLoop's own trainer search ran with, recorded as `search` in
   the experiment's `config.json` — what repeats the run.
+- `ColumnLayoutInference.Infer` (`MLoop.Core.Data`): the column layout of a delimited file with a header — the
+  `TextLoader.Options` (separator, quoting, columns, numeric columns folded into one vector) and each loaded
+  column's purpose (`ColumnLayout`). It gives the layout ML.NET AutoML's `InferColumns` gives, field for field,
+  except that a file over 8 MB is sampled from fixed positions (the same file always gives the same layout) and no
+  column is read as an image path. Not used by training yet.
 
 ### Changed
 

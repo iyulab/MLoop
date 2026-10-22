@@ -114,5 +114,5 @@ label: label
 numeric: Features
 
 ## header-only (label: label)
-throws InferenceException: Unable to infer column types of the file provided.
+throws: Unable to infer column types of the file provided.
 
