@@ -612,6 +612,7 @@ public partial class AutoMLRunner
             RowCount = RowsIn(trainSet),
             Trials = records,
             RankingMetric = metric,
+            ValidationScore = search.BestValidation.Mean.TryGetValue(metric, out var validation) ? validation : null,
             Search = request.Settings
         };
     }
@@ -2246,6 +2247,13 @@ public record AutoMLResult
     /// metric scripts are computed over after training. Null where a task has no such partition.
     /// </summary>
     public IDataView? EvaluationData { get; init; }
+
+    /// <summary>
+    /// The kept trial's score on <see cref="RankingMetric"/> over its validation folds (or holdout) — what the search
+    /// chose the model by, measured on the training partition. Null where no search ran. Unlike <see cref="Metrics"/>
+    /// (the test partition, which the run reports), it may be compared to choose between two runs.
+    /// </summary>
+    public double? ValidationScore { get; init; }
 }
 
 /// <summary>

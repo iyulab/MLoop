@@ -630,12 +630,16 @@ public class TrainingEngine : ITrainingEngine
 
         var probeAutoMLResult = await _autoMLRunner.RunAsync(probeConfig, probeProgress, cancellationToken);
 
-        // Determine best metric from probe
-        var bestMetric = GetPrimaryMetricValue(probeAutoMLResult.Metrics, config.CanonicalMetric, config.Task);
+        // The probe's outcome as the search judged it — its validation score. The test partition is what the
+        // run reports; reading it here (to stop early, or to pick the probe over the main model) let the reported
+        // score choose its own model.
+        var (bestMetric, higherIsBetter) = SelectionScore(probeAutoMLResult, config);
 
         var probe = new ProbeResult
         {
-            BestMetric = bestMetric,
+            // The multiplier reads a score in [0, 1] where higher is better; for an error metric (rmse) the
+            // static estimate stands (0.9 → ×1.0) rather than an error of 13,000 reading as "converged".
+            BestMetric = higherIsBetter ? bestMetric : 0.9,
             ProbeTimeSeconds = probeTime,
             TrialsCompleted = probeTrialCount
         };
@@ -664,7 +668,7 @@ public class TrainingEngine : ITrainingEngine
         }
 
         // Phase 2: Main Training (only if not already converged)
-        if (bestMetric > 0.95)
+        if (higherIsBetter && bestMetric > 0.95)
         {
             progress?.Report(new TrainingProgress
             {
@@ -696,14 +700,22 @@ public class TrainingEngine : ITrainingEngine
 
         var mainResult = await _autoMLRunner.RunAsync(mainConfig, progress, cancellationToken);
 
-        // Pick best between probe and main
-        var mainMetric = GetPrimaryMetricValue(mainResult.Metrics, config.CanonicalMetric, config.Task);
-        if (mainMetric >= bestMetric)
-        {
-            return mainResult;
-        }
+        // The better of probe and main by validation score — the same rows for both (one seed, one partition).
+        var (mainMetric, _) = SelectionScore(mainResult, config);
+        return (higherIsBetter ? mainMetric >= bestMetric : mainMetric <= bestMetric) ? mainResult : probeAutoMLResult;
+    }
 
-        return probeAutoMLResult;
+    /// <summary>
+    /// A run's score for auto-time to judge it by, and its direction: the kept trial's validation score on the
+    /// ranking metric (<see cref="AutoMLResult.ValidationScore"/>) — or, where no search ran, the test-partition
+    /// value of the task's primary metric, the only score such a run has.
+    /// </summary>
+    internal static (double Value, bool HigherIsBetter) SelectionScore(AutoMLResult result, TrainingConfig config)
+    {
+        if (result.ValidationScore is { } validation && result.RankingMetric is { } ranked)
+            return (validation, !MetricDirection.IsLowerBetter(ranked));
+        return (GetPrimaryMetricValue(result.Metrics, config.CanonicalMetric, config.Task),
+            !MetricDirection.IsLowerBetter(config.CanonicalMetric));
     }
 
     /// <summary>

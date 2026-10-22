@@ -103,6 +103,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Auto-time (`mloop train` without `--time`) judges its probe by the search's validation score, not the test
+  partition's: whether the probe has converged (score above 0.95), and whether the probe's model or the main run's is
+  kept. Reading the test score let the score the run reported choose its own model. It also read an error metric
+  (rmse, mae) as if higher were better — an rmse of 13,000 counted as "converged", and the worse of the two runs was
+  kept. A run whose validation score is below 0.95 now goes on to main training where its test score once stopped it.
 - `POST /predict` (and `PredictionService.Predict` in process) matches a row's fields to the model's columns ignoring
   case. A body whose keys differ in case from the columns — `x1` for `X1`, as a serializer with camelCase names
   writes them — passed the check that a row shares a column with the model, and then every one of its values was
