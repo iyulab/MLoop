@@ -23,19 +23,49 @@ public class RuntimeManager
     }
 
     /// <summary>
-    /// Checks if a runtime is installed (cached) for the current platform
+    /// Checks if the runtime is installed for the current platform <em>at the version MLoop needs</em>.
+    /// Native libraries of another version count as not installed: the managed half binds to the
+    /// native API of its own version, and an older native library makes the first call fail.
     /// </summary>
     public bool IsInstalled(RuntimeDefinition runtime)
     {
         var rid = PlatformDetector.GetRuntimeIdentifier();
-        var runtimeDir = GetRuntimeDir(runtime, rid);
+        if (!HasNativeLibraries(runtime, rid))
+            return false;
+        var installed = InstalledVersion(runtime, rid);
+        return installed is null || installed == runtime.Version;
+    }
 
+    /// <summary>
+    /// The version recorded when the runtime was installed, or null when nothing was recorded.
+    /// </summary>
+    /// <remarks>
+    /// A directory without a manifest (assembled by hand, or left by an install that stopped before
+    /// writing it) has no recorded version; its libraries are trusted rather than downloaded again.
+    /// </remarks>
+    public string? InstalledVersion(RuntimeDefinition runtime) =>
+        InstalledVersion(runtime, PlatformDetector.GetRuntimeIdentifier());
+
+    private string? InstalledVersion(RuntimeDefinition runtime, string rid)
+    {
+        var manifestPath = Path.Combine(GetRuntimeDir(runtime, rid), ManifestFileName);
+        if (!File.Exists(manifestPath))
+            return null;
+        var lines = File.ReadAllLines(manifestPath);
+        return lines.Length > 1 && !string.IsNullOrWhiteSpace(lines[1]) ? lines[1].Trim() : null;
+    }
+
+    private bool HasNativeLibraries(RuntimeDefinition runtime, string rid)
+    {
         if (!runtime.NativeLibraries.TryGetValue(rid, out var expectedLibs))
             return false;
 
+        var runtimeDir = GetRuntimeDir(runtime, rid);
         return expectedLibs.Length > 0 && expectedLibs.All(lib =>
             File.Exists(Path.Combine(runtimeDir, lib)));
     }
+
+    private const string ManifestFileName = "manifest.txt";
 
     /// <summary>
     /// Gets installed runtime info (version, size, path)
@@ -58,6 +88,7 @@ public class RuntimeManager
         {
             Runtime = runtime,
             Installed = installed,
+            InstalledVersion = HasNativeLibraries(runtime, rid) ? InstalledVersion(runtime, rid) : null,
             Path = runtimeDir,
             SizeBytes = sizeBytes,
             RuntimeIdentifier = rid
@@ -99,6 +130,11 @@ public class RuntimeManager
             return;
         }
 
+        // Libraries present but not installed means another version's files: replace them whole, so
+        // no library of the old version is left beside the new ones.
+        if (HasNativeLibraries(runtime, rid))
+            Directory.Delete(runtimeDir, recursive: true);
+
         Directory.CreateDirectory(runtimeDir);
 
         // Phase 1: Resolve NuGet package URL
@@ -139,18 +175,18 @@ public class RuntimeManager
                 Message = "Verifying installation..."
             });
 
-            if (!IsInstalled(runtime))
+            if (!HasNativeLibraries(runtime, rid))
             {
                 // Try extracting from root (some packages don't use runtimes/ structure)
                 ExtractNativeLibraries(tempFile, runtimeDir, "");
             }
 
-            if (!IsInstalled(runtime))
+            if (!HasNativeLibraries(runtime, rid))
                 throw new InvalidOperationException($"Installation verification failed. Expected native libraries not found in {runtimeDir}");
 
             // Write manifest
             var manifest = $"{runtime.Id}\n{runtime.Version}\n{rid}\n{DateTime.UtcNow:O}";
-            await File.WriteAllTextAsync(Path.Combine(runtimeDir, "manifest.txt"), manifest, cancellationToken).ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Combine(runtimeDir, ManifestFileName), manifest, cancellationToken).ConfigureAwait(false);
 
             progress?.Report(new RuntimeDownloadProgress
             {
@@ -393,6 +429,16 @@ public class RuntimeStatus
 {
     public required RuntimeDefinition Runtime { get; init; }
     public required bool Installed { get; init; }
+
+    /// <summary>
+    /// The version found on disk, when libraries are present and a version was recorded. With
+    /// <see cref="Installed"/> false it names the version that needs replacing.
+    /// </summary>
+    public string? InstalledVersion { get; init; }
+
+    /// <summary>Libraries of another version are on disk — reinstalling replaces them.</summary>
+    public bool NeedsReinstall => !Installed && InstalledVersion is not null;
+
     public required string Path { get; init; }
     public required long SizeBytes { get; init; }
     public required string RuntimeIdentifier { get; init; }

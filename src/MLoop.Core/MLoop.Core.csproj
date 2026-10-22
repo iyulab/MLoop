@@ -17,6 +17,14 @@
     <PackageReference Include="Microsoft.ML" />
     <PackageReference Include="Microsoft.ML.AutoML" />
     <PackageReference Include="Microsoft.ML.OnnxConverter" />
+    <!-- Trainers, transforms and the ONNX Runtime managed API this assembly calls by name —
+         declared rather than inherited from Microsoft.ML.AutoML, which is being retired. -->
+    <PackageReference Include="Microsoft.ML.FastTree" />
+    <PackageReference Include="Microsoft.ML.LightGbm" />
+    <PackageReference Include="Microsoft.ML.TimeSeries" />
+    <PackageReference Include="Microsoft.ML.Recommender" />
+    <PackageReference Include="Microsoft.ML.ImageAnalytics" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" />
     <PackageReference Include="CsvHelper" />

@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace MLoop.Core.Runtime;
@@ -73,8 +74,9 @@ public static class RuntimeRegistry
 
     /// <summary>
     /// ONNX Runtime, for checking an exported graph against the model it came from
-    /// (<c>mloop export onnx --verify</c>). The managed half already ships with MLoop (through
-    /// ML.NET AutoML); only the native library is downloaded.
+    /// (<c>mloop export onnx --verify</c>). The managed half ships with MLoop; only the native
+    /// library is downloaded, at the version of the managed assembly actually loaded — the managed
+    /// half asks the native one for its own API version, so the two must match exactly.
     /// </summary>
     public static readonly RuntimeDefinition OnnxRuntime = new()
     {
@@ -90,9 +92,7 @@ public static class RuntimeRegistry
             ["osx-x64"] = "Microsoft.ML.OnnxRuntime",
             ["osx-arm64"] = "Microsoft.ML.OnnxRuntime",
         },
-        // Must match the Microsoft.ML.OnnxRuntime.Managed that ML.NET AutoML brings in (the managed
-        // half binds to this native version's API).
-        Version = "1.23.2",
+        Version = ManagedOnnxRuntimeVersion(),
         NativeLibraries = new Dictionary<string, string[]>
         {
             ["win-x64"] = ["onnxruntime.dll"],
@@ -116,6 +116,22 @@ public static class RuntimeRegistry
     };
 
     public static IReadOnlyList<RuntimeDefinition> All { get; } = [TensorFlow, Torch, OnnxRuntime];
+
+    /// <summary>
+    /// The version of the ONNX Runtime managed assembly MLoop runs with, read from its informational
+    /// version (<c>1.31.0+&lt;commit&gt;</c>). A literal here once had to be kept equal to a package
+    /// version by hand, and the package that set it was a transitive one nobody had declared.
+    /// </summary>
+    internal static string ManagedOnnxRuntimeVersion()
+    {
+        var informational = typeof(Microsoft.ML.OnnxRuntime.OrtEnv).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var version = informational?.Split('+')[0];
+        return !string.IsNullOrWhiteSpace(version)
+            ? version
+            : throw new InvalidOperationException(
+                "The ONNX Runtime managed assembly carries no informational version; the native runtime to download cannot be chosen.");
+    }
 
     public static RuntimeDefinition? GetById(string id) =>
         All.FirstOrDefault(r => r.Id.Equals(id, StringComparison.OrdinalIgnoreCase));

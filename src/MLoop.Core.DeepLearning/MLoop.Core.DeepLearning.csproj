@@ -6,7 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.ML" />
-    <PackageReference Include="Microsoft.ML.AutoML" />
     <PackageReference Include="Microsoft.ML.TorchSharp" />
     <PackageReference Include="Microsoft.ML.Vision" />
   </ItemGroup>

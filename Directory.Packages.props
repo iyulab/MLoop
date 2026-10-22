@@ -9,6 +9,17 @@
     <PackageVersion Include="Microsoft.ML" Version="5.0.1" />
     <PackageVersion Include="Microsoft.ML.AutoML" Version="0.23.1" />
     <PackageVersion Include="Microsoft.ML.OnnxConverter" Version="0.23.1" />
+    <!-- Components MLoop.Core calls directly. They used to arrive only through Microsoft.ML.AutoML,
+         so nothing in the graph said MLoop needed them; declared here they survive that package. -->
+    <PackageVersion Include="Microsoft.ML.FastTree" Version="5.0.1" />
+    <PackageVersion Include="Microsoft.ML.LightGbm" Version="5.0.1" />
+    <PackageVersion Include="Microsoft.ML.TimeSeries" Version="5.0.1" />
+    <PackageVersion Include="Microsoft.ML.Recommender" Version="0.23.1" />
+    <PackageVersion Include="Microsoft.ML.ImageAnalytics" Version="5.0.1" />
+    <!-- The managed half of ONNX Runtime ships with MLoop; `mloop runtime install onnxruntime`
+         downloads the native half at the same version (RuntimeRegistry.OnnxRuntime reads it from
+         the loaded assembly). The test project's full package must stay on this version too. -->
+    <PackageVersion Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.31.0" />
     <!-- Test-only: runs exported graphs to prove they answer what the ML.NET model answers. -->
     <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
     <PackageVersion Include="Microsoft.ML.TorchSharp" Version="0.23.1" />

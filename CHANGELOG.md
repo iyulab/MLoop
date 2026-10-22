@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- ONNX Runtime moves to 1.31.0 (from 1.23.2). `mloop export onnx --verify` needs the native library at the same
+  version, so an installed 1.23.2 runtime now reads as needing reinstall: `mloop runtime list` shows the version on
+  disk and the one needed, `--verify` says so, and `mloop runtime install onnxruntime` replaces it.
+- `MLoop.Core` declares the ML.NET components it calls — FastTree, LightGbm, TimeSeries, Recommender, ImageAnalytics
+  and the ONNX Runtime managed API — instead of receiving them only through `Microsoft.ML.AutoML`. An in-process
+  consumer gets the same assemblies; the package's dependency list now names them.
+
+### Fixed
+
+- `mloop runtime install` and every runtime check counted native libraries of any version as installed. A runtime
+  is installed only at the version this mloop needs; reinstalling over another version replaces its files.
+
 ## [0.42.0] - 2026-10-22
 
 ### Added

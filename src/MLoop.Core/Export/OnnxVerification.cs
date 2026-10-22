@@ -62,8 +62,12 @@ public static class OnnxVerification
         if (NativeLibraryPath() is null)
         {
             var runtime = RuntimeRegistry.OnnxRuntime;
-            return $"ONNX Runtime's native library is not installed. Install it with: mloop runtime install {runtime.Id} "
-                   + $"(~{runtime.ApproximateSizeMB} MB download)";
+            var status = new RuntimeManager().GetStatus(runtime);
+            return status.NeedsReinstall
+                ? $"ONNX Runtime {status.InstalledVersion} is installed, but this mloop needs {runtime.Version}. "
+                  + $"Install it again with: mloop runtime install {runtime.Id} (~{runtime.ApproximateSizeMB} MB download)"
+                : $"ONNX Runtime's native library is not installed. Install it with: mloop runtime install {runtime.Id} "
+                  + $"(~{runtime.ApproximateSizeMB} MB download)";
         }
 
         RegisterRuntimeResolver();

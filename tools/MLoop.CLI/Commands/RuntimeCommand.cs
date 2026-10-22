@@ -56,7 +56,9 @@ public static class RuntimeCommand
             {
                 var statusText = status.Installed
                     ? "[green]Installed[/]"
-                    : $"[dim]Not installed (~{runtime.ApproximateSizeMB}MB)[/]";
+                    : status.NeedsReinstall
+                        ? $"[yellow]{Markup.Escape(status.InstalledVersion!)} on disk, needs {Markup.Escape(runtime.Version)} — run install again[/]"
+                        : $"[dim]Not installed (~{runtime.ApproximateSizeMB}MB)[/]";
 
                 var sizeText = status.Installed
                     ? $"{status.SizeBytes / (1024 * 1024)}MB"
@@ -81,6 +83,8 @@ public static class RuntimeCommand
                         s.Runtime.Id,
                         s.Runtime.DisplayName,
                         s.Status.Installed,
+                        s.Status.InstalledVersion,
+                        RequiredVersion = s.Runtime.Version,
                         SizeBytes = s.Status.Installed ? s.Status.SizeBytes : (long?)null,
                         s.Runtime.ApproximateSizeMB,
                         s.Runtime.RequiredByTasks
