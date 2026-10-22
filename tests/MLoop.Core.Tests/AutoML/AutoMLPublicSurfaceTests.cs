@@ -70,7 +70,7 @@ public class AutoMLPublicSurfaceTests
     public sealed class Hidden
     {
         internal Microsoft.ML.AutoML.ColumnInformation? Internal() => null;
-        private Microsoft.ML.AutoML.ColumnInformation? _private;
+        private readonly Microsoft.ML.AutoML.ColumnInformation? _private = null;
         public bool HasInfo => _private is not null;
     }
 
