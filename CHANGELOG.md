@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-10-22
+
 ### Added
 
 - NER models report `entity_precision`, `entity_recall` and `entity_f1` beside the word accuracies, in training
