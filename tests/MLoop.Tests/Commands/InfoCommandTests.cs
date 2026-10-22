@@ -1,5 +1,5 @@
-using Microsoft.ML.AutoML;
 using MLoop.CLI.Commands;
+using MLoop.Core.Data;
 
 namespace MLoop.Tests.Commands;
 
@@ -24,9 +24,7 @@ public class InfoCommandTests : IDisposable
     [Fact]
     public void GetColumnPurpose_LabelColumn_ReturnsLabel()
     {
-        var colInfo = new ColumnInformation { LabelColumnName = "target" };
-
-        var result = InfoCommand.GetColumnPurpose("target", colInfo, "Numeric");
+        var result = InfoCommand.GetColumnPurpose("target", "target", [new("target", ColumnLayoutPurpose.Label)], "Numeric");
 
         Assert.Contains("Label", result);
     }
@@ -34,10 +32,7 @@ public class InfoCommandTests : IDisposable
     [Fact]
     public void GetColumnPurpose_IgnoredColumn_ReturnsIgnored()
     {
-        var colInfo = new ColumnInformation();
-        colInfo.IgnoredColumnNames.Add("id");
-
-        var result = InfoCommand.GetColumnPurpose("id", colInfo, "Numeric");
+        var result = InfoCommand.GetColumnPurpose("id", null, [new("id", ColumnLayoutPurpose.Ignore)], "Numeric");
 
         Assert.Contains("Ignored", result);
     }
@@ -45,9 +40,7 @@ public class InfoCommandTests : IDisposable
     [Fact]
     public void GetColumnPurpose_TextDataType_ReturnsTextFeature()
     {
-        var colInfo = new ColumnInformation();
-
-        var result = InfoCommand.GetColumnPurpose("description", colInfo, "Text");
+        var result = InfoCommand.GetColumnPurpose("description", null, [], "Text");
 
         Assert.Contains("Text Feature", result);
     }
@@ -55,10 +48,7 @@ public class InfoCommandTests : IDisposable
     [Fact]
     public void GetColumnPurpose_CategoricalColumn_ReturnsCategorical()
     {
-        var colInfo = new ColumnInformation();
-        colInfo.CategoricalColumnNames.Add("color");
-
-        var result = InfoCommand.GetColumnPurpose("color", colInfo, "Text/Categorical");
+        var result = InfoCommand.GetColumnPurpose("color", null, [new("color", ColumnLayoutPurpose.Categorical)], "Text/Categorical");
 
         Assert.Contains("Categorical Feature", result);
     }
@@ -66,10 +56,7 @@ public class InfoCommandTests : IDisposable
     [Fact]
     public void GetColumnPurpose_NumericColumn_ReturnsNumeric()
     {
-        var colInfo = new ColumnInformation();
-        colInfo.NumericColumnNames.Add("x1");
-
-        var result = InfoCommand.GetColumnPurpose("x1", colInfo, "Numeric");
+        var result = InfoCommand.GetColumnPurpose("x1", null, [new("x1", ColumnLayoutPurpose.Numeric)], "Numeric");
 
         Assert.Contains("Numeric Feature", result);
     }
@@ -77,9 +64,7 @@ public class InfoCommandTests : IDisposable
     [Fact]
     public void GetColumnPurpose_BooleanType_ReturnsNumeric()
     {
-        var colInfo = new ColumnInformation();
-
-        var result = InfoCommand.GetColumnPurpose("flag", colInfo, "Boolean");
+        var result = InfoCommand.GetColumnPurpose("flag", null, [], "Boolean");
 
         Assert.Contains("Numeric Feature", result);
     }
@@ -87,9 +72,7 @@ public class InfoCommandTests : IDisposable
     [Fact]
     public void GetColumnPurpose_UnknownType_ReturnsFeature()
     {
-        var colInfo = new ColumnInformation();
-
-        var result = InfoCommand.GetColumnPurpose("unknown", colInfo, "SomeOtherType");
+        var result = InfoCommand.GetColumnPurpose("unknown", null, [], "SomeOtherType");
 
         Assert.Contains("Feature", result);
     }

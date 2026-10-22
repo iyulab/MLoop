@@ -1,6 +1,5 @@
 using System.Globalization;
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -410,38 +409,26 @@ public class PredictionEngine
 
         var dummyLabel = labelExistsInData ? labelColumn! : (columns.Length > 0 ? columns[0] : "dummy");
 
-        var columnInference = _mlContext.Auto().InferColumns(
-            mlnetCompatiblePath,
-            labelColumnName: dummyLabel,
-            separatorChar: ',');
-
-        // If we have the label column in the data, ensure it's marked as ignored/label in inference
-        if (labelExistsInData && !string.IsNullOrEmpty(labelColumn) && columnInference.ColumnInformation != null)
-        {
-            // Remove from feature columns if present
-            columnInference.ColumnInformation.NumericColumnNames.Remove(labelColumn);
-            columnInference.ColumnInformation.CategoricalColumnNames.Remove(labelColumn);
-            columnInference.ColumnInformation.TextColumnNames.Remove(labelColumn);
-        }
+        var loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath, dummyLabel).Options;
 
         // Shared non-label reconciliation — overrides feature types from the trained
         // schema (including the "String" raw type name), enables RFC 4180 quoting
         // and splits preserved group/user/item columns out of any merged Features range
         // . The label is reconciled separately below because predict and evaluate handle it
         // differently — a legitimate divergence the helper deliberately leaves alone.
-        CsvDataLoader.ReconcileInferredSchemaForInference(columnInference, trainedSchema, labelColumn, mlnetCompatiblePath, preserveColumns);
+        CsvDataLoader.ReconcileInferredSchemaForInference(loaderOptions, trainedSchema, labelColumn, mlnetCompatiblePath, preserveColumns);
 
         // The label: predict aligns the label column's type to the trained schema too. The
         // label value is ignored at predict time, but its type must satisfy the model's input
         // schema (e.g. MapValueToKey). evaluate deliberately skips this, so the shared
         // helper leaves the label untouched; predict applies it here via the same type table.
-        if (trainedSchema != null && labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
+        if (trainedSchema != null && labelColumn != null && loaderOptions.Columns != null)
         {
             var labelType = trainedSchema.Columns
                 .FirstOrDefault(c => c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))?.DataType;
             if (labelType != null)
             {
-                foreach (var col in columnInference.TextLoaderOptions.Columns)
+                foreach (var col in loaderOptions.Columns)
                 {
                     if (col.Name != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
                         col.DataKind = CsvDataLoader.MapTrainedTypeToDataKind(labelType, col.DataKind);
@@ -451,9 +438,9 @@ public class PredictionEngine
 
         // If the label column is (still) Boolean, convert to String for MapValueToKey
         // compatibility — the same as CsvDataLoader's training-side fix.
-        if (labelColumn != null && columnInference.TextLoaderOptions.Columns != null)
+        if (labelColumn != null && loaderOptions.Columns != null)
         {
-            foreach (var col in columnInference.TextLoaderOptions.Columns)
+            foreach (var col in loaderOptions.Columns)
             {
                 if (col.Name != null &&
                     col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) &&
@@ -464,9 +451,9 @@ public class PredictionEngine
             }
         }
 
-        var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
+        var textLoader = _mlContext.Data.CreateTextLoader(loaderOptions);
         var inputData = textLoader.Load(mlnetCompatiblePath);
-        return new InferenceInput(trainedModel, inputData, columnInference.TextLoaderOptions, columns, labelColumn);
+        return new InferenceInput(trainedModel, inputData, loaderOptions, columns, labelColumn);
     }
 
     /// <summary>

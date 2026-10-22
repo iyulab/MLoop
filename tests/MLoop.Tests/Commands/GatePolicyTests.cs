@@ -2,8 +2,8 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
 
@@ -151,9 +151,9 @@ public sealed class GatePolicyTests : IDisposable
             File.WriteAllLines(train, lines.Take(1).Concat(lines.Skip(1).Select((l, i) => l[..(l.LastIndexOf(',') + 1)] + labels[i])));
         }
         var ml = new MLContext(seed: 42);
-        var inference = ml.Auto().InferColumns(train, labelColumnName: "Y", separatorChar: ',');
+        var inference = ColumnLayoutInference.Infer(ml, train, "Y").Options;
         var model = ml.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y", featureColumnName: "Features")
-            .Fit(ml.Data.CreateTextLoader(inference.TextLoaderOptions).Load(train));
+            .Fit(ml.Data.CreateTextLoader(inference).Load(train));
 
         var fileSystem = new FileSystemManager();
         var store = new ExperimentStore(fileSystem, new ProjectDiscovery(fileSystem));

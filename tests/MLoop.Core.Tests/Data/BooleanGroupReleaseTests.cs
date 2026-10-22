@@ -1,5 +1,4 @@
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
@@ -12,7 +11,7 @@ namespace MLoop.Core.Tests.Data;
 /// </summary>
 /// <remarks>
 /// Measured on a churn model: <c>MultipleLines</c> held No / Yes / No phone service in training; the
-/// twelve two-year-contract rows held only No / Yes, InferColumns merged the column into
+/// twelve two-year-contract rows held only No / Yes, the layout inference merged the column into
 /// <c>BooleanFeatures</c>, and predict and evaluate both failed with
 /// <c>Could not find input column 'MultipleLines'</c> — which <c>evaluate --slice-by</c> turned
 /// from rare into routine, because a slice is exactly a subset where a column loses values.
@@ -39,11 +38,11 @@ public class BooleanGroupReleaseTests
     {
         var path = Path.Combine(Directory.CreateTempSubdirectory("mloop-bool-").FullName, "subset.csv");
         File.WriteAllText(path, Subset);
-        var inference = new MLContext(seed: 1).Auto().InferColumns(path, labelColumnName: "label", groupColumns: true);
+        var inference = ColumnLayoutInference.Infer(new MLContext(seed: 1), path, "label").Options;
 
         CsvDataLoader.ReconcileInferredSchemaForInference(inference, trainedSchema, "label", path, preserveColumns: null);
 
-        return [.. inference.TextLoaderOptions.Columns!.Select(c =>
+        return [.. inference.Columns!.Select(c =>
             (c.Name, c.DataKind, string.Join(",", (c.Source ?? []).Select(r => $"{r.Min}..{r.Max}"))))];
     }
 
@@ -71,7 +70,7 @@ public class BooleanGroupReleaseTests
     [Fact]
     public void ThisInferenceDoesGroupTheColumn_WithoutTheSchema()
     {
-        // The scan above is only meaningful if InferColumns does swallow the column here.
+        // The scan above is only meaningful if the layout inference does swallow the column here.
         var layout = Layout(trainedSchema: null);
 
         Assert.DoesNotContain(layout, c => c.Name == "lines");

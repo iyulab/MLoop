@@ -1,5 +1,4 @@
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -333,27 +332,24 @@ public class EvaluationEngine
         string loadPath = InferenceDataPreprocessor.Prepare(testDataPath, labelColumn, trainedSchema, out tempFiles, keepColumns: keepColumns);
 
         // Infer column types from the data
-        var columnInference = _mlContext.Auto().InferColumns(
-            loadPath,
-            labelColumnName: labelColumn,
-            separatorChar: ',');
+        var loaderOptions = ColumnLayoutInference.Infer(_mlContext, loadPath, labelColumn).Options;
 
         // Shared non-label reconciliation — overrides feature types from the trained schema
         // (including the "String" raw-type-name case that predict had but evaluate
         // lacked), enables RFC 4180 quoting (likewise predict-only before), and splits
         // preserved group/user/item columns out of any merged Features range (the evaluate twin
-        // of predict's). The label is deliberately left to InferColumns + the task-specific handling
+        // of predict's). The label is deliberately left to the inferred layout + the task-specific handling
         // below, so the helper does not touch it.
-        CsvDataLoader.ReconcileInferredSchemaForInference(columnInference, trainedSchema, labelColumn, loadPath, preserveColumns);
+        CsvDataLoader.ReconcileInferredSchemaForInference(loaderOptions, trainedSchema, labelColumn, loadPath, preserveColumns);
 
-        // Multiclass classification: InferColumns may detect the label as Boolean
+        // Multiclass classification: the layout may type the label as Boolean
         // when values are 0/1/2 etc. CsvDataLoader converts Boolean→String for multiclass
         // during training. Override BEFORE loading so TextLoader can parse all values.
         bool isMulticlass = taskType.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase);
         bool isRegressionEval = taskType.Equals("regression", StringComparison.OrdinalIgnoreCase);
-        if (columnInference.TextLoaderOptions.Columns != null)
+        if (loaderOptions.Columns != null)
         {
-            foreach (var col in columnInference.TextLoaderOptions.Columns)
+            foreach (var col in loaderOptions.Columns)
             {
                 if (col.Name != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) && col.DataKind == DataKind.Boolean)
                 {
@@ -366,7 +362,7 @@ public class EvaluationEngine
         }
 
         // Create text loader with inferred schema
-        var textLoader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
+        var textLoader = _mlContext.Data.CreateTextLoader(loaderOptions);
 
         // Load the data
         var dataView = textLoader.Load(loadPath);

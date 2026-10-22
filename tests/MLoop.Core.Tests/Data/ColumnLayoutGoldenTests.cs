@@ -149,6 +149,28 @@ public sealed class ColumnLayoutGoldenTests : IDisposable
         Assert.Equal(Render(ParserEdges(), DescribeAutoML), Render(ParserEdges(), DescribeMLoop));
     }
 
+    // The loader drops white space before an unquoted field, so only a quoted value keeps it — and then
+    // ML.NET checks what follows a number from the number's end counted after that white space, but
+    // against the whole value: a quoted " 7" is a number, a quoted " 12" is not. Kept, since fixing it
+    // would retype such a column and change the width of every model trained on one.
+    [Theory]
+    [InlineData(" 12", "Single")]
+    [InlineData("12 ", "Single")]
+    [InlineData("\" 7\"", "Single")]
+    [InlineData("\" 12\"", "String")]
+    [InlineData("\"12 \"", "Single")]
+    public void ALeadingSpace_ReadsAsTheLoaderReadsIt(string value, string kind)
+    {
+        var path = Path.Combine(_dir, "leading.csv");
+        File.WriteAllText(path, "v,label\n" + string.Concat(Enumerable.Range(0, 10).Select(i => $"{value},{(i % 2 == 0 ? "true" : "false")}\n")));
+
+        var autoML = new MLContext(seed: 1).Auto().InferColumns(path, labelColumnName: "label", separatorChar: ',');
+        var mloop = ColumnLayoutInference.Infer(new MLContext(seed: 1), path, "label");
+
+        Assert.Equal(kind, autoML.TextLoaderOptions.Columns.Single(c => c.Name == "v").DataKind.ToString());
+        Assert.Equal(kind, mloop.Options.Columns.Single(c => c.Name == "v").DataKind.ToString());
+    }
+
     [Fact]
     public void MLoopInference_OfAFileSampledInChunks_IsTheSameEveryTime()
     {

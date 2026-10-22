@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -936,36 +935,23 @@ public class TrainingEngine : ITrainingEngine
             }
             var dataLines = sampleLines.ToArray();
 
-            // Try ML.NET InferColumns first
-            Microsoft.ML.AutoML.ColumnInformation? columnInfo = null;
+            // The inferred layout first; the values decide where it says nothing
+            ColumnLayout? layout = null;
             DataKind? labelInferredKind = null;
             try
             {
-                var columnInference = _mlContext.Auto().InferColumns(
-                    dataFile,
-                    labelColumnName: labelColumn,
-                    separatorChar: ',');
-                columnInfo = columnInference?.ColumnInformation;
+                layout = ColumnLayoutInference.Infer(_mlContext, dataFile, labelColumn);
 
                 // Track label column's inferred DataKind.
                 // CsvDataLoader converts Boolean labels -> String for MapValueToKey compatibility.
                 // Schema must reflect this so PredictionEngine uses the correct type.
-                if (columnInference?.TextLoaderOptions?.Columns != null)
-                {
-                    foreach (var col in columnInference.TextLoaderOptions.Columns)
-                    {
-                        if (col.Name != null &&
-                            col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
-                        {
-                            labelInferredKind = col.DataKind;
-                            break;
-                        }
-                    }
-                }
+                labelInferredKind = layout.Options.Columns
+                    .FirstOrDefault(c => c.Name != null && c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                    ?.DataKind;
             }
             catch
             {
-                // InferColumns may fail for complex data
+                // A file whose layout cannot be inferred is typed from its values alone
             }
 
             var columns = new List<ColumnSchema>();
@@ -973,9 +959,9 @@ public class TrainingEngine : ITrainingEngine
             foreach (var colName in columnNames)
             {
                 var colIndex = Array.IndexOf(columnNames, colName);
-                var purpose = GetColumnPurposeEnhanced(colName, labelColumn, columnInfo);
+                var purpose = GetColumnPurposeEnhanced(colName, labelColumn, layout);
                 var (dataType, categoricalValues, uniqueCount) = InferColumnTypeFromData(
-                    colName, colIndex, dataLines, columnInfo);
+                    colName, colIndex, dataLines, layout);
 
                 // If label column was inferred as Boolean by InferColumns,
                 // CsvDataLoader converts it to String (for MapValueToKey compatibility).
@@ -1107,18 +1093,18 @@ public class TrainingEngine : ITrainingEngine
     private string GetColumnPurposeEnhanced(
         string columnName,
         string labelColumn,
-        Microsoft.ML.AutoML.ColumnInformation? columnInfo)
+        ColumnLayout? layout)
     {
         // Exact match for label
         if (columnName == labelColumn)
             return "Label";
 
-        // Check ML.NET inference
-        if (columnInfo != null)
+        // The inferred layout
+        if (layout != null)
         {
-            if (columnInfo.LabelColumnName == columnName)
+            if (layout.Label == columnName)
                 return "Label";
-            if (columnInfo.IgnoredColumnNames?.Contains(columnName) == true)
+            if (layout.Of(ColumnLayoutPurpose.Ignore).Contains(columnName))
                 return "Ignore";
         }
 
@@ -1130,12 +1116,12 @@ public class TrainingEngine : ITrainingEngine
         string columnName,
         int colIndex,
         string[] dataLines,
-        Microsoft.ML.AutoML.ColumnInformation? columnInfo)
+        ColumnLayout? layout)
     {
-        // First check ML.NET inference
-        if (columnInfo != null)
+        // First the inferred layout
+        if (layout != null)
         {
-            if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
+            if (layout.Of(ColumnLayoutPurpose.Categorical).Contains(columnName))
             {
                 var (values, count) = CollectCategoricalValues(colIndex, dataLines);
                 if (count > 0 && dataLines.Length > 0 && LooksLikeText(colIndex, dataLines, count))
@@ -1145,9 +1131,9 @@ public class TrainingEngine : ITrainingEngine
                 }
                 return (SchemaDataTypes.Categorical, values, count);
             }
-            if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
+            if (layout.Of(ColumnLayoutPurpose.Numeric).Contains(columnName))
                 return (SchemaDataTypes.Numeric, null, null);
-            if (columnInfo.TextColumnNames?.Contains(columnName) == true)
+            if (layout.Of(ColumnLayoutPurpose.Text).Contains(columnName))
                 return (SchemaDataTypes.Text, null, null);
         }
 

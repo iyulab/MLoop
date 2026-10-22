@@ -1,9 +1,9 @@
 using System.CommandLine;
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using Spectre.Console;
@@ -96,8 +96,8 @@ public class EvaluateCommandJsonTests : IDisposable
         }
 
         var mlContext = new MLContext(seed: 42);
-        var inference = mlContext.Auto().InferColumns(trainCsvPath, labelColumnName: LabelColumn, separatorChar: ',');
-        var trainData = mlContext.Data.CreateTextLoader(inference.TextLoaderOptions).Load(trainCsvPath);
+        var inference = ColumnLayoutInference.Infer(mlContext, trainCsvPath, LabelColumn).Options;
+        var trainData = mlContext.Data.CreateTextLoader(inference).Load(trainCsvPath);
 
         var model = mlContext.Regression.Trainers
             .SingleThreadSdca(labelColumnName: LabelColumn, featureColumnName: "Features")

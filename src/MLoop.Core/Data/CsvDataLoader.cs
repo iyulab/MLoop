@@ -1,5 +1,4 @@
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.Core.Models;
 
@@ -127,46 +126,19 @@ public class CsvDataLoader : DataProviderBase
         }
 
         // Infer columns from the file
-        ColumnInferenceResults columnInference;
+        TextLoader.Options loaderOptions;
         try
         {
-            // InferColumns requires a valid label column name that exists in the CSV.
-            // For unsupervised tasks (no label), use the first CSV column as a dummy label
-            // so InferColumns can parse the schema, then treat all columns as features.
-            string effectiveLabelColumn;
-            bool usingDummyLabel = false;
-            if (string.IsNullOrEmpty(labelColumn))
-            {
-                var headers = ReadCsvHeaders(mlnetCompatiblePath);
-                effectiveLabelColumn = headers.Length > 0 ? headers[0] : "Label";
-                usingDummyLabel = true;
-            }
-            else
-            {
-                effectiveLabelColumn = labelColumn;
-            }
+            // The layout needs a label column that exists in the file. A task without a label
+            // (clustering, anomaly detection) names the first column: it is then loaded on its own,
+            // outside the Features vector, and the model's pipeline reads it by name.
+            var effectiveLabelColumn = string.IsNullOrEmpty(labelColumn)
+                ? ReadCsvHeaders(mlnetCompatiblePath) is [var first, ..] ? first : "Label"
+                : labelColumn;
 
-            columnInference = _mlContext.Auto().InferColumns(
-                mlnetCompatiblePath,
-                labelColumnName: effectiveLabelColumn,
-                separatorChar: ',');
-
-            // For unsupervised tasks, remove the label role from TextLoaderOptions
-            // so the dummy label column is loaded as a regular feature column
-            if (usingDummyLabel)
-            {
-                // Find and rename the "Label" column back to original name in TextLoaderOptions
-                foreach (var col in columnInference.TextLoaderOptions.Columns)
-                {
-                    if (col.Name == "Label")
-                    {
-                        col.Name = effectiveLabelColumn;
-                        break;
-                    }
-                }
-            }
+            loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath, effectiveLabelColumn).Options;
         }
-        catch (Exception ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
+        catch (ColumnLayoutException ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
         {
             throw new InvalidOperationException(
                 $"Failed to parse CSV file: {ex.Message}\n\n" +
@@ -190,9 +162,9 @@ public class CsvDataLoader : DataProviderBase
         var isRegressionTask = string.Equals(taskType, "regression", StringComparison.OrdinalIgnoreCase)
                             || string.Equals(taskType, "Regression", StringComparison.OrdinalIgnoreCase);
 
-        if (!isBinaryTask && !isRegressionTask && !string.IsNullOrEmpty(labelColumn) && columnInference.TextLoaderOptions.Columns != null)
+        if (!isBinaryTask && !isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
         {
-            foreach (var col in columnInference.TextLoaderOptions.Columns)
+            foreach (var col in loaderOptions.Columns)
             {
                 if (col.Name != null &&
                     col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) &&
@@ -205,9 +177,9 @@ public class CsvDataLoader : DataProviderBase
 
         // For regression, override Boolean label to Single.
         // InferColumns may detect 0/1 numeric labels as Boolean, but regression needs Single.
-        if (isRegressionTask && !string.IsNullOrEmpty(labelColumn) && columnInference.TextLoaderOptions.Columns != null)
+        if (isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
         {
-            foreach (var col in columnInference.TextLoaderOptions.Columns)
+            foreach (var col in loaderOptions.Columns)
             {
                 if (col.Name != null &&
                     col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) &&
@@ -239,18 +211,18 @@ public class CsvDataLoader : DataProviderBase
         // name left to be found by.
         if (TaskTypes.Canonical(taskType) == "question-answering")
             preserveColumns = csvHeaders.Concat(preserveColumns ?? []);
-        ApplyColumnPreservation(columnInference, mlnetCompatiblePath, preserveColumns);
+        ApplyColumnPreservation(loaderOptions, mlnetCompatiblePath, preserveColumns);
 
         // Record which source columns each merged range spans — the loaded IDataView
         // carries no slot names, so this mapping is what lets schema capture expand the
         // merged vector back into named columns.
         _mergedColumnGroups = ComputeMergedColumnGroups(
-            columnInference.TextLoaderOptions, ReadCsvHeaders(mlnetCompatiblePath));
+            loaderOptions, ReadCsvHeaders(mlnetCompatiblePath));
 
         // Create text loader with inferred schema
         // Ensure RFC 4180 compliance: handle commas inside quoted fields
-        columnInference.TextLoaderOptions.AllowQuoting = true;
-        var loader = _mlContext.Data.CreateTextLoader(columnInference.TextLoaderOptions);
+        loaderOptions.AllowQuoting = true;
+        var loader = _mlContext.Data.CreateTextLoader(loaderOptions);
         var dataView = loader.Load(mlnetCompatiblePath);
 
         // Note: Do NOT delete temp file here - ML.NET may lazily load data
@@ -316,8 +288,8 @@ public class CsvDataLoader : DataProviderBase
 
     /// <summary>
     /// The single inference schema-reconciliation step that predict and evaluate both run
-    /// after <c>InferColumns</c>. It (1) overrides each non-label column's inferred <c>DataKind</c> to
-    /// the type training fitted on — <c>InferColumns</c> can misdetect types when the inference data is
+    /// after <see cref="ColumnLayoutInference"/>. It (1) overrides each non-label column's inferred <c>DataKind</c> to
+    /// the type training fitted on — the inferred layout can misdetect types when the inference data is
     /// sparse — including the raw "String" type name; (2) enables RFC 4180 quoting so fields
     /// containing commas load as one column; and (3) splits preserved group/user/item columns
     /// out of any merged Features range via <see cref="ApplyColumnPreservation"/>.
@@ -329,14 +301,12 @@ public class CsvDataLoader : DataProviderBase
     /// reimplemented per engine, which is where that drift came from.
     /// </summary>
     public static void ReconcileInferredSchemaForInference(
-        ColumnInferenceResults columnInference,
+        TextLoader.Options options,
         InputSchemaInfo? trainedSchema,
         string? labelColumn,
         string csvPath,
         IEnumerable<string>? preserveColumns)
     {
-        var options = columnInference.TextLoaderOptions;
-
         // 1. Override each non-label column's inferred kind with the type training fitted on.
         //    InferColumns can misdetect types (e.g. "0"/"1" as Boolean) when the inference data is
         //    sparse. The label is left to the caller's task-specific handling.
@@ -380,7 +350,7 @@ public class CsvDataLoader : DataProviderBase
         options.AllowQuoting = true;
 
         // 3. Split preserved group/user/item columns back out of any merged Features range.
-        ApplyColumnPreservation(columnInference, csvPath, preserveColumns);
+        ApplyColumnPreservation(options, csvPath, preserveColumns);
     }
 
     /// <summary>
@@ -594,7 +564,7 @@ public class CsvDataLoader : DataProviderBase
     /// because InferColumns had merged the group/user/item column into the feature vector.
     /// </summary>
     public static void ApplyColumnPreservation(
-        ColumnInferenceResults columnInference, string csvPath, IEnumerable<string>? preserveColumns)
+        TextLoader.Options options, string csvPath, IEnumerable<string>? preserveColumns)
     {
         if (preserveColumns == null) return;
         var preserveSet = new HashSet<string>(preserveColumns, StringComparer.OrdinalIgnoreCase);
@@ -603,7 +573,6 @@ public class CsvDataLoader : DataProviderBase
 
         // Read CSV headers to find column indices
         var headers = ReadCsvHeaders(csvPath);
-        var options = columnInference.TextLoaderOptions;
 
         foreach (var colName in preserveSet)
         {

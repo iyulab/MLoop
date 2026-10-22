@@ -1,5 +1,4 @@
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 
@@ -10,7 +9,7 @@ namespace MLoop.Core.Tests.Data;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>InferColumns</c> groups the columns it reads as numeric into one vector and leaves the rest
+/// the column layout inference groups the columns it reads as numeric into one vector and leaves the rest
 /// as their own columns. Measured on a three-feature set: training inferred one <c>Features</c>
 /// column over source <c>0..2</c>; re-inferring on a prediction file where one of those three
 /// carried text gave <c>Features</c> over <c>0..0, 2..2</c> plus a separate <c>String</c> column —
@@ -66,12 +65,12 @@ public class TrainedFeatureRangeTests
     private static (string Name, string Ranges)[] Layout(string csvPath, InputSchemaInfo? trainedSchema)
     {
         var ml = new MLContext(seed: 1);
-        var inference = ml.Auto().InferColumns(csvPath, labelColumnName: "label", groupColumns: true);
+        var inference = ColumnLayoutInference.Infer(ml, csvPath, "label").Options;
 
         CsvDataLoader.ReconcileInferredSchemaForInference(
             inference, trainedSchema, labelColumn: "label", csvPath, preserveColumns: null);
 
-        return [.. inference.TextLoaderOptions.Columns!.Select(c =>
+        return [.. inference.Columns!.Select(c =>
             (c.Name, string.Join(",", (c.Source ?? []).Select(r => $"{r.Min}..{r.Max}"))))];
     }
 

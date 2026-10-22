@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using MLoop.CLI;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using Spectre.Console;
@@ -107,8 +107,8 @@ public class SchemaMismatchJsonContractTests : IDisposable
         WriteLinearCsv(trainCsv, rowCount: 50, seed: 42);
 
         var ml = new MLContext(seed: 42);
-        var inference = ml.Auto().InferColumns(trainCsv, labelColumnName: LabelColumn, separatorChar: ',');
-        var data = ml.Data.CreateTextLoader(inference.TextLoaderOptions).Load(trainCsv);
+        var inference = ColumnLayoutInference.Infer(ml, trainCsv, LabelColumn).Options;
+        var data = ml.Data.CreateTextLoader(inference).Load(trainCsv);
         var model = ml.Regression.Trainers.SingleThreadSdca(labelColumnName: LabelColumn, featureColumnName: "Features").Fit(data);
 
         var experimentPath = _experimentStore.GetExperimentPath("default", "exp-001");

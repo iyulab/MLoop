@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using MLoop.CLI;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using Spectre.Console;
@@ -112,8 +112,8 @@ public class PredictJsonContractTests : IDisposable
         File.WriteAllLines(trainCsv, lines);
 
         var ml = new MLContext(seed: 42);
-        var inference = ml.Auto().InferColumns(trainCsv, labelColumnName: "Species", separatorChar: ',');
-        var data = ml.Data.CreateTextLoader(inference.TextLoaderOptions).Load(trainCsv);
+        var inference = ColumnLayoutInference.Infer(ml, trainCsv, "Species").Options;
+        var data = ml.Data.CreateTextLoader(inference).Load(trainCsv);
         var pipeline = ml.Transforms.Conversion.MapValueToKey("Species", "Species")
             .Append(ml.MulticlassClassification.Trainers.SingleThreadSdcaMaximumEntropy("Species", featureColumnName: "Features"))
             .Append(ml.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
@@ -242,8 +242,8 @@ public class PredictJsonContractTests : IDisposable
         File.WriteAllLines(trainCsv, lines);
 
         var ml = new MLContext(seed: 42);
-        var inference = ml.Auto().InferColumns(trainCsv, labelColumnName: "Y", separatorChar: ',');
-        var data = ml.Data.CreateTextLoader(inference.TextLoaderOptions).Load(trainCsv);
+        var inference = ColumnLayoutInference.Infer(ml, trainCsv, "Y").Options;
+        var data = ml.Data.CreateTextLoader(inference).Load(trainCsv);
         var model = ml.Regression.Trainers.SingleThreadSdca("Y", featureColumnName: "Features").Fit(data);
         var modelPath = Path.Combine(_testProjectRoot, "reg.zip");
         ml.Model.Save(model, null, modelPath);

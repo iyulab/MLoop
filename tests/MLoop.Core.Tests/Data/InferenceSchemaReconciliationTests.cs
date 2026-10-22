@@ -1,5 +1,4 @@
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
@@ -8,7 +7,7 @@ namespace MLoop.Core.Tests.Data;
 
 /// <summary>
 /// Pins the shared inference schema-reconciliation contract that predict and evaluate both
-/// run after InferColumns. Centralizing it closed the "String" trained-type and quoted-field
+/// run after the column layout inference. Centralizing it closed the "String" trained-type and quoted-field
 /// (AllowQuoting) gaps that had been fixed on the predict path but silently missing from evaluate —
 /// the family of "fix one inference path, the other drifts" defects.
 /// </summary>
@@ -40,10 +39,10 @@ public class InferenceSchemaReconciliationTests : IDisposable
         // present in PredictionEngine but missing from EvaluationEngine (only "Categorical"/"Text"
         // mapped to String there), so evaluate could not reproduce the trained feature type.
         var csvPath = WriteCsv("schema_string.csv", "flag,Label\n1.5,10\n2.5,20\n3.5,30\n");
-        var inference = _mlContext.Auto().InferColumns(csvPath, labelColumnName: "Label", separatorChar: ',');
+        var inference = ColumnLayoutInference.Infer(_mlContext, csvPath, "Label").Options;
 
         // Sanity: "flag" is inferred as a non-String numeric kind so the override is observable.
-        var inferredFlag = inference.TextLoaderOptions.Columns!.First(c => c.Name == "flag").DataKind;
+        var inferredFlag = inference.Columns!.First(c => c.Name == "flag").DataKind;
         Assert.NotEqual(DataKind.String, inferredFlag);
 
         var trainedSchema = MakeSchema(
@@ -52,7 +51,7 @@ public class InferenceSchemaReconciliationTests : IDisposable
 
         CsvDataLoader.ReconcileInferredSchemaForInference(inference, trainedSchema, "Label", csvPath, null);
 
-        var flagCol = inference.TextLoaderOptions.Columns!.First(c => c.Name == "flag");
+        var flagCol = inference.Columns!.First(c => c.Name == "flag");
         Assert.Equal(DataKind.String, flagCol.DataKind);
     }
 
@@ -63,11 +62,11 @@ public class InferenceSchemaReconciliationTests : IDisposable
         // single column. PredictionEngine set AllowQuoting=true; EvaluationEngine did not, so evaluate
         // mis-split such rows and the feature vector width drifted from training.
         var csvPath = WriteCsv("quoting.csv", "a,Label\n1,2\n");
-        var inference = _mlContext.Auto().InferColumns(csvPath, labelColumnName: "Label", separatorChar: ',');
+        var inference = ColumnLayoutInference.Infer(_mlContext, csvPath, "Label").Options;
 
         CsvDataLoader.ReconcileInferredSchemaForInference(inference, null, "Label", csvPath, null);
 
-        Assert.True(inference.TextLoaderOptions.AllowQuoting);
+        Assert.True(inference.AllowQuoting);
     }
 
     [Fact]
@@ -78,8 +77,8 @@ public class InferenceSchemaReconciliationTests : IDisposable
         // string→bool) handling afterward. Reconcile must NOT override the label from the trained
         // schema, or it would clobber that per-engine handling.
         var csvPath = WriteCsv("label_untouched.csv", "a,Label\n1,x\n2,y\n3,x\n");
-        var inference = _mlContext.Auto().InferColumns(csvPath, labelColumnName: "Label", separatorChar: ',');
-        var labelKindBefore = inference.TextLoaderOptions.Columns!.First(c => c.Name == "Label").DataKind;
+        var inference = ColumnLayoutInference.Infer(_mlContext, csvPath, "Label").Options;
+        var labelKindBefore = inference.Columns!.First(c => c.Name == "Label").DataKind;
 
         var trainedSchema = MakeSchema(
             ("a", "Numeric", "Feature"),
@@ -87,7 +86,7 @@ public class InferenceSchemaReconciliationTests : IDisposable
 
         CsvDataLoader.ReconcileInferredSchemaForInference(inference, trainedSchema, "Label", csvPath, null);
 
-        var labelKindAfter = inference.TextLoaderOptions.Columns!.First(c => c.Name == "Label").DataKind;
+        var labelKindAfter = inference.Columns!.First(c => c.Name == "Label").DataKind;
         Assert.Equal(labelKindBefore, labelKindAfter);
     }
 
@@ -95,16 +94,16 @@ public class InferenceSchemaReconciliationTests : IDisposable
     public void ReconcileInferredSchema_PreservesGroupColumn_SplitsOutOfMergedRange()
     {
         // a numeric group/user/item column adjacent to features gets merged into the
-        // Features range by InferColumns. Reconcile must split it back out so a model's key transform
+        // Features range by the layout inference. Reconcile must split it back out so a model's key transform
         // can address it. This pins that reconcile threads preserveColumns into ApplyColumnPreservation.
         var csvPath = WriteCsv("preserve.csv", "QueryId,F1,F2,Label\n0,0.1,0.2,1\n0,0.3,0.4,2\n1,0.5,0.6,3\n");
-        var inference = _mlContext.Auto().InferColumns(csvPath, labelColumnName: "Label", separatorChar: ',');
+        var inference = ColumnLayoutInference.Infer(_mlContext, csvPath, "Label").Options;
 
         CsvDataLoader.ReconcileInferredSchemaForInference(
             inference, null, "Label", csvPath, new[] { "QueryId" });
 
         // QueryId must exist as an individually-addressable single-source column.
-        var queryCol = inference.TextLoaderOptions.Columns!
+        var queryCol = inference.Columns!
             .FirstOrDefault(c => c.Name.Equals("QueryId", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(queryCol);
         Assert.Single(queryCol!.Source);

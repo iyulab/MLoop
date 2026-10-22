@@ -2,7 +2,6 @@ using System.CommandLine;
 using DataLens;
 using DataLens.Models;
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
@@ -315,18 +314,11 @@ public static class InfoCommand
             }
         }
 
-        var columnInference = mlContext.Auto().InferColumns(
-            dataFile,
-            labelColumnName: inferLabel,
-            separatorChar: ',');
+        var layout = ColumnLayoutInference.Infer(mlContext, dataFile, inferLabel);
 
-        // A guessed label only lets InferColumns run; no one named it the label, so no column is
+        // A guessed label only lets the inference run; no one named it the label, so no column is
         // reported as one — each keeps the role its type gives it.
-        if (inferLabel != labelColumn)
-            columnInference.ColumnInformation.LabelColumnName = null;
-
-        // Ensure RFC 4180 compliance
-        columnInference.TextLoaderOptions.AllowQuoting = true;
+        var reportedLabel = inferLabel == labelColumn ? labelColumn : null;
 
         // What training will drop before featurizing — the one authority, run silently: the table
         // below states it per column.
@@ -339,8 +331,8 @@ public static class InfoCommand
         // 2. Column Information
         InfoPresenter.DisplayColumnInfo(
             columns,
-            (colName, colIdx) => InferDisplayType(colName, columnInference, colIdx, sampleLines),
-            (colName, dataType) => GetColumnPurpose(colName, columnInference.ColumnInformation, dataType, excluded),
+            (colName, colIdx) => InferDisplayType(colName, layout, colIdx, sampleLines),
+            (colName, dataType) => GetColumnPurpose(colName, reportedLabel, layout.Columns, dataType, excluded),
             columnOverrides);
 
         // 3. DataLens Profile (always-on, nullable)
@@ -378,8 +370,8 @@ public static class InfoCommand
         var columnRows = new List<ColumnInfoRow>();
         for (int ci = 0; ci < columns.Length; ci++)
         {
-            var dataType = InferDisplayType(columns[ci], columnInference, ci, sampleLines);
-            var purpose = GetColumnPurpose(columns[ci], columnInference.ColumnInformation, dataType, excluded);
+            var dataType = InferDisplayType(columns[ci], layout, ci, sampleLines);
+            var purpose = GetColumnPurpose(columns[ci], reportedLabel, layout.Columns, dataType, excluded);
             string? overrideType = columnOverrides != null && columnOverrides.TryGetValue(columns[ci], out var ot)
                 ? ot
                 : null;
@@ -500,25 +492,29 @@ public static class InfoCommand
     /// decision of <see cref="CsvDataLoader.DetermineExcludedColumns"/>, so the report names what
     /// training will do instead of calling a dropped column a feature.</param>
     internal static string GetColumnPurpose(
-        string columnName, ColumnInformation columnInfo, string dataType,
+        string columnName, string? label, IReadOnlyList<ColumnLayoutColumn> layout, string dataType,
         IReadOnlyDictionary<string, string>? excluded = null)
     {
-        if (columnInfo.LabelColumnName == columnName)
+        var inferred = PurposeOf(layout, columnName);
+        if (label == columnName)
             return "Label";
         if (excluded is not null && excluded.TryGetValue(columnName, out var reason))
             return $"Excluded ({reason})";
-        if (columnInfo.IgnoredColumnNames?.Contains(columnName) == true)
+        if (inferred == ColumnLayoutPurpose.Ignore)
             return "Ignored";
 
         // Use dataType (which incorporates text-likeness reclassification) over raw ML.NET inference
         if (dataType == "Text")
             return "Text Feature";
-        if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
-            return "Categorical Feature";
-        if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
-            return "Numeric Feature";
-        if (columnInfo.TextColumnNames?.Contains(columnName) == true)
-            return "Text Feature";
+        switch (inferred)
+        {
+            case ColumnLayoutPurpose.Categorical:
+                return "Categorical Feature";
+            case ColumnLayoutPurpose.Numeric:
+                return "Numeric Feature";
+            case ColumnLayoutPurpose.Text:
+                return "Text Feature";
+        }
 
         return dataType switch
         {
@@ -528,11 +524,16 @@ public static class InfoCommand
         };
     }
 
-    private static string InferDisplayType(string columnName, ColumnInferenceResults results, int csvColumnIndex, string[] sampleLines)
-    {
-        var columnInfo = results.ColumnInformation;
+    // A loaded column of the layout carries the name of the file column only when it covers that one
+    // column alone; a folded vector (Features) is found by the file column's index instead.
+    private static ColumnLayoutPurpose? PurposeOf(IReadOnlyList<ColumnLayoutColumn> layout, string columnName) =>
+        layout.FirstOrDefault(c => c.Name == columnName)?.Purpose;
 
-        if (columnInfo.CategoricalColumnNames?.Contains(columnName) == true)
+    private static string InferDisplayType(string columnName, ColumnLayout layout, int csvColumnIndex, string[] sampleLines)
+    {
+        var inferred = PurposeOf(layout.Columns, columnName);
+
+        if (inferred == ColumnLayoutPurpose.Categorical)
         {
             // Apply text-likeness check: reclassify categorical columns that look like text
             var uniqueValues = new HashSet<string>();
@@ -550,45 +551,42 @@ public static class InfoCommand
                 return "Text";
             return "Text/Categorical";
         }
-        if (columnInfo.NumericColumnNames?.Contains(columnName) == true)
+        if (inferred == ColumnLayoutPurpose.Numeric)
             return "Numeric";
-        if (columnInfo.TextColumnNames?.Contains(columnName) == true)
+        if (inferred == ColumnLayoutPurpose.Text)
             return "Text";
 
-        // Fall back to TextLoaderOptions for columns not in ColumnInformation
-        if (results.TextLoaderOptions?.Columns != null)
+        // A column folded into a vector, or the label: its type from the loader column covering it
+        foreach (var col in layout.Options.Columns)
         {
-            foreach (var col in results.TextLoaderOptions.Columns)
-            {
-                bool matched = false;
+            bool matched = false;
 
-                if (col.Name == columnName)
+            if (col.Name == columnName)
+            {
+                matched = true;
+            }
+            else if (col.Source != null)
+            {
+                foreach (var range in col.Source)
                 {
-                    matched = true;
-                }
-                else if (col.Source != null)
-                {
-                    foreach (var range in col.Source)
+                    if (csvColumnIndex >= range.Min && csvColumnIndex <= (range.Max ?? range.Min))
                     {
-                        if (csvColumnIndex >= range.Min && csvColumnIndex <= (range.Max ?? range.Min))
-                        {
-                            matched = true;
-                            break;
-                        }
+                        matched = true;
+                        break;
                     }
                 }
+            }
 
-                if (matched)
+            if (matched)
+            {
+                return col.DataKind switch
                 {
-                    return col.DataKind switch
-                    {
-                        DataKind.Single or DataKind.Double => "Numeric",
-                        DataKind.Int32 or DataKind.Int64 or DataKind.UInt32 or DataKind.UInt64 => "Integer",
-                        DataKind.String => "Text",
-                        DataKind.Boolean => "Boolean",
-                        _ => col.DataKind.ToString()
-                    };
-                }
+                    DataKind.Single or DataKind.Double => "Numeric",
+                    DataKind.Int32 or DataKind.Int64 or DataKind.UInt32 or DataKind.UInt64 => "Integer",
+                    DataKind.String => "Text",
+                    DataKind.Boolean => "Boolean",
+                    _ => col.DataKind.ToString()
+                };
             }
         }
 

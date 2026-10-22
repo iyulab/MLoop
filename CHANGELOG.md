@@ -30,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `TextLoader.Options` (separator, quoting, columns, numeric columns folded into one vector) and each loaded
   column's purpose (`ColumnLayout`). It gives the layout ML.NET AutoML's `InferColumns` gives, field for field,
   except that a file over 8 MB is sampled from fixed positions (the same file always gives the same layout) and no
-  column is read as an image path. Not used by training yet.
+  column is read as an image path. Every command reads its layout from it (`train`, `predict`, `evaluate`, `info`).
 
 ### Changed
 
@@ -40,6 +40,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with `roles.Label`. It no longer returns null for a table of numeric columns: such a table is all
   `ColumnRole.Numeric`. `AutoMLRunner.BuildManualBinaryPipeline` and `PortableTextFeaturizer.FitAndApply` take and
   return `ColumnRoles`. `TrialProgressReporter<TMetrics>` is internal.
+- **Breaking (in-process API):** `CsvDataLoader.ReconcileInferredSchemaForInference` and
+  `CsvDataLoader.ApplyColumnPreservation` take the `TextLoader.Options` they adjust — pass `layout.Options` from
+  `ColumnLayoutInference.Infer` where you passed an `InferColumns` result. No public member of `MLoop.Core` hands out
+  an ML.NET AutoML type any more. A file whose layout cannot be inferred fails with `ColumnLayoutException`, with the
+  messages it had.
 
 - ONNX Runtime moves to 1.31.0 (from 1.23.2). `mloop export onnx --verify` needs the native library at the same
   version, so an installed 1.23.2 runtime now reads as needing reinstall: `mloop runtime list` shows the version on

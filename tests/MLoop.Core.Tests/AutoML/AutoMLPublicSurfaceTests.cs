@@ -6,28 +6,15 @@ namespace MLoop.Core.Tests.AutoML;
 /// <summary>
 /// MLoop.Core is a published library, and Microsoft.ML.AutoML is on its way out: no public member
 /// may hand a caller an AutoML type, or the package cannot drop AutoML without breaking its users.
-/// What still does is listed below, each with the step that removes it.
 /// </summary>
 public class AutoMLPublicSurfaceTests
 {
     private const string AutoMLAssembly = "Microsoft.ML.AutoML";
 
-    /// <summary>
-    /// Public members that still expose an AutoML type, all of them column inference — replaced
-    /// together with InferColumns, after which this list must be empty.
-    /// </summary>
-    private static readonly string[] StillExposed =
-    [
-        "CsvDataLoader.ApplyColumnPreservation",
-        "CsvDataLoader.ReconcileInferredSchemaForInference",
-    ];
-
     [Fact]
-    public void NoPublicMember_ExposesAnAutoMLType_BeyondTheListedOnes()
+    public void NoPublicMember_ExposesAnAutoMLType()
     {
-        var exposed = Exposures(typeof(AutoMLRunner).Assembly);
-
-        Assert.Equal(StillExposed.Order(), exposed.Order());
+        Assert.Empty(Exposures(typeof(AutoMLRunner).Assembly));
     }
 
     // The check must be able to see an exposure: fed a type that has one of each kind, it finds all.

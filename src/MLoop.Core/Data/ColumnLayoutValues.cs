@@ -40,7 +40,8 @@ internal static class ColumnLayoutValues
 
         // The end is counted within the number but checked against the whole value, as ML.NET does:
         // after leading white space, a number longer than one character is refused unless the
-        // characters that many places from the start are white space too.
+        // characters that many places from the start are white space too. Only a quoted value reaches
+        // here with leading white space — the loader drops it before an unquoted field.
         for (; end < span.Length; end++)
             if (!char.IsWhiteSpace(span[end]))
                 return false;
