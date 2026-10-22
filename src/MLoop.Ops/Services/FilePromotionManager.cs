@@ -68,7 +68,7 @@ public sealed class FilePromotionManager : IPromotionManager
         // prefix so a production directory is still backed up even without metadata.
         var label = string.IsNullOrEmpty(currentExpId) ? "production" : currentExpId;
         var backupPath = Path.Combine(modelPath, "backups",
-            $"{label}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}");
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{label}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}"));
         Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
         CopyDirectory(productionPath, backupPath);
 

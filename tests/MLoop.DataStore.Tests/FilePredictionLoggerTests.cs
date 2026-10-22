@@ -31,6 +31,30 @@ public class FilePredictionLoggerTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A day file is named by the Gregorian date whatever the machine's culture: under a culture whose calendar
+    /// differs (th-TH counts Buddhist years) it was named 2569-…, which the retention pruner — reading names with
+    /// the invariant culture — took for a date centuries ahead and never pruned.
+    /// </summary>
+    [Fact]
+    public async Task ADayFile_IsNamedByTheGregorianDate_UnderAnotherCalendar()
+    {
+        var before = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("th-TH");
+        try
+        {
+            await _logger.LogPredictionAsync("m", "exp-001", new Dictionary<string, object> { ["x"] = 1.0 }, "yes", 0.9);
+
+            var file = Directory.EnumerateFiles(_testDir, "*.jsonl", SearchOption.AllDirectories).Single();
+            Path.GetFileNameWithoutExtension(file).Should().Be(DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+            (await _logger.GetLogsAsync("m")).Should().HaveCount(1);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = before;
+        }
+    }
+
     [Fact]
     public async Task LogPredictionAsync_CreatesSingleEntry()
     {

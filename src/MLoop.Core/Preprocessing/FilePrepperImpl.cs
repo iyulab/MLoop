@@ -69,7 +69,7 @@ public class FilePrepperImpl : IFilePrepper
                     typeMap[kvp.Key] = "int";
                 else if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
                     typeMap[kvp.Key] = "double";
-                else if (DateTime.TryParse(value, out _))
+                else if (DateTime.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
                     typeMap[kvp.Key] = "datetime";
                 else if (bool.TryParse(value, out _))
                     typeMap[kvp.Key] = "bool";

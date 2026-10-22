@@ -81,7 +81,7 @@ public static class ProjectLayout
     public static string PredictionFileName(string modelName, PredictionKind kind, DateTimeOffset at)
     {
         var (infix, extension) = Conventions[kind];
-        return $"{ModelName.Normalize(modelName)}-{infix}-{at.ToLocalTime():yyyyMMdd-HHmmss}{extension}";
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{ModelName.Normalize(modelName)}-{infix}-{at.ToLocalTime():yyyyMMdd-HHmmss}{extension}");
     }
 
     /// <summary>

@@ -35,7 +35,7 @@ public sealed class HITLQuestionGenerator : IHITLQuestionGenerator
                 $"Rule {rule.Id} does not require HITL. Type: {rule.Type}");
         }
 
-        var questionId = $"HITL_{rule.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}";
+        var questionId = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"HITL_{rule.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}");
 
         return rule.Type switch
         {

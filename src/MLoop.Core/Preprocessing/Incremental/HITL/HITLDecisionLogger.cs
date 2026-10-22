@@ -35,7 +35,7 @@ public sealed class HITLDecisionLogger : IHITLDecisionLogger
     /// <inheritdoc />
     public async Task LogDecisionAsync(HITLDecisionLog log)
     {
-        var fileName = $"{log.Question.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}.json";
+        var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{log.Question.Id}_{DateTime.UtcNow:yyyyMMddHHmmss}.json");
         var filePath = Path.Combine(_logDirectory, fileName);
 
         try

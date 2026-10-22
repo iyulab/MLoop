@@ -61,7 +61,7 @@ internal static class ColumnTypeHelper
     /// </summary>
     public static bool TryParseDateTime(string value, out DateTime result)
     {
-        return DateTime.TryParse(value, out result);
+        return DateTime.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out result);
     }
 
     /// <summary>

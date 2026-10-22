@@ -112,6 +112,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that parse — as text or categories, by how many values they had — so `serve` would load them as strings. The saved schema now takes such a column's type from the column layout,
   by its own name (`ColumnLayout.FileColumns`); prep's `filter-rows` comparisons and the data-quality checks parse
   the same way.
+- Dates in file names are written and read in the Gregorian calendar whatever the machine's culture. Under a culture
+  whose calendar differs (th-TH counts Buddhist years) the prediction-log and feedback day files were named `2569-…`,
+  which `logs prune` — reading names with the invariant culture — took for a date five centuries ahead and never
+  pruned; promotion backups, prediction outputs, `POST /train` job ids and retraining samples were named the same
+  way. `GET /logs` `from` / `to`, the experiment record's timestamp and date detection in prep read dates with the
+  invariant culture too.
 - Auto-time (`mloop train` without `--time`) judges its probe by the search's validation score, not the test
   partition's: whether the probe has converged (score above 0.95), and whether the probe's model or the main run's is
   kept. Reading the test score let the score the run reported choose its own model. It also read an error metric

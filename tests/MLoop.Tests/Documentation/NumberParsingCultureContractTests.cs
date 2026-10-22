@@ -3,14 +3,17 @@ using System.Text.RegularExpressions;
 namespace MLoop.Tests.Documentation;
 
 /// <summary>
-/// Product code reads a number from text with a stated culture — invariant, as ML.NET's loader reads a file — never
-/// the machine's. A parse that takes the current culture reads "1.5" as a number on one machine and not on another
-/// (a comma-decimal culture): on such a machine regression refused every label as "no valid numeric values", and the
-/// saved schema recorded numeric columns as categories.
+/// Product code reads a number or a date from text with a stated culture — invariant, as ML.NET's loader reads a
+/// file — never the machine's. A parse that takes the current culture reads "1.5" as a number on one machine and not
+/// on another (a comma-decimal culture): on such a machine regression refused every label as "no valid numeric
+/// values". A date read under a culture whose calendar differs moves its year: a log file named 2026-10-22 read
+/// under a Buddhist calendar is 543 years old.
 /// </summary>
 public class NumberParsingCultureContractTests
 {
-    private static readonly Regex NumberParse = new(@"\b(?:double|float|decimal|int|long|short|byte)\.(?:Try)?Parse\(", RegexOptions.Compiled);
+    private static readonly Regex NumberParse = new(
+        @"\b(?:double|float|decimal|int|long|short|byte|DateTime|DateTimeOffset|DateOnly|TimeOnly|TimeSpan)\.(?:Try)?Parse(?:Exact)?\(",
+        RegexOptions.Compiled);
 
     private static IEnumerable<string> Offenders(IEnumerable<(string File, string Text)> sources)
     {
@@ -64,7 +67,8 @@ public class NumberParsingCultureContractTests
             """);
         var nested = ("src/C.cs", "        var n = int.Parse(Trim(s), System.Globalization.CultureInfo.InvariantCulture);");
         var comment = ("src/D.cs", "        // double.TryParse(value, out _) reads the machine's culture");
+        var date = ("src/E.cs", "        if (DateOnly.TryParseExact(name, \"yyyy-MM-dd\", null, DateTimeStyles.None, out var d)) return d;");
 
-        Assert.Equal(["src/A.cs:1"], Offenders([bare, stated, nested, comment]));
+        Assert.Equal(["src/A.cs:1", "src/E.cs:1"], Offenders([bare, stated, nested, comment, date]));
     }
 }

@@ -281,7 +281,7 @@ public class ExperimentStore : IExperimentStore
         {
             ModelName = resolvedName,
             ExperimentId = experimentId,
-            Timestamp = DateTime.Parse(metadata["timestamp"].ToString()!),
+            Timestamp = DateTime.Parse(metadata["timestamp"].ToString()!, System.Globalization.CultureInfo.InvariantCulture),
             Status = metadata["status"].ToString()!,
             Task = metadata["task"].ToString()!,
             Config = config,

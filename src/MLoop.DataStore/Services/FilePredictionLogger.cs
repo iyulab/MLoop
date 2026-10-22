@@ -179,7 +179,7 @@ public sealed class FilePredictionLogger : IPredictionLogger
     private string GetLogFilePath(string modelName, DateTimeOffset timestamp)
     {
         var safeModelName = SanitizeFileName(modelName);
-        var dateStr = timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var dateStr = timestamp.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         return Path.Combine(_baseDirectory, safeModelName, $"{dateStr}.jsonl");
     }
 
@@ -201,7 +201,7 @@ public sealed class FilePredictionLogger : IPredictionLogger
     private static bool IsFileInDateRange(string filePath, DateTimeOffset from, DateTimeOffset to)
     {
         var fileName = Path.GetFileNameWithoutExtension(filePath);
-        if (DateOnly.TryParseExact(fileName, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var fileDate))
+        if (DateOnly.TryParseExact(fileName, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var fileDate))
         {
             var fileDateTime = new DateTimeOffset(fileDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
             var nextDay = fileDateTime.AddDays(1);

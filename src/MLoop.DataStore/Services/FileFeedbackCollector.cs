@@ -273,14 +273,14 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
     private string GetFeedbackFilePath(string modelName, DateTimeOffset timestamp)
     {
         var safeModelName = SanitizeFileName(modelName);
-        var dateStr = timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var dateStr = timestamp.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         return Path.Combine(_feedbackDirectory, safeModelName, $"{dateStr}.jsonl");
     }
 
     private static bool IsFileInDateRange(string filePath, DateTimeOffset from, DateTimeOffset to)
     {
         var fileName = Path.GetFileNameWithoutExtension(filePath);
-        if (DateOnly.TryParseExact(fileName, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var fileDate))
+        if (DateOnly.TryParseExact(fileName, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var fileDate))
         {
             var fileDateTime = new DateTimeOffset(fileDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
             var nextDay = fileDateTime.AddDays(1);

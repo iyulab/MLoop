@@ -1789,7 +1789,7 @@ static bool TryParseDateRange(string? from, string? to,
 
     if (from != null)
     {
-        if (!DateTimeOffset.TryParse(from, out var parsedFrom))
+        if (!DateTimeOffset.TryParse(from, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedFrom))
         {
             error = $"Invalid 'from' date format: {from}";
             return false;
@@ -1799,7 +1799,7 @@ static bool TryParseDateRange(string? from, string? to,
 
     if (to != null)
     {
-        if (!DateTimeOffset.TryParse(to, out var parsedTo))
+        if (!DateTimeOffset.TryParse(to, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedTo))
         {
             error = $"Invalid 'to' date format: {to}";
             return false;
