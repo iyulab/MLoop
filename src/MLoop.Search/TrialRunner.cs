@@ -61,6 +61,11 @@ public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, str
 /// point stops at its next fold and is dropped — it is neither a result nor a failure.</item>
 /// <item><b>A failed trial is recorded and the search goes on</b>; the tuner reads it as the worst loss.</item>
 /// <item><b>Cancellation by the caller stops at once</b> and throws; budget expiry keeps the best.</item>
+/// <item><b>A seed fixes the search; the clock only ends it.</b> The tuners and the schema proposer read each
+/// trial's loss and its schema's relative cost (<see cref="TrainerCandidate.InitialCost"/>), never its measured
+/// time — so the same seed on the same data proposes the same trials in the same order on any machine, and a
+/// budget decides only how many of them run. Measured time goes to <see cref="TrialResult.RuntimeSeconds"/>
+/// and the refit reserve.</item>
 /// </list>
 /// </remarks>
 public sealed class TrialRunner
@@ -136,15 +141,15 @@ public sealed class TrialRunner
                 if (_request.Metric.TryScore(trial, out var value))
                 {
                     var loss = _request.Metric.HigherIsBetter ? -value : value;
-                    tuners[schemaId].Update(trialId, point, loss, seconds * 1000);
-                    proposer.Update(schemaId, loss, seconds);
+                    tuners[schemaId].Update(trialId, point, loss, schema.Candidate.InitialCost);
+                    proposer.Update(schemaId, loss, schema.Candidate.InitialCost);
                     if (best is null || _request.Metric.IsBetter(value, best.Value.Value))
                         best = (trial, value, score, pipeline, seconds / plan.Folds);
                 }
                 else
                 {
-                    tuners[schemaId].Update(trialId, point, double.MaxValue, seconds * 1000);
-                    proposer.Update(schemaId, double.NaN, seconds);
+                    tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.InitialCost);
+                    proposer.Update(schemaId, double.NaN, schema.Candidate.InitialCost);
                 }
                 _sink?.Completed(trial, _request.Metric.Name);
             }
@@ -161,8 +166,8 @@ public sealed class TrialRunner
                 var seconds = (clock.Elapsed - started).TotalSeconds;
                 var failed = new TrialResult { Trainer = schema.Candidate.Name, Parameters = parameters, RuntimeSeconds = seconds, Error = ex.GetBaseException().Message };
                 trials.Add(failed);
-                tuners[schemaId].Update(trialId, point, double.MaxValue, seconds * 1000);
-                proposer.Update(schemaId, double.NaN, seconds);
+                tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.InitialCost);
+                proposer.Update(schemaId, double.NaN, schema.Candidate.InitialCost);
                 _sink?.Completed(failed, _request.Metric.Name);
                 if (best is null && clock.Elapsed >= _request.Budget)
                     break;

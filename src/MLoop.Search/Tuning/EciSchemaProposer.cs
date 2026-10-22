@@ -11,6 +11,12 @@ namespace MLoop.Search.Tuning;
 /// draws in the same order. One upstream rule is not kept: a trial counts as failed there when it took
 /// under a second (<c>DurationInMilliseconds / 1000</c> is integer division, so 0), which sent every fast
 /// trainer's ECI to twice the maximum on small data. Here a trial fails only when its loss is not finite.
+/// <para>
+/// Upstream feeds it each trial's measured seconds. A cost here is whatever the caller measures in, as
+/// long as one search uses one unit — only ratios enter the estimate. <see cref="TrialRunner"/> passes the
+/// schema's relative cost rather than the clock, so which schema a seed picks does not depend on how
+/// busy the machine was.
+/// </para>
 /// </remarks>
 public sealed class EciSchemaProposer
 {
@@ -62,11 +68,11 @@ public sealed class EciSchemaProposer
         return _schemas[Math.Min(i, _schemas.Length - 1)];
     }
 
-    /// <summary>Takes a trial's result for <paramref name="schema"/>: its <paramref name="loss"/> (to minimize) and duration.</summary>
-    public void Update(string schema, double loss, double durationSeconds)
+    /// <summary>Takes a trial's result for <paramref name="schema"/>: its <paramref name="loss"/> (to minimize) and <paramref name="cost"/>.</summary>
+    public void Update(string schema, double loss, double cost)
     {
         _initialized = true;
-        if (!double.IsFinite(loss) || !(durationSeconds >= 0))
+        if (!double.IsFinite(loss) || !(cost >= 0))
         {
             _eci[schema] = _eci.Values.Max() * 2;
             return;
@@ -74,7 +80,7 @@ public sealed class EciSchemaProposer
 
         if (_k1 is null)
         {
-            _k1 = _schemas.ToDictionary(id => id, id => durationSeconds * _initialCost[id] / _initialCost[schema], StringComparer.Ordinal);
+            _k1 = _schemas.ToDictionary(id => id, id => cost * _initialCost[id] / _initialCost[schema], StringComparer.Ordinal);
             _k2 = new Dictionary<string, double>(_k1, StringComparer.Ordinal);
             _e1 = _schemas.ToDictionary(id => id, _ => loss, StringComparer.Ordinal);
             _e2 = _schemas.ToDictionary(id => id, _ => loss + 0.05 * Math.Abs(loss), StringComparer.Ordinal);
@@ -82,12 +88,12 @@ public sealed class EciSchemaProposer
         }
         else if (loss >= _e1![schema])
         {
-            _k1[schema] += durationSeconds;
+            _k1[schema] += cost;
         }
         else
         {
             _k2![schema] = _k1[schema];
-            _k1[schema] = durationSeconds;
+            _k1[schema] = cost;
             _e2![schema] = _e1[schema];
             _e1[schema] = loss;
             _globalBestError = Math.Min(_globalBestError, loss);

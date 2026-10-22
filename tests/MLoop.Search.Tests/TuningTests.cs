@@ -90,7 +90,7 @@ public sealed class TuningTests
         var proposer = new EciSchemaProposer([("lbfgs", 11.513), ("fasttree", 3.701), ("lightgbm", 4.765)], seed: 0);
 
         Assert.Equal("fasttree", proposer.Propose());
-        proposer.Update("fasttree", loss: -0.80, durationSeconds: 2);
+        proposer.Update("fasttree", loss: -0.80, cost: 2);
         var counts = Enumerable.Range(0, 2000).Select(_ => proposer.Propose()).GroupBy(s => s).ToDictionary(g => g.Key, g => g.Count());
 
         Assert.Equal(3, counts.Count);
@@ -104,7 +104,7 @@ public sealed class TuningTests
         // schema's ECI — on small data every fast trainer was pushed away. A finite loss succeeds here.
         var proposer = new EciSchemaProposer([("sdca", 13.16), ("fasttree", 3.701)], seed: 0);
         proposer.Propose();
-        proposer.Update("fasttree", loss: -0.9, durationSeconds: 0.2);
+        proposer.Update("fasttree", loss: -0.9, cost: 0.2);
 
         Assert.True(proposer.Eci["fasttree"] < proposer.Eci["sdca"]);
     }
@@ -114,7 +114,7 @@ public sealed class TuningTests
     {
         var proposer = new EciSchemaProposer([("a", 1), ("b", 5)], seed: 0);
         proposer.Propose();
-        proposer.Update("a", loss: double.NaN, durationSeconds: 3);
+        proposer.Update("a", loss: double.NaN, cost: 3);
 
         Assert.Equal(10, proposer.Eci["a"]);
     }

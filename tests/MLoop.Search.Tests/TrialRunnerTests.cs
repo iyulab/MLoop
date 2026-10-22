@@ -101,6 +101,33 @@ public sealed class TrialRunnerTests
     }
 
     [Fact]
+    public void ASeed_IsTheSameSearch_HoweverLongItsTrialsTake()
+    {
+        // A busy machine slows trials unevenly. Here one run's FastTree trials take far longer than the
+        // other's; if the proposer read the clock, the schema it picks after the first trial would differ.
+        static string Run(TimeSpan fastTreeDelay)
+        {
+            var ml = new MLContext(seed: 1);
+            var (data, roles) = Data(ml);
+            var candidates = CandidateCatalog.Binary(name => name is "FastTree" or "LbfgsLogisticRegression")
+                .Select(c => c.Name != "FastTree" ? c : c with
+                {
+                    Build = (context, point, columns, settings) =>
+                    {
+                        Thread.Sleep(fastTreeDelay);
+                        return c.Build(context, point, columns, settings);
+                    },
+                })
+                .ToList();
+            var result = new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 8, candidates)).Run(data, roles);
+            return string.Join("\n", result.Trials.Select(t =>
+                $"{t.Trainer} {string.Join(",", t.Parameters!.Select(p => $"{p.Key}={p.Value}"))} {t.Metrics?["auc"]:R}"));
+        }
+
+        Assert.Equal(Run(TimeSpan.Zero), Run(TimeSpan.FromMilliseconds(400)));
+    }
+
+    [Fact]
     public void AFailedTrial_IsRecorded_AndTheSearchGoesOn()
     {
         var ml = new MLContext(seed: 1);

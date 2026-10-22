@@ -15,7 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `RankingPolicy`, MLoop's metric names and directions as an `IMetricPolicy`.
 - `MLoop.Search.Tuning`: the hyperparameter tuner MLoop's trainer search will run — `SearchSpace` and
   `SearchDimension` (ranges, log scales, choices, starting values), `CostFrugalTuner` (CFO / FLOW2) and
-  `EciSchemaProposer` (estimated cost for improvement across trainers). Not used by training yet.
+  `EciSchemaProposer` (estimated cost for improvement across trainers). A trial's cost is in whatever unit one
+  search keeps to — the search passes each trainer's relative cost rather than measured seconds, so one seed
+  proposes the same trials in the same order on a busy machine as on an idle one. Not used by training yet.
 
 ### Changed
 

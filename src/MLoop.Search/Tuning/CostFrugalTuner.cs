@@ -56,9 +56,10 @@ public sealed class CostFrugalTuner
 
     /// <summary>
     /// Takes trial <paramref name="trialId"/>'s result — <paramref name="loss"/> to minimize (a failed
-    /// trial: <see cref="double.MaxValue"/>) and its <paramref name="costMs"/>.
+    /// trial: <see cref="double.MaxValue"/>) and its <paramref name="cost"/> (any unit, one per search — it is
+    /// recorded for the incumbent and steers nothing).
     /// </summary>
-    public void Update(int trialId, SearchPoint point, double loss, double costMs)
+    public void Update(int trialId, SearchPoint point, double loss, double cost)
     {
         ArgumentNullException.ThrowIfNull(point);
         if (loss < _bestLoss)
@@ -70,13 +71,13 @@ public sealed class CostFrugalTuner
         var thread = _proposedBy.TryGetValue(trialId, out var proposer) ? proposer : _currentThread;
         if (_threads.Count == 0)
         {
-            _threads[_currentThread] = _localSearch.CreateSearchThread(point, loss, costMs);
+            _threads[_currentThread] = _localSearch.CreateSearchThread(point, loss, cost);
             _initUsed = true;
             Widen(_space.UnitOf(point));
             return;
         }
 
-        _threads[thread].OnTrialComplete(point, loss, costMs);
+        _threads[thread].OnTrialComplete(point, loss, cost);
         if (_threads[thread].IsConverged)
         {
             _threads.Remove(thread);
