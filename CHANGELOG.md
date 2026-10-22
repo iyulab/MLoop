@@ -65,6 +65,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the compiler's message is reported now. The shipped examples (`docs/examples/metrics/`) did not compile
   (missing `using` directives) and checked a task name MLoop never passes (`BinaryClassification` →
   `binary-classification`); the guide's and `mloop init`'s examples showed an interface that does not exist.
+- Warnings that carried their own sign read `Warning: ⚠ …` — the prefix and the sign saying the same thing. The
+  warning seam drops a leading `⚠` (a severity colour such as `🟡` stays).
 - A script's compile errors named their line and column counted from 0 (`0,30:`); they read `line 1, column 31:` now.
 - What a hook or metric script logs (`ctx.Logger`) reached stdout under `--json`, ahead of the document — `mloop
   evaluate --json` with a metric script, `mloop train --json` with a hook that logs, could not be parsed. It goes

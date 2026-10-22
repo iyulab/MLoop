@@ -134,7 +134,7 @@ public class MetricEngine
         var metrics = await new ScriptDiscovery(_projectRoot, Loader, _logger.Debug).DiscoverMetricsAsync().ConfigureAwait(false);
         if (metrics.Count == 0)
         {
-            _logger.Warning("⚠️  No metric implementations found in .mloop/scripts/metrics/");
+            _logger.Warning("No metric implementations found in .mloop/scripts/metrics/");
             return results;
         }
 
@@ -150,7 +150,7 @@ public class MetricEngine
             catch (Exception ex)
             {
                 // Graceful degradation: Log error and continue with remaining metrics
-                _logger.Warning($"⚠️  Metric '{metric.Name}' failed: {ex.Message}");
+                _logger.Warning($"Metric '{metric.Name}' failed: {ex.Message}");
                 _logger.Debug($"Stack trace: {ex.StackTrace}");
             }
         }

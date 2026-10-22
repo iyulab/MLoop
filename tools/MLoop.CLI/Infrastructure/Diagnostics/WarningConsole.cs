@@ -31,7 +31,25 @@ public static class WarningConsole
     /// </summary>
     public static void Warn(string markup)
     {
+        markup = WithoutOwnWarningSign(markup);
         AnsiConsole.MarkupLine($"[yellow]Warning:[/] {markup}");
         MachineOutputScope.ReportWarning(markup);
+    }
+
+    /// <summary>
+    /// The message without a warning sign of its own at the start (<c>⚠</c>, <c>⚠️</c>): this seam already
+    /// says «Warning:», and the many messages written with a sign read <c>Warning: ⚠ …</c> — two layers
+    /// adding the same decoration, which the release walk counts as a defect. Other leading symbols
+    /// (a severity colour) say something the prefix does not and stay.
+    /// </summary>
+    internal static string WithoutOwnWarningSign(string message)
+    {
+        var trimmed = message.TrimStart();
+        if (!trimmed.StartsWith('⚠'))
+            return message;
+        trimmed = trimmed[1..];
+        if (trimmed.StartsWith('\uFE0F'))
+            trimmed = trimmed[1..];
+        return trimmed.TrimStart();
     }
 }
