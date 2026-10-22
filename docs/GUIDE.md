@@ -1542,6 +1542,15 @@ keeps a leak (`⚠ leak`). Steps that learn nothing (renames, filters, date part
 You do not need `normalize` or `scale` for the model's sake: the trainer search already scales the features ahead of
 its linear trainers, and its trees do not need it. Declare them when the scaled values themselves matter to you.
 
+**Missing numbers.** An empty numeric field is read as missing — never as zero, which would be a real value inside
+most columns' range. The trainer search replaces a missing number by its column's mean, fitted on the training rows
+only, and for every column that had missing values in training adds an indicator feature (`<column>.missing`, 1
+where the value was missing), so a model can learn from the missingness itself; the saved model, `predict`,
+`serve` and the ONNX export do the same. Clustering, anomaly detection and ranking replace a missing number by the
+mean. A time series refuses a gap — dropping the row would close up the time around it — and names the column:
+fill it first, e.g. `mloop prep plan --set fill-missing:forward --columns <series>`. Declare `fill-missing` yourself
+when another fill (median, a constant) is the one you mean.
+
 ### `mloop features`
 
 Declares which columns are features — policy in `mloop.yaml` (`columns: {name: {type: ignore}}`), no data
@@ -1863,7 +1872,7 @@ mloop predict data/custom.csv --model models/staging/exp-005/model.zip --output 
 1. **Clean Data First**: MLoop expects preprocessed, clean CSV data
 2. **Consistent Schema**: Ensure train/test/predict files have matching columns
 3. **Label Column**: Must be numeric for regression, categorical for classification
-4. **No Missing Values**: Handle missing data before training
+4. **Missing Values**: An empty number is read as missing. Tables with gaps train as they are (see «Missing numbers» under `mloop prep`); a time series needs its gaps filled first
 
 ### Training Workflow
 

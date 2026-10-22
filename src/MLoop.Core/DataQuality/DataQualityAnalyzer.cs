@@ -89,7 +89,8 @@ public class DataQualityAnalyzer
                     HasHeader = true,
                     AllowQuoting = true,
                     AllowSparse = false,
-                    Columns = columns
+                    Columns = columns,
+                    MissingRealsAsNaNs = true,
                 });
 
             dataView = textLoader.Load(csvPath);

@@ -21,7 +21,8 @@ namespace MLoop.Core.Tests.Data;
 /// matched on every table before AutoML was removed: <c>column-layout.txt</c> for the corpus, and
 /// <c>column-layout-edges.txt</c> for the values at the edges of what reads as a number or a boolean. They are
 /// the layouts saved models were trained with, so they are checked against, not regenerated from, the
-/// inference.
+/// inference. One field departs from them on purpose: <c>nan-for-missing</c> is <c>True</c> — an empty number
+/// is read as missing rather than as 0 (<c>MissingNumbers</c>); the columns and their types are AutoML's.
 /// </para>
 /// <para>
 /// <c>MLOOP_UPDATE_GOLDEN=1</c> rewrites them from the current inference. Do that only when the layout is

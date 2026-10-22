@@ -105,6 +105,7 @@ public static class ColumnLayoutInference
             AllowQuoting = split.Quoting,
             ReadMultilines = split.Multiline,
             HasHeader = true,
+            MissingRealsAsNaNs = true,
         };
         var purposes = InferPurposes(mlContext, mlContext.Data.CreateTextLoader(typed).Load(path), columns, label);
 
@@ -117,6 +118,8 @@ public static class ColumnLayoutInference
             Separators = [separator],
             ReadMultilines = split.Multiline,
             HasHeader = true,
+            // An empty number is missing, not zero (MissingNumbers).
+            MissingRealsAsNaNs = true,
         };
         return new ColumnLayout(options, label, [.. groups.Select(g => new ColumnLayoutColumn(g.Name, g.Purpose))]);
     }
@@ -140,6 +143,7 @@ public static class ColumnLayoutInference
                         AllowQuoting = quoting,
                         AllowSparse = sparse,
                         ReadMultilines = multiline,
+                        MissingRealsAsNaNs = true,
                     };
                     if (FieldCount(mlContext, options, sample) is { } count)
                         return new Split(separator, sparse, quoting, multiline, count);
@@ -192,6 +196,7 @@ public static class ColumnLayoutInference
             AllowSparse = split.Sparse,
             AllowQuoting = split.Quoting,
             ReadMultilines = split.Multiline,
+            MissingRealsAsNaNs = true,
         };
         var data = mlContext.Data.TakeRows(mlContext.Data.CreateTextLoader(options).Load(sample), TypeRows);
 

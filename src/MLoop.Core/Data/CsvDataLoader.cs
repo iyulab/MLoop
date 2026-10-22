@@ -117,13 +117,14 @@ public class CsvDataLoader : DataProviderBase
         if (csvHeaders.Length == 1)
         {
             var singleColName = csvHeaders[0];
-            var singleColLoader = _mlContext.Data.LoadFromTextFile(
-                mlnetCompatiblePath,
-                new[] { new Microsoft.ML.Data.TextLoader.Column(singleColName, Microsoft.ML.Data.DataKind.Single, 0) },
-                separatorChar: ',',
-                hasHeader: true,
-                allowQuoting: true);
-            return singleColLoader;
+            return _mlContext.Data.CreateTextLoader(new TextLoader.Options
+            {
+                Columns = [new TextLoader.Column(singleColName, DataKind.Single, 0)],
+                Separators = [','],
+                HasHeader = true,
+                AllowQuoting = true,
+                MissingRealsAsNaNs = true,
+            }).Load(mlnetCompatiblePath);
         }
 
         // Infer columns from the file

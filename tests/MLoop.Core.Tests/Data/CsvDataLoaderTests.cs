@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using Microsoft.ML.Data;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 
@@ -41,6 +42,32 @@ public class CsvDataLoaderTests : IDisposable
 
         // Act & Assert
         Assert.Throws<FileNotFoundException>(() => _loader.LoadData(filePath));
+    }
+
+    /// <summary>
+    /// An empty number is missing (NaN), not zero — ML.NET's TextLoader reads it as 0 unless told otherwise
+    /// (MissingNumbers), and a zero inside a column's range cannot be told from a real reading.
+    /// </summary>
+    [Fact]
+    public void LoadData_ReadsAnEmptyNumberAsMissing_NotAsZero()
+    {
+        var csvPath = CreateTestCsv(new[]
+        {
+            "temp,flow,label",
+            "1.5,,0",
+            ",4.0,1",
+            "2.5,6.0,0",
+            "3.5,8.0,1",
+        });
+
+        var dataView = _loader.LoadData(csvPath, "label");
+
+        var values = dataView.Schema.GetColumnOrNull("Features") is { } features
+            ? dataView.GetColumn<VBuffer<float>>(features).Select(v => v.DenseValues().ToArray()).ToArray()
+            : dataView.GetColumn<float>("temp").Zip(dataView.GetColumn<float>("flow"), (t, f) => new[] { t, f }).ToArray();
+        Assert.True(float.IsNaN(values[0][1]), "an empty flow is NaN");
+        Assert.True(float.IsNaN(values[1][0]), "an empty temp is NaN");
+        Assert.Equal(new[] { 2.5f, 6.0f }, values[2]);
     }
 
     [Fact]

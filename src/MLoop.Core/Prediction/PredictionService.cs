@@ -89,12 +89,16 @@ public class PredictionService
 
         var warnings = new List<string>();
 
+        // A row's fields are matched to the schema's columns ignoring case, everywhere below — the
+        // overlap guard always did, the value lookup did not, so a camelCase JSON body (`x1` for `X1`)
+        // passed the guard and then every one of its values was dropped and scored as missing.
+        rows = Array.ConvertAll(rows, ByColumnName);
+
         // Silent-GIGO guard: if the input rows share NO column with the trained schema (e.g. the
         // caller wrapped rows in an envelope like {"rows":[...]} or posted an unrelated payload),
-        // every schema column falls back to its default value and the model emits an all-zero score
-        // whose argmax is a fabricated label — returned with 200 and no warning. Fail fast instead:
-        // partial column overlap stays legitimate (missing values are defaulted below), but zero
-        // overlap is unambiguous caller error.
+        // every schema column is missing and the model scores a row of nothing — returned with 200
+        // and no warning. Fail fast instead: partial column overlap stays legitimate (a column a row
+        // leaves out is read as missing, MissingNumbers), but zero overlap is unambiguous caller error.
         RequireSchemaColumnOverlap(rows, schema);
 
         MapCategoricalValues(rows, schema, warnings);
@@ -230,6 +234,7 @@ public class PredictionService
             HasHeader = true,
             AllowQuoting = true,
             Separators = new[] { ',' },
+            MissingRealsAsNaNs = true,
         };
     }
 
@@ -240,9 +245,9 @@ public class PredictionService
     /// </summary>
     /// <summary>
     /// Throws when the input rows contain none of the trained schema's non-label input columns —
-    /// with zero overlap every column defaults and the model returns a fabricated all-zero-score
-    /// prediction with 200/no-warning (silent garbage-in-garbage-out). Partial overlap is
-    /// legitimate (missing values default) and stays untouched.
+    /// with zero overlap every column is missing and the model returns a fabricated prediction with
+    /// 200/no-warning (silent garbage-in-garbage-out). Partial overlap is legitimate (a column a row
+    /// leaves out is read as missing) and stays untouched.
     /// </summary>
     /// <summary>
     /// Throws for forecasting models: the SSA forecaster is stateful (it forecasts a fixed horizon
@@ -260,6 +265,15 @@ public class PredictionService
                 "forecasts a fixed horizon ahead of its training series, so transforming posted rows yields no output. " +
                 "Use 'mloop predict' (optionally with --json) to generate the horizon forecast with confidence bounds.");
         }
+    }
+
+    // The last of two fields that differ only in case wins, as a JSON object's last duplicate key does.
+    private static Dictionary<string, object> ByColumnName(Dictionary<string, object> row)
+    {
+        var byName = new Dictionary<string, object>(row.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in row)
+            byName[name] = value;
+        return byName;
     }
 
     private static void RequireSchemaColumnOverlap(Dictionary<string, object>[] rows, InputSchemaInfo schema)

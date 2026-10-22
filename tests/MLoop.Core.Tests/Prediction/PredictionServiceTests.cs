@@ -1,6 +1,7 @@
 using System.Linq;
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using Microsoft.ML.Transforms;
 using MLoop.Core.AutoML;
 using MLoop.Core.Detection;
 using MLoop.Core.Models;
@@ -460,7 +461,11 @@ public class PredictionServiceTests : IDisposable
             new TwoFeatureRegression { X = 2.0f, Z = 1.0f, Y = 4.0f },
             new TwoFeatureRegression { X = 3.0f, Z = 1.0f, Y = 6.0f },
         });
-        var pipeline = _mlContext.Transforms.Concatenate("Features", "X", "Z")
+        // A missing number reaches the model as NaN (MissingNumbers); a trained model replaces it, as
+        // the trainer search's featurizer does.
+        var pipeline = _mlContext.Transforms.ReplaceMissingValues(
+                [new InputOutputColumnPair("X"), new InputOutputColumnPair("Z")], MissingValueReplacingEstimator.ReplacementMode.Mean)
+            .Append(_mlContext.Transforms.Concatenate("Features", "X", "Z"))
             .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y"));
         var model = pipeline.Fit(data);
 
@@ -475,7 +480,7 @@ public class PredictionServiceTests : IDisposable
             CapturedAt = DateTime.UtcNow
         };
 
-        // "Z" missing — defaults; must not throw.
+        // "Z" missing — read as missing and replaced by the model; must not throw.
         var rows = new[] { new Dictionary<string, object> { ["X"] = 2.0f } };
 
         var service = new PredictionService(_mlContext);

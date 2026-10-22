@@ -252,6 +252,11 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
 
         var predictions = body.GetProperty("predictions");
         predictions.GetArrayLength().Should().Be(2);
+        // The body's keys are camelCase (`x1`) and the schema's columns are not (`X1`): the values reach
+        // the model all the same — (1, 1) is a bird and (9, 9) a dog. They used to be dropped and scored
+        // as zeros, a bird twice, and the assertion below accepted it.
+        predictions.EnumerateArray().Select(p => p.GetProperty("predictedLabel").GetString())
+            .Should().Equal("bird", "dog");
 
         foreach (var row in predictions.EnumerateArray())
         {

@@ -89,7 +89,8 @@ public static class ForecastReplayService
             Columns = [new TextLoader.Column(valueColName, DataKind.Single, colIdx)],
             HasHeader = true,
             Separators = [','],
-            AllowQuoting = true
+            AllowQuoting = true,
+            MissingRealsAsNaNs = true,
         };
 
         var textLoader = mlContext.Data.CreateTextLoader(columnOptions);

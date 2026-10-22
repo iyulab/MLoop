@@ -37,6 +37,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- An empty numeric field is read as missing (NaN) by every loader — training, `predict`, `evaluate`, `serve` and the
+  ONNX export's data — instead of as 0, ML.NET's default. A missing reading used to train and predict as a reading
+  of zero. The trainer search now replaces a missing number by its column's mean (fitted on the training rows only)
+  rather than by zero, and adds an indicator feature (`<column>.missing`) for each column that had missing values in
+  training. Clustering, anomaly detection and ranking replace a missing number by the mean. Forecasting and
+  time-series anomaly detection refuse a series with a gap, naming the column and the `fill-missing` step that
+  fills it. A clustering, anomaly-detection or ranking model trained before this release reads a missing input as
+  NaN — retrain it.
 - The trainer search scales features to [0, 1] ahead of its linear trainers (L-BFGS and SDCA, every task); trees read
   them as before. Unscaled, a wide column next to narrow ones made those solvers crawl and learn little — on a
   16,730-row four-class table three linear trials took half of a 60-second budget at macro accuracy 0.25. Measured on
@@ -82,6 +90,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `POST /predict` (and `PredictionService.Predict` in process) matches a row's fields to the model's columns ignoring
+  case. A body whose keys differ in case from the columns — `x1` for `X1`, as a serializer with camelCase names
+  writes them — passed the check that a row shares a column with the model, and then every one of its values was
+  dropped: the row was scored as all zeros and answered with 200.
 - **Clustering without a label could not train, and anomaly detection without a label could not predict** — on a
   file of plain numbers. A label-less file was loaded with its first column standing in as a label, set apart from
   the `Features` vector, while every prediction path rebuilt the vector with that column inside it: clustering failed

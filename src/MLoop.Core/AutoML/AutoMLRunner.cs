@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using Microsoft.ML.Transforms;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
 using MLoop.Core.Detection;
@@ -1110,8 +1111,9 @@ public partial class AutoMLRunner
             // Determine PCA rank (auto: min of feature count and 20)
             var rank = Math.Min(featureColumns.Count, 20);
 
-            // Build pipeline: Concatenate features → RandomizedPca
+            // Build pipeline: Concatenate features → missing values to the mean (MissingNumbers) → RandomizedPca
             var pipeline = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray())
+                .Append(_mlContext.Transforms.ReplaceMissingValues("Features", replacementMode: MissingValueReplacingEstimator.ReplacementMode.Mean))
                 .Append(_mlContext.AnomalyDetection.Trainers.RandomizedPca(
                     featureColumnName: "Features",
                     rank: rank,
@@ -1239,9 +1241,11 @@ public partial class AutoMLRunner
                 cancellationToken.ThrowIfCancellationRequested();
                 var k = kValues[i];
 
-                var pipeline = _mlContext.Clustering.Trainers.KMeans(
-                    featureColumnName: "Features",
-                    numberOfClusters: k);
+                // Missing values to the mean inside the model, in place — its input stays "Features" (MissingNumbers).
+                var pipeline = _mlContext.Transforms.ReplaceMissingValues("Features", replacementMode: MissingValueReplacingEstimator.ReplacementMode.Mean)
+                    .Append(_mlContext.Clustering.Trainers.KMeans(
+                        featureColumnName: "Features",
+                        numberOfClusters: k));
 
                 var model = pipeline.Fit(featurizedTrainSet);
                 var predictions = model.Transform(featurizedTestSet);
@@ -1364,7 +1368,8 @@ public partial class AutoMLRunner
             // Build pipeline: convert label to Single, hash group to Key, concatenate features
             var pipeline = _mlContext.Transforms.Conversion.ConvertType(config.LabelColumn, outputKind: Microsoft.ML.Data.DataKind.Single)
                 .Append(_mlContext.Transforms.Conversion.MapValueToKey("GroupId", config.GroupColumn))
-                .Append(_mlContext.Transforms.Concatenate("Features", featureColumns.ToArray()));
+                .Append(_mlContext.Transforms.Concatenate("Features", featureColumns.ToArray()))
+                .Append(_mlContext.Transforms.ReplaceMissingValues("Features", replacementMode: MissingValueReplacingEstimator.ReplacementMode.Mean));
 
             // Try both trainers: LightGbm and FastTree
             var trainers = new (string Name, Microsoft.ML.IEstimator<Microsoft.ML.ITransformer> Trainer)[]
@@ -1481,6 +1486,7 @@ public partial class AutoMLRunner
 
             if (valueCol.Value.Type is not NumberDataViewType and not (VectorDataViewType { ItemType: NumberDataViewType }))
                 throw new InvalidOperationException($"Value column '{valueColumn}' must be numeric for forecasting.");
+            MissingNumbers.RefuseGapsInSeries(trainSet, valueColumn);
 
             // Determine parameters — use CountRows for lazy IDataView
             var totalRows = (int)CountRows(trainSet);
@@ -1625,6 +1631,7 @@ public partial class AutoMLRunner
 
             if (valueCol.Value.Type is not NumberDataViewType and not (VectorDataViewType { ItemType: NumberDataViewType }))
                 throw new InvalidOperationException($"Value column '{valueColumn}' must be numeric for time series anomaly detection.");
+            MissingNumbers.RefuseGapsInSeries(trainSet, valueColumn);
 
             var totalRows = (int)CountRows(trainSet);
             if (totalRows < 12)

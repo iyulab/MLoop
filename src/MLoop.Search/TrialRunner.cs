@@ -101,6 +101,7 @@ public sealed class TrialRunner
         var settings = _request.Settings;
         var plan = FoldPlan.For(train, roles.Label, _request.Stratify, settings.Seed);
         var columns = new TrainerColumns(roles.Label, "Features", _request.Weight);
+        var withMissingValues = Featurizer.ColumnsWithMissingValues(train, roles);
 
         var encodings = roles.Of(ColumnRole.Categorical).Count > 0
             ? new[] { CategoricalEncoding.OneHot, CategoricalEncoding.Hash }
@@ -133,7 +134,7 @@ public sealed class TrialRunner
             var schema = schemas.First(s => s.Id == schemaId);
             var point = tuners[schemaId].Propose(trialId);
             var trialContext = new MLContext(settings.Seed);
-            var featurizer = Featurizer.Build(trialContext, train.Schema, roles, schema.Encoding, columns.Features)
+            var featurizer = Featurizer.Build(trialContext, train.Schema, roles, schema.Encoding, withMissingValues, columns.Features)
                 ?? throw new InvalidOperationException("No column is a feature: every column is the label or ignored.");
 
             // Past the first success, a trial that would eat the refit's time stops inside its fit
