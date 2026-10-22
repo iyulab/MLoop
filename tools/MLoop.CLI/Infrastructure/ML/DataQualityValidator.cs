@@ -307,7 +307,7 @@ public class DataQualityValidator
             result.Warnings.Add($"   Majority class '{majorityClass.Class}': {majorityClass.Count} samples ({(double)majorityClass.Count / totalSamples:P1})");
             result.Warnings.Add($"   Minority class '{minorityClass.Class}': {minorityClass.Count} samples ({(double)minorityClass.Count / totalSamples:P1})");
             result.Warnings.Add("");
-            result.Warnings.Add("⚠️  AutoML may fail with 'AUC not defined' error due to insufficient minority class samples in cross-validation folds");
+            result.Warnings.Add("⚠️  Some cross-validation folds will hold no minority rows; AUC is undefined there and model choice rests on the folds that do");
             result.Warnings.Add("");
             result.Suggestions.Add("🔧 RECOMMENDED WORKAROUNDS:");
             result.Suggestions.Add("   1. Oversample minority class before training:");
@@ -438,7 +438,7 @@ public class DataQualityValidator
             }
             result.Warnings.Add($"   Total dataset: {totalSamples} rows, {classCount} classes");
             result.Warnings.Add("");
-            result.Warnings.Add("   Cross-validation folds will likely have empty classes, causing AutoML to fail");
+            result.Warnings.Add("   Cross-validation folds will likely have empty classes; metrics that need both (AUC) go undefined there");
             result.Warnings.Add("");
             result.Suggestions.Add("🔧 For datasets with rare classes:");
             result.Suggestions.Add($"   1. Collect more data (target: ≥{RECOMMENDED_PER_CLASS} samples per class, ≥{classCount * RECOMMENDED_PER_CLASS} total)");

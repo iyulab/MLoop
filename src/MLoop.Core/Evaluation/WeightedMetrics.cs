@@ -17,8 +17,12 @@ namespace MLoop.Core.Evaluation;
 /// </remarks>
 public static class WeightedMetrics
 {
-    /// <summary>Weighted binary metrics, or <c>null</c> when the columns they need are missing.</summary>
-    public static Dictionary<string, double>? Binary(IDataView predictions, string labelColumn, string weightColumn)
+    /// <summary>
+    /// Weighted binary metrics — or, with no <paramref name="weightColumn"/>, each row counting once — or
+    /// <c>null</c> when the columns they need are missing. Unlike ML.NET's evaluator, rows of one class are
+    /// scored: what they leave undefined (AUC, and recall or precision of the absent class) is left out.
+    /// </summary>
+    public static Dictionary<string, double>? Binary(IDataView predictions, string labelColumn, string? weightColumn)
     {
         var label = predictions.Schema.GetColumnOrNull(labelColumn);
         var predicted = predictions.Schema.GetColumnOrNull("PredictedLabel");
@@ -31,8 +35,8 @@ public static class WeightedMetrics
             return null;
         var hasProbability = probability is { } pc && pc.Type == NumberDataViewType.Single;
 
-        var weights = WeightedResampling.ReadWeights(predictions, weightColumn);
-        var rows = new List<(bool Y, bool P, float S, float Prob, double W)>(weights.Length);
+        var weights = weightColumn is null ? null : WeightedResampling.ReadWeights(predictions, weightColumn);
+        var rows = new List<(bool Y, bool P, float S, float Prob, double W)>(weights?.Length ?? 0);
         var columns = new List<DataViewSchema.Column> { label.Value, predicted.Value, score.Value };
         if (hasProbability) columns.Add(probability!.Value);
         using (var cursor = predictions.GetRowCursor(columns))
@@ -49,7 +53,7 @@ public static class WeightedMetrics
                 getPredicted(ref p);
                 getScore(ref s);
                 getProbability?.Invoke(ref prob);
-                rows.Add((isPositive(), p, s, prob, weights[i++]));
+                rows.Add((isPositive(), p, s, prob, weights is null ? 1.0 : weights[i++]));
             }
         }
 

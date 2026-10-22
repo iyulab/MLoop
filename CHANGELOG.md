@@ -37,6 +37,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Binary classification, multiclass classification and regression train with MLoop's own trainer search**
+  (`MLoop.Search`) instead of ML.NET AutoML's experiment. What a run records changes with it: each trial is scored
+  as a mean over stratified folds (with its spread) and the best is refit on the whole training partition; a trial
+  names its trainer (`LbfgsLogisticRegression`, `FastTree`) rather than an AutoML pipeline string; the seed and
+  thread count go into `config.json`; a weight column weights the trainers instead of resampling rows; and the
+  search spends its whole time budget. Saved models load and predict as before — the column layout is unchanged.
+  Data with so few rows of one class that a fold holds none no longer falls back to a single SDCA fit: such a fold
+  is scored with the metrics it defines.
 - **Breaking (in-process API):** `MLoop.Core` no longer hands out ML.NET AutoML column types.
   `AutoMLRunner.BuildColumnInformation` is `AutoMLRunner.BuildColumnRoles` and returns a `ColumnRoles` for every
   table — read a role's columns with `roles.Of(ColumnRole.Text)` where you read `info.TextColumnNames`, and the label

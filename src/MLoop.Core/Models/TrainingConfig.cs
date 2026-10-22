@@ -191,11 +191,11 @@ public record TrainingConfig
     public string? ItemColumn { get; init; }
 
     /// <summary>
-    /// Which trainer search a binary run uses. Internal and off by default: the MLoop search is compared
-    /// with AutoML's inside <c>MLoop.Core.Tests</c> before it replaces it.
+    /// Which trainer search a binary, multiclass or regression run uses — MLoop's own. Internal: AutoML's is
+    /// kept only for the comparison inside <c>MLoop.Core.Tests</c> until the AutoML package is removed.
     /// TODO(AutoML removal): remove with the AutoML package — the MLoop search becomes the only one.
     /// </summary>
-    internal SearchEngine Engine { get; init; } = SearchEngine.AutoML;
+    internal SearchEngine Engine { get; init; } = SearchEngine.MLoop;
 
     /// <summary>
     /// The seed and threads MLoop's search runs with; <see langword="null"/> for its defaults. Internal,

@@ -54,7 +54,8 @@ public class TabularTrialProgressTests : IDisposable
     }
 
     private async Task<(AutoMLResult Result, CollectingProgress Progress)> TrainAsync(
-        string csvPath, string task, string label, string? metric = null, int timeLimitSeconds = 10)
+        string csvPath, string task, string label, string? metric = null, int timeLimitSeconds = 10,
+        SearchEngine engine = SearchEngine.MLoop)
     {
         var ctx = new MLContext(seed: 42);
         var runner = new AutoMLRunner(ctx, new CsvDataLoader(ctx));
@@ -65,7 +66,8 @@ public class TabularTrialProgressTests : IDisposable
             LabelColumn = label,
             Task = task,
             TimeLimitSeconds = timeLimitSeconds,
-            Metric = metric ?? string.Empty
+            Metric = metric ?? string.Empty,
+            Engine = engine,
         };
 
         var progress = new CollectingProgress();
@@ -126,13 +128,14 @@ public class TabularTrialProgressTests : IDisposable
     [Fact]
     public async Task Manual_fallback_reports_the_metric_it_actually_measured()
     {
-        // The path taken when AutoML's AUC computation fails. It used to announce itself
+        // The path taken when AutoML's AUC computation fails — AutoML's engine only, so pinned to it while
+        // that engine exists (MLoop's search does not divert on this data). It used to announce itself
         // before fitting with accuracy=0 and elapsed=0 — a trial line reading "accuracy=0.0000" and
         // a progress bar pinned at 0%, since the CLI derives its percentage from ElapsedSeconds.
         // 150 rows is the size measured to divert here.
         var csv = await WriteCsvAsync("fallback.csv", BinaryFixture(rows: 150));
 
-        var (result, progress) = await TrainAsync(csv, "binary-classification", "label", metric: "accuracy");
+        var (result, progress) = await TrainAsync(csv, "binary-classification", "label", metric: "accuracy", engine: SearchEngine.AutoML);
 
         Assert.NotNull(result.Model);
         var trial = Assert.Single(progress.Trials);

@@ -547,6 +547,12 @@ public partial class AutoMLRunner
         var optimizingMetric = GetBinaryMetric(config);
         string? metricFallbackNote = null;
 
+        // The fallbacks below answer ML.NET AutoML's AUC failure; MLoop's search scores a fold of one class
+        // instead of failing on it, and is not retried under them.
+        if (SearchesWithMLoop(config))
+            return await RunBinaryClassificationCoreAsync(
+                trainSet, testSet, config, optimizingMetric, progress, cancellationToken, validationSet: validationSet).ConfigureAwait(false);
+
         try
         {
             return await RunBinaryClassificationCoreAsync(
@@ -807,9 +813,22 @@ public partial class AutoMLRunner
     }
 
     private Dictionary<string, double> ScoreBinary(IDataView scored, string labelColumn)
-        => WithoutUndefinedRanking(MetricReport.Describe(scored.Schema.GetColumnOrNull("Probability") != null
-            ? _mlContext.BinaryClassification.Evaluate(scored, labelColumn)
-            : _mlContext.BinaryClassification.EvaluateNonCalibrated(scored, labelColumn)));
+    {
+        try
+        {
+            return WithoutUndefinedRanking(MetricReport.Describe(scored.Schema.GetColumnOrNull("Probability") != null
+                ? _mlContext.BinaryClassification.Evaluate(scored, labelColumn)
+                : _mlContext.BinaryClassification.EvaluateNonCalibrated(scored, labelColumn)));
+        }
+        catch (Exception ex) when (IsAucUndefinedException(ex))
+        {
+            // Rows of one class — a fold or a test partition of rare positives. ML.NET's evaluator throws
+            // rather than leave AUC undefined; the metrics the rows do define come from their counts.
+            if (WeightedMetrics.Binary(scored, labelColumn, weightColumn: null) is { } counted)
+                return counted;
+            throw;
+        }
+    }
 
     // Whether LightGBM's native library loads here — it has none for osx-arm64. A search leaves the
     // trainer out rather than spend trials failing on it.

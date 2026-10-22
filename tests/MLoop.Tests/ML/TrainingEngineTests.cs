@@ -732,24 +732,20 @@ public class TrainingEngineTests : IDisposable
     /// <summary>
     /// One run reports its trials three ways — the live <c>trial</c> events, the count on
     /// <c>phase(complete)</c>, and the rows of <c>trials.ndjson</c> — and they have to be the same
-    /// number. They were not: <c>complete</c> read <c>AutoMLResult.Trials</c> while the events came
-    /// from the progress channel, and the manual fallback filled only the second, so a run that
-    /// emitted one trial summarised itself as "0 trials" and wrote no file. A downstream tree UI
-    /// drew one node under a "0 trials" heading and reported it.
-    ///
-    /// The fallback is the case to pin because it is the one where the two productions came apart,
-    /// and a unit test on the emitter cannot see it — the disagreement only exists once a real run
-    /// has both a channel and a persisted result.
+    /// number. They were not once: <c>complete</c> read the result's trials while the events came from
+    /// the progress channel, and a path that filled only one of them summarised a run that emitted a
+    /// trial as "0 trials" and wrote no file. A downstream tree UI drew one node under a "0 trials"
+    /// heading and reported it. The disagreement only exists once a real run has both a channel and a
+    /// persisted result, so a unit test on the emitter cannot see it.
     /// </summary>
+    /// <remarks>
+    /// Two positives in 150 rows — the data that sent ML.NET AutoML to its manual SDCA fallback, the path
+    /// where the two productions came apart (still pinned on that engine in <c>TabularTrialProgressTests</c>).
+    /// MLoop's search runs it as any other.
+    /// </remarks>
     [Fact]
-    public async Task TrainAsync_ManualFallback_ReportedTrialsAgreeWithSummaryAndFile()
+    public async Task TrainAsync_ExtremeImbalance_ReportedTrialsAgreeWithSummaryAndFile()
     {
-        // Two positives in 150 rows: AUC needs both classes present in whatever holdout AutoML
-        // validates against, and at this ratio it cannot count on that — the run raises
-        // AUC-undefined for both AUC and F1Score and diverts to the manual SDCA pipeline.
-        // Constructed from that property rather than a magic row count, so it stays the fallback
-        // path. The trainer-name assertion below fails loudly if it ever stops diverting, rather
-        // than passing on the AutoML path by accident.
         var csv = Path.Combine(_tempDir, "fallback-ledger.csv");
         var lines = new List<string> { "f1,f2,label" };
         for (int i = 0; i < 150; i++)
@@ -774,8 +770,7 @@ public class TrainingEngineTests : IDisposable
         lock (events) seen = [.. events];
 
         var reported = seen.Where(p => p.Phase is null).ToList();
-        var trial = Assert.Single(reported);
-        Assert.Contains("fallback", trial.TrainerName);
+        Assert.NotEmpty(reported);
 
         var complete = Assert.Single(seen, p => p.Phase == TrainingPhase.Complete);
         Assert.Equal(reported.Count, complete.TrialNumber);
@@ -785,8 +780,8 @@ public class TrainingEngineTests : IDisposable
         Assert.True(File.Exists(trialsPath), "a reported trial left no row in trials.ndjson");
         Assert.Equal(reported.Count, (await File.ReadAllLinesAsync(trialsPath)).Length);
 
-        // A leaderboard the search can be ranked by: the fallback optimizes accuracy, which
-        // MetricDirection knows, so "unknown" here would mean the ranking metric went unrecorded.
+        // A leaderboard the search can be ranked by: the run's metric is one MetricDirection knows, so
+        // "unknown" here would mean the ranking metric went unrecorded.
         var leaderboard = JsonDocument.Parse(
             await File.ReadAllTextAsync(Path.Combine(experimentPath, "leaderboard.json")));
         Assert.Equal(reported.Count, leaderboard.RootElement.GetProperty("trialCount").GetInt32());

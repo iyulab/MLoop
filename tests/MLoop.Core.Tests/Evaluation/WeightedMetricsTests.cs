@@ -43,6 +43,31 @@ public class WeightedMetricsTests
     }
 
     [Fact]
+    public void Binary_WithoutAWeightColumn_CountsEachRowOnce()
+    {
+        var view = _ml.Data.LoadFromEnumerable(BinaryRows());
+
+        Assert.Equal(WeightedMetrics.Binary(view, "Label", "W"), WeightedMetrics.Binary(view, "Label", weightColumn: null));
+    }
+
+    // ML.NET's evaluator throws on rows of one class ("AUC is not defined"); a fold of rare positives is such
+    // rows, and a search scores it with what those rows define.
+    [Fact]
+    public void Binary_RowsOfOneClass_AreScored_WithoutWhatTheyLeaveUndefined()
+    {
+        var rows = BinaryRows().Where(r => !r.Label).ToList();
+        var view = _ml.Data.LoadFromEnumerable(rows);
+        Assert.ThrowsAny<Exception>(() => _ml.BinaryClassification.Evaluate(view, "Label"));
+
+        var metrics = WeightedMetrics.Binary(view, "Label", weightColumn: null)!;
+
+        Assert.Equal(rows.Count(r => !r.PredictedLabel) / (double)rows.Count, metrics["accuracy"], 9);
+        Assert.Equal(metrics["accuracy"], metrics["negative_recall"], 9);
+        Assert.False(metrics.ContainsKey("auc"));
+        Assert.False(metrics.ContainsKey("recall"));
+    }
+
+    [Fact]
     public void Binary_UnitWeights_MatchTheEvaluator()
     {
         var view = _ml.Data.LoadFromEnumerable(BinaryRows());
