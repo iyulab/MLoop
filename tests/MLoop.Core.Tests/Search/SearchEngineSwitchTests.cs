@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.ML;
+using Microsoft.ML.Data;
 using MLoop.Core.AutoML;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
@@ -50,7 +51,8 @@ public sealed class SearchEngineSwitchTests : IDisposable
         return path;
     }
 
-    private static async Task<AutoMLResult> TrainAsync(string csv, SearchEngine engine, int seconds = 8)
+    private static async Task<AutoMLResult> TrainAsync(string csv, SearchEngine engine, int seconds = 8,
+        string label = "churn", string task = "binary-classification", string metric = "auc")
     {
         var ctx = new MLContext(seed: 42);
         var runner = new AutoMLRunner(ctx, new CsvDataLoader(ctx));
@@ -58,12 +60,58 @@ public sealed class SearchEngineSwitchTests : IDisposable
         {
             ModelName = "engine",
             DataFile = csv,
-            LabelColumn = "churn",
-            Task = "binary-classification",
+            LabelColumn = label,
+            Task = task,
             TimeLimitSeconds = seconds,
-            Metric = "auc",
+            Metric = metric,
             Engine = engine,
         }, null, CancellationToken.None);
+    }
+
+    private string WriteMulticlassCsv(int rows = 600)
+    {
+        var random = new Random(23);
+        var lines = new List<string> { "x,z,colour,tier" };
+        string[] colours = ["red", "green", "blue"];
+        for (var i = 0; i < rows; i++)
+        {
+            var x = random.NextDouble();
+            var colour = colours[random.Next(colours.Length)];
+            var score = x + (colour == "red" ? 0.3 : 0) + random.NextDouble() * 0.3;
+            var tier = score < 0.55 ? "bronze" : score < 0.95 ? "silver" : "gold";
+            lines.Add(string.Create(CultureInfo.InvariantCulture, $"{x:F4},{random.NextDouble():F4},{colour},{tier}"));
+        }
+        var path = Path.Combine(_dir, "tiers.csv");
+        File.WriteAllLines(path, lines);
+        return path;
+    }
+
+    [Fact]
+    public async Task TheMLoopSearch_GivesAMulticlassResultOfTheSameShape()
+    {
+        var csv = WriteMulticlassCsv();
+
+        var mloop = await TrainAsync(csv, SearchEngine.MLoop, label: "tier", task: "multiclass-classification", metric: "macro_accuracy");
+        var automl = await TrainAsync(csv, SearchEngine.AutoML, label: "tier", task: "multiclass-classification", metric: "macro_accuracy");
+
+        _output.WriteLine($"AutoML: {automl.Trainer.Name} macro_accuracy {automl.Metrics["macro_accuracy"]:F4} · {automl.Trials.Count} trials");
+        _output.WriteLine($"MLoop:  {mloop.Trainer.Name} macro_accuracy {mloop.Metrics["macro_accuracy"]:F4} · {mloop.Trials.Count} trials");
+
+        Assert.Contains(mloop.Trainer.Name, MLoop.Search.Candidates.CandidateCatalog.Multiclass().Select(c => c.Name));
+        Assert.Equal("macro_accuracy", mloop.RankingMetric);
+        Assert.Subset(mloop.Metrics.Keys.ToHashSet(), automl.Metrics.Keys.ToHashSet());
+        Assert.Contains("macro_f1", mloop.Metrics.Keys);
+        Assert.All(mloop.Trials.Where(t => t.Error is null), t => Assert.Contains("macro_accuracy", t.Metrics.Keys));
+        // The saved model answers in the label's own values, as the AutoML one does.
+        var loadContext = new MLContext(seed: 1);
+        var answers = mloop.Model.Transform(new CsvDataLoader(loadContext).LoadData(csv, "tier", "multiclass-classification"));
+        Assert.Subset(new HashSet<string> { "bronze", "silver", "gold" },
+            answers.GetColumn<ReadOnlyMemory<char>>("PredictedLabel").Select(v => v.ToString()).ToHashSet());
+        // Each probability is named after its class, read from the Score column's annotations as for AutoML's models.
+        var score = answers.Schema["Score"];
+        var names = MulticlassScoreVocabulary.Of(score, ((VectorDataViewType)score.Type).Size);
+        Assert.Equal(new HashSet<string> { "bronze", "silver", "gold" }, names!.ToHashSet());
+        Assert.True(mloop.Metrics["macro_accuracy"] > 0.7, $"MLoop search macro_accuracy {mloop.Metrics["macro_accuracy"]}");
     }
 
     [Fact]

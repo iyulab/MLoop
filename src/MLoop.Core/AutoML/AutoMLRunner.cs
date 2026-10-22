@@ -486,11 +486,11 @@ public partial class AutoMLRunner
                 $"The test data has no weight column '{config.WeightColumn}'; a weighted model is judged on weighted test rows.");
     }
 
-    // Whether MLoop's own search runs this training. It covers binary classification so far.
-    // TODO(AutoML removal): multiclass and regression.
+    // Whether MLoop's own search runs this training. It covers classification so far.
+    // TODO(AutoML removal): regression.
     private static bool SearchesWithMLoop(TrainingConfig config)
         => config.Engine == SearchEngine.MLoop
-           && config.Task.Equals("binary-classification", StringComparison.OrdinalIgnoreCase);
+           && (IsBinary(config) || config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Re-scores the test partition with the final model and replaces the task's evaluator metrics
@@ -598,7 +598,9 @@ public partial class AutoMLRunner
     {
         if (SearchesWithMLoop(config))
         {
-            return await RunBinaryWithMLoopSearchAsync(trainSet, testSet, config, optimizingMetric, progress, cancellationToken)
+            return await RunWithMLoopSearchAsync(trainSet, testSet, config,
+                CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
+                DescribeBinaryMetric(optimizingMetric).Name, ScoreBinaryWithCalibrationError, progress, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -675,15 +677,19 @@ public partial class AutoMLRunner
     }
 
     /// <summary>
-    /// The binary path on MLoop's own search (<see cref="TrialRunner"/>): the same roles, portable-text
-    /// step, test evaluation, calibration and trial records as the AutoML path, with the search —
-    /// candidates, tuner, folds, refit — owned here.
+    /// A classification run on MLoop's own search (<see cref="TrialRunner"/>): the same roles, portable-text
+    /// step, test evaluation and trial records as the AutoML path, with the search — candidates, tuner, folds,
+    /// refit — owned here. <paramref name="score"/> gives the metrics of scored rows, for each fold (weighted
+    /// when the run is) and for the test partition. A binary model without probabilities gets them from a
+    /// calibrator fitted on the test predictions, as on the AutoML path.
     /// </summary>
-    private async Task<AutoMLResult> RunBinaryWithMLoopSearchAsync(
+    private async Task<AutoMLResult> RunWithMLoopSearchAsync(
         IDataView trainSet,
         IDataView testSet,
         TrainingConfig config,
-        BinaryClassificationMetric optimizingMetric,
+        IReadOnlyList<TrainerCandidate> candidates,
+        string metric,
+        Func<IDataView, string, Dictionary<string, double>> score,
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -692,12 +698,11 @@ public partial class AutoMLRunner
         if (config.Portable)
             (roles, portableText, trainSet, _) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, null);
 
-        var metric = DescribeBinaryMetric(optimizingMetric).Name;
         var channel = CreateTrialChannel(progress);
         var request = new SearchRequest(
-            CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
+            candidates,
             RankingPolicy.For(metric),
-            scored => ScoreFold(scored, config),
+            scored => ScoreFold(scored, config, score),
             TimeSpan.FromSeconds(config.TimeLimitSeconds),
             config.SearchSettings ?? Settings,
             Weight: string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn,
@@ -717,10 +722,10 @@ public partial class AutoMLRunner
 
         var bestModel = PortableTextFeaturizer.Prepend(portableText, search.Model);
         var predictions = bestModel.Transform(testSet);
-        var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
-        var metricsDict = ScoreBinary(predictions, config.LabelColumn);
-        if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
-            metricsDict[CalibrationError.MetricName] = binaryEce;
+        var model = IsBinary(config)
+            ? EnsureCalibratedModel(_mlContext, bestModel, predictions, config.LabelColumn,
+                predictions.Schema.GetColumnOrNull("Probability") != null)
+            : bestModel;
 
         return new AutoMLResult
         {
@@ -730,8 +735,8 @@ public partial class AutoMLRunner
                 FallbackReason = search.FallbackReason,
                 FallbackKind = search.FallbackReason is null ? TrainerFallbackKind.None : TrainerFallbackKind.RefitFailed,
             },
-            Model = EnsureCalibratedModel(_mlContext, bestModel, predictions, config.LabelColumn, hasProbability),
-            Metrics = metricsDict,
+            Model = model,
+            Metrics = score(predictions, config.LabelColumn),
             RowCount = trainSet.GetRowCount() ?? 0,
             Trials = [.. channel.Records],
             RankingMetric = metric,
@@ -739,17 +744,55 @@ public partial class AutoMLRunner
         };
     }
 
+    private static bool IsBinary(TrainingConfig config)
+        => config.Task.Equals("binary-classification", StringComparison.OrdinalIgnoreCase);
+
     // The seed and threads the MLoop search runs with unless the run sets its own (TrainingConfig.SearchSettings);
     // recorded with the experiment (AutoMLResult.Search).
     private static readonly SearchSettings Settings = new(Seed: 1, Threads: 1);
 
     // A fold's metrics: weighted by the run's weight column when it has one, as the test partition's are.
-    private Dictionary<string, double> ScoreFold(IDataView scored, TrainingConfig config)
+    private static Dictionary<string, double> ScoreFold(
+        IDataView scored, TrainingConfig config, Func<IDataView, string, Dictionary<string, double>> score)
     {
-        var metrics = ScoreBinary(scored, config.LabelColumn);
+        var metrics = score(scored, config.LabelColumn);
         if (!string.IsNullOrEmpty(config.WeightColumn))
             OverlayWeighted(metrics, scored, config.Task, config.LabelColumn, config.WeightColumn);
         return metrics;
+    }
+
+    // A binary model's metrics on scored rows and, where it gives probabilities, their calibration error.
+    private Dictionary<string, double> ScoreBinaryWithCalibrationError(IDataView scored, string labelColumn)
+    {
+        var metrics = ScoreBinary(scored, labelColumn);
+        if (CalibrationError.Binary(scored, labelColumn) is { } ece)
+            metrics[CalibrationError.MetricName] = ece;
+        return metrics;
+    }
+
+    // A multiclass model's metrics on scored rows: the evaluator's, the calibration error, and macro F1 from
+    // the per-class precision and recall — for the test partition and, on MLoop's search, each fold.
+    private Dictionary<string, double> ScoreMulticlass(IDataView scored, string labelColumn)
+    {
+        var metrics = _mlContext.MulticlassClassification.Evaluate(scored, labelColumn);
+        var described = MetricReport.Describe(metrics);
+        if (CalibrationError.Multiclass(scored, labelColumn) is { } ece)
+            described[CalibrationError.MetricName] = ece;
+
+        var cm = metrics.ConfusionMatrix;
+        var classCount = cm.PerClassPrecision.Count;
+        if (classCount > 0)
+        {
+            double f1Sum = 0;
+            for (var i = 0; i < classCount; i++)
+            {
+                var p = cm.PerClassPrecision[i];
+                var r = cm.PerClassRecall[i];
+                f1Sum += (p + r) > 0 ? 2 * p * r / (p + r) : 0;
+            }
+            described["macro_f1"] = f1Sum / classCount;
+        }
+        return described;
     }
 
     private Dictionary<string, double> ScoreBinary(IDataView scored, string labelColumn)
@@ -1257,12 +1300,22 @@ public partial class AutoMLRunner
         IDataView? validationSet = null)
     {
         var optimizingMetric = GetMulticlassMetric(config);
+        if (SearchesWithMLoop(config))
+        {
+            return await RunWithMLoopSearchAsync(trainSet, testSet, config,
+                CandidateCatalog.Multiclass(name => name != "LightGbm" || LightGbmLoads.Value),
+                DescribeMulticlassMetric(optimizingMetric).Name, ScoreMulticlass, progress, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var settings = new MulticlassExperimentSettings
         {
             MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
             OptimizingMetric = optimizingMetric,
             CancellationToken = cancellationToken
         };
+        if (config.SearchMaxTrials is { } maxTrials)
+            settings.MaxModels = maxTrials;
 
         var experiment = _mlContext.Auto().CreateMulticlassClassificationExperiment(settings);
 
@@ -1290,34 +1343,7 @@ public partial class AutoMLRunner
         // Evaluate on test set
         var bestModel = PortableTextFeaturizer.Prepend(portableText, experimentResult.BestRun.Model);
         var predictions = bestModel.Transform(testSet);
-        var metrics = _mlContext.MulticlassClassification.Evaluate(predictions, config.LabelColumn);
-
-        var metricsDict = MetricReport.Describe(metrics);
-
-        if (CalibrationError.Multiclass(predictions, config.LabelColumn) is { } multiclassEce)
-            metricsDict[CalibrationError.MetricName] = multiclassEce;
-
-        // Calculate Macro F1 from confusion matrix per-class precision/recall
-        try
-        {
-            var cm = metrics.ConfusionMatrix;
-            var classCount = cm.PerClassPrecision.Count;
-            if (classCount > 0)
-            {
-                double f1Sum = 0;
-                for (int i = 0; i < classCount; i++)
-                {
-                    var p = cm.PerClassPrecision[i];
-                    var r = cm.PerClassRecall[i];
-                    f1Sum += (p + r) > 0 ? 2 * p * r / (p + r) : 0;
-                }
-                metricsDict["macro_f1"] = f1Sum / classCount;
-            }
-        }
-        catch
-        {
-            // Non-critical: skip if confusion matrix unavailable
-        }
+        var metricsDict = ScoreMulticlass(predictions, config.LabelColumn);
 
         return new AutoMLResult
         {

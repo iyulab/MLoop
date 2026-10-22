@@ -113,4 +113,50 @@ public sealed class ValidationAndCatalogTests
             CandidateCatalog.Binary().Select(c => c.Name));
         Assert.DoesNotContain(CandidateCatalog.Binary(name => name != "LightGbm"), c => c.Name == "LightGbm");
     }
+
+    private sealed class ClassRow
+    {
+        public string Label { get; set; } = "";
+
+        [VectorType(2)]
+        public float[] Features { get; set; } = [];
+    }
+
+    [Fact]
+    public void EveryMulticlassCandidate_BuildsFromItsStart_FitsAndAnswersWithTheLabelsValues()
+    {
+        var ml = new MLContext(seed: 1);
+        var random = new Random(5);
+        string[] classes = ["low", "mid", "high"];
+        var data = ml.Data.LoadFromEnumerable(Enumerable.Range(0, 300).Select(i =>
+        {
+            var k = i % 3;
+            return new ClassRow { Label = classes[k], Features = [(float)(k + random.NextDouble()), (float)random.NextDouble()] };
+        }).ToList());
+        var columns = new TrainerColumns("Label", "Features");
+
+        foreach (var candidate in CandidateCatalog.Multiclass())
+        {
+            var estimator = candidate.Build(ml, candidate.Space.PointAt(candidate.Space.Default), columns, new SearchSettings());
+            ITransformer model;
+            try
+            {
+                model = estimator.Fit(data);
+            }
+            catch (Exception ex) when (candidate.Name == "LightGbm" && ex.GetBaseException() is DllNotFoundException)
+            {
+                continue;   // no native LightGBM on this platform (osx-arm64)
+            }
+            var scored = model.Transform(data);
+            var predicted = scored.GetColumn<ReadOnlyMemory<char>>("PredictedLabel").Select(v => v.ToString()).ToHashSet();
+            Assert.Subset(classes.ToHashSet(), predicted);
+            // The label column comes out as the key the trainer read, so the evaluator reads it directly. A
+            // start is cheap, not good — SDCA's (L1 = 1) barely learns — so the floor is chance among three.
+            var accuracy = ml.MulticlassClassification.Evaluate(scored, "Label").MicroAccuracy;
+            Assert.True(accuracy > 1.0 / 3, $"{candidate.Name}: accuracy {accuracy}");
+        }
+        Assert.Equal(["FastTreeOva", "FastForestOva", "LightGbm", "LbfgsMaximumEntropy", "SdcaMaximumEntropy",
+                "LbfgsLogisticRegressionOva", "SdcaLogisticRegressionOva"],
+            CandidateCatalog.Multiclass().Select(c => c.Name));
+    }
 }

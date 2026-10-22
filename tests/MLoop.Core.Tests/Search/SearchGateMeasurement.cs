@@ -36,9 +36,10 @@ public sealed class SearchGateFactAttribute : FactAttribute
 /// directory, else the test output) whose numbers set the gate's tolerances.
 /// </summary>
 /// <remarks>
-/// Data sets: three generated binary tables, plus every <c>name.csv</c> with a <c>name.label</c> beside it
-/// (the label column's name) in <c>MLOOP_SEARCH_GATE_DATA</c>. LightGBM is a candidate only where its native
-/// library loads, so a machine without it compares four trainers, not five.
+/// Data sets: three generated binary tables and one multiclass, plus every <c>name.csv</c> with a <c>name.label</c>
+/// beside it (the label column's name; <c>multiclass</c> on a second line) in <c>MLOOP_SEARCH_GATE_DATA</c>.
+/// LightGBM is a candidate only where its native library loads, so a machine without it compares one trainer
+/// fewer.
 /// </remarks>
 [Collection("FileSystem")]
 [Trait(TestCategories.Category, TestCategories.Integration)]
@@ -63,7 +64,7 @@ public sealed class SearchGateMeasurement : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch { /* temp */ }
     }
 
-    private sealed record DataSet(string Name, string Path, string Label);
+    private sealed record DataSet(string Name, string Path, string Label, string Task = "binary-classification", string Metric = "auc");
 
     private sealed record Run(string DataSet, string Engine, int Seed, int? MaxTrials, int Budget,
         string Metric, double? Value, int Trials, int Scored, double Seconds, string? Error);
@@ -107,15 +108,22 @@ public sealed class SearchGateMeasurement : IDisposable
             Generate("numeric-2k", 2000, (rng, i) => { var x = rng.NextDouble(); var z = rng.NextDouble(); return ([F(x), F(z), F(rng.NextDouble())], x + 0.5 * z + rng.NextDouble() * 0.6 > 1.0); }, "x,z,noise"),
             Generate("mixed-2k", 2000, (rng, i) => { string[] c = ["red", "green", "blue", "grey", "black"]; var x = rng.NextDouble(); var colour = c[rng.Next(c.Length)]; return ([F(x), colour, F(rng.NextDouble())], x + (colour is "red" or "blue" ? 0.35 : 0) + rng.NextDouble() * 0.5 > 0.95); }, "x,colour,noise"),
             Generate("imbalanced-5k", 5000, (rng, i) => { var x = rng.NextDouble(); var z = rng.NextDouble(); return ([F(x), F(z), F(rng.NextDouble())], x * z + rng.NextDouble() * 0.15 > 0.8); }, "x,z,noise"),
+            GenerateClasses("tiers-3k", 3000),
         };
 
         if (Environment.GetEnvironmentVariable("MLOOP_SEARCH_GATE_DATA") is { Length: > 0 } dir && Directory.Exists(dir))
         {
             foreach (var csv in Directory.EnumerateFiles(dir, "*.csv").Order(StringComparer.Ordinal))
             {
+                // name.label: the label column on the first line; "multiclass" on a second line for a multiclass set.
                 var labelFile = System.IO.Path.ChangeExtension(csv, ".label");
-                if (File.Exists(labelFile))
-                    sets.Add(new DataSet(System.IO.Path.GetFileNameWithoutExtension(csv), csv, File.ReadAllText(labelFile).Trim()));
+                if (!File.Exists(labelFile))
+                    continue;
+                var spec = File.ReadAllLines(labelFile).Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
+                var name = System.IO.Path.GetFileNameWithoutExtension(csv);
+                sets.Add(spec.Length > 1 && spec[1].Equals("multiclass", StringComparison.OrdinalIgnoreCase)
+                    ? new DataSet(name, csv, spec[0], "multiclass-classification", "macro_accuracy")
+                    : new DataSet(name, csv, spec[0]));
             }
         }
         return sets;
@@ -135,6 +143,25 @@ public sealed class SearchGateMeasurement : IDisposable
         return new DataSet(name, path, "label");
     }
 
+    private DataSet GenerateClasses(string name, int rows)
+    {
+        var rng = new Random(29);
+        string[] colours = ["red", "green", "blue"];
+        var lines = new List<string>(rows + 1) { "x,z,colour,noise,label" };
+        for (var i = 0; i < rows; i++)
+        {
+            var x = rng.NextDouble();
+            var z = rng.NextDouble();
+            var colour = colours[rng.Next(colours.Length)];
+            var score = x + 0.3 * z + (colour == "red" ? 0.25 : 0) + rng.NextDouble() * 0.3;
+            var label = score < 0.6 ? "bronze" : score < 1.0 ? "silver" : "gold";
+            lines.Add($"{F(x)},{F(z)},{colour},{F(rng.NextDouble())},{label}");
+        }
+        var path = System.IO.Path.Combine(_dir, name + ".csv");
+        File.WriteAllLines(path, lines);
+        return new DataSet(name, path, "label", "multiclass-classification", "macro_accuracy");
+    }
+
     private static string F(double value) => value.ToString("F4", CultureInfo.InvariantCulture);
 
     private static TrainingConfig Config(DataSet set, SearchEngine engine, int seed, int? maxTrials, int budget) => new()
@@ -142,9 +169,9 @@ public sealed class SearchGateMeasurement : IDisposable
         ModelName = "gate",
         DataFile = set.Path,
         LabelColumn = set.Label,
-        Task = "binary-classification",
+        Task = set.Task,
         TimeLimitSeconds = budget,
-        Metric = "auc",
+        Metric = set.Metric,
         Engine = engine,
         SearchSettings = new SearchSettings(Seed: seed, Threads: 1),
         SearchMaxTrials = maxTrials,
@@ -158,13 +185,13 @@ public sealed class SearchGateMeasurement : IDisposable
         {
             var result = await new AutoMLRunner(ctx, new CsvDataLoader(ctx))
                 .RunAsync(Config(set, engine, seed, maxTrials, budget), null, CancellationToken.None);
-            return new Run(set.Name, engine.ToString(), seed, maxTrials, budget, "auc",
-                result.Metrics.TryGetValue("auc", out var auc) ? auc : null,
+            return new Run(set.Name, engine.ToString(), seed, maxTrials, budget, set.Metric,
+                result.Metrics.TryGetValue(set.Metric, out var value) ? value : null,
                 result.Trials.Count, result.Trials.Count(t => t.Error is null), clock.Elapsed.TotalSeconds, null);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            return new Run(set.Name, engine.ToString(), seed, maxTrials, budget, "auc", null, 0, 0, clock.Elapsed.TotalSeconds, ex.GetBaseException().Message);
+            return new Run(set.Name, engine.ToString(), seed, maxTrials, budget, set.Metric, null, 0, 0, clock.Elapsed.TotalSeconds, ex.GetBaseException().Message);
         }
     }
 
@@ -181,29 +208,29 @@ public sealed class SearchGateMeasurement : IDisposable
     private void Report(IReadOnlyList<Run> runs, IReadOnlyList<(string DataSet, bool Same)> determinism)
     {
         var md = new StringBuilder();
-        md.AppendLine("# Trainer search comparison — MLoop vs AutoML (binary)");
+        md.AppendLine("# Trainer search comparison — MLoop vs AutoML");
         md.AppendLine();
         md.AppendLine(CultureInfo.InvariantCulture, $"Machine: {System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier}, {Environment.ProcessorCount} cores.");
         md.AppendLine();
-        md.AppendLine(CultureInfo.InvariantCulture, $"## Search quality — {Trials} trials, seeds {string.Join(" ", Seeds)}, test-partition auc");
+        md.AppendLine(CultureInfo.InvariantCulture, $"## Search quality — {Trials} trials, seeds {string.Join(" ", Seeds)}, the test partition's metric");
         md.AppendLine();
-        md.AppendLine("| data | search | mean | min | max | per seed | failed runs |");
-        md.AppendLine("|---|---|---|---|---|---|---|");
-        foreach (var group in runs.Where(r => r.MaxTrials is not null).GroupBy(r => (r.DataSet, r.Engine)))
+        md.AppendLine("| data | metric | search | mean | min | max | per seed | failed runs |");
+        md.AppendLine("|---|---|---|---|---|---|---|---|");
+        foreach (var group in runs.Where(r => r.MaxTrials is not null).GroupBy(r => (r.DataSet, r.Metric, r.Engine)))
         {
             var values = group.Where(r => r.Value is not null).Select(r => r.Value!.Value).ToList();
             md.AppendLine(CultureInfo.InvariantCulture,
-                $"| {group.Key.DataSet} | {group.Key.Engine} | {(values.Count > 0 ? values.Average() : double.NaN):F4} | {(values.Count > 0 ? values.Min() : double.NaN):F4} | {(values.Count > 0 ? values.Max() : double.NaN):F4} | {string.Join(" ", group.Select(r => r.Value?.ToString("F4", CultureInfo.InvariantCulture) ?? "—"))} | {group.Count(r => r.Error is not null)} |");
+                $"| {group.Key.DataSet} | {group.Key.Metric} | {group.Key.Engine} | {(values.Count > 0 ? values.Average() : double.NaN):F4} | {(values.Count > 0 ? values.Min() : double.NaN):F4} | {(values.Count > 0 ? values.Max() : double.NaN):F4} | {string.Join(" ", group.Select(r => r.Value?.ToString("F4", CultureInfo.InvariantCulture) ?? "—"))} | {group.Count(r => r.Error is not null)} |");
         }
         md.AppendLine();
         md.AppendLine("## Time budget — seed 1, default trial cap");
         md.AppendLine();
-        md.AppendLine("| data | search | budget s | took s | trials | scored | auc | error |");
-        md.AppendLine("|---|---|---|---|---|---|---|---|");
+        md.AppendLine("| data | search | budget s | took s | trials | scored | metric | value | error |");
+        md.AppendLine("|---|---|---|---|---|---|---|---|---|");
         foreach (var r in runs.Where(r => r.MaxTrials is null))
         {
             md.AppendLine(CultureInfo.InvariantCulture,
-                $"| {r.DataSet} | {r.Engine} | {r.Budget} | {r.Seconds:F1} | {r.Trials} | {r.Scored} | {r.Value?.ToString("F4", CultureInfo.InvariantCulture) ?? "—"} | {r.Error?.Replace("|", "/", StringComparison.Ordinal)} |");
+                $"| {r.DataSet} | {r.Engine} | {r.Budget} | {r.Seconds:F1} | {r.Trials} | {r.Scored} | {r.Metric} | {r.Value?.ToString("F4", CultureInfo.InvariantCulture) ?? "—"} | {r.Error?.Replace("|", "/", StringComparison.Ordinal)} |");
         }
         md.AppendLine();
         md.AppendLine("## Determinism — MLoop, seed 1 twice, 8 trials");

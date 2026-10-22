@@ -97,6 +97,115 @@ public static class CandidateCatalog
         return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true)];
     }
 
+    /// <summary>
+    /// The multiclass classification trainers: LightGbm, LbfgsMaximumEntropy and SdcaMaximumEntropy, and
+    /// one-versus-all over FastTree, FastForest, LbfgsLogisticRegression and SdcaLogisticRegression — the
+    /// last always searched by AutoML though its option to leave it out was never passed, so it is named
+    /// here rather than inherited unseen. Each maps the label to a key ahead of the trainer and the
+    /// predicted key back to the label's value after it, as AutoML's pipelines did.
+    /// </summary>
+    public static IReadOnlyList<TrainerCandidate> Multiclass(Func<string, bool>? isAvailable = null)
+    {
+        TrainerCandidate[] all =
+        [
+            new("FastTreeOva", FastTreeSpace, 3.701, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.OneVersusAll(
+                ml.BinaryClassification.Trainers.FastTree(new FastTreeBinaryTrainer.Options
+                {
+                    NumberOfLeaves = p.Int("NumberOfLeaves"),
+                    NumberOfTrees = p.Int("NumberOfTrees"),
+                    MinimumExampleCountPerLeaf = p.Int("MinimumExampleCountPerLeaf"),
+                    LearningRate = p["LearningRate"],
+                    MaximumBinCountPerFeature = p.Int("MaximumBinCountPerFeature"),
+                    FeatureFraction = p["FeatureFraction"],
+                    DiskTranspose = false,
+                    NumberOfThreads = s.Threads,
+                    Seed = s.Seed,
+                    LabelColumnName = c.Label,
+                    FeatureColumnName = c.Features,
+                    ExampleWeightColumnName = c.Weight,
+                }), c.Label))),
+            new("FastForestOva", FastForestSpace, 4.283, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.OneVersusAll(
+                ml.BinaryClassification.Trainers.FastForest(new FastForestBinaryTrainer.Options
+                {
+                    NumberOfTrees = p.Int("NumberOfTrees"),
+                    NumberOfLeaves = p.Int("NumberOfLeaves"),
+                    FeatureFraction = p.Single("FeatureFraction"),
+                    NumberOfThreads = s.Threads,
+                    Seed = s.Seed,
+                    LabelColumnName = c.Label,
+                    FeatureColumnName = c.Features,
+                    ExampleWeightColumnName = c.Weight,
+                }), c.Label))),
+            new("LightGbm", LightGbmSpace, 4.765, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.LightGbm(new LightGbmMulticlassTrainer.Options
+            {
+                NumberOfLeaves = p.Int("NumberOfLeaves"),
+                NumberOfIterations = p.Int("NumberOfTrees"),
+                MinimumExampleCountPerLeaf = p.Int("MinimumExampleCountPerLeaf"),
+                LearningRate = p["LearningRate"],
+                MaximumBinCountPerFeature = p.Int("MaximumBinCountPerFeature"),
+                Booster = new GradientBooster.Options
+                {
+                    SubsampleFraction = p["SubsampleFraction"],
+                    FeatureFraction = p["FeatureFraction"],
+                    L1Regularization = p["L1Regularization"],
+                    L2Regularization = p["L2Regularization"],
+                },
+                NumberOfThreads = s.Threads,
+                Seed = s.Seed,
+                Deterministic = true,
+                LabelColumnName = c.Label,
+                FeatureColumnName = c.Features,
+                ExampleWeightColumnName = c.Weight,
+            }))),
+            new("LbfgsMaximumEntropy", LbfgsSpace, 7.980, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.LbfgsMaximumEntropy(new LbfgsMaximumEntropyMulticlassTrainer.Options
+            {
+                L1Regularization = p.Single("L1Regularization"),
+                L2Regularization = p.Single("L2Regularization"),
+                NumberOfThreads = s.Threads,
+                LabelColumnName = c.Label,
+                FeatureColumnName = c.Features,
+                ExampleWeightColumnName = c.Weight,
+            }))),
+            new("SdcaMaximumEntropy", SdcaSpace, 10.129, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.SdcaMaximumEntropy(new SdcaMaximumEntropyMulticlassTrainer.Options
+            {
+                L1Regularization = p.Single("L1Regularization"),
+                L2Regularization = p.Single("L2Regularization"),
+                NumberOfThreads = s.Threads,
+                LabelColumnName = c.Label,
+                FeatureColumnName = c.Features,
+                ExampleWeightColumnName = c.Weight,
+            }))),
+            new("LbfgsLogisticRegressionOva", LbfgsSpace, 11.513, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.OneVersusAll(
+                ml.BinaryClassification.Trainers.LbfgsLogisticRegression(new LbfgsLogisticRegressionBinaryTrainer.Options
+                {
+                    L1Regularization = p.Single("L1Regularization"),
+                    L2Regularization = p.Single("L2Regularization"),
+                    NumberOfThreads = s.Threads,
+                    LabelColumnName = c.Label,
+                    FeatureColumnName = c.Features,
+                    ExampleWeightColumnName = c.Weight,
+                }), c.Label))),
+            new("SdcaLogisticRegressionOva", SdcaSpace, 13.16, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.OneVersusAll(
+                ml.BinaryClassification.Trainers.SdcaLogisticRegression(new SdcaLogisticRegressionBinaryTrainer.Options
+                {
+                    L1Regularization = p.Single("L1Regularization"),
+                    L2Regularization = p.Single("L2Regularization"),
+                    NumberOfThreads = s.Threads,
+                    LabelColumnName = c.Label,
+                    FeatureColumnName = c.Features,
+                    ExampleWeightColumnName = c.Weight,
+                }), c.Label))),
+        ];
+        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true)];
+    }
+
+    // The label as a key for the trainer, and the predicted key back as the label's value.
+    private static IEstimator<ITransformer> KeyedLabel<TTransformer>(MLContext ml, TrainerColumns columns, IEstimator<TTransformer> trainer)
+        where TTransformer : class, ITransformer
+        => ml.Transforms.Conversion.MapValueToKey(columns.Label)
+            .Append(trainer)
+            .Append(ml.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+
     /// <summary>LightGBM (<c>lgbm_search_space.json</c>).</summary>
     public static SearchSpace LightGbmSpace { get; } = new([
         SearchDimension.Integer("NumberOfLeaves", 4, 32768, logBase: false, defaultValue: 4),
