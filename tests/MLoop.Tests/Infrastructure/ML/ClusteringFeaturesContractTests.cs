@@ -9,29 +9,14 @@ using MLoop.Core.Prediction;
 namespace MLoop.Tests.Infrastructure.ML;
 
 /// <summary>
-/// Label-less clustering's structured predict
-/// surfaces (serve <c>/predict</c>, <c>mloop predict --json</c>) hard-failed with a Features dimension
-/// mismatch ("expected Vector&lt;Single, 3&gt;, got Vector&lt;Single, 4&gt;"), while the CLI CSV path
-/// worked by incidental shape-matching.
-///
-/// <para>Root cause: <see cref="CsvDataLoader"/> picks the first CSV column as a "dummy label" so
-/// <c>InferColumns</c> can run on label-less data, then excludes it from the merged "Features" vector —
-/// so the trained schema is <c>[dummyLabel(Single), Features(Vector&lt;2&gt;)]</c>. The old
-/// <c>RunClusteringAsync</c> embedded a <c>Concatenate("Features", [dummyLabel, "Features"])</c> INSIDE
-/// the fitted+saved pipeline, baking in that incidental 2-input shape. At predict time,
-/// <see cref="PredictionService"/>'s <c>EnsureFeaturesColumn</c> (D8) independently builds its OWN
-/// "Features" from every named non-excluded column (dummyLabel included, since predict has no concept
-/// of "dummy") — so the model's embedded Concatenate then re-consumed that already-3-dim "Features" as
-/// one of ITS two inputs, alongside the still-present dummyLabel scalar, producing 1+3=4 instead of the
-/// 3 KMeans was fit on.</para>
-///
-/// <para>Fix (train-side contract normalization): <c>RunClusteringAsync</c> now pre-featurizes
-/// (materializes "Features" from every real feature column, matching what EnsureFeaturesColumn will
-/// build) and fits ONLY the trainer on the result — the saved model embeds no Concatenate at all, so
-/// there is nothing left to re-collide with EnsureFeaturesColumn's output. The CLI CSV path
-/// (<see cref="PredictionEngine"/>) needed a matching fix: since it now bypasses the old embedded
-/// concat too, it must explicitly restore the dummy-label dimension InferColumns split off, or its own
-/// "Features" would carry one fewer dimension than the new bare-trainer model expects.</para>
+/// Label-less clustering's structured predict surfaces (serve <c>/predict</c>, <c>mloop predict --json</c>)
+/// and its file predict read the vector the model was fit on. The saved model is the trainer alone over
+/// <c>Features</c>; every prediction path builds that vector itself — serve from the named columns
+/// (<see cref="PredictionService"/>'s <c>EnsureFeaturesColumn</c>), the file path from the loader's range —
+/// so a Concatenate inside the model would count a column twice ("expected Vector&lt;Single, 3&gt;, got
+/// Vector&lt;Single, 4&gt;"). Training loads a label-less file without a label, so its vector is the same.
+/// The whole train → predict → serve seam, through the commands too, is
+/// <see cref="MLoop.Tests.ML.LabellessVectorTaskSeamTests"/>.
 /// </summary>
 public class ClusteringFeaturesContractTests : IDisposable
 {
@@ -53,8 +38,8 @@ public class ClusteringFeaturesContractTests : IDisposable
         writer.WriteLine("pH,Temp,Current");
         for (int i = 0; i < rows; i++)
         {
-            // Two loose blobs so KMeans has something real to separate, mirroring the KAMP
-            // sensor shape the issue was found on (pH first column = the dummy-label victim).
+            // Two loose blobs so KMeans has something real to separate, with pH first —
+            // the column a label-less load once set apart from the vector.
             var center = i % 2 == 0 ? 5.0 : 9.0;
             var pH = center + rng.NextDouble() * 0.5;
             var temp = center * 4 + rng.NextDouble() * 0.5;
@@ -80,7 +65,7 @@ public class ClusteringFeaturesContractTests : IDisposable
         {
             ModelName = "test",
             DataFile = trainCsv,
-            LabelColumn = "",       // label-less — CsvDataLoader picks "pH" as the InferColumns dummy label
+            LabelColumn = "",       // label-less
             Task = "clustering",
             TimeLimitSeconds = 30,
             NumClusters = 2,

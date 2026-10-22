@@ -32,7 +32,7 @@ public sealed record ColumnLayoutColumn(string Name, ColumnLayoutPurpose Purpose
 /// How a delimited file is read: the loader options (separator, quoting, and the columns — adjacent
 /// columns of one kind folded into one vector) and the purpose of each loaded column.
 /// </summary>
-public sealed record ColumnLayout(TextLoader.Options Options, string Label, IReadOnlyList<ColumnLayoutColumn> Columns)
+public sealed record ColumnLayout(TextLoader.Options Options, string? Label, IReadOnlyList<ColumnLayoutColumn> Columns)
 {
     /// <summary>The loaded columns with <paramref name="purpose"/>, in load order.</summary>
     public IReadOnlyList<string> Of(ColumnLayoutPurpose purpose) =>
@@ -84,10 +84,14 @@ public static class ColumnLayoutInference
     private const int PurposeRows = 1_000;
     private const int MaxColumns = 10_000;
 
-    /// <summary>Infers the layout of <paramref name="path"/>, a file with a header whose column <paramref name="label"/> is the label.</summary>
+    /// <summary>
+    /// Infers the layout of <paramref name="path"/>, a file with a header whose column <paramref name="label"/> is the
+    /// label — or, when <paramref name="label"/> is null, a file without one (clustering, anomaly detection): every
+    /// column is then typed and grouped as a feature, so no column is set apart from the numeric vector.
+    /// </summary>
     /// <exception cref="ColumnLayoutException">The file does not split into consistent columns, or has no data rows.</exception>
     /// <exception cref="ArgumentException">No column is named <paramref name="label"/>.</exception>
-    public static ColumnLayout Infer(MLContext mlContext, string path, string label, char separator = ',')
+    public static ColumnLayout Infer(MLContext mlContext, string path, string? label, char separator = ',')
     {
         var sample = ColumnLayoutSample.Read(path);
         var split = InferSplit(mlContext, sample, separator);
@@ -176,7 +180,7 @@ public static class ColumnLayoutInference
         }
     }
 
-    private static TypedColumn[] InferTypes(MLContext mlContext, IMultiStreamSource sample, Split split, string label)
+    private static TypedColumn[] InferTypes(MLContext mlContext, IMultiStreamSource sample, Split split, string? label)
     {
         if (split.ColumnCount >= MaxColumns)
             throw new ColumnLayoutException("Unable to infer column types of the file provided.");
@@ -240,6 +244,9 @@ public static class ColumnLayoutInference
             columns[i] = new TypedColumn(i, unique, kind);
         }
 
+        if (label is null)
+            return columns;
+
         var labelIndex = Array.FindIndex(columns, c => c.Name == label);
         if (labelIndex < 0)
             throw new ArgumentException($"Specified label column '{label}' was not found.");
@@ -252,12 +259,13 @@ public static class ColumnLayoutInference
             values.Skip(1).All(v => !v.IsEmpty && ColumnLayoutValues.IsBoolean(v.Span));
     }
 
-    private static ColumnLayoutPurpose[] InferPurposes(MLContext mlContext, IDataView typed, TypedColumn[] columns, string label)
+    private static ColumnLayoutPurpose[] InferPurposes(MLContext mlContext, IDataView typed, TypedColumn[] columns, string? label)
     {
         var data = mlContext.Data.TakeRows(typed, PurposeRows);
         var purposes = new ColumnLayoutPurpose?[columns.Length];
         var toInfer = columns.Where(c => c.Name != label).ToArray();
-        purposes[Array.FindIndex(columns, c => c.Name == label)] = ColumnLayoutPurpose.Label;
+        if (label is not null)
+            purposes[Array.FindIndex(columns, c => c.Name == label)] = ColumnLayoutPurpose.Label;
 
         foreach (var column in toInfer.Where(c => c.Kind == DataKind.String))
         {

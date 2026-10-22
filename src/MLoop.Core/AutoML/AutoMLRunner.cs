@@ -111,8 +111,8 @@ public partial class AutoMLRunner
     /// <summary>
     /// Single source of truth for whether a task requires a label column. The unsupervised tasks
     /// (anomaly-detection, clustering, time-series-anomaly) are label-optional: when no label is
-    /// configured, <see cref="Data.CsvDataLoader"/> loads a dummy label and treats every column as
-    /// a feature. This set was duplicated as inline HashSets in <c>ConfigMerger</c>, <c>InitCommand</c>
+    /// configured, <see cref="Data.CsvDataLoader"/> loads the file without one and treats every
+    /// column as a feature. This set was duplicated as inline HashSets in <c>ConfigMerger</c>, <c>InitCommand</c>
     /// and <c>TrainCommand</c> — and had already drifted (TrainCommand omitted time-series-anomaly,
     /// and ValidateCommand was missing the concept entirely, so it errored "Label required" on a valid
     /// unsupervised project that <c>train</c> accepts). All four now read this.
@@ -273,11 +273,11 @@ public partial class AutoMLRunner
             "regression" => await RunRegressionAsync(
                 trainSet, testSet, config, progress, cancellationToken, validationSet).ConfigureAwait(false),
             "anomaly-detection" => await RunAnomalyDetectionAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
+                trainSet, testSet, config, progress, cancellationToken, mergedColumnGroups).ConfigureAwait(false),
             "clustering" => await RunClusteringAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
+                trainSet, testSet, config, progress, cancellationToken, mergedColumnGroups).ConfigureAwait(false),
             "ranking" => await RunRankingAsync(
-                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
+                trainSet, testSet, config, progress, cancellationToken, mergedColumnGroups).ConfigureAwait(false),
             "forecasting" => await RunForecastingAsync(
                 trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "time-series-anomaly" => await RunTimeSeriesAnomalyAsync(
@@ -1508,20 +1508,14 @@ public partial class AutoMLRunner
         IDataView testSet,
         TrainingConfig config,
         IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string[]>? mergedColumnGroups)
     {
         return await Task.Run(() =>
         {
-            // Identify numeric feature columns (exclude label, hidden, and non-numeric)
-            var featureColumns = new List<string>();
-            foreach (var col in trainSet.Schema)
-            {
-                if (col.IsHidden) continue;
-                if (col.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) continue;
-                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType
-                    || (col.Type is VectorDataViewType vt && vt.ItemType is NumberDataViewType))
-                    featureColumns.Add(col.Name);
-            }
+            // The numeric feature columns (not the label)
+            var featureColumns = NumericVectorColumns(trainSet.Schema,
+                name => name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase), "Anomaly detection", mergedColumnGroups);
 
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for anomaly detection.");
@@ -1612,39 +1606,23 @@ public partial class AutoMLRunner
         IDataView testSet,
         TrainingConfig config,
         IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string[]>? mergedColumnGroups)
     {
         return await Task.Run(() =>
         {
-            // Identify numeric feature columns (exclude label, hidden, and non-numeric)
-            var featureColumns = new List<string>();
-            foreach (var col in trainSet.Schema)
-            {
-                if (col.IsHidden) continue;
-                if (!string.IsNullOrEmpty(config.LabelColumn) &&
-                    col.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) continue;
-                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType
-                    || (col.Type is VectorDataViewType vt && vt.ItemType is NumberDataViewType))
-                    featureColumns.Add(col.Name);
-            }
+            // The numeric feature columns (not a label, when there is one)
+            var featureColumns = NumericVectorColumns(trainSet.Schema,
+                name => !string.IsNullOrEmpty(config.LabelColumn) && name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase),
+                "Clustering", mergedColumnGroups);
 
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for clustering.");
 
-            // featurize BEFORE fitting and fit only the trainer on the result, instead of
-            // embedding Concatenate inside the saved pipeline. The embedded shape used to be
-            // fragile because CsvDataLoader picks a "dummy label" column for InferColumns on
-            // label-less data (clustering has none), so trainSet's schema mixed a leftover scalar
-            // (the dummy label) with an already-partially-merged "Features" vector that excluded
-            // it — the model's own Concatenate("Features", [dummy, Features]) baked in that exact,
-            // incidental shape. At predict time PredictionService.EnsureFeaturesColumn (D8)
-            // independently builds its own "Features" from every non-excluded named column
-            // (including the erstwhile dummy label, since predict-time has no concept of it) and
-            // the model's embedded Concatenate then re-consumed that already-built "Features" as
-            // one of *its* inputs, double-counting a dimension ("expected Vector<3>, got Vector<4>").
-            // Pre-featurizing here and fitting the trainer alone means the saved model's
-            // only input contract is "Features" — exactly what EnsureFeaturesColumn builds, once,
-            // with no re-concatenation to collide with it.
+            // Featurize before fitting and fit only the trainer on the result: the saved model's one input
+            // is then "Features", which every prediction path builds itself (the file loader as one range,
+            // serve from the named columns) — a Concatenate inside the model would concatenate that vector
+            // again.
             var featurizer = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray()).Fit(trainSet);
             var featurizedTrainSet = featurizer.Transform(trainSet);
             var featurizedTestSet = featurizer.Transform(testSet);
@@ -1771,7 +1749,8 @@ public partial class AutoMLRunner
         IDataView testSet,
         TrainingConfig config,
         IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string[]>? mergedColumnGroups)
     {
         return await Task.Run(() =>
         {
@@ -1783,17 +1762,11 @@ public partial class AutoMLRunner
             if (!groupCol.HasValue)
                 throw new InvalidOperationException($"Group column '{config.GroupColumn}' not found in data.");
 
-            // Identify numeric feature columns (exclude label, group, hidden, non-numeric)
-            var featureColumns = new List<string>();
-            foreach (var col in trainSet.Schema)
-            {
-                if (col.IsHidden) continue;
-                if (col.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) continue;
-                if (col.Name.Equals(config.GroupColumn, StringComparison.OrdinalIgnoreCase)) continue;
-                if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType
-                    || (col.Type is VectorDataViewType vt && vt.ItemType is NumberDataViewType))
-                    featureColumns.Add(col.Name);
-            }
+            // The numeric feature columns (not the label or the group)
+            var featureColumns = NumericVectorColumns(trainSet.Schema,
+                name => name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)
+                     || name.Equals(config.GroupColumn, StringComparison.OrdinalIgnoreCase),
+                "Ranking", mergedColumnGroups);
 
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for ranking.");
@@ -2606,6 +2579,37 @@ public partial class AutoMLRunner
             write($"[Info] Ignored column(s) (override): {string.Join(", ", ignoredColumns)}");
 
         return roles;
+    }
+
+    /// <summary>
+    /// The columns a trainer that reads one numeric vector (anomaly detection, clustering, ranking) puts into
+    /// <c>Features</c>: the numbers — scalar columns and the loader's numeric vectors — in schema order.
+    /// </summary>
+    /// <remarks>
+    /// That is the vector a prediction rebuilds from the saved schema, which records yes/no columns as
+    /// categories; so a yes/no column is not read here either, and the user is told so. (Taking one in
+    /// also failed the fit: <c>Concatenate</c> joins columns of one item type only.)
+    /// </remarks>
+    private List<string> NumericVectorColumns(DataViewSchema schema, Func<string, bool> skip, string task,
+        IReadOnlyDictionary<string, string[]>? mergedColumnGroups)
+    {
+        var columns = new List<string>();
+        var booleans = new List<string>();
+        foreach (var col in schema)
+        {
+            if (col.IsHidden || skip(col.Name))
+                continue;
+
+            var item = col.Type is VectorDataViewType vector ? vector.ItemType : col.Type;
+            if (item is NumberDataViewType)
+                columns.Add(col.Name);
+            else if (item is BooleanDataViewType)
+                booleans.AddRange(mergedColumnGroups is not null && mergedColumnGroups.TryGetValue(col.Name, out var sources) ? sources : [col.Name]);
+        }
+
+        if (booleans.Count > 0)
+            _logger.Warning($"{task} reads numeric columns only; yes/no column(s) not used: {string.Join(", ", booleans)}");
+        return columns;
     }
 
     /// <summary>

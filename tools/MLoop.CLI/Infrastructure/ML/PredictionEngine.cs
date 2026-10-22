@@ -92,12 +92,9 @@ public class PredictionEngine
             // The label values are ignored during prediction.
             IDataView processedData = inputData;
 
-            // The dimension InferColumns splits off — the CSV's first column, which it treats as
-            // *some* label when the data has no real one — is put back by CsvDataLoader's
-            // reconciliation, which rebuilds the merged range from the saved schema for every task
-            // rather than for clustering alone. This path used to re-concatenate it here; with both
-            // in place the same column was counted twice and the model saw
-            // Vector<Single, 4> against the Vector<Single, 3> it was fit on.
+            // The Features vector is the loader's, rebuilt from the saved schema by CsvDataLoader's
+            // reconciliation for every task — nothing is concatenated here, or a column would be counted
+            // twice (Vector<Single, 4> against the Vector<Single, 3> the model was fit on).
 
             // Make predictions
             IDataView predictions;
@@ -407,9 +404,9 @@ public class PredictionEngine
             labelExistsInData = true;
         }
 
-        var dummyLabel = labelExistsInData ? labelColumn! : (columns.Length > 0 ? columns[0] : "dummy");
-
-        var loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath, dummyLabel).Options;
+        // Without a label in the file nothing is set apart as one: every numeric column is in the Features
+        // vector, as training loads it.
+        var loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath, labelExistsInData ? labelColumn : null).Options;
 
         // Shared non-label reconciliation — overrides feature types from the trained
         // schema (including the "String" raw type name), enables RFC 4180 quoting

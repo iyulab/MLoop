@@ -129,14 +129,12 @@ public class CsvDataLoader : DataProviderBase
         TextLoader.Options loaderOptions;
         try
         {
-            // The layout needs a label column that exists in the file. A task without a label
-            // (clustering, anomaly detection) names the first column: it is then loaded on its own,
-            // outside the Features vector, and the model's pipeline reads it by name.
-            var effectiveLabelColumn = string.IsNullOrEmpty(labelColumn)
-                ? ReadCsvHeaders(mlnetCompatiblePath) is [var first, ..] ? first : "Label"
-                : labelColumn;
-
-            loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath, effectiveLabelColumn).Options;
+            // A task without a label (clustering, anomaly detection) gets a layout without one, so every
+            // numeric column is in the Features vector — the vector the prediction path rebuilds from the
+            // saved schema. Standing in a column as the label set that column apart, and the trained
+            // vector no longer matched the one a prediction was made from.
+            loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath,
+                string.IsNullOrEmpty(labelColumn) ? null : labelColumn).Options;
         }
         catch (ColumnLayoutException ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
         {

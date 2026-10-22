@@ -58,6 +58,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Clustering without a label could not train, and anomaly detection without a label could not predict** — on a
+  file of plain numbers. A label-less file was loaded with its first column standing in as a label, set apart from
+  the `Features` vector, while every prediction path rebuilt the vector with that column inside it: clustering failed
+  at the end of training (`Incompatible features column type: Vector<Single, 2> vs Vector<Single, 3>`), anomaly
+  detection at `mloop predict` (`expected Vector<Single, 3>, got Vector<Single, 4>`). A label-less file is now loaded
+  without a label, so training and prediction read one vector. A yes/no column, which also failed the fit, is not
+  read by these tasks (nor by ranking), and training names the ones it leaves out.
 - `mloop prep run` and the prep step of `mloop predict` reported warnings straight to the console, so with
   `--json` they never became `warning` events; `mloop preprocess` and `mloop train` passed messages into console
   markup unescaped, so a message with a bracket in it (a file name such as `[train].csv`) threw instead of
