@@ -13,6 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `TrialResult` and `ITrialSink` (a finished trial and where it is reported), and `IMetricPolicy` (the metric trials
   are ranked by and which way is better). It depends on nothing else of MLoop. `MLoop.Core` supplies
   `RankingPolicy`, MLoop's metric names and directions as an `IMetricPolicy`.
+- `MLoop.Search.Tuning`: the hyperparameter tuner MLoop's trainer search will run — `SearchSpace` and
+  `SearchDimension` (ranges, log scales, choices, starting values), `CostFrugalTuner` (CFO / FLOW2) and
+  `EciSchemaProposer` (estimated cost for improvement across trainers). Not used by training yet.
 
 ### Changed
 

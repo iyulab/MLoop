@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="MLoop.Search.Tests" />
+    <!-- The trace tests run the upstream tuner beside this one, and only MLoop.Core.Tests can still reach it. -->
+    <InternalsVisibleTo Include="MLoop.Core.Tests" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,121 @@
+using MLoop.Search.Tuning;
+
+namespace MLoop.Search.Tests;
+
+/// <summary>
+/// The tuner's pure parts: the unit-space mapping of a hyperparameter, the cost-frugal tuner's start,
+/// and the schema proposer's ECI. Trial-by-trial agreement with AutoML is in MLoop.Core.Tests
+/// (<c>TunerTraceTests</c>), the one project that can still load AutoML.
+/// </summary>
+public sealed class TuningTests
+{
+    [Fact]
+    public void AnInteger_MapsToTheUnitCubeAndBack_RoundingDown()
+    {
+        var leaves = SearchDimension.Integer("NumberOfLeaves", 4, 32768, defaultValue: 4);
+
+        Assert.Equal(0.0, leaves.UnitOf(4));
+        Assert.Equal(4, leaves.ValueAt(0));
+        Assert.Equal(32768, leaves.ValueAt(1));
+        Assert.Equal(16386, leaves.ValueAt(0.5));     // 4 + 32764 · 0.5, floored
+    }
+
+    [Fact]
+    public void ALogScale_SpendsTheCubeEvenlyOverOrdersOfMagnitude()
+    {
+        var rate = SearchDimension.Double("LearningRate", 2e-10, 1, logBase: true, defaultValue: 1);
+
+        Assert.Equal(1.0, rate.Default.Single(), 12);
+        Assert.Equal(Math.Sqrt(2e-10), rate.ValueAt(0.5), 15);
+        Assert.Equal(0.5, rate.UnitOf(Math.Sqrt(2e-10)), 12);
+    }
+
+    [Fact]
+    public void AChoice_IsAnIndex_AndAChoiceOfOneTakesNoCoordinate()
+    {
+        var encoding = SearchDimension.Choice("Encoding", ["one-hot", "hash"], defaultChoice: "hash");
+        var single = SearchDimension.Choice("Schema", ["only"]);
+
+        Assert.Equal(0.5, encoding.Default.Single());
+        Assert.Equal(1, encoding.ValueAt(1));         // the top of the cube is the last choice
+        Assert.Equal(0, encoding.ValueAt(0.49));
+        Assert.Equal(0, single.FeatureDim);
+        var space = new SearchSpace([encoding, single]);
+        Assert.Equal(1, space.FeatureDim);
+        Assert.Equal("hash", space.PointAt([0.7]).Choice("Encoding"));
+        Assert.Equal("only", space.PointAt([0.7]).Choice("Schema"));
+    }
+
+    [Fact]
+    public void TheTuner_StartsAtTheDefault_TheCheapModel()
+    {
+        var space = new SearchSpace([
+            SearchDimension.Integer("NumberOfTrees", 4, 32768, defaultValue: 4),
+            SearchDimension.Integer("NumberOfLeaves", 4, 32768, defaultValue: 4),
+        ]);
+        var tuner = new CostFrugalTuner(space, seed: 1);
+
+        var first = tuner.Propose(0);
+        tuner.Update(0, first, 0.5, 10);
+        var second = tuner.Propose(1);
+
+        Assert.Equal((4, 4), (first.Int("NumberOfTrees"), first.Int("NumberOfLeaves")));
+        Assert.NotEqual(first.ToString(), second.ToString());       // then it moves
+    }
+
+    [Fact]
+    public void TheTuner_IsDeterministicUnderASeed()
+    {
+        static string Run(int seed)
+        {
+            var space = new SearchSpace([SearchDimension.Double("L2", 0.03125, 32768, logBase: true, defaultValue: 1)]);
+            var tuner = new CostFrugalTuner(space, seed);
+            var trace = new List<string>();
+            for (var i = 0; i < 30; i++)
+            {
+                var p = tuner.Propose(i);
+                trace.Add(p.ToString());
+                tuner.Update(i, p, Math.Abs(Math.Log(p["L2"]) - 2), 1);
+            }
+            return string.Join("|", trace);
+        }
+
+        Assert.Equal(Run(3), Run(3));
+        Assert.NotEqual(Run(3), Run(4));
+    }
+
+    [Fact]
+    public void Eci_ProposesTheCheapestSchemaFirst_ThenByOneOverEci()
+    {
+        var proposer = new EciSchemaProposer([("lbfgs", 11.513), ("fasttree", 3.701), ("lightgbm", 4.765)], seed: 0);
+
+        Assert.Equal("fasttree", proposer.Propose());
+        proposer.Update("fasttree", loss: -0.80, durationSeconds: 2);
+        var counts = Enumerable.Range(0, 2000).Select(_ => proposer.Propose()).GroupBy(s => s).ToDictionary(g => g.Key, g => g.Count());
+
+        Assert.Equal(3, counts.Count);
+        Assert.True(counts["fasttree"] > counts["lbfgs"]);   // cheaper to improve is drawn more
+    }
+
+    [Fact]
+    public void Eci_AFastTrialIsASuccess_NotAFailure()
+    {
+        // Upstream counted a trial under one second as failed (integer seconds = 0) and doubled the
+        // schema's ECI — on small data every fast trainer was pushed away. A finite loss succeeds here.
+        var proposer = new EciSchemaProposer([("sdca", 13.16), ("fasttree", 3.701)], seed: 0);
+        proposer.Propose();
+        proposer.Update("fasttree", loss: -0.9, durationSeconds: 0.2);
+
+        Assert.True(proposer.Eci["fasttree"] < proposer.Eci["sdca"]);
+    }
+
+    [Fact]
+    public void Eci_AFailedTrial_DoublesTheLargestEci()
+    {
+        var proposer = new EciSchemaProposer([("a", 1), ("b", 5)], seed: 0);
+        proposer.Propose();
+        proposer.Update("a", loss: double.NaN, durationSeconds: 3);
+
+        Assert.Equal(10, proposer.Eci["a"]);
+    }
+}

@@ -13,6 +13,10 @@ package for you. It is versioned with them.
   and the label.
 - `TrialResult` and `ITrialSink` — one trial's outcome, and where a search reports it.
 - `IMetricPolicy` — the metric a search ranks trials by and which way is better.
+- `MLoop.Search.Tuning` — the hyperparameter tuner: `SearchSpace` / `SearchDimension` (a trainer's
+  options as a unit cube, ranges and log scales), `CostFrugalTuner` (CFO with the FLOW2 local search,
+  starting from cheap settings and growing them) and `EciSchemaProposer` (which trainer to try next, by
+  estimated cost for improvement). Seeded, a search proposes the same settings in the same order.
 
 ## License
 
