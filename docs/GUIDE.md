@@ -584,7 +584,9 @@ experiment is in production. From then on every path that loads the model answer
 (CSV and `--json`), `mloop serve` (its model cache reloads), `evaluate` (accuracy, precision, recall,
 `negative_precision`, `negative_recall`, F1 and the confusion matrix — AUC does not depend on it) and the gate policy. `promote` carries it
 with the model, and a promoted model without one answers at 0.5 again. Rows of one probability are
-answered alike, so a threshold never splits them; when not even the rows the model is most confident
+answered alike, so a threshold never splits them — and it sits halfway between the last probability
+answered one way and the next, never on a row's own probability, so the arithmetic of another runtime
+(an exported ONNX graph differs in the seventh digit) keeps every row's answer; when not even the rows the model is most confident
 about reach the precision, the command says so and changes nothing. A model whose trainer gives no
 probability cannot be given one. The ONNX export does not apply it — the manifest names it, for the
 consumer to apply.
@@ -1411,9 +1413,15 @@ Two files land in the experiment's directory (or `--output`):
   Its outputs are the prediction columns with `.output` appended (`PredictedLabel.output`,
   `Score.output`, `Probability.output`).
 - `model.onnx.json` — the manifest: for each input, the data columns that fill it in slot order;
-  the outputs; the classes and how to read the answer (binary: `PredictedLabel` true is the second
-  class, `Score > 0`; multiclass: `Score` per class in `classes` order); the experiment's metrics and
+  the outputs; the classes and how to read the answer (`label.decision`); the experiment's metrics and
   weight column; SHA-256 of the graph and of the `model.zip` it came from.
+
+The graph is the trained model. A calibration (`mloop calibrate`) and a decision threshold
+(`mloop threshold`) beside it are not in the graph: the manifest carries them (`calibration`,
+`decisionThreshold`) and `label.decision` says how to apply them, in the order `mloop predict` does —
+calibrate the probability, then compare it with the threshold (a calibrated model without one answers
+at 0.5). Binary without either: `PredictedLabel` true is the second class, `Score > 0`; multiclass:
+`Score` per class in `classes` order.
 
 The model was saved without an input schema, so the export reads one from data — by default the
 experiment's training file, through the same loader prediction uses. A column the model does not read
@@ -1421,8 +1429,9 @@ experiment's training file, through the same loader prediction uses. A column th
 multiclass label — is listed under `unusedInputs`: a runtime still requires it, so feed any value.
 
 **`--verify`** runs the graph in ONNX Runtime on up to 1,000 rows of the data and compares every
-output with the model's: `Score` and `Probability` within 1e-4, `PredictedLabel` exactly. A graph
-that disagrees is deleted and the command exits 1; the manifest keeps the comparison under
+output with the model's: `Score` and `Probability` within 1e-4, `PredictedLabel` exactly. When the
+model has a calibration or a threshold, it also applies `label.decision`'s rule to the graph's outputs
+and compares that with `mloop predict`'s answer (`verification.layered`). A graph that disagrees is deleted and the command exits 1; the manifest keeps the comparison under
 `verification`. Use it: ML.NET's converter can report success and write a wrong graph — a text
 n-gram step loaded from a saved model exports counting only its longest n-grams, which answered
 differently on every row. ONNX Runtime's native library is not part of MLoop; install it once with

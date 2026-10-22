@@ -26,8 +26,26 @@ public sealed record OnnxVerificationResult
     /// <summary>The ONNX Runtime version the graph ran on.</summary>
     public string? Runtime { get; init; }
 
-    /// <summary>Every numeric output within <see cref="Tolerance"/> and no label differs.</summary>
-    public bool Passed => LabelMismatches == 0 && MaxAbsDifference.Values.All(d => d <= Tolerance);
+    /// <summary>
+    /// How the manifest's decision rule, applied to the graph's outputs, compared with the answer
+    /// <c>mloop predict</c> gives (the model with its calibration and threshold); null when the model
+    /// has neither, and the graph's own answer is that answer.
+    /// </summary>
+    public OnnxLayeredCheck? Layered { get; init; }
+
+    /// <summary>Every numeric output within <see cref="Tolerance"/> and no label differs — the graph's own and, when there are layers, the rule's.</summary>
+    public bool Passed => LabelMismatches == 0 && MaxAbsDifference.Values.All(d => d <= Tolerance)
+                          && (Layered is null || (Layered.LabelMismatches == 0 && Layered.MaxAbsDifference.Values.All(d => d <= Tolerance)));
+}
+
+/// <summary>The manifest's decision rule replayed on the graph's outputs, against <c>mloop predict</c>'s answer.</summary>
+public sealed record OnnxLayeredCheck
+{
+    /// <summary>The largest absolute difference per probability output after the rule.</summary>
+    public required IReadOnlyDictionary<string, double> MaxAbsDifference { get; init; }
+
+    /// <summary>Rows whose answer under the rule differs.</summary>
+    public required int LabelMismatches { get; init; }
 }
 
 /// <summary>
@@ -85,7 +103,9 @@ public static class OnnxVerification
     /// <summary>
     /// Runs <paramref name="onnxPath"/> and <paramref name="model"/> on the first
     /// <paramref name="maxRows"/> rows of <paramref name="input"/> and compares the outputs
-    /// <see cref="OnnxExport.Write"/> listed in <paramref name="export"/>.
+    /// <see cref="OnnxExport.Write"/> listed in <paramref name="export"/>. With a
+    /// <paramref name="recipe"/> that has layers, also replays it on the graph's outputs and compares
+    /// that with <paramref name="layered"/> — the model as <c>mloop predict</c> scores with it.
     /// </summary>
     public static OnnxVerificationResult Compare(
         ITransformer model,
@@ -93,7 +113,9 @@ public static class OnnxVerification
         OnnxExportResult export,
         string onnxPath,
         int maxRows = DefaultRows,
-        double tolerance = DefaultTolerance)
+        double tolerance = DefaultTolerance,
+        OnnxDecisionRecipe? recipe = null,
+        ITransformer? layered = null)
     {
         if (Unavailable() is { } unavailable)
             throw new InvalidOperationException(unavailable);
@@ -151,6 +173,47 @@ public static class OnnxVerification
             LabelMismatches = labelMismatches,
             Tolerance = tolerance,
             Runtime = SafeVersion(),
+            Layered = recipe is { HasLayers: true } && layered is not null
+                ? CompareLayered(recipe, layered.Transform(input), byName, export, rows)
+                : null,
+        };
+    }
+
+    private static OnnxLayeredCheck CompareLayered(
+        OnnxDecisionRecipe recipe, IDataView expected, Dictionary<string, NamedOnnxValue> graph, OnnxExportResult export, int rows)
+    {
+        Tensor<T> Output<T>(string column)
+        {
+            var spec = export.Outputs.FirstOrDefault(o => o.Column == column)
+                ?? throw new InvalidOperationException($"The graph has no '{column}' output to apply the decision rule to.");
+            return graph[spec.Name].Value as Tensor<T>
+                ?? throw new InvalidOperationException($"The graph's '{column}' output is not {typeof(T).Name}.");
+        }
+
+        if (recipe.Task == "multiclass-classification")
+        {
+            var score = Output<float>("Score").ToArray();
+            var width = score.Length / Math.Max(rows, 1);
+            var answered = Enumerable.Range(0, rows)
+                .SelectMany(r => recipe.AnswerMulticlass(score[(r * width)..((r + 1) * width)]))
+                .ToArray();
+            return new OnnxLayeredCheck
+            {
+                MaxAbsDifference = new Dictionary<string, double> { ["Score"] = MaxDifference(ExpectedFloats(expected, "Score", rows), answered) },
+                LabelMismatches = 0,
+            };
+        }
+
+        var probability = Output<float>("Probability").ToArray();
+        var label = Output<bool>("PredictedLabel").ToArray();
+        var answers = Enumerable.Range(0, rows).Select(r => recipe.AnswerBinary(probability[r], label[r])).ToArray();
+        return new OnnxLayeredCheck
+        {
+            MaxAbsDifference = new Dictionary<string, double>
+            {
+                ["Probability"] = MaxDifference(ExpectedFloats(expected, "Probability", rows), answers.Select(a => a.Probability).ToArray()),
+            },
+            LabelMismatches = Mismatches(expected.GetColumn<bool>("PredictedLabel").Take(rows).ToArray(), answers.Select(a => a.Label).ToArray()),
         };
     }
 

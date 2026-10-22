@@ -92,6 +92,48 @@ public sealed class ExportCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Export_OfACalibratedModelWithAThreshold_StatesTheRuleAndVerifiesItAgainstPredict()
+    {
+        await InitAsync();
+        var csv = new StringBuilder("x,z,y\n");
+        var rng = new Random(5);
+        for (var i = 0; i < 300; i++)
+        {
+            var x = rng.NextDouble();
+            csv.Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{(x + rng.NextDouble() * 0.6 > 0.8 ? "yes" : "no")}\n");
+        }
+        await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
+        var (trainExit, trainOutput, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        Assert.True(trainExit == 0, trainOutput);
+        var (calExit, calOutput, _) = await CliRunner.RunAsync("calibrate", "--data", "datasets/train.csv", "--method", "isotonic");
+        Assert.True(calExit == 0, calOutput);
+        var (thrExit, thrOutput, _) = await CliRunner.RunAsync("threshold", "--precision", "0.8", "--data", "datasets/train.csv");
+        Assert.True(thrExit == 0, thrOutput);
+
+        var (exit, output, error) = await CliRunner.RunAsync("export", "onnx", "--json", "--verify");
+        if (exit != 0)
+        {
+            Assert.Contains("mloop runtime install onnxruntime", output + error);
+            return;
+        }
+        using var doc = JsonDocument.Parse(output);
+        var manifest = OnnxManifest.FromJson(await File.ReadAllTextAsync(doc.RootElement.GetProperty("manifestPath").GetString()!));
+
+        // The sentence names both layers, in mloop predict's order.
+        var decision = manifest.Label.Decision!;
+        Assert.Contains("calibration", decision);
+        Assert.Contains("decisionThreshold", decision);
+        Assert.True(decision.IndexOf("calibration", StringComparison.Ordinal) < decision.IndexOf("decisionThreshold", StringComparison.Ordinal));
+        Assert.DoesNotContain("calibrated chance", decision);
+
+        // And the rule, replayed on the graph's outputs, answers as mloop predict does.
+        var verification = manifest.Verification!;
+        Assert.True(verification.Passed);
+        Assert.NotNull(verification.Layered);
+        Assert.Equal(0, verification.Layered!.LabelMismatches);
+    }
+
+    [Fact]
     public async Task Export_OfAModelWithACategoryColumn_OneHotsItAndExports()
     {
         await InitAsync();

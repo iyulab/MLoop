@@ -32,6 +32,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop export onnx`: the manifest's `label.decision` left out a calibration (`mloop calibrate`) — it called the
+  graph's probability "calibrated" and, with a threshold, told the consumer to compare it directly — so a consumer
+  following it answered differently from `mloop predict`. The sentence now gives the whole rule in `mloop predict`'s
+  order (the calibration with its parameters, then the threshold, or 0.5 when there is none), and `--verify` applies
+  that rule to the graph's outputs and compares it with `mloop predict`'s answer (`verification.layered`); a
+  disagreement fails the export like any other.
+- `mloop threshold` chose a threshold equal to a row's probability. Models with few distinct probabilities put many
+  rows on that value and left their answer to the last float digit: an ONNX graph answered 39 of 300 rows the other
+  way. The threshold now sits halfway between the last probability answered one way and the next, so in-sample
+  answers are unchanged and another runtime's rounding keeps them. A threshold chosen before stays as written.
 - `mloop runtime install` and every runtime check counted native libraries of any version as installed. A runtime
   is installed only at the version this mloop needs; reinstalling over another version replaces its files.
 

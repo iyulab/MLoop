@@ -64,7 +64,7 @@ public static class ExportCommand
 
         var verifyOption = new Option<bool>("--verify")
         {
-            Description = $"Run the graph in ONNX Runtime on up to {OnnxVerification.DefaultRows} rows of the data and compare it with the model; a graph that disagrees is not kept (needs: mloop runtime install onnxruntime)"
+            Description = $"Run the graph in ONNX Runtime on up to {OnnxVerification.DefaultRows} rows of the data and compare it with the model — and the manifest's decision rule (calibration, threshold) with mloop predict's answer; a graph that disagrees is not kept (needs: mloop runtime install onnxruntime)"
         };
 
         var command = new Command("onnx", "Export a model as ONNX, with a manifest describing its inputs, outputs and classes");
@@ -197,10 +197,14 @@ public static class ExportCommand
                     File.Delete(partial);
             }
 
+            var recipe = OnnxDecisionRecipe.Beside(task, modelPath);
             OnnxVerificationResult? verification = null;
             if (verify)
             {
-                verification = OnnxVerification.Compare(input.Model, input.Data, result, onnxPath);
+                // The rule is checked too: replayed on the graph's outputs, it has to give what
+                // mloop predict gives — the model with the layers beside it.
+                var layered = recipe.HasLayers ? ScoringModel.Load(new MLContext(seed: 42), modelPath, task) : null;
+                verification = OnnxVerification.Compare(input.Model, input.Data, result, onnxPath, recipe: recipe, layered: layered);
                 if (!verification.Passed)
                 {
                     // A graph that answers differently from the model is not left where a consumer
@@ -222,9 +226,9 @@ public static class ExportCommand
                 Inputs = result.Inputs,
                 UnusedInputs = result.UnusedInputs,
                 Outputs = result.Outputs,
-                Label = LabelInfo(task, labelColumn, experiment, input, result, DecisionThreshold.ReadBeside(modelPath)),
-                DecisionThreshold = DecisionThreshold.ReadBeside(modelPath),
-                Calibration = ProbabilityCalibration.ReadBeside(modelPath),
+                Label = LabelInfo(task, labelColumn, experiment, input, result, recipe),
+                DecisionThreshold = recipe.Threshold,
+                Calibration = recipe.Calibration,
                 Metrics = experiment.Metrics,
                 WeightColumn = experiment.Config?.WeightColumn,
                 Portable = experiment.Config?.Portable == true,
@@ -302,7 +306,7 @@ public static class ExportCommand
 
     private static OnnxLabelInfo LabelInfo(
         string task, string? labelColumn, ExperimentData experiment, PredictionEngine.InferenceInput input, OnnxExportResult result,
-        DecisionThreshold? threshold = null)
+        OnnxDecisionRecipe recipe)
     {
         switch (task)
         {
@@ -313,11 +317,7 @@ public static class ExportCommand
                 {
                     Column = labelColumn,
                     Classes = vocabulary is { } v ? [v.Negative, v.Positive] : null,
-                    // The graph answers at the trainer's own threshold; a chosen one is the consumer's to apply.
-                    Decision = threshold is { } t
-                        ? string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                            $"The model answers the second class when Probability >= {t.Threshold:R} (its decision threshold — apply it to Probability; the graph's PredictedLabel is the trainer's own, Score > 0); Probability is the calibrated chance of the second class")
-                        : "PredictedLabel is true (the second class) when Score > 0; Probability is the calibrated chance of the second class",
+                    Decision = recipe.Describe(),
                 };
             }
             case "multiclass-classification":
@@ -342,11 +342,11 @@ public static class ExportCommand
                 {
                     Column = labelColumn,
                     Classes = classes,
-                    Decision = $"Score holds one value per class, in Classes order; {predictedReads}",
+                    Decision = recipe.Describe(predictedReads),
                 };
             }
             default:
-                return new OnnxLabelInfo { Column = labelColumn, Decision = "Score is the predicted value" };
+                return new OnnxLabelInfo { Column = labelColumn, Decision = recipe.Describe() };
         }
     }
 
@@ -356,6 +356,14 @@ public static class ExportCommand
             .Select(kv => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{kv.Key} max |difference| {kv.Value:G3}"))
             .ToList();
         parts.Add($"{verification.LabelMismatches} label mismatch(es)");
+        if (verification.Layered is { } layered)
+        {
+            // The manifest's decision rule (calibration, threshold) on the graph's outputs, against mloop predict.
+            var rule = layered.MaxAbsDifference
+                .Select(kv => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{kv.Key} max |difference| {kv.Value:G3}"))
+                .Append($"{layered.LabelMismatches} answer mismatch(es)");
+            parts.Add($"decision rule vs mloop predict: {string.Join(", ", rule)}");
+        }
         return string.Join(", ", parts);
     }
 

@@ -85,8 +85,14 @@ public sealed record DecisionThreshold(
     /// <remarks>
     /// For the positive class that is the <b>lowest</b> such threshold — every row from it upward is
     /// answered positive. For the negative class (<paramref name="ofPositive"/> false) it is the
-    /// <b>highest</b>: every row below it is answered negative, so the threshold sits at the next
-    /// probability above the last row answered negative. A class with no rows has no precision to reach.
+    /// <b>highest</b>: every row below it is answered negative. A class with no rows has no precision to reach.
+    /// <para>
+    /// The threshold sits <b>halfway</b> between the last probability answered as the class and the next
+    /// one (0 or 1 past the end), never on a row's probability. Models with few distinct probabilities —
+    /// trees, a calibration's steps — put many rows on one value, and a threshold on that value leaves them
+    /// to the last digit of float arithmetic: an exported ONNX graph, which differs from ML.NET in the
+    /// seventh digit, answered 39 of 300 such rows the other way. Halfway, either side keeps its answer.
+    /// </para>
     /// </remarks>
     public static (double Threshold, double Precision, double Recall)? Choose(
         IReadOnlyList<(double Probability, bool Positive, double Weight)> rows, double targetPrecision, bool ofPositive = true)
@@ -110,10 +116,9 @@ public sealed record DecisionThreshold(
             var precision = hit / (hit + miss);
             if (precision < targetPrecision)
                 continue;
-            var threshold = ofPositive
-                ? usable[i].Probability
-                // The next probability up answers positive; past the last row, the next float does.
-                : i + 1 < usable.Count ? usable[i + 1].Probability : MathF.BitIncrement((float)usable[i].Probability);
+            // Halfway to the next probability the walk would reach — the first answered the other way.
+            var next = i + 1 < usable.Count ? usable[i + 1].Probability : ofPositive ? 0.0 : 1.0;
+            var threshold = (usable[i].Probability + next) / 2;
             best = (threshold, precision, hit / ofClass);
         }
         return best;

@@ -61,7 +61,8 @@ public sealed record OnnxManifest
     /// <summary>
     /// The binary model's decision threshold, when one was chosen (<c>mloop threshold</c>): the graph does
     /// not apply it — its <c>PredictedLabel</c> is the trainer's own — so a consumer answering as the model
-    /// does compares <c>Probability</c> with it. Null when the model answers at its trainer's threshold.
+    /// does compares the probability with it, after <see cref="Calibration"/> when there is one
+    /// (<see cref="OnnxDecisionRecipe"/>). Null when the model answers at its trainer's threshold.
     /// </summary>
     public Models.DecisionThreshold? DecisionThreshold { get; init; }
 
@@ -110,6 +111,6 @@ public sealed record OnnxLabelInfo
     /// </summary>
     public IReadOnlyList<string>? Classes { get; init; }
 
-    /// <summary>The rule that turns the outputs into <c>PredictedLabel</c>, in words.</summary>
+    /// <summary>The rule that turns the outputs into the answer <c>mloop predict</c> gives, in words (<see cref="OnnxDecisionRecipe.Describe"/>).</summary>
     public string? Decision { get; init; }
 }
