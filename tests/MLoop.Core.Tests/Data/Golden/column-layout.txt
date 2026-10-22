@@ -1,0 +1,118 @@
+## adjacent-numbers-bool-label (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-3]
+column label: Boolean [4]
+label: label
+numeric: Features
+
+## numbers-split-by-a-category (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1 3-4]
+column colour: String [2]
+column label: Boolean [5]
+label: label
+numeric: Features
+categorical: colour
+
+## free-text-and-category (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column note: String [0]
+column kind: String [1]
+column score: Single [2]
+column label: Boolean [3]
+label: label
+numeric: score
+categorical: kind
+text: note
+
+## quoted-commas (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column name: String [0]
+column amount: Single [1]
+column label: Boolean [2]
+label: label
+numeric: amount
+text: name
+
+## quoted-multiline (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=True trim=False nan-for-missing=False escape-quotes="
+column comment: String [0]
+column amount: Single [1]
+column label: Boolean [2]
+label: label
+numeric: amount
+text: comment
+
+## empty-and-special-numbers (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-2]
+column label: Boolean [3]
+label: label
+numeric: Features
+
+## boolean-feature-with-a-gap (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column flag: Boolean [0]
+column other_flag: String [1]
+column v: Single [2]
+column label: Boolean [3]
+label: label
+numeric: flag, v
+categorical: other_flag
+
+## zero-one-label (label: outcome)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column outcome: Boolean [2]
+label: outcome
+numeric: Features
+
+## numeric-label (label: price)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column price: Single [2]
+label: price
+numeric: Features
+
+## string-label-multiclass (label: tier)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column tier: String [2]
+label: tier
+numeric: Features
+
+## type-changes-past-the-sample (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-1]
+column label: Boolean [2]
+label: label
+numeric: Features
+
+## purpose-past-a-thousand-rows (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column code: String [0]
+column v: Single [1]
+column label: Boolean [2]
+label: label
+numeric: v
+ignored: code
+
+## leading-spaces (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column a: Single [0]
+column b: String [1]
+column label: Boolean [2]
+label: label
+numeric: a
+categorical: b
+
+## wide-numbers (label: label)
+options: separators=[,] header=True quoting=True sparse=False multiline=False trim=False nan-for-missing=False escape-quotes="
+column Features: Single [0-39]
+column label: Boolean [40]
+label: label
+numeric: Features
+
+## header-only (label: label)
+throws InferenceException: Unable to infer column types of the file provided.
+
