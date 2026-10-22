@@ -6,7 +6,7 @@
 #   sudo apt-get install parallel  # Ubuntu/Debian
 #   brew install parallel           # macOS
 #
-# Usage:
+# Usage (from inside an MLoop project — example 1 uses examples/customer-churn after `mloop init .`):
 #   ./mloop-parallel.sh [example-number]
 #
 # Examples:
@@ -75,9 +75,9 @@ case $example in
         echo ""
 
         # Create sample datasets list
-        echo "train examples/equipment-anomaly-detection/datasets/sensor_data.csv failure_type --time 300" > /tmp/mloop-jobs.txt
-        echo "train examples/equipment-anomaly-detection/datasets/sensor_data.csv failure_type --time 600" >> /tmp/mloop-jobs.txt
-        echo "train examples/equipment-anomaly-detection/datasets/sensor_data.csv failure_type --time 900" >> /tmp/mloop-jobs.txt
+        echo "train datasets/customers.csv --label Churn --time 30" > /tmp/mloop-jobs.txt
+        echo "train datasets/customers.csv --label Churn --time 60" >> /tmp/mloop-jobs.txt
+        echo "train datasets/customers.csv --label Churn --time 90" >> /tmp/mloop-jobs.txt
 
         echo "Jobs to execute:"
         cat /tmp/mloop-jobs.txt
@@ -96,10 +96,10 @@ case $example in
         echo ""
 
         # Create sample jobs
-        echo "train dataset1.csv target --time 300" > /tmp/mloop-jobs.txt
-        echo "train dataset2.csv target --time 300" >> /tmp/mloop-jobs.txt
-        echo "train dataset3.csv target --time 300" >> /tmp/mloop-jobs.txt
-        echo "train dataset4.csv target --time 300" >> /tmp/mloop-jobs.txt
+        echo "train dataset1.csv --label target --time 300" > /tmp/mloop-jobs.txt
+        echo "train dataset2.csv --label target --time 300" >> /tmp/mloop-jobs.txt
+        echo "train dataset3.csv --label target --time 300" >> /tmp/mloop-jobs.txt
+        echo "train dataset4.csv --label target --time 300" >> /tmp/mloop-jobs.txt
 
         echo "Jobs to execute (2 at a time):"
         cat /tmp/mloop-jobs.txt
@@ -117,9 +117,9 @@ case $example in
         echo ""
 
         # Create sample jobs
-        echo "train dataset1.csv target --time 300" > /tmp/mloop-jobs.txt
-        echo "train dataset2.csv target --time 300" >> /tmp/mloop-jobs.txt
-        echo "train dataset3.csv target --time 300" >> /tmp/mloop-jobs.txt
+        echo "train dataset1.csv --label target --time 300" > /tmp/mloop-jobs.txt
+        echo "train dataset2.csv --label target --time 300" >> /tmp/mloop-jobs.txt
+        echo "train dataset3.csv --label target --time 300" >> /tmp/mloop-jobs.txt
 
         echo "Jobs to execute:"
         cat /tmp/mloop-jobs.txt
@@ -167,11 +167,11 @@ EOF
         echo ""
 
         # Create sample jobs
-        echo "train dataset1.csv target --time 60" > /tmp/mloop-jobs.txt
-        echo "train dataset2.csv target --time 60" >> /tmp/mloop-jobs.txt
-        echo "train dataset3.csv target --time 60" >> /tmp/mloop-jobs.txt
-        echo "train dataset4.csv target --time 60" >> /tmp/mloop-jobs.txt
-        echo "train dataset5.csv target --time 60" >> /tmp/mloop-jobs.txt
+        echo "train dataset1.csv --label target --time 60" > /tmp/mloop-jobs.txt
+        echo "train dataset2.csv --label target --time 60" >> /tmp/mloop-jobs.txt
+        echo "train dataset3.csv --label target --time 60" >> /tmp/mloop-jobs.txt
+        echo "train dataset4.csv --label target --time 60" >> /tmp/mloop-jobs.txt
+        echo "train dataset5.csv --label target --time 60" >> /tmp/mloop-jobs.txt
 
         echo "Jobs to execute:"
         cat /tmp/mloop-jobs.txt
@@ -189,9 +189,9 @@ EOF
         echo ""
 
         # Create sample jobs
-        echo "train dataset1.csv target --time 1800" > /tmp/mloop-jobs.txt
-        echo "train dataset2.csv target --time 1800" >> /tmp/mloop-jobs.txt
-        echo "train dataset3.csv target --time 1800" >> /tmp/mloop-jobs.txt
+        echo "train dataset1.csv --label target --time 1800" > /tmp/mloop-jobs.txt
+        echo "train dataset2.csv --label target --time 1800" >> /tmp/mloop-jobs.txt
+        echo "train dataset3.csv --label target --time 1800" >> /tmp/mloop-jobs.txt
 
         echo "Commands that would be executed:"
         echo ""

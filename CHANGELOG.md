@@ -118,6 +118,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `mloop agent` command, which was removed earlier — AI agents use MLoop through [mloop-mcp](https://github.com/iyulab/mloop-mcp),
   the CLI or `mloop serve` ([docs/AI-AGENTS.md](docs/AI-AGENTS.md)). The `.env.example` now lists the variables
   MLoop reads.
+- The equipment anomaly detection example. Its training file held one class, so it could not train, and its
+  preparation script wrote a fixed sample instead of labeling the readings it copied.
 
 ## [0.42.0] - 2026-10-22
 

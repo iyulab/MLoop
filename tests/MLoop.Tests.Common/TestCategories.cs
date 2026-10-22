@@ -64,19 +64,7 @@ public static class TestEnvironment
         Environment.GetEnvironmentVariable("JENKINS_URL") != null;
 
     /// <summary>
-    /// Returns true if LLM API keys are available for testing.
-    /// </summary>
-    public static bool HasLLMApiKeys =>
-        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OPENAI_API_KEY")) ||
-        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY"));
-
-    /// <summary>
     /// Skip message for CI-excluded tests.
     /// </summary>
     public const string CISkipMessage = "This test is excluded from CI/CD pipeline";
-
-    /// <summary>
-    /// Skip message for LLM-dependent tests.
-    /// </summary>
-    public const string LLMSkipMessage = "This test requires LLM API keys";
 }

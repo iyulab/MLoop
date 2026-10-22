@@ -107,6 +107,20 @@ public class InternalTokenContractTests
     }
 
     [Fact]
+    public void TheScanReachesBuildAndScriptFiles()
+    {
+        // A comment in a project file, a workflow or a script is as public as one in a class; the scan
+        // must walk them, or a token there passes in the voice of a clean tree.
+        var files = RepoSourceTree.PublishedTextFiles().Select(RepoSourceTree.RelativeToRoot).ToArray();
+
+        Assert.Contains(files, f => f.EndsWith(".csproj", StringComparison.Ordinal));
+        Assert.Contains(files, f => f.EndsWith("Directory.Build.props", StringComparison.Ordinal));
+        Assert.Contains(files, f => f.EndsWith(".yml", StringComparison.Ordinal));
+        Assert.Contains(files, f => f.EndsWith(".sh", StringComparison.Ordinal));
+        Assert.Contains(files, f => f.EndsWith(".env.example", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void PublishedTextCarriesNoInternalToken()
     {
         var findings = new List<string>();

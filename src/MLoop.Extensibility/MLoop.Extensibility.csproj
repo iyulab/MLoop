@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>13</LangVersion>
 
-    <!-- Published with the CLI at the same version (in-process library — umbrella policy 7′). -->
+    <!-- Published with the CLI at the same version: MLoop.Core depends on it. -->
     <IsPackable>true</IsPackable>
     <PackageId>MLoop.Extensibility</PackageId>
     <Authors>MLoop Contributors</Authors>

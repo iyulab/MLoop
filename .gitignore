@@ -57,19 +57,10 @@ predictions/
 Thumbs.db
 *.swp
 
-# Development docs (내부 문서)
+# Local working notes and tool state
 local-docs/
-claudedocs/
-
-# Testing resources
 local-tests/
-
-# Serena (개발용)
 .serena/
-
-# Node.js (agent, mcp)
-node_modules/
-build/
 
 # Local
 .env

@@ -122,10 +122,10 @@ dotnet restore
 # Build solution
 dotnet build
 
-# Run tests (lightweight — same set CI runs; excludes Slow/LLM/E2E/Database)
-./scripts/test-all.sh --exclude-heavy     # or: ./scripts/test-all.ps1 -ExcludeHeavy
+# Run tests, one project at a time — the set CI runs (Slow excluded)
+./scripts/test-all.sh --ci     # or: ./scripts/test-all.ps1 -ExcludeHeavy
 
-# Run the full suite including heavy/perf tests (timing-based, run locally)
+# Every test, including the wall-clock-bound Slow ones
 ./scripts/test-all.sh
 ```
 

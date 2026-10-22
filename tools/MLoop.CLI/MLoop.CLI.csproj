@@ -22,6 +22,10 @@
     <InternalsVisibleTo Include="MLoop.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -33,6 +37,8 @@
     <AssemblyName>mloop</AssemblyName>
     <RootNamespace>MLoop.CLI</RootNamespace>
     <Description>MLoop - A modern CLI tool for ML.NET with filesystem-based MLOps</Description>
+    <PackageTags>mlops;automl;mlnet;machine-learning;cli;dotnet-tool</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>mloop</ToolCommandName>
 

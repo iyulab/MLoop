@@ -46,7 +46,15 @@ internal static class RepoSourceTree
                          || !Path.GetFileName(f).Equals(excludingFileNamed + ".cs", StringComparison.Ordinal)));
 
     /// <summary>
-    /// Every Markdown and C# file this repository actually publishes, as absolute paths.
+    /// The file kinds whose text this repository publishes: documents, sources, and the build and script
+    /// files around them — a comment in a project file or a workflow is as public as one in a class, and
+    /// it is the one nobody rereads.
+    /// </summary>
+    internal static readonly string[] PublishedPatterns =
+        ["*.md", "*.cs", "*.csproj", "*.props", "*.yml", "*.sh", "*.ps1", "*.json", ".env.example", ".gitignore"];
+
+    /// <summary>
+    /// Every file of <see cref="PublishedPatterns"/> this repository actually publishes, as absolute paths.
     /// </summary>
     /// <remarks>
     /// "Publishes" is asked of git rather than of the file system, because those two answers
@@ -74,9 +82,10 @@ internal static class RepoSourceTree
             RedirectStandardOutput = true,
             UseShellExecute = false,
         };
-        foreach (var argument in new[]
-                 { "-C", RepoRoot, "ls-files", "--cached", "--others", "--exclude-standard", "--", "*.md", "*.cs" })
+        foreach (var argument in new[] { "-C", RepoRoot, "ls-files", "--cached", "--others", "--exclude-standard", "--" })
             git.ArgumentList.Add(argument);
+        foreach (var pattern in PublishedPatterns)
+            git.ArgumentList.Add(pattern);
 
         using var process = Process.Start(git)
             ?? throw new InvalidOperationException(

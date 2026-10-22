@@ -66,13 +66,10 @@ the tree.
 
 
 ```bash
-for p in tests/MLoop.Tests tests/MLoop.Core.Tests tests/MLoop.Core.DeepLearning.Tests \
-         tests/MLoop.API.Tests tests/MLoop.DataStore.Tests tests/MLoop.Ops.Tests; do
-  dotnet test "$p" -c Release --nologo || break
-done
+./scripts/test-all.sh      # every test project, one at a time; or scripts/test-all.ps1
 ```
 
-Serially, never two at once: several suites train real AutoML experiments on a ten-second
+Serially, never two at once: several suites run real trainer searches on a ten-second
 budget, and under CPU load no trial completes — a failure that describes the machine, not the
 code. The loop also keeps partial results when the whole-solution form dies under memory
 pressure.

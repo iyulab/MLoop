@@ -613,94 +613,28 @@ public class FileSystemManager : IFileSystemManager
 
 ### 6.1 Development Project Structure
 
-MLoop is organized into **6 separate projects** with clear separation of concerns:
-
 ```
 MLoop/
-├── src/
-│   ├── MLoop.sln                        # .NET 10 Solution
-│   │
-│   ├── MLoop.Extensibility/             # Extension interfaces (no dependencies)
-│   │   ├── Preprocessing/
-│   │   │   └── IPreprocessingScript.cs  # Custom preprocessing interface
-│   │   ├── Hooks/
-│   │   │   └── IHook.cs                 # Lifecycle hook interface
-│   │   └── Metrics/
-│   │       └── ICustomMetric.cs         # Custom metric interface
-│   │
-│   ├── MLoop.Core/                      # Core ML engine
-│   │   ├── AutoML/                      # Training runner (tasks, trainer search, evaluation)
-│   │   │   ├── TrainingEngine.cs
-│   │   │   └── TrainingConfig.cs
-│   │   ├── Data/                        # Data loading, encoding detection
-│   │   │   ├── DataLoaderFactory.cs
-│   │   │   └── CsvHelperImpl.cs
-│   │   ├── Preprocessing/               # FilePrepper integration
-│   │   ├── Scripting/                   # C# script compilation/execution
-│   │   ├── Hooks/                       # Hook execution
-│   │   ├── Metrics/                     # Metric processing
-│   │   └── Models/                      # Domain models (Experiment, etc.)
-│   │
-│   ├── MLoop.CLI/                       # Command-line interface
-│   │   ├── Commands/                    # CLI commands
-│   │   │   ├── InitCommand.cs          # mloop init
-│   │   │   ├── TrainCommand.cs         # mloop train (863 lines, orchestration)
-│   │   │   ├── TrainPresenter.cs       # Training display logic (414 lines)
-│   │   │   ├── TrainDataValidator.cs   # Data file/label validation (88 lines)
-│   │   │   ├── CommandContext.cs       # Shared command dependencies
-│   │   │   ├── PredictCommand.cs       # mloop predict
-│   │   │   ├── EvaluateCommand.cs      # mloop evaluate
-│   │   │   ├── ListCommand.cs          # mloop list
-│   │   │   ├── PromoteCommand.cs       # mloop promote
-│   │   │   ├── ServeCommand.cs         # mloop serve (launches API)
-│   │   │   ├── DockerCommand.cs        # mloop docker
-│   │   │   └── InfoCommand.cs          # mloop info
-│   │   ├── Infrastructure/              # FileSystem, Configuration, ML, Update, Diagnostics
-│   │   └── Templates/                   # Dockerfile templates
-│   │
-│   ├── MLoop.API/                       # REST API server (ASP.NET Core)
-│   │   ├── Program.cs                   # Minimal API endpoints
-│   │   └── appsettings.json             # API configuration
-│   │
-│   ├── MLoop.DataStore/                 # Prediction logging & feedback (MLOps)
-│   │   └── Interfaces/
-│   │       ├── IPredictionLogger.cs     # Prediction logging interface
-│   │       ├── IFeedbackCollector.cs    # Ground truth feedback collection
-│   │       └── IDataSampler.cs          # Production data sampling
-│   │
-│   └── MLoop.Ops/                       # MLOps automation
-│       └── Interfaces/
-│           ├── IRetrainingTrigger.cs    # Retraining condition evaluation
-│           ├── IModelComparer.cs        # Model performance comparison
-│           └── IPromotionManager.cs     # Automated model promotion
+├── MLoop.slnx                     # Solution
+├── Directory.Build.props          # Shared build settings and the version
+├── Directory.Packages.props       # Central package versions
 │
-├── tests/
-│   ├── MLoop.Core.Tests/           # 650+ tests (AutoML, data, schema)
-│   ├── MLoop.Tests/                # 350+ tests (CLI, infrastructure)
-│   ├── MLoop.Ops.Tests/            # 45 tests (comparison, triggers)
-│   ├── MLoop.DataStore.Tests/      # 26 tests (logging, feedback)
-│   ├── MLoop.API.Tests/            # 15 tests (REST endpoints)
-│   └── MLoop.Tests.Common/         # Shared test utilities
+├── src/                           # Libraries
+│   ├── MLoop.Extensibility/       # Script interfaces: preprocessing, hooks, metrics, detectors
+│   ├── MLoop.Search/              # Trainer search: candidates, tuner, folds, trial runner (ML.NET only)
+│   ├── MLoop.Core/                # Training runner, data loading, evaluation, prediction, storage layout, export
+│   ├── MLoop.Core.DeepLearning/   # Image and object-detection tasks (on-demand native runtimes)
+│   ├── MLoop.DataStore/           # Prediction logs, feedback, retention
+│   └── MLoop.Ops/                 # Model comparison, retraining triggers, rollback
 │
-├── examples/                            # Example projects
-│   ├── customer-churn/
-│   ├── equipment-anomaly-detection/
-│   └── tutorials/
+├── tools/                         # Executables
+│   ├── MLoop.CLI/                 # The `mloop` dotnet tool
+│   └── MLoop.API/                 # REST API behind `mloop serve`
 │
-├── docs/                                # Documentation
-│   ├── ARCHITECTURE.md                  # This file
-│   ├── GUIDE.md                         # User guide
-│   └── ECOSYSTEM.md                     # MLoop ecosystem overview
-│
-├── mcp/                                 # [Submodule] mloop-mcp (MCP Server)
-│   └── (https://github.com/iyulab/mloop-mcp)
-│
-├── studio/                              # [Submodule] mloop-studio (Web Platform)
-│   └── (https://github.com/iyulab/mloop-studio)
-│
-├── Directory.Build.props                # Central package management
-├── Directory.Packages.props             # Package versions
-└── .gitignore
+├── tests/                         # One test project per assembly, plus shared helpers
+├── examples/                      # customer-churn, tutorials, extension and preprocessing scripts
+├── docs/                          # This file, GUIDE.md, ECOSYSTEM.md, ...
+└── scripts/                       # test-all (one test project at a time), local CLI build
 ```
 
 ### 6.2 Project Dependencies

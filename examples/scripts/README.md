@@ -88,9 +88,9 @@ brew install parallel
 ./mloop-parallel.sh 1
 
 # Executes:
-# train dataset1.csv target --time 300
-# train dataset2.csv target --time 600
-# train dataset3.csv target --time 900
+# train dataset1.csv --label target --time 300
+# train dataset2.csv --label target --time 600
+# train dataset3.csv --label target --time 900
 ```
 
 **Example 3: Resume on Failure**:
