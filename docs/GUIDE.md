@@ -97,7 +97,7 @@ my-project/
 
 ### `mloop train`
 
-Train models using ML.NET AutoML with automatic experiment tracking.
+Train models with MLoop's trainer search (over ML.NET's trainers) and automatic experiment tracking.
 
 ```bash
 # Basic training

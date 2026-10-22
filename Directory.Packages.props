@@ -7,10 +7,11 @@
   <ItemGroup>
     <!-- ML.NET Core Packages -->
     <PackageVersion Include="Microsoft.ML" Version="5.0.1" />
+    <!-- Tests only (MLoop.Core.Tests): the upstream oracle MLoop.Search's tuner is checked against. -->
     <PackageVersion Include="Microsoft.ML.AutoML" Version="0.23.1" />
     <PackageVersion Include="Microsoft.ML.OnnxConverter" Version="0.23.1" />
     <!-- Components MLoop.Core calls directly. They used to arrive only through Microsoft.ML.AutoML,
-         so nothing in the graph said MLoop needed them; declared here they survive that package. -->
+         so nothing in the graph said MLoop needed them; declared here, they outlived that package. -->
     <PackageVersion Include="Microsoft.ML.FastTree" Version="5.0.1" />
     <PackageVersion Include="Microsoft.ML.LightGbm" Version="5.0.1" />
     <PackageVersion Include="Microsoft.ML.TimeSeries" Version="5.0.1" />

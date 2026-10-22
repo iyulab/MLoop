@@ -191,21 +191,14 @@ public record TrainingConfig
     public string? ItemColumn { get; init; }
 
     /// <summary>
-    /// Which trainer search a binary, multiclass or regression run uses — MLoop's own. Internal: AutoML's is
-    /// kept only for the comparison inside <c>MLoop.Core.Tests</c> until the AutoML package is removed.
-    /// TODO(AutoML removal): remove with the AutoML package — the MLoop search becomes the only one.
-    /// </summary>
-    internal SearchEngine Engine { get; init; } = SearchEngine.MLoop;
-
-    /// <summary>
-    /// The seed and threads MLoop's search runs with; <see langword="null"/> for its defaults. Internal,
-    /// like <see cref="Engine"/>: the comparison of the two searches varies the seed.
+    /// The seed and threads MLoop's search runs with; <see langword="null"/> for its defaults. Internal:
+    /// the search's measurements vary the seed.
     /// </summary>
     internal MLoop.Search.Candidates.SearchSettings? SearchSettings { get; init; }
 
     /// <summary>
-    /// At most this many trials, on either search (AutoML's <c>MaxModels</c>); <see langword="null"/> for
-    /// the time budget alone. Internal: the comparison of the two searches holds the trial count equal.
+    /// At most this many trials; <see langword="null"/> for the time budget alone. Internal: the search's
+    /// measurements hold the trial count fixed.
     /// </summary>
     internal int? SearchMaxTrials { get; init; }
 
@@ -236,14 +229,4 @@ public record TrainingConfig
             return claimed;
         }
     }
-}
-
-/// <summary>The trainer search behind a run (<see cref="TrainingConfig.Engine"/>).</summary>
-internal enum SearchEngine
-{
-    /// <summary>ML.NET AutoML's experiment.</summary>
-    AutoML,
-
-    /// <summary>MLoop's own search (<c>MLoop.Search.TrialRunner</c>).</summary>
-    MLoop,
 }

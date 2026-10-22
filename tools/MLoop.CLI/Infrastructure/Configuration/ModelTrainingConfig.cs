@@ -68,7 +68,7 @@ public static class ModelTrainingConfig
         var weight = definition.Weight?.Trim();
         if (string.IsNullOrEmpty(weight))
             return null;
-        if (!WeightedResampling.Supports(definition.Task))
+        if (!RowWeights.Supports(definition.Task))
             return $"weight '{weight}': weighted training applies to binary-classification, multiclass-classification and regression, not '{definition.Task}'.";
         if (string.Equals(weight, definition.Label, StringComparison.OrdinalIgnoreCase))
             return $"weight '{weight}' is the label column; the weight must be a column of its own.";

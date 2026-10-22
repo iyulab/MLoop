@@ -23,12 +23,14 @@ public sealed class SearchGateFactAttribute : FactAttribute
 }
 
 /// <summary>
-/// The comparison of MLoop's trainer search with AutoML's, through the training path both run on — the
-/// same loader, split, column roles and test evaluation. Three measurements:
+/// The measurement of MLoop's trainer search through the training path — loader, split, column roles and
+/// test evaluation. (Until ML.NET AutoML was removed it ran beside AutoML's search on the same data; the
+/// numbers that set the gate's tolerances, and the comparison they came from, are in the decision record.)
+/// Three measurements:
 /// <list type="number">
 /// <item><b>Search quality</b> — the trial count held equal, five seeds each: the distribution of the test
-/// partition's metric per data set and search.</item>
-/// <item><b>Time budget</b> — the same budgets on both: trials that scored, and the time a run took against
+/// partition's metric per data set.</item>
+/// <item><b>Time budget</b> — trials that scored, and the time a run took against
 /// the time it was given (the refit included).</item>
 /// <item><b>Determinism</b> — MLoop's search twice under one seed proposes and scores the same trials.</item>
 /// </list>
@@ -80,13 +82,11 @@ public sealed class SearchGateMeasurement : IDisposable
         {
             foreach (var seed in Seeds)
             {
-                runs.Add(await TrainAsync(set, SearchEngine.AutoML, seed, Trials, QualityBudgetSeconds));
-                runs.Add(await TrainAsync(set, SearchEngine.MLoop, seed, Trials, QualityBudgetSeconds));
+                runs.Add(await TrainAsync(set, seed, Trials, QualityBudgetSeconds));
             }
             foreach (var budget in Budgets)
             {
-                runs.Add(await TrainAsync(set, SearchEngine.AutoML, 1, null, budget));
-                runs.Add(await TrainAsync(set, SearchEngine.MLoop, 1, null, budget));
+                runs.Add(await TrainAsync(set, 1, null, budget));
             }
         }
 
@@ -187,7 +187,7 @@ public sealed class SearchGateMeasurement : IDisposable
 
     private static string F(double value) => value.ToString("F4", CultureInfo.InvariantCulture);
 
-    private static TrainingConfig Config(DataSet set, SearchEngine engine, int seed, int? maxTrials, int budget) => new()
+    private static TrainingConfig Config(DataSet set, int seed, int? maxTrials, int budget) => new()
     {
         ModelName = "gate",
         DataFile = set.Path,
@@ -195,26 +195,25 @@ public sealed class SearchGateMeasurement : IDisposable
         Task = set.Task,
         TimeLimitSeconds = budget,
         Metric = set.Metric,
-        Engine = engine,
         SearchSettings = new SearchSettings(Seed: seed, Threads: 1),
         SearchMaxTrials = maxTrials,
     };
 
-    private static async Task<Run> TrainAsync(DataSet set, SearchEngine engine, int seed, int? maxTrials, int budget)
+    private static async Task<Run> TrainAsync(DataSet set, int seed, int? maxTrials, int budget)
     {
         var ctx = new MLContext(seed: seed);
         var clock = Stopwatch.StartNew();
         try
         {
             var result = await new AutoMLRunner(ctx, new CsvDataLoader(ctx))
-                .RunAsync(Config(set, engine, seed, maxTrials, budget), null, CancellationToken.None);
-            return new Run(set.Name, engine.ToString(), seed, maxTrials, budget, set.Metric,
+                .RunAsync(Config(set, seed, maxTrials, budget), null, CancellationToken.None);
+            return new Run(set.Name, "MLoop", seed, maxTrials, budget, set.Metric,
                 result.Metrics.TryGetValue(set.Metric, out var value) ? value : null,
                 result.Trials.Count, result.Trials.Count(t => t.Error is null), clock.Elapsed.TotalSeconds, null);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            return new Run(set.Name, engine.ToString(), seed, maxTrials, budget, set.Metric, null, 0, 0, clock.Elapsed.TotalSeconds, ex.GetBaseException().Message);
+            return new Run(set.Name, "MLoop", seed, maxTrials, budget, set.Metric, null, 0, 0, clock.Elapsed.TotalSeconds, ex.GetBaseException().Message);
         }
     }
 
@@ -223,7 +222,7 @@ public sealed class SearchGateMeasurement : IDisposable
     {
         var ctx = new MLContext(seed: 1);
         var result = await new AutoMLRunner(ctx, new CsvDataLoader(ctx))
-            .RunAsync(Config(set, SearchEngine.MLoop, 1, 8, QualityBudgetSeconds), null, CancellationToken.None);
+            .RunAsync(Config(set, 1, 8, QualityBudgetSeconds), null, CancellationToken.None);
         return string.Join("\n", result.Trials.Select(t =>
             $"{t.TrainerName} {string.Join(",", t.Metrics.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => $"{m.Key}={m.Value:R}"))} {t.Error}"));
     }
@@ -231,7 +230,7 @@ public sealed class SearchGateMeasurement : IDisposable
     private void Report(IReadOnlyList<Run> runs, IReadOnlyList<(string DataSet, bool Same)> determinism)
     {
         var md = new StringBuilder();
-        md.AppendLine("# Trainer search comparison — MLoop vs AutoML");
+        md.AppendLine("# Trainer search measurement — MLoop");
         md.AppendLine();
         md.AppendLine(CultureInfo.InvariantCulture, $"Machine: {System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier}, {Environment.ProcessorCount} cores.");
         md.AppendLine();

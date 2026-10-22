@@ -54,13 +54,10 @@ public sealed class TrialProgressChannel : ITrialSink
     /// </summary>
     /// <remarks>
     /// Task paths that run their own search (clustering over K, anomaly over rank, ts-anomaly over
-    /// detectors, ranking over trainers) and the manual fallback have no AutoML <c>RunDetails</c> to
-    /// harvest afterwards, so their leaderboard exists only here. Taking it from the channel rather
-    /// than rebuilding it at each call site is what keeps "reported" and "recorded" the same set:
-    /// one <c>ReportCompleted</c> call produces both, and neither can be added without the other.
-    /// The AutoML paths ignore this list and read <c>RunDetails</c> instead — that source carries
-    /// each trial's full metric set and its own runtime, which the live stream does not see — and
-    /// the two productions are held together by <see cref="TrialLedger.IsReportable"/>.
+    /// detectors, ranking over trainers) keep no other record, so their leaderboard exists only here.
+    /// Taking it from the channel rather than rebuilding it at each call site is what keeps "reported" and
+    /// "recorded" the same set: one <c>ReportCompleted</c> call produces both, and neither can be added
+    /// without the other.
     /// </remarks>
     public IReadOnlyList<TrialRecord> Records
     {

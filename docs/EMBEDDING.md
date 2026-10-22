@@ -18,90 +18,20 @@ see [GUIDE.md](GUIDE.md).
 
 ---
 
-## 1. Pruning the transitive deep-learning weight (tabular-only consumers)
+## 1. The deep-learning weight (tabular-only consumers)
 
-Since **v0.23.0**, `MLoop.Core.dll` is **Torch/Vision-free at the IL level** (the DL task
-handlers live in the separate `MLoop.Core.DeepLearning` assembly — see the
-[tabular-slim split](../CHANGELOG.md)). This makes it **safe** for a tabular-only consumer to
-strip the unused managed DL assemblies from a `dotnet publish --self-contained` output.
-
-The split does **not** shrink your publish output by itself: `Microsoft.ML.AutoML`
-(MLoop.Core's core engine, irremovable) still *transitively* pulls in `Microsoft.ML.TorchSharp`
-and `Microsoft.ML.Vision`. You prune them by excluding those transitive assets:
-
-```xml
-<PackageReference Include="Microsoft.ML.TorchSharp" ExcludeAssets="all" />
-<PackageReference Include="Microsoft.ML.Vision" ExcludeAssets="all" />
-<PackageReference Include="TorchSharp" ExcludeAssets="all" />
-```
-
-Verified result: the tabular self-contained publish then contains **no**
-TorchSharp/Vision/LibTorchSharp assemblies, and tabular AutoML (binary/multiclass/regression,
-clustering, ranking, forecasting, time-series-anomaly, anomaly-detection, recommendation) still
-runs. A consumer measured ~201 MB → ~196 MB and 5 → 0 Torch/Vision/LibTorchSharp DLLs across
-its engine bundles.
-
-> If your consumer **does** use a DL task (image-classification, text-classification,
-> sentence-similarity, ner, object-detection, question-answering), do **not** apply this recipe
-> — reference `MLoop.Core.DeepLearning` and keep the DL assets.
-
-### ⚠️ Placement: put the recipe in the *publishing* project, not an intermediate library
-
-`ExcludeAssets` on a `PackageReference` **does not flow transitively through a
-`ProjectReference`.** If your topology is
-
-```
-engine.exe  →  YourApp.ML (intermediate lib)  →  MLoop.Core  →  AutoML  →  Torch
-```
-
-placing the recipe in the intermediate `YourApp.ML` library has **no effect** — the Torch DLLs
-still land in `engine.exe`'s publish output. The recipe must live in **the project that is
-actually published** (the executable / entry-point project). A clean pattern for multiple
-publishable entry points is a shared `.props` file that each executable `<Import>`s:
-
-```xml
-<!-- Directory.Torch-Exclude.props (shared) -->
-<Project>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.ML.TorchSharp" ExcludeAssets="all" />
-    <PackageReference Include="Microsoft.ML.Vision" ExcludeAssets="all" />
-    <PackageReference Include="TorchSharp" ExcludeAssets="all" />
-  </ItemGroup>
-</Project>
-```
-
-```xml
-<!-- each engine .exe .csproj -->
-<Import Project="..\Directory.Torch-Exclude.props" />
-```
-
-### Non-CPM consumers: specify versions explicitly
-
-The versionless recipe above assumes **Central Package Management** (a `Directory.Packages.props`
-supplying the versions). A consumer **without** CPM will fail the versionless form with
-**NU1015** ("PackageReference … does not contain a version"). Add explicit versions.
-
-**Do not freeze a hardcoded version trio** — the DL package versions move whenever
-`Microsoft.ML.AutoML` bumps. Derive the exact versions your graph actually resolves:
+`MLoop.Core` carries no deep-learning dependency. Its deep-learning task handlers live in the separate
+`MLoop.Core.DeepLearning` assembly, and since MLoop searches trainers with its own `MLoop.Search` the package
+graph no longer reaches TorchSharp, `Microsoft.ML.TorchSharp` or `Microsoft.ML.Vision` either — they used to
+arrive transitively through `Microsoft.ML.AutoML`, which MLoop no longer references. A tabular-only consumer
+needs no exclusion recipe; check what your graph resolves with:
 
 ```bash
 dotnet list <your-project>.csproj package --include-transitive | \
-  grep -Ei "TorchSharp|Microsoft.ML.Vision|Microsoft.ML.TorchSharp"
+  grep -Ei "TorchSharp|Microsoft.ML.Vision|Microsoft.ML.AutoML"
 ```
 
-For reference only, the transitive values under `Microsoft.ML.AutoML 0.23.0` are:
-
-| Package | Version (AutoML 0.23.0) |
-|---------|-------------------------|
-| `TorchSharp` | `0.102.7` |
-| `Microsoft.ML.TorchSharp` | `0.23.0` |
-| `Microsoft.ML.Vision` | `5.0.0` |
-
-```xml
-<PackageReference Include="Microsoft.ML.TorchSharp" Version="0.23.0" ExcludeAssets="all" />
-<PackageReference Include="Microsoft.ML.Vision" Version="5.0.0" ExcludeAssets="all" />
-<PackageReference Include="TorchSharp" Version="0.102.7" ExcludeAssets="all" />
-```
+An empty result is the expected one. If a line appears, another package of yours brings it in.
 
 ---
 

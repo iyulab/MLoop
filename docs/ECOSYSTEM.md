@@ -203,7 +203,7 @@ MLoop은 **SDK**와 **Tools**로 분리됩니다:
 ```
 src/
 ├── MLoop.Core/                # ML 엔진 라이브러리
-│   ├── AutoML/               # ML.NET AutoML 래퍼
+│   ├── AutoML/               # 학습 실행기 (태스크 · 트레이너 탐색 · 평가)
 │   ├── Data/                 # 데이터 로딩
 │   └── Models/               # 도메인 모델
 │

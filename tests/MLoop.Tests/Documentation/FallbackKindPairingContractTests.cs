@@ -10,8 +10,8 @@ namespace MLoop.Tests.Documentation;
 /// <remarks>
 /// <para>
 /// The pair exists because the two audiences need different things: the reason carries the
-/// specifics a person wants (<c>Accuracy→F1Score (AUC imbalance)</c>), while the decision the
-/// engine makes — whether a second AutoML pass could possibly do better — must not be recovered by
+/// specifics a person wants (the refit's own error message), while the decision the engine makes —
+/// whether a second search pass could possibly do better — must not be recovered by
 /// matching that text's prefix, because then a reworded message silently changes behavior.
 /// </para>
 /// <para>
@@ -77,9 +77,10 @@ public class FallbackKindPairingContractTests
     }
 
     /// <summary>
-    /// The guard is only worth having if it can see the initializers it is meant to police. Two
-    /// exist today (the metric substitution and the direct-pipeline stand-in); a rewrite that moved
-    /// them out of object-initializer form would leave this test green while checking nothing.
+    /// The guard is only worth having if it can see the initializers it is meant to police. One
+    /// exists today (the search's refit falling back to the best trial's first fold — the metric
+    /// substitution and the direct-pipeline stand-in went with ML.NET AutoML); a rewrite that moved it
+    /// out of object-initializer form would leave this test green while checking nothing.
     /// </summary>
     [Fact]
     public void TheGuardSeesTheFallbackSitesItPolices()
@@ -92,8 +93,8 @@ public class FallbackKindPairingContractTests
              select body).Count();
 
         Assert.True(
-            initializersSettingAFallback >= 2,
-            $"Expected the two known fallback sites to be visible to this scan; saw "
+            initializersSettingAFallback >= 1,
+            $"Expected the known fallback site to be visible to this scan; saw "
             + $"{initializersSettingAFallback}. If the sites moved, move the guard with them — a "
             + "scan that matches nothing passes for the wrong reason.");
     }

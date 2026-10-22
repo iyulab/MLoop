@@ -41,7 +41,7 @@ public class EvaluationEngine
         string? weightColumn = null,
         MLoop.Core.Metrics.MetricEngine? metricScripts = null)
     {
-        if (!string.IsNullOrEmpty(weightColumn) && !WeightedResampling.Supports(taskType))
+        if (!string.IsNullOrEmpty(weightColumn) && !RowWeights.Supports(taskType))
             throw new NotSupportedException(
                 $"Weighted evaluation (weight '{weightColumn}') applies to binary-classification, multiclass-classification and regression, not '{taskType}'.");
 
@@ -197,7 +197,7 @@ public class EvaluationEngine
 
                 var confusion = classifier
                     ? ConfusionCounts.Of(predictions, taskType, labelColumn,
-                        string.IsNullOrEmpty(weightColumn) ? null : WeightedResampling.ReadWeights(predictions, weightColumn), trainedSchema)
+                        string.IsNullOrEmpty(weightColumn) ? null : RowWeights.Read(predictions, weightColumn), trainedSchema)
                     : null;
 
                 // The project's metric scripts over the same scored rows, as training computes them.
@@ -310,7 +310,7 @@ public class EvaluationEngine
                 var keep = string.IsNullOrEmpty(weightColumn) ? null : new[] { weightColumn };
                 var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, keep, out tempFiles, keepColumns: keep);
                 var scored = model.Transform(testData);
-                var weights = string.IsNullOrEmpty(weightColumn) ? null : WeightedResampling.ReadWeights(scored, weightColumn);
+                var weights = string.IsNullOrEmpty(weightColumn) ? null : RowWeights.Read(scored, weightColumn);
                 return read(scored, weights);
             }
             finally

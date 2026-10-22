@@ -1,5 +1,4 @@
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
@@ -249,16 +248,9 @@ public partial class AutoMLRunner
             mergedColumnGroups = loader.GetMergedColumnGroups();
         }
 
-        // Weighted training: AutoML fits and chooses on weighted resamples of two disjoint partitions;
-        // MLoop's own search gives the trainers the weights and scores its folds by them.
-        IDataView? validationSet = null;
+        // Weighted training: the search gives the trainers the weights and scores its folds by them.
         if (!string.IsNullOrEmpty(config.WeightColumn))
-        {
-            if (SearchesWithMLoop(config))
-                CheckWeightedTask(testSet, config);
-            else
-                (trainSet, validationSet) = PrepareWeightedPartitions(trainSet, testSet, config);
-        }
+            CheckWeightedTask(testSet, config);
 
         // Ensure the task's on-demand native runtime is installed and loaded (no-op for tabular tasks).
         Runtime.RuntimeManager.EnsureRuntimeForTask(config.Task);
@@ -267,11 +259,11 @@ public partial class AutoMLRunner
         var result = config.Task.ToLowerInvariant() switch
         {
             "binary-classification" => await RunBinaryClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken, validationSet).ConfigureAwait(false),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "multiclass-classification" => await RunMulticlassClassificationAsync(
-                trainSet, testSet, config, progress, cancellationToken, validationSet).ConfigureAwait(false),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "regression" => await RunRegressionAsync(
-                trainSet, testSet, config, progress, cancellationToken, validationSet).ConfigureAwait(false),
+                trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false),
             "anomaly-detection" => await RunAnomalyDetectionAsync(
                 trainSet, testSet, config, progress, cancellationToken, mergedColumnGroups).ConfigureAwait(false),
             "clustering" => await RunClusteringAsync(
@@ -458,25 +450,9 @@ public partial class AutoMLRunner
         return slotNames.DenseValues().Select(v => v.ToString()).ToArray();
     }
 
-    /// <summary>
-    /// Splits the training partition into the rows models are fitted on and the rows they are chosen
-    /// on, and resamples each by the weight column on its own — the same source row is never on both
-    /// sides. The test partition is left as it is. Refuses a task the weights would not reach.
-    /// </summary>
-    private (IDataView Train, IDataView Validation) PrepareWeightedPartitions(IDataView trainSet, IDataView testSet, TrainingConfig config)
-    {
-        CheckWeightedTask(testSet, config);
-        var split = _mlContext.Data.TrainTestSplit(trainSet, testFraction: WeightedValidationFraction, seed: WeightedSeed);
-        var train = WeightedResampling.Resample(_mlContext, split.TrainSet, config.WeightColumn!, WeightedSeed + 1);
-        var validation = WeightedResampling.Resample(_mlContext, split.TestSet, config.WeightColumn!, WeightedSeed + 2);
-        _logger.Info($"Weighted by '{config.WeightColumn}': models are fitted and chosen on weighted resamples " +
-                     $"({train.GetRowCount()} + {validation.GetRowCount()} rows).");
-        return (train, validation);
-    }
-
     private static void CheckWeightedTask(IDataView testSet, TrainingConfig config)
     {
-        if (!WeightedResampling.Supports(config.Task))
+        if (!RowWeights.Supports(config.Task))
             throw new NotSupportedException(
                 $"Weighted training (weight column '{config.WeightColumn}') applies to binary-classification, " +
                 $"multiclass-classification and regression; '{config.Task}' would ignore the weights. Remove the weight to train it.");
@@ -485,12 +461,6 @@ public partial class AutoMLRunner
             throw new InvalidOperationException(
                 $"The test data has no weight column '{config.WeightColumn}'; a weighted model is judged on weighted test rows.");
     }
-
-    // Whether MLoop's own search runs this training: the tasks AutoML searched — binary, multiclass, regression.
-    private static bool SearchesWithMLoop(TrainingConfig config)
-        => config.Engine == SearchEngine.MLoop
-           && (IsBinary(config) || IsRegression(config)
-               || config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Re-scores the test partition with the final model and replaces the task's evaluator metrics
@@ -531,169 +501,26 @@ public partial class AutoMLRunner
         ["micro_accuracy", "macro_accuracy", "log_loss", "log_loss_reduction", "macro_f1", "ece"];
     private static readonly string[] WeightedRegressionKeys = ["r_squared", "rmse", "mae", "mse"];
 
-    // The share of the training partition models are chosen on when the rows are weighted, and the
-    // seed of that split and its resamples. Fixed, so a weighted run is reproducible.
-    private const double WeightedValidationFraction = 0.2;
-    private const int WeightedSeed = 1683;
-
-    private async Task<AutoMLResult> RunBinaryClassificationAsync(
+    private Task<AutoMLResult> RunBinaryClassificationAsync(
         IDataView trainSet,
         IDataView testSet,
         TrainingConfig config,
         IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken,
-        IDataView? validationSet = null)
-    {
-        var optimizingMetric = GetBinaryMetric(config);
-        string? metricFallbackNote = null;
-
-        // The fallbacks below answer ML.NET AutoML's AUC failure; MLoop's search scores a fold of one class
-        // instead of failing on it, and is not retried under them.
-        if (SearchesWithMLoop(config))
-            return await RunBinaryClassificationCoreAsync(
-                trainSet, testSet, config, optimizingMetric, progress, cancellationToken, validationSet: validationSet).ConfigureAwait(false);
-
-        try
-        {
-            return await RunBinaryClassificationCoreAsync(
-                trainSet, testSet, config, optimizingMetric, progress, cancellationToken, validationSet: validationSet).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (IsAucUndefinedException(ex))
-        {
-            // AUC requires both positive and negative samples in the test set.
-            // AutoML internally computes AUC regardless of the user's requested metric,
-            // so this error can occur even with --metric accuracy or other non-AUC metrics.
-            // Fall back to F1Score which is more robust for imbalanced data.
-            if (optimizingMetric == BinaryClassificationMetric.F1Score)
-            {
-                // Already using F1Score — fall back to manual pipeline directly.
-                _logger.Warning("AutoML failed with F1Score metric. Falling back to direct pipeline training (SDCA).");
-                return await RunManualBinaryClassificationAsync(
-                    trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false);
-            }
-
-            var originalMetric = optimizingMetric.ToString();
-            _logger.Warning($"AUC computation failed during {originalMetric} optimization (extreme class imbalance). Falling back to F1Score.");
-            metricFallbackNote = $"{originalMetric}→F1Score (AUC imbalance)";
-
-            try
-            {
-                return await RunBinaryClassificationCoreAsync(
-                    trainSet, testSet, config, BinaryClassificationMetric.F1Score, progress, cancellationToken,
-                    metricFallbackNote, validationSet).ConfigureAwait(false);
-            }
-            catch (Exception fallbackEx) when (IsAucUndefinedException(fallbackEx))
-            {
-                // AutoML failed with both metrics — fall back to manual pipeline training.
-                _logger.Warning("AutoML failed with both metrics. Falling back to direct pipeline training (SDCA).");
-                return await RunManualBinaryClassificationAsync(
-                    trainSet, testSet, config, progress, cancellationToken).ConfigureAwait(false);
-            }
-        }
-    }
-
-    private async Task<AutoMLResult> RunBinaryClassificationCoreAsync(
-        IDataView trainSet,
-        IDataView testSet,
-        TrainingConfig config,
-        BinaryClassificationMetric optimizingMetric,
-        IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken,
-        string? metricFallbackNote = null,
-        IDataView? validationSet = null)
-    {
-        if (SearchesWithMLoop(config))
-        {
-            return await RunWithMLoopSearchAsync(trainSet, testSet, config,
-                CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
-                DescribeBinaryMetric(optimizingMetric).Name, ScoreBinaryWithCalibrationError, progress, cancellationToken,
-                (model, predictions) => (
-                    EnsureCalibratedModel(_mlContext, model, predictions, config.LabelColumn,
-                        predictions.Schema.GetColumnOrNull("Probability") != null),
-                    ScoreBinaryWithCalibrationError(predictions, config.LabelColumn),
-                    null))
-                .ConfigureAwait(false);
-        }
-
-        var settings = new BinaryExperimentSettings
-        {
-            MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
-            OptimizingMetric = optimizingMetric,
-            CancellationToken = cancellationToken
-        };
-        if (config.SearchMaxTrials is { } maxTrials)
-            settings.MaxModels = maxTrials;
-
-        var experiment = _mlContext.Auto().CreateBinaryClassificationExperiment(settings);
-
-        // Build explicit ColumnInformation to ensure text columns get
-        // TextFeaturizingEstimator instead of being ignored by AutoML's internal inference.
-        var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
-        var preFeaturizer = config.PreFeaturizer;
-        ITransformer? portableText = null;
-        if (config.Portable)
-            (roles, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, validationSet);
-        var columnInfo = AutoMLColumns.ToColumnInformation(roles);
-
-        var trialReporter = CreateTrialReporter(progress, DescribeBinaryMetric(optimizingMetric));
-
-        var experimentResult = await ExecuteExperimentAsync(
-            () => validationSet != null
-                ? experiment.Execute(trainSet, validationSet,
-                    columnInfo ?? new ColumnInformation { LabelColumnName = config.LabelColumn },
-                    preFeaturizer, trialReporter)
-                : columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo, preFeaturizer, trialReporter)
-                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
-                    preFeaturizer: preFeaturizer, progressHandler: trialReporter),
-            config, cancellationToken).ConfigureAwait(false);
-
-        // Evaluate on test set
-        var bestModel = PortableTextFeaturizer.Prepend(portableText, experimentResult.BestRun.Model);
-        var predictions = bestModel.Transform(testSet);
-
-        // Some AutoML pipelines (non-calibrated models) don't produce a Probability column.
-        // Use EvaluateNonCalibrated when Probability column is missing.
-        var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
-
-        // One mapping from ML.NET's fields to MLoop's names (MetricReport): a name the optimizer
-        // accepts is a name this result carries.
-        var metricsDict = WithoutUndefinedRanking(MetricReport.Describe(hasProbability
-            ? _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn)
-            : _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn)));
-
-        if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
-            metricsDict[CalibrationError.MetricName] = binaryEce;
-
-        // The note says the run optimized a different metric than asked (AUC → F1Score), which is a
-        // fact about the run, not part of the trainer's name — it used to be appended to it.
-        var trainer = new TrainerDescriptor
-        {
-            Name = experimentResult.BestRun.TrainerName,
-            FallbackReason = metricFallbackNote is null ? null : $"metric fallback: {metricFallbackNote}",
-            FallbackKind = metricFallbackNote is null
-                ? TrainerFallbackKind.None
-                : TrainerFallbackKind.MetricSubstituted
-        };
-
-        return new AutoMLResult
-        {
-            Trainer = trainer,
-            Model = EnsureCalibratedModel(_mlContext, bestModel, predictions, config.LabelColumn, hasProbability),
-            Metrics = metricsDict,
-            RowCount = trainSet.GetRowCount() ?? 0,
-            Trials = CollectTrials(experimentResult.RunDetails, DescribeAllBinaryMetrics),
-            RankingMetric = DescribeBinaryMetric(optimizingMetric).Name
-        };
-    }
-
+        CancellationToken cancellationToken)
+        => RunWithMLoopSearchAsync(trainSet, testSet, config,
+            CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
+            OptimizingMetric(config), ScoreBinaryWithCalibrationError, progress, cancellationToken,
+            (model, predictions) => (
+                EnsureCalibratedModel(_mlContext, model, predictions, config.LabelColumn,
+                    predictions.Schema.GetColumnOrNull("Probability") != null),
+                ScoreBinaryWithCalibrationError(predictions, config.LabelColumn),
+                null));
     /// <summary>
-    /// A classification run on MLoop's own search (<see cref="TrialRunner"/>): the same roles, portable-text
-    /// step, test evaluation and trial records as the AutoML path, with the search — candidates, tuner, folds,
-    /// refit — owned here. <paramref name="score"/> gives the metrics of scored rows, for each fold (weighted
-    /// when the run is) and for the test partition; <paramref name="finish"/>, when given, turns the refit model
-    /// and its test predictions into what is saved, as the task's AutoML path does (a binary calibrator, a
-    /// regression's intervals and σ-model).
+    /// A binary, multiclass or regression run on MLoop's trainer search (<see cref="TrialRunner"/>): column roles,
+    /// portable-text step, the search — candidates, tuner, folds, refit — the test evaluation and the trial
+    /// records. <paramref name="score"/> gives the metrics of scored rows, for each fold (weighted when the run
+    /// is) and for the test partition; <paramref name="finish"/>, when given, turns the refit model and its test
+    /// predictions into what is saved (a binary calibrator, a regression's intervals and σ-model).
     /// </summary>
     private async Task<AutoMLResult> RunWithMLoopSearchAsync(
         IDataView trainSet,
@@ -1157,305 +984,29 @@ public partial class AutoMLRunner
         return count;
     }
 
-    /// <summary>
-    /// Manual pipeline fallback for small datasets where AutoML's internal AUC
-    /// computation fails. Builds an explicit ML.NET pipeline with SDCA trainer, bypassing
-    /// AutoML's cross-validation entirely.
-    /// </summary>
-    private async Task<AutoMLResult> RunManualBinaryClassificationAsync(
+    private Task<AutoMLResult> RunMulticlassClassificationAsync(
         IDataView trainSet,
         IDataView testSet,
         TrainingConfig config,
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
-    {
-        // This pipeline has no AutoML trials; it reports itself as one, once it has a result to
-        // report (see TrialProgressChannel — reporting up front meant sending accuracy=0).
-        var trialChannel = CreateTrialChannel(progress);
-
-        var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
-
-        // The pre-featurizer (statistical prep, portable text) belongs in front of this pipeline as it
-        // does in front of AutoML's — without it the fallback trained on columns prep never touched.
-        var preFeaturizer = config.PreFeaturizer;
-        ITransformer? portableText = null;
-        if (config.Portable)
-            (roles, portableText, trainSet, _) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, null);
-        var manualPipeline = BuildManualBinaryPipeline(_mlContext,
-            preFeaturizer is null ? trainSet : preFeaturizer.Fit(trainSet).Transform(trainSet),
-            config.LabelColumn, roles);
-        var trainingPipeline = preFeaturizer is null ? manualPipeline : preFeaturizer.Append(manualPipeline);
-
-        var fittedPipeline = await Task.Run(
-            () => trainingPipeline.Fit(trainSet),
-            cancellationToken).ConfigureAwait(false);
-        var model = PortableTextFeaturizer.Prepend(portableText, fittedPipeline);
-
-        // Evaluate on test set
-        var predictions = model.Transform(testSet);
-        var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
-
-        // One mapping from ML.NET's fields to MLoop's names (MetricReport): a name the optimizer
-        // accepts is a name this result carries.
-        var metricsDict = WithoutUndefinedRanking(MetricReport.Describe(hasProbability
-            ? _mlContext.BinaryClassification.Evaluate(predictions, config.LabelColumn)
-            : _mlContext.BinaryClassification.EvaluateNonCalibrated(predictions, config.LabelColumn)));
-
-        if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
-            metricsDict[CalibrationError.MetricName] = binaryEce;
-
-        // One descriptor for both the trial and the result: they describe the same fit, and the
-        // trial line used to say "SdcaLogisticRegression (fallback)" while the result said
-        // "SdcaLogisticRegression [manual fallback: AutoML AUC failure]" — two renderings of it.
-        var trainer = new TrainerDescriptor
-        {
-            Name = "SdcaLogisticRegression",
-            FallbackReason = "manual fallback: AutoML AUC failure",
-            FallbackKind = TrainerFallbackKind.AutoMLUnavailable
-        };
-
-        trialChannel.ReportCompleted(trainer, "accuracy", metricsDict["accuracy"], metricsDict);
-
-        return new AutoMLResult
-        {
-            Trainer = trainer,
-            Model = EnsureCalibratedModel(_mlContext, model, predictions, config.LabelColumn, hasProbability),
-            Metrics = metricsDict,
-            RowCount = trainSet.GetRowCount() ?? 0,
-            Trials = trialChannel.Records,
-            RankingMetric = trialChannel.RankingMetric
-        };
-    }
-
-    /// <summary>
-    /// The manual binary pipeline: featurization → <b>cache checkpoint</b> → SDCA logistic regression.
-    /// </summary>
-    /// <remarks>
-    /// The checkpoint is the load-bearing part. ML.NET evaluates a pipeline lazily, and SDCA makes
-    /// many passes over its input — without a checkpoint every pass re-runs the whole featurization
-    /// chain (tokenize, n-gram, normalize, one-hot, concatenate) from the source rows. On the
-    /// repository's own 50-row example with twelve text columns that put a 29-second probe at
-    /// <b>five and a half minutes</b>, stuck in <c>SdcaTrainerBase.TrainCore</c> re-opening the
-    /// shuffled cursor, with no time budget able to stop it. Caching the featurized rows once is
-    /// what ML.NET documents for every iterative trainer ("add a cache checkpoint before the
-    /// trainer"); the fallback exists for small data, which is exactly where the cache fits in memory.
-    /// Public so the shape can be pinned by test without training end-to-end.
-    /// </remarks>
-    public static IEstimator<ITransformer> BuildManualBinaryPipeline(
-        MLContext mlContext, IDataView trainSet, string labelColumn, ColumnRoles roles)
-    {
-        var featurePipeline = BuildFeaturePipeline(mlContext, trainSet, labelColumn, roles);
-
-        // One thread: this fallback runs on small data, where multi-threaded SDCA does not converge
-        // — it runs to its iteration limit and its model differs between runs of the same seed.
-        return featurePipeline
-            .AppendCacheCheckpoint(mlContext)
-            .Append(mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
-                new Microsoft.ML.Trainers.SdcaLogisticRegressionBinaryTrainer.Options
-                {
-                    LabelColumnName = labelColumn,
-                    FeatureColumnName = "Features",
-                    NumberOfThreads = 1
-                }));
-    }
-
-    /// <summary>
-    /// Builds a feature engineering pipeline based on column types.
-    /// Used by manual training fallback when AutoML is unavailable.
-    /// </summary>
-    private static IEstimator<ITransformer> BuildFeaturePipeline(
-        MLContext mlContext, IDataView data, string labelColumn, ColumnRoles roles)
-    {
-        var featureColumns = new List<string>();
-        IEstimator<ITransformer>? pipeline = null;
-
-        // The same split the AutoML path makes: roles naming only numeric columns read every
-        // non-label column as a feature.
-        if (AutoMLColumns.NeedsExplicitRoles(roles))
-        {
-            // Text columns → FeaturizeText
-            foreach (var textCol in roles.Of(ColumnRole.Text))
-            {
-                var outputCol = $"_Text_{textCol}";
-                var textEstimator = mlContext.Transforms.Text.FeaturizeText(outputCol, textCol);
-                pipeline = pipeline == null
-                    ? (IEstimator<ITransformer>)textEstimator
-                    : pipeline.Append(textEstimator);
-                featureColumns.Add(outputCol);
-            }
-
-            // Numeric columns pass through directly
-            foreach (var numCol in roles.Of(ColumnRole.Numeric))
-            {
-                featureColumns.Add(numCol);
-            }
-
-            // Categorical columns → OneHotEncoding
-            foreach (var catCol in roles.Of(ColumnRole.Categorical))
-            {
-                var outputCol = $"_Cat_{catCol}";
-                var catEstimator = mlContext.Transforms.Categorical.OneHotEncoding(outputCol, catCol);
-                pipeline = pipeline == null
-                    ? (IEstimator<ITransformer>)catEstimator
-                    : pipeline.Append(catEstimator);
-                featureColumns.Add(outputCol);
-            }
-        }
-        else
-        {
-            // Only numeric roles — use all non-label columns as numeric features
-            foreach (var col in data.Schema)
-            {
-                if (col.IsHidden) continue;
-                if (col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)) continue;
-                featureColumns.Add(col.Name);
-            }
-        }
-
-        // Concatenate all features into a single "Features" column
-        var concatEstimator = mlContext.Transforms.Concatenate("Features", featureColumns.ToArray());
-        pipeline = pipeline == null
-            ? (IEstimator<ITransformer>)concatEstimator
-            : pipeline.Append(concatEstimator);
-
-        return pipeline;
-    }
-
-    private async Task<AutoMLResult> RunMulticlassClassificationAsync(
+        => RunWithMLoopSearchAsync(trainSet, testSet, config,
+            CandidateCatalog.Multiclass(name => name != "LightGbm" || LightGbmLoads.Value),
+            OptimizingMetric(config), ScoreMulticlass, progress, cancellationToken);
+    private Task<AutoMLResult> RunRegressionAsync(
         IDataView trainSet,
         IDataView testSet,
         TrainingConfig config,
         IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken,
-        IDataView? validationSet = null)
-    {
-        var optimizingMetric = GetMulticlassMetric(config);
-        if (SearchesWithMLoop(config))
-        {
-            return await RunWithMLoopSearchAsync(trainSet, testSet, config,
-                CandidateCatalog.Multiclass(name => name != "LightGbm" || LightGbmLoads.Value),
-                DescribeMulticlassMetric(optimizingMetric).Name, ScoreMulticlass, progress, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        var settings = new MulticlassExperimentSettings
-        {
-            MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
-            OptimizingMetric = optimizingMetric,
-            CancellationToken = cancellationToken
-        };
-        if (config.SearchMaxTrials is { } maxTrials)
-            settings.MaxModels = maxTrials;
-
-        var experiment = _mlContext.Auto().CreateMulticlassClassificationExperiment(settings);
-
-        // Explicit ColumnInformation for text column featurization
-        var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
-        var preFeaturizer = config.PreFeaturizer;
-        ITransformer? portableText = null;
-        if (config.Portable)
-            (roles, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, validationSet);
-        var columnInfo = AutoMLColumns.ToColumnInformation(roles);
-
-        var trialReporter = CreateTrialReporter(progress, DescribeMulticlassMetric(optimizingMetric));
-
-        var experimentResult = await ExecuteExperimentAsync(
-            () => validationSet != null
-                ? experiment.Execute(trainSet, validationSet,
-                    columnInfo ?? new ColumnInformation { LabelColumnName = config.LabelColumn },
-                    preFeaturizer, trialReporter)
-                : columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo, preFeaturizer, trialReporter)
-                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
-                    preFeaturizer: preFeaturizer, progressHandler: trialReporter),
-            config, cancellationToken).ConfigureAwait(false);
-
-        // Evaluate on test set
-        var bestModel = PortableTextFeaturizer.Prepend(portableText, experimentResult.BestRun.Model);
-        var predictions = bestModel.Transform(testSet);
-        var metricsDict = ScoreMulticlass(predictions, config.LabelColumn);
-
-        return new AutoMLResult
-        {
-            Trainer = TrainerDescriptor.Of(experimentResult.BestRun.TrainerName),
-            Model = bestModel,
-            Metrics = metricsDict,
-            RowCount = trainSet.GetRowCount() ?? 0,
-            Trials = CollectTrials(experimentResult.RunDetails, DescribeAllMulticlassMetrics),
-            RankingMetric = DescribeMulticlassMetric(optimizingMetric).Name
-        };
-    }
-
-    private async Task<AutoMLResult> RunRegressionAsync(
-        IDataView trainSet,
-        IDataView testSet,
-        TrainingConfig config,
-        IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken,
-        IDataView? validationSet = null)
-    {
-        var optimizingMetric = GetRegressionMetric(config);
-        if (SearchesWithMLoop(config))
-        {
-            return await RunWithMLoopSearchAsync(trainSet, testSet, config,
-                CandidateCatalog.Regression(name => name != "LightGbm" || LightGbmLoads.Value),
-                DescribeRegressionMetric(optimizingMetric).Name, ScoreRegression, progress, cancellationToken,
-                (model, predictions) =>
-                {
-                    var (metrics, residualModel) = FinishRegression(predictions, config.LabelColumn);
-                    return (model, metrics, residualModel);
-                })
-                .ConfigureAwait(false);
-        }
-
-        var settings = new RegressionExperimentSettings
-        {
-            MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
-            OptimizingMetric = optimizingMetric,
-            CancellationToken = cancellationToken
-        };
-        if (config.SearchMaxTrials is { } maxTrials)
-            settings.MaxModels = maxTrials;
-
-        var experiment = _mlContext.Auto().CreateRegressionExperiment(settings);
-
-        // Explicit ColumnInformation for text column featurization
-        var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
-        var preFeaturizer = config.PreFeaturizer;
-        ITransformer? portableText = null;
-        if (config.Portable)
-            (roles, portableText, trainSet, validationSet) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, validationSet);
-        var columnInfo = AutoMLColumns.ToColumnInformation(roles);
-
-        var trialReporter = CreateTrialReporter(progress, DescribeRegressionMetric(optimizingMetric));
-
-        var experimentResult = await ExecuteExperimentAsync(
-            () => validationSet != null
-                ? experiment.Execute(trainSet, validationSet,
-                    columnInfo ?? new ColumnInformation { LabelColumnName = config.LabelColumn },
-                    preFeaturizer, trialReporter)
-                : columnInfo != null
-                ? experiment.Execute(trainSet, columnInfo, preFeaturizer, trialReporter)
-                : experiment.Execute(trainSet, labelColumnName: config.LabelColumn, samplingKeyColumn: null,
-                    preFeaturizer: preFeaturizer, progressHandler: trialReporter),
-            config, cancellationToken).ConfigureAwait(false);
-
-        // Evaluate on test set
-        var bestModel = PortableTextFeaturizer.Prepend(portableText, experimentResult.BestRun.Model);
-        var (metricsDict, residualModel) = FinishRegression(bestModel.Transform(testSet), config.LabelColumn);
-
-        return new AutoMLResult
-        {
-            Trainer = TrainerDescriptor.Of(experimentResult.BestRun.TrainerName),
-            Model = bestModel,
-            Metrics = metricsDict,
-            ResidualModel = residualModel,
-            RowCount = trainSet.GetRowCount() ?? 0,
-            Trials = CollectTrials(experimentResult.RunDetails, DescribeAllRegressionMetrics),
-            RankingMetric = DescribeRegressionMetric(optimizingMetric).Name
-        };
-    }
-
+        CancellationToken cancellationToken)
+        => RunWithMLoopSearchAsync(trainSet, testSet, config,
+            CandidateCatalog.Regression(name => name != "LightGbm" || LightGbmLoads.Value),
+            OptimizingMetric(config), ScoreRegression, progress, cancellationToken,
+            (model, predictions) =>
+            {
+                var (metrics, residualModel) = FinishRegression(predictions, config.LabelColumn);
+                return (model, metrics, residualModel);
+            });
     /// <summary>
     /// A regression model's test results: its metrics on the test predictions, the prediction-interval
     /// widths, and the σ-model that widens or narrows the band per row when one fits — on either search.
@@ -2274,57 +1825,19 @@ public partial class AutoMLRunner
     // The *Metric switches below are the inverse of the Describe*Metric switches further down
     // (enum → name), and a round-trip test pins that they agree.
 
-    private BinaryClassificationMetric GetBinaryMetric(TrainingConfig config) =>
-        BinaryMetricFor(config.CanonicalMetric) ?? throw Refuse(config);
-
-    private MulticlassClassificationMetric GetMulticlassMetric(TrainingConfig config) =>
-        MulticlassMetricFor(config.CanonicalMetric) ?? throw Refuse(config);
-
-    private RegressionMetric GetRegressionMetric(TrainingConfig config) =>
-        RegressionMetricFor(config.CanonicalMetric) ?? throw Refuse(config);
-
+    // The metric a binary, multiclass or regression search optimizes. The name arrives already canonical
+    // (TrainingConfig.CanonicalMetric, via MetricNames), and a name the task cannot optimize
+    // (MetricNames.OptimizableFor) is refused, never replaced by the task default: a substitute would be
+    // optimized while every record kept the name that was given, which is how `metric: F1Score` optimized
+    // accuracy for a long time. Producers (CLI train, API /train) refuse the same names before any work
+    // starts; this is the backstop for a caller that skipped them.
+    private static string OptimizingMetric(TrainingConfig config) =>
+        MetricNames.OptimizableFor(config.Task) is { } optimizable && optimizable.Contains(config.CanonicalMetric)
+            ? config.CanonicalMetric
+            : throw Refuse(config);
     private static ArgumentException Refuse(TrainingConfig config) =>
         new(MetricNames.Rejection(config.Task, config.Metric)
             ?? $"Metric '{config.Metric}' cannot be optimized for {config.Task}.", nameof(config));
-
-    internal static BinaryClassificationMetric? BinaryMetricFor(string canonical) => canonical switch
-    {
-        "accuracy" => BinaryClassificationMetric.Accuracy,
-        "auc" => BinaryClassificationMetric.AreaUnderRocCurve,
-        "auprc" => BinaryClassificationMetric.AreaUnderPrecisionRecallCurve,
-        "f1_score" => BinaryClassificationMetric.F1Score,
-        "precision" => BinaryClassificationMetric.PositivePrecision,
-        "recall" => BinaryClassificationMetric.PositiveRecall,
-        "negative_precision" => BinaryClassificationMetric.NegativePrecision,
-        "negative_recall" => BinaryClassificationMetric.NegativeRecall,
-        _ => null
-    };
-
-    internal static MulticlassClassificationMetric? MulticlassMetricFor(string canonical) => canonical switch
-    {
-        "macro_accuracy" => MulticlassClassificationMetric.MacroAccuracy,
-        "micro_accuracy" => MulticlassClassificationMetric.MicroAccuracy,
-        "log_loss" => MulticlassClassificationMetric.LogLoss,
-        _ => null
-    };
-
-    internal static RegressionMetric? RegressionMetricFor(string canonical) => canonical switch
-    {
-        "r_squared" => RegressionMetric.RSquared,
-        "rmse" => RegressionMetric.RootMeanSquaredError,
-        "mae" => RegressionMetric.MeanAbsoluteError,
-        "mse" => RegressionMetric.MeanSquaredError,
-        _ => null
-    };
-
-    /// <summary>
-    /// Builds the per-trial progress adapter, or <c>null</c> when nobody is listening — ML.NET
-    /// accepts a null progressHandler, so the three tabular paths keep one call shape either way.
-    /// </summary>
-    private static TrialProgressReporter<TMetrics>? CreateTrialReporter<TMetrics>(
-        IProgress<TrainingProgress>? progress,
-        (string Name, Func<TMetrics, double> Select) metric) where TMetrics : class
-        => progress is null ? null : new TrialProgressReporter<TMetrics>(progress, metric.Name, metric.Select);
 
     /// <summary>
     /// Trial channel for the task paths that do not run AutoML: they fit one explicit pipeline (or
@@ -2334,8 +1847,7 @@ public partial class AutoMLRunner
     /// Always created, even with nobody listening. It used to be null in that case — which was
     /// harmless while it only forwarded progress, but became a defect the moment it also kept the
     /// trial records: the leaderboard would have existed only for runs someone happened to be
-    /// watching. The AutoML paths take their history from <c>RunDetails</c> precisely so it does not
-    /// depend on an observer, and these paths have no equivalent to fall back on.
+    /// watching, and these paths have no other record to fall back on.
     /// </remarks>
     private static TrialProgressChannel CreateTrialChannel(IProgress<TrainingProgress>? progress)
         => new(progress);
@@ -2350,77 +1862,13 @@ public partial class AutoMLRunner
     // Names use MLoop's own metric vocabulary (the keys of AutoMLResult.Metrics) so a trial line and
     // the final results table talk about the same thing.
 
-    internal static (string Name, Func<BinaryClassificationMetrics, double> Select) DescribeBinaryMetric(
-        BinaryClassificationMetric metric) => metric switch
-        {
-            BinaryClassificationMetric.AreaUnderRocCurve => ("auc", m => m.AreaUnderRocCurve),
-            BinaryClassificationMetric.AreaUnderPrecisionRecallCurve => ("auprc", m => m.AreaUnderPrecisionRecallCurve),
-            BinaryClassificationMetric.F1Score => ("f1_score", m => m.F1Score),
-            BinaryClassificationMetric.PositivePrecision => ("precision", m => m.PositivePrecision),
-            BinaryClassificationMetric.PositiveRecall => ("recall", m => m.PositiveRecall),
-            BinaryClassificationMetric.NegativePrecision => ("negative_precision", m => m.NegativePrecision),
-            BinaryClassificationMetric.NegativeRecall => ("negative_recall", m => m.NegativeRecall),
-            _ => ("accuracy", m => m.Accuracy)
-        };
-
-    internal static (string Name, Func<MulticlassClassificationMetrics, double> Select) DescribeMulticlassMetric(
-        MulticlassClassificationMetric metric) => metric switch
-        {
-            MulticlassClassificationMetric.MicroAccuracy => ("micro_accuracy", m => m.MicroAccuracy),
-            MulticlassClassificationMetric.LogLoss => ("log_loss", m => m.LogLoss),
-            _ => ("macro_accuracy", m => m.MacroAccuracy)
-        };
-
-    internal static (string Name, Func<RegressionMetrics, double> Select) DescribeRegressionMetric(
-        RegressionMetric metric) => metric switch
-        {
-            RegressionMetric.RootMeanSquaredError => ("rmse", m => m.RootMeanSquaredError),
-            RegressionMetric.MeanAbsoluteError => ("mae", m => m.MeanAbsoluteError),
-            RegressionMetric.MeanSquaredError => ("mse", m => m.MeanSquaredError),
-            _ => ("r_squared", m => m.RSquared)
-        };
-
     // Trial history: the full leaderboard ML.NET keeps on the experiment result. Taken from
     // RunDetails after the run rather than from the live progress channel, because RunDetails carries
     // each trial's complete metric set and its own runtime, and is present whether or not anyone was
     // listening to progress.
 
-    /// <summary>
-    /// Turns AutoML's per-trial run details into the records persisted with the experiment. Trials
-    /// that threw carry no validation metrics and are skipped, as AutoML's live stream skips them.
-    /// </summary>
-    private static List<TrialRecord> CollectTrials<TMetrics>(
-        IEnumerable<RunDetail<TMetrics>> runDetails,
-        Func<TMetrics, Dictionary<string, double>> describeAll) where TMetrics : class
-    {
-        var trials = new List<TrialRecord>();
-
-        foreach (var run in runDetails)
-        {
-            // AutoML's live stream never shows a trial that threw (TrialProgressReporter), so this list
-            // leaves them out too — the two productions of it have to count the same trials. MLoop's
-            // own search reports and records its failures.
-            if (run.ValidationMetrics is null)
-                continue;
-
-            // AutoML names an assembled pipeline and exposes no hyperparameters to separate out, so
-            // the name is the whole trial description.
-            var trial = new TrialResult
-            {
-                Trainer = run.TrainerName ?? string.Empty,
-                Metrics = describeAll(run.ValidationMetrics),
-                RuntimeSeconds = run.RuntimeInSeconds
-            };
-            trials.Add(TrialLedger.ToRecord(trial, trials.Count + 1));
-        }
-
-        return trials;
-    }
-
     // The full metric set per trial, in MLoop's own vocabulary — the same keys the final
     // AutoMLResult.Metrics uses, so a trial row and the results table name the same things.
-
-    private static Dictionary<string, double> DescribeAllBinaryMetrics(BinaryClassificationMetrics m) => MetricReport.Describe(m);
 
     // A test partition of one class leaves AUC and AUPRC undefined (NaN); the result records them as
     // absent rather than as a number, as it always has for AUC.
@@ -2430,37 +1878,6 @@ public partial class AutoMLRunner
             if (metrics.TryGetValue(key, out var value) && double.IsNaN(value))
                 metrics.Remove(key);
         return metrics;
-    }
-
-    private static Dictionary<string, double> DescribeAllMulticlassMetrics(MulticlassClassificationMetrics m) => MetricReport.Describe(m);
-
-    private static Dictionary<string, double> DescribeAllRegressionMetrics(RegressionMetrics m) => MetricReport.Describe(m);
-
-    /// <summary>
-    /// Runs an AutoML experiment and translates its terminal failures (see
-    /// <see cref="AutoMLFailureTranslator"/>) before they escape this class.
-    /// </summary>
-    /// <remarks>
-    /// Every task type funnels through here so the translation happens once. Doing it at each
-    /// <c>Execute</c> call site instead would put the same knowledge in three places — the drift the
-    /// Single-Source Authorities rule exists to prevent.
-    /// </remarks>
-    private static async Task<TResult> ExecuteExperimentAsync<TResult>(
-        Func<TResult> execute,
-        TrainingConfig config,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await Task.Run(execute, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            if (AutoMLFailureTranslator.TryTranslate(ex, config.TimeLimitSeconds, out var translated))
-                throw translated;
-
-            throw;
-        }
     }
 
     /// <summary>

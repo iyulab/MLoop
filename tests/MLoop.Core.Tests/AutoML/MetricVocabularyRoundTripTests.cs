@@ -1,102 +1,44 @@
-using Microsoft.ML.AutoML;
-using MLoop.Core.AutoML;
 using MLoop.Core.Evaluation;
 
 namespace MLoop.Core.Tests.AutoML;
 
 /// <summary>
-/// The optimizer reads a canonical name into an ML.NET enum (<c>*MetricFor</c>) and the trial
-/// reporter writes the enum back as a canonical name (<c>Describe*Metric</c>). They are each
-/// other's inverse and nothing used to say so — <c>precision</c> and <c>recall</c> were names the
-/// reporter could write and the optimizer refused. This pins the round trip in both directions,
-/// and that every name the optimizer accepts is one <see cref="MetricNames"/> knows.
+/// The names a search may optimize are <see cref="MetricNames.OptimizableFor"/>, read by the trainer search
+/// as they are — there is no second list. These pin that the vocabulary and that list agree: every name the
+/// list gives is canonical, and every canonical name is optimizable somewhere or is listed here as one that
+/// is reported and never optimized. (The list used to have a copy — a switch into ML.NET AutoML's enums —
+/// and <c>precision</c> and <c>recall</c> were names the records could carry and the optimizer refused.)
 /// </summary>
 public class MetricVocabularyRoundTripTests
 {
-    [Fact]
-    public void Every_name_the_binary_reporter_writes_is_one_the_binary_optimizer_accepts()
-    {
-        foreach (var metric in Enum.GetValues<BinaryClassificationMetric>())
-        {
-            var name = AutoMLRunner.DescribeBinaryMetric(metric).Name;
-            var parsed = AutoMLRunner.BinaryMetricFor(name);
-            Assert.True(parsed.HasValue, $"the reporter writes '{name}' but the optimizer does not accept it");
-            Assert.Equal(name, AutoMLRunner.DescribeBinaryMetric(parsed.Value).Name);
-            Assert.Equal(name, MetricNames.Canonical(name));
-        }
-    }
-
-    [Fact]
-    public void Every_name_the_multiclass_reporter_writes_is_one_the_multiclass_optimizer_accepts()
-    {
-        foreach (var metric in Enum.GetValues<MulticlassClassificationMetric>())
-        {
-            var name = AutoMLRunner.DescribeMulticlassMetric(metric).Name;
-            var parsed = AutoMLRunner.MulticlassMetricFor(name);
-            Assert.True(parsed.HasValue, $"the reporter writes '{name}' but the optimizer does not accept it");
-            Assert.Equal(name, AutoMLRunner.DescribeMulticlassMetric(parsed.Value).Name);
-            Assert.Equal(name, MetricNames.Canonical(name));
-        }
-    }
-
-    [Fact]
-    public void Every_name_the_regression_reporter_writes_is_one_the_regression_optimizer_accepts()
-    {
-        foreach (var metric in Enum.GetValues<RegressionMetric>())
-        {
-            var name = AutoMLRunner.DescribeRegressionMetric(metric).Name;
-            var parsed = AutoMLRunner.RegressionMetricFor(name);
-            Assert.True(parsed.HasValue, $"the reporter writes '{name}' but the optimizer does not accept it");
-            Assert.Equal(name, AutoMLRunner.DescribeRegressionMetric(parsed.Value).Name);
-            Assert.Equal(name, MetricNames.Canonical(name));
-        }
-    }
-
-    /// <summary>
-    /// The other direction: a canonical name the vocabulary lists for one of the three AutoML
-    /// families is accepted by that family's optimizer — a name added to <see cref="MetricNames"/>
-    /// without a switch arm would otherwise be "known" to validate and unknown to training.
-    /// </summary>
-    [Fact]
-    public void Every_canonical_name_is_accepted_by_at_least_one_optimizer_or_is_a_task_primary()
-    {
-        foreach (var name in MetricNames.All)
-        {
-            var accepted = AutoMLRunner.BinaryMetricFor(name).HasValue
-                        || AutoMLRunner.MulticlassMetricFor(name).HasValue
-                        || AutoMLRunner.RegressionMetricFor(name).HasValue
-                        || TaskMetadata.AllPrimaryMetrics.Contains(name)
-                        || name == "davies_bouldin_index" // clustering's second metric: reported, never optimized
-                        || name == "mape"                 // forecasting's second metric: reported, never optimized
-                        || name == "exact_match"          // question answering's second metric: reported, never optimized
-                        || name == "log_loss_reduction"   // reported, refused as an optimizing metric (MetricNames.Rejection)
-                        || name == CalibrationError.MetricName; // calibration of the probabilities: reported, never optimized
-            Assert.True(accepted, $"'{name}' is in the vocabulary but no optimizer accepts it");
-        }
-    }
-
-    /// <summary>
-    /// What <see cref="MetricNames.OptimizableFor"/> says a task can take is exactly what that
-    /// task's optimizer switch accepts — otherwise <c>validate</c> and the producers would refuse a
-    /// name training takes, or pass one it throws on.
-    /// </summary>
     [Theory]
     [InlineData("binary-classification")]
     [InlineData("multiclass-classification")]
     [InlineData("regression")]
-    public void OptimizableFor_matches_the_optimizer_switch(string task)
+    public void Every_optimizable_name_is_canonical(string task)
     {
-        Func<string, bool> accepts = task switch
-        {
-            "binary-classification" => n => AutoMLRunner.BinaryMetricFor(n).HasValue,
-            "multiclass-classification" => n => AutoMLRunner.MulticlassMetricFor(n).HasValue,
-            _ => n => AutoMLRunner.RegressionMetricFor(n).HasValue
-        };
-        var declared = MetricNames.OptimizableFor(task);
-        Assert.NotNull(declared);
+        foreach (var name in MetricNames.OptimizableFor(task)!)
+            Assert.Equal(name, MetricNames.Canonical(name));
+    }
+
+    [Fact]
+    public void Every_canonical_name_is_optimizable_for_a_task_or_is_only_reported()
+    {
+        string[] reportedOnly =
+        [
+            "davies_bouldin_index",  // clustering's second metric
+            "mape",                  // forecasting's second metric
+            "exact_match",           // question answering's second metric
+            "log_loss_reduction",    // refused as an optimizing metric (MetricNames.Rejection)
+            CalibrationError.MetricName,
+        ];
+        var optimizable = new[] { "binary-classification", "multiclass-classification", "regression" }
+            .SelectMany(task => MetricNames.OptimizableFor(task)!)
+            .ToHashSet();
+
         foreach (var name in MetricNames.All)
-            Assert.True(accepts(name) == declared!.Contains(name),
-                $"'{name}': optimizer accepts = {accepts(name)}, OptimizableFor lists it = {declared.Contains(name)}");
+            Assert.True(optimizable.Contains(name) || TaskMetadata.AllPrimaryMetrics.Contains(name) || reportedOnly.Contains(name),
+                $"'{name}' is in the vocabulary but no search optimizes it");
     }
 
     /// <summary>The spelling that shipped in the examples for months, read the way it was meant.</summary>
@@ -104,6 +46,7 @@ public class MetricVocabularyRoundTripTests
     public void The_examples_F1Score_reaches_the_optimizer_as_F1()
     {
         var canonical = MetricNames.Canonical("binary-classification", "F1Score");
-        Assert.Equal(BinaryClassificationMetric.F1Score, AutoMLRunner.BinaryMetricFor(canonical!));
+        Assert.Equal("f1_score", canonical);
+        Assert.Contains(canonical, MetricNames.OptimizableFor("binary-classification")!);
     }
 }

@@ -37,6 +37,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **MLoop no longer depends on ML.NET AutoML** (`Microsoft.ML.AutoML`). With it go the transitive TorchSharp,
+  `Microsoft.ML.TorchSharp` and `Microsoft.ML.Vision` a tabular-only consumer of `MLoop.Core` used to receive —
+  nothing to exclude any more (`docs/EMBEDDING.md`). **Breaking (in-process API):** `AutoMLRunner.BuildManualBinaryPipeline`
+  is removed (it built the fallback that answered AutoML's AUC failure, which MLoop's search does not have);
+  `WeightedResampling` is `RowWeights` — `RowWeights.Read` where you called `ReadWeights`, and `Resample` / `DrawRows`
+  are removed (the search weights the trainers instead).
 - **Binary classification, multiclass classification and regression train with MLoop's own trainer search**
   (`MLoop.Search`) instead of ML.NET AutoML's experiment. What a run records changes with it: each trial is scored
   as a mean over stratified folds (with its spread) and the best is refit on the whole training partition; a trial

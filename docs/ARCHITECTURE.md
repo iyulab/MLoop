@@ -45,7 +45,7 @@ MLoop enables anyone to achieve production-quality ML models with minimal coding
 
 **AutoML-First, Minimal Coding**
 - One command trains production-ready models
-- Automatic algorithm selection via ML.NET AutoML
+- Automatic algorithm selection via MLoop's trainer search (`MLoop.Search`) over ML.NET trainers
 - Optional FilePrepper integration for complex preprocessing
 - No manual feature engineering unless user chooses to customize
 
@@ -629,7 +629,7 @@ MLoop/
 │   │       └── ICustomMetric.cs         # Custom metric interface
 │   │
 │   ├── MLoop.Core/                      # Core ML engine
-│   │   ├── AutoML/                      # ML.NET AutoML wrapper
+│   │   ├── AutoML/                      # Training runner (tasks, trainer search, evaluation)
 │   │   │   ├── TrainingEngine.cs
 │   │   │   └── TrainingConfig.cs
 │   │   ├── Data/                        # Data loading, encoding detection
@@ -1157,7 +1157,6 @@ $ mloop experiment show exp-005  # Read metadata.json, metrics.json
 | Package | Version | Purpose |
 |---------|---------|---------|
 | Microsoft.ML | 5.0.0 | ML.NET core framework |
-| Microsoft.ML.AutoML | 0.23.0 | AutoML engine |
 | System.CommandLine | 2.0.1 | CLI framework |
 | YamlDotNet | 16.3.0 | YAML configuration |
 | Spectre.Console | 0.54.0 | Rich CLI UI |

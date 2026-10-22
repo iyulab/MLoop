@@ -15,10 +15,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.ML" />
-    <PackageReference Include="Microsoft.ML.AutoML" />
     <PackageReference Include="Microsoft.ML.OnnxConverter" />
     <!-- Trainers, transforms and the ONNX Runtime managed API this assembly calls by name —
-         declared rather than inherited from Microsoft.ML.AutoML, which is being retired. -->
+         declared, as they are the ones it uses (they once arrived only through Microsoft.ML.AutoML). -->
     <PackageReference Include="Microsoft.ML.FastTree" />
     <PackageReference Include="Microsoft.ML.LightGbm" />
     <PackageReference Include="Microsoft.ML.TimeSeries" />

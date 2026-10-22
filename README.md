@@ -20,7 +20,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 
 **2. AutoML-First, Minimal Coding**
 - **One command to train**: `mloop train datasets/train.csv --label price --time 60`
-- **Automatic model selection**: ML.NET AutoML finds the best algorithm for your data
+- **Automatic model selection**: MLoop's trainer search finds the best ML.NET algorithm and settings for your data
 - **No feature engineering required**: Optional FilePrepper integration for complex preprocessing
 - **Production-ready in minutes**: From CSV to deployed model in 3 commands
 
@@ -50,7 +50,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 ### Key Features
 
 - **15 ML Task Types**: Full ML.NET coverage — classification, regression, clustering, ranking, forecasting, recommendation, anomaly detection, NLP, image, and more
-- **AutoML Training**: Automatic model selection with ML.NET AutoML
+- **AutoML Training**: Automatic model selection — a trainer search over ML.NET's trainers, scored over folds
 - **Multi-Model Projects**: Manage multiple models (churn, revenue, etc.) in one project
 - **On-Demand DL Runtimes**: `mloop runtime install torch` downloads native runtimes only when needed
 - **Smart Predictions**: Production model auto-discovery and batch processing

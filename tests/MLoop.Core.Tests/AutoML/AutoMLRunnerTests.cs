@@ -1,6 +1,5 @@
 using System.Linq;
 using Microsoft.ML;
-using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 using MLoop.Core.AutoML;
 
@@ -49,10 +48,8 @@ public class AutoMLRunnerTests
         // Act
         var result = AutoMLRunner.BuildColumnRoles(data, "Label");
 
-        // Assert: every column numeric — and such a table reaches AutoML as its label alone, which
-        // is what kept AutoML from building an empty feature vector.
+        // Assert: every column numeric
         Assert.Equal(["Feature1", "Feature2"], result.Of(ColumnRole.Numeric));
-        Assert.Null(AutoMLColumns.ToColumnInformation(result));
     }
 
     [Fact]
@@ -210,7 +207,6 @@ public class AutoMLRunnerTests
         // Assert: Description forced to numeric — no text column remains, so AutoML is left to
         // infer the columns itself (it handles numeric ones fine)
         Assert.Equal(ColumnRole.Numeric, result.RoleOf("Description"));
-        Assert.Null(AutoMLColumns.ToColumnInformation(result));
     }
 
     [Fact]
@@ -251,7 +247,6 @@ public class AutoMLRunnerTests
 
         // Assert: same as no overrides — numeric only, AutoML infers
         Assert.Empty(result.Of(ColumnRole.Text));
-        Assert.Null(AutoMLColumns.ToColumnInformation(result));
     }
 
     #endregion

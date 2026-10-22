@@ -35,7 +35,7 @@ public static class WeightedMetrics
             return null;
         var hasProbability = probability is { } pc && pc.Type == NumberDataViewType.Single;
 
-        var weights = weightColumn is null ? null : WeightedResampling.ReadWeights(predictions, weightColumn);
+        var weights = weightColumn is null ? null : RowWeights.Read(predictions, weightColumn);
         var rows = new List<(bool Y, bool P, float S, float Prob, double W)>(weights?.Length ?? 0);
         var columns = new List<DataViewSchema.Column> { label.Value, predicted.Value, score.Value };
         if (hasProbability) columns.Add(probability!.Value);
@@ -97,7 +97,7 @@ public static class WeightedMetrics
             return null;
 
         var classes = vector.Size;
-        var weights = WeightedResampling.ReadWeights(predictions, weightColumn);
+        var weights = RowWeights.Read(predictions, weightColumn);
         var classWeight = new double[classes];
         var classHit = new double[classes];
         var predictedWeight = new double[classes];
@@ -177,7 +177,7 @@ public static class WeightedMetrics
             || label.Value.Type != NumberDataViewType.Single || score.Value.Type != NumberDataViewType.Single)
             return null;
 
-        var weights = WeightedResampling.ReadWeights(predictions, weightColumn);
+        var weights = RowWeights.Read(predictions, weightColumn);
         var rows = new List<(double Y, double S, double W)>(weights.Length);
         using (var cursor = predictions.GetRowCursor([label.Value, score.Value]))
         {

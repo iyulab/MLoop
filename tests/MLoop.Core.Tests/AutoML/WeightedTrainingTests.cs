@@ -9,9 +9,9 @@ using MLoop.Tests.Common;
 namespace MLoop.Core.Tests.AutoML;
 
 /// <summary>
-/// Weighted training reaches the model. AutoML takes a weight column and does not pass it to its
-/// trainers, so MLoop resamples instead — on a fixture where the weight alone decides the answer,
-/// an unweighted fit cannot tell the classes apart and a weighted one can.
+/// Weighted training reaches the model: the search gives the trainers the weights and scores its folds by
+/// them — on a fixture where the weight alone decides the answer, an unweighted fit cannot tell the classes
+/// apart and a weighted one can.
 /// </summary>
 [Collection("FileSystem")]
 [Trait(TestCategories.Category, TestCategories.Integration)]
@@ -67,11 +67,11 @@ public class WeightedTrainingTests : IDisposable
 
     private async Task<(float High, float Low, Dictionary<string, double> Metrics)> TrainAndScore(string? weightColumn)
     {
-        var (high, low, result) = await TrainAndScoreOn(weightColumn, SearchEngine.AutoML);
+        var (high, low, result) = await TrainAndScoreOn(weightColumn);
         return (high, low, result.Metrics);
     }
 
-    private async Task<(float High, float Low, AutoMLResult Result)> TrainAndScoreOn(string? weightColumn, SearchEngine engine)
+    private async Task<(float High, float Low, AutoMLResult Result)> TrainAndScoreOn(string? weightColumn)
     {
         var ctx = new MLContext(seed: 42);
         var data = ctx.Data.LoadFromEnumerable(Fixture());
@@ -86,7 +86,6 @@ public class WeightedTrainingTests : IDisposable
             WeightColumn = weightColumn,
             // The control keeps W out of the features too, so the only difference is the weighting.
             ColumnOverrides = weightColumn is null ? new() { ["W"] = "ignore" } : null,
-            Engine = engine,
         };
 
         var result = await new AutoMLRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
@@ -114,13 +113,13 @@ public class WeightedTrainingTests : IDisposable
     }
 
     /// <summary>
-    /// MLoop's own search gives the trainers the weights — no resampling — and scores its folds by
-    /// them: unweighted, every fold's AUC would sit near 0.5 on this fixture.
+    /// The folds are scored by the weights too: unweighted, every fold's AUC would sit near 0.5 on this
+    /// fixture.
     /// </summary>
     [Fact]
-    public async Task TheWeightReachesTheModel_OnMLoopsSearch_AndItsFoldsAreScoredByIt()
+    public async Task TheFoldsAreScoredByTheWeight()
     {
-        var (high, low, result) = await TrainAndScoreOn("W", SearchEngine.MLoop);
+        var (high, low, result) = await TrainAndScoreOn("W");
 
         Assert.True(high > 0.7f, $"P(true | x=0.9) = {high}, expected the weighted 0.9");
         Assert.True(low < 0.3f, $"P(true | x=0.1) = {low}, expected the weighted 0.1");
@@ -165,39 +164,11 @@ public class WeightedTrainingTests : IDisposable
 
 public class WeightedResamplingTests
 {
-    [Fact]
-    public void RowsAreDrawnInProportionToTheirWeight_AndAZeroWeightRowNever()
-    {
-        var rows = WeightedResampling.DrawRows(Enumerable.Repeat(new[] { 1.0, 0.0, 3.0 }, 2000).SelectMany(w => w).ToArray(), seed: 5);
-
-        Assert.Equal(6000, rows.Length);
-        Assert.DoesNotContain(rows, r => r % 3 == 1);
-        var ratio = rows.Count(r => r % 3 == 2) / (double)rows.Count(r => r % 3 == 0);
-        Assert.InRange(ratio, 2.7, 3.3);
-        Assert.Equal(rows.OrderBy(r => r), rows);
-        Assert.Equal(rows, WeightedResampling.DrawRows(Enumerable.Repeat(new[] { 1.0, 0.0, 3.0 }, 2000).SelectMany(w => w).ToArray(), seed: 5));
-    }
-
     private sealed class R
     {
         public float V { get; set; }
         public float W { get; set; }
         public string T { get; set; } = "";
-    }
-
-    [Fact]
-    public void TheResampledViewReadsTheDrawnRows()
-    {
-        var ml = new MLContext(seed: 1);
-        var data = ml.Data.LoadFromEnumerable(new[]
-        {
-            new R { V = 1, W = 0, T = "a" }, new R { V = 2, W = 1, T = "b" }, new R { V = 3, W = 0, T = "c" },
-        });
-
-        var resampled = WeightedResampling.Resample(ml, data, "W", seed: 3);
-
-        Assert.Equal(new float[] { 2, 2, 2 }, resampled.GetColumn<float>("V").ToArray());
-        Assert.All(resampled.GetColumn<string>("T"), t => Assert.Equal("b", t));
     }
 
     [Theory]
@@ -208,7 +179,7 @@ public class WeightedResamplingTests
         var ml = new MLContext(seed: 1);
         var data = ml.Data.LoadFromEnumerable(new[] { new R { V = 1, W = 1 }, new R { V = 2, W = bad } });
 
-        var ex = Assert.Throws<InvalidOperationException>(() => WeightedResampling.ReadWeights(data, "W"));
+        var ex = Assert.Throws<InvalidOperationException>(() => RowWeights.Read(data, "W"));
         Assert.Contains(expected, ex.Message);
         Assert.Contains("row 2", ex.Message);
     }
@@ -219,10 +190,10 @@ public class WeightedResamplingTests
         var ml = new MLContext(seed: 1);
         var data = ml.Data.LoadFromEnumerable(new[] { new R { V = 1, W = 0, T = "x" } });
 
-        Assert.Contains("is 0", Assert.Throws<InvalidOperationException>(() => WeightedResampling.ReadWeights(data, "W")).Message);
-        Assert.Contains("not in the data", Assert.Throws<InvalidOperationException>(() => WeightedResampling.ReadWeights(data, "Q")).Message);
+        Assert.Contains("is 0", Assert.Throws<InvalidOperationException>(() => RowWeights.Read(data, "W")).Message);
+        Assert.Contains("not in the data", Assert.Throws<InvalidOperationException>(() => RowWeights.Read(data, "Q")).Message);
         // A text column whose values are not numbers: named with the row, like any missing weight.
-        Assert.Contains("row 1", Assert.Throws<InvalidOperationException>(() => WeightedResampling.ReadWeights(data, "T")).Message);
+        Assert.Contains("row 1", Assert.Throws<InvalidOperationException>(() => RowWeights.Read(data, "T")).Message);
     }
 
     [Fact]
@@ -231,7 +202,7 @@ public class WeightedResamplingTests
         var ml = new MLContext(seed: 1);
         var data = ml.Data.LoadFromEnumerable(new[] { new R { T = "2.5" }, new R { T = "0" } });
 
-        Assert.Equal(new[] { 2.5, 0 }, WeightedResampling.ReadWeights(data, "T"));
+        Assert.Equal(new[] { 2.5, 0 }, RowWeights.Read(data, "T"));
     }
 
     [Fact]
