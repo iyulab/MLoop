@@ -191,6 +191,13 @@ public record TrainingConfig
     public string? ItemColumn { get; init; }
 
     /// <summary>
+    /// Which trainer search a binary run uses. Internal and off by default: the MLoop search is compared
+    /// with AutoML's inside <c>MLoop.Core.Tests</c> before it replaces it.
+    /// TODO(AutoML removal): remove with the AutoML package — the MLoop search becomes the only one.
+    /// </summary>
+    internal SearchEngine Engine { get; init; } = SearchEngine.AutoML;
+
+    /// <summary>
     /// Columns this run has claimed for a purpose of its own — the ranking group, the recommendation
     /// user and item, the row weight, pre-featurizer inputs, and every column the user gave an
     /// explicit type override other than <c>ignore</c>. No feature-exclusion heuristic drops one of
@@ -217,4 +224,14 @@ public record TrainingConfig
             return claimed;
         }
     }
+}
+
+/// <summary>The trainer search behind a run (<see cref="TrainingConfig.Engine"/>).</summary>
+internal enum SearchEngine
+{
+    /// <summary>ML.NET AutoML's experiment.</summary>
+    AutoML,
+
+    /// <summary>MLoop's own search (<c>MLoop.Search.TrialRunner</c>).</summary>
+    MLoop,
 }

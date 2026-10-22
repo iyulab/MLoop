@@ -11,6 +11,7 @@ using MLoop.Extensibility;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 using MLoop.Search;
+using MLoop.Search.Candidates;
 // Microsoft.ML.AutoML has a TrialResult of its own; this is the search's.
 using TrialResult = MLoop.Search.TrialResult;
 
@@ -572,6 +573,14 @@ public partial class AutoMLRunner
         string? metricFallbackNote = null,
         IDataView? validationSet = null)
     {
+        // The MLoop search covers the plain path so far: no given validation set (pre-split or weighted)
+        // and no prep featurizer. TODO(AutoML removal): those, then multiclass and regression.
+        if (config.Engine == SearchEngine.MLoop && validationSet is null && config.PreFeaturizer is null)
+        {
+            return await RunBinaryWithMLoopSearchAsync(trainSet, testSet, config, optimizingMetric, progress, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var settings = new BinaryExperimentSettings
         {
             MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
@@ -641,6 +650,81 @@ public partial class AutoMLRunner
             RankingMetric = DescribeBinaryMetric(optimizingMetric).Name
         };
     }
+
+    /// <summary>
+    /// The binary path on MLoop's own search (<see cref="TrialRunner"/>): the same roles, portable-text
+    /// step, test evaluation, calibration and trial records as the AutoML path, with the search —
+    /// candidates, tuner, folds, refit — owned here.
+    /// </summary>
+    private async Task<AutoMLResult> RunBinaryWithMLoopSearchAsync(
+        IDataView trainSet,
+        IDataView testSet,
+        TrainingConfig config,
+        BinaryClassificationMetric optimizingMetric,
+        IProgress<TrainingProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
+        ITransformer? portableText = null;
+        if (config.Portable)
+            (roles, portableText, trainSet, _) = PortableTextFeaturizer.FitAndApply(_mlContext, roles, trainSet, null);
+
+        var metric = DescribeBinaryMetric(optimizingMetric).Name;
+        var channel = CreateTrialChannel(progress);
+        var request = new SearchRequest(
+            CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
+            RankingPolicy.For(metric),
+            scored => ScoreBinary(scored, config.LabelColumn),
+            TimeSpan.FromSeconds(config.TimeLimitSeconds),
+            new SearchSettings(Seed: SearchSeed));
+
+        SearchResult search;
+        try
+        {
+            search = await Task.Run(() => new TrialRunner(request, channel).Run(trainSet, roles, cancellationToken), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (SearchFailedException ex)
+        {
+            throw new NoSuccessfulTrialException(config.TimeLimitSeconds, ex);
+        }
+
+        var bestModel = PortableTextFeaturizer.Prepend(portableText, search.Model);
+        var predictions = bestModel.Transform(testSet);
+        var hasProbability = predictions.Schema.GetColumnOrNull("Probability") != null;
+        var metricsDict = ScoreBinary(predictions, config.LabelColumn);
+        if (CalibrationError.Binary(predictions, config.LabelColumn) is { } binaryEce)
+            metricsDict[CalibrationError.MetricName] = binaryEce;
+
+        return new AutoMLResult
+        {
+            Trainer = new TrainerDescriptor
+            {
+                Name = search.Best.Trainer,
+                FallbackReason = search.FallbackReason,
+                FallbackKind = search.FallbackReason is null ? TrainerFallbackKind.None : TrainerFallbackKind.RefitFailed,
+            },
+            Model = EnsureCalibratedModel(_mlContext, bestModel, predictions, config.LabelColumn, hasProbability),
+            Metrics = metricsDict,
+            RowCount = trainSet.GetRowCount() ?? 0,
+            Trials = [.. channel.Records],
+            RankingMetric = metric
+        };
+    }
+
+    // The seed the MLoop search draws from. TODO(AutoML removal): record it (and the thread count) in config.json, so a run can be repeated.
+    private const int SearchSeed = 1;
+
+    private Dictionary<string, double> ScoreBinary(IDataView scored, string labelColumn)
+        => WithoutUndefinedRanking(MetricReport.Describe(scored.Schema.GetColumnOrNull("Probability") != null
+            ? _mlContext.BinaryClassification.Evaluate(scored, labelColumn)
+            : _mlContext.BinaryClassification.EvaluateNonCalibrated(scored, labelColumn)));
+
+    // Whether LightGBM's native library loads here — it has none for osx-arm64. A search leaves the
+    // trainer out rather than spend trials failing on it.
+    private static readonly Lazy<bool> LightGbmLoads = new(() =>
+        System.Runtime.InteropServices.NativeLibrary.TryLoad(
+            "lib_lightgbm", typeof(Microsoft.ML.Trainers.LightGbm.LightGbmBinaryTrainer).Assembly, null, out _));
 
     /// <summary>
     /// AutoML can select a binary trainer (e.g. FastForest/FastTree)

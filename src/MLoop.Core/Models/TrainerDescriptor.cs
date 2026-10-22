@@ -159,4 +159,10 @@ public enum TrainerFallbackKind
     /// and not bother.
     /// </summary>
     AutoMLUnavailable,
+
+    /// <summary>
+    /// The search chose its model, but refitting it on the whole training partition failed, so the
+    /// model is the one fitted on the best trial's first fold — on fewer rows than the partition holds.
+    /// </summary>
+    RefitFailed,
 }
