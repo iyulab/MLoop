@@ -25,4 +25,9 @@
     <ProjectReference Include="..\MLoop.Tests.Common\MLoop.Tests.Common.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Golden files are read from the output: a deterministic build maps source paths to /_/. -->
+    <None Update="Data/Golden/**" CopyToOutputDirectory="PreserveNewest" Link="Golden/%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

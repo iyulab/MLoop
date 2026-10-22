@@ -92,14 +92,16 @@ public sealed class ColumnLayoutGoldenTests : IDisposable
     public void InferredLayouts_MatchTheGoldenFile()
     {
         var rendered = Render();
-        var golden = GoldenPath();
 
         if (Environment.GetEnvironmentVariable("MLOOP_UPDATE_GOLDEN") == "1")
         {
-            File.WriteAllText(golden, rendered);
+            File.WriteAllText(SourceGoldenPath(), rendered);
             return;
         }
 
+        // Read from the build output, where the project copies it: a deterministic build (CI) maps the
+        // source path a test could name to /_/, which does not exist.
+        var golden = Path.Combine(AppContext.BaseDirectory, "Golden", "column-layout.txt");
         Assert.True(File.Exists(golden), $"No golden file at {golden} — run once with MLOOP_UPDATE_GOLDEN=1.");
         Assert.Equal(File.ReadAllText(golden).ReplaceLineEndings("\n"), rendered);
     }
@@ -157,6 +159,7 @@ public sealed class ColumnLayoutGoldenTests : IDisposable
             text.Append("sampling key: ").Append(key).Append('\n');
     }
 
-    private static string GoldenPath([CallerFilePath] string source = "")
+    // Where an update writes: the source tree, on a machine that builds from it.
+    private static string SourceGoldenPath([CallerFilePath] string source = "")
         => Path.Combine(Path.GetDirectoryName(source)!, "Golden", "column-layout.txt");
 }
