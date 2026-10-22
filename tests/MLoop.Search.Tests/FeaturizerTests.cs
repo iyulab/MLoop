@@ -49,7 +49,7 @@ public sealed class FeaturizerTests
         var data = Data(ml);
         var roles = Roles();
 
-        var featurizer = Featurizer.Build(ml, data.Schema, roles, CategoricalEncoding.OneHot, Featurizer.ColumnsWithMissingValues(data, roles))!;
+        var featurizer = Featurizer.Build(ml, data.Schema, roles, Featurizer.ColumnsWithMissingValues(data, roles))!;
         var features = featurizer.Fit(data).Transform(data).GetColumn<VBuffer<float>>("Features")
             .Select(v => v.DenseValues().ToArray()).ToArray();
 
@@ -72,7 +72,7 @@ public sealed class FeaturizerTests
         var roles = Roles();
 
         var withMissing = Featurizer.ColumnsWithMissingValues(train, roles);
-        var model = Featurizer.Build(ml, train.Schema, roles, CategoricalEncoding.OneHot, withMissing)!.Fit(train);
+        var model = Featurizer.Build(ml, train.Schema, roles, withMissing)!.Fit(train);
         var scored = model.Transform(ml.Data.LoadFromEnumerable(new[] { new Row { Gappy = float.NaN, Full = 10, Pair = [1, 5] } }));
 
         Assert.Empty(withMissing);
@@ -90,7 +90,7 @@ public sealed class FeaturizerTests
         });
         var roles = new ColumnRoles("Label", [KeyValuePair.Create("A", ColumnRole.Numeric), KeyValuePair.Create("A.missing", ColumnRole.Numeric)]);
 
-        var featurizer = Featurizer.Build(ml, data.Schema, roles, CategoricalEncoding.OneHot, Featurizer.ColumnsWithMissingValues(data, roles))!;
+        var featurizer = Featurizer.Build(ml, data.Schema, roles, Featurizer.ColumnsWithMissingValues(data, roles))!;
         var transformed = featurizer.Fit(data).Transform(data);
 
         Assert.NotNull(transformed.Schema.GetColumnOrNull("A.missing2"));
@@ -104,5 +104,24 @@ public sealed class FeaturizerTests
 
         [ColumnName("A.missing")]
         public float AMissing { get; set; }
+    }
+
+    private sealed class Coded
+    {
+        public float Label { get; set; }
+        public string Part { get; set; } = "";
+    }
+
+    /// <summary>A category is one-hot encoded whatever its count of values — one slot per value seen in training.</summary>
+    [Fact]
+    public void ACategory_IsOneHot_OneSlotPerValue_EvenWithManyValues()
+    {
+        var ml = new MLContext(1);
+        var data = ml.Data.LoadFromEnumerable(Enumerable.Range(0, 1000).Select(i => new Coded { Label = i % 2, Part = $"p{i % 500}" }));
+        var roles = new ColumnRoles("Label", [KeyValuePair.Create("Part", ColumnRole.Categorical)]);
+
+        var transformed = Featurizer.Build(ml, data.Schema, roles)!.Fit(data).Transform(data);
+
+        Assert.Equal(500, ((VectorDataViewType)transformed.Schema["Part"].Type).Size);
     }
 }

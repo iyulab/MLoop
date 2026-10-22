@@ -37,6 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The trainer search one-hot encodes categorical columns and no longer also tries each trainer with its categories
+  hashed (`OneHotHashEncoding`, 2¹⁶ slots) — a schema is a trainer, so a budget runs about twice the trials per
+  trainer. The hashed vector is never the narrower one for a column MLoop calls a category, and on a 500-value
+  category it scored AUC 0.60 against one-hot's 0.71. A trial's parameters no longer carry `CategoricalEncoding`.
 - An empty numeric field is read as missing (NaN) by every loader — training, `predict`, `evaluate`, `serve` and the
   ONNX export's data — instead of as 0, ML.NET's default. A missing reading used to train and predict as a reading
   of zero. The trainer search now replaces a missing number by its column's mean (fitted on the training rows only)

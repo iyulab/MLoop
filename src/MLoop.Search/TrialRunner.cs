@@ -55,7 +55,7 @@ public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, str
 }
 
 /// <summary>
-/// Runs a search: ECI picks the schema (trainer × categorical encoding), its cost-frugal tuner picks the
+/// Runs a search: ECI picks the trainer, its cost-frugal tuner picks the
 /// settings, the validator scores the pipeline as a mean over folds, and the best is refit on the whole
 /// training partition.
 /// </summary>
@@ -103,12 +103,7 @@ public sealed class TrialRunner
         var columns = new TrainerColumns(roles.Label, "Features", _request.Weight);
         var withMissingValues = Featurizer.ColumnsWithMissingValues(train, roles);
 
-        var encodings = roles.Of(ColumnRole.Categorical).Count > 0
-            ? new[] { CategoricalEncoding.OneHot, CategoricalEncoding.Hash }
-            : [CategoricalEncoding.OneHot];
-        var schemas = _request.Candidates
-            .SelectMany(c => encodings.Select(e => (Id: encodings.Length == 1 || e == CategoricalEncoding.OneHot ? c.Name : $"{c.Name}+hash", Candidate: c, Encoding: e)))
-            .ToList();
+        var schemas = _request.Candidates.Select(c => (Id: c.Name, Candidate: c)).ToList();
         var proposer = new EciSchemaProposer([.. schemas.Select(s => (s.Id, s.Candidate.InitialCost))], settings.Seed);
         var tuners = schemas.ToDictionary(s => s.Id, s => new CostFrugalTuner(s.Candidate.Space, settings.Seed), StringComparer.Ordinal);
 
@@ -134,7 +129,7 @@ public sealed class TrialRunner
             var schema = schemas.First(s => s.Id == schemaId);
             var point = tuners[schemaId].Propose(trialId);
             var trialContext = new MLContext(settings.Seed);
-            var featurizer = Featurizer.Build(trialContext, train.Schema, roles, schema.Encoding, withMissingValues, columns.Features)
+            var featurizer = Featurizer.Build(trialContext, train.Schema, roles, withMissingValues, columns.Features)
                 ?? throw new InvalidOperationException("No column is a feature: every column is the label or ignored.");
 
             // Past the first success, a trial that would eat the refit's time stops inside its fit
@@ -144,7 +139,7 @@ public sealed class TrialRunner
                 budgetCut.CancelAfter(TimeSpan.FromSeconds(Math.Max(deadline - clock.Elapsed.TotalSeconds, 0)));
 
             var started = clock.Elapsed;
-            var parameters = Parameters(point, schema.Encoding, encodings.Length > 1);
+            var parameters = Parameters(point);
             // A trial cut by the budget records nothing, so its schema keeps the last finished duration.
             void Took(double seconds) => lastSeconds[schemaId] = seconds;
             IEstimator<ITransformer>? pipeline = null;
@@ -229,13 +224,8 @@ public sealed class TrialRunner
         return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan);
     }
 
-    private static IReadOnlyList<KeyValuePair<string, string>> Parameters(SearchPoint point, CategoricalEncoding encoding, bool withEncoding)
-    {
-        var values = point.Space.Dimensions.Select(d => new KeyValuePair<string, string>(d.Name, d.Kind == DimensionKind.Choice
+    private static IReadOnlyList<KeyValuePair<string, string>> Parameters(SearchPoint point)
+        => [.. point.Space.Dimensions.Select(d => new KeyValuePair<string, string>(d.Name, d.Kind == DimensionKind.Choice
             ? point.Choice(d.Name)
-            : point[d.Name].ToString("R", CultureInfo.InvariantCulture))).ToList();
-        if (withEncoding)
-            values.Add(new("CategoricalEncoding", encoding == CategoricalEncoding.OneHot ? "one-hot" : "hash"));
-        return values;
-    }
+            : point[d.Name].ToString("R", CultureInfo.InvariantCulture)))];
 }

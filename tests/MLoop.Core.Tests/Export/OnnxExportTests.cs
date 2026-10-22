@@ -110,11 +110,11 @@ public sealed class OnnxExportTests : IDisposable
     }
 
     /// <summary>
-    /// The trainer search also tries categories hashed into slots (one-hot-hash). The graph of that
-    /// featurization — built by the search's own featurizer — answers what the model answers.
+    /// The graph of the trainer search's own featurization — a number and a one-hot category — answers
+    /// what the model answers.
     /// </summary>
     [Fact]
-    public void Binary_OneHotHashCategory_FromTheSearchFeaturizer_GraphMatchesModel()
+    public void Binary_Category_FromTheSearchFeaturizer_GraphMatchesModel()
     {
         var rng = new Random(9);
         string[] cats = ["red", "green", "blue", "grey"];
@@ -138,7 +138,7 @@ public sealed class OnnxExportTests : IDisposable
         var data = _ml.Data.CreateTextLoader(loader).Load(path);
         var roles = new MLoop.Search.ColumnRoles("label",
             [new("a", MLoop.Search.ColumnRole.Numeric), new("colour", MLoop.Search.ColumnRole.Categorical)]);
-        var featurizer = MLoop.Search.Candidates.Featurizer.Build(_ml, data.Schema, roles, MLoop.Search.Candidates.CategoricalEncoding.Hash)!;
+        var featurizer = MLoop.Search.Candidates.Featurizer.Build(_ml, data.Schema, roles)!;
         var model = featurizer
             .Append(_ml.BinaryClassification.Trainers.LbfgsLogisticRegression("label", "Features"))
             .Fit(data);

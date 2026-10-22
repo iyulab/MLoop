@@ -65,7 +65,8 @@ public sealed class TrialRunnerTests
         Assert.Equal(result.Trials, sink.Seen);
         Assert.Equal(result.Trials.Where(t => t.Succeeded).Max(t => t.Metrics!["auc"]), result.Best.Metrics!["auc"]);
         Assert.All(result.Trials, t => Assert.Contains(t.Trainer, new[] { "FastTree", "LbfgsLogisticRegression" }));
-        Assert.Contains(result.Trials, t => t.Parameters!.Any(p => p is { Key: "CategoricalEncoding", Value: "hash" }));
+        // A schema is a trainer: the categories' encoding follows from their counts, it is not searched.
+        Assert.All(result.Trials, t => Assert.DoesNotContain(t.Parameters!, p => p.Key == "CategoricalEncoding"));
         Assert.Equal(5, result.BestValidation.Folds);
         Assert.Null(result.FallbackReason);
         var auc = ml.BinaryClassification.EvaluateNonCalibrated(result.Model.Transform(data)).AreaUnderRocCurve;

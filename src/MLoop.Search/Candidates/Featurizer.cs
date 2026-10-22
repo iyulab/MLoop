@@ -4,28 +4,27 @@ using Microsoft.ML.Transforms;
 
 namespace MLoop.Search.Candidates;
 
-/// <summary>How a schema encodes its categorical columns — the second half of a schema, beside the trainer.</summary>
-public enum CategoricalEncoding
-{
-    /// <summary>One slot per category seen in training (<c>OneHotEncoding</c>).</summary>
-    OneHot,
-
-    /// <summary>Categories hashed into a fixed number of slots (<c>OneHotHashEncoding</c>).</summary>
-    Hash,
-}
-
 /// <summary>
 /// The feature vector a candidate trains on, built from the column roles in the shape of ML.NET AutoML's
 /// featurizer (<c>AutoCatalog.Featurizer</c>, dotnet/machinelearning <c>cf9093abb6</c>): numbers with
-/// missing values replaced, booleans as numbers, categories one-hot or hashed, each text column
+/// missing values replaced, booleans as numbers, categories one-hot encoded, each text column
 /// featurized, all concatenated — text, numbers, missing-value indicators, categories, booleans, in that order.
 /// </summary>
 /// <remarks>
+/// <para>
+/// A category is one-hot encoded, one slot per value seen in training. AutoML also tried every trainer with its
+/// categories hashed (<c>OneHotHashEncoding</c>, 2¹⁶ slots) as a second schema — twice the schemas for one
+/// budget, for a vector that is never narrower: a column is a category only while its values are few
+/// against its rows, far under 2¹⁶. Measured on a 500-value category, the hashed schemas scored AUC 0.60
+/// against one-hot's 0.71.
+/// </para>
+/// <para>
 /// A missing number is replaced by its column's mean (per slot of a vector), fitted with the rest of the
 /// pipeline on the rows it trains on — not by zero, as AutoML did, which reads as a real value wherever
 /// zero lies inside a column's range. A column that held missing values in training also gets an
 /// indicator (1 where the value was missing), so a model can still tell the replacement from a real mean
 /// and learn from the missingness itself.
+/// </para>
 /// </remarks>
 public static class Featurizer
 {
@@ -36,7 +35,6 @@ public static class Featurizer
     /// <param name="mlContext">The context the estimators are made in.</param>
     /// <param name="schema">The schema of the rows the featurization will be fitted on.</param>
     /// <param name="roles">Each column's role.</param>
-    /// <param name="encoding">How categorical columns are encoded.</param>
     /// <param name="withMissingValues">
     /// The numeric columns that held missing values in training (<see cref="ColumnsWithMissingValues"/>) —
     /// each gets an indicator. Other numeric columns are mean-replaced alone, so a column that is never
@@ -44,7 +42,7 @@ public static class Featurizer
     /// </param>
     /// <param name="outputColumn">The name of the feature vector.</param>
     public static IEstimator<ITransformer>? Build(
-        MLContext mlContext, DataViewSchema schema, ColumnRoles roles, CategoricalEncoding encoding,
+        MLContext mlContext, DataViewSchema schema, ColumnRoles roles,
         IReadOnlySet<string>? withMissingValues = null, string outputColumn = "Features")
     {
         ArgumentNullException.ThrowIfNull(mlContext);
@@ -69,11 +67,7 @@ public static class Featurizer
         if (booleans.Length > 0)
             Append(mlContext.Transforms.Conversion.ConvertType(Pairs(booleans), DataKind.Single));
         if (categories.Length > 0)
-        {
-            Append(encoding == CategoricalEncoding.OneHot
-                ? mlContext.Transforms.Categorical.OneHotEncoding(Pairs(categories))
-                : mlContext.Transforms.Categorical.OneHotHashEncoding(Pairs(categories)));
-        }
+            Append(mlContext.Transforms.Categorical.OneHotEncoding(Pairs(categories)));
         foreach (var text in texts)
             Append(mlContext.Transforms.Text.FeaturizeText(text, text));
 
