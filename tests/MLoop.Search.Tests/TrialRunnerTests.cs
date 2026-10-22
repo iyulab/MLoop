@@ -164,6 +164,37 @@ public sealed class TrialRunnerTests
         public SchemaShape GetOutputSchema(SchemaShape inputSchema) => inner.GetOutputSchema(inputSchema);
     }
 
+    /// <summary>
+    /// A trial whose schema's last trial took longer than the time left is not started — it could only run
+    /// past the deadline and be dropped. Each trial here takes about 2 s (the build sleeps) under a 6 s budget:
+    /// the second starts with about 3.4 s left before the refit, a third would start with about 1.4 s left.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Slow")]   // the count rests on wall-clock margins (≥ 0.6 s), so it measures the runner too
+    public void ATrialThatCannotFinishInTheTimeLeft_IsNotStarted()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+        var builds = 0;
+        var lbfgs = CandidateCatalog.Binary(name => name == "LbfgsLogisticRegression").Single();
+        var slow = lbfgs with
+        {
+            Build = (context, point, columns, settings) =>
+            {
+                builds++;
+                Thread.Sleep(TimeSpan.FromSeconds(2));
+                return lbfgs.Build(context, point, columns, settings);
+            },
+        };
+        // One numeric column only, so there is one schema (no hash encoding of a category).
+        var numeric = new ColumnRoles("Label", [new("X", ColumnRole.Numeric), new("Z", ColumnRole.Numeric)]);
+
+        var result = new TrialRunner(Request(ml, TimeSpan.FromSeconds(6), candidates: [slow])).Run(data, numeric);
+
+        Assert.Equal(2, result.Trials.Count);
+        Assert.Equal(2, builds);
+    }
+
     [Fact]
     public void AFailedTrial_IsRecorded_AndTheSearchGoesOn()
     {

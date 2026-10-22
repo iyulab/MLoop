@@ -65,6 +65,10 @@ public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, str
 /// <item><b>The refit is budgeted</b>: the search stops starting trials once the time left is what refitting
 /// the best is expected to take (its mean fold fit × folds ⁄ (folds − 1)), and a trial still running at that
 /// point stops at its next fold and is dropped — it is neither a result nor a failure.</item>
+/// <item><b>A trial that cannot finish is not started.</b> Past the first success, the search ends rather than
+/// start a trial whose schema's last trial took longer than the time left before the refit — the tuner grows
+/// a schema's settings from there, so the new one would take at least as long, run past the deadline by
+/// up to a fold, and be dropped. The trials that do run are the seed's, in its order; the end comes sooner.</item>
 /// <item><b>A failed trial is recorded and the search goes on</b>; the tuner reads it as the worst loss.</item>
 /// <item><b>Cancellation by the caller stops at once</b> and throws; budget expiry keeps the best.</item>
 /// <item><b>A seed fixes the search; the clock only ends it.</b> The tuners and the schema proposer read each
@@ -107,6 +111,7 @@ public sealed class TrialRunner
         var tuners = schemas.ToDictionary(s => s.Id, s => new CostFrugalTuner(s.Candidate.Space, settings.Seed), StringComparer.Ordinal);
 
         var trials = new List<TrialResult>();
+        var lastSeconds = new Dictionary<string, double>(StringComparer.Ordinal);
         (TrialResult Trial, double Value, ValidationScore Score, IEstimator<ITransformer> Pipeline, double FitSeconds)? best = null;
 
         for (var trialId = 0; ; trialId++)
@@ -121,6 +126,9 @@ public sealed class TrialRunner
 
             var schemaId = proposer.Propose();
             var schema = schemas.First(s => s.Id == schemaId);
+            if (best is not null && lastSeconds.TryGetValue(schemaId, out var expected)
+                && clock.Elapsed.TotalSeconds + expected > deadline)
+                break;
             var point = tuners[schemaId].Propose(trialId);
             var trialContext = new MLContext(settings.Seed);
             var featurizer = Featurizer.Build(trialContext, train.Schema, roles, schema.Encoding, columns.Features)
@@ -135,6 +143,8 @@ public sealed class TrialRunner
 
             var started = clock.Elapsed;
             var parameters = Parameters(point, schema.Encoding, encodings.Length > 1);
+            // A trial cut by the budget records nothing, so its schema keeps the last finished duration.
+            void Took(double seconds) => lastSeconds[schemaId] = seconds;
             IEstimator<ITransformer>? pipeline = null;
             try
             {
@@ -143,6 +153,7 @@ public sealed class TrialRunner
                 pipeline = featurized.Append(schema.Candidate.Build(trialContext, point, columns, settings));
                 var score = Validator.Validate(trialContext, train, plan, pipeline, _request.Score, budgetCut.Token);
                 var seconds = (clock.Elapsed - started).TotalSeconds;
+                Took(seconds);
                 var trial = new TrialResult
                 {
                     Trainer = schema.Candidate.Name,
@@ -179,6 +190,7 @@ public sealed class TrialRunner
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 var seconds = (clock.Elapsed - started).TotalSeconds;
+                Took(seconds);
                 var failed = new TrialResult { Trainer = schema.Candidate.Name, Parameters = parameters, RuntimeSeconds = seconds, Error = ex.GetBaseException().Message };
                 trials.Add(failed);
                 tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.InitialCost);
