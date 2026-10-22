@@ -52,7 +52,7 @@ public static class InitCommand
 
         var forceOption = new Option<bool>("--force", "-f")
         {
-            Description = "Reinitialize existing project (preserves .mloop/scripts/ directory)",
+            Description = "Reinitialize an existing project: rebuild .mloop/ (its scripts/ kept). mloop.yaml and other project files are never overwritten",
             DefaultValueFactory = _ => false
         };
 
@@ -180,6 +180,7 @@ public static class InitCommand
             }
 
             var displayName = projectName == "." ? Path.GetFileName(projectPath) : projectName;
+            var kept = new List<string>();
 
             await AnsiConsole.Progress()
                 .StartAsync(async ctx =>
@@ -190,22 +191,22 @@ public static class InitCommand
 
                     // Step 1: Create directory structure
                     progressTask.Description = "[green]Creating directory structure...[/]";
-                    await CreateDirectoryStructure(fileSystem, projectPath, modelName, task);
+                    await CreateDirectoryStructure(fileSystem, projectPath, modelName, task, kept);
                     progressTask.Increment(30);
 
                     // Step 2: Create configuration files
                     progressTask.Description = "[green]Creating configuration files...[/]";
-                    await CreateConfigurationFiles(fileSystem, projectPath, displayName, task, modelName, labelColumn);
+                    await CreateConfigurationFiles(fileSystem, projectPath, displayName, task, modelName, labelColumn, kept);
                     progressTask.Increment(30);
 
                     // Step 3: Create documentation
                     progressTask.Description = "[green]Creating documentation...[/]";
-                    await CreateDocumentation(fileSystem, projectPath, displayName, task, modelName);
+                    await CreateDocumentation(fileSystem, projectPath, displayName, task, modelName, kept);
                     progressTask.Increment(20);
 
                     // Step 4: Create .gitignore
                     progressTask.Description = "[green]Creating .gitignore...[/]";
-                    await CreateGitIgnore(fileSystem, projectPath);
+                    await CreateGitIgnore(fileSystem, projectPath, kept);
                     progressTask.Increment(10);
 
                     // Step 5: Create example extensibility scripts
@@ -228,6 +229,13 @@ public static class InitCommand
 
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine($"[green]>[/] Project '{displayName}' created successfully!");
+            var keptConfiguration = kept.Contains(ProjectConfigFile);
+            if (kept.Count > 0)
+            {
+                AnsiConsole.MarkupLine($"[yellow]>[/] Kept what was already there: {Markup.Escape(string.Join(", ", kept))}");
+                if (keptConfiguration)
+                    AnsiConsole.MarkupLine($"  [grey]The models, tasks and labels are the ones in the existing {ProjectConfigFile}; --task and --label were not applied.[/]");
+            }
             AnsiConsole.WriteLine();
 
             // Display configuration summary
@@ -237,9 +245,12 @@ public static class InitCommand
                 .AddColumn("Value");
 
             table.AddRow("Project", displayName);
-            table.AddRow("Model", $"[cyan]{modelName}[/]");
-            table.AddRow("Task", task);
-            table.AddRow("Label Column", labelColumn);
+            if (!keptConfiguration)
+            {
+                table.AddRow("Model", $"[cyan]{modelName}[/]");
+                table.AddRow("Task", task);
+                table.AddRow("Label Column", labelColumn);
+            }
 
             AnsiConsole.Write(table);
             AnsiConsole.WriteLine();
@@ -296,7 +307,8 @@ public static class InitCommand
         IFileSystemManager fileSystem,
         string projectPath,
         string modelName,
-        string task)
+        string task,
+        List<string> kept)
     {
         // Create main project directory
         await fileSystem.CreateDirectoryAsync(projectPath);
@@ -316,7 +328,7 @@ public static class InitCommand
         {
             var cocoPath = fileSystem.CombinePath(datasetsPath, "coco");
             await fileSystem.CreateDirectoryAsync(cocoPath);
-            await fileSystem.WriteTextAsync(
+            await WriteIfAbsentAsync(fileSystem, projectPath, kept,
                 fileSystem.CombinePath(cocoPath, "annotations.json"),
                 "{\n" +
                 "  \"images\": [\n" +
@@ -329,7 +341,7 @@ public static class InitCommand
                 "    { \"id\": 1, \"name\": \"defect\" }\n" +
                 "  ]\n" +
                 "}\n");
-            await fileSystem.WriteTextAsync(
+            await WriteIfAbsentAsync(fileSystem, projectPath, kept,
                 fileSystem.CombinePath(cocoPath, "README.txt"),
                 "Object detection dataset layout (COCO format):\n\n" +
                 "  datasets/coco/\n" +
@@ -347,7 +359,7 @@ public static class InitCommand
         {
             var imagesPath = fileSystem.CombinePath(datasetsPath, "images");
             await fileSystem.CreateDirectoryAsync(imagesPath);
-            await fileSystem.WriteTextAsync(
+            await WriteIfAbsentAsync(fileSystem, projectPath, kept,
                 fileSystem.CombinePath(imagesPath, "README.txt"),
                 "Image classification dataset layout (folder name = class label):\n\n" +
                 "  datasets/images/\n" +
@@ -378,7 +390,8 @@ public static class InitCommand
         string projectName,
         string task,
         string modelName,
-        string labelColumn)
+        string labelColumn,
+        List<string> kept)
     {
         // Create .mloop/config.json (project metadata)
         var configData = new
@@ -396,8 +409,8 @@ public static class InitCommand
 
         // Create mloop.yaml with new multi-model schema
         var yamlContent = GetYamlTemplate(projectName, task, modelName, labelColumn);
-        var yamlPath = fileSystem.CombinePath(projectPath, "mloop.yaml");
-        await fileSystem.WriteTextAsync(yamlPath, yamlContent);
+        var yamlPath = fileSystem.CombinePath(projectPath, ProjectConfigFile);
+        await WriteIfAbsentAsync(fileSystem, projectPath, kept, yamlPath, yamlContent);
     }
 
     private static async Task CreateDocumentation(
@@ -405,7 +418,8 @@ public static class InitCommand
         string projectPath,
         string projectName,
         string task,
-        string modelName)
+        string modelName,
+        List<string> kept)
     {
         var readme = $@"# {projectName}
 
@@ -499,10 +513,10 @@ For more information, see [MLoop documentation](https://github.com/iyulab/MLoop)
 ";
 
         var readmePath = fileSystem.CombinePath(projectPath, "README.md");
-        await fileSystem.WriteTextAsync(readmePath, readme);
+        await WriteIfAbsentAsync(fileSystem, projectPath, kept, readmePath, readme);
     }
 
-    private static async Task CreateGitIgnore(IFileSystemManager fileSystem, string projectPath)
+    private static async Task CreateGitIgnore(IFileSystemManager fileSystem, string projectPath, List<string> kept)
     {
         var gitignore = @"# MLoop user project .gitignore
 
@@ -533,7 +547,7 @@ Thumbs.db
 ";
 
         var gitignorePath = fileSystem.CombinePath(projectPath, ".gitignore");
-        await fileSystem.WriteTextAsync(gitignorePath, gitignore);
+        await WriteIfAbsentAsync(fileSystem, projectPath, kept, gitignorePath, gitignore);
     }
 
     private static async Task CreateExampleScripts(IFileSystemManager fileSystem, string projectPath)
@@ -705,6 +719,30 @@ data:
     // The rule itself lives in MLoop.Core.Storage.ModelName — a model name is a directory name, so
     // Ops and the API need the same answer and cannot reach into the CLI.
     internal static bool IsValidModelName(string name) => MLoop.Core.Storage.ModelName.IsValid(name);
+
+    /// <summary>The project configuration file, at the project root.</summary>
+    private const string ProjectConfigFile = "mloop.yaml";
+
+    /// <summary>
+    /// Writes a scaffold file only where none exists, and records the one it left alone.
+    /// </summary>
+    /// <remarks>
+    /// <c>init .</c> runs where a project's files may already be — a cloned repository carries its
+    /// <c>mloop.yaml</c>, README and <c>.gitignore</c> but not the <c>.mloop/</c> marker, and a dataset
+    /// folder may hold real COCO annotations. Overwriting them replaced the project's own models, tasks
+    /// and labels with a template's, without a word. <c>--force</c> rebuilds <c>.mloop/</c>; it does not
+    /// reach the user's files either — deleting one is how to get the template back.
+    /// </remarks>
+    private static async Task WriteIfAbsentAsync(
+        IFileSystemManager fileSystem, string projectPath, List<string> kept, string path, string content)
+    {
+        if (fileSystem.FileExists(path))
+        {
+            kept.Add(Path.GetRelativePath(projectPath, path).Replace(Path.DirectorySeparatorChar, '/'));
+            return;
+        }
+        await fileSystem.WriteTextAsync(path, content);
+    }
 
     private static void CopyDirectory(string sourceDir, string destDir)
         => MLoop.Ops.Services.FilePromotionManager.CopyDirectory(sourceDir, destDir);
