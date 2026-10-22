@@ -207,4 +207,35 @@ public sealed class ValidationAndCatalogTests
 
     private static bool LightGbmLoads() => System.Runtime.InteropServices.NativeLibrary.TryLoad(
         "lib_lightgbm", typeof(Microsoft.ML.Trainers.LightGbm.LightGbmMulticlassTrainer).Assembly, null, out _);
+
+    private sealed class ValueRow
+    {
+        public float Label { get; set; }
+
+        [VectorType(2)]
+        public float[] Features { get; set; } = [];
+    }
+
+    [Fact]
+    public void EveryRegressionCandidate_BuildsFromItsStartAndFits()
+    {
+        var ml = new MLContext(seed: 1);
+        var random = new Random(9);
+        var data = ml.Data.LoadFromEnumerable(Enumerable.Range(0, 300).Select(_ =>
+        {
+            var x = (float)random.NextDouble();
+            return new ValueRow { Label = 3 * x + 1 + (float)random.NextDouble() * 0.2f, Features = [x, (float)random.NextDouble()] };
+        }).ToList());
+        var columns = new TrainerColumns("Label", "Features");
+
+        foreach (var candidate in CandidateCatalog.Regression(name => name != "LightGbm" || LightGbmLoads()))
+        {
+            var model = candidate.Build(ml, candidate.Space.PointAt(candidate.Space.Default), columns, new SearchSettings()).Fit(data);
+            var metrics = ml.Regression.Evaluate(model.Transform(data));
+            // A start is cheap, not good — four trees, SDCA's L1 = 1 — so only a finite score is asked of it.
+            Assert.True(double.IsFinite(metrics.RootMeanSquaredError), $"{candidate.Name}: rmse {metrics.RootMeanSquaredError}");
+        }
+        Assert.Equal(["FastTree", "FastForest", "LightGbm", "Sdca", "LbfgsPoissonRegression"],
+            CandidateCatalog.Regression().Select(c => c.Name));
+    }
 }

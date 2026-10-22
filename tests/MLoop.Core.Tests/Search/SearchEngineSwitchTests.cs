@@ -138,4 +138,42 @@ public sealed class SearchEngineSwitchTests : IDisposable
         // Not the parity gate — a floor: the data separates well, so a working search clears it.
         Assert.True(mloop.Metrics["auc"] > 0.8, $"MLoop search auc {mloop.Metrics["auc"]}");
     }
+
+    private string WriteRegressionCsv(int rows = 600)
+    {
+        var random = new Random(31);
+        var lines = new List<string> { "x,z,colour,price" };
+        string[] colours = ["red", "green", "blue"];
+        for (var i = 0; i < rows; i++)
+        {
+            var x = random.NextDouble();
+            var colour = colours[random.Next(colours.Length)];
+            // The noise grows with x, so the per-row band has something to learn.
+            var price = 10 + 20 * x + (colour == "red" ? 5 : 0) + (random.NextDouble() - 0.5) * (1 + 6 * x);
+            lines.Add(string.Create(CultureInfo.InvariantCulture, $"{x:F4},{random.NextDouble():F4},{colour},{price:F3}"));
+        }
+        var path = Path.Combine(_dir, "prices.csv");
+        File.WriteAllLines(path, lines);
+        return path;
+    }
+
+    [Fact]
+    public async Task TheMLoopSearch_GivesARegressionResultOfTheSameShape()
+    {
+        var csv = WriteRegressionCsv();
+
+        var mloop = await TrainAsync(csv, SearchEngine.MLoop, label: "price", task: "regression", metric: "r_squared");
+        var automl = await TrainAsync(csv, SearchEngine.AutoML, label: "price", task: "regression", metric: "r_squared");
+
+        _output.WriteLine($"AutoML: {automl.Trainer.Name} r_squared {automl.Metrics["r_squared"]:F4} · {automl.Trials.Count} trials");
+        _output.WriteLine($"MLoop:  {mloop.Trainer.Name} r_squared {mloop.Metrics["r_squared"]:F4} · {mloop.Trials.Count} trials");
+
+        Assert.Contains(mloop.Trainer.Name, MLoop.Search.Candidates.CandidateCatalog.Regression().Select(c => c.Name));
+        Assert.Equal("r_squared", mloop.RankingMetric);
+        // The same metrics as AutoML's run — the evaluator's, the prediction intervals and, when it fits, the σ-model's.
+        Assert.Equal(automl.Metrics.Keys.ToHashSet(), mloop.Metrics.Keys.ToHashSet());
+        Assert.Equal(automl.ResidualModel is null, mloop.ResidualModel is null);
+        Assert.All(mloop.Trials.Where(t => t.Error is null), t => Assert.Contains("r_squared", t.Metrics.Keys));
+        Assert.True(mloop.Metrics["r_squared"] > 0.8, $"MLoop search r_squared {mloop.Metrics["r_squared"]}");
+    }
 }

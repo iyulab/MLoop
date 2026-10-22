@@ -486,11 +486,11 @@ public partial class AutoMLRunner
                 $"The test data has no weight column '{config.WeightColumn}'; a weighted model is judged on weighted test rows.");
     }
 
-    // Whether MLoop's own search runs this training. It covers classification so far.
-    // TODO(AutoML removal): regression.
+    // Whether MLoop's own search runs this training: the tasks AutoML searched — binary, multiclass, regression.
     private static bool SearchesWithMLoop(TrainingConfig config)
         => config.Engine == SearchEngine.MLoop
-           && (IsBinary(config) || config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase));
+           && (IsBinary(config) || IsRegression(config)
+               || config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Re-scores the test partition with the final model and replaces the task's evaluator metrics
@@ -600,7 +600,12 @@ public partial class AutoMLRunner
         {
             return await RunWithMLoopSearchAsync(trainSet, testSet, config,
                 CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
-                DescribeBinaryMetric(optimizingMetric).Name, ScoreBinaryWithCalibrationError, progress, cancellationToken)
+                DescribeBinaryMetric(optimizingMetric).Name, ScoreBinaryWithCalibrationError, progress, cancellationToken,
+                (model, predictions) => (
+                    EnsureCalibratedModel(_mlContext, model, predictions, config.LabelColumn,
+                        predictions.Schema.GetColumnOrNull("Probability") != null),
+                    ScoreBinaryWithCalibrationError(predictions, config.LabelColumn),
+                    null))
                 .ConfigureAwait(false);
         }
 
@@ -680,8 +685,9 @@ public partial class AutoMLRunner
     /// A classification run on MLoop's own search (<see cref="TrialRunner"/>): the same roles, portable-text
     /// step, test evaluation and trial records as the AutoML path, with the search — candidates, tuner, folds,
     /// refit — owned here. <paramref name="score"/> gives the metrics of scored rows, for each fold (weighted
-    /// when the run is) and for the test partition. A binary model without probabilities gets them from a
-    /// calibrator fitted on the test predictions, as on the AutoML path.
+    /// when the run is) and for the test partition; <paramref name="finish"/>, when given, turns the refit model
+    /// and its test predictions into what is saved, as the task's AutoML path does (a binary calibrator, a
+    /// regression's intervals and σ-model).
     /// </summary>
     private async Task<AutoMLResult> RunWithMLoopSearchAsync(
         IDataView trainSet,
@@ -691,7 +697,8 @@ public partial class AutoMLRunner
         string metric,
         Func<IDataView, string, Dictionary<string, double>> score,
         IProgress<TrainingProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<ITransformer, IDataView, (ITransformer Model, Dictionary<string, double> Metrics, ITransformer? ResidualModel)>? finish = null)
     {
         var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         ITransformer? portableText = null;
@@ -706,6 +713,7 @@ public partial class AutoMLRunner
             TimeSpan.FromSeconds(config.TimeLimitSeconds),
             config.SearchSettings ?? Settings,
             Weight: string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn,
+            Stratify: !IsRegression(config),
             MaxTrials: config.SearchMaxTrials,
             Preprocess: config.PreFeaturizer);
 
@@ -722,10 +730,9 @@ public partial class AutoMLRunner
 
         var bestModel = PortableTextFeaturizer.Prepend(portableText, search.Model);
         var predictions = bestModel.Transform(testSet);
-        var model = IsBinary(config)
-            ? EnsureCalibratedModel(_mlContext, bestModel, predictions, config.LabelColumn,
-                predictions.Schema.GetColumnOrNull("Probability") != null)
-            : bestModel;
+        var (model, metrics, residualModel) = finish is null
+            ? (bestModel, score(predictions, config.LabelColumn), null)
+            : finish(bestModel, predictions);
 
         return new AutoMLResult
         {
@@ -736,7 +743,8 @@ public partial class AutoMLRunner
                 FallbackKind = search.FallbackReason is null ? TrainerFallbackKind.None : TrainerFallbackKind.RefitFailed,
             },
             Model = model,
-            Metrics = score(predictions, config.LabelColumn),
+            Metrics = metrics,
+            ResidualModel = residualModel,
             RowCount = trainSet.GetRowCount() ?? 0,
             Trials = [.. channel.Records],
             RankingMetric = metric,
@@ -746,6 +754,9 @@ public partial class AutoMLRunner
 
     private static bool IsBinary(TrainingConfig config)
         => config.Task.Equals("binary-classification", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsRegression(TrainingConfig config)
+        => config.Task.Equals("regression", StringComparison.OrdinalIgnoreCase);
 
     // The seed and threads the MLoop search runs with unless the run sets its own (TrainingConfig.SearchSettings);
     // recorded with the experiment (AutoMLResult.Search).
@@ -1365,12 +1376,27 @@ public partial class AutoMLRunner
         IDataView? validationSet = null)
     {
         var optimizingMetric = GetRegressionMetric(config);
+        if (SearchesWithMLoop(config))
+        {
+            return await RunWithMLoopSearchAsync(trainSet, testSet, config,
+                CandidateCatalog.Regression(name => name != "LightGbm" || LightGbmLoads.Value),
+                DescribeRegressionMetric(optimizingMetric).Name, ScoreRegression, progress, cancellationToken,
+                (model, predictions) =>
+                {
+                    var (metrics, residualModel) = FinishRegression(predictions, config.LabelColumn);
+                    return (model, metrics, residualModel);
+                })
+                .ConfigureAwait(false);
+        }
+
         var settings = new RegressionExperimentSettings
         {
             MaxExperimentTimeInSeconds = (uint)config.TimeLimitSeconds,
             OptimizingMetric = optimizingMetric,
             CancellationToken = cancellationToken
         };
+        if (config.SearchMaxTrials is { } maxTrials)
+            settings.MaxModels = maxTrials;
 
         var experiment = _mlContext.Auto().CreateRegressionExperiment(settings);
 
@@ -1397,52 +1423,7 @@ public partial class AutoMLRunner
 
         // Evaluate on test set
         var bestModel = PortableTextFeaturizer.Prepend(portableText, experimentResult.BestRun.Model);
-        var predictions = bestModel.Transform(testSet);
-        var metrics = _mlContext.Regression.Evaluate(predictions, config.LabelColumn);
-
-        var metricsDict = MetricReport.Describe(metrics);
-
-        // ML.NET's Regression.Evaluate silently drops rows whose Score is non-finite. When the best
-        // model is degenerate (e.g. FastForest fitted on a handful of rows scores NaN for EVERY input)
-        // the evaluator is left with zero usable rows and fabricates all-zero metrics — r²=0 AND rmse=0,
-        // a mathematically contradictory pair that lands exactly on the quality gate's r²≥0 boundary and
-        // gets promoted; predict then emits literal '?' CSVs. Detect the all-non-finite holdout directly
-        // and mark the core metrics NaN so the MetricSanitizer funnel (RunAsync) replaces them with
-        // direction-aware worst-sentinels — the existing r²<0 gate then blocks promotion, with no new
-        // gate logic and no way for the fabricated zeros to masquerade as a boundary-passing model.
-        ITransformer? residualModel = null;
-        if (AllScoresNonFinite(predictions))
-        {
-            _logger.Warning(
-                "The selected model scored a non-finite value (NaN/Infinity) for every holdout row — a " +
-                "degenerate model, typically the result of training on too little data. The evaluator " +
-                "metrics are fabricated (every row was filtered out) and will be recorded as worst-case " +
-                "so this model cannot pass the quality gate. Provide more training data.");
-            foreach (var key in metricsDict.Keys.ToArray())
-                metricsDict[key] = double.NaN;
-            // Conformal calibration over all-NaN residuals is meaningless — skip it (its graceful
-            // key-omission contract would drop everything anyway).
-        }
-        else
-        {
-            // ② regression wave: derive split-conformal prediction-interval half-widths from the same
-            // held-out test predictions used for metrics, so predict/serve can surface an uncertainty
-            // band [Score ± q] (the regression analogue of the confidence signal binary/multiclass expose).
-            foreach (var interval in ComputeConformalIntervals(predictions, config.LabelColumn))
-                metricsDict[interval.Key] = interval.Value;
-
-            // ② regression wave (heteroscedastic): fit the per-row σ(x) band on top of the constant-width
-            // one. The constant-width metrics stay as the backward-safe fallback; when the aux model fits,
-            // its normalized-quantile metrics + the residual model let predict widen/narrow per row.
-            var featureColumns = SelectSigmaFeatureColumns(predictions.Schema, config.LabelColumn);
-            var normalized = ComputeNormalizedConformal(_mlContext, predictions, config.LabelColumn, featureColumns);
-            if (normalized is not null)
-            {
-                residualModel = normalized.AuxModel;
-                foreach (var kv in normalized.Metrics)
-                    metricsDict[kv.Key] = kv.Value;
-            }
-        }
+        var (metricsDict, residualModel) = FinishRegression(bestModel.Transform(testSet), config.LabelColumn);
 
         return new AutoMLResult
         {
@@ -1454,6 +1435,72 @@ public partial class AutoMLRunner
             Trials = CollectTrials(experimentResult.RunDetails, DescribeAllRegressionMetrics),
             RankingMetric = DescribeRegressionMetric(optimizingMetric).Name
         };
+    }
+
+    /// <summary>
+    /// A regression model's test results: its metrics on the test predictions, the prediction-interval
+    /// widths, and the σ-model that widens or narrows the band per row when one fits — on either search.
+    /// </summary>
+    private (Dictionary<string, double> Metrics, ITransformer? ResidualModel) FinishRegression(IDataView predictions, string labelColumn)
+    {
+        var metricsDict = ScoreRegression(predictions, labelColumn);
+
+        // Every score non-finite: the metrics are already NaN (ScoreRegression), and intervals over NaN
+        // residuals mean nothing.
+        ITransformer? residualModel = null;
+        if (AllScoresNonFinite(predictions))
+        {
+            _logger.Warning(
+                "The selected model scored a non-finite value (NaN/Infinity) for every holdout row — a " +
+                "degenerate model, typically the result of training on too little data. The evaluator " +
+                "metrics are fabricated (every row was filtered out) and will be recorded as worst-case " +
+                "so this model cannot pass the quality gate. Provide more training data.");
+            // Conformal calibration over all-NaN residuals is meaningless — skip it (its graceful
+            // key-omission contract would drop everything anyway).
+        }
+        else
+        {
+            // ② regression wave: derive split-conformal prediction-interval half-widths from the same
+            // held-out test predictions used for metrics, so predict/serve can surface an uncertainty
+            // band [Score ± q] (the regression analogue of the confidence signal binary/multiclass expose).
+            foreach (var interval in ComputeConformalIntervals(predictions, labelColumn))
+                metricsDict[interval.Key] = interval.Value;
+
+            // ② regression wave (heteroscedastic): fit the per-row σ(x) band on top of the constant-width
+            // one. The constant-width metrics stay as the backward-safe fallback; when the aux model fits,
+            // its normalized-quantile metrics + the residual model let predict widen/narrow per row.
+            var featureColumns = SelectSigmaFeatureColumns(predictions.Schema, labelColumn);
+            var normalized = ComputeNormalizedConformal(_mlContext, predictions, labelColumn, featureColumns);
+            if (normalized is not null)
+            {
+                residualModel = normalized.AuxModel;
+                foreach (var kv in normalized.Metrics)
+                    metricsDict[kv.Key] = kv.Value;
+            }
+        }
+
+        return (metricsDict, residualModel);
+    }
+
+    // A regression model's metrics on scored rows, for the test partition and, on MLoop's search, each fold.
+    private Dictionary<string, double> ScoreRegression(IDataView scored, string labelColumn)
+    {
+        // ML.NET's Regression.Evaluate silently drops rows whose Score is non-finite. When a
+        // model is degenerate (e.g. FastForest fitted on a handful of rows scores NaN for EVERY input)
+        // the evaluator is left with zero usable rows and fabricates all-zero metrics — r²=0 AND rmse=0,
+        // a mathematically contradictory pair that lands exactly on the quality gate's r²≥0 boundary and
+        // gets promoted; predict then emits literal '?' CSVs. Detect the all-non-finite holdout directly
+        // and mark the core metrics NaN so the MetricSanitizer funnel (RunAsync) replaces them with
+        // direction-aware worst-sentinels — the existing r²<0 gate then blocks promotion, with no new
+        // gate logic and no way for the fabricated zeros to masquerade as a boundary-passing model.
+        // A fold scored this way counts as a failed trial's loss, so such a model never wins the search either.
+        var metrics = MetricReport.Describe(_mlContext.Regression.Evaluate(scored, labelColumn));
+        if (AllScoresNonFinite(scored))
+        {
+            foreach (var key in metrics.Keys.ToArray())
+                metrics[key] = double.NaN;
+        }
+        return metrics;
     }
 
     private async Task<AutoMLResult> RunAnomalyDetectionAsync(

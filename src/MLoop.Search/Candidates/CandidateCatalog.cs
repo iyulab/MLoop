@@ -199,6 +199,83 @@ public static class CandidateCatalog
         return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true)];
     }
 
+    /// <summary>
+    /// The regression trainers: FastTree, FastForest, LightGbm, Sdca and LbfgsPoissonRegression. AutoML's
+    /// list also held FastTreeTweedie, which its proposer never reached a trial of; it is left out.
+    /// </summary>
+    public static IReadOnlyList<TrainerCandidate> Regression(Func<string, bool>? isAvailable = null)
+    {
+        TrainerCandidate[] all =
+        [
+            new("FastTree", FastTreeSpace, 0.382, (ml, p, c, s) => ml.Regression.Trainers.FastTree(new FastTreeRegressionTrainer.Options
+            {
+                NumberOfLeaves = p.Int("NumberOfLeaves"),
+                NumberOfTrees = p.Int("NumberOfTrees"),
+                MinimumExampleCountPerLeaf = p.Int("MinimumExampleCountPerLeaf"),
+                LearningRate = p["LearningRate"],
+                MaximumBinCountPerFeature = p.Int("MaximumBinCountPerFeature"),
+                FeatureFraction = p["FeatureFraction"],
+                DiskTranspose = false,
+                NumberOfThreads = s.Threads,
+                Seed = s.Seed,
+                LabelColumnName = c.Label,
+                FeatureColumnName = c.Features,
+                ExampleWeightColumnName = c.Weight,
+            })),
+            new("FastForest", FastForestSpace, 0.374, (ml, p, c, s) => ml.Regression.Trainers.FastForest(new FastForestRegressionTrainer.Options
+            {
+                NumberOfTrees = p.Int("NumberOfTrees"),
+                NumberOfLeaves = p.Int("NumberOfLeaves"),
+                FeatureFraction = p.Single("FeatureFraction"),
+                NumberOfThreads = s.Threads,
+                Seed = s.Seed,
+                LabelColumnName = c.Label,
+                FeatureColumnName = c.Features,
+                ExampleWeightColumnName = c.Weight,
+            })),
+            new("LightGbm", LightGbmSpace, 0.788, (ml, p, c, s) => ml.Regression.Trainers.LightGbm(new LightGbmRegressionTrainer.Options
+            {
+                NumberOfLeaves = p.Int("NumberOfLeaves"),
+                NumberOfIterations = p.Int("NumberOfTrees"),
+                MinimumExampleCountPerLeaf = p.Int("MinimumExampleCountPerLeaf"),
+                LearningRate = p["LearningRate"],
+                MaximumBinCountPerFeature = p.Int("MaximumBinCountPerFeature"),
+                Booster = new GradientBooster.Options
+                {
+                    SubsampleFraction = p["SubsampleFraction"],
+                    FeatureFraction = p["FeatureFraction"],
+                    L1Regularization = p["L1Regularization"],
+                    L2Regularization = p["L2Regularization"],
+                },
+                NumberOfThreads = s.Threads,
+                Seed = s.Seed,
+                Deterministic = true,
+                LabelColumnName = c.Label,
+                FeatureColumnName = c.Features,
+                ExampleWeightColumnName = c.Weight,
+            })),
+            new("Sdca", SdcaSpace, 0.566, (ml, p, c, s) => ml.Regression.Trainers.Sdca(new SdcaRegressionTrainer.Options
+            {
+                L1Regularization = p.Single("L1Regularization"),
+                L2Regularization = p.Single("L2Regularization"),
+                NumberOfThreads = s.Threads,
+                LabelColumnName = c.Label,
+                FeatureColumnName = c.Features,
+                ExampleWeightColumnName = c.Weight,
+            })),
+            new("LbfgsPoissonRegression", LbfgsSpace, 4.73, (ml, p, c, s) => ml.Regression.Trainers.LbfgsPoissonRegression(new LbfgsPoissonRegressionTrainer.Options
+            {
+                L1Regularization = p.Single("L1Regularization"),
+                L2Regularization = p.Single("L2Regularization"),
+                NumberOfThreads = s.Threads,
+                LabelColumnName = c.Label,
+                FeatureColumnName = c.Features,
+                ExampleWeightColumnName = c.Weight,
+            })),
+        ];
+        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true)];
+    }
+
     // The label as a key for the trainer, and the predicted key back as the label's value.
     private static IEstimator<ITransformer> KeyedLabel<TTransformer>(MLContext ml, TrainerColumns columns, IEstimator<TTransformer> trainer)
         where TTransformer : class, ITransformer

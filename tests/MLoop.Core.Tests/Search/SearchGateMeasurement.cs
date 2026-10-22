@@ -36,8 +36,9 @@ public sealed class SearchGateFactAttribute : FactAttribute
 /// directory, else the test output) whose numbers set the gate's tolerances.
 /// </summary>
 /// <remarks>
-/// Data sets: three generated binary tables and one multiclass, plus every <c>name.csv</c> with a <c>name.label</c>
-/// beside it (the label column's name; <c>multiclass</c> on a second line) in <c>MLOOP_SEARCH_GATE_DATA</c>.
+/// Data sets: three generated binary tables, one multiclass and one regression, plus every <c>name.csv</c> with a
+/// <c>name.label</c> beside it (the label column's name; <c>multiclass</c> or <c>regression</c> on a second line)
+/// in <c>MLOOP_SEARCH_GATE_DATA</c>.
 /// LightGBM is a candidate only where its native library loads, so a machine without it compares one trainer
 /// fewer.
 /// </remarks>
@@ -109,21 +110,25 @@ public sealed class SearchGateMeasurement : IDisposable
             Generate("mixed-2k", 2000, (rng, i) => { string[] c = ["red", "green", "blue", "grey", "black"]; var x = rng.NextDouble(); var colour = c[rng.Next(c.Length)]; return ([F(x), colour, F(rng.NextDouble())], x + (colour is "red" or "blue" ? 0.35 : 0) + rng.NextDouble() * 0.5 > 0.95); }, "x,colour,noise"),
             Generate("imbalanced-5k", 5000, (rng, i) => { var x = rng.NextDouble(); var z = rng.NextDouble(); return ([F(x), F(z), F(rng.NextDouble())], x * z + rng.NextDouble() * 0.15 > 0.8); }, "x,z,noise"),
             GenerateClasses("tiers-3k", 3000),
+            GenerateValues("prices-3k", 3000),
         };
 
         if (Environment.GetEnvironmentVariable("MLOOP_SEARCH_GATE_DATA") is { Length: > 0 } dir && Directory.Exists(dir))
         {
             foreach (var csv in Directory.EnumerateFiles(dir, "*.csv").Order(StringComparer.Ordinal))
             {
-                // name.label: the label column on the first line; "multiclass" on a second line for a multiclass set.
+                // name.label: the label column on the first line; "multiclass" or "regression" on a second line.
                 var labelFile = System.IO.Path.ChangeExtension(csv, ".label");
                 if (!File.Exists(labelFile))
                     continue;
                 var spec = File.ReadAllLines(labelFile).Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
                 var name = System.IO.Path.GetFileNameWithoutExtension(csv);
-                sets.Add(spec.Length > 1 && spec[1].Equals("multiclass", StringComparison.OrdinalIgnoreCase)
-                    ? new DataSet(name, csv, spec[0], "multiclass-classification", "macro_accuracy")
-                    : new DataSet(name, csv, spec[0]));
+                sets.Add((spec.Length > 1 ? spec[1].ToLowerInvariant() : "") switch
+                {
+                    "multiclass" => new DataSet(name, csv, spec[0], "multiclass-classification", "macro_accuracy"),
+                    "regression" => new DataSet(name, csv, spec[0], "regression", "r_squared"),
+                    _ => new DataSet(name, csv, spec[0]),
+                });
             }
         }
         return sets;
@@ -160,6 +165,24 @@ public sealed class SearchGateMeasurement : IDisposable
         var path = System.IO.Path.Combine(_dir, name + ".csv");
         File.WriteAllLines(path, lines);
         return new DataSet(name, path, "label", "multiclass-classification", "macro_accuracy");
+    }
+
+    private DataSet GenerateValues(string name, int rows)
+    {
+        var rng = new Random(31);
+        string[] colours = ["red", "green", "blue"];
+        var lines = new List<string>(rows + 1) { "x,z,colour,noise,label" };
+        for (var i = 0; i < rows; i++)
+        {
+            var x = rng.NextDouble();
+            var z = rng.NextDouble();
+            var colour = colours[rng.Next(colours.Length)];
+            var value = 10 + 20 * x + 8 * z * z + (colour == "red" ? 5 : 0) + (rng.NextDouble() - 0.5) * (1 + 6 * x);
+            lines.Add($"{F(x)},{F(z)},{colour},{F(rng.NextDouble())},{F(value)}");
+        }
+        var path = System.IO.Path.Combine(_dir, name + ".csv");
+        File.WriteAllLines(path, lines);
+        return new DataSet(name, path, "label", "regression", "r_squared");
     }
 
     private static string F(double value) => value.ToString("F4", CultureInfo.InvariantCulture);
