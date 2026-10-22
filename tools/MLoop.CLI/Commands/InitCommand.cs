@@ -541,7 +541,9 @@ Thumbs.db
         // Create example hook README
         var hookReadme = @"# MLoop Hooks
 
-Place your custom hook scripts in this directory. Hooks execute at lifecycle points during training.
+Hooks run at lifecycle points during training. Put each hook in the folder of its stage —
+`pre-train/` or `post-train/` — not in this folder itself: a file here runs at no stage.
+`mloop new hook <name> --type pre-train` writes one.
 
 ## Example Hook
 
@@ -573,11 +575,11 @@ public class DataValidationHook : IMLoopHook
 
 ## Usage
 
-1. Create a new .cs file in this directory
+1. Create a new .cs file in `pre-train/` or `post-train/`
 2. Implement the `IMLoopHook` interface
-3. Run `mloop train` - hooks are auto-discovered and executed
+3. Run `mloop train` - hooks are compiled and run at their stage
 
-See: docs/EXTENSIBILITY.md for more information
+See the Extensibility section of the MLoop guide (docs/GUIDE.md).
 ";
 
         var hookReadmePath = fileSystem.CombinePath(projectPath, ".mloop", "scripts", "hooks", "README.md");
@@ -586,44 +588,36 @@ See: docs/EXTENSIBILITY.md for more information
         // Create example metric README
         var metricReadme = @"# MLoop Custom Metrics
 
-Place your custom metric scripts in this directory. Metrics evaluate model performance using business-specific logic.
+Place your custom metric scripts in this directory, one metric per file. After training, each is computed over the
+held-out rows and recorded with the run's metrics (metrics.json, the results table, `mloop list --json`).
 
 ## Example Metric
 
 ```csharp
 using System.Threading.Tasks;
-using Microsoft.ML;
-using Microsoft.ML.Data;
-using MLoop.Extensibility;
+using MLoop.Extensibility.Metrics;
 
 public class ProfitMetric : IMLoopMetric
 {
-    public string Name => ""Expected Profit"";
-    public bool HigherIsBetter => true;
+    public string Name => ""expected_profit"";
+    public string Description => ""100 per true positive, -50 per false positive"";
 
-    private const double PROFIT_PER_TP = 100.0;
-    private const double LOSS_PER_FP = -50.0;
-
-    public async Task<double> CalculateAsync(MetricContext ctx)
+    public Task<MetricResult> CalculateAsync(MetricContext ctx)
     {
-        var metrics = ctx.MLContext.BinaryClassification.Evaluate(ctx.Predictions);
-
-        var profit = (metrics.PositiveRecall * PROFIT_PER_TP) +
-                     ((1 - metrics.NegativeRecall) * LOSS_PER_FP);
-
-        ctx.Logger.Info($""Calculated profit: ${profit:F2}"");
-        return await Task.FromResult(profit);
+        var predicted = (bool[])ctx.Predictions;   // binary-classification: bool[]
+        var actual = (bool[])ctx.Labels;
+        double profit = 0;
+        for (var i = 0; i < predicted.Length; i++)
+            if (predicted[i]) profit += actual[i] ? 100 : -50;
+        return Task.FromResult(new MetricResult { Name = Name, Value = profit });
     }
 }
 ```
 
-## Usage
+`Predictions` / `Labels`: `bool[]` for binary-classification, `int[]` class indices for
+multiclass-classification, `float[]` for regression.
 
-1. Create a new .cs file in this directory
-2. Implement the `IMLoopMetric` interface
-3. Run `mloop train` - metrics are auto-discovered and calculated
-
-See: docs/EXTENSIBILITY.md for more information
+See the Extensibility section of the MLoop guide (docs/GUIDE.md).
 ";
 
         var metricReadmePath = fileSystem.CombinePath(projectPath, ".mloop", "scripts", "metrics", "README.md");

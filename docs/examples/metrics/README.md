@@ -121,7 +121,7 @@ public class MyBusinessMetric : IMLoopMetric
     public Task<MetricResult> CalculateAsync(MetricContext ctx)
     {
         // 1. Validate task type
-        if (ctx.TaskType != "BinaryClassification")
+        if (ctx.TaskType != "binary-classification")
         {
             throw new InvalidOperationException("Requires binary classification");
         }

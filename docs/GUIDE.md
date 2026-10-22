@@ -1724,30 +1724,44 @@ Validation passed
 
 ### Custom Metrics
 
-Add custom evaluation metrics.
+Business metrics of your own, computed after training over the held-out rows the run's metrics were measured on,
+and recorded with them — in `metrics.json`, the results table, `report.md`, `mloop list --json` and
+`mloop compare`. A post-train hook sees them in `Metrics`.
 
-**Script Location**: `.mloop/scripts/metrics/`
+**Script Location**: `.mloop/scripts/metrics/` — one metric per file. Ready-made examples (profit, churn value, ROI)
+are in `docs/examples/metrics/`.
 
 ```csharp
-using MLoop.Extensibility;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Metrics;
 
-public class WeightedF1 : IMLoopMetric
+public class ProfitMetric : IMLoopMetric
 {
-    public string Name => "Weighted F1";
+    public string Name => "expected_profit";
+    public string Description => "100 per true positive, -50 per false positive";
 
-    public async Task<double> CalculateAsync(MetricContext context)
+    public Task<MetricResult> CalculateAsync(MetricContext ctx)
     {
-        // Calculate custom metric
-        var predictions = context.Predictions;
-        var schema = predictions.Schema;
-
-        // Your metric calculation logic
-        double weightedF1 = CalculateWeightedF1Score(predictions);
-
-        return weightedF1;
+        var predicted = (bool[])ctx.Predictions;   // binary-classification
+        var actual = (bool[])ctx.Labels;
+        double profit = 0;
+        for (var i = 0; i < predicted.Length; i++)
+            if (predicted[i]) profit += actual[i] ? 100 : -50;
+        return Task.FromResult(new MetricResult { Name = Name, Value = profit });
     }
 }
 ```
+
+| `ctx.TaskType` | `Predictions` / `Labels` |
+|---|---|
+| `binary-classification` | `bool[]` |
+| `multiclass-classification` | `int[]` — class indices, in the order of the model's score slots |
+| `regression` | `float[]` |
+
+Rows without a label are left out, so index `i` of both arrays is the same row. Other tasks do not compute metric
+scripts (training says so). A result whose name the run already reports (`accuracy`, `auc`, …) or whose value is
+not finite is not recorded, with a warning; a script that fails to compile or throws is reported and skipped —
+training goes on.
 
 ### Validation
 

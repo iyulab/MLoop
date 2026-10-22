@@ -11,7 +11,7 @@ namespace MLoop.Core.Metrics;
 public class MetricEngine
 {
     private readonly string _projectRoot;
-    private readonly ScriptLoader _scriptLoader;
+    private ScriptLoader? _scriptLoader;
     private readonly ILogger _logger;
 
     /// <summary>
@@ -27,7 +27,61 @@ public class MetricEngine
     {
         _projectRoot = projectRoot;
         _logger = logger;
-        _scriptLoader = scriptLoader ?? new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot), _logger.Warning);
+        _scriptLoader = scriptLoader;  // created on first use, as HookEngine does — most projects have no metric scripts
+    }
+
+    private ScriptLoader Loader => _scriptLoader ??= new ScriptLoader(ScriptLoader.CacheDirectoryFor(_projectRoot), _logger.Warning);
+
+    /// <summary>
+    /// Computes the project's metric scripts over scored held-out rows and adds each result to
+    /// <paramref name="metrics"/> under the script's <c>Name</c>. A name the run already reports, or a
+    /// value that is not finite, is skipped with a warning — a script cannot replace a measured metric,
+    /// and a non-finite value cannot be recorded. Nothing happens without scripts; a task the metric
+    /// contract does not cover (classification or regression predictions) is said once and skipped.
+    /// </summary>
+    /// <returns>The names added.</returns>
+    public async Task<IReadOnlyList<string>> AddToAsync(
+        Dictionary<string, double> metrics,
+        Microsoft.ML.MLContext mlContext,
+        Microsoft.ML.IDataView scored,
+        string task,
+        string labelColumn,
+        string? modelName = null,
+        string? experimentId = null)
+    {
+        if (!HasMetrics())
+            return [];
+        if (CustomMetricInputs.Of(scored, task, labelColumn) is not { } inputs)
+        {
+            _logger.Warning($"The metric scripts in .mloop/scripts/metrics/ were not computed: they take classification or regression predictions, and this model's task is {task}.");
+            return [];
+        }
+
+        var results = await ExecuteMetricsAsync(new MetricContext
+        {
+            MLContext = mlContext,
+            Predictions = inputs.Predictions,
+            Labels = inputs.Labels,
+            TaskType = task,
+            ModelName = modelName,
+            ExperimentId = experimentId,
+            Logger = _logger,
+        }).ConfigureAwait(false);
+
+        var added = new List<string>();
+        foreach (var result in results)
+        {
+            if (metrics.ContainsKey(result.Name))
+                _logger.Warning($"Metric script result '{result.Name}' was not recorded: the run already reports a metric of that name.");
+            else if (!double.IsFinite(result.Value))
+                _logger.Warning($"Metric script result '{result.Name}' was not recorded: its value is {result.Value}.");
+            else
+            {
+                metrics[result.Name] = result.Value;
+                added.Add(result.Name);
+            }
+        }
+        return added;
     }
 
     /// <summary>
@@ -98,7 +152,7 @@ public class MetricEngine
             try
             {
                 // Load and execute metric
-                var metrics = await _scriptLoader.LoadScriptAsync<IMLoopMetric>(scriptFile).ConfigureAwait(false);
+                var metrics = await Loader.LoadScriptAsync<IMLoopMetric>(scriptFile).ConfigureAwait(false);
 
                 if (metrics.Count == 0)
                 {

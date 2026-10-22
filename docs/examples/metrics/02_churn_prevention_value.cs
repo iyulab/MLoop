@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using MLoop.Extensibility.Metrics;
 
 /// <summary>
@@ -29,7 +32,7 @@ public class ChurnPreventionValueMetric : IMLoopMetric
     public Task<MetricResult> CalculateAsync(MetricContext ctx)
     {
         // Validate task type
-        if (ctx.TaskType != "BinaryClassification")
+        if (ctx.TaskType != "binary-classification")
         {
             throw new InvalidOperationException(
                 $"Churn metric requires binary classification, got: {ctx.TaskType}");

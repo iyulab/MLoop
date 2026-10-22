@@ -30,6 +30,7 @@ public class TrainingEngine : ITrainingEngine
     private readonly IFileSystemManager _fileSystem;
     private readonly AutoMLRunner _autoMLRunner;
     private readonly HookEngine? _hookEngine;
+    private readonly MLoop.Core.Metrics.MetricEngine? _metricEngine;
     private readonly string? _projectRoot;
 
     public TrainingEngine(
@@ -58,6 +59,7 @@ public class TrainingEngine : ITrainingEngine
         if (!string.IsNullOrEmpty(projectRoot))
         {
             _hookEngine = new HookEngine(projectRoot, logger ?? new TrainingEngineLogger());
+            _metricEngine = new MLoop.Core.Metrics.MetricEngine(projectRoot, logger ?? new TrainingEngineLogger());
         }
     }
 
@@ -369,6 +371,12 @@ public class TrainingEngine : ITrainingEngine
             }
 
             await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config, modelPath, cancellationToken);
+
+            // The project's metric scripts, over the rows the run's metrics were measured on — recorded with
+            // them, and seen by the post-train hooks below.
+            if (_metricEngine != null && autoMLResult.EvaluationData is { } evaluationData)
+                await _metricEngine.AddToAsync(autoMLResult.Metrics, _mlContext, autoMLResult.Model.Transform(evaluationData),
+                    config.Task, config.LabelColumn, modelName, experimentId);
 
             // Execute PostTrain hooks
             string? hookRefusal = null;

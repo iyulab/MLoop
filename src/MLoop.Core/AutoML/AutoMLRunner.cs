@@ -306,7 +306,7 @@ public partial class AutoMLRunner
             };
         }
 
-        return result;
+        return result with { EvaluationData = result.EvaluationData ?? testSet };
     }
 
     /// <summary>
@@ -2546,6 +2546,12 @@ public record AutoMLResult
     /// undefined. Null when nothing was ranked.
     /// </summary>
     public string? RankingMetric { get; init; }
+
+    /// <summary>
+    /// The held-out rows <see cref="Metrics"/> were measured on, unscored — what the project's own
+    /// metric scripts are computed over after training. Null where a task has no such partition.
+    /// </summary>
+    public IDataView? EvaluationData { get; init; }
 }
 
 /// <summary>

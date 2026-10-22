@@ -54,6 +54,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Metric scripts in `.mloop/scripts/metrics/` were never computed — nothing ran them, although `mloop init` scaffolds
+  the folder and the guide describes them. Training now computes each over the held-out rows and records it with the
+  run's metrics (`metrics.json`, results table, `list --json`, post-train hooks). A name the run already reports, or
+  a non-finite value, is skipped with a warning. The shipped examples (`docs/examples/metrics/`) did not compile
+  (missing `using` directives) and checked a task name MLoop never passes (`BinaryClassification` →
+  `binary-classification`); the guide's and `mloop init`'s examples showed an interface that does not exist.
+- The hooks README `mloop init` writes told users to put hooks in `.mloop/scripts/hooks/` itself; it names the stage
+  folders now.
+
 - Feedback for a prediction logged more than 7 days earlier was refused as "prediction not found" (`mloop feedback
   add`, `POST /feedback` 404) although the prediction was in the logs. Every logged day is searched now, newest
   first; how far back the logs reach is the retention period.

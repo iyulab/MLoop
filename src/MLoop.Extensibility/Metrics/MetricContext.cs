@@ -29,7 +29,8 @@ public class MetricContext
     public required Array Labels { get; init; }
 
     /// <summary>
-    /// ML task type: BinaryClassification, MulticlassClassification, Regression
+    /// The model's task as the project names it: <c>binary-classification</c>, <c>multiclass-classification</c>
+    /// or <c>regression</c> — the tasks metric scripts are computed for.
     /// </summary>
     public required string TaskType { get; init; }
 
