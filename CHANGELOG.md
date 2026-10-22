@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `TimestampKeys` (`MLoop.Core.Storage`): the times written into names a program reads back — the day-file name of a
+  log or feedback entry (`Day`, `TryParseDay`, `DayFileCovers`) and a time to the second (`Stamp`,
+  `yyyyMMdd-HHmmss`) — in the invariant culture and the Gregorian calendar. The prediction logger, the feedback
+  collector and the retention pruner read one day format from it, where each had its own copy. A retraining sample
+  written by `mloop sample create --model` / `POST /samples` is named `<model>_yyyyMMdd-HHmmss.csv` (was
+  `_yyyyMMdd_HHmmss`).
 - `ColumnLayout.FileColumns` and `ColumnLayout.FileColumn(name)` (`MLoop.Core.Data`): every column of the file by
   its own name, with the kind it loads as and its purpose — what a column folded into the `Features` vector was read
   as, which `ColumnLayout.Columns` says only of the vector. `ColumnLayout` takes it as a fourth constructor argument.

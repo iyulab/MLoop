@@ -1,5 +1,6 @@
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Storage;
 using MLoop.DataStore.Interfaces;
 
 namespace MLoop.CLI.Infrastructure.ML;
@@ -61,5 +62,5 @@ public static class FeedbackSamples
 
     /// <summary>Where a sample goes when no path is given: <c>.mloop/samples/&lt;model&gt;_&lt;local time&gt;.csv</c>.</summary>
     public static string DefaultPath(string projectRoot, string modelName) =>
-        Path.Combine(projectRoot, ".mloop", "samples", string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{modelName.ToLowerInvariant()}_{DateTime.Now:yyyyMMdd_HHmmss}.csv"));
+        Path.Combine(projectRoot, ".mloop", "samples", $"{modelName.ToLowerInvariant()}_{TimestampKeys.Stamp(DateTime.Now)}.csv");
 }

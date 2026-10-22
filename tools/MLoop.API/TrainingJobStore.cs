@@ -44,7 +44,7 @@ public class TrainingJobStore
 
     public string CreateJob(TrainingJobRequest request)
     {
-        var jobId = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"job-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString()[..8]}");
+        var jobId = $"job-{MLoop.Core.Storage.TimestampKeys.Stamp(DateTime.UtcNow)}-{Guid.NewGuid().ToString()[..8]}";
         var job = new TrainingJob
         {
             JobId = jobId,

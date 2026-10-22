@@ -1,4 +1,5 @@
 using System.Globalization;
+using MLoop.Core.Storage;
 
 namespace MLoop.DataStore.Services;
 
@@ -50,8 +51,7 @@ public static class RetentionPruner
         {
             foreach (var file in Directory.EnumerateFiles(modelDir, "*.jsonl"))
             {
-                if (!DateOnly.TryParseExact(Path.GetFileNameWithoutExtension(file), "yyyy-MM-dd",
-                        CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) || day >= cutoff)
+                if (!TimestampKeys.TryParseDay(Path.GetFileNameWithoutExtension(file), out var day) || day >= cutoff)
                     continue;
                 try
                 {

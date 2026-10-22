@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using MLoop.Core.Storage;
 using MLoop.DataStore.Interfaces;
 
 namespace MLoop.DataStore.Services;
@@ -77,7 +78,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             return results;
 
         var feedbackFiles = Directory.GetFiles(modelDir, "*.jsonl")
-            .Where(f => IsFileInDateRange(f, effectiveFrom, effectiveTo))
+            .Where(f => TimestampKeys.DayFileCovers(f, effectiveFrom, effectiveTo))
             .OrderByDescending(f => f);
 
         foreach (var file in feedbackFiles)
@@ -273,21 +274,9 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
     private string GetFeedbackFilePath(string modelName, DateTimeOffset timestamp)
     {
         var safeModelName = SanitizeFileName(modelName);
-        var dateStr = timestamp.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        return Path.Combine(_feedbackDirectory, safeModelName, $"{dateStr}.jsonl");
+        return Path.Combine(_feedbackDirectory, safeModelName, $"{TimestampKeys.Day(timestamp)}.jsonl");
     }
 
-    private static bool IsFileInDateRange(string filePath, DateTimeOffset from, DateTimeOffset to)
-    {
-        var fileName = Path.GetFileNameWithoutExtension(filePath);
-        if (DateOnly.TryParseExact(fileName, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var fileDate))
-        {
-            var fileDateTime = new DateTimeOffset(fileDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-            var nextDay = fileDateTime.AddDays(1);
-            return fileDateTime <= to && nextDay > from;
-        }
-        return true; // Include if we can't parse the date
-    }
 
     private static string SanitizeFileName(string name)
     {
