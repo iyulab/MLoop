@@ -109,6 +109,48 @@ public sealed class OnnxExportTests : IDisposable
             outputs["PredictedLabel.output"].Strings);
     }
 
+    /// <summary>
+    /// The trainer search also tries categories hashed into slots (one-hot-hash). The graph of that
+    /// featurization — built by the search's own featurizer — answers what the model answers.
+    /// </summary>
+    [Fact]
+    public void Binary_OneHotHashCategory_FromTheSearchFeaturizer_GraphMatchesModel()
+    {
+        var rng = new Random(9);
+        string[] cats = ["red", "green", "blue", "grey"];
+        var path = WriteCsv("a,colour,label", Enumerable.Range(0, 240).Select(i =>
+        {
+            double a = rng.NextDouble();
+            var colour = cats[i % 4];
+            return Row(a, colour, a + (colour == "red" ? 0.4 : 0) > 0.7 ? "true" : "false");
+        }));
+        var loader = new TextLoader.Options
+        {
+            HasHeader = true,
+            Separators = [','],
+            Columns =
+            [
+                new TextLoader.Column("a", DataKind.Single, 0),
+                new TextLoader.Column("colour", DataKind.String, 1),
+                new TextLoader.Column("label", DataKind.Boolean, 2),
+            ],
+        };
+        var data = _ml.Data.CreateTextLoader(loader).Load(path);
+        var roles = new MLoop.Search.ColumnRoles("label",
+            [new("a", MLoop.Search.ColumnRole.Numeric), new("colour", MLoop.Search.ColumnRole.Categorical)]);
+        var featurizer = MLoop.Search.Candidates.Featurizer.Build(_ml, data.Schema, roles, MLoop.Search.Candidates.CategoricalEncoding.Hash)!;
+        var model = featurizer
+            .Append(_ml.BinaryClassification.Trainers.LbfgsLogisticRegression("label", "Features"))
+            .Fit(data);
+
+        var (result, onnx) = Export(model, data, loader, ["a", "colour", "label"], "label");
+
+        Assert.Equal("string", result.Inputs.Single(i => i.Name == "colour").ElementType);
+        var outputs = Run(onnx, data, result);
+        AssertClose(Floats(model.Transform(data), "Probability"), outputs["Probability.output"].Floats);
+        Assert.Equal(Bools(model.Transform(data), "PredictedLabel"), outputs["PredictedLabel.output"].Bools);
+    }
+
     [Fact]
     public void Verification_FeedsAVectorOfBooleans()
     {
