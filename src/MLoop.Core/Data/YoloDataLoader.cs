@@ -198,7 +198,7 @@ public sealed class YoloDataLoader : DataProviderBase
             {
                 var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length < 5) continue;
-                if (!int.TryParse(parts[0], out var classId)) continue;
+                if (!int.TryParse(parts[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var classId)) continue;
                 if (!TryParseBox(parts, out var cx, out var cy, out var w, out var h)) continue;
 
                 // YOLO boxes are normalized; convert to absolute x0 y0 x1 y1.

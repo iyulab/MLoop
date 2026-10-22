@@ -29,14 +29,31 @@ public enum ColumnLayoutPurpose
 public sealed record ColumnLayoutColumn(string Name, ColumnLayoutPurpose Purpose);
 
 /// <summary>
+/// One column of the file, as the layout read it before folding adjacent columns into vectors: its header name, the
+/// kind it loads as, and its purpose.
+/// </summary>
+public sealed record ColumnLayoutFileColumn(string Name, DataKind Kind, ColumnLayoutPurpose Purpose);
+
+/// <summary>
 /// How a delimited file is read: the loader options (separator, quoting, and the columns — adjacent
 /// columns of one kind folded into one vector) and the purpose of each loaded column.
 /// </summary>
-public sealed record ColumnLayout(TextLoader.Options Options, string? Label, IReadOnlyList<ColumnLayoutColumn> Columns)
+/// <param name="Options">The loader options.</param>
+/// <param name="Label">The label column, when one was named.</param>
+/// <param name="Columns">The loaded columns — a vector of folded columns is one entry, named for the vector.</param>
+/// <param name="FileColumns">
+/// Every column of the file by its own name — what a column inside a folded vector was read as, which
+/// <paramref name="Columns"/> says only of the vector.
+/// </param>
+public sealed record ColumnLayout(
+    TextLoader.Options Options, string? Label, IReadOnlyList<ColumnLayoutColumn> Columns, IReadOnlyList<ColumnLayoutFileColumn> FileColumns)
 {
     /// <summary>The loaded columns with <paramref name="purpose"/>, in load order.</summary>
     public IReadOnlyList<string> Of(ColumnLayoutPurpose purpose) =>
         [.. Columns.Where(c => c.Purpose == purpose).Select(c => c.Name)];
+
+    /// <summary>The file column named <paramref name="name"/>, or <see langword="null"/>.</summary>
+    public ColumnLayoutFileColumn? FileColumn(string name) => FileColumns.FirstOrDefault(c => c.Name == name);
 }
 
 /// <summary>A file whose layout cannot be inferred — it does not split into consistent columns, or has no rows.</summary>
@@ -121,7 +138,8 @@ public static class ColumnLayoutInference
             // An empty number is missing, not zero (MissingNumbers).
             MissingRealsAsNaNs = true,
         };
-        return new ColumnLayout(options, label, [.. groups.Select(g => new ColumnLayoutColumn(g.Name, g.Purpose))]);
+        return new ColumnLayout(options, label, [.. groups.Select(g => new ColumnLayoutColumn(g.Name, g.Purpose))],
+            [.. columns.Select((c, i) => new ColumnLayoutFileColumn(c.Name, c.Kind, purposes[i]))]);
     }
 
     private sealed record Split(char Separator, bool Sparse, bool Quoting, bool Multiline, int ColumnCount);

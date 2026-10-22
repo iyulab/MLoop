@@ -583,6 +583,39 @@ public class TrainingEngineTests : IDisposable
     }
 
     /// <summary>
+    /// The saved schema records a number folded into the Features vector as Numeric whatever the machine's culture.
+    /// It once judged such a column by its values with the current culture's number parser, so on a machine whose
+    /// decimal separator is a comma "1.5" did not read as a number, and the column was recorded as text or a category
+    /// for <c>serve</c> to load as a string where the model expects a number. (On such a machine regression also
+    /// refused every label as non-numeric, before any schema was written.)
+    /// </summary>
+    [Fact]
+    public async Task TheSavedSchema_RecordsAFoldedNumberAsNumeric_UnderACommaDecimalCulture()
+    {
+        var csv = Path.Combine(_tempDir, "culture.csv");
+        var rnd = new Random(5);
+        var lines = new List<string> { "width,height,price" };
+        for (var i = 0; i < 200; i++)
+        {
+            var w = rnd.NextDouble() * 10;
+            var h = rnd.NextDouble() * 5;
+            lines.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{w:F3},{h:F3},{w * 2 + h:F3}"));
+        }
+        await File.WriteAllLinesAsync(csv, lines);
+        var config = new TrainingConfig { ModelName = "culture", DataFile = csv, LabelColumn = "price", Task = "regression", TimeLimitSeconds = 5 };
+
+        var before = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("fr-FR");
+        TrainingResult result;
+        try { result = await NewEngine().TrainAsync(config, null, CancellationToken.None); }
+        finally { System.Globalization.CultureInfo.CurrentCulture = before; }
+
+        var schema = result.Schema!;
+        Assert.Equal("Numeric", schema.Columns.Single(c => c.Name == "width").DataType);
+        Assert.Equal("Numeric", schema.Columns.Single(c => c.Name == "height").DataType);
+    }
+
+    /// <summary>
     /// End-to-end pin for the trial history: a real training run has to leave the search's
     /// leaderboard on disk. The collection and the writing are each covered on their own, so what
     /// this adds is the wiring between them — the one thing a silently-dropped property breaks

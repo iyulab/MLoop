@@ -117,7 +117,7 @@ public class DataQualityValidator
                 if (labelColumnIndex < values.Length)
                 {
                     var rawValue = values[labelColumnIndex].Trim();
-                    if (double.TryParse(rawValue, out var numericValue))
+                    if (double.TryParse(rawValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var numericValue))
                     {
                         numericLabelValues.Add(numericValue);
                         textLabelValues.Add(rawValue);
@@ -470,7 +470,7 @@ public class DataQualityValidator
             foreach (var line in dataLines)
             {
                 var cells = CsvFieldParser.ParseFields(line);
-                if (colIndex < cells.Length && double.TryParse(cells[colIndex], out var value))
+                if (colIndex < cells.Length && double.TryParse(cells[colIndex], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value))
                 {
                     values.Add(value);
                 }

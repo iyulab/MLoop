@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `ColumnLayout.FileColumns` and `ColumnLayout.FileColumn(name)` (`MLoop.Core.Data`): every column of the file by
+  its own name, with the kind it loads as and its purpose — what a column folded into the `Features` vector was read
+  as, which `ColumnLayout.Columns` says only of the vector. `ColumnLayout` takes it as a fourth constructor argument.
 - `MLoop.Search` package, published with `MLoop.Core` at the same version and a dependency of it: the trainer
   search's own types — `ColumnRoles` (one role per column: numeric, categorical, text or ignored, and the label),
   `TrialResult` and `ITrialSink` (a finished trial and where it is reported), and `IMetricPolicy` (the metric trials
@@ -103,6 +106,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Numbers are read from text with the invariant culture everywhere, as ML.NET's loader reads a file — not the
+  machine's. On a machine whose decimal separator is a comma, regression refused every label ("No valid numeric
+  values found in label column"), and the saved schema judged the numeric columns folded into the feature vector by
+  that parse — as text or categories, by how many values they had — so `serve` would load them as strings. The saved schema now takes such a column's type from the column layout,
+  by its own name (`ColumnLayout.FileColumns`); prep's `filter-rows` comparisons and the data-quality checks parse
+  the same way.
 - Auto-time (`mloop train` without `--time`) judges its probe by the search's validation score, not the test
   partition's: whether the probe has converged (score above 0.95), and whether the probe's model or the main run's is
   kept. Reading the test score let the score the run reported choose its own model. It also read an error metric

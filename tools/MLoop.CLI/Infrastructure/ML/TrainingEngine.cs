@@ -780,7 +780,8 @@ public class TrainingEngine : ITrainingEngine
                 {
                     if (i == labelIndex) continue;
                     var val = fields[i].Trim();
-                    if (val.Contains(' ') && val.Length > 20 && !double.TryParse(val, out _))
+                    if (val.Contains(' ') && val.Length > 20
+                        && !double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
                     {
                         hasTextFeatures = true;
                         break;
@@ -1172,6 +1173,12 @@ public class TrainingEngine : ITrainingEngine
                 return (SchemaDataTypes.Numeric, null, null);
             if (layout.Of(ColumnLayoutPurpose.Text).Contains(columnName))
                 return (SchemaDataTypes.Text, null, null);
+            // A number folded into the Features vector: the layout read it as one, by its own name. A yes/no
+            // column folded into BooleanFeatures is left to its values — the saved schema's count of them is
+            // what tells a later file's two-valued slice from a column that was never boolean
+            // (CsvDataLoader.ReconcileInferredSchemaForInference).
+            if (layout.FileColumn(columnName) is { Purpose: ColumnLayoutPurpose.Numeric, Kind: not DataKind.Boolean })
+                return (SchemaDataTypes.Numeric, null, null);
         }
 
         // Fallback: Infer type from actual values
@@ -1195,8 +1202,8 @@ public class TrainingEngine : ITrainingEngine
             totalCount++;
             uniqueValues.Add(value);
 
-            // Check if value is numeric
-            if (double.TryParse(value, out _))
+            // Numeric as the loader reads it — invariant, whatever the machine's culture.
+            if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
             {
                 numericCount++;
             }

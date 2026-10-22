@@ -53,7 +53,7 @@ internal static class ColumnTypeHelper
     {
         // Remove common thousand separators
         var cleaned = value.Replace(",", "").Replace(" ", "").Trim();
-        return double.TryParse(cleaned, out result);
+        return double.TryParse(cleaned, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out result);
     }
 
     /// <summary>

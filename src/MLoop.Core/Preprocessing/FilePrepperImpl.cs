@@ -65,9 +65,9 @@ public class FilePrepperImpl : IFilePrepper
                 // Try to infer type from first value
                 var value = kvp.Value;
 
-                if (int.TryParse(value, out _))
+                if (int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _))
                     typeMap[kvp.Key] = "int";
-                else if (double.TryParse(value, out _))
+                else if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
                     typeMap[kvp.Key] = "double";
                 else if (DateTime.TryParse(value, out _))
                     typeMap[kvp.Key] = "datetime";

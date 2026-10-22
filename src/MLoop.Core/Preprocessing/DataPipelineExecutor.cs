@@ -147,10 +147,10 @@ public class DataPipelineExecutor
 
         Func<Dictionary<string, string>, bool> predicate = op.ToLowerInvariant() switch
         {
-            "gt" or ">" => row => double.TryParse(row.GetValueOrDefault(column), out var v) && v > double.Parse(value),
-            "gte" or ">=" => row => double.TryParse(row.GetValueOrDefault(column), out var v) && v >= double.Parse(value),
-            "lt" or "<" => row => double.TryParse(row.GetValueOrDefault(column), out var v) && v < double.Parse(value),
-            "lte" or "<=" => row => double.TryParse(row.GetValueOrDefault(column), out var v) && v <= double.Parse(value),
+            "gt" or ">" => row => double.TryParse(row.GetValueOrDefault(column), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > double.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
+            "gte" or ">=" => row => double.TryParse(row.GetValueOrDefault(column), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= double.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
+            "lt" or "<" => row => double.TryParse(row.GetValueOrDefault(column), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v < double.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
+            "lte" or "<=" => row => double.TryParse(row.GetValueOrDefault(column), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v <= double.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
             "eq" or "==" => row => row.GetValueOrDefault(column) == value,
             "neq" or "!=" => row => row.GetValueOrDefault(column) != value,
             "contains" => row => row.GetValueOrDefault(column)?.Contains(value, StringComparison.OrdinalIgnoreCase) == true,

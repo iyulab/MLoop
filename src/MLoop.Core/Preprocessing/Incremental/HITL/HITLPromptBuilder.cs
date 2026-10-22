@@ -125,7 +125,7 @@ public sealed class HITLPromptBuilder : IHITLPromptBuilder
                     .ValidationErrorMessage("[red]Please enter a valid number.[/]")
                     .Validate(input =>
                     {
-                        return double.TryParse(input, out _)
+                        return double.TryParse(input, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)
                             ? ValidationResult.Success()
                             : ValidationResult.Error("Must be a valid number");
                     })

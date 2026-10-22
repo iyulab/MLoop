@@ -220,7 +220,7 @@ public static class UpdateChecker
             prerelease = "";
         }
 
-        numericParts = numericStr.Split('.').Select(s => int.TryParse(s, out var n) ? n : 0).ToArray();
+        numericParts = numericStr.Split('.').Select(s => int.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0).ToArray();
     }
 
     private static UpdateInfo? ReadCache()

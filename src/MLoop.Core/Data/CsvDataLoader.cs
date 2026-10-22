@@ -1627,7 +1627,7 @@ public class CsvDataLoader : DataProviderBase
                 foreach (var row in dataRows)
                 {
                     var fields = ParseCsvLine(row);
-                    if (col >= fields.Length || !long.TryParse(fields[col].Trim(), out var value))
+                    if (col >= fields.Length || !long.TryParse(fields[col].Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value))
                     {
                         isMonotonic = false;
                         break;

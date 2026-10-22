@@ -532,6 +532,9 @@ public static class InfoCommand
     private static string InferDisplayType(string columnName, ColumnLayout layout, int csvColumnIndex, string[] sampleLines)
     {
         var inferred = PurposeOf(layout.Columns, columnName);
+        // A column folded into a vector, by its own name: what the layout read it as.
+        if (inferred is null && layout.FileColumn(columnName) is { } folded && folded.Purpose != ColumnLayoutPurpose.Label)
+            return folded.Kind == DataKind.Boolean ? "Boolean" : folded.Purpose == ColumnLayoutPurpose.Numeric ? "Numeric" : folded.Kind.ToString();
 
         if (inferred == ColumnLayoutPurpose.Categorical)
         {
