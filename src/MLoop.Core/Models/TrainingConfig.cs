@@ -148,6 +148,13 @@ public record TrainingConfig
     public IReadOnlyCollection<string>? CategoryColumns { get; init; }
 
     /// <summary>
+    /// The type every load of this run reads the label as — decided once from the saved schema
+    /// (<see cref="LabelKinds"/>), like <see cref="FeatureExclusions"/>. Null leaves each load to infer
+    /// it, which two partitions of a file sorted by its label do differently.
+    /// </summary>
+    public Microsoft.ML.Data.DataKind? LabelKind { get; init; }
+
+    /// <summary>
     /// Train only with steps an ONNX runtime computes exactly, so the model can be exported
     /// (<c>mloop export onnx</c>): text columns are featurized by
     /// <see cref="AutoML.PortableTextFeaturizer"/> instead of <c>FeaturizeText</c>.

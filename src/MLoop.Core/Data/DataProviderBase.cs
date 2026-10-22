@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using Microsoft.ML.Data;
 using MLoop.Core.Contracts;
 using MLoop.Core.Models;
 
@@ -31,7 +32,8 @@ public abstract class DataProviderBase : IDataProvider
 
     /// <inheritdoc />
     public abstract IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null);
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
+        DataKind? labelKind = null);
 
     /// <inheritdoc />
     public virtual bool ValidateLabelColumn(IDataView data, string labelColumn) =>

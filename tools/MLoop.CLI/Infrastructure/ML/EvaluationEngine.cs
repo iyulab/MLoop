@@ -342,22 +342,26 @@ public class EvaluationEngine
         // below, so the helper does not touch it.
         CsvDataLoader.ReconcileInferredSchemaForInference(loaderOptions, trainedSchema, labelColumn, loadPath, preserveColumns);
 
-        // Multiclass classification: the layout may type the label as Boolean
-        // when values are 0/1/2 etc. CsvDataLoader converts Boolean→String for multiclass
-        // during training. Override BEFORE loading so TextLoader can parse all values.
+        // The label loads as training loaded it: the saved schema's type through the one rule
+        // (LabelKinds) training and predict follow. Inferred from this file instead, a numeric
+        // multiclass label read as a number here and as a string in training, or the reverse, and the
+        // model's key mapping refused the column. Without a recorded label (an old schema), a yes/no
+        // reading is corrected as before: multiclass to a string, regression to a number.
+        var recordedLabel = trainedSchema?.Columns.FirstOrDefault(c => c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase));
         bool isMulticlass = taskType.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase);
         bool isRegressionEval = taskType.Equals("regression", StringComparison.OrdinalIgnoreCase);
         if (loaderOptions.Columns != null)
         {
             foreach (var col in loaderOptions.Columns)
             {
-                if (col.Name != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) && col.DataKind == DataKind.Boolean)
-                {
-                    if (isMulticlass)
-                        col.DataKind = DataKind.String;
-                    else if (isRegressionEval)
-                        col.DataKind = DataKind.Single;
-                }
+                if (col.Name == null || !col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (recordedLabel != null && LabelKinds.AppliesAtTraining(taskType))
+                    col.DataKind = LabelKinds.For(taskType, recordedLabel.DataType);
+                else if (col.DataKind == DataKind.Boolean && isMulticlass)
+                    col.DataKind = DataKind.String;
+                else if (col.DataKind == DataKind.Boolean && isRegressionEval)
+                    col.DataKind = DataKind.Single;
             }
         }
 

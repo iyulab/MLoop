@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using Microsoft.ML.Data;
 using MLoop.Core.Models;
 
 namespace MLoop.Core.Contracts;
@@ -24,8 +25,15 @@ public interface IDataProvider
     /// Loaders whose input is not tabular (image folders, COCO/YOLO annotations) have no such
     /// columns and ignore it, as they do <see cref="GetMergedColumnGroups"/>.
     /// </param>
+    /// <param name="labelKind">
+    /// The type to load the label column as, decided once for the run from the saved schema
+    /// (<see cref="Models.LabelKinds"/>) — the partitions of one split must type the label alike, and
+    /// inference from each file does not. Null leaves the label as the loader infers it. Loaders whose
+    /// label is not a column of a table ignore it.
+    /// </param>
     IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null);
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
+        DataKind? labelKind = null);
 
     /// <summary>
     /// Validates that the label column exists in the data

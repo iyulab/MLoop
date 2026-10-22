@@ -52,7 +52,7 @@ public class ClusteringKSearchRegressionTests : IDisposable
 
         public IDataView LoadData(string filePath, string? labelColumn = null,
             string? taskType = null, IEnumerable<string>? preserveColumns = null,
-            IReadOnlyCollection<string>? featureExclusions = null)
+            IReadOnlyCollection<string>? featureExclusions = null, Microsoft.ML.Data.DataKind? labelKind = null)
             => _fullData;
 
         public bool ValidateLabelColumn(IDataView data, string labelColumn)

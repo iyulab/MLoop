@@ -55,7 +55,7 @@ public class WeightedTrainingTests : IDisposable
     private sealed class InMemoryDataProvider(MLContext ctx, IDataView data) : IDataProvider
     {
         public IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-            IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null) => data;
+            IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null, Microsoft.ML.Data.DataKind? labelKind = null) => data;
         public bool ValidateLabelColumn(IDataView d, string labelColumn) => d.Schema.GetColumnOrNull(labelColumn).HasValue;
         public DataSchema GetSchema(IDataView d) => new() { Columns = [], RowCount = 0 };
         public (IDataView trainSet, IDataView testSet) SplitData(IDataView d, double testFraction = 0.2)

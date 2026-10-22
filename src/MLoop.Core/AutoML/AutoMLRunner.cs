@@ -224,16 +224,16 @@ public partial class AutoMLRunner
                     .Select(c => c.Name).ToList();
             }
 
-            trainSet = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, featureExclusions);
+            trainSet = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind);
             // Grab the training file's merge mapping before the test-file load overwrites it
             mergedColumnGroups = loader.GetMergedColumnGroups();
-            testSet = loader.LoadData(config.TestDataFile, config.LabelColumn, config.Task, preserve, featureExclusions);
+            testSet = loader.LoadData(config.TestDataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind);
         }
         else if (isTimeSeriesTask)
         {
             // Time series: use full dataset (no random split — temporal order matters)
             // Forecasting/TS-Anomaly handle holdout internally
-            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions);
+            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions, config.LabelKind);
             trainSet = dataView;
             testSet = dataView; // same data — internal holdout handles evaluation
             mergedColumnGroups = loader.GetMergedColumnGroups();
@@ -243,7 +243,7 @@ public partial class AutoMLRunner
             // Single file split in-memory: both partitions come from one load, so they share one
             // featurization by construction. The exclusion set still flows through so the saved
             // schema predict replays describes exactly what was fitted.
-            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions);
+            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions, config.LabelKind);
             (trainSet, testSet) = loader.SplitData(dataView, config.TestSplit);
             mergedColumnGroups = loader.GetMergedColumnGroups();
         }

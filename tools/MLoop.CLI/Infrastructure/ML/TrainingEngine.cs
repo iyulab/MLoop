@@ -241,6 +241,14 @@ public class TrainingEngine : ITrainingEngine
                 // every category the model may be asked to predict on.
                 inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides, featureExclusions, config.CategoryColumns, config.WeightColumn);
 
+                // The label's type, decided from the whole file once — the schema just captured is what
+                // evaluate and predict will load it as, so both partitions are loaded the same way.
+                if (LabelKinds.AppliesAtTraining(config.Task)
+                    && inputSchema?.Columns.FirstOrDefault(c => c.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) is { } labelSchema)
+                {
+                    config = config with { LabelKind = LabelKinds.For(config.Task, labelSchema.DataType) };
+                }
+
                 // Stratify the train/test split for classification. The unstratified alternative is
                 // ML.NET's TrainTestSplit (DataProviderBase.SplitData), which draws rows uniformly and
                 // therefore leaves a rare class out of the test partition entirely with high probability

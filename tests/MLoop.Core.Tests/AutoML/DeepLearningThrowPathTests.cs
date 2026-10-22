@@ -93,7 +93,7 @@ public class DeepLearningThrowPathTests
     private sealed class NarratingProvider(IDataProvider inner, Action<string>? log) : IDataProvider
     {
         public IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-            IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null)
+            IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null, Microsoft.ML.Data.DataKind? labelKind = null)
         {
             log?.Invoke("[Info] Loaded 5 images across 2 class(es)");
             return inner.LoadData(filePath, labelColumn, taskType, preserveColumns, featureExclusions);
@@ -196,7 +196,7 @@ public class DeepLearningThrowPathTests
 
         public IDataView LoadData(string filePath, string? labelColumn = null,
             string? taskType = null, IEnumerable<string>? preserveColumns = null,
-            IReadOnlyCollection<string>? featureExclusions = null)
+            IReadOnlyCollection<string>? featureExclusions = null, Microsoft.ML.Data.DataKind? labelKind = null)
             => _fullData;
 
         public bool ValidateLabelColumn(IDataView data, string labelColumn)

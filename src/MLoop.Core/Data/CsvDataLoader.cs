@@ -40,7 +40,8 @@ public class CsvDataLoader : DataProviderBase
     public override IReadOnlyDictionary<string, string[]>? GetMergedColumnGroups() => _mergedColumnGroups;
 
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null)
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
+        DataKind? labelKind = null)
     {
         if (!File.Exists(filePath))
         {
@@ -188,8 +189,16 @@ public class CsvDataLoader : DataProviderBase
             }
         }
 
-
-
+        // The run's decision overrides every inference above: the partitions of one split type the
+        // label alike, as the saved schema recorded it (LabelKinds).
+        if (labelKind is { } decidedLabelKind && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
+        {
+            foreach (var col in loaderOptions.Columns)
+            {
+                if (col.Name != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                    col.DataKind = decidedLabelKind;
+            }
+        }
 
         // Ensure preserved columns (group_column, user_column, item_column, and the
         // statistical-prep columns referenced by a preFeaturizer) are not merged into a

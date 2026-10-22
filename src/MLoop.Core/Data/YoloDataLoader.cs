@@ -75,7 +75,8 @@ public sealed class YoloDataLoader : DataProviderBase
     }
 
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null)
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
+        DataKind? labelKind = null)
     {
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("YOLO dataset path must be provided.", nameof(filePath));

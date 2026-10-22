@@ -287,32 +287,7 @@ public class PredictionService
                        col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase);
 
         if (isLabel)
-        {
-            // Folded, because the task recorded in an experiment's config predates the merge-time
-            // canonicalization for anything trained before it — and an unrecognized spelling here
-            // falls to the default arm and silently picks the wrong label DataKind.
-            return Models.TaskTypes.Canonical(taskType) switch
-            {
-                "binary-classification" => col.DataType switch
-                {
-                    "Boolean" => DataKind.Boolean,
-                    _ => DataKind.String
-                },
-                // a multiclass label can be numeric-looking (e.g. class ids "0"/"1"/"2"), in
-                // which case train-time schema inference records DataType=Numeric and AutoML's fitted
-                // pipeline embeds MapValueToKey over a Single-typed column, not String. Forcing String
-                // unconditionally mismatched that trained schema and made model.Transform throw
-                // "Could not apply a map over type 'Single' to column '...' since it has type 'String'".
-                "multiclass-classification" or "text-classification" or "image-classification"
-                    => MapDataTypeToDataKind(col.DataType),
-                "regression" or "forecasting" => col.DataType switch
-                {
-                    "Boolean" => DataKind.Single,
-                    _ => DataKind.Single
-                },
-                _ => MapDataTypeToDataKind(col.DataType)
-            };
-        }
+            return LabelKinds.For(taskType, col.DataType);
 
         return MapDataTypeToDataKind(col.DataType);
     }

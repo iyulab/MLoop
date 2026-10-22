@@ -1,4 +1,5 @@
 using Microsoft.ML;
+using Microsoft.ML.Data;
 using MLoop.Core.Contracts;
 
 namespace MLoop.Core.Data;
@@ -24,7 +25,8 @@ public sealed class ObjectDetectionDataLoader : DataProviderBase
     }
 
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
-        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null)
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
+        DataKind? labelKind = null)
     {
         // YOLO's images/ + labels/*.txt layout is the most distinctive signal; prefer it,
         // otherwise fall back to the COCO parser (which gives a clear error if no JSON exists).
