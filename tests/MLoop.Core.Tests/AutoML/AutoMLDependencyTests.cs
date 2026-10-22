@@ -17,11 +17,17 @@ public class AutoMLDependencyTests
         Assert.DoesNotContain(typeof(AutoMLRunner).Assembly.GetReferencedAssemblies(), a => a.Name == AutoMLAssembly);
     }
 
-    // The check must be able to see a reference: this test assembly keeps one (the upstream oracle the
-    // search's tuner is compared with), and the same read finds it.
+    // The check must be able to see a reference: the same read finds one MLoop.Core does keep. (This test
+    // assembly kept AutoML itself until the tuner's upstream trace became a fixture.)
     [Fact]
-    public void TheCheck_SeesAnAutoMLReference()
+    public void TheCheck_SeesAReferenceThatIsThere()
     {
-        Assert.Contains(typeof(AutoMLDependencyTests).Assembly.GetReferencedAssemblies(), a => a.Name == AutoMLAssembly);
+        Assert.Contains(typeof(AutoMLRunner).Assembly.GetReferencedAssemblies(), a => a.Name == "Microsoft.ML.Data");
+    }
+
+    [Fact]
+    public void NoTestAssemblyReferencesAutoMLEither()
+    {
+        Assert.DoesNotContain(typeof(AutoMLDependencyTests).Assembly.GetReferencedAssemblies(), a => a.Name == AutoMLAssembly);
     }
 }

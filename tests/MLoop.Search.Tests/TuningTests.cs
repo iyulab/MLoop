@@ -4,8 +4,8 @@ namespace MLoop.Search.Tests;
 
 /// <summary>
 /// The tuner's pure parts: the unit-space mapping of a hyperparameter, the cost-frugal tuner's start,
-/// and the schema proposer's ECI. Trial-by-trial agreement with AutoML is in MLoop.Core.Tests
-/// (<c>TunerTraceTests</c>), the one project that can still load AutoML.
+/// and the schema proposer's ECI. Trial-by-trial agreement with AutoML is <c>TunerTraceTests</c>, against a
+/// recorded trace of AutoML's tuner.
 /// </summary>
 public sealed class TuningTests
 {
