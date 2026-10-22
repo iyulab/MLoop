@@ -1766,15 +1766,21 @@ training goes on.
 
 ### Validation
 
-Validate scripts before using them:
+Training warns about a script that does not compile and goes on without it. `mloop validate` compiles every hook
+(each stage folder), metric script and pattern detector, and reports what would not run:
 
-```bash
-mloop validate
-
-# Output:
-# ✅ Hook: DataValidator (Valid)
-# ✅ Metric: WeightedF1 (Valid)
 ```
+Errors (2):
+  ✗ .mloop/scripts/hooks/pre-train/nothing.cs: Compiles, but has no public class implementing IMLoopHook — nothing in it would run
+  ✗ .mloop/scripts/metrics/broken.cs: Compilation failed:
+  line 1, column 31: Invalid expression term ';'
+
+Warnings (1):
+  ⚠ .mloop/scripts/hooks/stray.cs: In .mloop/scripts/hooks/ itself, so it runs at no stage — move it into the folder of its stage (pre-train/, post-train/, …)
+```
+
+A script error fails validation (exit 1, `--json` lists it under `errors`). What compiles is cached, so the next
+training run starts from it.
 
 ---
 

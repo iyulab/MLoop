@@ -18,6 +18,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `POST /train` takes `promote` — `false` keeps the experiment in staging, as `mloop train --no-promote`, for an
   application that decides promotion itself (its own gate, a review) and then calls `POST /promote`. A completed job
   reports `promoted` and, when the experiment stayed in staging, `keptInStagingReason` (`GET /jobs` lists `promoted`).
+- `mloop validate` compiles the project's scripts — hooks in each stage folder, metric scripts, pattern detectors —
+  and reports one that does not compile or implements nothing it would run as an error, and a hook outside every
+  stage folder as a warning. The guide showed this output before any of it existed.
 - Retention for prediction logs and feedback: `retention: days: N` in `mloop.yaml` keeps today (UTC) and the N days
   before it. `mloop serve` removes older days at start and once a day; `mloop logs prune [--days N] [--dry-run]
   [--json]` does it on demand. Whole day-files leave, logs and feedback together; nothing is removed without a period.
@@ -62,6 +65,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the compiler's message is reported now. The shipped examples (`docs/examples/metrics/`) did not compile
   (missing `using` directives) and checked a task name MLoop never passes (`BinaryClassification` →
   `binary-classification`); the guide's and `mloop init`'s examples showed an interface that does not exist.
+- A script's compile errors named their line and column counted from 0 (`0,30:`); they read `line 1, column 31:` now.
 - What a hook or metric script logs (`ctx.Logger`) reached stdout under `--json`, ahead of the document — `mloop
   evaluate --json` with a metric script, `mloop train --json` with a hook that logs, could not be parsed. It goes
   where the command's other narration goes.

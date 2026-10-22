@@ -1,3 +1,4 @@
+using MLoop.CLI.Infrastructure.ML;
 using System.CommandLine;
 using CsvHelper;
 using CsvHelper.Configuration;
@@ -131,6 +132,8 @@ public static class ValidateCommand
             if (config.Retention?.Days is < 1 and var retentionDays)
                 errors.Add(new ValidationError("retention.days",
                     $"The retention period must be at least 1 day (got {retentionDays}) — today's logs are always kept"));
+
+            await ValidateScriptsAsync(ctx.ProjectRoot, errors, warnings);
 
             // Validate data paths and label column
             if (config.Data != null)
@@ -642,6 +645,47 @@ public static class ValidateCommand
         }
         if (!string.IsNullOrWhiteSpace(gate.SliceBy) && gate.Limits is not { Count: > 0 })
             warnings.Add(new ValidationWarning($"{prefix}.slice_by", "slice_by applies the class limits per slice, and there are none"));
+    }
+
+    /// <summary>
+    /// The project's scripts compile and implement what their folder runs: hooks in each stage folder,
+    /// metric scripts, pattern detectors. A script that does not is an error — training would otherwise
+    /// warn and go on without it — and a hook outside every stage folder, which nothing runs, a warning.
+    /// The scripts are compiled into the project's script cache, so training starts from them.
+    /// </summary>
+    internal static async Task ValidateScriptsAsync(string projectRoot, List<ValidationError> errors, List<ValidationWarning> warnings)
+    {
+        var scripts = Path.Combine(projectRoot, ".mloop", "scripts");
+        if (!Directory.Exists(scripts))
+            return;
+
+        var hooks = new MLoop.Core.Hooks.HookEngine(projectRoot, new ScriptConsoleLogger());
+        foreach (var unplaced in hooks.UnplacedHooks())
+            warnings.Add(new ValidationWarning(ScriptPath(Path.Combine(scripts, "hooks", unplaced)),
+                "In .mloop/scripts/hooks/ itself, so it runs at no stage — move it into the folder of its stage (pre-train/, post-train/, …)"));
+
+        foreach (var stage in Enum.GetValues<MLoop.Extensibility.Hooks.HookType>())
+            await CheckAsync<MLoop.Extensibility.Hooks.IMLoopHook>(hooks.GetHookDirectory(stage), "IMLoopHook");
+        await CheckAsync<MLoop.Extensibility.Metrics.IMLoopMetric>(Path.Combine(scripts, "metrics"), "IMLoopMetric");
+        await CheckAsync<MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts.IPatternDetector>(Path.Combine(scripts, "detectors"), "IPatternDetector");
+
+        string ScriptPath(string file) => Path.GetRelativePath(projectRoot, file).Replace(Path.DirectorySeparatorChar, '/');
+
+        async Task CheckAsync<T>(string folder, string contract) where T : class
+        {
+            if (!Directory.Exists(folder))
+                return;
+            foreach (var file in Directory.GetFiles(folder, "*.cs", SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
+            {
+                var said = new List<string>();
+                var loader = new MLoop.Core.Scripting.ScriptLoader(MLoop.Core.Scripting.ScriptLoader.CacheDirectoryFor(projectRoot), said.Add);
+                if ((await loader.LoadScriptAsync<T>(file)).Count > 0)
+                    continue;
+                errors.Add(new ValidationError(ScriptPath(file), said.Count > 0
+                    ? string.Join(" ", said.Select(line => line.Replace($"❌ Failed to load script {file}: ", "").Trim()))
+                    : $"Compiles, but has no public class implementing {contract} — nothing in it would run"));
+            }
+        }
     }
 
     internal record ValidationError(string Path, string Message);

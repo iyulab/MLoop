@@ -172,7 +172,10 @@ public class ScriptLoader
         {
             var errors = string.Join("\n", result.Diagnostics
                 .Where(d => d.Severity == DiagnosticSeverity.Error)
-                .Select(d => $"  {d.Location.GetLineSpan().StartLinePosition}: {d.GetMessage()}"));
+                .Select(d => d.Location.GetLineSpan().StartLinePosition is var at
+                    // Roslyn counts from 0; an editor, and the person reading this, from 1.
+                    ? $"  line {at.Line + 1}, column {at.Character + 1}: {d.GetMessage()}"
+                    : ""));
 
             throw new InvalidOperationException($"Compilation failed:\n{errors}");
         }
