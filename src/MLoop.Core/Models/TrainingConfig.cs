@@ -198,6 +198,18 @@ public record TrainingConfig
     internal SearchEngine Engine { get; init; } = SearchEngine.AutoML;
 
     /// <summary>
+    /// The seed and threads MLoop's search runs with; <see langword="null"/> for its defaults. Internal,
+    /// like <see cref="Engine"/>: the comparison of the two searches varies the seed.
+    /// </summary>
+    internal MLoop.Search.Candidates.SearchSettings? SearchSettings { get; init; }
+
+    /// <summary>
+    /// At most this many trials, on either search (AutoML's <c>MaxModels</c>); <see langword="null"/> for
+    /// the time budget alone. Internal: the comparison of the two searches holds the trial count equal.
+    /// </summary>
+    internal int? SearchMaxTrials { get; init; }
+
+    /// <summary>
     /// Columns this run has claimed for a purpose of its own — the ranking group, the recommendation
     /// user and item, the row weight, pre-featurizer inputs, and every column the user gave an
     /// explicit type override other than <c>ignore</c>. No feature-exclusion heuristic drops one of

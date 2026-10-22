@@ -608,6 +608,8 @@ public partial class AutoMLRunner
             OptimizingMetric = optimizingMetric,
             CancellationToken = cancellationToken
         };
+        if (config.SearchMaxTrials is { } maxTrials)
+            settings.MaxModels = maxTrials;
 
         var experiment = _mlContext.Auto().CreateBinaryClassificationExperiment(settings);
 
@@ -697,8 +699,9 @@ public partial class AutoMLRunner
             RankingPolicy.For(metric),
             scored => ScoreFold(scored, config),
             TimeSpan.FromSeconds(config.TimeLimitSeconds),
-            Settings,
+            config.SearchSettings ?? Settings,
             Weight: string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn,
+            MaxTrials: config.SearchMaxTrials,
             Preprocess: config.PreFeaturizer);
 
         SearchResult search;
@@ -736,7 +739,8 @@ public partial class AutoMLRunner
         };
     }
 
-    // The seed and threads the MLoop search runs with, recorded with the experiment (AutoMLResult.Search).
+    // The seed and threads the MLoop search runs with unless the run sets its own (TrainingConfig.SearchSettings);
+    // recorded with the experiment (AutoMLResult.Search).
     private static readonly SearchSettings Settings = new(Seed: 1, Threads: 1);
 
     // A fold's metrics: weighted by the run's weight column when it has one, as the test partition's are.
