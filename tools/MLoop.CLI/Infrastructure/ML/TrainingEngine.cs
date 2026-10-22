@@ -206,9 +206,11 @@ public class TrainingEngine : ITrainingEngine
                 // random partition happened to flatten it.
                 // A model that reads no feature columns (a series, matrix factorization, a deep-learning
                 // input) loses nothing to these exclusions, so they are made without being announced.
+                // The removal chain runs silent: the warning below is the one announcement, and the
+                // chain's own narration of the same columns printed each of them twice.
                 var readsFeatures = AutoMLRunner.ReadsFeatureColumns(config.Task);
                 var featureExclusions = CsvDataLoader.DetermineExcludedColumns(
-                    dataFilePath, config.LabelColumn, readsFeatures ? CoreNarration.Sink : null, config.ClaimedColumns);
+                    dataFilePath, config.LabelColumn, log: null, config.ClaimedColumns);
                 config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
 
                 // Which untyped string columns hold categories (one-hot) rather than language (text
@@ -233,7 +235,8 @@ public class TrainingEngine : ITrainingEngine
                 {
                     WarningConsole.Warn(
                         $"Excluded from features ({Markup.Escape(group.Key)}): " +
-                        Markup.Escape(string.Join(", ", group.Select(c => c.Name))));
+                        Markup.Escape(string.Join(", ", group.Select(c => c.Name))) +
+                        Markup.Escape(ExclusionReason(group.Key)));
                 }
 
                 // Capture input schema before training (using enhanced detection).
@@ -553,6 +556,20 @@ public class TrainingEngine : ITrainingEngine
     /// splitting again would discard its work. <c>TestSplit == 0</c> means the caller opted out of a
     /// holdout entirely and AutoML validates internally.
     /// </remarks>
+    /// <summary>
+    /// What an exclusion reason means to the person reading the warning — and, where there is one, what
+    /// to do about it. The markers are <see cref="SchemaDataTypes"/>' vocabulary.
+    /// </summary>
+    internal static string ExclusionReason(string marker) => marker switch
+    {
+        SchemaDataTypes.ExcludedIdentifier => " — a distinct value in every row",
+        SchemaDataTypes.ExcludedConstant => " — the same value in every row",
+        SchemaDataTypes.ExcludedSparse => " — mostly missing",
+        SchemaDataTypes.ExcludedDateTime => " — dates are not read as features; derive date parts with `mloop prep` if they matter",
+        SchemaDataTypes.ExcludedStructured => " — a list or record in every row; unpack it into rows or columns first",
+        _ => "",
+    };
+
     private static bool RequiresStratifiedSplit(TrainingConfig config) =>
         config.TestSplit > 0
         && string.IsNullOrEmpty(config.TestDataFile)

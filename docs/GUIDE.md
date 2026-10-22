@@ -236,8 +236,8 @@ regression; the experiment records `portable: true`.
 
 #### Which columns training drops, and how to change that
 
-Before column inference runs, four kinds of column are removed from the feature set. Each removal is
-reported as `Excluded from features (<reason>): <columns>` — as a warning on the terminal, and as a
+Before column inference runs, these kinds of column are removed from the feature set. Each removal is
+reported once, as `Excluded from features (<reason>): <columns> — <what that means>` — as a warning on the terminal, and as a
 `warning` event for a `--json` consumer — and recorded in the model's schema, so `predict` and
 `evaluate` drop exactly the same columns from the data you hand them later.
 
@@ -247,6 +247,7 @@ reported as `Excluded from features (<reason>): <columns>` — as a warning on t
 | `Sparse` | More than 90% of the values are missing | Nothing to learn from, and a wide sparse text column can exhaust memory |
 | `Constant` | Every non-missing value is the same | Zero predictive signal |
 | `Identifier` | A **text** column in which every row carries its own distinct, whitespace-free value — a customer id, an order number, a UUID | Pure noise as a feature, and a leak path whenever the id encodes something about the label |
+| `Structured` | Every value is a JSON list or object — what a Parquet or JSON list column becomes in a table | Structure to unpack into rows or columns before training, not one value |
 
 The identifier rule is deliberately narrow. Numeric columns are never identifiers (measurements are
 distinct per row too); a value containing whitespace, a single repeated value, or a missing value

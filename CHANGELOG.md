@@ -106,6 +106,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   answers are unchanged and another runtime's rounding keeps them. A threshold chosen before stays as written.
 - `mloop runtime install` and every runtime check counted native libraries of any version as installed. A runtime
   is installed only at the version this mloop needs; reinstalling over another version replaces its files.
+- **A multiclass file sorted by its class ids could fail at the end of training** with `Could not apply a map over
+  type 'String' to column 'class' since it has type 'Single'`. Each partition of the split typed the label from its
+  own first rows: the training partition, all class `0` there, read it as text; the test partition, reaching `1`
+  and `2`, as a number. Every load of a run — both partitions, `mloop evaluate`, `mloop predict` — now types the
+  label as the saved schema recorded it (`LabelKinds`).
+- **Each column dropped from the features was announced twice** during `mloop train`; it is announced once, with
+  what the reason means (`Excluded from features (Identifier): customerID — a distinct value in every row`).
 - **`mloop init .` replaced a project's own `mloop.yaml`, README and `.gitignore` with the template** — in a cloned
   repository, which carries those files but not the `.mloop/` marker, the first command run wiped the project's
   models, tasks and labels without a word. `init` now writes only files that are missing and lists the ones it kept;
