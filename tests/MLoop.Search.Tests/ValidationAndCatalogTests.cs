@@ -71,6 +71,35 @@ public sealed class ValidationAndCatalogTests
         Assert.Equal(score.FoldMetrics.Average(f => f["auc"]), score.Mean["auc"], 12);
         Assert.True(score.Mean["auc"] > 0.7, $"auc {score.Mean["auc"]}");
         Assert.True(score.StandardDeviation["auc"] >= 0);
+        Assert.Equal(score.StandardDeviation["auc"] / Math.Sqrt(5), score.StandardError!["auc"], 12);
+    }
+
+    /// <summary>
+    /// A holdout has no folds to spread over: its standard error is the spread of five equal slices of it over √5 —
+    /// so the search can tell a real lead from noise on large data too.
+    /// </summary>
+    [Fact]
+    public void AHoldoutsStandardError_IsTheSpreadOfItsSlices()
+    {
+        var ml = new MLContext(seed: 1);
+        var data = Data(ml, FoldPlan.HoldoutThreshold);
+        var plan = FoldPlan.For(data, "Label", stratify: true, seed: 4);
+        var candidate = CandidateCatalog.Binary().Single(c => c.Name == "LbfgsLogisticRegression");
+        var pipeline = candidate.Build(ml, candidate.Space.PointAt(candidate.Space.Default), new TrainerColumns("Label", "Features"), new SearchSettings());
+        var scoredRows = new List<int>();
+
+        var score = Validator.Validate(ml, data, plan, pipeline, scored =>
+        {
+            scoredRows.Add(scored.GetColumn<bool>("Label").Count());
+            return new Dictionary<string, double> { ["auc"] = ml.BinaryClassification.EvaluateNonCalibrated(scored).AreaUnderRocCurve };
+        });
+
+        Assert.True(score.IsHoldout);
+        Assert.Equal(1, score.Folds);
+        Assert.Equal(0, score.StandardDeviation["auc"]);
+        // The holdout once, then each of its five slices.
+        Assert.Equal([1500, 300, 300, 300, 300, 300], scoredRows);
+        Assert.InRange(score.StandardError!["auc"], 1e-6, 0.05);
     }
 
     [Fact]

@@ -37,6 +37,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- When the top trial's model is large — 100,000 tree leaves (trees × leaves) or more — the trainer search keeps
+  the smallest model within one standard error of its score (the one-standard-error rule). Measured on a 43,000-row
+  regression: a forest of 1,135 trees of 1,510 leaves led one of 27 trees of 252 leaves by 0.006 R², inside its
+  holdout's standard error; it was a 193 MB `model.zip` whose save took 10 s and ran a 60 s budget to 79 s. Now 1.0 MB, 62 s, R² 0.9677
+  → 0.9645. The run says which trial it kept over which; that trial carries `"selected": true` in `trials.ndjson`
+  and `leaderboard.json` (ranked by score as before), and `mloop list --trials` marks it `(model)`. A holdout's
+  standard error is the spread of five slices of it.
+- The search reserves the refit's time by the share of rows a trial fitted on — for a large dataset's holdout,
+  nine tenths — where it reserved one fold-fit's time, so a refit on all the rows no longer runs past the budget.
 - The trainer search one-hot encodes categorical columns and no longer also tries each trainer with its categories
   hashed (`OneHotHashEncoding`, 2¹⁶ slots) — a schema is a trainer, so a budget runs about twice the trials per
   trainer. The hashed vector is never the narrower one for a column MLoop calls a category, and on a 500-value

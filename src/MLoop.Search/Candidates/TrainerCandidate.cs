@@ -26,4 +26,22 @@ public sealed record TrainerCandidate(
     string Name,
     SearchSpace Space,
     double InitialCost,
-    Func<MLContext, SearchPoint, TrainerColumns, SearchSettings, IEstimator<ITransformer>> Build);
+    Func<MLContext, SearchPoint, TrainerColumns, SearchSettings, IEstimator<ITransformer>> Build)
+{
+    /// <summary>
+    /// The size of the model a point of a space builds, read from the point alone: trees × leaves for a tree
+    /// ensemble, 1 for a linear model. What a larger model costs is time to fit, save, load and score, and room
+    /// on disk — a forest of a thousand trees of a thousand leaves is a model.zip of hundreds of megabytes.
+    /// </summary>
+    public static double ModelSize(SearchPoint point)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+        double size = 1;
+        foreach (var dimension in point.Space.Dimensions)
+        {
+            if (dimension.Name is "NumberOfTrees" or "NumberOfLeaves")
+                size *= point.Int(dimension.Name);
+        }
+        return size;
+    }
+}

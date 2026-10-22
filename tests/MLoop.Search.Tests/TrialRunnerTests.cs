@@ -283,4 +283,44 @@ public sealed class TrialRunnerTests
             cts.Cancel();
         }
     }
+
+    /// <summary>
+    /// The one-standard-error rule, from a large top model: the smallest model within the margin is kept, the better
+    /// score between two of one size. Under the size it starts at, or without a margin, the top trial stands.
+    /// </summary>
+    [Fact]
+    public void ALargeTopModel_GivesWayToTheSmallestWithinOneStandardError()
+    {
+        var auc = new Auc();
+        var big = TrialRunner.LargeModelSize;
+        (double, double)[] trials = [(0.80, 16), (0.952, 2 * big), (0.948, 40), (0.949, 40), (0.930, 1)];
+
+        Assert.Equal(3, TrialRunner.Choose(trials, top: 1, margin: 0.005, auc));   // 0.949 and 0.948 both inside; 40 < 2·big, the better of the two
+        Assert.Equal(1, TrialRunner.Choose(trials, top: 1, margin: 0, auc));       // no margin, no other trial inside
+        (double, double)[] small = [(0.952, big - 1), (0.951, 1)];
+        Assert.Equal(0, TrialRunner.Choose(small, top: 0, margin: 0.005, auc));    // a top model under the size stands
+    }
+
+    [Fact]
+    public void ForALowerIsBetterMetric_TheMarginIsAbove()
+    {
+        var rmse = new Auc("rmse", HigherIsBetter: false);
+        (double, double)[] trials = [(1.00, 3 * TrialRunner.LargeModelSize), (1.04, 10), (1.20, 1)];
+
+        Assert.Equal(1, TrialRunner.Choose(trials, top: 0, margin: 0.05, rmse));
+    }
+
+    [Fact]
+    public void AModelsSize_IsTreesTimesLeaves_AndOneForALinearModel()
+    {
+        var forest = CandidateCatalog.Binary().Single(c => c.Name == "FastForest");
+        var linear = CandidateCatalog.Binary().Single(c => c.Name == "LbfgsLogisticRegression");
+
+        Assert.Equal(16, TrainerCandidate.ModelSize(forest.Space.PointAt(forest.Space.Default)));   // 4 trees × 4 leaves
+        Assert.Equal(1, TrainerCandidate.ModelSize(linear.Space.PointAt(linear.Space.Default)));
+    }
+
+    private static double Size(TrialResult trial) => trial.Parameters!
+        .Where(p => p.Key is "NumberOfTrees" or "NumberOfLeaves")
+        .Aggregate(1.0, (size, p) => size * double.Parse(p.Value, System.Globalization.CultureInfo.InvariantCulture));
 }

@@ -58,6 +58,25 @@ public sealed class TrialRecord
     /// <summary>Why the trial failed; absent when it scored. A failed trial has no <see cref="Metrics"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Error { get; init; }
+
+    /// <summary>
+    /// True on the trial the experiment's model was refit from, when that is not simply the highest-scoring one
+    /// — MLoop's search keeps the smallest model within one standard error of the top score. Absent elsewhere.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Selected { get; init; }
+
+    /// <summary>This record, marked <see cref="Selected"/>.</summary>
+    public TrialRecord AsSelected() => new()
+    {
+        TrialNumber = TrialNumber,
+        Trainer = Trainer,
+        Metrics = Metrics,
+        RuntimeSeconds = RuntimeSeconds,
+        Validation = Validation,
+        Error = Error,
+        Selected = true,
+    };
 }
 
 /// <summary>A trial's validation over folds: how many, and each metric's standard deviation across them.</summary>

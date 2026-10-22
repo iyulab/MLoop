@@ -34,18 +34,24 @@ public sealed record SearchRequest(
 
 /// <summary>A finished search: every trial, the best, and the best refit on the whole partition.</summary>
 /// <param name="Trials">Every trial in the order it finished, failures included.</param>
-/// <param name="Best">The best trial by the metric.</param>
+/// <param name="Best">
+/// The trial the model is refit from: the highest-scoring (<see cref="TopScoring"/>) — or, when its model is at least
+/// <see cref="TrialRunner.LargeModelSize"/>, the smallest model (<see cref="TrainerCandidate.ModelSize"/>) within one
+/// standard error of its score.
+/// </param>
 /// <param name="BestValidation">The best trial's fold scores.</param>
 /// <param name="Model">The best pipeline refit on the whole training partition — or, when that refit failed, its first fold's model.</param>
 /// <param name="FallbackReason">Why <see cref="Model"/> is a fold's model, or <see langword="null"/>.</param>
 /// <param name="Folds">How the partition was validated.</param>
+/// <param name="TopScoring">The trial with the highest score — <see cref="Best"/> itself unless a smaller model scored within its standard error.</param>
 public sealed record SearchResult(
     IReadOnlyList<TrialResult> Trials,
     TrialResult Best,
     ValidationScore BestValidation,
     ITransformer Model,
     string? FallbackReason,
-    FoldPlan Folds);
+    FoldPlan Folds,
+    TrialResult TopScoring);
 
 /// <summary>No trial of a search produced a score. <see cref="Trials"/> says why each failed.</summary>
 public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, string message) : Exception(message)
@@ -62,8 +68,15 @@ public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, str
 /// <remarks>
 /// <list type="bullet">
 /// <item><b>The first trial always finishes</b>, whatever the budget — a search returns a model.</item>
+/// <item><b>A large top model gives way to the smallest model within one standard error of its score</b> — the
+/// one-standard-error rule of model selection, applied from <see cref="LargeModelSize"/>. Two trials inside that margin cannot be told apart on these rows,
+/// and the larger model costs time to fit, save, load and score: measured, a forest of 1,135 trees of 1,510 leaves
+/// (a 193 MB model) led one of 27 trees of 252 leaves (1 MB) by 0.006 R², inside its holdout's standard error.
+/// Size is read from the trial's settings (<see cref="TrainerCandidate.ModelSize"/>), so the choice depends on
+/// the trials alone, never on the clock.</item>
 /// <item><b>The refit is budgeted</b>: the search stops starting trials once the time left is what refitting
-/// the best is expected to take (its mean fold fit × folds ⁄ (folds − 1)), and a trial still running at that
+/// the chosen trial is expected to take (its fit on one fold's training rows × the share those rows are of the
+/// partition — parts ⁄ (parts − 1), for folds and holdout alike), and a trial still running at that
 /// point stops inside its fit and is dropped — it is neither a result nor a failure.</item>
 /// <item><b>A trial that cannot finish is not started.</b> Past the first success, a schema whose last trial
 /// took longer than the time left before the refit is not proposed — the tuner grows a schema's settings
@@ -81,6 +94,15 @@ public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, str
 /// </remarks>
 public sealed class TrialRunner
 {
+    /// <summary>
+    /// The model size (<see cref="TrainerCandidate.ModelSize"/>, trees × leaves) from which the search keeps a smaller
+    /// model within one standard error of the top score. Below it a model is a few megabytes at most and costs
+    /// nothing worth a point of score; above it — a hundred thousand leaves — it is tens to hundreds of megabytes,
+    /// seconds to save and load, and its save spills past the time budget. Measured on twelve sets: where the top
+    /// model was smaller, keeping a smaller one still lost up to 0.03 of score for no saving.
+    /// </summary>
+    public const double LargeModelSize = 100_000;
+
     private readonly SearchRequest _request;
     private readonly ITrialSink? _sink;
 
@@ -109,12 +131,13 @@ public sealed class TrialRunner
 
         var trials = new List<TrialResult>();
         var lastSeconds = new Dictionary<string, double>(StringComparer.Ordinal);
-        (TrialResult Trial, double Value, ValidationScore Score, IEstimator<ITransformer> Pipeline, MLContext Context, double FitSeconds)? best = null;
+        var scored = new List<Scored>();
+        Scored? best = null;     // the highest score so far
 
         for (var trialId = 0; ; trialId++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var reserve = best is { } b ? b.FitSeconds * plan.Folds / Math.Max(plan.Folds - 1, 1) : 0;
+            var reserve = best is null ? 0 : Choose(scored, best).FitSeconds * plan.Parts / Math.Max(plan.Parts - 1, 1);
             var deadline = _request.Budget.TotalSeconds - reserve;
             if (best is not null && clock.Elapsed.TotalSeconds >= deadline)
                 break;
@@ -166,8 +189,10 @@ public sealed class TrialRunner
                     var loss = _request.Metric.HigherIsBetter ? -value : value;
                     tuners[schemaId].Update(trialId, point, loss, schema.Candidate.InitialCost);
                     proposer.Update(schemaId, loss, schema.Candidate.InitialCost);
-                    if (best is null || _request.Metric.IsBetter(value, best.Value.Value))
-                        best = (trial, value, score, pipeline, trialContext, seconds / plan.Folds);
+                    var entry = new Scored(trial, value, score, pipeline, trialContext, seconds / plan.Folds, TrainerCandidate.ModelSize(point));
+                    scored.Add(entry);
+                    if (best is null || _request.Metric.IsBetter(value, best.Value))
+                        best = entry;
                 }
                 else
                 {
@@ -198,7 +223,7 @@ public sealed class TrialRunner
             }
         }
 
-        if (best is not { } winner)
+        if (best is not { } top)
         {
             throw new SearchFailedException(trials,
                 $"No trial produced a score in {_request.Budget.TotalSeconds:0} s ({trials.Count} tried): "
@@ -206,6 +231,7 @@ public sealed class TrialRunner
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        var winner = Choose(scored, top);
         string? fallback = null;
         ITransformer model;
         // The caller's cancellation stops the refit too; the budget does not — the refit was reserved for.
@@ -221,7 +247,37 @@ public sealed class TrialRunner
             var view = new HoldoutView(train, plan.FoldOf, plan.Validated[0]);
             model = winner.Pipeline.Fit(new MLContext(settings.Seed).Data.FilterRowsByColumn(view, HoldoutView.ColumnName, 0, 0.5));
         }
-        return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan);
+        return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial);
+    }
+
+    private sealed record Scored(
+        TrialResult Trial, double Value, ValidationScore Score, IEstimator<ITransformer> Pipeline, MLContext Context, double FitSeconds, double Size);
+
+    private Scored Choose(List<Scored> scored, Scored top)
+    {
+        var margin = top.Score.StandardError is { } errors && errors.TryGetValue(_request.Metric.Name, out var se) && double.IsFinite(se) ? se : 0;
+        return scored[Choose([.. scored.Select(t => (t.Value, t.Size))], scored.IndexOf(top), margin, _request.Metric)];
+    }
+
+    /// <summary>
+    /// The trial kept: when the top-scoring trial's model is at least <see cref="LargeModelSize"/>, the smallest model
+    /// within <paramref name="margin"/> of its score — the better score, then the earlier trial, between two of one
+    /// size; otherwise the top trial itself.
+    /// </summary>
+    internal static int Choose(IReadOnlyList<(double Value, double Size)> trials, int top, double margin, IMetricPolicy metric)
+    {
+        if (trials[top].Size < LargeModelSize)
+            return top;
+        var floor = metric.HigherIsBetter ? trials[top].Value - margin : trials[top].Value + margin;
+        var chosen = top;
+        for (var i = 0; i < trials.Count; i++)
+        {
+            var (value, size) = trials[i];
+            var inside = metric.HigherIsBetter ? value >= floor : value <= floor;
+            if (inside && (size < trials[chosen].Size || (size == trials[chosen].Size && metric.IsBetter(value, trials[chosen].Value))))
+                chosen = i;
+        }
+        return chosen;
     }
 
     private static IReadOnlyList<KeyValuePair<string, string>> Parameters(SearchPoint point)

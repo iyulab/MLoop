@@ -577,6 +577,21 @@ public partial class AutoMLRunner
             throw new NoSuccessfulTrialException(config.TimeLimitSeconds, ex);
         }
 
+        // The model is the smallest within one standard error of the top score (TrialRunner); when that is not the
+        // top-scoring trial, say so here and mark it in the trial records, where the leaderboard ranks by score.
+        var records = channel.Records;
+        if (!ReferenceEquals(search.Best, search.TopScoring))
+        {
+            var selected = IndexOf(search.Trials, search.Best);
+            if (selected >= 0 && selected < records.Count)
+                records = [.. records.Select((r, i) => i == selected ? r.AsSelected() : r)];
+            search.TopScoring.Metrics!.TryGetValue(metric, out var topValue);
+            search.Best.Metrics!.TryGetValue(metric, out var keptValue);
+            _logger.Info($"Kept {search.Best.Trainer} ({metric} {keptValue:0.####}, model size {TrainerSize(search.Best)}) over " +
+                $"{search.TopScoring.Trainer} ({topValue:0.####}, size {TrainerSize(search.TopScoring)}): within one standard error " +
+                "of the top score, the smaller model.");
+        }
+
         var bestModel = PortableTextFeaturizer.Prepend(portableText, search.Model);
         var predictions = bestModel.Transform(testSet);
         var (model, metrics, residualModel) = finish is null
@@ -595,7 +610,7 @@ public partial class AutoMLRunner
             Metrics = metrics,
             ResidualModel = residualModel,
             RowCount = RowsIn(trainSet),
-            Trials = [.. channel.Records],
+            Trials = records,
             RankingMetric = metric,
             Search = request.Settings
         };
@@ -619,6 +634,26 @@ public partial class AutoMLRunner
         if (!string.IsNullOrEmpty(config.WeightColumn))
             OverlayWeighted(metrics, scored, config.Task, config.LabelColumn, config.WeightColumn);
         return metrics;
+    }
+
+    private static int IndexOf(IReadOnlyList<TrialResult> trials, TrialResult trial)
+    {
+        for (var i = 0; i < trials.Count; i++)
+            if (ReferenceEquals(trials[i], trial))
+                return i;
+        return -1;
+    }
+
+    // Trees × leaves from a trial's settings, as TrainerCandidate.ModelSize reads them from its point.
+    private static string TrainerSize(TrialResult trial)
+    {
+        double size = 1;
+        foreach (var (name, value) in trial.Parameters ?? [])
+        {
+            if (name is "NumberOfTrees" or "NumberOfLeaves" && double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var n))
+                size *= n;
+        }
+        return size.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // A binary model's metrics on scored rows and, where it gives probabilities, their calibration error.

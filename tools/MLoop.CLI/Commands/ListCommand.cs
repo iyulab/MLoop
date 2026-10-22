@@ -141,6 +141,8 @@ public static class ListCommand
 
             var rank = 0;
             var trialNotes = new List<string>();
+            // The model is rank 1 unless the search kept a smaller model within the top score's standard error.
+            var selected = leaderboard.Trials.FirstOrDefault(t => t.Selected) ?? leaderboard.Trials.FirstOrDefault(t => t.Error is null);
             foreach (var trial in leaderboard.Trials)
             {
                 rank++;
@@ -149,7 +151,7 @@ public static class ListCommand
                     : leaderboard.Metric != null && trial.Metrics.TryGetValue(leaderboard.Metric, out var v)
                     ? v.ToString("F4")
                     : "[grey]-[/]";
-                var rankDisplay = rank == 1 ? "[green bold]1[/]" : rank.ToString();
+                var rankDisplay = ReferenceEquals(trial, selected) ? $"[green bold]{rank}[/]" : rank.ToString();
 
                 var note = TrainerDisplay.Footnote($"[{rank}]", trial.Trainer, trial.Error);
                 if (note != null)
@@ -157,7 +159,7 @@ public static class ListCommand
 
                 table.AddRow(
                     rankDisplay,
-                    $"[cyan]{Markup.Escape(TrainerDisplay.Short(trial.Trainer))}[/]",
+                    $"[cyan]{Markup.Escape(TrainerDisplay.Short(trial.Trainer))}[/]" + (ReferenceEquals(trial, selected) && trial.Selected ? " [green](model)[/]" : ""),
                     metricDisplay,
                     $"{trial.RuntimeSeconds:F1}s");
             }
@@ -166,6 +168,8 @@ public static class ListCommand
             WriteTrainerNotes(trialNotes);
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine($"[grey]{leaderboard.TrialCount} trial(s)[/]");
+            if (selected is { Selected: true })
+                AnsiConsole.MarkupLine("[grey](model) — the smallest model within one standard error of the top score; the one the experiment kept.[/]");
             AnsiConsole.WriteLine();
 
             return 0;

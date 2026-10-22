@@ -226,7 +226,13 @@ regression; the experiment records `portable: true`.
   expected calibration error of the model's probabilities (ten bins; 0 = a stated 0.8 is right 80% of
   the time) — read it before using a confidence as a threshold. It is reported, never optimized, and
   absent for a model without probabilities.
-- `trials.ndjson`, `leaderboard.json` — every trial the search completed, in completion order and ranked
+- `trials.ndjson`, `leaderboard.json` — every trial the search completed, in completion order and ranked.
+  The model is not always the top-ranked trial: when the top trial's model is large (100,000 tree leaves or
+  more — tens of megabytes), the search keeps the smallest model within one standard error of its score
+  (across folds, or across slices of a large dataset's holdout) — trees × leaves, a linear model being the
+  smallest — since two trials inside that margin cannot be told apart and the larger one costs time to save,
+  load and score, and disk. That trial carries
+  `"selected": true`, `mloop list --trials <exp-id>` marks it `(model)`, and the run says which it kept over which
 - `report.md` — the experiment as a page: result, metrics, ranked trials, and each column's role (with
   the reason for any exclusion). A rendering of the files above for reading and sharing; no command
   reads it back
