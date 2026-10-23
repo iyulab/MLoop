@@ -20,6 +20,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Text classification (NAS-BERT) reported the network's logits as class probabilities: `probabilities` held negative
+  values that did not sum to one, `confidence` was near 0 for a confident answer, and the log loss recorded at training
+  and by `mloop evaluate` was meaningless (15.7 at accuracy 1.0). A classifier that scores with logits now answers in
+  probabilities (softmax) on every path — predict, serve, evaluate, training's metrics, calibration. Experiments trained
+  earlier keep the log loss they recorded; `mloop evaluate` gives the right one.
+- Text tasks on macOS failed to load TorchSharp's library ("Library not loaded: @rpath/libtorch.dylib"): the macOS
+  runtime did not preload `libtorch.dylib`. It does now.
+
 - **Image classification could not train on Linux or macOS**: it failed with "Tensorflow exception triggered while
   loading model". The runtime's libraries were preloaded from `~/.mloop/runtimes` by their full path, but a P/Invoke
   asks for `tensorflow` by name, and outside Windows nothing pointed the loader at that directory (an

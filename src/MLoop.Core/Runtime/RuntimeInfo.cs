@@ -54,8 +54,10 @@ public static class RuntimeRegistry
         {
             ["win-x64"] = ["torch_cpu.dll", "c10.dll", "torch.dll"],
             ["linux-x64"] = ["libtorch_cpu.so", "libc10.so", "libtorch.so"],
-            ["osx-x64"] = ["libtorch_cpu.dylib", "libc10.dylib"],
-            ["osx-arm64"] = ["libtorch_cpu.dylib", "libc10.dylib"]
+            // libtorch.dylib too: TorchSharp's wrapper links @rpath/libtorch.dylib, and on macOS only a library already
+            // loaded under that name satisfies it — without it text tasks failed with "Library not loaded".
+            ["osx-x64"] = ["libc10.dylib", "libtorch_cpu.dylib", "libtorch.dylib"],
+            ["osx-arm64"] = ["libc10.dylib", "libtorch_cpu.dylib", "libtorch.dylib"]
         },
         NativeSearchPaths = new Dictionary<string, string>
         {

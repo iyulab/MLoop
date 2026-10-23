@@ -10,7 +10,8 @@ namespace MLoop.Core.Models;
 /// </summary>
 /// <remarks>
 /// Loading a model to score is several things, not one: the native runtime a deep-learning task needs
-/// has to be present before deserialization; the probability calibration and the decision threshold
+/// has to be present before deserialization; a classifier that scores with logits has them turned into class
+/// probabilities (<see cref="ClassScores"/>); the probability calibration and the decision threshold
 /// beside the model (<see cref="ProbabilityCalibration"/>, <see cref="DecisionThreshold"/>) have to
 /// be applied, in that order; and a regression model may carry a σ-model
 /// sibling (<see cref="ExperimentLayout.ResidualModelFileName"/>) that widens its band per row. Each
@@ -39,7 +40,9 @@ public static class ScoringModel
         ArgumentNullException.ThrowIfNull(mlContext);
         if (!string.IsNullOrWhiteSpace(task))
             RuntimeManager.EnsureRuntimeForTask(task);
-        var model = mlContext.Model.Load(modelPath, out inputSchema);
+        // A classifier that scores with logits answers in probabilities first, whatever the layers: they are what the
+        // model means, and a calibration — fitted with no layers — reads them.
+        var model = ClassScores.AsProbabilities(mlContext, mlContext.Model.Load(modelPath, out inputSchema));
         if (layers.HasFlag(ScoringLayers.Calibration))
             model = ProbabilityCalibration.ApplyBeside(mlContext, model, modelPath);
         if (layers.HasFlag(ScoringLayers.DecisionThreshold))

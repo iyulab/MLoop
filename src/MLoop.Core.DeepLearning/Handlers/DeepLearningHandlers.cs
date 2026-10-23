@@ -102,7 +102,9 @@ internal static class DeepLearningHandlers
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Text classification (NAS-BERT)", log))
                 model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
-            var predictions = model.Transform(testSet);
+            // Scored as every prediction path scores it: the classifier's logits as probabilities (ClassScores) — the
+            // evaluator's log loss reads them as probabilities.
+            var predictions = MLoop.Core.Models.ClassScores.AsProbabilities(mlContext, model).Transform(testSet);
             var metrics = mlContext.MulticlassClassification.Evaluate(predictions, labelColumnName: "Label");
 
             var metricsDict = new Dictionary<string, double>

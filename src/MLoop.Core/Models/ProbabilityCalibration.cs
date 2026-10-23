@@ -107,7 +107,7 @@ public sealed record ProbabilityCalibration(
     {
         ArgumentNullException.ThrowIfNull(mlContext);
         if (IsMulticlass)
-            return new TemperedModel(mlContext, model, this);
+            return ScoreMapping.Apply(mlContext, model, scores => Temper(scores));
         var step = mlContext.Transforms.CustomMapping<ProbabilityInput, CalibratedOutput>(
                 (input, output) =>
                 {
@@ -320,92 +320,6 @@ public sealed record ProbabilityCalibration(
             rows.Add((scores.DenseValues().ToArray(), (int)labelKey - 1, w));
         }
         return rows;
-    }
-
-    // The model followed by the tempering step. The step's Score width and annotations come from the
-    // model's output on the schema it is actually given — a saved model need not carry its input
-    // schema — so the chain is built on first use for a schema and kept for it. Never saved: the
-    // calibration lives in its own file, beside the model.
-    private sealed class TemperedModel(MLContext mlContext, ITransformer model, ProbabilityCalibration calibration) : ITransformer
-    {
-        private readonly object _gate = new();
-        private (DataViewSchema Schema, ITransformer Chain)? _built;
-
-        public bool IsRowToRowMapper => model.IsRowToRowMapper;
-
-        public DataViewSchema GetOutputSchema(DataViewSchema inputSchema) => ChainFor(inputSchema).GetOutputSchema(inputSchema);
-
-        public IRowToRowMapper GetRowToRowMapper(DataViewSchema inputSchema) => ChainFor(inputSchema).GetRowToRowMapper(inputSchema);
-
-        public IDataView Transform(IDataView input) => ChainFor(input.Schema).Transform(input);
-
-        void ICanSaveModel.Save(ModelSaveContext ctx) =>
-            throw new NotSupportedException("A calibrated model is saved as the model and its calibration file, not as one model.");
-
-        private ITransformer ChainFor(DataViewSchema schema)
-        {
-            lock (_gate)
-            {
-                if (_built is { } built && ReferenceEquals(built.Schema, schema))
-                    return built.Chain;
-                var chain = calibration.ApplyTemperature(mlContext, model, schema);
-                _built = (schema, chain);
-                return chain;
-            }
-        }
-    }
-
-    // Replaces Score with the tempered probabilities. The new column carries the old one's class-name
-    // annotations (SlotNames, TrainingLabelValues): MulticlassScoreVocabulary names the classes from
-    // them, and a replacement without them would leave every probability keyed by position.
-    private ITransformer ApplyTemperature(MLContext mlContext, ITransformer model, DataViewSchema inputSchema)
-    {
-        var score = model.GetOutputSchema(inputSchema).GetColumnOrNull("Score");
-        if (score?.Type is not VectorDataViewType { Size: > 0 } vector || vector.ItemType != NumberDataViewType.Single)
-            return model;
-        var width = vector.Size;
-
-        var input = SchemaDefinition.Create(typeof(ScoreVector));
-        input["Score"].ColumnType = new VectorDataViewType(NumberDataViewType.Single, width);
-        var output = SchemaDefinition.Create(typeof(ScoreVector));
-        output["Score"].ColumnType = new VectorDataViewType(NumberDataViewType.Single, width);
-        foreach (var annotation in score.Value.Annotations.Schema)
-            CopyAnnotation(score.Value, annotation, output["Score"]);
-
-        var step = mlContext.Transforms.CustomMapping<ScoreVector, ScoreVector>(
-                (row, tempered) => tempered.Score = Temper(row.Score),
-                contractName: null, inputSchemaDefinition: input, outputSchemaDefinition: output)
-            .Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<ScoreVector>(), input));
-        return new TransformerChain<ITransformer>(model, step);
-    }
-
-    private static void CopyAnnotation(DataViewSchema.Column source, DataViewSchema.Column annotation, SchemaDefinition.Column target)
-    {
-        switch (annotation.Type)
-        {
-            case VectorDataViewType { ItemType: TextDataViewType }:
-                {
-                    VBuffer<ReadOnlyMemory<char>> value = default;
-                    source.Annotations.GetValue(annotation.Name, ref value);
-                    target.AddAnnotation(annotation.Name, value, annotation.Type);
-                    break;
-                }
-            case VectorDataViewType { ItemType: NumberDataViewType n } when n == NumberDataViewType.Single:
-                {
-                    VBuffer<float> value = default;
-                    source.Annotations.GetValue(annotation.Name, ref value);
-                    target.AddAnnotation(annotation.Name, value, annotation.Type);
-                    break;
-                }
-                // Other annotations (score kind, column set) describe the trainer's output; the vocabulary
-                // does not read them, and a scored column without them still scores.
-        }
-    }
-
-    /// <summary>The class probabilities temperature reads and writes.</summary>
-    public sealed class ScoreVector
-    {
-        public float[] Score { get; set; } = [];
     }
 
     private static double Logit(double p)
