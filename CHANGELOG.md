@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-10-23
+
 ### Added
 
 - `mloop embed <images…> [--encoder <id>] [--json]` and `POST /embed`: one L2-normalised vector per image from a
