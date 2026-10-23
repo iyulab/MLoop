@@ -14,6 +14,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The TensorFlow runtime (`mloop runtime install tf`, image classification) listed macOS and a Linux package that do
+  not exist: TensorFlow's redistributable 2.16.0 carries Windows and Linux x64 libraries only, and the GPU package
+  named for Linux has no 2.16.0. On macOS the install downloaded 182 MB, left 656 MB of other platforms' files behind
+  and ended in a stack trace; on Linux it could not download at all. The runtime now lists the platforms its package
+  has (Linux uses the same package, with `libtensorflow_framework.so.2`), an install that finds no library for the
+  platform removes what it unpacked, `mloop runtime install` reports a failure as a message, `mloop runtime list` says
+  "Not available for <platform>" (and `available` in `--json`), and a task whose runtime has no build for the platform
+  says so instead of suggesting an install.
+
 - `mloop embed` and `POST /embed` read an image with transparency premultiplied: every translucent pixel was darkened
   by its own alpha, so the vector differed from the one the encoder's own image processor gives (cosine 0.965 on a
   screenshot with a translucent layer). Images are now decoded unpremultiplied and the alpha dropped, as converting to

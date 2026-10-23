@@ -50,6 +50,23 @@ public class RuntimeCommandJsonTests
         }
     }
 
+    // Whether a runtime can be installed on this machine is the registry's answer for this platform — said in the list,
+    // so a runtime whose package has nothing for this platform does not read as one install away.
+    [Fact]
+    public async Task Runtime_List_Json_SaysWhichRuntimesCanBeInstalledHere()
+    {
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("runtime", "list", "--json");
+
+        Assert.Equal(0, exitCode);
+        var rid = MLoop.Core.Runtime.PlatformDetector.GetRuntimeIdentifier();
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        foreach (var runtime in doc.RootElement.GetProperty("runtimes").EnumerateArray())
+        {
+            var definition = MLoop.Core.Runtime.RuntimeRegistry.GetById(runtime.GetProperty("id").GetString()!)!;
+            Assert.Equal(definition.NuGetPackages.ContainsKey(rid), runtime.GetProperty("available").GetBoolean());
+        }
+    }
+
     [Fact]
     public async Task Runtime_List_Human_StillRendersTable()
     {

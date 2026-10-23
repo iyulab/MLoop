@@ -13,27 +13,23 @@ public static class RuntimeRegistry
         Id = "tf",
         DisplayName = "TensorFlow CPU",
         Description = "TensorFlow native runtime for image classification",
+        // What SciSharp.TensorFlow.Redist 2.16.0 actually carries: Windows and Linux x64 only — its osx-x64 folder is
+        // an empty placeholder and there is no osx-arm64 one. (The GPU package once named for Linux has no 2.16.0.)
         NuGetPackages = new Dictionary<string, string>
         {
             ["win-x64"] = "SciSharp.TensorFlow.Redist",
-            ["linux-x64"] = "SciSharp.TensorFlow.Redist-Linux-Gpu",
-            ["osx-x64"] = "SciSharp.TensorFlow.Redist",
-            ["osx-arm64"] = "SciSharp.TensorFlow.Redist"
+            ["linux-x64"] = "SciSharp.TensorFlow.Redist",
         },
         Version = "2.16.0",
         NativeLibraries = new Dictionary<string, string[]>
         {
             ["win-x64"] = ["tensorflow.dll"],
-            ["linux-x64"] = ["libtensorflow.so", "libtensorflow_framework.so"],
-            ["osx-x64"] = ["libtensorflow.dylib", "libtensorflow_framework.dylib"],
-            ["osx-arm64"] = ["libtensorflow.dylib", "libtensorflow_framework.dylib"]
+            ["linux-x64"] = ["libtensorflow.so", "libtensorflow_framework.so.2"],
         },
         NativeSearchPaths = new Dictionary<string, string>
         {
             ["win-x64"] = "runtimes/win-x64/native",
             ["linux-x64"] = "runtimes/linux-x64/native",
-            ["osx-x64"] = "runtimes/osx-x64/native",
-            ["osx-arm64"] = "runtimes/osx-arm64/native"
         },
         ApproximateSizeMB = 182,
         RequiredByTasks = ["image-classification"]

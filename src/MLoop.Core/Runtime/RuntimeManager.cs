@@ -91,7 +91,8 @@ public class RuntimeManager
             InstalledVersion = HasNativeLibraries(runtime, rid) ? InstalledVersion(runtime, rid) : null,
             Path = runtimeDir,
             SizeBytes = sizeBytes,
-            RuntimeIdentifier = rid
+            RuntimeIdentifier = rid,
+            Available = runtime.NuGetPackages.ContainsKey(rid)
         };
     }
 
@@ -182,7 +183,14 @@ public class RuntimeManager
             }
 
             if (!HasNativeLibraries(runtime, rid))
-                throw new InvalidOperationException($"Installation verification failed. Expected native libraries not found in {runtimeDir}");
+            {
+                // Nothing is installed, and nothing of what was unpacked is kept: the fallback above extracts the whole
+                // package, which for a multi-platform redistributable is hundreds of megabytes of other platforms' files.
+                Directory.Delete(runtimeDir, recursive: true);
+                throw new InvalidOperationException(
+                    $"{runtime.DisplayName} {runtime.Version} does not carry the native libraries for {rid} " +
+                    $"({string.Join(", ", runtime.NativeLibraries.GetValueOrDefault(rid, []))}); nothing was installed.");
+            }
 
             // Write manifest
             var manifest = $"{runtime.Id}\n{runtime.Version}\n{rid}\n{DateTime.UtcNow:O}";
@@ -254,7 +262,8 @@ public class RuntimeManager
     /// time, since ML.NET resolves the native library while reconstructing the model.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// The task requires a runtime that is not yet installed (includes an install hint).
+    /// The task requires a runtime that is not yet installed (includes an install hint), or one with no build for this
+    /// platform (names the platforms it has).
     /// </exception>
     public static void EnsureRuntimeForTask(string taskType)
     {
@@ -264,6 +273,12 @@ public class RuntimeManager
         var runtime = RuntimeRegistry.GetRequiredByTask(taskType);
         if (runtime == null)
             return;
+
+        var rid = PlatformDetector.GetRuntimeIdentifier();
+        if (!runtime.NuGetPackages.ContainsKey(rid))
+            throw new InvalidOperationException(
+                $"Task '{taskType}' needs {runtime.DisplayName}, which has no build for {rid}; " +
+                $"it runs on {string.Join(", ", runtime.NuGetPackages.Keys)}.");
 
         var manager = new RuntimeManager();
         if (!manager.IsInstalled(runtime))
@@ -442,6 +457,9 @@ public class RuntimeStatus
     public required string Path { get; init; }
     public required long SizeBytes { get; init; }
     public required string RuntimeIdentifier { get; init; }
+
+    /// <summary>Whether the runtime has a package for <see cref="RuntimeIdentifier"/> — whether it can be installed here.</summary>
+    public bool Available { get; init; } = true;
 }
 
 public class RuntimeDownloadProgress

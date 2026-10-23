@@ -56,6 +56,8 @@ public static class RuntimeCommand
             {
                 var statusText = status.Installed
                     ? "[green]Installed[/]"
+                    : !status.Available
+                        ? $"[dim]Not available for {Markup.Escape(status.RuntimeIdentifier)}[/]"
                     : status.NeedsReinstall
                         ? $"[yellow]{Markup.Escape(status.InstalledVersion!)} on disk, needs {Markup.Escape(runtime.Version)} — run install again[/]"
                         : $"[dim]Not installed (~{runtime.ApproximateSizeMB}MB)[/]";
@@ -83,6 +85,7 @@ public static class RuntimeCommand
                         s.Runtime.Id,
                         s.Runtime.DisplayName,
                         s.Status.Installed,
+                        s.Status.Available,
                         s.Status.InstalledVersion,
                         RequiredVersion = s.Runtime.Version,
                         SizeBytes = s.Status.Installed ? s.Status.SizeBytes : (long?)null,
@@ -142,44 +145,52 @@ public static class RuntimeCommand
                 return 0;
             }
 
-            if (quiet)
+            try
             {
-                var progress = new Progress<RuntimeDownloadProgress>(p =>
+                if (quiet)
                 {
-                    if (p.Phase == DownloadPhase.Complete)
-                        Console.WriteLine(p.Message);
-                });
-                await manager.InstallAsync(runtime, progress);
-            }
-            else
-            {
-                await AnsiConsole.Progress()
-                    .AutoClear(false)
-                    .Columns(
-                        new TaskDescriptionColumn(),
-                        new ProgressBarColumn(),
-                        new PercentageColumn(),
-                        new SpinnerColumn())
-                    .StartAsync(async ctx =>
+                    var progress = new Progress<RuntimeDownloadProgress>(p =>
                     {
-                        var task = ctx.AddTask($"Installing {runtime.DisplayName}", maxValue: 100);
-                        var progress = new Progress<RuntimeDownloadProgress>(p =>
+                        if (p.Phase == DownloadPhase.Complete)
+                            Console.WriteLine(p.Message);
+                    });
+                    await manager.InstallAsync(runtime, progress);
+                }
+                else
+                {
+                    await AnsiConsole.Progress()
+                        .AutoClear(false)
+                        .Columns(
+                            new TaskDescriptionColumn(),
+                            new ProgressBarColumn(),
+                            new PercentageColumn(),
+                            new SpinnerColumn())
+                        .StartAsync(async ctx =>
                         {
-                            task.Description = p.Message;
-                            if (p.TotalBytes > 0)
-                                task.Value = p.PercentComplete;
-                            else if (p.Phase == DownloadPhase.Extracting)
-                                task.Value = 90;
-                            else if (p.Phase == DownloadPhase.Verifying)
-                                task.Value = 95;
-                            else if (p.Phase == DownloadPhase.Complete)
-                                task.Value = 100;
+                            var task = ctx.AddTask($"Installing {runtime.DisplayName}", maxValue: 100);
+                            var progress = new Progress<RuntimeDownloadProgress>(p =>
+                            {
+                                task.Description = p.Message;
+                                if (p.TotalBytes > 0)
+                                    task.Value = p.PercentComplete;
+                                else if (p.Phase == DownloadPhase.Extracting)
+                                    task.Value = 90;
+                                else if (p.Phase == DownloadPhase.Verifying)
+                                    task.Value = 95;
+                                else if (p.Phase == DownloadPhase.Complete)
+                                    task.Value = 100;
+                            });
+
+                            await manager.InstallAsync(runtime, progress);
                         });
 
-                        await manager.InstallAsync(runtime, progress);
-                    });
-
-                AnsiConsole.MarkupLine($"[green]✓[/] {runtime.DisplayName} installed successfully");
+                    AnsiConsole.MarkupLine($"[green]✓[/] {runtime.DisplayName} installed successfully");
+                }
+            }
+            catch (Exception ex) when (ex is PlatformNotSupportedException or InvalidOperationException or HttpRequestException or IOException)
+            {
+                ErrorConsole.Error($"{runtime.DisplayName} was not installed: {ex.Message}");
+                return 1;
             }
 
             return 0;

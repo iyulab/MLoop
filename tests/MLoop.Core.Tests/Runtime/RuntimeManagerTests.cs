@@ -43,7 +43,14 @@ public class RuntimeManagerTests
         var runtime = RuntimeRegistry.GetRequiredByTask(taskType);
         Assert.NotNull(runtime);
 
-        if (new RuntimeManager().IsInstalled(runtime!))
+        if (!runtime!.NuGetPackages.ContainsKey(PlatformDetector.GetRuntimeIdentifier()))
+        {
+            // No build for this platform: the guard says so and names where it runs — not an install that cannot work.
+            var unavailable = Assert.Throws<InvalidOperationException>(() => RuntimeManager.EnsureRuntimeForTask(taskType));
+            Assert.Contains("no build for", unavailable.Message);
+            Assert.DoesNotContain("mloop runtime install", unavailable.Message);
+        }
+        else if (new RuntimeManager().IsInstalled(runtime))
         {
             // Installed: the guard registers the native search paths and returns without throwing.
             RuntimeManager.EnsureRuntimeForTask(taskType);
@@ -59,4 +66,48 @@ public class RuntimeManagerTests
             Assert.Contains($"mloop runtime install {runtime!.Id}", ex.Message, StringComparison.OrdinalIgnoreCase);
         }
     }
+
+    // A platform is supported by a runtime only as a whole: a package to download, the libraries to find in it and
+    // where. An entry with one of the three and not the others was a platform «supported» that could not install.
+    [Fact]
+    public void EveryRuntime_NamesThePackageLibrariesAndPathForTheSamePlatforms()
+    {
+        Assert.All(RuntimeRegistry.All, runtime =>
+        {
+            var platforms = runtime.NuGetPackages.Keys.Order().ToArray();
+            Assert.Equal(platforms, runtime.NativeLibraries.Keys.Order().ToArray());
+            Assert.Equal(platforms, runtime.NativeSearchPaths.Keys.Order().ToArray());
+        });
+    }
+
+    // TensorFlow's redistributable carries no macOS library (its osx-x64 folder is an empty placeholder): installing it
+    // there downloaded 182 MB, unpacked every other platform's files beside nothing usable and failed with a stack trace.
+    [Fact]
+    public void TensorFlow_IsNotOffered_WhereItsPackageHasNoLibrary()
+    {
+        Assert.DoesNotContain("osx-arm64", RuntimeRegistry.TensorFlow.NuGetPackages.Keys);
+        Assert.DoesNotContain("osx-x64", RuntimeRegistry.TensorFlow.NuGetPackages.Keys);
+    }
+
+    [Fact]
+    public async Task ARuntimeWithoutAPackageForThisPlatform_IsRefusedBeforeAnythingIsDownloadedOrWritten()
+    {
+        var cache = Path.Combine(Path.GetTempPath(), $"mloop-runtimes-{Guid.NewGuid():N}");
+        var nowhere = new RuntimeDefinition
+        {
+            Id = "nowhere",
+            DisplayName = "Nowhere",
+            Description = "",
+            Version = "1.0.0",
+            ApproximateSizeMB = 1,
+            NuGetPackages = [],
+            NativeLibraries = [],
+            NativeSearchPaths = [],
+            RequiredByTasks = [],
+        };
+
+        await Assert.ThrowsAsync<PlatformNotSupportedException>(() => new RuntimeManager(cache).InstallAsync(nowhere));
+        Assert.False(Directory.Exists(cache));
+    }
+
 }
