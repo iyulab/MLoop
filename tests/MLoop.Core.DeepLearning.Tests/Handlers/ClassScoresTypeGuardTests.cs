@@ -11,5 +11,5 @@ public class ClassScoresTypeGuardTests
 {
     [Fact]
     public void TheLogitTransformerName_IsTheTextClassifiersType()
-        => Assert.Equal(typeof(Microsoft.ML.TorchSharp.NasBert.TextClassificationTransformer).FullName, ClassScores.LogitTransformer);
+        => Assert.Equal(ClassScores.LogitTransformer, typeof(Microsoft.ML.TorchSharp.NasBert.TextClassificationTransformer).FullName);
 }
