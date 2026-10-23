@@ -1,7 +1,7 @@
 name: Search gate
 
-# Compares MLoop's trainer search with AutoML's (SearchGateMeasurement in MLoop.Core.Tests): search
-# quality at an equal trial count over five seeds, the time budget, and determinism. Run on request —
+# Measures MLoop's trainer search (SearchGateMeasurement in MLoop.Core.Tests): search quality at an equal
+# trial count over five seeds, the time budget, and determinism. Run on request —
 # it takes tens of minutes and its output is a report to read, not a pass/fail signal. Linux and
 # Windows only: LightGBM has no native library for macOS on ARM, so a macOS runner compares one
 # trainer fewer.

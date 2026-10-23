@@ -38,7 +38,7 @@ public sealed class SearchGateFactAttribute : FactAttribute
 /// directory, else the test output) whose numbers set the gate's tolerances.
 /// </summary>
 /// <remarks>
-/// Data sets: three generated binary tables, one multiclass and one regression, plus every <c>name.csv</c> with a
+/// Data sets: four generated binary tables (one of them 105 rows with a handful of positives), one multiclass and one regression, plus every <c>name.csv</c> with a
 /// <c>name.label</c> beside it (the label column's name; <c>multiclass</c> or <c>regression</c> on a second line)
 /// in <c>MLOOP_SEARCH_GATE_DATA</c>.
 /// LightGBM is a candidate only where its native library loads, so a machine without it compares one trainer
@@ -109,6 +109,11 @@ public sealed class SearchGateMeasurement : IDisposable
             Generate("numeric-2k", 2000, (rng, i) => { var x = rng.NextDouble(); var z = rng.NextDouble(); return ([F(x), F(z), F(rng.NextDouble())], x + 0.5 * z + rng.NextDouble() * 0.6 > 1.0); }, "x,z,noise"),
             Generate("mixed-2k", 2000, (rng, i) => { string[] c = ["red", "green", "blue", "grey", "black"]; var x = rng.NextDouble(); var colour = c[rng.Next(c.Length)]; return ([F(x), colour, F(rng.NextDouble())], x + (colour is "red" or "blue" ? 0.35 : 0) + rng.NextDouble() * 0.5 > 0.95); }, "x,colour,noise"),
             Generate("imbalanced-5k", 5000, (rng, i) => { var x = rng.NextDouble(); var z = rng.NextDouble(); return ([F(x), F(z), F(rng.NextDouble())], x * z + rng.NextDouble() * 0.15 > 0.8); }, "x,z,noise"),
+            // A small table with a handful of positives — fewer than two per validation fold — where the model a search
+            // keeps rests on a few rows, and a one-row difference on a 21-row test partition is the whole margin. Exactly 12
+            // positives, whose x overlaps the negatives': a threshold on random values left the test partition without a
+            // positive (AUC undefined), and a noiseless one gave every search a perfect AUC.
+            Generate("rare-105", 105, (rng, i) => { var positive = i % 9 == 0; var x = positive ? 0.45 + 0.55 * rng.NextDouble() : 0.8 * rng.NextDouble(); var z = rng.NextDouble(); return ([F(x), F(z), F(rng.NextDouble())], positive); }, "x,z,noise"),
             GenerateClasses("tiers-3k", 3000),
             GenerateValues("prices-3k", 3000),
         };
