@@ -362,9 +362,17 @@ public sealed record FeatureProfile
             return edges.Count;
         }
         var categories = Categories ?? [];
+        var text = value.Trim();
         for (var i = 0; i < categories.Count; i++)
-            if (string.Equals(categories[i], value.Trim(), StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(categories[i], text, StringComparison.OrdinalIgnoreCase))
                 return i;
+        // In a yes/no column, a value written another way — training's CSV said "yes", a JSON request sends
+        // true — is the same value: the loader reads both as one boolean, and so does the model.
+        if (categories.Count > 0 && Data.ColumnLayoutValues.TryReadBoolean(text, out var truth)
+            && categories.All(c => Data.ColumnLayoutValues.TryReadBoolean(c, out _)))
+            for (var i = 0; i < categories.Count; i++)
+                if (Data.ColumnLayoutValues.TryReadBoolean(categories[i], out var category) && category == truth)
+                    return i;
         return categories.Count; // other
     }
 

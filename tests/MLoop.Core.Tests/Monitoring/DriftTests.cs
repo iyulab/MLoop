@@ -51,6 +51,29 @@ public class DriftProfileTests
         Assert.Equal(1.0, kind.Shares.Sum(), 9);
     }
 
+    // A yes/no column's training CSV says "yes"/"no"; a JSON request sends true/false and is logged as
+    // True/False. The loader reads both as one boolean, so the profile must bin them together.
+    [Theory]
+    [InlineData("True", "yes")]
+    [InlineData("false", "no")]
+    [InlineData("Y", "yes")]
+    [InlineData("0", "no")]
+    public void A_yes_no_value_bins_with_its_meaning_whatever_its_spelling(string served, string trained)
+    {
+        var flag = FeatureProfile.Categorical("flag", ["yes", "no", "yes", "no", "yes"]);
+
+        Assert.Equal(flag.BinOf(trained), flag.BinOf(served));
+    }
+
+    // Only in a yes/no column: one category that happens to read as yes/no does not absorb every true.
+    [Fact]
+    public void A_category_that_merely_looks_yes_no_keeps_its_own_values()
+    {
+        var plan = FeatureProfile.Categorical("plan", ["Yes", "Basic", "Pro"]);
+
+        Assert.Equal(plan.Categories!.Count, plan.BinOf("true")); // other
+    }
+
     [Fact]
     public void ColumnsOf_TakesNumericCategoricalAndBooleanFeatures_NotTextLabelOrExcluded()
     {

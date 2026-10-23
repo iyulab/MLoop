@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop drift` and `GET /drift` counted a yes/no column's values by spelling: a training file's `yes` and a JSON
+  request's `true` (logged as `True`) fell in different bins, so a column whose values never changed read as
+  drifted. In a yes/no column, values are now binned by what they mean.
+
 - **Yes/no feature columns** (`yes`/`no`, `true`/`false`, `t`/`f`, …) were lost on the way to a prediction:
   - With two or more of them, training never read them: the loader folds them into one boolean vector, and the
     trainer search gave that vector no role, so every model was fitted without those columns.

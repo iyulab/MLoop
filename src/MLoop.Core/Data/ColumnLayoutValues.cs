@@ -165,6 +165,26 @@ internal static class ColumnLayoutValues
     };
 
     /// <summary>
+    /// The truth value of a non-empty yes/no token as the loader reads it (<see cref="IsBoolean"/>'s vocabulary):
+    /// <c>true</c>, <c>t</c>, <c>yes</c>, <c>y</c>, <c>1</c>, <c>+</c>, <c>+1</c> and their opposites.
+    /// </summary>
+    public static bool TryReadBoolean(ReadOnlySpan<char> span, out bool value)
+    {
+        value = false;
+        if (span.IsEmpty || !IsBoolean(span))
+            return false;
+        value = span.Length switch
+        {
+            1 => span[0] is 'T' or 't' or 'Y' or 'y' or '1' or '+',
+            2 => span is "+1",
+            3 => true,                                                   // yes
+            4 => true,                                                   // true
+            _ => false,                                                  // false
+        };
+        return true;
+    }
+
+    /// <summary>
     /// Whether <paramref name="span"/> reads as a boolean: empty, one of <c>T t Y y 1 +</c> /
     /// <c>F f N n 0 -</c>, <c>+1</c> / <c>-1</c>, or <c>yes</c> / <c>no</c> / <c>true</c> / <c>false</c>
     /// in any case.
