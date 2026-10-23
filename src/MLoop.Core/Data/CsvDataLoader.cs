@@ -65,10 +65,6 @@ public class CsvDataLoader : DataProviderBase
         // Warn if CSV appears to have no header row
         WarnIfHeaderless(mlnetCompatiblePath);
 
-        // Warn about monotonically increasing columns that may be IDs — where the model would read them.
-        if (Training.TrainingRunner.ReadsFeatureColumns(taskType))
-            WarnMonotonicColumns(mlnetCompatiblePath, labelColumn);
-
         // Column removals are announced only where the model reads feature columns; elsewhere a dropped
         // column was never going to be read.
         var narrateExclusions = Training.TrainingRunner.ReadsFeatureColumns(taskType) ? _log : null;
@@ -1314,29 +1310,6 @@ public class CsvDataLoader : DataProviderBase
         }
 
         return convertedPath;
-    }
-
-    /// <summary>
-    /// Detects and removes unnamed/index columns from CSV files.
-    /// Common patterns: empty column name (pandas default index), "Unnamed: 0", "Unnamed: N".
-    /// These columns are auto-generated row numbers that should not be used as features.
-    /// Returns original path if no index columns found, or a temp file path otherwise.
-    /// </summary>
-
-    /// <summary>
-    /// Warns about monotonically increasing integer columns that are likely ID/index columns.
-    /// These columns cause overfitting when used as features.
-    /// </summary>
-    private void WarnMonotonicColumns(string filePath, string? labelColumn)
-    {
-        var monotonicCols = DetectMonotonicColumns(filePath, labelColumn);
-        if (monotonicCols.Count > 0)
-        {
-            var colNames = string.Join(", ", monotonicCols);
-            _log($"[Warning] Possible ID/index column(s) detected (strictly increasing integers): {colNames}");
-            _log($"[Info] These columns may cause overfitting. Consider excluding them:");
-            _log($"[Info]   mloop features select --drop {monotonicCols.First()}");
-        }
     }
 
     /// <summary>

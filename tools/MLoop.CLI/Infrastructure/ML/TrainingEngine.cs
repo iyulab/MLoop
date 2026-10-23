@@ -239,6 +239,24 @@ public class TrainingEngine : ITrainingEngine
                         Markup.Escape(ExclusionReason(group.Key)));
                 }
 
+                // A column of strictly increasing integers reads as a row number — judged here, on the whole file
+                // before the split, as the exclusions are: the shuffled partitions the loader sees no longer
+                // increase, so a check there never fired in training. Advice, not an exclusion — a day counter can
+                // be a real feature of a trend.
+                var indexLike = readsFeatures
+                    ? CsvDataLoader.DetectMonotonicColumns(dataFilePath, config.LabelColumn)
+                        .Where(c => !config.FeatureExclusions.Contains(c, StringComparer.OrdinalIgnoreCase)
+                                    && !config.ClaimedColumns.Contains(c, StringComparer.OrdinalIgnoreCase))
+                        .ToList()
+                    : [];
+                if (indexLike.Count > 0)
+                {
+                    WarningConsole.Warn(
+                        $"Possible ID/index column(s) (strictly increasing integers): {Markup.Escape(string.Join(", ", indexLike))} — " +
+                        $"read as a feature, a row number lets the model learn the order of the rows. To exclude: " +
+                        $"[cyan]mloop features select --drop {Markup.Escape(indexLike[0])}[/]");
+                }
+
                 // Capture input schema before training (using enhanced detection).
                 // Deliberately from the full dataset, not the train split — the schema must describe
                 // every category the model may be asked to predict on.

@@ -127,6 +127,40 @@ public class WarningEventWiringTests : IDisposable
     }
 
     /// <summary>
+    /// A column of strictly increasing integers is advised against as a row number — judged on the whole file, before
+    /// the stratified split. The check used to run in the loader, which saw only the shuffled partitions, where the
+    /// column no longer increases: a 1..N customer number was trained on and nothing was said.
+    /// </summary>
+    [Fact]
+    public async Task An_increasing_id_column_is_flagged_even_though_the_split_shuffles_it()
+    {
+        var csv = Path.Combine(_tempDir, "id-column.csv");
+        var lines = new List<string> { "customer,age,income,label" };
+        var rnd = new Random(5);
+        for (int i = 0; i < 400; i++)
+        {
+            var age = rnd.Next(20, 70);
+            var income = rnd.Next(1000, 9000);
+            lines.Add($"{i + 1},{age},{income},{(income + age * 50 > 6000 ? 1 : 0)}");
+        }
+        await File.WriteAllLinesAsync(csv, lines);
+
+        var warnings = await CaptureWarningsAsync(new TrainingConfig
+        {
+            ModelName = "idwire",
+            DataFile = csv,
+            LabelColumn = "label",
+            Task = "binary-classification",
+            TimeLimitSeconds = 5
+        });
+
+        var advice = Assert.Single(warnings, w => w.GetProperty("message").GetString()!.Contains("Possible ID/index"));
+        var message = advice.GetProperty("message").GetString()!;
+        Assert.Contains("customer", message);
+        Assert.DoesNotContain("age", message);
+    }
+
+    /// <summary>
     /// The gap the promotion gate leaves: judged on <c>f1_score</c>, a model can promote while its
     /// accuracy is below what a constant predictor scores, because the f1 floor knows nothing about
     /// the majority share. The number then reads as good and is not.

@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop train` now warns about a column of strictly increasing integers (a likely row number). The check ran
+  on the training partition after the stratified split had shuffled it, so the column no longer increased and the
+  warning never fired: a 1..N id was trained on as a feature without a word. It is judged on the whole file now, and
+  arrives as a warning event under `--json` too. Loading a file for `predict` or `evaluate` no longer prints it.
 - Anomaly detection, clustering and ranking fit one pipeline and take no time budget. Under auto-time (`mloop train`
   without `--time`) they were trained twice, once as the probe and once as the main pass, and `mloop train` showed a
   "Time Limit" that nothing enforced.
