@@ -115,8 +115,11 @@ public static class ScoreMapping
 /// </summary>
 public static class ClassScores
 {
-    // Known by the model itself, not by a task name: the serving cache and file prediction load without one.
-    private const string LogitTransformer = "Microsoft.ML.TorchSharp.NasBert.TextClassificationTransformer";
+    /// <summary>
+    /// The transformer that scores with logits, by type name — MLoop.Core does not reference TorchSharp. Known by the
+    /// model itself, not by a task name: the serving cache and file prediction load without one.
+    /// </summary>
+    public const string LogitTransformer = "Microsoft.ML.TorchSharp.NasBert.TextClassificationTransformer";
 
     /// <summary>Whether <paramref name="model"/> (or a transformer in its chain) scores with logits.</summary>
     public static bool AreLogits(ITransformer model) => model switch
