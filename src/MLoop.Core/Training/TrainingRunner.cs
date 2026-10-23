@@ -2051,8 +2051,11 @@ public partial class TrainingRunner
                     textColumns.Add(col.Name);
                 }
             }
+            // The loader folds every yes/no column into one boolean vector (BooleanFeatures) once there are
+            // two or more of them; leaving vectors of booleans out dropped all of those columns from every
+            // model without a word.
             else if (col.Type is NumberDataViewType || col.Type is BooleanDataViewType
-                || (col.Type is VectorDataViewType vt2 && vt2.ItemType is NumberDataViewType))
+                || (col.Type is VectorDataViewType vt2 && vt2.ItemType is NumberDataViewType or BooleanDataViewType))
             {
                 numericColumns.Add(col.Name);
             }

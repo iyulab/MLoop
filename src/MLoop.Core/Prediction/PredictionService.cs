@@ -118,6 +118,7 @@ public class PredictionService
         // "Could not find input column 'Features'". Tasks whose model featurizes named columns internally
         // (AutoML binary/multiclass/regression) are left untouched.
         var transformInput = EnsureFeaturesColumn(dataView, schema, taskType, labelColumn);
+        transformInput = FoldYesNoColumns(transformInput, schema, labelColumn);
 
         IDataView predictions;
         try
@@ -303,11 +304,8 @@ public class PredictionService
         if (isLabel)
             return LabelKinds.For(taskType, col.DataType);
 
-        return MapDataTypeToDataKind(col.DataType);
+        return SchemaDataTypes.FeatureLoadKind(col, fallback: DataKind.String);
     }
-
-    private static DataKind MapDataTypeToDataKind(string dataType) =>
-        SchemaDataTypes.ToDataKind(dataType, fallback: DataKind.String);
 
     /// <summary>
     /// For classification tasks, restores original label values from Key type using MapKeyToValue.
@@ -925,6 +923,30 @@ public class PredictionService
             is "anomaly-detection" or "clustering" or "time-series-anomaly"
             or "regression" or "forecasting" or "ranking"
         || IsClassificationTask(taskType);
+
+    /// <summary>
+    /// Folds the yes/no feature columns into the one boolean vector training's loader read them as, when there
+    /// are two or more (<see cref="Data.ColumnLayoutInference.FoldedName"/>) — rows arrive as named columns, and
+    /// a model trained on the folded vector cannot find it otherwise. One yes/no column keeps its own name, as
+    /// it did in training.
+    /// </summary>
+    private IDataView FoldYesNoColumns(IDataView data, InputSchemaInfo schema, string? labelColumn)
+    {
+        var yesNo = schema.Columns
+            .Where(c => !c.Purpose.Equals("Exclude", StringComparison.OrdinalIgnoreCase)
+                     && !c.Purpose.Equals("Label", StringComparison.OrdinalIgnoreCase)
+                     && (labelColumn is null || !c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
+                     && SchemaDataTypes.FeatureLoadKind(c, DataKind.String) == DataKind.Boolean)
+            .Select(c => c.Name)
+            .ToArray();
+        if (yesNo.Length < 2)
+            return data;
+
+        var name = Data.ColumnLayoutInference.FoldedName(yesNo, DataKind.Boolean);
+        if (data.Schema.GetColumnOrNull(name) is not null)
+            return data;
+        return _mlContext.Transforms.Concatenate(name, yesNo).Fit(data).Transform(data);
+    }
 
     /// <summary>
     /// For models that expect a single <c>Features</c> vector input (see <see cref="RequiresFeaturesVectorInput"/>),

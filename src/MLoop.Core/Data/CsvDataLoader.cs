@@ -318,7 +318,7 @@ public class CsvDataLoader : DataProviderBase
         //    sparse. The label is left to the caller's task-specific handling.
         if (trainedSchema != null && options.Columns != null)
         {
-            var schemaLookup = trainedSchema.Columns.ToDictionary(c => c.Name, c => c.DataType);
+            var schemaLookup = trainedSchema.Columns.ToDictionary(c => c.Name);
             foreach (var col in options.Columns)
             {
                 if (col.Name == null)
@@ -326,9 +326,9 @@ public class CsvDataLoader : DataProviderBase
                 if (labelColumn != null && col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                if (schemaLookup.TryGetValue(col.Name, out var expectedType))
+                if (schemaLookup.TryGetValue(col.Name, out var trained))
                 {
-                    var expectedKind = MapTrainedTypeToDataKind(expectedType, col.DataKind);
+                    var expectedKind = SchemaDataTypes.FeatureLoadKind(trained, col.DataKind);
                     if (col.DataKind != expectedKind)
                         col.DataKind = expectedKind;
                 }
@@ -436,7 +436,7 @@ public class CsvDataLoader : DataProviderBase
         // training used. Give it its own column back, at the type the schema records.
         foreach (var column in trainedSchema.Columns.Where(c => c.Purpose == "Feature"))
         {
-            var kind = SchemaDataTypes.ToDataKind(column.DataType, DataKind.String);
+            var kind = SchemaDataTypes.FeatureLoadKind(column, DataKind.String);
             if (kind == DataKind.Single)
                 continue;
 
@@ -487,7 +487,7 @@ public class CsvDataLoader : DataProviderBase
 
         var neverBoolean = trainedSchema.Columns
             .Where(c => c.UniqueValueCount > 2
-                     && SchemaDataTypes.ToDataKind(c.DataType, DataKind.String) != DataKind.Boolean
+                     && SchemaDataTypes.FeatureLoadKind(c, DataKind.String) != DataKind.Boolean
                      && (labelColumn == null || !c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)))
             .ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
         if (neverBoolean.Count == 0)

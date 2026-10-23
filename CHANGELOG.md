@@ -29,6 +29,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Yes/no feature columns** (`yes`/`no`, `true`/`false`, `t`/`f`, …) were lost on the way to a prediction:
+  - With two or more of them, training never read them: the loader folds them into one boolean vector, and the
+    trainer search gave that vector no role, so every model was fitted without those columns.
+  - With one, training read it but every reader after it did not: the saved schema recorded the column as a
+    category, `mloop predict`, `mloop evaluate` and `mloop serve` loaded it as text, and the model saw a missing
+    value in every row. A model whose signal was that column gave one answer for every row — accuracy 1.0 at
+    training, AUC 0.5 at evaluation, no error.
+
+  The search now reads boolean vectors, the saved schema records such a column as `Boolean`, and serving folds
+  the columns into the vector training read. Models trained by earlier versions with one yes/no column predict
+  correctly without retraining (their schema's yes/no values identify the column); models with two or more
+  should be retrained to use them.
+
 - `mloop evaluate --slice-by` printed one table with every metric, and at 80 columns the numbers themselves wrapped
   (`0.862` on one line, `1` under it). The metrics are now split into tables that each fit the console, every
   table keeping the slice and row columns.

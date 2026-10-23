@@ -1014,9 +1014,11 @@ public class TrainingEngine : ITrainingEngine
                 // A string feature's recorded type is what training does with it: Categorical when the
                 // run one-hot encodes it (CategoryColumns), Text when it featurizes it as text. The two
                 // used to disagree — the schema said Categorical for columns training read as text.
-                // A column of numbers keeps whatever the inference said; a typed column is settled
-                // by the override below.
-                if (categoryColumns != null && purpose == "Feature" && IsStringColumn(colIndex, dataLines))
+                // A column of numbers keeps whatever the inference said, and so does a yes/no column — the
+                // loader reads it as a boolean, never as a string to encode; a typed column is settled by the
+                // override below.
+                if (categoryColumns != null && purpose == "Feature" && dataType != SchemaDataTypes.Boolean
+                    && IsStringColumn(colIndex, dataLines))
                 {
                     if (categoryColumns.Contains(colName, StringComparer.OrdinalIgnoreCase))
                     {
@@ -1153,16 +1155,15 @@ public class TrainingEngine : ITrainingEngine
                 }
                 return (SchemaDataTypes.Categorical, values, count);
             }
-            if (layout.Of(ColumnLayoutPurpose.Numeric).Contains(columnName))
-                return (SchemaDataTypes.Numeric, null, null);
             if (layout.Of(ColumnLayoutPurpose.Text).Contains(columnName))
                 return (SchemaDataTypes.Text, null, null);
-            // A number folded into the Features vector: the layout read it as one, by its own name. A yes/no
-            // column folded into BooleanFeatures is left to its values — the saved schema's count of them is
-            // what tells a later file's two-valued slice from a column that was never boolean
-            // (CsvDataLoader.ReconcileInferredSchemaForInference).
-            if (layout.FileColumn(columnName) is { Purpose: ColumnLayoutPurpose.Numeric, Kind: not DataKind.Boolean })
-                return (SchemaDataTypes.Numeric, null, null);
+            // A number or a yes/no column the layout read as one, by its own name — the kind a prediction must
+            // load it as (SchemaDataTypes.FeatureLoadKind). Recorded as a category, a yes/no column was loaded
+            // as text at prediction and the model saw a missing value in every row.
+            if (layout.FileColumn(columnName) is { Purpose: ColumnLayoutPurpose.Numeric } read)
+                return read.Kind == DataKind.Boolean
+                    ? (SchemaDataTypes.Boolean, null, null)
+                    : (SchemaDataTypes.Numeric, null, null);
         }
 
         // Fallback: Infer type from actual values

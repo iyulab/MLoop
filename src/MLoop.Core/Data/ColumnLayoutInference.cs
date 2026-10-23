@@ -108,6 +108,17 @@ public static class ColumnLayoutInference
     /// </summary>
     /// <exception cref="ColumnLayoutException">The file does not split into consistent columns, or has no data rows.</exception>
     /// <exception cref="ArgumentException">No column is named <paramref name="label"/>.</exception>
+    /// <summary>
+    /// The loaded name of the feature columns of one kind that fold together — the one column's own name, or
+    /// the vector's (<c>Features</c> for numbers, <c>BooleanFeatures</c> for yes/no columns). A reader that
+    /// rebuilds the loaded view from named columns (serving) names its vectors by this, as the loader does.
+    /// </summary>
+    public static string FoldedName(IReadOnlyList<string> members, DataKind kind)
+    {
+        ArgumentNullException.ThrowIfNull(members);
+        return members.Count == 1 ? members[0] : GroupName(ColumnLayoutPurpose.Numeric, kind);
+    }
+
     public static ColumnLayout Infer(MLContext mlContext, string path, string? label, char separator = ',')
     {
         var sample = ColumnLayoutSample.Read(path);
@@ -350,13 +361,6 @@ public static class ColumnLayoutInference
         static bool StaysItsOwn(ColumnLayoutPurpose purpose) =>
             purpose is ColumnLayoutPurpose.Categorical or ColumnLayoutPurpose.Text or ColumnLayoutPurpose.Ignore;
 
-        static string GroupName(ColumnLayoutPurpose purpose, DataKind kind) => purpose switch
-        {
-            ColumnLayoutPurpose.Numeric => kind == DataKind.Boolean ? "BooleanFeatures" : "Features",
-            ColumnLayoutPurpose.Label => "Label",
-            _ => purpose.ToString(),
-        };
-
         static string UnusedName(string prefix, List<Group> previous)
         {
             var name = prefix;
@@ -365,6 +369,13 @@ public static class ColumnLayoutInference
             return name;
         }
     }
+
+    private static string GroupName(ColumnLayoutPurpose purpose, DataKind kind) => purpose switch
+    {
+        ColumnLayoutPurpose.Numeric => kind == DataKind.Boolean ? "BooleanFeatures" : "Features",
+        ColumnLayoutPurpose.Label => "Label",
+        _ => purpose.ToString(),
+    };
 
     private static TextLoader.Range[] Ranges(int[] indices)
     {

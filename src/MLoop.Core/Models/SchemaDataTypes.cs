@@ -112,10 +112,37 @@ public static class SchemaDataTypes
             DataKind.Single or DataKind.Double =>
                 double.TryParse(value, System.Globalization.NumberStyles.Float,
                                 System.Globalization.CultureInfo.InvariantCulture, out _),
-            DataKind.Boolean => bool.TryParse(value, out _)
-                                || value is "0" or "1",
+            DataKind.Boolean => Data.ColumnLayoutValues.IsBoolean(value.Trim()),
             _ => true,
         };
+    }
+
+    /// <summary>
+    /// The <see cref="DataKind"/> training's loader read a feature column as — what a prediction must load
+    /// it as for the model to see the values it was fitted on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Mostly <see cref="ToDataKind"/> of the recorded name. The exception is a yes/no column: the loader
+    /// reads a column whose every value is a non-empty yes/no (<c>yes</c>, <c>false</c>, <c>t</c>, …) as
+    /// <see cref="DataKind.Boolean"/>, and the model converts that to a number. Loaded as text instead, the
+    /// same conversion yields a missing value for every row, and the model answers as if the column were
+    /// not there — no error, the same answer for every row. Schemas written before the column was recorded
+    /// as <see cref="Boolean"/> record it as <see cref="Categorical"/> with its yes/no values; those values
+    /// are what identify it.
+    /// </para>
+    /// <para>
+    /// Not for a label: its kind is the task's decision (<see cref="LabelKinds"/>).
+    /// </para>
+    /// </remarks>
+    public static DataKind FeatureLoadKind(ColumnSchema column, DataKind fallback)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        if (column.DataType.Equals(Categorical, StringComparison.OrdinalIgnoreCase)
+            && column.CategoricalValues is { Count: > 0 } values
+            && values.All(v => v.Length > 0 && Data.ColumnLayoutValues.IsBoolean(v)))
+            return DataKind.Boolean;
+        return ToDataKind(column.DataType, fallback);
     }
 
     /// <summary>
