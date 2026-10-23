@@ -1,4 +1,4 @@
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Models;
 
 namespace MLoop.Core.Tests.Models;
@@ -7,7 +7,7 @@ namespace MLoop.Core.Tests.Models;
 /// One answer to "which task is this". Four normalizations were in use — none at all, lowercase,
 /// case-insensitive comparison, and lowercase with hyphens and spaces deleted — and the two
 /// authorities that already existed disagreed: <c>TaskTypes.IsValid</c> trimmed but did not fold
-/// underscores, <c>AutoMLRunner.RequiresLabel</c> folded underscores but did not trim.
+/// underscores, <c>TrainingRunner.RequiresLabel</c> folded underscores but did not trim.
 /// </summary>
 public class TaskTypesCanonicalTests
 {
@@ -91,8 +91,8 @@ public class TaskTypesCanonicalTests
     public void TheLegacySpellingNoLongerSplitsTheProductInTwo()
     {
         Assert.True(TaskTypes.IsValid("classification"));
-        Assert.True(AutoMLRunner.RequiresLabel("classification"));
-        Assert.True(AutoMLRunner.SupportsPreFeaturizer("classification"));
+        Assert.True(TrainingRunner.RequiresLabel("classification"));
+        Assert.True(TrainingRunner.SupportsPreFeaturizer("classification"));
     }
 
     /// <summary>
@@ -103,7 +103,7 @@ public class TaskTypesCanonicalTests
     public void TheUnderscoreSpellingNoLongerSplitsTheProductInTwo()
     {
         Assert.True(TaskTypes.IsValid("binary_classification"));
-        Assert.True(AutoMLRunner.SupportsPreFeaturizer("binary_classification"));
+        Assert.True(TrainingRunner.SupportsPreFeaturizer("binary_classification"));
     }
 
     /// <summary>
@@ -114,8 +114,8 @@ public class TaskTypesCanonicalTests
     public void SurroundingSpaceIsToleratedByBothAuthorities()
     {
         Assert.True(TaskTypes.IsValid(" clustering "));
-        Assert.False(AutoMLRunner.RequiresLabel(" clustering "));
-        Assert.True(AutoMLRunner.IsTimeSeriesTask(" forecasting "));
+        Assert.False(TrainingRunner.RequiresLabel(" clustering "));
+        Assert.True(TrainingRunner.IsTimeSeriesTask(" forecasting "));
     }
 
     /// <summary>
@@ -125,9 +125,9 @@ public class TaskTypesCanonicalTests
     [Fact]
     public void AnUnrecognizedTaskStillRequiresALabel()
     {
-        Assert.True(AutoMLRunner.RequiresLabel("nonsense"));
-        Assert.True(AutoMLRunner.RequiresLabel(null));
-        Assert.False(AutoMLRunner.SupportsPreFeaturizer("nonsense"));
-        Assert.False(AutoMLRunner.IsTimeSeriesTask("nonsense"));
+        Assert.True(TrainingRunner.RequiresLabel("nonsense"));
+        Assert.True(TrainingRunner.RequiresLabel(null));
+        Assert.False(TrainingRunner.SupportsPreFeaturizer("nonsense"));
+        Assert.False(TrainingRunner.IsTimeSeriesTask("nonsense"));
     }
 }

@@ -39,7 +39,7 @@ public sealed class TrialRecord
 
     /// <summary>
     /// The trial's validation metrics in MLoop's own vocabulary (the keys of
-    /// <c>AutoMLResult.Metrics</c>), so a trial row and the final results table name the same things.
+    /// <c>TrainedModel.Metrics</c>), so a trial row and the final results table name the same things.
     /// Non-finite values are dropped rather than written — <c>NaN</c> has no JSON representation and
     /// would make the whole file unreadable.
     /// </summary>

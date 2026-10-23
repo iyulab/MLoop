@@ -1,5 +1,5 @@
 using System.Runtime.CompilerServices;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 
 namespace MLoop.Core.DeepLearning.Tests;
 

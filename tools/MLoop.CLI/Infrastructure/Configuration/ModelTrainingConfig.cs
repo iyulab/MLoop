@@ -55,7 +55,7 @@ public static class ModelTrainingConfig
     /// silently did nothing would leave a model the user expects to export unexportable.
     /// </summary>
     public static string? PortableConflict(ModelDefinition definition)
-        => definition.Portable == true && !MLoop.Core.AutoML.AutoMLRunner.SupportsPreFeaturizer(definition.Task)
+        => definition.Portable == true && !MLoop.Core.Training.TrainingRunner.SupportsPreFeaturizer(definition.Task)
             ? $"portable: a portable model is trained for binary-classification, multiclass-classification or regression, not '{definition.Task}'."
             : null;
 

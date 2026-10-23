@@ -3,7 +3,7 @@ using System.Reflection;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
@@ -130,8 +130,8 @@ public static class InitCommand
             }
 
             // For unsupervised tasks, clear default label if user didn't explicitly set one
-            // (AutoMLRunner.RequiresLabel — single source shared with merge/train/validate).
-            if (!AutoMLRunner.RequiresLabel(task) && labelColumn == "Label")
+            // (TrainingRunner.RequiresLabel — single source shared with merge/train/validate).
+            if (!TrainingRunner.RequiresLabel(task) && labelColumn == "Label")
                 labelColumn = "";
 
             // Resolve project path (allow "." for current directory)

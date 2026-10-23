@@ -19,11 +19,11 @@ public static class DataLoaderFactory
     {
         ArgumentNullException.ThrowIfNull(mlContext);
 
-        if (IsDirectoryBased(taskType) && !MLoop.Core.AutoML.DeepLearningRegistry.IsRegistered)
+        if (IsDirectoryBased(taskType) && !MLoop.Core.Training.DeepLearningRegistry.IsRegistered)
             throw new NotSupportedException(
                 $"Task '{taskType}' requires the MLoop.Core.DeepLearning package (data loader not registered).");
 
-        var dl = MLoop.Core.AutoML.DeepLearningRegistry.Current?.CreateDataLoader(
+        var dl = MLoop.Core.Training.DeepLearningRegistry.Current?.CreateDataLoader(
             taskType ?? string.Empty, mlContext, log);
         if (dl is not null) return dl;
 

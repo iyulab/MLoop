@@ -93,8 +93,7 @@ public sealed record TrainerDescriptor
     /// <para>
     /// Not serialized: the stored artifacts already carry <c>fallbackReason</c>, and a second
     /// field naming the same fact on the wire is a contract to keep in sync for no consumer that
-    /// asked for it. This one exists for an in-process decision — see
-    /// <see cref="TrainerFallbackKind.AutoMLUnavailable"/>.
+    /// asked for it. This one exists for in-process decisions.
     /// </para>
     /// </remarks>
     [JsonIgnore]
@@ -144,21 +143,6 @@ public enum TrainerFallbackKind
 {
     /// <summary>The run trained what it meant to. <see cref="TrainerDescriptor.FallbackReason"/> is null.</summary>
     None,
-
-    /// <summary>
-    /// AutoML ran and produced a model, but optimized a different metric than the one requested —
-    /// the requested one could not be computed on this data. The search itself worked, so a larger
-    /// time budget still buys more trials.
-    /// </summary>
-    MetricSubstituted,
-
-    /// <summary>
-    /// AutoML could not run on this data at all and a direct pipeline stood in for it. The cause is
-    /// a property of the data, not of the budget, so <b>repeating the search with more time repeats
-    /// the same failure</b> — a caller deciding whether to run another AutoML pass should read this
-    /// and not bother.
-    /// </summary>
-    AutoMLUnavailable,
 
     /// <summary>
     /// The search chose its model, but refitting it on the whole training partition failed, so the

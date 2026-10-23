@@ -1,5 +1,5 @@
 using System.Text.Json;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Preprocessing;
 
 namespace MLoop.CLI.Commands.Policy;
@@ -63,11 +63,11 @@ public static class PolicyJson
     /// <summary>
     /// Projects each prep step to its leakage category, fold-safety, and (if leaky) the
     /// shared warning message. Reuses <see cref="PrepStepClassifier"/> and
-    /// <see cref="AutoMLRunner.SupportsPreFeaturizer"/> — no new wording or routing logic.
+    /// <see cref="TrainingRunner.SupportsPreFeaturizer"/> — no new wording or routing logic.
     /// </summary>
     public static IReadOnlyList<PrepStepView> BuildStepViews(IReadOnlyList<PrepStep> prep, string task)
     {
-        var supports = AutoMLRunner.SupportsPreFeaturizer(task);
+        var supports = TrainingRunner.SupportsPreFeaturizer(task);
         var views = new List<PrepStepView>(prep.Count);
         for (var i = 0; i < prep.Count; i++)
         {

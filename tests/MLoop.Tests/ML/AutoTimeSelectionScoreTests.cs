@@ -1,5 +1,5 @@
 using MLoop.CLI.Infrastructure.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Models;
 
 namespace MLoop.Tests.ML;
@@ -20,7 +20,7 @@ public class AutoTimeSelectionScoreTests
         Metric = "rmse",
     };
 
-    private static AutoMLResult Result(double? validation, string? ranking) => new()
+    private static TrainedModel Result(double? validation, string? ranking) => new()
     {
         Model = null!,
         Trainer = TrainerDescriptor.Of("FastTree"),

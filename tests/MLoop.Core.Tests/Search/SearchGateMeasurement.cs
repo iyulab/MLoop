@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Search.Candidates;
@@ -205,7 +205,7 @@ public sealed class SearchGateMeasurement : IDisposable
         var clock = Stopwatch.StartNew();
         try
         {
-            var result = await new AutoMLRunner(ctx, new CsvDataLoader(ctx))
+            var result = await new TrainingRunner(ctx, new CsvDataLoader(ctx))
                 .RunAsync(Config(set, seed, maxTrials, budget), null, CancellationToken.None);
             return new Run(set.Name, "MLoop", seed, maxTrials, budget, set.Metric,
                 result.Metrics.TryGetValue(set.Metric, out var value) ? value : null,
@@ -221,7 +221,7 @@ public sealed class SearchGateMeasurement : IDisposable
     private static async Task<string> TrialListAsync(DataSet set)
     {
         var ctx = new MLContext(seed: 1);
-        var result = await new AutoMLRunner(ctx, new CsvDataLoader(ctx))
+        var result = await new TrainingRunner(ctx, new CsvDataLoader(ctx))
             .RunAsync(Config(set, 1, 8, QualityBudgetSeconds), null, CancellationToken.None);
         return string.Join("\n", result.Trials.Select(t =>
             $"{t.TrainerName} {string.Join(",", t.Metrics.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => $"{m.Key}={m.Value:R}"))} {t.Error}"));

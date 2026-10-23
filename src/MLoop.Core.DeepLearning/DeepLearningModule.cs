@@ -1,5 +1,5 @@
 using Microsoft.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
@@ -9,7 +9,7 @@ namespace MLoop.Core.DeepLearning;
 /// <summary>
 /// The concrete <see cref="IDeepLearningModule"/> implementation. Register once at process
 /// startup via <c>DeepLearningRegistry.Register(new DeepLearningModule())</c> so
-/// <c>MLoop.Core.AutoMLRunner</c> and <c>MLoop.Core.Data.DataLoaderFactory</c> can dispatch
+/// <c>MLoop.Core.TrainingRunner</c> and <c>MLoop.Core.Data.DataLoaderFactory</c> can dispatch
 /// deep-learning tasks without MLoop.Core taking a compile-time dependency on TorchSharp/Vision.
 /// </summary>
 public sealed class DeepLearningModule : IDeepLearningModule
@@ -22,7 +22,7 @@ public sealed class DeepLearningModule : IDeepLearningModule
 
     public bool CanHandleTask(string task) => DlTasks.Contains(task);
 
-    public Task<AutoMLResult> TrainAsync(MLContext mlContext, Action<string> log, string task,
+    public Task<TrainedModel> TrainAsync(MLContext mlContext, Action<string> log, string task,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken ct) => task.ToLowerInvariant() switch
         {

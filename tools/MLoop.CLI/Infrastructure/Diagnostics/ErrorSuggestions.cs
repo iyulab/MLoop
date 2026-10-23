@@ -1,6 +1,6 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using Spectre.Console;
 
 namespace MLoop.CLI.Infrastructure.Diagnostics;
@@ -258,7 +258,7 @@ public static partial class ErrorSuggestions
                 // table to profile, and a fit that takes no time budget is not shortened by --time.
                 if (!MLoop.Core.Data.DataLoaderFactory.IsDirectoryBased(task))
                     suggestions.Add("Check data quality: [cyan]mloop analyze profile <data-file>[/]");
-                if (AutoMLRunner.TimeBudgetUnused(task) is null)
+                if (TrainingRunner.TimeBudgetUnused(task) is null)
                     suggestions.Add("Try with a smaller time limit first: [cyan]mloop train --time 30[/]");
                 suggestions.Add("Check the GUIDE.md for common solutions");
             }

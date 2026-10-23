@@ -1,7 +1,7 @@
 using System.Globalization;
 using Microsoft.ML;
 using Microsoft.ML.Data;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Models;
 using MLoop.Core.Runtime;
 using MLoop.Core.Storage;
@@ -897,12 +897,12 @@ public class PredictionService
         return rows;
     }
 
-    // The rule lives in AutoMLRunner.IsClassification, beside RequiresLabel. This copy compared
+    // The rule lives in TrainingRunner.IsClassification, beside RequiresLabel. This copy compared
     // ordinally against un-folded literals, so a task string that had not been through the config
     // merge — `Binary-Classification`, say — answered "not a classification task" and the rows
     // were read as if the model had produced a regression score.
     private static bool IsClassificationTask(string taskType) =>
-        AutoML.AutoMLRunner.IsClassification(taskType);
+        Training.TrainingRunner.IsClassification(taskType);
 
     private static bool IsLabelRequiredForTransform(string taskType) =>
         IsClassificationTask(taskType) || taskType == "ranking";

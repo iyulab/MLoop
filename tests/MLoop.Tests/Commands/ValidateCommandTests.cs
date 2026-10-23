@@ -342,7 +342,7 @@ public class ValidateCommandTests
     public void ValidateTrainingSettings_WarnsTestSplitIgnoredForTimeSeries(string task)
     {
         // Time-series tasks feed the full series and hold out the last `horizon` rows internally
-        // (AutoMLRunner.IsTimeSeriesTask), so test_split is silently inert. Validate must surface it.
+        // (TrainingRunner.IsTimeSeriesTask), so test_split is silently inert. Validate must surface it.
         var (errors, warnings) = RunValidateTraining(new TrainingSettings { TestSplit = 0.2 }, task);
         Assert.Empty(errors);
         Assert.Contains(warnings, w => w.Message.Contains("ignored for forecasting"));

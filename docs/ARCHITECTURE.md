@@ -497,7 +497,7 @@ public class TrainCommand : Command
 
 #### Training Engine
 ```csharp
-namespace MLoop.Core.AutoML;
+namespace MLoop.Core.Training;
 
 public interface ITrainingEngine
 {
@@ -510,7 +510,7 @@ public interface ITrainingEngine
 public class TrainingEngine : ITrainingEngine
 {
     private readonly IFileSystemManager _fileSystem;
-    private readonly IAutoMLRunner _autoML;
+    private readonly TrainingRunner _runner;
     private readonly IExperimentStore _experiments;
 
     public async Task<TrainingResult> TrainAsync(
@@ -521,8 +521,8 @@ public class TrainingEngine : ITrainingEngine
         // 1. Generate experiment ID
         var experimentId = await _experiments.GenerateIdAsync();
 
-        // 2. Run AutoML
-        var mlResult = await _autoML.RunAsync(config, progress, cancellationToken);
+        // 2. Run the trainer search
+        var mlResult = await _runner.RunAsync(config, progress, cancellationToken);
 
         // 3. Save results to filesystem
         await _experiments.SaveAsync(experimentId, mlResult);
@@ -1537,7 +1537,7 @@ mloop train data.csv --label target --metric profit-metric.cs
 │  │  ├─ ScriptLoader.cs (Hybrid compilation)        │
 │  │  ├─ ScriptDiscovery.cs (Auto-discovery)         │
 │  │  └─ ScriptCompiler.cs (Roslyn wrapper)          │
-│  └─ AutoML/                                         │
+│  └─ Training/                                       │
 │     └─ TrainingEngine.cs (Hook integration)        │
 └─────────────────────────────────────────────────────┘
 ```

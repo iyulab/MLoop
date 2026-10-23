@@ -47,7 +47,7 @@ public sealed class TrainingProgressTracker
             case TrainingPhase.MainStart:
                 _budgetSeconds = phaseEvent.FinalTimeSeconds;
                 break;
-                // ProbeConverged, ProbeFellBack and Complete end training; the budget they would
+                // ProbeConverged and Complete end training; the budget they would
                 // switch to is never used.
         }
     }
@@ -95,7 +95,6 @@ public sealed class TrainingProgressTracker
         TrainingPhase.ProbeStart => $"[cyan]Phase 1:[/] Probe ({p.ProbeTimeSeconds}s)...",
         TrainingPhase.ProbeComplete => $"[cyan]Phase 2:[/] Main training ({p.FinalTimeSeconds}s)...",
         TrainingPhase.ProbeConverged => "[green]Converged[/] in probe phase",
-        TrainingPhase.ProbeFellBack => "[yellow]AutoML unavailable[/] for this data",
         TrainingPhase.Complete => $"[green]Finalizing {Markup.Escape(modelName)}...[/]",
         TrainingPhase.Featurize when p.Steps > 0 =>
             $"[green]Featurizing {p.Step}/{p.Steps}[/]{RemainingSuffix(p.Step, p.Steps, p.ElapsedSeconds)}",

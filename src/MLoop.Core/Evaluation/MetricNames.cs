@@ -2,7 +2,7 @@ namespace MLoop.Core.Evaluation;
 
 /// <summary>
 /// The single place a metric name a user wrote becomes the canonical name the rest of MLoop
-/// speaks — the keys of <c>AutoMLResult.Metrics</c>, the leaderboard's <c>metric</c>, the
+/// speaks — the keys of <c>TrainedModel.Metrics</c>, the leaderboard's <c>metric</c>, the
 /// experiment index's <c>metricName</c>.
 /// </summary>
 /// <remarks>

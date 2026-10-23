@@ -50,14 +50,14 @@ public sealed record DriftProfile
         if (!HasAnswerProfile(task))
             return null;
         var values = answers.Select(DriftMeasure.Text).ToList();
-        return AutoML.AutoMLRunner.IsClassification(task)
+        return Training.TrainingRunner.IsClassification(task)
             ? FeatureProfile.Categorical(PredictionColumn, values)
             : FeatureProfile.Numeric(PredictionColumn, values);
     }
 
     /// <summary>Whether <paramref name="task"/>'s answer is a class or a value — the answers an answer profile describes.</summary>
     public static bool HasAnswerProfile(string? task)
-        => AutoML.AutoMLRunner.IsClassification(task) || TaskTypes.Canonical(task) == "regression";
+        => Training.TrainingRunner.IsClassification(task) || TaskTypes.Canonical(task) == "regression";
 
     /// <summary>The feature columns of <paramref name="schema"/> a drift profile covers: numeric, categorical and boolean features. Free text is profiled apart (<see cref="TextColumnsOf"/>).</summary>
     public static IReadOnlyList<(string Column, bool Numeric)> ColumnsOf(InputSchemaInfo schema)

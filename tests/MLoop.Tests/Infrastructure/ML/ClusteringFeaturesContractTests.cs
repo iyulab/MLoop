@@ -1,6 +1,6 @@
 using Microsoft.ML;
 using MLoop.CLI.Infrastructure.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
@@ -60,7 +60,7 @@ public class ClusteringFeaturesContractTests : IDisposable
         var trainCsv = WriteLabellessCsv(dir, "train.csv", 60);
 
         var loader = new CsvDataLoader(ctx);
-        var runner = new AutoMLRunner(ctx, loader);
+        var runner = new TrainingRunner(ctx, loader);
         var config = new TrainingConfig
         {
             ModelName = "test",

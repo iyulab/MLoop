@@ -3,7 +3,7 @@ using FilePrepper.Pipeline;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 using Spectre.Console;
@@ -151,7 +151,7 @@ internal static class TrainDataValidator
             // column — the same composed question the stratified split asks. The legacy spellings
             // this used to list are folded before they reach here (TaskTypes.Canonical).
             strategy =
-                AutoMLRunner.IsClassification(taskType) && !DataLoaderFactory.IsDirectoryBased(taskType)
+                TrainingRunner.IsClassification(taskType) && !DataLoaderFactory.IsDirectoryBased(taskType)
                     ? "stratified"
                     : "random";
         }

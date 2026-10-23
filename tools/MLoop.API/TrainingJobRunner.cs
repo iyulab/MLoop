@@ -118,7 +118,7 @@ public class TrainingJobRunner : BackgroundService
             var trainFile = prepared.DataFile;
             string? testFile = null;
             var testSplit = definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit;
-            if (MLoop.Core.AutoML.AutoMLRunner.IsClassification(definition.Task) && !string.IsNullOrEmpty(definition.Label))
+            if (MLoop.Core.Training.TrainingRunner.IsClassification(definition.Task) && !string.IsNullOrEmpty(definition.Label))
             {
                 MLoop.Core.Diagnostics.ClassDistributionResult? classes = null;
                 try

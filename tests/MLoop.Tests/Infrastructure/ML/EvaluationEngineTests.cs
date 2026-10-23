@@ -283,7 +283,7 @@ public class EvaluationEngineTests : IDisposable
     {
         // EvaluateClustering must pass featureColumnName to Clustering.Evaluate, else ML.NET
         // cannot compute the Davies-Bouldin Index and reports it as 0 — the exact evaluate-path twin
-        // of the K-search fix (the same omission, in AutoMLRunner). Three well-separated
+        // of the K-search fix (the same omission, in TrainingRunner). Three well-separated
         // clusters must yield a finite, positive DBI plus the cluster-distribution metrics.
         var (modelPath, testDataPath) = TrainSimpleClusteringModel();
 

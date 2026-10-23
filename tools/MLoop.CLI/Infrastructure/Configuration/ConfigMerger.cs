@@ -1,4 +1,4 @@
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 
@@ -70,10 +70,10 @@ public class ConfigMerger
         // caller's error message can quote what the user actually wrote.
         task = TaskTypes.Canonical(task) ?? task;
 
-        // Label is optional for unsupervised tasks (AutoMLRunner.RequiresLabel — single source).
+        // Label is optional for unsupervised tasks (TrainingRunner.RequiresLabel — single source).
         var label = cliLabel
             ?? baseDefinition?.Label
-            ?? (AutoMLRunner.RequiresLabel(task)
+            ?? (TrainingRunner.RequiresLabel(task)
                 ? throw new InvalidOperationException(
                     $"Label not specified for model '{modelName}'. Use <label> argument or define in mloop.yaml")
                 : "");

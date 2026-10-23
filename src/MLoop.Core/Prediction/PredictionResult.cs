@@ -25,7 +25,7 @@ public record PredictionRow
     public double? AnomalyScore { get; init; }
 
     // ② regression wave: split-conformal prediction interval around Score. Null unless the model
-    // carries a conformal band (regression only, computed at train time — see AutoMLRunner.ComputeConformalIntervals).
+    // carries a conformal band (regression only, computed at train time — see TrainingRunner.ComputeConformalIntervals).
     // Gives the regression trust-loop signal the confidence probability gives classification.
     public double? ScoreLowerBound { get; init; }
     public double? ScoreUpperBound { get; init; }
@@ -60,7 +60,7 @@ public record RegressionInterval(double HalfWidth, double Confidence, double? No
 {
     /// <summary>
     /// The primary coverage level exposed at predict time. Training stores the 80/90/95 bands
-    /// (<see cref="AutoML.AutoMLRunner.ComputeConformalIntervals"/>); predict surfaces this one.
+    /// (<see cref="Training.TrainingRunner.ComputeConformalIntervals"/>); predict surfaces this one.
     /// </summary>
     public const double PrimaryConfidence = 0.90;
 

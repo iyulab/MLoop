@@ -1,7 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
 

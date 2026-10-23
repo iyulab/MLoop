@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (library):** the training runner is named for what it does. `MLoop.Core.AutoML` is now
+  `MLoop.Core.Training`, `AutoMLRunner` is `TrainingRunner` and its result `AutoMLResult` is `TrainedModel`; the
+  members are unchanged. The training runs MLoop's own trainer search, so the old names described a library it no
+  longer uses. Migration: replace the namespace and the two type names — there are no aliases.
+
+### Removed
+
+- The `fellback` phase of `mloop train --json` and `TrainingPhase.ProbeFellBack`, and `TrainerFallbackKind`'s
+  `MetricSubstituted` and `AutoMLUnavailable`: nothing has produced them since the trainer search replaced AutoML.
+
 ## [0.43.0] - 2026-10-23
 
 ### Added

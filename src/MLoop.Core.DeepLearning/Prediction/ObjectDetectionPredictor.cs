@@ -22,7 +22,7 @@ public sealed record ImageDetectionResult(
 /// with mAP, this one surfaces the raw detections for <c>mloop predict</c>.
 /// </summary>
 /// <remarks>
-/// The scored schema (see <c>AutoMLRunner.RunObjectDetectionAsync</c>) carries the loader's
+/// The scored schema (see <c>TrainingRunner.RunObjectDetectionAsync</c>) carries the loader's
 /// <c>ImagePath</c> string through, and the trainer emits <c>PredictedBoundingBoxes</c>
 /// (a flat <c>VBuffer&lt;float&gt;</c> of four values per object), <c>Score</c> (one confidence per
 /// object) and a key-typed <c>PredictedLabel</c> that a trailing <c>MapKeyToValue</c> turns back

@@ -1,5 +1,5 @@
 using MLoop.CLI.Infrastructure.Diagnostics;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 
 namespace MLoop.Tests.Diagnostics;
 
@@ -244,7 +244,7 @@ public class ErrorSuggestionsTests
     [Fact]
     public void GetSuggestions_RawMlNetTimeout_IsRecognisedByTypeNotWording()
     {
-        // The shape actually observed downstream, before AutoMLRunner translates it: ML.NET's own
+        // The shape actually observed downstream, before TrainingRunner translates it: ML.NET's own
         // message, which contains neither "timeout" nor "memory", so every message-keyed rule misses it
         // and the generic training fallback answers with "--time 30". Keyed on the type, it can't miss.
         var ex = AsTrainingEngineWraps(new TimeoutException(
@@ -288,7 +288,7 @@ public class ErrorSuggestionsTests
     [Fact]
     public void GetSuggestions_WrappedOutOfMemory_SuggestsResourceRemedies()
     {
-        // AutoML surfaces OOM through an AggregateException, which AutoMLRunner unwraps; the CLI then
+        // AutoML surfaces OOM through an AggregateException, which TrainingRunner unwraps; the CLI then
         // wraps it again. The memory rule existed all along but only matched a *bare* OutOfMemoryException.
         var ex = AsTrainingEngineWraps(new OutOfMemoryException("Insufficient memory to continue."));
 

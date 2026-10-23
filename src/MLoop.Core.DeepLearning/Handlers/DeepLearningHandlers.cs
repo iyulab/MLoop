@@ -2,7 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.TorchSharp;
 using Microsoft.ML.Vision;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
@@ -13,7 +13,7 @@ namespace MLoop.Core.DeepLearning;
 /// Deep-learning task handlers (TensorFlow/TorchSharp-backed): image-classification,
 /// text-classification, sentence-similarity, ner, object-detection, question-answering.
 ///
-/// Moved out of <c>MLoop.Core.AutoML.AutoMLRunner</c> into this
+/// Moved out of <c>MLoop.Core.Training.TrainingRunner</c> into this
 /// optional <c>MLoop.Core.DeepLearning</c> assembly, so the Microsoft.ML.TorchSharp /
 /// Microsoft.ML.Vision usings — and their heavy native runtime dependencies — no longer live in
 /// MLoop.Core. Invoked via <see cref="DeepLearningModule"/>, which is registered with
@@ -21,7 +21,7 @@ namespace MLoop.Core.DeepLearning;
 /// </summary>
 internal static class DeepLearningHandlers
 {
-    public static async Task<AutoMLResult> RunImageClassificationAsync(
+    public static async Task<TrainedModel> RunImageClassificationAsync(
         MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
@@ -68,7 +68,7 @@ internal static class DeepLearningHandlers
             trialChannel.ReportCompleted(
                 TrainerDescriptor.Of("ImageClassification (TF)"), "accuracy", metrics.MacroAccuracy, metricsDict);
 
-            return new AutoMLResult
+            return new TrainedModel
             {
                 Trainer = TrainerDescriptor.Of("ImageClassification (TensorFlow)"),
                 Model = model,
@@ -80,7 +80,7 @@ internal static class DeepLearningHandlers
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<AutoMLResult> RunTextClassificationAsync(
+    public static async Task<TrainedModel> RunTextClassificationAsync(
         MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
@@ -115,7 +115,7 @@ internal static class DeepLearningHandlers
             trialChannel.ReportCompleted(
                 TrainerDescriptor.Of("TextClassification (NAS-BERT)"), "accuracy", metrics.MacroAccuracy, metricsDict);
 
-            return new AutoMLResult
+            return new TrainedModel
             {
                 Trainer = TrainerDescriptor.Of("TextClassification (NAS-BERT)"),
                 Model = model,
@@ -127,7 +127,7 @@ internal static class DeepLearningHandlers
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<AutoMLResult> RunSentenceSimilarityAsync(
+    public static async Task<TrainedModel> RunSentenceSimilarityAsync(
         MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
@@ -164,7 +164,7 @@ internal static class DeepLearningHandlers
             trialChannel.ReportCompleted(
                 TrainerDescriptor.Of("SentenceSimilarity (NAS-BERT)"), "r_squared", metrics.RSquared, metricsDict);
 
-            return new AutoMLResult
+            return new TrainedModel
             {
                 Trainer = TrainerDescriptor.Of("SentenceSimilarity (NAS-BERT)"),
                 Model = model,
@@ -176,7 +176,7 @@ internal static class DeepLearningHandlers
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<AutoMLResult> RunNerAsync(
+    public static async Task<TrainedModel> RunNerAsync(
         MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
@@ -216,7 +216,7 @@ internal static class DeepLearningHandlers
 
             trialChannel.ReportCompleted(TrainerDescriptor.Of("NER (NAS-BERT)"), NerTagAccuracy.MacroAccuracy, scores.Macro, metricsDict);
 
-            return new AutoMLResult
+            return new TrainedModel
             {
                 Trainer = TrainerDescriptor.Of("NER (NAS-BERT)"),
                 Model = model,
@@ -228,7 +228,7 @@ internal static class DeepLearningHandlers
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<AutoMLResult> RunObjectDetectionAsync(
+    public static async Task<TrainedModel> RunObjectDetectionAsync(
         MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
@@ -277,7 +277,7 @@ internal static class DeepLearningHandlers
                 model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
             var predictions = model.Transform(testSet);
 
-            return new AutoMLResult
+            return new TrainedModel
             {
                 Trainer = TrainerDescriptor.Of("ObjectDetection (AutoFormerV2)"),
                 Model = model,
@@ -287,7 +287,7 @@ internal static class DeepLearningHandlers
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<AutoMLResult> RunQuestionAnsweringAsync(
+    public static async Task<TrainedModel> RunQuestionAnsweringAsync(
         MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
         IProgress<TrainingProgress>? progress, CancellationToken cancellationToken)
@@ -346,7 +346,7 @@ internal static class DeepLearningHandlers
 
             trialChannel.ReportCompleted(TrainerDescriptor.Of("QA (RoBERTa)"), AnswerOverlap.CharF1, f1, metricsDict);
 
-            return new AutoMLResult
+            return new TrainedModel
             {
                 Trainer = TrainerDescriptor.Of("QA (RoBERTa)"),
                 Model = model,

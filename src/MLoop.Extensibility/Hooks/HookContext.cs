@@ -39,7 +39,7 @@ public class HookContext
     public ITransformer? Model { get; init; }
 
     /// <summary>
-    /// The training run's result — its trials, metrics and the search it ran (<c>MLoop.Core.AutoML.AutoMLResult</c>).
+    /// The training run's result — its trials, metrics and the search it ran (<c>MLoop.Core.Training.TrainedModel</c>).
     /// Available for: PostTrain
     /// Null for: Other hook types
     /// </summary>

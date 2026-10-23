@@ -81,7 +81,6 @@ public class TrainJsonEmitterTests
     [InlineData(TrainingPhase.ProbeStart, "probe", true, false, false, false, false)]
     [InlineData(TrainingPhase.ProbeComplete, "main", true, true, true, true, false)]
     [InlineData(TrainingPhase.ProbeConverged, "converged", true, false, true, true, false)]
-    [InlineData(TrainingPhase.ProbeFellBack, "fellback", true, false, true, true, false)]
     [InlineData(TrainingPhase.MainStart, "main", false, true, false, false, false)]
     [InlineData(TrainingPhase.Complete, "complete", false, false, true, false, true)]
     [InlineData(TrainingPhase.Epoch, "epoch", false, false, false, false, true)]

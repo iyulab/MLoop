@@ -10,7 +10,7 @@ namespace MLoop.Core.Evaluation;
 /// </summary>
 /// <remarks>
 /// The evaluator consumes the scored <see cref="IDataView"/> produced by the object-detection
-/// model (see <c>AutoMLRunner.RunObjectDetectionAsync</c>): the loader's original string label
+/// model (see <c>TrainingRunner.RunObjectDetectionAsync</c>): the loader's original string label
 /// column (<c>Label</c>, a vector of class names) and box column (<c>BoundingBoxes</c>) pass
 /// through, and the trainer emits <c>PredictedBoundingBoxes</c> plus <c>Score</c> and a key-typed
 /// <c>PredictedLabel</c> that a trailing <c>MapKeyToValue</c> turns back into a visible string

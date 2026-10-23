@@ -1,5 +1,5 @@
 using Microsoft.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 
 namespace MLoop.Core.Preprocessing;
 
@@ -20,7 +20,7 @@ public class PrepRouter
     /// <param name="steps">prep steps declared in mloop.yaml.</param>
     /// <param name="supportsPreFeaturizer">
     /// True only for task types whose AutoML Execute site consumes <c>config.PreFeaturizer</c>
-    /// (binary/multiclass/regression — see <see cref="AutoML.AutoMLRunner.SupportsPreFeaturizer"/>).
+    /// (binary/multiclass/regression — see <see cref="Training.TrainingRunner.SupportsPreFeaturizer"/>).
     /// When false, statistical transforms cannot be applied via the (ignored) preFeaturizer, so they
     /// are kept in the CSV stage instead (still applied, but leaky → leakage warning emitted).
     /// This avoids a silent behavioral regression for scale-sensitive tasks like clustering/anomaly.

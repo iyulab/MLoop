@@ -1,5 +1,5 @@
 using Microsoft.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Preprocessing;
 
 namespace MLoop.Core.Tests.Preprocessing;
@@ -11,7 +11,7 @@ public class PrepRouterTests
     {
         // clustering/anomaly Execute sites ignore config.PreFeaturizer; routing a normalize
         // there must NOT silently drop it — it stays a CSV step (applied) + leakage warning.
-        Assert.False(AutoMLRunner.SupportsPreFeaturizer("clustering"));
+        Assert.False(TrainingRunner.SupportsPreFeaturizer("clustering"));
 
         var ctx = new MLContext(seed: 42);
         var steps = new List<PrepStep>
@@ -56,7 +56,7 @@ public class PrepRouterTests
     [Fact]
     public void Route_sends_statistical_to_prefeaturizer_when_supported()
     {
-        Assert.True(AutoMLRunner.SupportsPreFeaturizer("binary-classification"));
+        Assert.True(TrainingRunner.SupportsPreFeaturizer("binary-classification"));
 
         var ctx = new MLContext(seed: 42);
         var steps = new List<PrepStep>
@@ -114,8 +114,8 @@ public class PrepRouterTests
     public void IsTimeSeriesTask_classifies_only_temporal_tasks(string? task, bool expected)
     {
         // These tasks ignore config.TestSplit (full-series feed + internal horizon holdout); the
-        // classification must match the isTimeSeriesTask branch in AutoMLRunner.RunAsync exactly.
-        Assert.Equal(expected, AutoMLRunner.IsTimeSeriesTask(task));
+        // classification must match the isTimeSeriesTask branch in TrainingRunner.RunAsync exactly.
+        Assert.Equal(expected, TrainingRunner.IsTimeSeriesTask(task));
     }
 
     [Theory]
@@ -140,6 +140,6 @@ public class PrepRouterTests
         // Single source consumed by ConfigMerger / InitCommand / TrainCommand / ValidateCommand —
         // previously three inline HashSets that drifted (TrainCommand omitted time-series-anomaly,
         // validate had no concept and errored "Label required" on a valid unsupervised project).
-        Assert.Equal(expected, AutoMLRunner.RequiresLabel(task));
+        Assert.Equal(expected, TrainingRunner.RequiresLabel(task));
     }
 }

@@ -1,7 +1,7 @@
 using MLoop.CLI.Commands;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Extensibility.Preprocessing;
 
@@ -22,8 +22,8 @@ public static class TrainingInput
     /// would close up the time between its neighbours — as are unsupervised tasks and image directories.
     /// </summary>
     public static bool DropsMissingLabelsByDefault(string? task) =>
-        AutoMLRunner.RequiresLabel(task)
-        && !AutoMLRunner.IsTimeSeriesTask(task)
+        TrainingRunner.RequiresLabel(task)
+        && !TrainingRunner.IsTimeSeriesTask(task)
         && !DataLoaderFactory.IsDirectoryBased(task);
 
     /// <summary>The file a job trains on, and what preparing it did.</summary>
@@ -85,7 +85,7 @@ public static class TrainingInput
             return optionError;
         if (string.IsNullOrEmpty(balance) || balance.Equals("none", StringComparison.OrdinalIgnoreCase))
             return null;
-        if (!AutoMLRunner.IsClassification(definition.Task))
+        if (!TrainingRunner.IsClassification(definition.Task))
             return $"--balance applies to classification tasks; '{definition.Task}' has no classes to balance.";
         return ModelTrainingConfig.WeightConflict(definition, balance);
     }

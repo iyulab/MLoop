@@ -2,7 +2,7 @@ using System.CommandLine;
 using MLoop.CLI.Commands.Policy;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Preprocessing;
 using Spectre.Console;
 
@@ -133,7 +133,7 @@ public static class PrepPlanCommand
             case PrepCategory.UnsupportedLeakageWarn:
                 AnsiConsole.MarkupLine($"[yellow]⚠ {Markup.Escape(PrepStepClassifier.LeakageWarning(step))}[/]");
                 break;
-            case PrepCategory.PreFeaturizer when !AutoMLRunner.SupportsPreFeaturizer(task):
+            case PrepCategory.PreFeaturizer when !TrainingRunner.SupportsPreFeaturizer(task):
                 AnsiConsole.MarkupLine($"[yellow]⚠ {Markup.Escape(PrepStepClassifier.UnsupportedTaskLeakageWarning(step))}[/]");
                 break;
         }
@@ -142,7 +142,7 @@ public static class PrepPlanCommand
     private static void PrintPlan(List<PrepStep> prep, string task)
     {
         if (prep.Count == 0) { AnsiConsole.MarkupLine("[grey]No prep steps defined.[/]"); return; }
-        var supports = AutoMLRunner.SupportsPreFeaturizer(task);
+        var supports = TrainingRunner.SupportsPreFeaturizer(task);
         var table = new Table().Border(TableBorder.Rounded);
         table.AddColumn("#");
         table.AddColumn("Type");

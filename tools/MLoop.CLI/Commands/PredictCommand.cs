@@ -10,7 +10,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
@@ -984,7 +984,7 @@ public static class PredictCommand
     /// (isAnomaly=false, rawScore=0 on every row) with exit 0 (the silent-GIGO family).
     /// </summary>
     internal static string? LabelColumnToExcludeFromRows(string? taskType, string? configLabelColumn)
-        => AutoMLRunner.IsTimeSeriesTask(taskType) ? null : configLabelColumn;
+        => TrainingRunner.IsTimeSeriesTask(taskType) ? null : configLabelColumn;
 
     /// <summary>
     /// --json presenter for forecasting: emits the horizon forecast to stdout in the same payload

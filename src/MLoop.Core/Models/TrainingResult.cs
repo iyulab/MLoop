@@ -2,7 +2,7 @@ namespace MLoop.Core.Models;
 
 /// <summary>
 /// Result of a training operation (used by CLI layer).
-/// For lower-level AutoML results, see <see cref="MLoop.Core.AutoML.AutoMLResult"/>.
+/// For the runner's in-memory result (the fitted model itself), see <see cref="MLoop.Core.Training.TrainedModel"/>.
 /// </summary>
 public class TrainingResult
 {
@@ -47,13 +47,6 @@ public enum TrainingPhase
     ProbeComplete,
     /// <summary>Probe converged early; main training skipped (auto-time only). Data: ProbeTimeSeconds, Metric (best), TrialNumber (trials).</summary>
     ProbeConverged,
-    /// <summary>
-    /// AutoML could not run on this data during the probe and a direct pipeline stood in for it, so
-    /// main training is skipped (auto-time only): the cause is a property of the data, and a second
-    /// pass under a larger budget would repeat the same failure and the same warnings.
-    /// Data: ProbeTimeSeconds, Metric (best), TrialNumber (trials).
-    /// </summary>
-    ProbeFellBack,
     /// <summary>The training window is starting under a fixed budget (no probe). Data: FinalTimeSeconds.</summary>
     MainStart,
     /// <summary>

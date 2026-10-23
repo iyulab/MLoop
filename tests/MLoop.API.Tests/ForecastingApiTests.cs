@@ -4,7 +4,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.ML;
 using Microsoft.ML.Data;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Detection;
 
 namespace MLoop.API.Tests;

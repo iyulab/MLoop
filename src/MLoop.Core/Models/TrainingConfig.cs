@@ -157,7 +157,7 @@ public record TrainingConfig
     /// <summary>
     /// Train only with steps an ONNX runtime computes exactly, so the model can be exported
     /// (<c>mloop export onnx</c>): text columns are featurized by
-    /// <see cref="AutoML.PortableTextFeaturizer"/> instead of <c>FeaturizeText</c>.
+    /// <see cref="Training.PortableTextFeaturizer"/> instead of <c>FeaturizeText</c>.
     /// Binary classification, multiclass classification and regression.
     /// </summary>
     public bool Portable { get; init; }

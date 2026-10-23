@@ -77,10 +77,9 @@ public sealed class TrainJsonEmitter(TextWriter output)
         // main window announces its budget (plus probe results under auto-time); the terminal
         // markers report what the search did. Metric values belong to trial/result events — a
         // boundary only repeats the probe's best where that is the fact being announced.
-        var hasProbe = phase is TrainingPhase.ProbeStart or TrainingPhase.ProbeComplete or TrainingPhase.ProbeConverged or TrainingPhase.ProbeFellBack;
+        var hasProbe = phase is TrainingPhase.ProbeStart or TrainingPhase.ProbeComplete or TrainingPhase.ProbeConverged;
         var hasBudget = phase is TrainingPhase.ProbeComplete or TrainingPhase.MainStart;
-        var hasMetric = phase is TrainingPhase.ProbeComplete or TrainingPhase.ProbeConverged
-                                or TrainingPhase.ProbeFellBack;
+        var hasMetric = phase is TrainingPhase.ProbeComplete or TrainingPhase.ProbeConverged;
         var hasTrials = phase is not (TrainingPhase.ProbeStart or TrainingPhase.MainStart
                                       or TrainingPhase.Featurize or TrainingPhase.Epoch);
         var hasElapsed = phase is TrainingPhase.Complete or TrainingPhase.Featurize or TrainingPhase.Epoch;
@@ -98,7 +97,6 @@ public sealed class TrainJsonEmitter(TextWriter output)
                 TrainingPhase.ProbeComplete => "main",
                 TrainingPhase.MainStart => "main",
                 TrainingPhase.ProbeConverged => "converged",
-                TrainingPhase.ProbeFellBack => "fellback",
                 TrainingPhase.Complete => "complete",
                 _ => phase.ToString().ToLowerInvariant()
             },

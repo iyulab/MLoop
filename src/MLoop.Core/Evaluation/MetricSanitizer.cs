@@ -16,7 +16,7 @@ namespace MLoop.Core.Evaluation;
 /// </list>
 /// The direction is resolved through <see cref="MetricDirection"/> so this can never drift from
 /// the compare/gate direction elsewhere (a class of cross-assembly drift). Both the
-/// training path (<c>AutoMLRunner.RunAsync</c>) and the evaluate path (<c>EvaluationEngine</c>)
+/// training path (<c>TrainingRunner.RunAsync</c>) and the evaluate path (<c>EvaluationEngine</c>)
 /// funnel their metric dictionaries through here.
 ///
 /// <para>Why worst-representable and not 0: a naïve <c>NaN → 0</c> guard (which this authority

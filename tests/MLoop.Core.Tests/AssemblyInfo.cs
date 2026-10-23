@@ -1,7 +1,7 @@
 using Xunit;
 
 // This assembly mutates process-wide statics: System.Console.Out (output capture in
-// CsvDataLoaderTests) and MLoop.Core.AutoML.DeepLearningRegistry (registration in the
+// CsvDataLoaderTests) and MLoop.Core.Training.DeepLearningRegistry (registration in the
 // DeepLearning tests, read by the loader-factory tests).
 //
 // `[Collection(...)]` cannot make that safe. It serializes the classes that share the name and

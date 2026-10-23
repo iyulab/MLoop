@@ -5,7 +5,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
@@ -240,12 +240,12 @@ public static class ValidateCommand
         // Validate label — only for supervised tasks. The unsupervised tasks (anomaly-detection /
         // clustering / time-series-anomaly) are label-optional: merge/train/init/CsvDataLoader all
         // accept a missing label (a dummy is loaded), so requiring one here contradicted train.
-        if (AutoMLRunner.RequiresLabel(model.Task) && string.IsNullOrWhiteSpace(model.Label))
+        if (TrainingRunner.RequiresLabel(model.Task) && string.IsNullOrWhiteSpace(model.Label))
         {
             errors.Add(new ValidationError($"{prefix}.label", "Label column is required"));
         }
 
-        // Validate task-specific required fields. These are mandatory at train time (AutoMLRunner
+        // Validate task-specific required fields. These are mandatory at train time (TrainingRunner
         // throws without them), so validate must catch their absence rather than let `mloop train`
         // fail later — the same validate↔train parity restored. `init` writes defaults for
         // each (horizon: 10, group_column, user_column/item_column), so a fresh project still passes.
@@ -352,7 +352,7 @@ public static class ValidateCommand
                 errors.Add(new ValidationError($"{prefix}.test_split",
                     "Test split must be between 0 and 1 (exclusive)"));
             }
-            else if (AutoMLRunner.IsTimeSeriesTask(task))
+            else if (TrainingRunner.IsTimeSeriesTask(task))
             {
                 // Time-series tasks (forecasting / time-series-anomaly) ignore test_split: a random
                 // split would break temporal order, so training feeds the full series and holds out
@@ -424,7 +424,7 @@ public static class ValidateCommand
     /// </summary>
     internal static List<string> InspectPrepLeakage(List<PrepStep> prep, string task)
     {
-        var supportsPreFeaturizer = AutoMLRunner.SupportsPreFeaturizer(task);
+        var supportsPreFeaturizer = TrainingRunner.SupportsPreFeaturizer(task);
         var warnings = new List<string>();
         foreach (var step in prep)
         {
@@ -452,7 +452,7 @@ public static class ValidateCommand
         // Notes describe AutoML trainer-selection context, which only applies when the step
         // is fold-internal. On tasks that don't support the preFeaturizer the step is CSV-baked
         // and already flagged by InspectPrepLeakage — a trainer-context note there would contradict it.
-        if (!AutoMLRunner.SupportsPreFeaturizer(task))
+        if (!TrainingRunner.SupportsPreFeaturizer(task))
             return [];
 
         var notes = new List<string>();

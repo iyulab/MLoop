@@ -94,7 +94,7 @@ public static class TaskTypes
     /// <c>ToLowerInvariant()</c>, <c>OrdinalIgnoreCase</c>, and lowercase-with-hyphens-and-spaces
     /// deleted. The two authorities that already existed disagreed with each other: this type's
     /// <see cref="IsValid"/> trimmed but did not fold underscores, while
-    /// <c>AutoMLRunner.RequiresLabel</c> folded underscores but did not trim.</para>
+    /// <c>TrainingRunner.RequiresLabel</c> folded underscores but did not trim.</para>
     /// <para>It reached users. <c>task: classification</c> was rejected by <c>mloop validate</c>
     /// and accepted as binary by <c>train</c> and <c>evaluate</c>; <c>task: binary_classification</c>
     /// split the other way.</para>

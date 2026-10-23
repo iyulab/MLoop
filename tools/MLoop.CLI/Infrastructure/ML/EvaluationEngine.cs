@@ -206,7 +206,7 @@ public class EvaluationEngine
 
                 // Single-authority guard: normalize any non-finite metric (NaN/±∞) to the
                 // direction-aware worst before it is returned/persisted (mirrors the training
-                // path in AutoMLRunner.RunAsync). System.Text.Json cannot serialize non-finite.
+                // path in TrainingRunner.RunAsync). System.Text.Json cannot serialize non-finite.
                 return new Evaluation(MetricSanitizer.SanitizeAndReturn(metrics), confusion);
             }
             finally
@@ -642,7 +642,7 @@ public class EvaluationEngine
 
         // ML.NET built-in clustering evaluation.
         // featureColumnName is REQUIRED for ML.NET to compute the Davies-Bouldin Index — without
-        // it DBI comes back 0 (the evaluate-path twin, fixed identically in AutoMLRunner's
+        // it DBI comes back 0 (the evaluate-path twin, fixed identically in TrainingRunner's
         // K-search). The clustering pipeline concatenates features into "Features", same as training.
         try
         {

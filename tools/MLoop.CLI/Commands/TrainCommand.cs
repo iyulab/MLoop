@@ -4,7 +4,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
 using MLoop.Core.Diagnostics;
@@ -345,9 +345,9 @@ public static class TrainCommand
             }
 
             // Validate required fields (defensive guard for nullable flow analysis).
-            // AutoMLRunner.RequiresLabel is the single source — previously this inline set omitted
+            // TrainingRunner.RequiresLabel is the single source — previously this inline set omitted
             // time-series-anomaly, so a label-less ts-anomaly project that merge/init accept failed here.
-            var requiresLabel = AutoMLRunner.RequiresLabel(effectiveDefinition.Task);
+            var requiresLabel = TrainingRunner.RequiresLabel(effectiveDefinition.Task);
 
             if (string.IsNullOrEmpty(effectiveDefinition.Task) ||
                 (requiresLabel && string.IsNullOrEmpty(effectiveDefinition.Label)))
@@ -659,7 +659,7 @@ public static class TrainCommand
                 // composed one: classes that live in a column, which is what dropping rows with a
                 // missing label and balancing both act on.
                 var isClassificationTask =
-                    AutoMLRunner.IsClassification(effectiveDefinition.Task)
+                    TrainingRunner.IsClassification(effectiveDefinition.Task)
                     && !DataLoaderFactory.IsDirectoryBased(effectiveDefinition.Task);
 
                 // Use explicit parameter if provided, otherwise the task's default (see DropsMissingLabelsByDefault)
@@ -891,7 +891,7 @@ public static class TrainCommand
 
             // If auto-time, display static estimate before progress bar starts. A fit that takes no
             // budget (deep learning, time series) would have an estimate describing time nothing uses.
-            if (useAutoTime && AutoMLRunner.TimeBudgetUnused(trainingConfig.Task) is null)
+            if (useAutoTime && TrainingRunner.TimeBudgetUnused(trainingConfig.Task) is null)
             {
                 var (rowCount, colCount, hasText, classCount) = TrainingEngine.CollectDataStats(
                     trainingConfig.DataFile, trainingConfig.LabelColumn, trainingConfig.Task);
@@ -927,7 +927,7 @@ public static class TrainCommand
                             // window boundaries (MainStart/Complete) every run now reports would
                             // otherwise overwrite it and silently drop the summary.
                             if (p.Phase is TrainingPhase.ProbeStart or TrainingPhase.ProbeComplete
-                                         or TrainingPhase.ProbeConverged or TrainingPhase.ProbeFellBack)
+                                         or TrainingPhase.ProbeConverged)
                                 lastAutoTimeEvent = p;
                             progressTracker.EnterPhase(p);
                             progressTask.Description =
@@ -963,13 +963,6 @@ public static class TrainCommand
             else if (lastAutoTimeEvent?.Phase == TrainingPhase.ProbeConverged)
             {
                 TrainPresenter.DisplayProbeConverged(
-                    lastAutoTimeEvent.ProbeTimeSeconds,
-                    lastAutoTimeEvent.Metric);
-                AnsiConsole.WriteLine();
-            }
-            else if (lastAutoTimeEvent?.Phase == TrainingPhase.ProbeFellBack)
-            {
-                TrainPresenter.DisplayProbeFellBack(
                     lastAutoTimeEvent.ProbeTimeSeconds,
                     lastAutoTimeEvent.Metric);
                 AnsiConsole.WriteLine();
@@ -1234,7 +1227,7 @@ public static class TrainCommand
     internal static async Task<(string dataFile, IEstimator<ITransformer>? preFeaturizer, List<string> warnings, List<string> preFeaturizerColumns)>
         ApplyPrepAsync(string dataFile, List<PrepStep> prep, MLContext ctx, string task)
     {
-        var route = new PrepRouter().Route(ctx, prep, AutoMLRunner.SupportsPreFeaturizer(task));
+        var route = new PrepRouter().Route(ctx, prep, TrainingRunner.SupportsPreFeaturizer(task));
 
         var prepOutputPath = Path.Combine(
             Path.GetDirectoryName(dataFile)!,

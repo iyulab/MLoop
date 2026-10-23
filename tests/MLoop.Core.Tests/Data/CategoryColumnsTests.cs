@@ -1,5 +1,5 @@
 using Microsoft.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 
 using MLoop.Search;
@@ -65,7 +65,7 @@ public sealed class CategoryColumnsTests : IDisposable
             new Row { Level = "WARN", Message = "disk almost full on the data volume", X = 2, Label = false },
         });
 
-        var info = AutoMLRunner.BuildColumnRoles(data, "Label", categoryColumns: ["Level"]);
+        var info = TrainingRunner.BuildColumnRoles(data, "Label", categoryColumns: ["Level"]);
 
         Assert.NotNull(info);
         Assert.Contains("Level", info.Of(ColumnRole.Categorical));
@@ -82,7 +82,7 @@ public sealed class CategoryColumnsTests : IDisposable
             new Row { Level = "INFO", Message = "m", X = 1, Label = true },
         });
 
-        var info = AutoMLRunner.BuildColumnRoles(data, "Label",
+        var info = TrainingRunner.BuildColumnRoles(data, "Label",
             columnOverrides: new() { ["Level"] = "text" }, categoryColumns: ["Level"]);
 
         Assert.Contains("Level", info.Of(ColumnRole.Text));

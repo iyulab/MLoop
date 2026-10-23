@@ -2,7 +2,7 @@ using System.Linq;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.Transforms;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Detection;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
@@ -185,9 +185,9 @@ public class PredictionServiceTests : IDisposable
             .Append(ml.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y")).Fit(data);
         var scored = mainModel.Transform(data);
 
-        var norm = AutoMLRunner.ComputeNormalizedConformal(ml, scored, "Y", new[] { "Features" });
+        var norm = TrainingRunner.ComputeNormalizedConformal(ml, scored, "Y", new[] { "Features" });
         Assert.NotNull(norm);
-        var metrics = new Dictionary<string, double>(AutoMLRunner.ComputeConformalIntervals(scored, "Y"));
+        var metrics = new Dictionary<string, double>(TrainingRunner.ComputeConformalIntervals(scored, "Y"));
         foreach (var kv in norm!.Metrics) metrics[kv.Key] = kv.Value;
         var interval = RegressionInterval.FromMetrics("regression", metrics);
         Assert.NotNull(interval);

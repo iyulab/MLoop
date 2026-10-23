@@ -2,7 +2,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.DataQuality;
 using MLoop.Core.Diagnostics;
@@ -90,14 +90,14 @@ internal static class TrainPresenter
         table.AddRow("Task", definition.Task);
         table.AddRow("Data File", Path.GetFileName(sourceFile ?? dataFile));
         table.AddRow("Label Column", definition.Label);
-        table.AddRow("Time Limit", AutoMLRunner.TimeBudgetUnused(definition.Task) is { } unused
+        table.AddRow("Time Limit", TrainingRunner.TimeBudgetUnused(definition.Task) is { } unused
             ? $"not used — {unused}"
             : useAutoTime
             ? "[cyan]auto[/] (estimated from data size)"
             : $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
 
-        if (AutoMLRunner.IsTimeSeriesTask(definition.Task))
+        if (TrainingRunner.IsTimeSeriesTask(definition.Task))
         {
             // A random split would break time order, so a series is never split (see IsTimeSeriesTask).
             table.AddRow("Test Split", "not used — a series keeps its time order");
@@ -626,18 +626,5 @@ internal static class TrainPresenter
     {
         AnsiConsole.MarkupLine(
             $"  [green]✓[/] Converged in probe phase ({probeTime}s, {bestMetric:F4}) — skipping main training");
-    }
-
-    /// <summary>
-    /// Says why main training did not run when the probe fell back to a direct pipeline. Without
-    /// this the run announces "Phase 1" and then simply ends, which reads as the phase having been
-    /// dropped rather than deliberately skipped.
-    /// </summary>
-    public static void DisplayProbeFellBack(int probeTime, double bestMetric)
-    {
-        AnsiConsole.MarkupLine(
-            $"  [yellow]![/] AutoML could not run on this data ({probeTime}s probe, {bestMetric:F4}) — "
-            + "trained a direct pipeline instead, and skipped main training since a longer search "
-            + "would fail the same way");
     }
 }

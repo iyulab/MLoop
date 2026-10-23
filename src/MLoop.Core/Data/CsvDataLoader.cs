@@ -66,12 +66,12 @@ public class CsvDataLoader : DataProviderBase
         WarnIfHeaderless(mlnetCompatiblePath);
 
         // Warn about monotonically increasing columns that may be IDs — where the model would read them.
-        if (AutoML.AutoMLRunner.ReadsFeatureColumns(taskType))
+        if (Training.TrainingRunner.ReadsFeatureColumns(taskType))
             WarnMonotonicColumns(mlnetCompatiblePath, labelColumn);
 
         // Column removals are announced only where the model reads feature columns; elsewhere a dropped
         // column was never going to be read.
-        var narrateExclusions = AutoML.AutoMLRunner.ReadsFeatureColumns(taskType) ? _log : null;
+        var narrateExclusions = Training.TrainingRunner.ReadsFeatureColumns(taskType) ? _log : null;
 
         if (featureExclusions is not null)
         {
@@ -281,7 +281,7 @@ public class CsvDataLoader : DataProviderBase
     /// skips it without a word and training and prediction disagree about the feature set.</para>
     /// <para>And it read the bytes as UTF-8 whatever they were. Most callers hand over a file the
     /// encoding conversion has already produced, but the exclusion fallback in
-    /// <c>AutoMLRunner</c> passes the user's own file — where a CP949 header, the case this
+    /// <c>TrainingRunner</c> passes the user's own file — where a CP949 header, the case this
     /// product converts for everywhere else, would come back mojibake and produce exclusion names
     /// that match nothing.</para>
     /// </remarks>
@@ -1022,7 +1022,7 @@ public class CsvDataLoader : DataProviderBase
     /// <remarks>
     /// <para>
     /// ML.NET's own purpose inference already classifies such a column as <c>Ignore</c> (a text
-    /// column at ≥ 0.9 cardinality with no spaces), but <c>AutoMLRunner.BuildColumnInformation</c>
+    /// column at ≥ 0.9 cardinality with no spaces), but <c>TrainingRunner.BuildColumnInformation</c>
     /// declares every text column a text feature, so the id was featurized as TF-IDF n-grams: pure
     /// noise on a real dataset, and a leak path whenever the id encodes anything about the label.
     /// Dropping it here, in the same chain as DateTime/sparse/constant, keeps the decision on the

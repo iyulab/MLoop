@@ -282,7 +282,7 @@ public sealed class OnnxExportTests : IDisposable
             ],
         };
         var data = _ml.Data.CreateTextLoader(loader).Load(path);
-        var trained = MLoop.Core.AutoML.PortableTextFeaturizer.For(_ml, "text")
+        var trained = MLoop.Core.Training.PortableTextFeaturizer.For(_ml, "text")
             .Append(_ml.Transforms.Concatenate("Features", "text"))
             .Append(_ml.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression("label"))
             .Fit(data);
@@ -326,7 +326,7 @@ public sealed class OnnxExportTests : IDisposable
         };
         var data = _ml.Data.CreateTextLoader(loader).Load(path);
         IEstimator<ITransformer> featurizer = portable
-            ? MLoop.Core.AutoML.PortableTextFeaturizer.For(_ml, "text")
+            ? MLoop.Core.Training.PortableTextFeaturizer.For(_ml, "text")
             : _ml.Transforms.Text.TokenizeIntoCharactersAsKeys("chars", "text")
                 .Append(_ml.Transforms.Text.ProduceNgrams("text", "chars", ngramLength: 4, useAllLengths: true,
                     weighting: Microsoft.ML.Transforms.Text.NgramExtractingEstimator.WeightingCriteria.Tf));

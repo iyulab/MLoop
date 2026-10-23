@@ -1,6 +1,6 @@
 # MLoop.Core
 
-The in-process library behind the `mloop` CLI: AutoML training on ML.NET, prediction from a saved
+The in-process library behind the `mloop` CLI: trainer-search training on ML.NET, prediction from a saved
 model, data loading with Korean-encoding detection, and the evaluation rules (quality gate, metric
 names and directions) the CLI applies.
 
@@ -19,15 +19,15 @@ dotnet add package MLoop.Core
 
 ```csharp
 using Microsoft.ML;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
 
 var ml = new MLContext(seed: 42);
 
-// Train: AutoML search within the time budget, evaluated on a held-out split.
-var runner = new AutoMLRunner(ml, new CsvDataLoader(ml));
+// Train: trainer search within the time budget, evaluated on a held-out split.
+var runner = new TrainingRunner(ml, new CsvDataLoader(ml));
 var result = await runner.RunAsync(new TrainingConfig
 {
     ModelName = "default",
@@ -51,7 +51,7 @@ foreach (var row in predictions.Rows)
     Console.WriteLine($"{row.PredictedLabel} {row.Score}");
 ```
 
-`AutoMLRunner` reports progress through `IProgress<TrainingProgress>` and takes a
+`TrainingRunner` reports progress through `IProgress<TrainingProgress>` and takes a
 `CancellationToken`. Its optional `warningSink` and `narrationSink` receive the warnings and progress text
 the CLI prints.
 

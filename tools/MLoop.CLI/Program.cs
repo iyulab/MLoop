@@ -22,7 +22,7 @@ internal class Program
         // Register the DeepLearning module for object-detection etc. tasks.
         // Production wiring: only apps that reference + register MLoop.Core.DeepLearning
         // get DL support; tabular-only consumers never pull it in.
-        MLoop.Core.AutoML.DeepLearningRegistry.Register(new MLoop.Core.DeepLearning.DeepLearningModule());
+        MLoop.Core.Training.DeepLearningRegistry.Register(new MLoop.Core.DeepLearning.DeepLearningModule());
 
         // Cleanup .old binary from previous standalone update (Windows only)
         UpdateChecker.CleanupOldBinary();

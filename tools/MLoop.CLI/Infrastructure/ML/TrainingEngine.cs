@@ -4,7 +4,7 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
@@ -27,7 +27,7 @@ public class TrainingEngine : ITrainingEngine
     private readonly IDataProvider _dataLoader;
     private readonly IExperimentStore _experimentStore;
     private readonly IFileSystemManager _fileSystem;
-    private readonly AutoMLRunner _autoMLRunner;
+    private readonly TrainingRunner _trainingRunner;
     private readonly HookEngine? _hookEngine;
     private readonly MLoop.Core.Metrics.MetricEngine? _metricEngine;
     private readonly string? _projectRoot;
@@ -49,7 +49,7 @@ public class TrainingEngine : ITrainingEngine
         // Core: that is what makes them a `Warning:` line for a human and a `warning` event for a
         // consumer. Without it the AUC-fallback chain and the hook failures were console-only, and a
         // --json run never heard about them.
-        _autoMLRunner = new AutoMLRunner(
+        _trainingRunner = new TrainingRunner(
             _mlContext, _dataLoader,
             warningSink: message => WarningConsole.Warn(Markup.Escape(message)),
             narrationSink: CoreNarration.Sink);
@@ -90,7 +90,7 @@ public class TrainingEngine : ITrainingEngine
         // training whose result is thrown away — measured: NER ran twice, 1,050 s.
         var autoTimed = config.UseAutoTime
                         && !DataLoaderFactory.IsDirectoryBased(config.Task)
-                        && AutoMLRunner.TimeBudgetUnused(config.Task) is null;
+                        && TrainingRunner.TimeBudgetUnused(config.Task) is null;
 
         try
         {
@@ -143,7 +143,7 @@ public class TrainingEngine : ITrainingEngine
                 // Flatten multi-line quoted headers (ML.NET doesn't support them)
                 dataFilePath = CsvDataLoader.FlattenMultiLineHeaders(dataFilePath, CoreNarration.Sink);
 
-                // Update config DataFile so AutoMLRunner uses the processed file
+                // Update config DataFile so TrainingRunner uses the processed file
                 if (dataFilePath != config.DataFile)
                 {
                     // `with` rather than a re-listed constructor: the previous hand-written copy
@@ -208,7 +208,7 @@ public class TrainingEngine : ITrainingEngine
                 // input) loses nothing to these exclusions, so they are made without being announced.
                 // The removal chain runs silent: the warning below is the one announcement, and the
                 // chain's own narration of the same columns printed each of them twice.
-                var readsFeatures = AutoMLRunner.ReadsFeatureColumns(config.Task);
+                var readsFeatures = TrainingRunner.ReadsFeatureColumns(config.Task);
                 var featureExclusions = CsvDataLoader.DetermineExcludedColumns(
                     dataFilePath, config.LabelColumn, log: null, config.ClaimedColumns);
                 config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
@@ -272,7 +272,7 @@ public class TrainingEngine : ITrainingEngine
                         outputDirectory: stratifiedSplitDirectory);
 
                     // TestSplit stays on the config for provenance (the experiment records the fraction
-                    // that was actually requested); AutoMLRunner switches to the pre-split path on the
+                    // that was actually requested); TrainingRunner switches to the pre-split path on the
                     // presence of TestDataFile alone.
                     config = config with { DataFile = split.TrainFile, TestDataFile = split.TestFile };
 
@@ -334,11 +334,11 @@ public class TrainingEngine : ITrainingEngine
             // Run AutoML (with optional auto-time two-phase training).
             // Auto-time probing samples CSV rows, which does not apply to image
             // directories — image classification always uses the single-pass path.
-            AutoMLResult autoMLResult;
+            TrainedModel trained;
 
             if (autoTimed)
             {
-                autoMLResult = await RunAutoTimeTrainingAsync(config, dataFilePath, grantedSeconds, progress, cancellationToken);
+                trained = await RunAutoTimeTrainingAsync(config, dataFilePath, grantedSeconds, progress, cancellationToken);
             }
             else
             {
@@ -356,7 +356,7 @@ public class TrainingEngine : ITrainingEngine
                     FinalTimeSeconds = config.TimeLimitSeconds
                 });
 
-                autoMLResult = await _autoMLRunner.RunAsync(config, progress, cancellationToken);
+                trained = await _trainingRunner.RunAsync(config, progress, cancellationToken);
             }
 
             stopwatch.Stop();
@@ -366,7 +366,7 @@ public class TrainingEngine : ITrainingEngine
             // after this, so a consumer can tell "still training" from "finalizing".
             progress?.Report(new TrainingProgress
             {
-                TrialNumber = autoMLResult.Trials.Count,
+                TrialNumber = trained.Trials.Count,
                 TrainerName = "",
                 Metric = 0,
                 MetricName = "",
@@ -376,23 +376,23 @@ public class TrainingEngine : ITrainingEngine
 
             // Save model
             var modelPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.ModelFileName);
-            _mlContext.Model.Save(autoMLResult.Model, null, modelPath);
+            _mlContext.Model.Save(trained.Model, null, modelPath);
 
             // ② regression wave (heteroscedastic): persist the optional σ(x) model beside the main one
             // so predict/serve can widen the conformal band per row. Absent for non-regression tasks
             // and homoscedastic fallbacks — predict then uses the constant-width band.
-            if (autoMLResult.ResidualModel != null)
+            if (trained.ResidualModel != null)
             {
                 var residualPath = _fileSystem.CombinePath(experimentPath, ExperimentLayout.ResidualModelFileName);
-                _mlContext.Model.Save(autoMLResult.ResidualModel, null, residualPath);
+                _mlContext.Model.Save(trained.ResidualModel, null, residualPath);
             }
 
             await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config, modelPath, cancellationToken);
 
             // The project's metric scripts, over the rows the run's metrics were measured on — recorded with
             // them, and seen by the post-train hooks below.
-            if (_metricEngine != null && autoMLResult.EvaluationData is { } evaluationData)
-                await _metricEngine.AddToAsync(autoMLResult.Metrics, _mlContext, autoMLResult.Model.Transform(evaluationData),
+            if (_metricEngine != null && trained.EvaluationData is { } evaluationData)
+                await _metricEngine.AddToAsync(trained.Metrics, _mlContext, trained.Model.Transform(evaluationData),
                     config.Task, config.LabelColumn, modelName, experimentId);
 
             // Execute PostTrain hooks
@@ -405,9 +405,9 @@ public class TrainingEngine : ITrainingEngine
                     HookName = string.Empty,  // Will be set by HookEngine
                     MLContext = _mlContext,
                     DataView = null,
-                    Model = autoMLResult.Model,
-                    ExperimentResult = autoMLResult,
-                    Metrics = autoMLResult.Metrics,
+                    Model = trained.Model,
+                    ExperimentResult = trained,
+                    Metrics = trained.Metrics,
                     ProjectRoot = _projectRoot!,
                     Logger = new ConsoleLogger(),
                     Metadata = new Dictionary<string, object>
@@ -417,7 +417,7 @@ public class TrainingEngine : ITrainingEngine
                         ["ModelName"] = modelName,
                         ["ExperimentId"] = experimentId,
                         ["TimeLimit"] = config.TimeLimitSeconds,
-                        ["BestTrainer"] = autoMLResult.BestTrainer,
+                        ["BestTrainer"] = trained.BestTrainer,
                         ["ModelPath"] = modelPath
                     }
                 };
@@ -426,9 +426,9 @@ public class TrainingEngine : ITrainingEngine
                 hookRefusal = await _hookEngine.RefusalAsync(HookType.PostTrain, hookContext);
             }
 
-            WarnIfAccuracyDoesNotBeatTheMajorityClass(config, autoMLResult.Metrics, inputSchema);
+            WarnIfAccuracyDoesNotBeatTheMajorityClass(config, trained.Metrics, inputSchema);
 
-            if (inputSchema is not null && autoMLResult.TrainingOnlyColumns is { Count: > 0 } trainingOnly)
+            if (inputSchema is not null && trained.TrainingOnlyColumns is { Count: > 0 } trainingOnly)
                 inputSchema = inputSchema.WithTrainingOnly(trainingOnly);
 
             // Prepare experiment data
@@ -454,17 +454,17 @@ public class TrainingEngine : ITrainingEngine
                     ItemColumn = config.ItemColumn,
                     WeightColumn = config.WeightColumn,
                     Portable = config.Portable,
-                    Search = autoMLResult.Search
+                    Search = trained.Search
                 },
                 Result = new ExperimentResult
                 {
-                    BestTrainer = autoMLResult.BestTrainer,
-                    Trainer = autoMLResult.Trainer,
+                    BestTrainer = trained.BestTrainer,
+                    Trainer = trained.Trainer,
                     TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds
                 },
-                Metrics = autoMLResult.Metrics,
-                Trials = autoMLResult.Trials,
-                RankingMetric = autoMLResult.RankingMetric
+                Metrics = trained.Metrics,
+                Trials = trained.Trials,
+                RankingMetric = trained.RankingMetric
             };
 
             // Save experiment metadata
@@ -477,13 +477,13 @@ public class TrainingEngine : ITrainingEngine
             return new TrainingResult
             {
                 ExperimentId = experimentId,
-                Trainer = autoMLResult.Trainer,
-                Metrics = autoMLResult.Metrics,
+                Trainer = trained.Trainer,
+                Metrics = trained.Metrics,
                 TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds,
                 ModelPath = modelPath,
                 ReportPath = _fileSystem.FileExists(reportPath) ? reportPath : null,
-                Schema = inputSchema ?? autoMLResult.Schema,
-                RowCount = autoMLResult.RowCount,
+                Schema = inputSchema ?? trained.Schema,
+                RowCount = trained.RowCount,
                 HookRefusal = hookRefusal
             };
         }
@@ -578,12 +578,12 @@ public class TrainingEngine : ITrainingEngine
         // directory names. text-classification reads a CSV like the other two and had been left
         // out, so a text classifier got the uniform split this exists to avoid.
         && !DataLoaderFactory.IsDirectoryBased(config.Task)
-        && AutoMLRunner.IsClassification(config.Task);
+        && TrainingRunner.IsClassification(config.Task);
 
     /// <summary>
     /// Two-phase auto-time training: static estimate -> probe run -> reactive estimate -> main run
     /// </summary>
-    private async Task<AutoMLResult> RunAutoTimeTrainingAsync(
+    private async Task<TrainedModel> RunAutoTimeTrainingAsync(
         TrainingConfig config,
         string dataFilePath,
         StrongBox<int> grantedSeconds,
@@ -628,12 +628,12 @@ public class TrainingEngine : ITrainingEngine
             })
             : null;
 
-        var probeAutoMLResult = await _autoMLRunner.RunAsync(probeConfig, probeProgress, cancellationToken);
+        var probeTrainedModel = await _trainingRunner.RunAsync(probeConfig, probeProgress, cancellationToken);
 
         // The probe's outcome as the search judged it — its validation score. The test partition is what the
         // run reports; reading it here (to stop early, or to pick the probe over the main model) let the reported
         // score choose its own model.
-        var (bestMetric, higherIsBetter) = SelectionScore(probeAutoMLResult, config);
+        var (bestMetric, higherIsBetter) = SelectionScore(probeTrainedModel, config);
 
         var probe = new ProbeResult
         {
@@ -645,27 +645,6 @@ public class TrainingEngine : ITrainingEngine
         };
 
         var finalTime = TimeEstimator.EstimateReactive(probe, staticEstimate);
-
-        // Phase 2 buys more AutoML trials. When the probe reports that AutoML could not run on this
-        // data at all — a direct pipeline stood in for it — there are no more trials to buy: the
-        // second pass takes the identical path, fails the identical way, and prints the identical
-        // pair of fallback warnings a second time. Measured on a 50-row imbalanced set: four
-        // warnings for two passes, and a "Phase 2: Main training (130s)" line above a run that
-        // spent 10s not doing it.
-        if (AnotherSearchWouldRepeatTheSameFailure(probeAutoMLResult))
-        {
-            progress?.Report(new TrainingProgress
-            {
-                TrialNumber = probeTrialCount,
-                TrainerName = "",
-                Metric = bestMetric,
-                MetricName = "",
-                ElapsedSeconds = 0,
-                Phase = TrainingPhase.ProbeFellBack,
-                ProbeTimeSeconds = probeTime
-            });
-            return probeAutoMLResult;
-        }
 
         // Phase 2: Main Training (only if not already converged)
         if (higherIsBetter && bestMetric > 0.95)
@@ -680,7 +659,7 @@ public class TrainingEngine : ITrainingEngine
                 Phase = TrainingPhase.ProbeConverged,
                 ProbeTimeSeconds = probeTime
             });
-            return probeAutoMLResult;
+            return probeTrainedModel;
         }
 
         progress?.Report(new TrainingProgress
@@ -698,38 +677,25 @@ public class TrainingEngine : ITrainingEngine
         var mainConfig = config with { TimeLimitSeconds = finalTime, UseAutoTime = false };
         grantedSeconds.Value = probeTime + finalTime;
 
-        var mainResult = await _autoMLRunner.RunAsync(mainConfig, progress, cancellationToken);
+        var mainResult = await _trainingRunner.RunAsync(mainConfig, progress, cancellationToken);
 
         // The better of probe and main by validation score — the same rows for both (one seed, one partition).
         var (mainMetric, _) = SelectionScore(mainResult, config);
-        return (higherIsBetter ? mainMetric >= bestMetric : mainMetric <= bestMetric) ? mainResult : probeAutoMLResult;
+        return (higherIsBetter ? mainMetric >= bestMetric : mainMetric <= bestMetric) ? mainResult : probeTrainedModel;
     }
 
     /// <summary>
     /// A run's score for auto-time to judge it by, and its direction: the kept trial's validation score on the
-    /// ranking metric (<see cref="AutoMLResult.ValidationScore"/>) — or, where no search ran, the test-partition
+    /// ranking metric (<see cref="TrainedModel.ValidationScore"/>) — or, where no search ran, the test-partition
     /// value of the task's primary metric, the only score such a run has.
     /// </summary>
-    internal static (double Value, bool HigherIsBetter) SelectionScore(AutoMLResult result, TrainingConfig config)
+    internal static (double Value, bool HigherIsBetter) SelectionScore(TrainedModel result, TrainingConfig config)
     {
         if (result.ValidationScore is { } validation && result.RankingMetric is { } ranked)
             return (validation, !MetricDirection.IsLowerBetter(ranked));
         return (GetPrimaryMetricValue(result.Metrics, config.CanonicalMetric, config.Task),
             !MetricDirection.IsLowerBetter(config.CanonicalMetric));
     }
-
-    /// <summary>
-    /// Whether running AutoML again under a larger budget would reach the same outcome the probe
-    /// already reached — true only when the probe reports that AutoML could not run on this data at
-    /// all, which is a property of the data and not of the time it was given.
-    /// </summary>
-    /// <remarks>
-    /// Named rather than inlined so the rule is stated once and can be asserted without training a
-    /// model: the engine builds its own <c>AutoMLRunner</c>, so the surrounding phase logic is only
-    /// reachable through a real search.
-    /// </remarks>
-    internal static bool AnotherSearchWouldRepeatTheSameFailure(AutoMLResult probeResult) =>
-        probeResult.Trainer.FallbackKind == TrainerFallbackKind.AutoMLUnavailable;
 
     /// <summary>
     /// Collects basic data statistics from CSV for time estimation
@@ -793,7 +759,7 @@ public class TrainingEngine : ITrainingEngine
         // Same composed question as the split above: a class count only means something when the
         // classes are values in a column.
         var isClassification =
-            AutoMLRunner.IsClassification(task) && !DataLoaderFactory.IsDirectoryBased(task);
+            TrainingRunner.IsClassification(task) && !DataLoaderFactory.IsDirectoryBased(task);
 
         int classCount = isClassification ? labelValues.Count : 0;
 
@@ -881,7 +847,7 @@ public class TrainingEngine : ITrainingEngine
         string experimentPath, string dataFilePath, InputSchemaInfo? inputSchema, TrainingConfig config, string modelPath,
         CancellationToken cancellationToken)
     {
-        if (inputSchema is null || !File.Exists(dataFilePath) || !AutoMLRunner.ReadsFeatureColumns(config.Task))
+        if (inputSchema is null || !File.Exists(dataFilePath) || !TrainingRunner.ReadsFeatureColumns(config.Task))
             return;
         try
         {
@@ -1016,7 +982,7 @@ public class TrainingEngine : ITrainingEngine
 
                 // If InferColumns classified a text column as Ignored,
                 // but InferColumnTypeFromData detected it as Text, override purpose to Feature.
-                // This aligns schema metadata with AutoMLRunner's BuildColumnInformation behavior.
+                // This aligns schema metadata with TrainingRunner's BuildColumnInformation behavior.
                 // Not for a column the exclusion decision already dropped: MarkColumnsAsExcluded
                 // below records it as "Exclude", and announcing "→ Text Feature" first would tell
                 // the user two contradictory things about the same column.

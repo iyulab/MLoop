@@ -1,6 +1,6 @@
 using Microsoft.ML;
 using MLoop.CLI.Infrastructure.Diagnostics;
-using MLoop.Core.AutoML;
+using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
@@ -36,7 +36,7 @@ public class DataQualityValidator
         }
 
         // Then check dataset size — against the feature count only where the model reads the features.
-        CheckDatasetSize(dataFile, result, AutoMLRunner.ReadsFeatureColumns(taskType));
+        CheckDatasetSize(dataFile, result, TrainingRunner.ReadsFeatureColumns(taskType));
 
         return result;
     }
@@ -90,18 +90,18 @@ public class DataQualityValidator
 
             // "Does this model predict a class" — the question that decides whether a text label
             // column is legitimate here.
-            var isClassificationTask = AutoMLRunner.IsClassification(taskType);
+            var isClassificationTask = TrainingRunner.IsClassification(taskType);
 
             // And the inverse of "does this task need a label at all", which has its own authority
             // rather than a second list of the unsupervised tasks to keep in step with it.
-            if (!AutoMLRunner.RequiresLabel(taskType))
+            if (!TrainingRunner.RequiresLabel(taskType))
             {
                 // Skip label-related warnings for unsupervised tasks
                 return result;
             }
 
             // A tag sequence or an answer text is neither a number nor a class to count.
-            if (AutoMLRunner.HasTextLabel(taskType))
+            if (TrainingRunner.HasTextLabel(taskType))
             {
                 return result;
             }
@@ -353,7 +353,7 @@ public class DataQualityValidator
         // whose labels are directory names has no column to count; one that reads a CSV does,
         // which is why text-classification belongs here and had been left out.
         var countsClassesInAColumn =
-            AutoMLRunner.IsClassification(taskType) && !DataLoaderFactory.IsDirectoryBased(taskType);
+            TrainingRunner.IsClassification(taskType) && !DataLoaderFactory.IsDirectoryBased(taskType);
         if (!countsClassesInAColumn || uniqueClasses.Count < 2)
             return;
 

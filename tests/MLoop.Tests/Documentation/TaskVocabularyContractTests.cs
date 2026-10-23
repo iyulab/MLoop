@@ -181,7 +181,7 @@ public class TaskVocabularyContractTests
             .ToList();
 
         // The scan reaches the two files that used to do this.
-        Assert.Contains(scanned, f => Path.GetFileName(f) == "AutoMLRunner.cs");
+        Assert.Contains(scanned, f => Path.GetFileName(f) == "TrainingRunner.cs");
         Assert.Contains(scanned, f => Path.GetFileName(f) == "PerformanceDiagnostics.cs");
 
         var offenders = scanned

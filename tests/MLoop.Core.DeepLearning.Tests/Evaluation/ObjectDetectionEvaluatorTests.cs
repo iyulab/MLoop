@@ -61,7 +61,7 @@ public sealed class ObjectDetectionEvaluatorTests : IDisposable
         var data = loader.LoadData(_tempDir, labelColumn: "Label", taskType: "object-detection");
         var (train, test) = loader.SplitData(data, testFraction: 0.34);
 
-        // Mirror AutoMLRunner.RunObjectDetectionAsync so the scored schema matches production.
+        // Mirror TrainingRunner.RunObjectDetectionAsync so the scored schema matches production.
         var pipeline = ml.Transforms.LoadImages(
                 outputColumnName: "Image", imageFolder: string.Empty, inputColumnName: CocoDataLoader.ImagePathColumn)
             .Append(ml.Transforms.Conversion.MapValueToKey(
