@@ -29,14 +29,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- `mloop serve` logged every health probe twice at Information — the request line and a "Health check requested"
-  line — so a container HEALTHCHECK (the one `mloop docker` writes) filled the log with probes. A successful
-  `/health` request is now logged at Verbose, below every configured level; a failing one is still an error.
-
-- `mloop drift` and `GET /drift` counted a yes/no column's values by spelling: a training file's `yes` and a JSON
-  request's `true` (logged as `True`) fell in different bins, so a column whose values never changed read as
-  drifted. In a yes/no column, values are now binned by what they mean.
-
 - **Yes/no feature columns** (`yes`/`no`, `true`/`false`, `t`/`f`, …) were lost on the way to a prediction:
   - With two or more of them, training never read them: the loader folds them into one boolean vector, and the
     trainer search gave that vector no role, so every model was fitted without those columns.
@@ -49,6 +41,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the columns into the vector training read. Models trained by earlier versions with one yes/no column predict
   correctly without retraining (their schema's yes/no values identify the column); models with two or more
   should be retrained to use them.
+
+- `mloop serve` logged every health probe twice at Information — the request line and a "Health check requested"
+  line — so a container HEALTHCHECK (the one `mloop docker` writes) filled the log with probes. A successful
+  `/health` request is now logged at Verbose, below every configured level; a failing one is still an error.
+
+- `mloop drift` and `GET /drift` counted a yes/no column's values by spelling: a training file's `yes` and a JSON
+  request's `true` (logged as `True`) fell in different bins, so a column whose values never changed read as
+  drifted. In a yes/no column, values are now binned by what they mean.
 
 - `mloop evaluate --slice-by` printed one table with every metric, and at 80 columns the numbers themselves wrapped
   (`0.862` on one line, `1` under it). The metrics are now split into tables that each fit the console, every

@@ -280,6 +280,13 @@ n-grams (TF-IDF). Training prints which is which (`Categorical column(s): …`),
 once from the whole training file, and the saved schema records it. To decide yourself, declare the
 column `type: categorical` or `type: text` below.
 
+**Yes/no columns are read as 0/1.** A column whose every value is a yes/no word — `yes`/`no`,
+`true`/`false`, `t`/`f`, `y`/`n` in any case — is a boolean feature in every task, including anomaly
+detection, clustering and ranking. The saved schema records it as `Boolean`, and a prediction accepts
+any of those spellings for it, or a JSON `true`/`false` (`mloop serve`); drift counts them by meaning,
+not spelling. A column that holds `0`/`1` is a number, and one with a missing value or a third value is
+a category.
+
 This writes column overrides into `mloop.yaml`, which you can also edit directly. An explicit type
 override is honoured over inference, and — for the identifier rule — over the heuristic: a column
 you declare as `text`, `categorical` or `numeric` is never dropped as an identifier, and neither is
@@ -1489,7 +1496,8 @@ file additionally mounts `models/` read-only so a promoted model can be picked u
 
 **docker-compose.yml Features**:
 - Health check that issues a GET (a HEAD-only probe is answered 405 by a GET route, which reads to
-  the orchestrator as a dead container even while the service is healthy)
+  the orchestrator as a dead container even while the service is healthy). A successful probe is
+  logged at Verbose, so the probes do not fill the server's log; a failing one is an error
 - Volume mounts for models
 - Environment variables for API configuration, including the required signing key
 - Restart policy for production
