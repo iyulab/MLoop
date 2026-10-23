@@ -45,8 +45,9 @@ public sealed class ThresholdCommandTests : IDisposable
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
         await File.WriteAllTextAsync("datasets/train.csv", Noisy(300, 3));
         await File.WriteAllTextAsync("datasets/recheck.csv", Noisy(300, 9));
-        var (exit, output, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
-        Assert.True(exit == 0, output);
+        var (exit, output, error) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        // stderr carries the reason a run fails; without it a failure here showed only the progress lines.
+        Assert.True(exit == 0, output + Environment.NewLine + error);
     }
 
     private static async Task<JsonElement> JsonAsync(params string[] args)
