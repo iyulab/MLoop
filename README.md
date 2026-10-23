@@ -231,7 +231,7 @@ cd vision
 #   datasets/images/OK/  img001.jpg ...
 #   datasets/images/NG/  img101.jpg ...
 
-mloop runtime install tf        # one-time TensorFlow CPU runtime (~182MB)
+mloop runtime install tf        # one-time TensorFlow CPU runtime (~182MB; Windows, Linux x64)
 mloop train --task image-classification   # auto-detects datasets/images/
 ```
 
@@ -390,7 +390,7 @@ The section above shows the ones a first project uses. This is the whole surface
 | `docker` | Generate Docker configuration for model deployment |
 | `new` | Generate new project components (hooks) |
 | `runtime` | Manage on-demand ML runtime downloads |
-| `encoder` | Install, list or remove the pretrained image encoders `embed` runs |
+| `encoder` | Install a catalog encoder (`install dinov2-small`), add your own, list or remove the encoders `embed` runs |
 | `embed` | Embed images as vectors with a pretrained encoder |
 | `update` | Check for and install CLI updates |
 
