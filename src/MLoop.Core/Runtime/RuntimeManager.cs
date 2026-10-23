@@ -292,6 +292,43 @@ public class RuntimeManager
     /// <summary>
     /// Ensures runtime is loaded for use. Call before using DL features.
     /// </summary>
+    // The libraries preloaded from the runtime cache, by the name a P/Invoke asks for them with.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IntPtr> Preloaded = new(StringComparer.Ordinal);
+    private static int _resolverRegistered;
+
+    /// <summary>
+    /// Hands a preloaded library to a P/Invoke that asks for it by name. On Windows the cache directory is on the DLL
+    /// search path; elsewhere nothing points the loader at it — <c>LD_LIBRARY_PATH</c> set while the process runs is not
+    /// read again, and loading a library by its full path does not make <c>[DllImport("tensorflow")]</c> find it. That
+    /// failed image classification on Linux and macOS inside ML.NET, which reported it only as a TensorFlow exception
+    /// "while loading model".
+    /// </summary>
+    private static void EnsureResolverRegistered()
+    {
+        if (Interlocked.Exchange(ref _resolverRegistered, 1) == 1)
+            return;
+        System.Runtime.Loader.AssemblyLoadContext.Default.ResolvingUnmanagedDll += (_, name) =>
+            Preloaded.TryGetValue(NativeLibraryName(name), out var handle) ? handle : IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// A native library's name without the platform's dressing — <c>libtensorflow.so</c>, <c>tensorflow.dll</c> and
+    /// <c>tensorflow</c> are all <c>tensorflow</c>; a version suffix (<c>.so.2</c>) is part of the dressing.
+    /// </summary>
+    internal static string NativeLibraryName(string fileName)
+    {
+        var name = Path.GetFileName(fileName);
+        var so = name.IndexOf(".so", StringComparison.Ordinal);
+        if (so > 0)
+            name = name[..so];
+        else if (name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase))
+            name = Path.GetFileNameWithoutExtension(name);
+        if (name.StartsWith("lib", StringComparison.Ordinal) && name.Length > 3)
+            name = name[3..];
+        var version = name.IndexOf('.');
+        return version > 0 && name.Length > version + 1 && char.IsDigit(name[version + 1]) ? name[..version] : name;
+    }
+
     public void EnsureLoaded(RuntimeDefinition runtime)
     {
         if (_loadedRuntimes.Contains(runtime.Id))
@@ -338,9 +375,10 @@ public class RuntimeManager
         foreach (var lib in libs)
         {
             var libPath = Path.Combine(runtimeDir, lib);
-            if (File.Exists(libPath) && new FileInfo(libPath).Length > 0)
-                NativeLibrary.TryLoad(libPath, out _);
+            if (File.Exists(libPath) && new FileInfo(libPath).Length > 0 && NativeLibrary.TryLoad(libPath, out var handle))
+                Preloaded[NativeLibraryName(lib)] = handle;
         }
+        EnsureResolverRegistered();
 
         // Preload the managed stack's native wrapper (if any) so its static initializer finds
         // it already resident — TorchSharp searches relative to its own assembly, not the cache.

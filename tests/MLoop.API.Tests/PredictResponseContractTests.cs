@@ -283,4 +283,69 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
             row.TryGetProperty("distances", out _).Should().BeFalse("a field without a value is absent, not null");
         }
     }
+
+    // POST /predict takes an image model's images by their contents, as POST /embed does. What it refuses, it refuses
+    // before any model work: too many, one that cannot be decoded (named by position), a body that is not JSON — and
+    // images sent to a model that does not read images.
+    private static string Pattern => Convert.ToBase64String(File.ReadAllBytes(
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "embedding", "pattern.png")));
+
+    [Fact]
+    public async Task Images_sent_to_a_model_that_does_not_read_them_are_refused()
+    {
+        var modelName = SeedMulticlassProductionModel();
+
+        var response = await _client.PostAsJsonAsync($"/predict?name={modelName}", new { images = new[] { Pattern } });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("image-classification");
+    }
+
+    [Fact]
+    public async Task More_images_than_one_request_takes_is_413()
+    {
+        var modelName = SeedMulticlassProductionModel();
+
+        var response = await _client.PostAsJsonAsync($"/predict?name={modelName}", new { images = Enumerable.Repeat(Pattern, 65) });
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+    }
+
+    [Fact]
+    public async Task An_image_that_cannot_be_decoded_is_named_by_its_position()
+    {
+        var modelName = SeedMulticlassProductionModel();
+
+        var response = await _client.PostAsJsonAsync($"/predict?name={modelName}",
+            new { images = new[] { Pattern, Convert.ToBase64String("not an image"u8.ToArray()) } });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync()).GetProperty("index").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_body_that_is_not_json_is_400()
+    {
+        var modelName = SeedMulticlassProductionModel();
+
+        var response = await _client.PostAsync($"/predict?name={modelName}",
+            new StringContent("{ not json", System.Text.Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Images_in_a_multipart_form_are_read_like_base64_ones()
+    {
+        var modelName = SeedMulticlassProductionModel();
+        using var form = new MultipartFormDataContent();
+        form.Add(new ByteArrayContent(Convert.FromBase64String(Pattern)), "image", "pattern.png");
+
+        var response = await _client.PostAsync($"/predict?name={modelName}", form);
+
+        // Read, decoded and then refused for the model's task — the same answer as the JSON form.
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("image-classification");
+    }
+
 }

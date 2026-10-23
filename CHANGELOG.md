@@ -8,11 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `POST /predict` takes an image-classification model's images by their contents — `{"images": ["<base64>", …]}` or
+  files as multipart form data, at most 64, as `POST /embed` takes them. Rows with an image path still work where the
+  server can read the path; content needs no shared disk. An image that cannot be decoded is a 400 naming its
+  position, images sent to a model of another task a 400, more than 64 a 413. Served predictions of images are logged
+  by each image's SHA-256 (`imageSha256`).
+
 - `mloop encoder install <id>`: downloads an encoder from MLoop's catalog, checks its pinned SHA-256 and installs it.
   The first entry is `dinov2-small` (DINOv2 ViT-S/14, Apache-2.0, 384 dimensions). `EncoderCatalog` and
   `EncoderStore.InstallAsync` are the library side. A missing encoder's message now names the install command.
 
 ### Fixed
+
+- **Image classification could not train on Linux or macOS**: it failed with "Tensorflow exception triggered while
+  loading model". The runtime's libraries were preloaded from `~/.mloop/runtimes` by their full path, but a P/Invoke
+  asks for `tensorflow` by name, and outside Windows nothing pointed the loader at that directory (an
+  `LD_LIBRARY_PATH` set while the process runs is not read again). Preloaded runtime libraries are now handed to the
+  imports that ask for them. Measured on Linux x64: training, `mloop serve` and `POST /predict` with image contents.
 
 - The TensorFlow runtime (`mloop runtime install tf`, image classification) listed macOS and a Linux package that do
   not exist: TensorFlow's redistributable 2.16.0 carries Windows and Linux x64 libraries only, and the GPU package

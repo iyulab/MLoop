@@ -412,9 +412,9 @@ try
 
     // Prediction endpoint (secured)
     app.MapPost("/predict", async (
+        HttpRequest request,
         [FromQuery] string? name,
         [FromQuery] string? experiment,
-        JsonElement input,
         IModelRegistry registry,
         IExperimentStore experimentStore,
         MLContext mlContext,
@@ -426,7 +426,57 @@ try
     {
         var stopwatch = Stopwatch.StartNew();
         var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
-        var predictionCount = input.ValueKind == JsonValueKind.Array ? input.GetArrayLength() : 1;
+
+        // The body: rows as JSON, or — for an image model — images by their contents, as POST /embed takes them
+        // (base64 under "images", or files in a multipart form). An empty body is no rows: forecasting needs none.
+        JsonElement input = default;
+        List<byte[]>? images = null;
+        if (request.HasFormContentType)
+        {
+            images = await ImageInputs.FromFormAsync(await request.ReadFormAsync(ct), ct);
+        }
+        else
+        {
+            using var reader = new StreamReader(request.Body);
+            var text = await reader.ReadToEndAsync(ct);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                try
+                {
+                    input = JsonDocument.Parse(text).RootElement.Clone();
+                }
+                catch (JsonException ex)
+                {
+                    return Results.BadRequest(new { error = $"The body is not JSON: {ex.Message}" });
+                }
+                if (ImageInputs.TryGetImages(input, out var encoded))
+                {
+                    var (decoded, unreadable) = ImageInputs.FromJson(encoded);
+                    if (decoded is null)
+                        return Results.BadRequest(new { error = unreadable });
+                    images = decoded;
+                }
+            }
+        }
+        if (images is not null)
+        {
+            if (ImageInputs.Refusal(images) is { } refused)
+                return refused;
+            for (var i = 0; i < images.Count; i++)
+            {
+                try
+                {
+                    MLoop.Core.Embedding.ImagePreprocessor.EnsureDecodable(images[i], i);
+                }
+                catch (MLoop.Core.Embedding.UnreadableImageException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message, index = ex.Index });
+                }
+            }
+        }
+
+        var predictionCount = images?.Count ?? (input.ValueKind == JsonValueKind.Array ? input.GetArrayLength() : 1);
+        var imageFiles = new List<string>();
 
         try
         {
@@ -530,8 +580,28 @@ try
                 );
             }
 
-            // Parse JSON input to dictionary rows
-            var rows = ParseJsonInput(input);
+            // The rows: parsed from JSON, or one per image — written to a scratch file the model's image column reads,
+            // and logged by the image's SHA-256 rather than a path that is gone once the request ends.
+            Dictionary<string, object>[] rows;
+            Dictionary<string, object>[] loggedRows;
+            if (images is not null)
+            {
+                if (MLoop.Core.Models.TaskTypes.Canonical(taskType) != "image-classification")
+                    return Results.BadRequest(new { error = $"Images are predicted by an image-classification model; '{modelName}' answers {taskType}. Send its rows as JSON." });
+                foreach (var image in images)
+                {
+                    var file = MLoop.Core.Data.ScratchFiles.New("mloop_predict_image_", ".img");
+                    imageFiles.Add(file);
+                    await File.WriteAllBytesAsync(file, image, ct);
+                }
+                rows = [.. imageFiles.Select(file => new Dictionary<string, object> { [MLoop.Core.Data.ImageDirectoryLoader.ImagePathColumn] = file })];
+                loggedRows = [.. images.Select(image => new Dictionary<string, object> { ["imageSha256"] = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(image)) })];
+            }
+            else
+            {
+                rows = ParseJsonInput(input);
+                loggedRows = rows;
+            }
 
             // Run prediction through shared PredictionService
             var labelColumn = expData?.Config?.LabelColumn;
@@ -579,7 +649,7 @@ try
                         modelName,
                         answeringId,
                         predictions.Select((row, i) => new PredictionLogEntry(
-                            modelName, answeringId, rows[i], PredictionLogOutput.Of(row), row.Confidence,
+                            modelName, answeringId, loggedRows[i], PredictionLogOutput.Of(row), row.Confidence,
                             loggedAt, ids[i])),
                         ct);
                     predictions = predictions.Select((row, i) => row with { PredictionId = ids[i] }).ToList();
@@ -623,11 +693,19 @@ try
                 statusCode: StatusCodes.Status500InternalServerError
             );
         }
+        finally
+        {
+            foreach (var file in imageFiles)
+                MLoop.Core.Data.ScratchFiles.Release(file);
+        }
     })
     .WithName("Predict")
     .WithTags("Prediction")
+    .Accepts<JsonElement>("application/json", "multipart/form-data")
     .Produces<object>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest)
     .Produces<object>(StatusCodes.Status404NotFound)
+    .Produces<object>(StatusCodes.Status413PayloadTooLarge)
     .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
     .RequireAuthorization();
 

@@ -44,6 +44,12 @@ public static class ImagePreprocessor
         return width <= height ? (shortestEdge, newLong) : (newLong, shortestEdge);
     }
 
+    /// <summary>
+    /// Throws <see cref="UnreadableImageException"/> (naming <paramref name="index"/>) unless <paramref name="encoded"/> is
+    /// an image this preprocessor — and so a model reading the same bytes — can decode.
+    /// </summary>
+    public static void EnsureDecodable(ReadOnlySpan<byte> encoded, int index = 0) => Decode(encoded, index);
+
     private static (byte[] Rgb, int Width, int Height) Decode(ReadOnlySpan<byte> encoded, int index)
     {
         // Decoded unpremultiplied, and the alpha dropped, not composited — what converting to RGB does in the image

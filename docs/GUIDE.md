@@ -1054,7 +1054,9 @@ mloop serve --detach
 # GET  /info                - Production model information
 # GET  /models              - List all models
 # POST /predict             - Make predictions (?experiment=<exp-id>: a candidate answers instead
-#                              of production — a shadow prediction; production does not move)
+#                              of production — a shadow prediction; production does not move).
+#                              An image-classification model takes the images themselves, as /embed does:
+#                              {"images": ["<base64>", …]} or files as multipart form data (at most 64)
 # POST /embed               - Images to vectors with a pretrained encoder (see `mloop embed`)
 
 # Authentication: every endpoint except /health requires a JWT bearer token. Mint one with the

@@ -10,9 +10,6 @@ namespace MLoop.API;
 /// </summary>
 public static class EmbedEndpoint
 {
-    /// <summary>The JSON body: images as base64.</summary>
-    public sealed record EmbedRequest(IReadOnlyList<string>? Images);
-
     public static void MapEmbed(this WebApplication app)
     {
         app.MapPost("/embed", async (HttpRequest request, [FromQuery] string? encoder, EmbedderPool pool, CancellationToken ct) =>
@@ -20,11 +17,8 @@ public static class EmbedEndpoint
             var (images, unreadable) = await ReadImagesAsync(request, ct);
             if (images is null)
                 return Results.BadRequest(new { error = unreadable });
-            if (images.Count == 0)
-                return Results.BadRequest(new { error = "No image given: send {\"images\": [\"<base64>\", …]} or image files as multipart form data." });
-            if (images.Count > EmbedderPool.MaxImages)
-                return Results.Json(new { error = $"{images.Count} images in one request; at most {EmbedderPool.MaxImages}." },
-                    statusCode: StatusCodes.Status413PayloadTooLarge);
+            if (ImageInputs.Refusal(images) is { } refused)
+                return refused;
 
             var (embedder, refusal) = pool.Get(encoder);
             if (embedder is null)
@@ -52,41 +46,16 @@ public static class EmbedEndpoint
     internal static async Task<(List<byte[]>? Images, string? Error)> ReadImagesAsync(HttpRequest request, CancellationToken ct)
     {
         if (request.HasFormContentType)
-        {
-            var form = await request.ReadFormAsync(ct);
-            var files = new List<byte[]>(form.Files.Count);
-            foreach (var file in form.Files)
-            {
-                using var buffer = new MemoryStream();
-                await file.CopyToAsync(buffer, ct);
-                files.Add(buffer.ToArray());
-            }
-            return (files, null);
-        }
+            return (await ImageInputs.FromFormAsync(await request.ReadFormAsync(ct), ct), null);
 
-        EmbedRequest? body;
         try
         {
-            body = await JsonSerializer.DeserializeAsync<EmbedRequest>(request.Body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+            using var body = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
+            return ImageInputs.TryGetImages(body.RootElement, out var images) ? ImageInputs.FromJson(images) : ([], null);
         }
         catch (JsonException ex)
         {
             return (null, $"The body is not JSON of the form {{\"images\": [\"<base64>\", …]}}: {ex.Message}");
         }
-
-        var images = new List<byte[]>();
-        var encoded = body?.Images ?? [];
-        for (var i = 0; i < encoded.Count; i++)
-        {
-            try
-            {
-                images.Add(Convert.FromBase64String(encoded[i]));
-            }
-            catch (FormatException)
-            {
-                return (null, $"Image {i} is not base64.");
-            }
-        }
-        return (images, null);
     }
 }

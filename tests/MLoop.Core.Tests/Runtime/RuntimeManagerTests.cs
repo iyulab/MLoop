@@ -110,4 +110,20 @@ public class RuntimeManagerTests
         Assert.False(Directory.Exists(cache));
     }
 
+
+    // A P/Invoke asks for a library by a bare name; the cache holds platform file names. Every spelling of one library
+    // must meet at one name, or a preloaded library stays out of reach of the import that needs it.
+    [Theory]
+    [InlineData("libtensorflow.so", "tensorflow")]
+    [InlineData("tensorflow.dll", "tensorflow")]
+    [InlineData("tensorflow", "tensorflow")]
+    [InlineData("libtensorflow", "tensorflow")]
+    [InlineData("libtensorflow_framework.so.2", "tensorflow_framework")]
+    [InlineData("libtensorflow.2.dylib", "tensorflow")]
+    [InlineData("libonnxruntime.so", "onnxruntime")]
+    [InlineData("libc10.dylib", "c10")]
+    [InlineData("torch_cpu.dll", "torch_cpu")]
+    public void ANativeLibrary_IsKnownByOneName_WhateverThePlatformCallsIt(string fileName, string name)
+        => Assert.Equal(name, RuntimeManager.NativeLibraryName(fileName));
+
 }
