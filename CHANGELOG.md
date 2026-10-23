@@ -61,6 +61,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Anomaly detection, clustering and ranking read yes/no feature columns as 0/1 in their feature vector; they used
+  to warn that such columns were not used. A clustering model now carries its feature step with it (it held only
+  the trainer), so it reads the loaded columns as every other model does. Retrain to include yes/no columns;
+  models trained earlier keep predicting as before.
+
 - **Breaking (library):** `OnnxVerification.Unavailable()` and `OnnxVerification.NativeLibraryPath()` moved to
   `MLoop.Core.Runtime.OnnxRuntimeNative`. Export verification and the image encoders run on the same ONNX Runtime and
   share one place that decides whether it can run.

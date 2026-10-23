@@ -1141,7 +1141,7 @@ public partial class TrainingRunner
         {
             // The numeric feature columns (not the label)
             var featureColumns = NumericVectorColumns(trainSet.Schema,
-                name => name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase), "Anomaly detection", mergedColumnGroups);
+                name => name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase));
 
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for anomaly detection.");
@@ -1152,7 +1152,7 @@ public partial class TrainingRunner
             var rank = Math.Min(featureColumns.Count, 20);
 
             // Build pipeline: Concatenate features → missing values to the mean (MissingNumbers) → RandomizedPca
-            var pipeline = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray())
+            var pipeline = FeatureVector(trainSet.Schema, featureColumns)
                 .Append(_mlContext.Transforms.ReplaceMissingValues("Features", replacementMode: MissingValueReplacingEstimator.ReplacementMode.Mean))
                 .Append(_mlContext.AnomalyDetection.Trainers.RandomizedPca(
                     featureColumnName: "Features",
@@ -1240,17 +1240,15 @@ public partial class TrainingRunner
         {
             // The numeric feature columns (not a label, when there is one)
             var featureColumns = NumericVectorColumns(trainSet.Schema,
-                name => !string.IsNullOrEmpty(config.LabelColumn) && name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase),
-                "Clustering", mergedColumnGroups);
+                name => !string.IsNullOrEmpty(config.LabelColumn) && name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase));
 
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for clustering.");
 
-            // Featurize before fitting and fit only the trainer on the result: the saved model's one input
-            // is then "Features", which every prediction path builds itself (the file loader as one range,
-            // serve from the named columns) — a Concatenate inside the model would concatenate that vector
-            // again.
-            var featurizer = _mlContext.Transforms.Concatenate("Features", featureColumns.ToArray()).Fit(trainSet);
+            // Featurize once, before the k search, and fit only the trainer on the result; the saved model is
+            // the two together, so it reads the loaded columns as every other task's model does — yes/no
+            // columns included, which no prediction path folds into "Features" on its own.
+            var featurizer = FeatureVector(trainSet.Schema, featureColumns).Fit(trainSet);
             var featurizedTrainSet = featurizer.Transform(trainSet);
             var featurizedTestSet = featurizer.Transform(testSet);
 
@@ -1364,7 +1362,7 @@ public partial class TrainingRunner
             return new TrainedModel
             {
                 Trainer = TrainerDescriptor.Of("KMeans", ("k", bestK)),
-                Model = bestModel!,
+                Model = featurizer.Append(bestModel!),
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = RowsIn(trainSet),
                 Trials = trialChannel.Records,
@@ -1394,8 +1392,7 @@ public partial class TrainingRunner
             // The numeric feature columns (not the label or the group)
             var featureColumns = NumericVectorColumns(trainSet.Schema,
                 name => name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)
-                     || name.Equals(config.GroupColumn, StringComparison.OrdinalIgnoreCase),
-                "Ranking", mergedColumnGroups);
+                     || name.Equals(config.GroupColumn, StringComparison.OrdinalIgnoreCase));
 
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for ranking.");
@@ -1408,7 +1405,7 @@ public partial class TrainingRunner
             // Build pipeline: convert label to Single, hash group to Key, concatenate features
             var pipeline = _mlContext.Transforms.Conversion.ConvertType(config.LabelColumn, outputKind: Microsoft.ML.Data.DataKind.Single)
                 .Append(_mlContext.Transforms.Conversion.MapValueToKey("GroupId", config.GroupColumn))
-                .Append(_mlContext.Transforms.Concatenate("Features", featureColumns.ToArray()))
+                .Append(FeatureVector(trainSet.Schema, featureColumns))
                 .Append(_mlContext.Transforms.ReplaceMissingValues("Features", replacementMode: MissingValueReplacingEstimator.ReplacementMode.Mean));
 
             // Try both trainers: LightGbm and FastTree
@@ -2092,33 +2089,39 @@ public partial class TrainingRunner
 
     /// <summary>
     /// The columns a trainer that reads one numeric vector (anomaly detection, clustering, ranking) puts into
-    /// <c>Features</c>: the numbers — scalar columns and the loader's numeric vectors — in schema order.
+    /// <c>Features</c>: the numbers and the yes/no columns — scalar columns and the loader's vectors — in
+    /// schema order. <see cref="FeatureVector"/> turns them into the vector.
     /// </summary>
-    /// <remarks>
-    /// That is the vector a prediction rebuilds from the saved schema, which records yes/no columns as
-    /// categories; so a yes/no column is not read here either, and the user is told so. (Taking one in
-    /// also failed the fit: <c>Concatenate</c> joins columns of one item type only.)
-    /// </remarks>
-    private List<string> NumericVectorColumns(DataViewSchema schema, Func<string, bool> skip, string task,
-        IReadOnlyDictionary<string, string[]>? mergedColumnGroups)
+    private static List<string> NumericVectorColumns(DataViewSchema schema, Func<string, bool> skip)
     {
         var columns = new List<string>();
-        var booleans = new List<string>();
         foreach (var col in schema)
         {
             if (col.IsHidden || skip(col.Name))
                 continue;
 
             var item = col.Type is VectorDataViewType vector ? vector.ItemType : col.Type;
-            if (item is NumberDataViewType)
+            if (item is NumberDataViewType or BooleanDataViewType)
                 columns.Add(col.Name);
-            else if (item is BooleanDataViewType)
-                booleans.AddRange(mergedColumnGroups is not null && mergedColumnGroups.TryGetValue(col.Name, out var sources) ? sources : [col.Name]);
         }
-
-        if (booleans.Count > 0)
-            _logger.Warning($"{task} reads numeric columns only; yes/no column(s) not used: {string.Join(", ", booleans)}");
         return columns;
+    }
+
+    /// <summary>
+    /// <c>Features</c> from <paramref name="columns"/>: yes/no columns as 0/1 (<c>Concatenate</c> joins one item
+    /// type only), then every column in order. Part of the saved model, so it reads the columns as the loader
+    /// names them — and as serving folds them (<see cref="Data.ColumnLayoutInference.FoldedName"/>).
+    /// </summary>
+    private IEstimator<ITransformer> FeatureVector(DataViewSchema schema, IReadOnlyList<string> columns)
+    {
+        var concatenate = _mlContext.Transforms.Concatenate("Features", [.. columns]);
+        var yesNo = columns
+            .Where(c => (schema[c].Type is VectorDataViewType v ? v.ItemType : schema[c].Type) is BooleanDataViewType)
+            .Select(c => new InputOutputColumnPair(c, c))
+            .ToArray();
+        return yesNo.Length == 0
+            ? concatenate
+            : _mlContext.Transforms.Conversion.ConvertType(yesNo, DataKind.Single).Append(concatenate);
     }
 
     /// <summary>

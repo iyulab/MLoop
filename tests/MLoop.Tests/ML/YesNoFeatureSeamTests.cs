@@ -64,6 +64,68 @@ public class YesNoFeatureSeamTests : IDisposable
             $"agreement with the yes/no column — file predict {Agreement(filed, expected):P0}, serve {Agreement(servedLabels, expected):P0}; evaluate auc {evaluation.Metrics["auc"]:F3}");
     }
 
+    // A label-less model reads yes/no columns as 0/1 in its vector: two clusters that differ only by them are
+    // told apart by every reader. Before, these tasks warned that the columns were not used.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Clustering_separates_by_yes_no_columns_in_every_reader(int yesNoColumns)
+    {
+        var path = Path.Combine(_tempDir, "clusters.csv");
+        var rnd = new Random(3);
+        var lines = new List<string> { yesNoColumns == 2 ? "x,flag,other" : "x,flag" };
+        var truth = new List<bool>();
+        for (var i = 0; i < 200; i++)
+        {
+            var flag = i % 2 == 0;
+            truth.Add(flag);
+            var x = (rnd.NextDouble() * 0.01).ToString("F4", CultureInfo.InvariantCulture);
+            var yesNo = flag ? "yes" : "no";
+            lines.Add(yesNoColumns == 2 ? $"{x},{yesNo},{yesNo}" : $"{x},{yesNo}");
+        }
+        File.WriteAllLines(path, lines);
+
+        var fs = new FileSystemManager();
+        var store = new ExperimentStore(fs, new ProjectDiscovery(fs), _tempDir);
+        var originalOut = Console.Out;
+        Console.SetOut(new StringWriter());
+        TrainingResult result;
+        try
+        {
+            result = await new TrainingEngine(fs, store).TrainAsync(new TrainingConfig
+            {
+                ModelName = "clusters", DataFile = path, LabelColumn = "", Task = "clustering",
+                TimeLimitSeconds = 10, NumClusters = 2,
+            }, progress: null, CancellationToken.None);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+        var modelPath = Path.Combine(store.GetExperimentPath("clusters", result.ExperimentId), ExperimentLayout.ModelFileName);
+
+        var output = Path.Combine(_tempDir, "clusters-out.csv");
+        await new PredictionEngine().PredictAsync(modelPath, path, output, result.Schema!,
+            CategoricalMapper.UnknownValueStrategy.Auto, cancellationToken: default,
+            labelColumnOverride: null, preserveColumns: null, interval: null, taskType: "clustering");
+        var header = File.ReadLines(output).First().TrimStart('\uFEFF').Split(',');
+        var clusterIndex = Array.IndexOf(header, "PredictedLabel");
+        Assert.True(clusterIndex >= 0, string.Join(",", header));
+        var filed = File.ReadLines(output).Skip(1).Select(l => l.Split(',')[clusterIndex]).ToList();
+
+        var rows = PredictionEngine.LoadCsvAsRows(path, result.Schema!, null);
+        var served = new PredictionEngine().PredictWithService(rows, result.Schema!, modelPath, "clustering", null);
+        var servedIds = served.Rows.Select(r => r.ClusterId?.ToString() ?? "").ToList();
+
+        Assert.True(Purity(filed, truth) > 0.95 && Purity(servedIds, truth) > 0.95,
+            $"cluster purity by the yes/no column — file predict {Purity(filed, truth):P0}, serve {Purity(servedIds, truth):P0}");
+    }
+
+    // The share of rows whose cluster's majority matches their own yes/no value.
+    private static double Purity(IReadOnlyList<string> clusters, IReadOnlyList<bool> truth)
+        => clusters.Zip(truth).GroupBy(p => p.First).Sum(g => Math.Max(g.Count(p => p.Second), g.Count(p => !p.Second)))
+           / (double)truth.Count;
+
     [Theory]
     [InlineData("yes", true)]
     [InlineData("No", true)]

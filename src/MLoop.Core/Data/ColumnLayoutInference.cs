@@ -102,13 +102,6 @@ public static class ColumnLayoutInference
     private const int MaxColumns = 10_000;
 
     /// <summary>
-    /// Infers the layout of <paramref name="path"/>, a file with a header whose column <paramref name="label"/> is the
-    /// label — or, when <paramref name="label"/> is null, a file without one (clustering, anomaly detection): every
-    /// column is then typed and grouped as a feature, so no column is set apart from the numeric vector.
-    /// </summary>
-    /// <exception cref="ColumnLayoutException">The file does not split into consistent columns, or has no data rows.</exception>
-    /// <exception cref="ArgumentException">No column is named <paramref name="label"/>.</exception>
-    /// <summary>
     /// The loaded name of the feature columns of one kind that fold together — the one column's own name, or
     /// the vector's (<c>Features</c> for numbers, <c>BooleanFeatures</c> for yes/no columns). A reader that
     /// rebuilds the loaded view from named columns (serving) names its vectors by this, as the loader does.
@@ -119,6 +112,13 @@ public static class ColumnLayoutInference
         return members.Count == 1 ? members[0] : GroupName(ColumnLayoutPurpose.Numeric, kind);
     }
 
+    /// <summary>
+    /// Infers the layout of <paramref name="path"/>, a file with a header whose column <paramref name="label"/> is the
+    /// label — or, when <paramref name="label"/> is null, a file without one (clustering, anomaly detection): every
+    /// column is then typed and grouped as a feature, so no column is set apart from the numeric vector.
+    /// </summary>
+    /// <exception cref="ColumnLayoutException">The file does not split into consistent columns, or has no data rows.</exception>
+    /// <exception cref="ArgumentException">No column is named <paramref name="label"/>.</exception>
     public static ColumnLayout Infer(MLContext mlContext, string path, string? label, char separator = ',')
     {
         var sample = ColumnLayoutSample.Read(path);
