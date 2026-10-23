@@ -242,6 +242,9 @@ try
     builder.Services.AddSingleton<IModelCache, ModelCache>();
     builder.Services.AddHostedService<ModelCachePreloader>();
     builder.Services.AddHostedService<RetentionService>();
+    // Pretrained image encoders for POST /embed — outside any project (MLOOP_ENCODERS or ~/.mloop/encoders), each graph
+    // opened once and shared.
+    builder.Services.AddSingleton(_ => new MLoop.Core.Embedding.EmbedderPool(new MLoop.Core.Embedding.EncoderStore()));
     builder.Services.AddSingleton<TrainingJobStore>();
     builder.Services.AddSingleton<MLoop.CLI.Infrastructure.ML.ITrainingEngine>(sp =>
     {
@@ -627,6 +630,8 @@ try
     .Produces<object>(StatusCodes.Status404NotFound)
     .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
     .RequireAuthorization();
+
+    app.MapEmbed();
 
     // Model cache stats (admin)
     app.MapGet("/cache/stats", (IModelCache modelCache) =>

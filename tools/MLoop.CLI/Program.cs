@@ -170,6 +170,10 @@ internal class Program
             // Runtime Management
             RuntimeCommand.Create(),
 
+            // Pretrained encoders
+            EncoderCommand.Create(),
+            EmbedCommand.Create(),
+
             // Utility
             UpdateCommand.Create(),
         };

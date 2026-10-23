@@ -1047,6 +1047,7 @@ mloop serve --detach
 # GET  /models              - List all models
 # POST /predict             - Make predictions (?experiment=<exp-id>: a candidate answers instead
 #                              of production — a shadow prediction; production does not move)
+# POST /embed               - Images to vectors with a pretrained encoder (see `mloop embed`)
 
 # Authentication: every endpoint except /health requires a JWT bearer token. Mint one with the
 # CLI (it signs with the same dev defaults the server validates out of the box), then attach it:
@@ -1507,6 +1508,55 @@ mloop runtime remove tf
 ```
 
 A task whose runtime is missing stops before training with the `runtime install` line to run.
+
+### `mloop encoder`
+
+Pretrained image encoders — graphs MLoop runs but does not train — for `mloop embed` and `POST /embed`. They are kept
+outside any project, in `~/.mloop/encoders/` (or the directory `MLOOP_ENCODERS` names), one directory per encoder
+with its definition and its ONNX graph. They are not experiments: nothing promotes, gates or retrains them.
+
+```bash
+mloop encoder add encoder.json --model model.onnx   # install; records the graph's SHA-256
+mloop encoder list                                  # id, version, dimension, input size, SHA-256
+mloop encoder list --json
+mloop encoder remove my-encoder
+```
+
+The definition names the graph's input and output, the vector's length, how a vector is read from the output, and
+the image preprocessing the encoder was trained with:
+
+```json
+{
+  "id": "my-encoder",
+  "version": "1",
+  "dimension": 384,
+  "preprocessing": { "shortestEdge": 256, "cropSize": 224, "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225] },
+  "inputName": "pixel_values",
+  "outputName": "last_hidden_state",
+  "pooling": "first-token"
+}
+```
+
+`pooling` is `first-token` for an output of `[images, tokens, dimension]` (a vision transformer's class token) or
+`none` for `[images, dimension]`. An image is resized so its shortest edge is `shortestEdge` (bicubic, computed as
+Pillow computes it — the resampling most published image processors use), cropped to a `cropSize` square at the
+centre, scaled to [0, 1] and normalised per channel. Adding a `sha256` to the definition makes `add` refuse a graph
+with other contents. Encoders run on ONNX Runtime (`mloop runtime install onnxruntime`).
+
+### `mloop embed`
+
+```bash
+mloop embed a.png b.jpg                    # one vector per image (first values shown)
+mloop embed a.png b.jpg --json             # {"encoder": {id, version, sha256, dimension, normalized}, "vectors": [[…], …]}
+mloop embed *.png --encoder my-encoder     # when more than one encoder is installed
+```
+
+Vectors are L2-normalised, so the cosine similarity of two is their dot product. The encoder's id and SHA-256 come
+with every answer: vectors from different weights are not comparable, so whoever keeps vectors re-embeds when they
+change. At most 64 images per call. The same is served as `POST /embed` (`mloop serve`): a JSON body
+`{"images": ["<base64>", …]}` or image files as multipart form data, `?encoder=` to choose one. It takes the images'
+contents, not paths. An image that cannot be decoded is a 400 naming its position (`index`). A missing encoder or
+runtime is a 409 saying how to install it. More than 64 images is a 413.
 
 ### `mloop update`
 

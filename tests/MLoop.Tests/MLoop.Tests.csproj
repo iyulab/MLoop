@@ -13,6 +13,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- Tests only: ONNX Runtime's native library, so `mloop embed` runs without the on-demand runtime. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
@@ -27,6 +29,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\tools\MLoop.CLI\MLoop.CLI.csproj" />
     <ProjectReference Include="..\MLoop.Tests.Common\MLoop.Tests.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The image-encoder fixtures MLoop.Core.Tests writes its expectations from (make_fixtures.py there). -->
+    <None Include="..\MLoop.Core.Tests\Fixtures\embedding\*.png;..\MLoop.Core.Tests\Fixtures\embedding\*.onnx;..\MLoop.Core.Tests\Fixtures\embedding\*.json" Link="Fixtures\embedding\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -23,7 +23,23 @@ public sealed record EncoderDefinition(
     string OutputName,
     EncoderPooling Pooling,
     string? Url = null,
-    string? Sha256 = null);
+    string? Sha256 = null)
+{
+    /// <summary>What makes this definition unusable, or <see langword="null"/> when it can run.</summary>
+    public string? Problem()
+    {
+        var p = Preprocessing;
+        if (string.IsNullOrWhiteSpace(Id) || string.IsNullOrWhiteSpace(InputName) || string.IsNullOrWhiteSpace(OutputName))
+            return "an encoder needs an id, an input name and an output name";
+        if (Dimension <= 0)
+            return $"dimension {Dimension} is not a vector length";
+        if (p is null || p.CropSize <= 0 || p.CropSize > p.ShortestEdge)
+            return $"it crops {p?.CropSize} pixels from a shortest edge of {p?.ShortestEdge}";
+        if (p.Mean is not { Count: 3 } || p.Std is not { Count: 3 } || p.Std.Any(s => s <= 0))
+            return "mean and std need three values (R, G, B), every std above zero";
+        return null;
+    }
+}
 
 /// <summary>
 /// An image processor's steps, in order: resize so the shortest edge is <see cref="ShortestEdge"/> (bicubic, as
@@ -32,6 +48,21 @@ public sealed record EncoderDefinition(
 /// </summary>
 public sealed record ImagePreprocessing(int ShortestEdge, int CropSize, IReadOnlyList<float> Mean, IReadOnlyList<float> Std)
 {
+    /// <summary>Equal when every step is: the channel values are compared by value, not by list.</summary>
+    public bool Equals(ImagePreprocessing? other) =>
+        other is not null && ShortestEdge == other.ShortestEdge && CropSize == other.CropSize
+        && Mean.SequenceEqual(other.Mean) && Std.SequenceEqual(other.Std);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(ShortestEdge);
+        hash.Add(CropSize);
+        foreach (var v in Mean.Concat(Std))
+            hash.Add(v);
+        return hash.ToHashCode();
+    }
+
     /// <summary>ImageNet's channel means and deviations, which most vision encoders are trained with.</summary>
     public static ImagePreprocessing ImageNet(int shortestEdge, int cropSize) =>
         new(shortestEdge, cropSize, [0.485f, 0.456f, 0.406f], [0.229f, 0.224f, 0.225f]);

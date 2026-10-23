@@ -12,6 +12,8 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- Tests only: ONNX Runtime's native library, so POST /embed runs without the on-demand runtime. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
@@ -22,6 +24,8 @@
 
   <ItemGroup>
     <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The image-encoder fixtures MLoop.Core.Tests writes its expectations from (make_fixtures.py there). -->
+    <None Include="..\MLoop.Core.Tests\Fixtures\embedding\*.png;..\MLoop.Core.Tests\Fixtures\embedding\*.onnx;..\MLoop.Core.Tests\Fixtures\embedding\*.json" Link="Fixtures\embedding\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

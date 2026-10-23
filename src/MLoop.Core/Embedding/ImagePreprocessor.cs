@@ -3,8 +3,8 @@ using Microsoft.ML.Data;
 namespace MLoop.Core.Embedding;
 
 /// <summary>An image that could not be decoded — its position in the request, and why.</summary>
-public sealed class UnreadableImageException(int index, string reason)
-    : Exception($"Image {index} could not be read: {reason}")
+public sealed class UnreadableImageException(int index, string reason, Exception? inner = null)
+    : Exception($"Image {index} could not be read: {reason}", inner)
 {
     /// <summary>The image's zero-based position in the batch.</summary>
     public int Index { get; } = index;
@@ -53,7 +53,8 @@ public static class ImagePreprocessor
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            throw new UnreadableImageException(index, ex.GetBaseException().Message);
+            // ML.NET's own message names its parameter ("Invalid input stream contents (Parameter 'imageStream')").
+            throw new UnreadableImageException(index, "not an image that can be decoded (PNG, JPEG, BMP, GIF or WebP)", ex);
         }
 
         using (image)

@@ -25,6 +25,9 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
     /// before exercising an endpoint end-to-end.</summary>
     public string TestProjectRoot => _testProjectRoot;
 
+    /// <summary>The encoder store <c>POST /embed</c> reads in this factory — empty until a test installs one.</summary>
+    public string EncoderRoot => Path.Combine(_testProjectRoot, "encoders");
+
     public TestWebApplicationFactory()
     {
         // Create a temporary test project directory with .mloop marker
@@ -64,6 +67,8 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
             ReplaceService<IPredictionLogger>(services, new FilePredictionLogger(_testProjectRoot));
             ReplaceService<IFeedbackCollector>(services, new FileFeedbackCollector(_testProjectRoot));
             ReplaceService<IPromotionManager>(services, new FilePromotionManager(_testProjectRoot));
+            // Encoders live outside any project; the test's own directory, so a test can install one and others see none.
+            ReplaceService(services, new MLoop.Core.Embedding.EmbedderPool(new MLoop.Core.Embedding.EncoderStore(EncoderRoot)));
         });
 
         // Override authentication for tests (no real JWT needed) — unless a subclass keeps the

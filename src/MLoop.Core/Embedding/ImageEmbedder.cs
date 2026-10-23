@@ -27,8 +27,8 @@ public sealed class ImageEmbedder : IDisposable
     public static ImageEmbedder Open(EncoderDefinition encoder, string modelPath)
     {
         ArgumentNullException.ThrowIfNull(encoder);
-        if (encoder.Preprocessing.CropSize > encoder.Preprocessing.ShortestEdge)
-            throw new ArgumentException($"Encoder '{encoder.Id}' crops {encoder.Preprocessing.CropSize} pixels from an edge of {encoder.Preprocessing.ShortestEdge}.", nameof(encoder));
+        if (encoder.Problem() is { } problem)
+            throw new ArgumentException($"Encoder '{encoder.Id}' cannot run: {problem}.", nameof(encoder));
         if (OnnxRuntimeNative.Unavailable() is { } unavailable)
             throw new InvalidOperationException(unavailable);
 

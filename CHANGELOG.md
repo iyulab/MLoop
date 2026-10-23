@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `mloop embed <images…> [--encoder <id>] [--json]` and `POST /embed`: one L2-normalised vector per image from a
+  pretrained image encoder. Every answer names the encoder — id, version, weights' SHA-256, dimension — since vectors
+  from different weights are not comparable. `POST /embed` takes the images' contents, either a JSON body of base64
+  strings or multipart files, never a path. At most 64 images per call. An undecodable image is a 400 naming its
+  position, a missing encoder or ONNX Runtime a 409, too many images a 413.
+- `mloop encoder add <encoder.json> --model <model.onnx> | list [--json] | remove <id>`: the encoders `embed` runs.
+  They are kept outside any project in `~/.mloop/encoders/`, or the directory `MLOOP_ENCODERS` names. A definition
+  gives the graph's input and output, the vector length, the pooling (`first-token` or `none`) and the preprocessing.
+  `add` records the graph's SHA-256 and refuses a definition that cannot run, or a graph whose SHA-256 differs from
+  one the definition pins. When only one encoder is installed, `--encoder` may be left out.
 - `MLoop.Core.Embedding` (library): runs a pretrained image encoder in ONNX Runtime. `EncoderDefinition` describes
   which graph, its input and output names, its dimension and its preprocessing. `ImageEmbedder.Open(definition, path)`
   then `Embed(images)` returns one L2-normalised vector per encoded image (PNG, JPEG, …). `ImagePreprocessor` resizes

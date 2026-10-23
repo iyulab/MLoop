@@ -390,6 +390,8 @@ The section above shows the ones a first project uses. This is the whole surface
 | `docker` | Generate Docker configuration for model deployment |
 | `new` | Generate new project components (hooks) |
 | `runtime` | Manage on-demand ML runtime downloads |
+| `encoder` | Install, list or remove the pretrained image encoders `embed` runs |
+| `embed` | Embed images as vectors with a pretrained encoder |
 | `update` | Check for and install CLI updates |
 
 ## Scripting MLoop
