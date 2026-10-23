@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop serve` logged every health probe twice at Information — the request line and a "Health check requested"
+  line — so a container HEALTHCHECK (the one `mloop docker` writes) filled the log with probes. A successful
+  `/health` request is now logged at Verbose, below every configured level; a failing one is still an error.
+
 - `mloop drift` and `GET /drift` counted a yes/no column's values by spelling: a training file's `yes` and a JSON
   request's `true` (logged as `True`) fell in different bins, so a column whose values never changed read as
   drifted. In a yes/no column, values are now binned by what they mean.

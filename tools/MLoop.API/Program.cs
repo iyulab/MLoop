@@ -302,6 +302,7 @@ try
     app.UseSerilogRequestLogging(options =>
     {
         options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000}ms";
+        options.GetLevel = RequestLogLevel.For;
         options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
         {
             diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value ?? "unknown");
@@ -330,9 +331,8 @@ try
     // and most load balancers, issue HEAD, and a GET-only route answers those 405 while the service
     // is perfectly healthy. RFC 9110 makes HEAD identical to GET minus the body, so ASP.NET returning
     // the same result here is exactly right — it drops the body itself.
-    app.MapMethods("/health", ["GET", "HEAD"], (ILogger<Program> logger) =>
+    app.MapMethods(RequestLogLevel.HealthPath, ["GET", "HEAD"], () =>
     {
-        logger.LogInformation("Health check requested");
         return Results.Ok(new
         {
             status = "healthy",
