@@ -277,7 +277,7 @@ public class RuntimeManager
         var rid = PlatformDetector.GetRuntimeIdentifier();
         if (!runtime.NuGetPackages.ContainsKey(rid))
             throw new InvalidOperationException(
-                $"Task '{taskType}' needs {runtime.DisplayName}, which has no build for {rid}; " +
+                $"Task '{taskType}' needs the {runtime.DisplayName} runtime, which has no build for {rid}; " +
                 $"it runs on {string.Join(", ", runtime.NuGetPackages.Keys)}.");
 
         var manager = new RuntimeManager();

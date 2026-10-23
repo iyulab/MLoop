@@ -349,6 +349,10 @@ mloop evaluate exp-001 test-images/
 ```
 
 Notes:
+- The TensorFlow runtime image classification needs exists for Windows and Linux x64 only — its package carries no
+  macOS library. `mloop runtime list` says which runtimes this machine can install.
+- A served image model takes the images themselves: `POST /predict` with `{"images": ["<base64>", …]}` or files as
+  multipart form data, as `POST /embed` does.
 - `mloop info <folder>` counts the images in each class folder before you train.
 - Training first runs every image through a pretrained network once — most of the time on a CPU —
   then trains for at most 200 epochs, stopping early once accuracy stops improving. The progress bar
@@ -1512,7 +1516,7 @@ are downloaded on demand into the user's profile, once per machine.
 ```bash
 mloop runtime list                  # each runtime, its size, whether it is installed, the tasks that need it
 mloop runtime list --json
-mloop runtime install tf            # TensorFlow CPU — image-classification
+mloop runtime install tf            # TensorFlow CPU — image-classification (Windows, Linux x64)
 mloop runtime install torch         # libtorch CPU — object-detection, text-classification, sentence-similarity, ner, question-answering
 mloop runtime install onnxruntime   # ONNX Runtime CPU — `mloop export onnx --verify`
 mloop runtime remove tf

@@ -39,7 +39,7 @@ public class ClassScoresTests
         });
         var model = ml.Transforms.Conversion.MapValueToKey("Label")
             .Append(ml.Transforms.Concatenate("Features", nameof(Row.X)))
-            .Append(ml.MulticlassClassification.Trainers.SdcaMaximumEntropy(new Microsoft.ML.Trainers.SdcaMaximumEntropyMulticlassTrainer.Options { NumberOfThreads = 1, MaximumNumberOfIterations = 10 }))
+            .Append(ml.MulticlassClassification.Trainers.SingleThreadSdcaMaximumEntropy())
             .Fit(data);
 
         Assert.False(ClassScores.AreLogits(model));

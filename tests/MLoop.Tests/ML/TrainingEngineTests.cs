@@ -382,7 +382,8 @@ public class TrainingEngineTests : IDisposable
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.TrainAsync(config));
 
         Assert.Contains("runtime", ex.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("install", ex.Message, StringComparison.OrdinalIgnoreCase);
+        // The gate names the runtime: how to install it, or — where it has no build — where it runs.
+        Assert.Contains(runtime!.DisplayName, ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("CSV", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
