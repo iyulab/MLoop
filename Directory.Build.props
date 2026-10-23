@@ -16,7 +16,7 @@
     <RepositoryUrl>https://github.com/iyulab/MLoop</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
-    <Version>0.42.0</Version>
+    <Version>0.43.0</Version>
 
     <!-- Packable: MLoop.CLI (dotnet tool) and the in-process library MLoop.Core with what it depends
          on — MLoop.Extensibility and MLoop.Search — all at this version. The rest is not published. -->

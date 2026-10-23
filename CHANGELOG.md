@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-10-23
+
 ### Added
 
 - `explode` and `split-list` prep steps: list columns (a list per cell, as Parquet and JSON lists are read) become one
@@ -1970,7 +1972,8 @@ This closes the **exclusion axis** of that error signature. A second, independen
 - YAML configuration (`mloop.yaml`)
 - Filesystem-based state management
 
-[Unreleased]: https://github.com/iyulab/MLoop/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/iyulab/MLoop/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/iyulab/MLoop/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/iyulab/MLoop/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/iyulab/MLoop/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/iyulab/MLoop/compare/v0.39.0...v0.40.0
