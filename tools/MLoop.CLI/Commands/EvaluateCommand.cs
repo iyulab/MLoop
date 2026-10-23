@@ -549,33 +549,77 @@ public static class EvaluateCommand
 
     private static void ShowSlices(string sliceBy, IReadOnlyList<EvaluationSlices.Slice> slices, IReadOnlyList<string> metricNames)
     {
-        var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn(Markup.Escape(sliceBy));
-        table.AddColumn(new TableColumn("Rows").RightAligned());
-        foreach (var name in metricNames)
-            table.AddColumn(new TableColumn(Markup.Escape(name)).RightAligned());
+        AnsiConsole.Write(new Rule($"[green]By {Markup.Escape(sliceBy)}[/]").LeftJustified());
 
-        foreach (var slice in slices)
+        var labelWidth = slices.Select(s => s.Value.Length).Append(sliceBy.Length).Max();
+        var rowsWidth = slices.Select(s => s.Rows.ToString(CultureInfo.InvariantCulture).Length + 1).Append("Rows".Length).Max();
+        string Cell(EvaluationSlices.Slice slice, string name) =>
+            slice.Metrics?.TryGetValue(name, out var v) == true && !double.IsNaN(v)
+                ? v.ToString("F4", CultureInfo.InvariantCulture)
+                : "-";
+        var metrics = metricNames
+            .Select(name => (name, slices.Select(s => Cell(s, name).Length).Append(name.Length).Max()))
+            .ToList();
+        foreach (var group in SliceMetricGroups(labelWidth, rowsWidth, metrics, AnsiConsole.Profile.Width))
         {
-            var cells = new List<string>
+            var table = new Table().Border(TableBorder.Rounded);
+            table.AddColumn(Markup.Escape(sliceBy));
+            table.AddColumn(new TableColumn("Rows").RightAligned());
+            foreach (var name in group)
+                table.AddColumn(new TableColumn(Markup.Escape(name)).RightAligned());
+
+            foreach (var slice in slices)
             {
-                Markup.Escape(slice.Value),
-                slice.Small ? $"[yellow]{slice.Rows}*[/]" : slice.Rows.ToString(CultureInfo.InvariantCulture),
-            };
-            foreach (var name in metricNames)
-                cells.Add(slice.Metrics?.TryGetValue(name, out var v) == true && !double.IsNaN(v)
-                    ? v.ToString("F4", CultureInfo.InvariantCulture)
-                    : "[grey]-[/]");
-            table.AddRow(cells.ToArray());
+                var cells = new List<string>
+                {
+                    Markup.Escape(slice.Value),
+                    slice.Small ? $"[yellow]{slice.Rows}*[/]" : slice.Rows.ToString(CultureInfo.InvariantCulture),
+                };
+                foreach (var name in group)
+                    cells.Add(Cell(slice, name) is "-" ? "[grey]-[/]" : Cell(slice, name));
+                table.AddRow(cells.ToArray());
+            }
+            AnsiConsole.Write(table);
         }
 
-        AnsiConsole.Write(new Rule($"[green]By {Markup.Escape(sliceBy)}[/]").LeftJustified());
-        AnsiConsole.Write(table);
         if (slices.Any(s => s.Small))
             AnsiConsole.MarkupLine($"[grey]* fewer than {EvaluationSlices.SmallRows} rows — these metrics vary a lot between samples[/]");
         foreach (var failed in slices.Where(s => s.Error != null))
             AnsiConsole.MarkupLineInterpolated($"[grey]{failed.Value}: not scored — {failed.Error}[/]");
         AnsiConsole.WriteLine();
+    }
+
+    /// <summary>
+    /// The slice table's metrics, split into groups that each fit the console beside the slice and row
+    /// columns. One table carrying every metric made Spectre wrap the numbers themselves at 80 columns —
+    /// <c>0.862</c> on one line and <c>1</c> under it — so a value could not be read at all.
+    /// </summary>
+    internal static IReadOnlyList<IReadOnlyList<string>> SliceMetricGroups(
+        int labelWidth, int rowsWidth, IReadOnlyList<(string Name, int Width)> metrics, int consoleWidth)
+    {
+        // A rounded table draws one border on the left, then each column's text, a space either side
+        // and the border after it.
+        static int Column(int text) => text + 3;
+        var fixedWidth = 1 + Column(labelWidth) + Column(rowsWidth);
+
+        var groups = new List<IReadOnlyList<string>>();
+        var current = new List<string>();
+        var width = fixedWidth;
+        foreach (var (name, textWidth) in metrics)
+        {
+            var column = Column(textWidth);
+            if (current.Count > 0 && width + column > consoleWidth)
+            {
+                groups.Add(current);
+                current = [];
+                width = fixedWidth;
+            }
+            current.Add(name);
+            width += column;
+        }
+        if (current.Count > 0 || groups.Count == 0)
+            groups.Add(current);
+        return groups;
     }
 
     internal static bool IsLowerBetterMetric(string metricName)

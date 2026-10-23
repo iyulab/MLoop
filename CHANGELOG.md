@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop evaluate --slice-by` printed one table with every metric, and at 80 columns the numbers themselves wrapped
+  (`0.862` on one line, `1` under it). The metrics are now split into tables that each fit the console, every
+  table keeping the slice and row columns.
+
 - Loading a data file no longer leaves full copies of it in the temp directory. Every preparing step — re-encoding to
   UTF-8, flattening quoted line breaks, removing index, excluded, date-time, sparse, constant and identifier columns,
   converting Excel or Parquet — wrote a copy that nothing deleted, up to one per step for every `train`, `predict` or
