@@ -152,8 +152,15 @@ public sealed class TrialRunner
             var schema = schemas.First(s => s.Id == schemaId);
             var point = tuners[schemaId].Propose(trialId);
             var trialContext = new MLContext(settings.Seed);
-            var featurizer = Featurizer.Build(trialContext, train.Schema, roles, withMissingValues, columns.Features)
-                ?? throw new InvalidOperationException("No column is a feature: every column is the label or ignored.");
+            // The trial's pipeline, made in a given context — the trial's own, and again for the refit, whose
+            // context must not be one a budget cut has stopped (FitCancellation marks the context, not the fit).
+            IEstimator<ITransformer> PipelineIn(MLContext context)
+            {
+                var featurizer = Featurizer.Build(context, train.Schema, roles, withMissingValues, columns.Features)
+                    ?? throw new InvalidOperationException("No column is a feature: every column is the label or ignored.");
+                var featurized = _request.Preprocess is { } preprocess ? preprocess.Append(featurizer) : featurizer;
+                return featurized.Append(schema.Candidate.Build(context, point, columns, settings));
+            }
 
             // Past the first success, a trial that would eat the refit's time stops inside its fit
             // (FitCancellation): one fit can be most of a budget, so stopping between folds is not enough.
@@ -169,8 +176,7 @@ public sealed class TrialRunner
             try
             {
                 // Built inside the trial: a trainer that cannot even be constructed is a failed trial, not a failed search.
-                var featurized = _request.Preprocess is { } preprocess ? preprocess.Append(featurizer) : featurizer;
-                pipeline = featurized.Append(schema.Candidate.Build(trialContext, point, columns, settings));
+                pipeline = PipelineIn(trialContext);
                 var score = Validator.Validate(trialContext, train, plan, pipeline, _request.Score, budgetCut.Token);
                 var seconds = (clock.Elapsed - started).TotalSeconds;
                 Took(seconds);
@@ -189,7 +195,7 @@ public sealed class TrialRunner
                     var loss = _request.Metric.HigherIsBetter ? -value : value;
                     tuners[schemaId].Update(trialId, point, loss, schema.Candidate.InitialCost);
                     proposer.Update(schemaId, loss, schema.Candidate.InitialCost);
-                    var entry = new Scored(trial, value, score, pipeline, trialContext, seconds / plan.Folds, TrainerCandidate.ModelSize(point));
+                    var entry = new Scored(trial, value, score, PipelineIn, seconds / plan.Folds, TrainerCandidate.ModelSize(point));
                     scored.Add(entry);
                     if (best is null || _request.Metric.IsBetter(value, best.Value))
                         best = entry;
@@ -234,24 +240,28 @@ public sealed class TrialRunner
         var winner = Choose(scored, top);
         string? fallback = null;
         ITransformer model;
+        // The refit fits in a context of its own: the winner's trial context may carry the budget's cut, set as
+        // the trial finished — measured on a CI runner, the refit then died with OperationCanceledException.
         // The caller's cancellation stops the refit too; the budget does not — the refit was reserved for.
-        using var stopRefit = FitCancellation.Register(winner.Context, cancellationToken);
+        var refitContext = new MLContext(settings.Seed);
+        using var stopRefit = FitCancellation.Register(refitContext, cancellationToken);
         try
         {
-            model = winner.Pipeline.Fit(train);
+            model = winner.Pipeline(refitContext).Fit(train);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
             // The pipeline fitted on four fifths of the rows; refit on all of them did not. Its first fold's model stands in.
             fallback = $"Refit on the whole training partition failed ({ex.GetBaseException().Message}); the model is the best trial's first fold.";
             var view = new HoldoutView(train, plan.FoldOf, plan.Validated[0]);
-            model = winner.Pipeline.Fit(new MLContext(settings.Seed).Data.FilterRowsByColumn(view, HoldoutView.ColumnName, 0, 0.5));
+            var fallbackContext = new MLContext(settings.Seed);
+            model = winner.Pipeline(fallbackContext).Fit(fallbackContext.Data.FilterRowsByColumn(view, HoldoutView.ColumnName, 0, 0.5));
         }
         return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial);
     }
 
     private sealed record Scored(
-        TrialResult Trial, double Value, ValidationScore Score, IEstimator<ITransformer> Pipeline, MLContext Context, double FitSeconds, double Size);
+        TrialResult Trial, double Value, ValidationScore Score, Func<MLContext, IEstimator<ITransformer>> Pipeline, double FitSeconds, double Size);
 
     private Scored Choose(List<Scored> scored, Scored top)
     {

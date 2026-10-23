@@ -187,13 +187,13 @@ public sealed class TrialRunnerTests
                 return lbfgs.Build(context, point, columns, settings);
             },
         };
-        // One numeric column only, so there is one schema (no hash encoding of a category).
+        // Numeric columns only — one schema, the one trainer.
         var numeric = new ColumnRoles("Label", [new("X", ColumnRole.Numeric), new("Z", ColumnRole.Numeric)]);
 
         var result = new TrialRunner(Request(ml, TimeSpan.FromSeconds(6), candidates: [slow])).Run(data, numeric);
 
         Assert.Equal(2, result.Trials.Count);
-        Assert.Equal(2, builds);
+        Assert.Equal(3, builds);   // the two trials, and the refit, which builds its pipeline in a context of its own
     }
 
     /// <summary>

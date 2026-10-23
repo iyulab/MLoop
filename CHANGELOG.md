@@ -117,6 +117,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The trainer search refits its chosen trial in an MLContext of its own. It reused the trial's context, and a trial
+  that finished as the budget's cut arrived left that context stopped: the refit failed with "Operation was
+  canceled" and the run with it — timing-dependent, seen on a CI runner.
 - Numbers are read from text with the invariant culture everywhere, as ML.NET's loader reads a file — not the
   machine's. On a machine whose decimal separator is a comma, regression refused every label ("No valid numeric
   values found in label column"), and the saved schema judged the numeric columns folded into the feature vector by

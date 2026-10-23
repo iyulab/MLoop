@@ -62,6 +62,9 @@ public class TrainDiagnosticsEventTests : IDisposable
             .Where(e => e.TryGetProperty("event", out var kind) && kind.GetString() == "warning")
             .Select(e => e.GetProperty("message").GetString()!)
             .ToList();
-        Assert.Contains(warnings, w => w.Contains("Near-perfect on held-out rows"));
+        // The result line carries the score the warning was judged on — what a failure here has to show.
+        var result = stdout.Split('\n').LastOrDefault(l => l.Contains("\"event\":\"result\"", StringComparison.Ordinal)) ?? stdout;
+        Assert.True(warnings.Any(w => w.Contains("Near-perfect on held-out rows")),
+            $"warnings: [{string.Join(" | ", warnings)}]; result: {result}");
     }
 }
