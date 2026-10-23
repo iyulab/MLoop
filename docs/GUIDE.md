@@ -1558,6 +1558,10 @@ change. At most 64 images per call. The same is served as `POST /embed` (`mloop 
 contents, not paths. An image that cannot be decoded is a 400 naming its position (`index`). A missing encoder or
 runtime is a 409 saying how to install it. More than 64 images is a 413.
 
+In a container made by `mloop docker`, embedding is opt-in. The Dockerfile has a commented
+`RUN mloop runtime install onnxruntime` line, and `docker-compose.yml` has a commented `MLOOP_ENCODERS` variable and a
+mount of the host's encoders. The image carries neither the runtime nor any encoder until those lines are uncommented.
+
 ### `mloop update`
 
 ```bash

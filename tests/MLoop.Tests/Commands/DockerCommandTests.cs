@@ -162,6 +162,29 @@ public class DockerCommandTests
         Assert.Contains(":ro", result);
     }
 
+    /// <summary>
+    /// Serving <c>POST /embed</c> from the image is opt-in: the ONNX Runtime install line in the Dockerfile and the
+    /// encoders' variable and mount in the compose file, commented. Uncommented as written, the compose file is still
+    /// YAML and carries both into the service; the variable is the one <see cref="MLoop.Core.Embedding.EncoderStore"/> reads.
+    /// </summary>
+    [Fact]
+    public void TheEmbeddingLines_AreOptIn_AndValidOnceUncommented()
+    {
+        var dockerfile = DockerCommand.GenerateDockerfile("default", 5000);
+        Assert.Contains("# RUN mloop runtime install onnxruntime --quiet", dockerfile);
+
+        var compose = DockerCommand.GenerateDockerCompose("default", 5000);
+        var enabled = string.Join('\n', compose.Split('\n').Select(line =>
+            line.TrimStart().StartsWith("# - ", StringComparison.Ordinal) && line.Contains("encoders", StringComparison.OrdinalIgnoreCase)
+                ? line.Replace("# - ", "- ")
+                : line));
+
+        var service = (Dictionary<object, object>)((Dictionary<object, object>)
+            new YamlDotNet.Serialization.Deserializer().Deserialize<Dictionary<object, object>>(enabled)["services"])["mloop-api"];
+        Assert.Contains($"{MLoop.Core.Embedding.EncoderStore.RootVariable}=/encoders", ((List<object>)service["environment"]).Cast<string>());
+        Assert.Contains("~/.mloop/encoders:/encoders:ro", ((List<object>)service["volumes"]).Cast<string>());
+    }
+
     [Fact]
     public void GenerateDockerCompose_ContainsRestartPolicy()
     {

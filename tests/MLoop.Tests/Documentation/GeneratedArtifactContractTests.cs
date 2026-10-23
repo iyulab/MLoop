@@ -29,7 +29,7 @@ public class GeneratedArtifactContractTests
     /// <summary>
     /// The variables one file writes. A name can reach the generated artifact two ways: spelled as
     /// a literal, or interpolated from the constant that owns it — which is what
-    /// <c>MLOOP_MODEL_NAME</c> now does, so the emitter and the process that reads it cannot
+    /// <c>MLOOP_MODEL_NAME</c> and <c>MLOOP_ENCODERS</c> now do, so the emitter and the process that reads it cannot
     /// disagree about the spelling. Both count as emitting it; counting only literals would let
     /// this report a file as emitting nothing the moment it started doing the right thing.
     /// </summary>
@@ -42,6 +42,8 @@ public class GeneratedArtifactContractTests
 
         if (source.Contains("ModelName.EnvironmentVariable", StringComparison.Ordinal))
             yield return MLoop.Core.Storage.ModelName.EnvironmentVariable;
+        if (source.Contains("EncoderStore.RootVariable", StringComparison.Ordinal))
+            yield return MLoop.Core.Embedding.EncoderStore.RootVariable;
     }
 
     [Fact]

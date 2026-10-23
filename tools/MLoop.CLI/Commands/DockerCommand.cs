@@ -170,6 +170,10 @@ COPY mloop.yaml ./
 COPY .mloop/ ./.mloop/
 COPY {ExperimentLayout.ModelsDirectory}/ ./{ExperimentLayout.ModelsDirectory}/
 
+# POST /embed (pretrained image encoders) runs on ONNX Runtime, whose native library this image carries only when
+# asked — uncomment to install it (~{MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.ApproximateSizeMB} MB), and mount the encoders as docker-compose.yml shows:
+# RUN mloop runtime install {MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.Id} --quiet
+
 ENV ASPNETCORE_URLS=http://+:{port}
 ENV MLOOP_PROJECT_ROOT=/app
 ENV {MLoop.Core.Storage.ModelName.EnvironmentVariable}={modelName}
@@ -250,8 +254,12 @@ services:
       # than defaulted: compose stops with this message when JWT_SIGNING_KEY is unset, instead of
       # starting a container that crash-loops on a fatal it cannot recover from.
       - Jwt__Key=${{JWT_SIGNING_KEY:?set JWT_SIGNING_KEY to a random secret of at least 32 characters}}
+      # POST /embed: the encoders `mloop encoder add` installed, mounted (the image carries none), with the
+      # Dockerfile's ONNX Runtime line uncommented:
+      # - {MLoop.Core.Embedding.EncoderStore.RootVariable}=/encoders
     volumes:
       - ./{ExperimentLayout.ModelsDirectory}:/app/{ExperimentLayout.ModelsDirectory}:ro  # Read-only model access
+      # - ~/.mloop/encoders:/encoders:ro
     restart: unless-stopped
     healthcheck:
       test: [""CMD"", ""wget"", ""--quiet"", ""--tries=1"", ""-O"", ""/dev/null"", ""http://127.0.0.1:{port}/health""]

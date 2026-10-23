@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   gives the graph's input and output, the vector length, the pooling (`first-token` or `none`) and the preprocessing.
   `add` records the graph's SHA-256 and refuses a definition that cannot run, or a graph whose SHA-256 differs from
   one the definition pins. When only one encoder is installed, `--encoder` may be left out.
+- `mloop docker` writes the lines a container needs to serve `POST /embed`, commented: an ONNX Runtime install in the
+  Dockerfile, and the encoders' variable and mount in `docker-compose.yml`.
 - `MLoop.Core.Embedding` (library): runs a pretrained image encoder in ONNX Runtime. `EncoderDefinition` describes
   which graph, its input and output names, its dimension and its preprocessing. `ImageEmbedder.Open(definition, path)`
   then `Embed(images)` returns one L2-normalised vector per encoded image (PNG, JPEG, …). `ImagePreprocessor` resizes
