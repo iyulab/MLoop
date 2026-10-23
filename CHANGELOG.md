@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-10-23
+
 ### Added
 
 - `POST /predict` takes an image-classification model's images by their contents — `{"images": ["<base64>", …]}` or
