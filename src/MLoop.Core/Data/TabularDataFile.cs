@@ -77,7 +77,7 @@ public static class TabularDataFile
         if (Converted.TryGetValue(key, out var existing) && File.Exists(existing))
             return existing;
 
-        var csv = Path.Combine(Path.GetTempPath(), $"mloop_table_{Guid.NewGuid():N}.csv");
+        var csv = ScratchFiles.New("mloop_table_", ".csv");
         DataPipeline pipeline;
         try
         {

@@ -66,7 +66,7 @@ public static class EncodingDetector
         // not know, so a converted `.csv` that came back as `.tmp` lost every analysis that ran on it.
         // Every other temp the loader writes (flatten, exclusion) already preserves it.
         var content = File.ReadAllText(filePath, detection.Encoding);
-        var tempFile = Path.Combine(Path.GetTempPath(), $"mloop_utf8_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+        var tempFile = ScratchFiles.New("mloop_utf8_", Path.GetExtension(filePath));
         File.WriteAllText(tempFile, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
         return (tempFile, detection with { WasConverted = true });

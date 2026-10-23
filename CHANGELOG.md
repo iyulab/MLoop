@@ -29,6 +29,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Loading a data file no longer leaves full copies of it in the temp directory. Every preparing step — re-encoding to
+  UTF-8, flattening quoted line breaks, removing index, excluded, date-time, sparse, constant and identifier columns,
+  converting Excel or Parquet — wrote a copy that nothing deleted, up to one per step for every `train`, `predict` or
+  `evaluate`. Now each copy is deleted as soon as the next step has written its own. The last one, which ML.NET reads
+  lazily, is deleted when the process ends (`MLoop.Core.Data.ScratchFiles`).
 - `mloop train` now warns about a column of strictly increasing integers (a likely row number). The check ran
   on the training partition after the stratified split had shuffled it, so the column no longer increased and the
   warning never fired: a 1..N id was trained on as a feature without a word. It is judged on the whole file now, and

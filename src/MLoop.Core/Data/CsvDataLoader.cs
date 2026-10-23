@@ -50,17 +50,19 @@ public class CsvDataLoader : DataProviderBase
 
         _mergedColumnGroups = null;
 
+        // Each step writes its own copy when it changes anything (ScratchFiles); the copy before it is released as the
+        // next appears, and the last one — which TextLoader reads lazily — when the process ends.
         // Ensure UTF-8 BOM for ML.NET compatibility (ML.NET's InferColumns relies on BOM detection)
         string mlnetCompatiblePath = EnsureUtf8Bom(filePath);
 
         // Flatten multi-line quoted fields in data rows (ML.NET TextLoader doesn't support RFC 4180 multiline)
-        mlnetCompatiblePath = FlattenMultiLineQuotedFields(mlnetCompatiblePath, _log);
+        mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, FlattenMultiLineQuotedFields(mlnetCompatiblePath, _log), filePath);
 
         // Flatten multi-line quoted headers (ML.NET doesn't support them)
-        mlnetCompatiblePath = FlattenMultiLineHeaders(mlnetCompatiblePath, _log);
+        mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, FlattenMultiLineHeaders(mlnetCompatiblePath, _log), filePath);
 
         // Remove unnamed/index columns (e.g., pandas default index, "Unnamed: 0")
-        mlnetCompatiblePath = RemoveIndexColumns(mlnetCompatiblePath, _log);
+        mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveIndexColumns(mlnetCompatiblePath, _log), filePath);
 
         // Warn if CSV appears to have no header row
         WarnIfHeaderless(mlnetCompatiblePath);
@@ -74,7 +76,7 @@ public class CsvDataLoader : DataProviderBase
             // The caller already decided — apply that decision verbatim. Re-deriving it from this
             // file would let a train/test partition disagree with the rest of the run about the
             // feature width (see DetermineExcludedColumns).
-            mlnetCompatiblePath = RemoveExcludedColumns(mlnetCompatiblePath, featureExclusions, narrateExclusions);
+            mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveExcludedColumns(mlnetCompatiblePath, featureExclusions, narrateExclusions), filePath);
         }
         else
         {
@@ -85,22 +87,22 @@ public class CsvDataLoader : DataProviderBase
             // Pre-InferColumns: Remove columns holding a JSON list or object in every row (a Parquet or
             // JSON list column). Read as text they became TF-IDF over brackets and digits. First in the
             // chain, so the identifier rule never claims one under the wrong reason.
-            mlnetCompatiblePath = RemoveStructuredColumns(mlnetCompatiblePath, labelColumn, preserveColumns, narrateExclusions);
-            mlnetCompatiblePath = RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn, narrateExclusions, preserveColumns);
+            mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveStructuredColumns(mlnetCompatiblePath, labelColumn, preserveColumns, narrateExclusions), filePath);
+            mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveDateTimeColumns(mlnetCompatiblePath, labelColumn, narrateExclusions, preserveColumns), filePath);
 
             // Pre-InferColumns: Remove sparse columns (>90% missing) from CSV.
             // ML.NET may combine sparse columns into a "Features" vector, preventing
             // post-InferColumns detection. Pre-removing prevents OOM from FeaturizeText.
-            mlnetCompatiblePath = RemoveSparseColumns(mlnetCompatiblePath, labelColumn, log: narrateExclusions, protectedColumns: preserveColumns);
+            mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveSparseColumns(mlnetCompatiblePath, labelColumn, log: narrateExclusions, protectedColumns: preserveColumns), filePath);
 
             // Pre-InferColumns: Remove constant columns (all identical values) from CSV.
             // Constant columns provide zero predictive signal and waste compute resources.
-            mlnetCompatiblePath = RemoveConstantColumns(mlnetCompatiblePath, labelColumn, narrateExclusions, preserveColumns);
+            mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveConstantColumns(mlnetCompatiblePath, labelColumn, narrateExclusions, preserveColumns), filePath);
 
             // Pre-InferColumns: Remove identifier columns (a distinct value in every row) from CSV.
             // InferColumns marks them Ignore, but BuildColumnInformation turns every text column
             // back into a text feature, so an id column became TF-IDF noise — and a leak path.
-            mlnetCompatiblePath = RemoveIdentifierColumns(mlnetCompatiblePath, labelColumn, preserveColumns, narrateExclusions);
+            mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveIdentifierColumns(mlnetCompatiblePath, labelColumn, preserveColumns, narrateExclusions), filePath);
         }
 
         // Pre-InferColumns: Warn about mixed-type columns (mostly numeric with some text).
@@ -738,7 +740,7 @@ public class CsvDataLoader : DataProviderBase
             if (dateTimeIndices.Count == 0) return filePath;
 
             // Create new CSV without DateTime columns
-            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_nodt_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var tempPath = ScratchFiles.New("mloop_nodt_", Path.GetExtension(filePath));
             var keepIndices = Enumerable.Range(0, headers.Length).Except(dateTimeIndices).ToArray();
 
             WriteColumns(filePath, tempPath, keepIndices);
@@ -828,7 +830,7 @@ public class CsvDataLoader : DataProviderBase
             if (sparseIndices.Count == 0) return filePath;
 
             // Create new CSV without sparse columns
-            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_nosparse_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var tempPath = ScratchFiles.New("mloop_nosparse_", Path.GetExtension(filePath));
             var keepIndices = Enumerable.Range(0, headers.Length).Except(sparseIndices).ToArray();
 
             WriteColumns(filePath, tempPath, keepIndices);
@@ -921,7 +923,7 @@ public class CsvDataLoader : DataProviderBase
             if (constantIndices.Count == 0) return filePath;
 
             // Create new CSV without constant columns
-            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_noconst_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var tempPath = ScratchFiles.New("mloop_noconst_", Path.GetExtension(filePath));
             var keepIndices = Enumerable.Range(0, headers.Length).Except(constantIndices).ToArray();
 
             WriteColumns(filePath, tempPath, keepIndices);
@@ -1122,7 +1124,7 @@ public class CsvDataLoader : DataProviderBase
     /// </summary>
     private static string WriteWithoutColumns(string filePath, IReadOnlyCollection<int> dropIndices, string tempPrefix)
     {
-        var tempPath = Path.Combine(Path.GetTempPath(), $"{tempPrefix}{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+        var tempPath = ScratchFiles.New(tempPrefix, Path.GetExtension(filePath));
         var headerCount = ParseCsvLine(File.ReadLines(filePath, System.Text.Encoding.UTF8).First()).Length;
         var keepIndices = Enumerable.Range(0, headerCount).Except(dropIndices).ToArray();
 
@@ -1395,7 +1397,7 @@ public class CsvDataLoader : DataProviderBase
             if (indexColumns.Count == 0) return filePath;
 
             // Create temp file without the index columns
-            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_noidx_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var tempPath = ScratchFiles.New("mloop_noidx_", Path.GetExtension(filePath));
             var keepIndices = Enumerable.Range(0, headers.Length).Except(indexColumns).ToArray();
 
             WriteColumns(filePath, tempPath, keepIndices);
@@ -1441,7 +1443,7 @@ public class CsvDataLoader : DataProviderBase
             }
             if (excludeIndices.Count == 0) return filePath;
 
-            var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_noexcl_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+            var tempPath = ScratchFiles.New("mloop_noexcl_", Path.GetExtension(filePath));
             var keepIndices = Enumerable.Range(0, headers.Length).Except(excludeIndices).ToArray();
 
             WriteColumns(filePath, tempPath, keepIndices);
@@ -1540,9 +1542,7 @@ public class CsvDataLoader : DataProviderBase
         finally
         {
             foreach (var temp in temps)
-            {
-                try { File.Delete(temp); } catch { /* temp cleanup is best-effort */ }
-            }
+                ScratchFiles.Release(temp);
         }
     }
 
@@ -1662,7 +1662,7 @@ public class CsvDataLoader : DataProviderBase
         if (!hasMultiLine) return filePath;
 
         // Multiline quoted fields detected — rebuild CSV with flattened fields.
-        var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_flatdata_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+        var tempPath = ScratchFiles.New("mloop_flatdata_", Path.GetExtension(filePath));
         int flattenedCount = 0;
 
         using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
@@ -1754,7 +1754,7 @@ public class CsvDataLoader : DataProviderBase
         }
 
         // Multi-line header detected - need to flatten
-        var tempPath = Path.Combine(Path.GetTempPath(), $"mloop_flat_{Guid.NewGuid():N}{Path.GetExtension(filePath)}");
+        var tempPath = ScratchFiles.New("mloop_flat_", Path.GetExtension(filePath));
 
         using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
         using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))

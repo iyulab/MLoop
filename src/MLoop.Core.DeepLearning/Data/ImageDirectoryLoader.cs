@@ -131,7 +131,7 @@ public sealed class ImageDirectoryLoader : DataProviderBase
     /// </summary>
     public static string WriteImageTable(IEnumerable<string> images)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"mloop-images-{Guid.NewGuid():N}.csv");
+        var path = MLoop.Core.Data.ScratchFiles.New("mloop-images-", ".csv");
         using var writer = new StreamWriter(path, append: false, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
         writer.WriteLine(ImagePathColumn);
         foreach (var image in images)
