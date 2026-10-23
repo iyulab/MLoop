@@ -13,6 +13,52 @@ public class TrainingRunnerTests
 
     #region BuildColumnRoles Tests
 
+    // The loader folds two or more yes/no columns into one boolean vector; the search must read it.
+    [Fact]
+    public void BuildColumnRoles_ABooleanVector_IsNumeric()
+    {
+        var csv = Path.Combine(Path.GetTempPath(), $"roles-{Guid.NewGuid():N}.csv");
+        File.WriteAllLines(csv, ["x,a,b,Label", "1,yes,no,true", "2,no,yes,false"]);
+        try
+        {
+            var data = _mlContext.Data.CreateTextLoader(
+                [new TextLoader.Column("x", DataKind.Single, 0), new TextLoader.Column("BooleanFeatures", DataKind.Boolean, 1, 2),
+                 new TextLoader.Column("Label", DataKind.Boolean, 3)], separatorChar: ',', hasHeader: true).Load(csv);
+
+            var result = TrainingRunner.BuildColumnRoles(data, "Label");
+
+            Assert.Equal(["x", "BooleanFeatures"], result.Of(ColumnRole.Numeric));
+        }
+        finally
+        {
+            File.Delete(csv);
+        }
+    }
+
+    // A column no rule reads is left out of the model — said, not silent.
+    [Fact]
+    public void BuildColumnRoles_AColumnOfAnUnreadType_IsReported()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new WithDate { When = new DateTime(2026, 1, 1), Feature1 = 1f, Label = true },
+            new WithDate { When = new DateTime(2026, 1, 2), Feature1 = 2f, Label = false },
+        });
+        var said = new List<string>();
+
+        var result = TrainingRunner.BuildColumnRoles(data, "Label", said.Add);
+
+        Assert.Equal(["Feature1"], result.Of(ColumnRole.Numeric));
+        Assert.Contains(said, line => line.StartsWith("[Warning]") && line.Contains("When"));
+    }
+
+    private sealed class WithDate
+    {
+        public DateTime When { get; set; }
+        public float Feature1 { get; set; }
+        public bool Label { get; set; }
+    }
+
     [Fact]
     public void BuildColumnRoles_TextOnlyDataset_ReturnsWithTextColumns()
     {

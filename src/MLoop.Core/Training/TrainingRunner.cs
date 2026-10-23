@@ -1996,7 +1996,7 @@ public partial class TrainingRunner
         var numericColumns = new List<string>();
         var categoricalColumns = new List<string>();
         var ignoredColumns = new List<string>();
-
+        var unreadColumns = new List<string>();
 
         foreach (var col in data.Schema)
         {
@@ -2059,6 +2059,10 @@ public partial class TrainingRunner
             {
                 numericColumns.Add(col.Name);
             }
+            else
+            {
+                unreadColumns.Add($"{col.Name} ({col.Type})");
+            }
         }
 
         // One role per column; the order within a role is the order the columns were met in.
@@ -2078,6 +2082,10 @@ public partial class TrainingRunner
             write($"[Info] Categorical column(s) (override): {string.Join(", ", declaredCategories)}");
         if (ignoredColumns.Count > 0)
             write($"[Info] Ignored column(s) (override): {string.Join(", ", ignoredColumns)}");
+        // A column no rule above reads is not in the model. Said here, where it is decided — a vector of yes/no
+        // values once fell through without a word, and every model left those columns out.
+        if (unreadColumns.Count > 0)
+            write($"[Warning] Column(s) of a type the search does not read, not used: {string.Join(", ", unreadColumns)}");
 
         return roles;
     }
