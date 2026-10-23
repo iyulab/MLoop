@@ -9,6 +9,7 @@ using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using MLoop.Core.Export;
 using MLoop.Core.Models;
+using MLoop.Core.Runtime;
 using MLoop.Core.Storage;
 using Spectre.Console;
 
@@ -135,7 +136,7 @@ public static class ExportCommand
             }
 
             // Checked before any work: a verification that cannot run is a refusal, not a skipped step.
-            if (verify && OnnxVerification.Unavailable() is { } unavailable)
+            if (verify && OnnxRuntimeNative.Unavailable() is { } unavailable)
             {
                 WriteError($"--verify needs ONNX Runtime. {unavailable}", jsonOutput);
                 return 1;

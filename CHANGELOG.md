@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `MLoop.Core.Embedding` (library): runs a pretrained image encoder in ONNX Runtime. `EncoderDefinition` describes
+  which graph, its input and output names, its dimension and its preprocessing. `ImageEmbedder.Open(definition, path)`
+  then `Embed(images)` returns one L2-normalised vector per encoded image (PNG, JPEG, …). `ImagePreprocessor` resizes
+  the shortest edge, crops the centre and normalises per channel. It resamples bicubically in Pillow's fixed point, so
+  its input is the one the encoder's own image processor computes. An undecodable image is reported by its position
+  (`UnreadableImageException.Index`).
+
 ### Fixed
 
 - Anomaly detection, clustering and ranking fit one pipeline and take no time budget. Under auto-time (`mloop train`
@@ -14,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Breaking (library):** `OnnxVerification.Unavailable()` and `OnnxVerification.NativeLibraryPath()` moved to
+  `MLoop.Core.Runtime.OnnxRuntimeNative`. Export verification and the image encoders run on the same ONNX Runtime and
+  share one place that decides whether it can run.
 - **Breaking (library):** the training runner is named for what it does. `MLoop.Core.AutoML` is now
   `MLoop.Core.Training`, `AutoMLRunner` is `TrainingRunner` and its result `AutoMLResult` is `TrainedModel`; the
   members are unchanged. The training runs MLoop's own trainer search, so the old names described a library it no

@@ -10,9 +10,9 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- Tests only: ONNX Runtime with its native library, so graph tests (export verification, image encoders)
+         run without the on-demand runtime. The product ships only the managed half. -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" />
-    <!-- Tests only: the upstream oracle MLoop.Search's tuner is checked against, trial for trial
-         (TunerTraceTests). No product project references it. -->
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
@@ -30,6 +30,7 @@
   <ItemGroup>
     <!-- Golden files are read from the output: a deterministic build maps source paths to /_/. -->
     <None Update="Data/Golden/**" CopyToOutputDirectory="PreserveNewest" Link="Golden/%(Filename)%(Extension)" />
+    <None Include="Fixtures/embedding/*.png;Fixtures/embedding/*.onnx;Fixtures/embedding/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
