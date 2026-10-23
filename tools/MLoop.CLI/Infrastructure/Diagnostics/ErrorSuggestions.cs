@@ -226,7 +226,17 @@ public static partial class ErrorSuggestions
         // reader after experiments when the problem is a column.
         // "load" as a word start: "download" is not a model failing to load, and a weights URL under
         // ".../models/" otherwise completed the match.
-        if (!labelNotFound && message.Contains("model") && (message.Contains("not found") || LoadWord().IsMatch(message)))
+        // A deep-learning framework failing on its own graph ("Tensorflow exception triggered while loading model") is
+        // not a missing MLoop model either: after a failed training, "train a model first" and "promote" sent the reader
+        // the wrong way. The runtime is where to look.
+        var frameworkFailure = message.Contains("tensorflow") || message.Contains("torch");
+        if (frameworkFailure)
+        {
+            suggestions.Add("Check the deep-learning runtime is installed for this platform: [cyan]mloop runtime list[/]");
+            suggestions.Add("Reinstall it if it is: [cyan]mloop runtime remove <runtime>[/] then [cyan]mloop runtime install <runtime>[/]");
+        }
+
+        if (!labelNotFound && !frameworkFailure && message.Contains("model") && (message.Contains("not found") || LoadWord().IsMatch(message)))
         {
             suggestions.Add("See the models and their experiments: [cyan]mloop list[/]");
             suggestions.Add("Train a model first: [cyan]mloop train[/]");

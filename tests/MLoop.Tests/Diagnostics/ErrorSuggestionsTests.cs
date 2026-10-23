@@ -324,4 +324,19 @@ public class ErrorSuggestionsTests
         Assert.Contains(suggestions, s => s.Contains("label:"));
         Assert.DoesNotContain(suggestions, s => s.Contains("mloop promote") || s.Contains("mloop list"));
     }
+
+    // A framework failing on its own graph during training is a runtime matter, not a missing model: "train a model
+    // first" after a failed training sent the reader the wrong way.
+    [Fact]
+    public void AFrameworkFailingToLoadItsGraph_PointsAtTheRuntime_NotAtMissingModels()
+    {
+        var ex = new InvalidOperationException("Training failed for experiment default/exp-001: Tensorflow exception triggered while loading model.");
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "training");
+
+        Assert.Contains(suggestions, s => s.Contains("mloop runtime list"));
+        Assert.DoesNotContain(suggestions, s => s.Contains("Train a model first"));
+        Assert.DoesNotContain(suggestions, s => s.Contains("mloop promote"));
+    }
+
 }

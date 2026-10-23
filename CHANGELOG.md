@@ -20,6 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A training that failed inside TensorFlow or TorchSharp ("… exception triggered while loading model") was followed by
+  "Train a model first" and "Promote an experiment"; it now points at the runtime (`mloop runtime list`, reinstall).
+
 - Text classification (NAS-BERT) reported the network's logits as class probabilities: `probabilities` held negative
   values that did not sum to one, `confidence` was near 0 for a confident answer, and the log loss recorded at training
   and by `mloop evaluate` was meaningless (15.7 at accuracy 1.0). A classifier that scores with logits now answers in
