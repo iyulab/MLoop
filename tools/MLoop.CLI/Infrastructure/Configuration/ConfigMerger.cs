@@ -1,6 +1,6 @@
-using MLoop.Core.Training;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
+using MLoop.Core.Training;
 
 namespace MLoop.CLI.Infrastructure.Configuration;
 

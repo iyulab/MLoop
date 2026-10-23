@@ -1,10 +1,10 @@
 using Microsoft.ML;
 using MLoop.CLI.Infrastructure.ML;
-using MLoop.Core.Training;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
+using MLoop.Core.Training;
 
 namespace MLoop.Tests.Infrastructure.ML;
 

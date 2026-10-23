@@ -1,5 +1,5 @@
-using MLoop.Core.Training;
 using MLoop.Core.Models;
+using MLoop.Core.Training;
 using Xunit;
 
 namespace MLoop.Core.Tests.Training;

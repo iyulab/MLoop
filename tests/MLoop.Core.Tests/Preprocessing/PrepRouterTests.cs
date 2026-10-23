@@ -1,6 +1,6 @@
 using Microsoft.ML;
-using MLoop.Core.Training;
 using MLoop.Core.Preprocessing;
+using MLoop.Core.Training;
 
 namespace MLoop.Core.Tests.Preprocessing;
 

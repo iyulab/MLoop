@@ -1,7 +1,6 @@
 using Microsoft.ML;
-using MLoop.Core.Training;
 using MLoop.Core.Data;
-
+using MLoop.Core.Training;
 using MLoop.Search;
 
 namespace MLoop.Core.Tests.Data;

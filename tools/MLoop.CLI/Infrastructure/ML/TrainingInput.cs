@@ -1,8 +1,8 @@
 using MLoop.CLI.Commands;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
-using MLoop.Core.Training;
 using MLoop.Core.Data;
+using MLoop.Core.Training;
 using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.CLI.Infrastructure.ML;

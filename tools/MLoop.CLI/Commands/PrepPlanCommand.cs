@@ -2,8 +2,8 @@ using System.CommandLine;
 using MLoop.CLI.Commands.Policy;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
-using MLoop.Core.Training;
 using MLoop.Core.Preprocessing;
+using MLoop.Core.Training;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;

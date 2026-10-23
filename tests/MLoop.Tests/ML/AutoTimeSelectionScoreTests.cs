@@ -1,6 +1,6 @@
 using MLoop.CLI.Infrastructure.ML;
-using MLoop.Core.Training;
 using MLoop.Core.Models;
+using MLoop.Core.Training;
 
 namespace MLoop.Tests.ML;
 

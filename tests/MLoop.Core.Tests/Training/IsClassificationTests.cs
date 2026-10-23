@@ -1,6 +1,6 @@
-using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
+using MLoop.Core.Training;
 
 namespace MLoop.Core.Tests.Training;
 

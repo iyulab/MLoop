@@ -1,8 +1,8 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
-using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.DeepLearning;
+using MLoop.Core.Training;
 
 namespace MLoop.Core.DeepLearning.Tests.Data;
 

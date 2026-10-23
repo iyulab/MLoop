@@ -2,10 +2,10 @@ using System.Linq;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.Transforms;
-using MLoop.Core.Training;
 using MLoop.Core.Detection;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
+using MLoop.Core.Training;
 
 namespace MLoop.Core.Tests.Prediction;
 

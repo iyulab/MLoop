@@ -1,8 +1,8 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
-using MLoop.Core.Training;
 using MLoop.Core.Detection;
 using MLoop.Core.Storage;
+using MLoop.Core.Training;
 
 namespace MLoop.Core.Prediction;
 

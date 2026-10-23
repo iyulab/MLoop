@@ -2,10 +2,10 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.TorchSharp;
 using Microsoft.ML.Vision;
-using MLoop.Core.Training;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
+using MLoop.Core.Training;
 
 namespace MLoop.Core.DeepLearning;
 

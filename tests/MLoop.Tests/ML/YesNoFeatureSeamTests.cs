@@ -94,8 +94,12 @@ public class YesNoFeatureSeamTests : IDisposable
         {
             result = await new TrainingEngine(fs, store).TrainAsync(new TrainingConfig
             {
-                ModelName = "clusters", DataFile = path, LabelColumn = "", Task = "clustering",
-                TimeLimitSeconds = 10, NumClusters = 2,
+                ModelName = "clusters",
+                DataFile = path,
+                LabelColumn = "",
+                Task = "clustering",
+                TimeLimitSeconds = 10,
+                NumClusters = 2,
             }, progress: null, CancellationToken.None);
         }
         finally
@@ -145,8 +149,11 @@ public class YesNoFeatureSeamTests : IDisposable
     {
         var column = new ColumnSchema
         {
-            Name = "flag", DataType = SchemaDataTypes.Categorical, Purpose = "Feature",
-            CategoricalValues = [.. values], UniqueValueCount = values.Length,
+            Name = "flag",
+            DataType = SchemaDataTypes.Categorical,
+            Purpose = "Feature",
+            CategoricalValues = [.. values],
+            UniqueValueCount = values.Length,
         };
 
         Assert.Equal(kind, SchemaDataTypes.FeatureLoadKind(column, Microsoft.ML.Data.DataKind.String));

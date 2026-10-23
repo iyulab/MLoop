@@ -1,8 +1,8 @@
 using Microsoft.ML;
-using MLoop.Core.Training;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
+using MLoop.Core.Training;
 using MLoop.Tests.Common;
 
 namespace MLoop.Core.Tests.Training;
