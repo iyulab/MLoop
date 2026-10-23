@@ -176,20 +176,24 @@ public partial class TrainingRunner
         && Models.TaskTypes.Canonical(task) != "recommendation";
 
     /// <summary>
-    /// Why <paramref name="task"/>'s fit takes no time budget, or <c>null</c> when it does. Only an
-    /// AutoML search spends a budget; a deep-learning fit runs its epochs (a set number, or up to a cap with early stopping) and a time-series
-    /// fit runs its algorithm over the series once, and matrix factorization (recommendation) runs a fixed
-    /// number of iterations — measured: its "probe" was the whole 2-second fit, reported as "converged in
-    /// probe phase (30s)" after a 143-second estimate. For those the auto-time probe would be a whole second
-    /// training whose result is thrown away, its estimate would describe time nothing uses, and a "Time
-    /// Limit" row would promise a bound nothing enforces — measured: a 2-second time-series fit was
-    /// reported as a 19-second probe and a 114-second main pass, its warnings printed twice.
+    /// Why <paramref name="task"/>'s fit takes no time budget, or <c>null</c> when it does. Only the trainer search
+    /// (binary, multiclass, regression) spends a budget; a deep-learning fit runs its epochs (a set number, or up to a
+    /// cap with early stopping), a time-series fit runs its algorithm over the series once, matrix factorization
+    /// (recommendation) runs a fixed number of iterations, and anomaly detection, clustering and ranking fit one
+    /// pipeline. For those the auto-time probe would be a whole second training whose result is thrown away, its
+    /// estimate would describe time nothing uses, and a "Time Limit" row would promise a bound nothing enforces —
+    /// measured: a 2-second time-series fit was reported as a 19-second probe and a 114-second main pass, its
+    /// warnings printed twice.
     /// </summary>
     public static string? TimeBudgetUnused(string? task) =>
         DeepLearningRegistry.Handles(task) ? "trains by epochs, not against a clock"
         : IsTimeSeriesTask(task) ? "fits the series once, without a search"
-        : Models.TaskTypes.Canonical(task) == "recommendation" ? "trains a fixed number of iterations"
-        : null;
+        : Models.TaskTypes.Canonical(task) switch
+        {
+            "recommendation" => "trains a fixed number of iterations",
+            "anomaly-detection" or "clustering" or "ranking" => "fits one pipeline, without a search",
+            _ => null,
+        };
 
     public async Task<TrainedModel> RunAsync(
         TrainingConfig config,

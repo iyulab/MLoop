@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Anomaly detection, clustering and ranking fit one pipeline and take no time budget. Under auto-time (`mloop train`
+  without `--time`) they were trained twice, once as the probe and once as the main pass, and `mloop train` showed a
+  "Time Limit" that nothing enforced.
+
 ### Changed
 
 - **Breaking (library):** the training runner is named for what it does. `MLoop.Core.AutoML` is now
