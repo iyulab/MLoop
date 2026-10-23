@@ -23,6 +23,7 @@
     <PackageReference Include="Microsoft.ML.TimeSeries" />
     <PackageReference Include="Microsoft.ML.Recommender" />
     <PackageReference Include="Microsoft.ML.ImageAnalytics" />
+    <PackageReference Include="SkiaSharp" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" />

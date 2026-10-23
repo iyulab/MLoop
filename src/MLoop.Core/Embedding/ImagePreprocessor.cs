@@ -1,4 +1,5 @@
-using Microsoft.ML.Data;
+using System.Runtime.InteropServices;
+using SkiaSharp;
 
 namespace MLoop.Core.Embedding;
 
@@ -18,7 +19,7 @@ public sealed class UnreadableImageException(int index, string reason, Exception
 /// Those processors resize with Pillow, which resamples 8-bit images in fixed point (22 fractional bits) and rounds to
 /// 8 bits between its horizontal and vertical passes. This does the same, so a vector computed here is the one the
 /// encoder's own processor would give — a float resampler differs by a level here and there, and the difference reaches
-/// the vector. Decoding is ML.NET's (<see cref="MLImage"/>).
+/// the vector. Decoding is SkiaSharp's (the library ML.NET's image support is built on), unpremultiplied.
 /// </remarks>
 public static class ImagePreprocessor
 {
@@ -45,37 +46,35 @@ public static class ImagePreprocessor
 
     private static (byte[] Rgb, int Width, int Height) Decode(ReadOnlySpan<byte> encoded, int index)
     {
-        MLImage image;
+        // Decoded unpremultiplied, and the alpha dropped, not composited — what converting to RGB does in the image
+        // processors encoders ship with. ML.NET's MLImage decodes premultiplied: a translucent pixel came out darkened
+        // by its own alpha, and an image with transparency gave a vector the encoder's own processor does not.
+        using var data = SKData.CreateCopy(encoded);
+        using var codec = SKCodec.Create(data)
+            ?? throw new UnreadableImageException(index, "not an image that can be decoded (PNG, JPEG, BMP, GIF or WebP)");
+        var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        var rgba = new byte[info.BytesSize];
+        var pinned = GCHandle.Alloc(rgba, GCHandleType.Pinned);
+        SKCodecResult result;
         try
         {
-            using var stream = new MemoryStream(encoded.ToArray(), writable: false);
-            image = MLImage.CreateFromStream(stream);
+            result = codec.GetPixels(info, pinned.AddrOfPinnedObject());
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        finally
         {
-            // ML.NET's own message names its parameter ("Invalid input stream contents (Parameter 'imageStream')").
-            throw new UnreadableImageException(index, "not an image that can be decoded (PNG, JPEG, BMP, GIF or WebP)", ex);
+            pinned.Free();
         }
+        if (result is not (SKCodecResult.Success or SKCodecResult.IncompleteInput))
+            throw new UnreadableImageException(index, $"the image could not be decoded ({result})");
 
-        using (image)
+        var rgb = new byte[info.Width * info.Height * 3];
+        for (int p = 0, o = 0; o < rgb.Length; p += 4, o += 3)
         {
-            var (r, b) = image.PixelFormat switch
-            {
-                MLPixelFormat.Rgba32 => (0, 2),
-                MLPixelFormat.Bgra32 => (2, 0),
-                var other => throw new UnreadableImageException(index, $"pixel format {other} is not supported"),
-            };
-            var pixels = image.Pixels;
-            var rgb = new byte[image.Width * image.Height * 3];
-            // Alpha is dropped, not composited — as converting to RGB does in the processors encoders ship with.
-            for (int p = 0, o = 0; o < rgb.Length; p += 4, o += 3)
-            {
-                rgb[o] = pixels[p + r];
-                rgb[o + 1] = pixels[p + 1];
-                rgb[o + 2] = pixels[p + b];
-            }
-            return (rgb, image.Width, image.Height);
+            rgb[o] = rgba[p];
+            rgb[o + 1] = rgba[p + 1];
+            rgb[o + 2] = rgba[p + 2];
         }
+        return (rgb, info.Width, info.Height);
     }
 
     private static byte[] Resize(byte[] rgb, int width, int height, int newWidth, int newHeight)

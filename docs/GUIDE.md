@@ -1524,8 +1524,19 @@ Pretrained image encoders — graphs MLoop runs but does not train — for `mloo
 outside any project, in `~/.mloop/encoders/` (or the directory `MLOOP_ENCODERS` names), one directory per encoder
 with its definition and its ONNX graph. They are not experiments: nothing promotes, gates or retrains them.
 
+The catalog `mloop encoder install` knows:
+
+| Encoder | Weights | License | Vector | Preprocessing |
+|---|---|---|---|---|
+| `dinov2-small` | DINOv2 ViT-S/14 as ONNX (88.5 MB), one pinned revision of `onnx-community/dinov2-small` | Apache-2.0 (`facebook/dinov2-small`) | 384, the class token | shortest edge 256 (bicubic), centre crop 224, ImageNet mean/std |
+
+The product ships no weights: `install` downloads them once, refuses a file whose SHA-256 is not the pinned one, and
+installs them like `add` does. Its vectors match the encoder's own image processor and the same graph run from Python
+(cosine 1.000 on photographs and screenshots, transparent ones included).
+
 ```bash
-mloop encoder add encoder.json --model model.onnx   # install; records the graph's SHA-256
+mloop encoder install dinov2-small                  # download a catalog encoder; its SHA-256 is checked against the pin
+mloop encoder add encoder.json --model model.onnx   # install your own; records the graph's SHA-256
 mloop encoder list                                  # id, version, dimension, input size, SHA-256
 mloop encoder list --json
 mloop encoder remove my-encoder

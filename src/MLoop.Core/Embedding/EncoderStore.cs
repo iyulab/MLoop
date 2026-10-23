@@ -66,13 +66,13 @@ public sealed class EncoderStore
         {
             return Find(id.Trim()) is { } found
                 ? (found, null)
-                : (null, $"Encoder '{id.Trim()}' is not installed. Installed: {Names()}. Add one with: mloop encoder add <encoder.json> --model <model.onnx>");
+                : (null, $"Encoder '{id.Trim()}' is not installed. Installed: {Names()}. {HowToInstall(id)}");
         }
         var all = List();
         return all.Count switch
         {
             1 => (all[0], null),
-            0 => (null, "No encoder is installed. Add one with: mloop encoder add <encoder.json> --model <model.onnx>"),
+            0 => (null, $"No encoder is installed. {HowToInstall(null)}"),
             _ => (null, $"Several encoders are installed ({Names()}); name one."),
         };
     }
@@ -110,6 +110,59 @@ public sealed class EncoderStore
         return new InstalledEncoder(recorded, Path.Combine(dir, ModelFileName));
     }
 
+    /// <summary>
+    /// Downloads a catalog entry's weights (<see cref="EncoderDefinition.Url"/>) and installs them, refusing a file
+    /// whose SHA-256 is not the one the entry pins. The download lands beside the encoders, so a partial one never
+    /// takes the place of an installed encoder, and is removed whatever happens.
+    /// </summary>
+    /// <param name="definition">The entry — with a URL and a SHA-256 (<see cref="EncoderCatalog"/>).</param>
+    /// <param name="http">The client to download with.</param>
+    /// <param name="progress">Bytes downloaded so far, and the total when the server says it.</param>
+    /// <param name="cancellationToken">Stops the download.</param>
+    public async Task<InstalledEncoder> InstallAsync(
+        EncoderDefinition definition, HttpClient http,
+        IProgress<(long Downloaded, long? Total)>? progress = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(http);
+        if (definition.Url is not { Length: > 0 } url || definition.Sha256 is not { Length: > 0 } pinned)
+            throw new ArgumentException($"Encoder '{definition.Id}' has no pinned download (URL and SHA-256); add it from a file instead.", nameof(definition));
+        if (!IsValidId(definition.Id))
+            throw new ArgumentException($"'{definition.Id}' is not an encoder id.", nameof(definition));
+
+        Directory.CreateDirectory(Root);
+        var download = Path.Combine(Root, definition.Id + ".download");
+        try
+        {
+            using (var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+            {
+                response.EnsureSuccessStatusCode();
+                var total = response.Content.Headers.ContentLength;
+                await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await using var target = new FileStream(download, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+                var buffer = new byte[81920];
+                long downloaded = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    downloaded += read;
+                    progress?.Report((downloaded, total));
+                }
+            }
+
+            var sha = Sha256Of(download);
+            if (!sha.Equals(pinned, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"The download of encoder '{definition.Id}' has SHA-256 {sha}, not the pinned {pinned}; nothing was installed.");
+            return Add(definition, download);
+        }
+        finally
+        {
+            if (File.Exists(download))
+                File.Delete(download);
+        }
+    }
+
     /// <summary>Removes encoder <paramref name="id"/>; false when it was not installed.</summary>
     public bool Remove(string id)
     {
@@ -143,6 +196,16 @@ public sealed class EncoderStore
         {
             return null;
         }
+    }
+
+    // The catalog's command when the catalog names this encoder (or, with no name, any); adding a file otherwise.
+    private static string HowToInstall(string? id)
+    {
+        if (EncoderCatalog.Find(id) is { } entry)
+            return $"Install it with: mloop encoder install {entry.Id}";
+        return id is null
+            ? $"Install one with: mloop encoder install <{EncoderCatalog.Ids}>, or add your own: mloop encoder add <encoder.json> --model <model.onnx>"
+            : "Add it with: mloop encoder add <encoder.json> --model <model.onnx>";
     }
 
     private string Names()

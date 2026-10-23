@@ -254,7 +254,7 @@ services:
       # than defaulted: compose stops with this message when JWT_SIGNING_KEY is unset, instead of
       # starting a container that crash-loops on a fatal it cannot recover from.
       - Jwt__Key=${{JWT_SIGNING_KEY:?set JWT_SIGNING_KEY to a random secret of at least 32 characters}}
-      # POST /embed: the encoders `mloop encoder add` installed, mounted (the image carries none), with the
+      # POST /embed: the encoders `mloop encoder install` (or `add`) put on the host, mounted (the image carries none), with the
       # Dockerfile's ONNX Runtime line uncommented:
       # - {MLoop.Core.Embedding.EncoderStore.RootVariable}=/encoders
     volumes:

@@ -18,6 +18,7 @@ public static class EncoderCommand
     {
         var command = new Command("encoder", "Manage the pretrained image encoders mloop embed runs");
         command.Subcommands.Add(CreateListCommand());
+        command.Subcommands.Add(CreateInstallCommand());
         command.Subcommands.Add(CreateAddCommand());
         command.Subcommands.Add(CreateRemoveCommand());
         return command;
@@ -44,7 +45,7 @@ public static class EncoderCommand
             if (encoders.Count == 0)
             {
                 AnsiConsole.MarkupLine($"[dim]No encoder installed in {Markup.Escape(store.Root)}.[/]");
-                AnsiConsole.MarkupLine("Add one with: [cyan]mloop encoder add <encoder.json> --model <model.onnx>[/]");
+                AnsiConsole.MarkupLine($"Install one with: [cyan]mloop encoder install <{Markup.Escape(EncoderCatalog.Ids)}>[/], or add your own: [cyan]mloop encoder add <encoder.json> --model <model.onnx>[/]");
                 return 0;
             }
 
@@ -62,6 +63,64 @@ public static class EncoderCommand
             }
             AnsiConsole.Write(table);
             return 0;
+        });
+        return command;
+    }
+
+    private static Command CreateInstallCommand()
+    {
+        var idArg = new Argument<string>("encoder") { Description = $"The catalog encoder to install ({EncoderCatalog.Ids})" };
+        var jsonOption = new Option<bool>("--json") { Description = "Emit the installed encoder's identity as JSON to stdout" };
+        var command = new Command("install", "Download a catalog encoder, check its pinned SHA-256 and install it");
+        command.Arguments.Add(idArg);
+        command.Options.Add(jsonOption);
+
+        command.SetAction(async (parseResult, cancellationToken) =>
+        {
+            var id = parseResult.GetValue(idArg)!;
+            var json = parseResult.GetValue(jsonOption);
+            if (EncoderCatalog.Find(id) is not { } entry)
+            {
+                ErrorConsole.Error($"'{id}' is not in the encoder catalog ({EncoderCatalog.Ids}). An encoder of your own is added with: mloop encoder add <encoder.json> --model <model.onnx>");
+                return 1;
+            }
+
+            using var machineOutput = json ? new JsonOutputScope() : null;
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+            var store = new EncoderStore();
+            try
+            {
+                InstalledEncoder installed;
+                if (json)
+                {
+                    installed = await store.InstallAsync(entry, http, cancellationToken: cancellationToken);
+                    Console.WriteLine(JsonSerializer.Serialize(new { encoder = EncoderIdentity.Of(installed.Definition) }, Json));
+                    return 0;
+                }
+
+                installed = await AnsiConsole.Progress()
+                    .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new DownloadedColumn())
+                    .StartAsync(async context =>
+                    {
+                        var task = context.AddTask($"Downloading {Markup.Escape(entry.Id)}", maxValue: 1);
+                        var progress = new Progress<(long Downloaded, long? Total)>(p =>
+                        {
+                            if (p.Total is { } total && task.MaxValue != total)
+                                task.MaxValue = total;
+                            task.Value = p.Downloaded;
+                        });
+                        return await store.InstallAsync(entry, http, progress, cancellationToken);
+                    });
+                AnsiConsole.MarkupLine($"[green]✓[/] Encoder [cyan]{Markup.Escape(installed.Definition.Id)}[/] installed " +
+                                       $"({installed.Definition.Dimension} dimensions, SHA-256 {installed.Definition.Sha256![..12]}…) in {Markup.Escape(store.Root)}");
+                return 0;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or UnauthorizedAccessException
+                                         or TaskCanceledException { CancellationToken.IsCancellationRequested: false })
+            {
+                ErrorConsole.Error($"Encoder '{entry.Id}' was not installed: {ex.Message}");
+                return 1;
+            }
         });
         return command;
     }

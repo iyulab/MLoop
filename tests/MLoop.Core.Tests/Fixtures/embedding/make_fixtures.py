@@ -61,3 +61,14 @@ onnx.save(model, os.path.join(HERE, "tiny-encoder.onnx"))
 with open(os.path.join(HERE, "expected.json"), "w") as f:
     json.dump({"resized": [nw, nh], "tensor": [float(v) for v in tensor.flatten()],
                "embedding": [float(v) for v in embedding]}, f, indent=1)
+
+# translucent.png / translucent.json: the same pattern with an alpha ramp (fully transparent to opaque), and the tensor
+# a processor computes after converting to RGB — which drops the alpha and keeps the colour stored under it.
+alpha = np.clip(x * 7, 0, 255).astype(np.uint8)[..., None]
+Image.fromarray(np.concatenate([pixels, alpha], axis=-1)).save(os.path.join(HERE, "translucent.png"))
+image = Image.open(os.path.join(HERE, "translucent.png")).convert("RGB")
+resized = np.asarray(image.resize((nw, nh), resample=Image.BICUBIC))
+cropped = resized[top:top + CROP, left:left + CROP].astype(np.float32) * np.float32(1 / 255)
+translucent = ((cropped - MEAN) / STD).transpose(2, 0, 1)
+with open(os.path.join(HERE, "translucent.json"), "w") as f:
+    json.dump({"tensor": [float(v) for v in translucent.flatten()]}, f, indent=1)

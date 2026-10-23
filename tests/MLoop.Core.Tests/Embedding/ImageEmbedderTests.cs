@@ -45,6 +45,24 @@ public class ImageEmbedderTests
             Assert.True(Math.Abs(Reference.Value.Tensor[i] - tensor[i]) < 1e-5, $"element {i}: Pillow {Reference.Value.Tensor[i]}, here {tensor[i]}");
     }
 
+    /// <summary>
+    /// An image with transparency: converting to RGB drops the alpha and keeps the colour stored under it. A decoder that
+    /// premultiplies darkens every translucent pixel by its own alpha (and blackens a transparent one), and the vector
+    /// moves — measured at cosine 0.965 against the encoder's own processor on a screenshot with a translucent layer.
+    /// </summary>
+    [Fact]
+    public void ATranslucentImage_IsReadAsItsStoredColours_AsConvertingToRgbDoes()
+    {
+        var expected = JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "translucent.json"))).RootElement
+            .GetProperty("tensor").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+
+        var tensor = ImagePreprocessor.ToTensor(File.ReadAllBytes(Path.Combine(Fixtures, "translucent.png")), Tiny.Preprocessing);
+
+        Assert.Equal(expected.Length, tensor.Length);
+        for (var i = 0; i < tensor.Length; i++)
+            Assert.True(Math.Abs(expected[i] - tensor[i]) < 1e-5, $"element {i}: Pillow {expected[i]}, here {tensor[i]}");
+    }
+
     [Fact]
     public void AnImage_BecomesTheEncodersUnitVector_FromTheFirstToken()
     {

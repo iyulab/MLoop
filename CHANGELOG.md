@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `mloop encoder install <id>`: downloads an encoder from MLoop's catalog, checks its pinned SHA-256 and installs it.
+  The first entry is `dinov2-small` (DINOv2 ViT-S/14, Apache-2.0, 384 dimensions). `EncoderCatalog` and
+  `EncoderStore.InstallAsync` are the library side. A missing encoder's message now names the install command.
+
+### Fixed
+
+- `mloop embed` and `POST /embed` read an image with transparency premultiplied: every translucent pixel was darkened
+  by its own alpha, so the vector differed from the one the encoder's own image processor gives (cosine 0.965 on a
+  screenshot with a translucent layer). Images are now decoded unpremultiplied and the alpha dropped, as converting to
+  RGB does.
+
 ## [0.44.0] - 2026-10-23
 
 ### Added

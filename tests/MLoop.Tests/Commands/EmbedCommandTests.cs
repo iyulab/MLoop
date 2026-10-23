@@ -64,6 +64,18 @@ public sealed class EmbedCommandTests : IDisposable
         var (exit, _, stderr) = await CliRunner.RunAsync("embed", Path.Combine(Fixtures, "pattern.png"));
 
         Assert.Equal(1, exit);
+        Assert.Contains("mloop encoder install", stderr);
+        Assert.Contains("mloop encoder add", stderr);
+    }
+
+    // Only catalog encoders install by name; anything else is added from a file, and the refusal says so.
+    [Fact]
+    public async Task InstallingAnEncoderNotInTheCatalog_IsRefused_WithTheCatalogAndTheAddCommand()
+    {
+        var (exit, _, stderr) = await CliRunner.RunAsync("encoder", "install", "not-an-encoder");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("dinov2-small", stderr);
         Assert.Contains("mloop encoder add", stderr);
     }
 
