@@ -258,7 +258,8 @@ reported once, as `Excluded from features (<reason>): <columns> — <what that m
 The identifier rule is deliberately narrow. Numeric columns are never identifiers (measurements are
 distinct per row too); a value containing whitespace, a single repeated value, or a missing value
 disqualifies the column; and fewer than 20 rows is not enough evidence. A strictly increasing integer
-column is *not* removed — it is reported as a possible ID column with the command to exclude it.
+column is *not* removed — a day counter can be a real feature — but it is reported as a possible ID column, judged on the
+whole file before the split, with the command to exclude it.
 
 The decision is taken once, on the whole training file, and applied to every partition — so a
 column that happens to be constant inside one split cannot give that split a different feature width.
