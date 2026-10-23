@@ -15,6 +15,12 @@ namespace MLoop.Search.Tests;
 /// against the authority once, when it was written, and an independent literal since. The losses and costs are
 /// computed here from the port's own proposals, which is only the same input as upstream's while the two agree —
 /// the first divergence is reported, so a later one cannot hide behind it.
+/// <para>
+/// An integer setting must match exactly, a real one to a relative 1e-9: the fixture was recorded on one
+/// architecture, and the log and power functions the tuner maps through differ in their last bits between arm64 and
+/// x64 (measured: 6.580642628446451E-10 against …455E-10). A changed rule moves a proposal far beyond that
+/// (<see cref="TheTraceSeesADifferentRule"/>).
+/// </para>
 /// </remarks>
 public sealed class TunerTraceTests
 {
@@ -85,7 +91,7 @@ public sealed class TunerTraceTests
             foreach (var d in LightGbm)
             {
                 var expected = upstream[trial][d.Name];
-                if (expected != mine[d.Name])
+                if (!Agrees(d.Kind, expected, mine[d.Name]))
                     return ($"trial {trial}, {d.Name}: AutoML {expected:R}, port {mine[d.Name]:R}", seen.Count);
             }
 
@@ -98,6 +104,9 @@ public sealed class TunerTraceTests
         }
         return (null, seen.Count);
     }
+
+    private static bool Agrees(char kind, double expected, double actual)
+        => kind == 'i' ? expected == actual : Math.Abs(expected - actual) <= 1e-9 * Math.Max(Math.Abs(expected), double.Epsilon);
 
     private static double Loss(SearchPoint p)
         => Math.Pow(Math.Log(p["LearningRate"]) + 2.3, 2)
