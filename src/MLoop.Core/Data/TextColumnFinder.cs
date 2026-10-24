@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.Diagnostics;
 
 namespace MLoop.Core.Data;
 
@@ -66,10 +67,10 @@ public static class TextColumnFinder
         var guesses = undeclared.Where(s => !chosen.Contains(s)).Take(count - chosen.Count).ToList();
         if (guesses.Count > 0)
         {
-            log?.Invoke(
-                $"[Warning] No column reads as free text beyond {(chosen.Count == 0 ? "none" : string.Join(", ", chosen))}; " +
+            log?.Invoke(CoreMessage.Warning(
+                $"No column reads as free text beyond {(chosen.Count == 0 ? "none" : string.Join(", ", chosen))}; " +
                 $"using {string.Join(", ", guesses)} as text. To choose them, declare each text column in " +
-                "mloop.yaml under columns: <name>: type: text");
+                "mloop.yaml under columns: <name>: type: text"));
             chosen.AddRange(guesses);
         }
         return chosen;

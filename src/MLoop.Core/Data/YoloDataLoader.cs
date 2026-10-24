@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.Diagnostics;
 
 namespace MLoop.Core.Data;
 
@@ -254,11 +255,11 @@ public sealed class YoloDataLoader : DataProviderBase
         int duplicatesCollapsed)
     {
         if (missingLabels > 0)
-            _log($"[Warning] {missingLabels} image(s) had no matching label .txt and were skipped.");
+            _log(CoreMessage.Warning($"{missingLabels} image(s) had no matching label .txt and were skipped."));
 
         if (unreadableImages.Count > 0)
-            _log($"[Warning] {unreadableImages.Count} image(s) could not be read and were skipped: " +
-                 $"{string.Join(", ", unreadableImages.Take(5))}.");
+            _log(CoreMessage.Warning($"{unreadableImages.Count} image(s) could not be read and were skipped: " +
+                 $"{string.Join(", ", unreadableImages.Take(5))}."));
 
         if (duplicatesCollapsed > 0)
             _log($"[Info] Collapsed {duplicatesCollapsed} duplicate bounding box annotation(s).");

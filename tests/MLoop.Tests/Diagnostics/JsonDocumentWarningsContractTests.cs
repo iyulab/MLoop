@@ -60,11 +60,15 @@ public class JsonDocumentWarningsContractTests
         Assert.True(Offends(warns));
         Assert.False(Offends(warns + " var d = new { warnings = JsonOutputScope.Warnings };"));
         Assert.False(Offends("WarningConsole.Warn(\"no json mode here\");"));
+        Assert.True(Offends("using var s = json ? new JsonOutputScope() : null; Load(path, CoreNarration.Sink);"));
     }
 
+    // A command warns through WarningConsole itself, or through CoreNarration — the sink that turns the lines
+    // MLoop.Core marks as warnings into WarningConsole warnings.
     private static bool Polices(string source) =>
         source.Contains("new JsonOutputScope()", StringComparison.Ordinal)
-        && source.Contains("WarningConsole.Warn(", StringComparison.Ordinal);
+        && (source.Contains("WarningConsole.Warn(", StringComparison.Ordinal)
+            || source.Contains("CoreNarration.", StringComparison.Ordinal));
 
     private static bool Offends(string source) =>
         Polices(source) && !source.Contains("JsonOutputScope.Warnings", StringComparison.Ordinal);

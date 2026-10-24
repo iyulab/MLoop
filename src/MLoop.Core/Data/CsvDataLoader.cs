@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.Diagnostics;
 using MLoop.Core.Models;
 
 namespace MLoop.Core.Data;
@@ -838,7 +839,7 @@ public class CsvDataLoader : DataProviderBase
             var removedNames = sparseIndices.Select(i => headers[i]);
             foreach (var name in removedNames)
             {
-                write($"[Warning] Sparse column '{name}' excluded (>{threshold:P0} missing values)");
+                write(CoreMessage.Warning($"Sparse column '{name}' excluded (>{threshold:P0} missing values)"));
             }
 
             return tempPath;
@@ -931,7 +932,7 @@ public class CsvDataLoader : DataProviderBase
             var removedNames = constantIndices.Select(i => headers[i]);
             foreach (var name in removedNames)
             {
-                write($"[Warning] Constant column '{name}' excluded (all values identical)");
+                write(CoreMessage.Warning($"Constant column '{name}' excluded (all values identical)"));
             }
 
             return tempPath;
@@ -997,7 +998,7 @@ public class CsvDataLoader : DataProviderBase
 
             var tempPath = WriteWithoutColumns(filePath, structured, "mloop_nostruct_");
             foreach (var idx in structured)
-                write($"[Warning] Column '{headers[idx]}' holds a list or record in every row and is not read as a feature — unpack it into rows or columns first");
+                write(CoreMessage.Warning($"Column '{headers[idx]}' holds a list or record in every row and is not read as a feature — unpack it into rows or columns first"));
             return tempPath;
         }
         catch
@@ -1107,7 +1108,7 @@ public class CsvDataLoader : DataProviderBase
 
             foreach (var idx in identifierIndices)
             {
-                write($"[Warning] Identifier column '{headers[idx]}' excluded (distinct in every row)");
+                write(CoreMessage.Warning($"Identifier column '{headers[idx]}' excluded (distinct in every row)"));
             }
 
             return tempPath;
@@ -1200,8 +1201,8 @@ public class CsvDataLoader : DataProviderBase
                 if (numericRatio > 0.80 && numericRatio < 1.0 && textCount[i] >= 2)
                 {
                     mixedColumns.Add(header);
-                    write($"[Warning] Column '{header}' is {numericRatio:P0} numeric with {textCount[i]} text values — " +
-                          $"may cause type misdetection. Consider adding column_overrides: {{ {header}: numeric }}");
+                    write(CoreMessage.Warning($"Column '{header}' is {numericRatio:P0} numeric with {textCount[i]} text values — " +
+                          $"may cause type misdetection. Consider adding column_overrides: {{ {header}: numeric }}"));
                 }
             }
         }
@@ -1322,8 +1323,8 @@ public class CsvDataLoader : DataProviderBase
     {
         if (IsLikelyHeaderless(filePath))
         {
-            _log("[Warning] Possible headerless CSV detected: first row appears to be data (all numeric values).");
-            _log("[Warning] ML.NET will treat the first row as column names, which may cause incorrect results.");
+            _log(CoreMessage.Warning("Possible headerless CSV detected: first row appears to be data (all numeric values)."));
+            _log(CoreMessage.Warning("ML.NET will treat the first row as column names, which may cause incorrect results."));
             _log("[Info] Solution: Add a header row with column names (e.g., Feature1,Feature2,...,Label).");
         }
     }
@@ -1824,8 +1825,8 @@ public class CsvDataLoader : DataProviderBase
             // If Row2 has significantly more unique values than Row1, confirm multi-row header
             if (uniqueRow2.Count > uniqueRow1.Count * 2)
             {
-                write($"[Warning] Possible multi-row header detected: Row 1 has only {uniqueRow1.Count} unique values across {row1Fields.Length} columns.");
-                write($"[Warning] Row 1 may be category headers (e.g., '{string.Join("', '", uniqueRow1.Take(3))}').");
+                write(CoreMessage.Warning($"Possible multi-row header detected: Row 1 has only {uniqueRow1.Count} unique values across {row1Fields.Length} columns."));
+                write(CoreMessage.Warning($"Row 1 may be category headers (e.g., '{string.Join("', '", uniqueRow1.Take(3))}')."));
                 write("[Info] MLoop expects a single header row. Please preprocess your CSV:");
                 write("[Info]   1. Remove the first row manually, or");
                 write("[Info]   2. Use: mloop prep run --drop-rows 1 --input data.csv --output clean.csv");

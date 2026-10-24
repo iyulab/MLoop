@@ -1,3 +1,4 @@
+using MLoop.Core.Diagnostics;
 using Spectre.Console;
 
 namespace MLoop.CLI.Infrastructure.Diagnostics;
@@ -29,8 +30,18 @@ namespace MLoop.CLI.Infrastructure.Diagnostics;
 /// </remarks>
 public static class CoreNarration
 {
-    /// <summary>The sink to pass wherever <c>MLoop.Core</c> takes an <c>Action&lt;string&gt; log</c>.</summary>
-    public static void Write(string message) => AnsiConsole.WriteLine(message);
+    /// <summary>
+    /// The sink to pass wherever <c>MLoop.Core</c> takes an <c>Action&lt;string&gt; log</c>. A line Core marks as a
+    /// warning (<see cref="CoreMessage"/>) goes through <see cref="WarningConsole"/>, so it reaches a <c>--json</c>
+    /// document's <c>warnings</c> and a training run's <c>warning</c> events; the rest is narration.
+    /// </summary>
+    public static void Write(string message)
+    {
+        if (CoreMessage.TryReadWarning(message, out var warning))
+            WarningConsole.Warn(Markup.Escape(warning));
+        else
+            AnsiConsole.WriteLine(message);
+    }
 
     /// <summary>The same sink as a delegate, for the call sites that pass one along.</summary>
     public static Action<string> Sink => Write;

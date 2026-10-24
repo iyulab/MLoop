@@ -1,3 +1,5 @@
+using MLoop.Core.Diagnostics;
+
 namespace MLoop.Core.DeepLearning;
 
 /// <summary>
@@ -35,9 +37,10 @@ public static class QuestionAnswerAlphabet
             return null;
 
         var unwritable = total - writable;
-        return $"[Warning] Question answering: {unwritable} of {total} answer(s) contain characters this model cannot write. "
+        return CoreMessage.Warning(
+            $"Question answering: {unwritable} of {total} answer(s) contain characters this model cannot write. "
             + "ML.NET's question-answering model writes its answer one byte per character (Latin-1), so Korean, Chinese, "
             + "Japanese, Cyrillic and similar text comes out with those characters missing. "
-            + $"exact_match cannot exceed {(double)writable / total:P0} on this data, and char_f1 counts only what it can write.";
+            + $"exact_match cannot exceed {(double)writable / total:P0} on this data, and char_f1 counts only what it can write.");
     }
 }

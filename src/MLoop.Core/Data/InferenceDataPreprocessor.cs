@@ -1,3 +1,4 @@
+using MLoop.Core.Diagnostics;
 using MLoop.Core.Models;
 
 namespace MLoop.Core.Data;
@@ -87,11 +88,11 @@ public static class InferenceDataPreprocessor
 
             if (ReadHeaderCount(current) != before)
             {
-                (log ?? CsvDataLoader.NoLog)(
-                    "[Warning] This model has no recorded feature-exclusion schema, so the excluded columns " +
+                (log ?? CsvDataLoader.NoLog)(CoreMessage.Warning(
+                    "This model has no recorded feature-exclusion schema, so the excluded columns " +
                     "were re-derived from the inference data. If the result disagrees with what training " +
                     "dropped, the model will report a feature-vector size mismatch — retrain to record the " +
-                    "schema (mloop train).");
+                    "schema (mloop train)."));
             }
         }
 

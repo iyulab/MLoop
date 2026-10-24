@@ -88,7 +88,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   trained type, a weight the file lacks, a calibration worse than the model's own probabilities — writing
   them only to stderr with the narration. `evaluate`, `predict`, `calibrate`, `threshold` and `compare`
   documents carry them as `warnings` (`evaluate`'s as `POST /evaluate` does); only `train`'s event stream
-  had them before.
+  had them before. So do `info`, `analyze`, `prep plan` and `features select`. The warnings the data loaders
+  raise — a possible multi-row or missing header, a column holding lists, images or annotations skipped — were
+  printed as plain lines even then (`mloop info --json` reported success with a multi-row header warning on
+  stderr only); they now reach the document's `warnings` and a training run's `warning` events.
 
 - An exported binary or regression graph declared the label column as an input although no output
   reads it and the manifest did not list it: the label was dropped from a view over the data, while the

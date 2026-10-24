@@ -4,6 +4,7 @@ using Microsoft.ML.Transforms;
 using MLoop.Core.Contracts;
 using MLoop.Core.Data;
 using MLoop.Core.Detection;
+using MLoop.Core.Diagnostics;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Scripting;
@@ -2159,7 +2160,7 @@ public partial class TrainingRunner
         // A column no rule above reads is not in the model. Said here, where it is decided — a vector of yes/no
         // values once fell through without a word, and every model left those columns out.
         if (unreadColumns.Count > 0)
-            write($"[Warning] Column(s) of a type the search does not read, not used: {string.Join(", ", unreadColumns)}");
+            write(CoreMessage.Warning($"Column(s) of a type the search does not read, not used: {string.Join(", ", unreadColumns)}"));
 
         return roles;
     }

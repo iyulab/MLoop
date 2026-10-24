@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.Diagnostics;
 
 namespace MLoop.Core.Data;
 
@@ -199,8 +200,8 @@ public sealed class ImageDirectoryLoader : DataProviderBase
         int totalImages)
     {
         if (emptyClasses.Count > 0)
-            _log($"[Warning] {emptyClasses.Count} class folder(s) contain no supported images and were skipped: " +
-                 $"{string.Join(", ", emptyClasses)}. Supported extensions: {string.Join(", ", SupportedExtensions.OrderBy(e => e))}.");
+            _log(CoreMessage.Warning($"{emptyClasses.Count} class folder(s) contain no supported images and were skipped: " +
+                 $"{string.Join(", ", emptyClasses)}. Supported extensions: {string.Join(", ", SupportedExtensions.OrderBy(e => e))}."));
 
         if (totalImages == 0)
             throw new InvalidOperationException(
@@ -208,24 +209,24 @@ public sealed class ImageDirectoryLoader : DataProviderBase
                 $"Supported extensions: {string.Join(", ", SupportedExtensions.OrderBy(e => e))}.");
 
         if (classCounts.Count < 2)
-            _log($"[Warning] Only {classCounts.Count} class with images was found. " +
-                 "Image classification needs at least two classes to learn a meaningful boundary.");
+            _log(CoreMessage.Warning($"Only {classCounts.Count} class with images was found. " +
+                 "Image classification needs at least two classes to learn a meaningful boundary."));
 
         var sparseClasses = classCounts
             .Where(kv => kv.Value < MinRecommendedImagesPerClass)
             .Select(kv => $"{kv.Key} ({kv.Value})")
             .ToList();
         if (sparseClasses.Count > 0)
-            _log($"[Warning] Classes with fewer than {MinRecommendedImagesPerClass} images may train poorly: " +
-                 $"{string.Join(", ", sparseClasses)}.");
+            _log(CoreMessage.Warning($"Classes with fewer than {MinRecommendedImagesPerClass} images may train poorly: " +
+                 $"{string.Join(", ", sparseClasses)}."));
 
         if (classCounts.Count >= 2)
         {
             var max = classCounts.Values.Max();
             var min = classCounts.Values.Min();
             if (min > 0 && max >= min * 10)
-                _log($"[Warning] Severe class imbalance detected (largest {max} vs smallest {min} images). " +
-                     "Consider balancing the dataset for better accuracy.");
+                _log(CoreMessage.Warning($"Severe class imbalance detected (largest {max} vs smallest {min} images). " +
+                     "Consider balancing the dataset for better accuracy."));
         }
 
         _log($"[Info] Loaded {totalImages} images across {classCounts.Count} class(es): " +

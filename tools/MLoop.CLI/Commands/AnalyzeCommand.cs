@@ -133,7 +133,7 @@ public static class AnalyzeCommand
     /// <summary>Emits an envelope as JSON (machine) or via the console renderer (human).</summary>
     internal static void Emit(AnalyzeEnvelope env, bool json, Action<AnalyzeEnvelope> renderConsole)
     {
-        if (json) Console.WriteLine(AnalyzeJson.Serialize(env));
+        if (json) Console.WriteLine(AnalyzeJson.Serialize(env with { Warnings = JsonOutputScope.Warnings }));
         else if (!env.Available)
             AnsiConsole.MarkupLine("[yellow]Warning:[/] DataLens is not available. Install the DataLens NuGet package to enable analysis.");
         else renderConsole(env);

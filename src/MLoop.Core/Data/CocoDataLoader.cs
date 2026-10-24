@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.Diagnostics;
 
 namespace MLoop.Core.Data;
 
@@ -241,15 +242,15 @@ public sealed class CocoDataLoader : DataProviderBase
         {
             var preview = string.Join(", ", missingImageFiles.Take(5));
             var suffix = missingImageFiles.Count > 5 ? $" (+{missingImageFiles.Count - 5} more)" : "";
-            _log($"[Warning] {missingImageFiles.Count} annotated image file(s) were not found on disk and were skipped: {preview}{suffix}.");
+            _log(CoreMessage.Warning($"{missingImageFiles.Count} annotated image file(s) were not found on disk and were skipped: {preview}{suffix}."));
         }
 
         if (skippedImageRefs > 0)
-            _log($"[Warning] {skippedImageRefs} annotation group(s) referenced an image id absent from the 'images' list and were skipped.");
+            _log(CoreMessage.Warning($"{skippedImageRefs} annotation group(s) referenced an image id absent from the 'images' list and were skipped."));
 
         if (unknownCategories.Count > 0)
-            _log($"[Warning] {unknownCategories.Count} category id(s) were not declared in 'categories' and were named generically (class_<id>): " +
-                 $"{string.Join(", ", unknownCategories.OrderBy(x => x).Take(10))}.");
+            _log(CoreMessage.Warning($"{unknownCategories.Count} category id(s) were not declared in 'categories' and were named generically (class_<id>): " +
+                 $"{string.Join(", ", unknownCategories.OrderBy(x => x).Take(10))}."));
 
         if (imageCount == 0)
             throw new InvalidOperationException(
@@ -261,7 +262,7 @@ public sealed class CocoDataLoader : DataProviderBase
              $"{string.Join(", ", classCounts.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}"))}.");
 
         if (classCounts.Count < 1)
-            _log("[Warning] No object classes were found. Object detection needs at least one labeled class.");
+            _log(CoreMessage.Warning("No object classes were found. Object detection needs at least one labeled class."));
     }
 
     /// <summary>Row shape produced by the loader and consumed by the trainer pipeline.</summary>

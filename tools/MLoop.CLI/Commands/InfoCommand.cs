@@ -288,7 +288,7 @@ public static class InfoCommand
         {
             if (!string.IsNullOrEmpty(labelColumn) && !columns.Contains(labelColumn))
             {
-                AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label column '{labelColumn}' not found in file");
+                WarningConsole.Warn($"Label column '{Markup.Escape(labelColumn)}' not found in file");
             }
 
             // Heuristic: prefer common label column names (case-insensitive)
@@ -412,7 +412,7 @@ public static class InfoCommand
     {
         if (!dataLens.IsAvailable)
         {
-            AnsiConsole.MarkupLine("[yellow]Warning:[/] --analyze requires DataLens library. Skipping deep analysis.");
+            WarningConsole.Warn("--analyze requires DataLens library. Skipping deep analysis.");
             AnsiConsole.MarkupLine("[grey]  Install DataLens NuGet package to enable.[/]");
             AnsiConsole.WriteLine();
             return null;
@@ -683,7 +683,8 @@ public static class InfoCommand
             LabelDistribution = labelDistribution,
             Profile = profile,
             Analysis = analysis,
-            Errors = errors
+            Errors = errors,
+            Warnings = JsonOutputScope.Warnings,
         };
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
         {

@@ -33,7 +33,8 @@ public sealed record AnalyzeEnvelope(
     bool Available,
     string Summary,
     object? Data,
-    IReadOnlyList<string> Flags);
+    IReadOnlyList<string> Flags,
+    IReadOnlyList<string>? Warnings = null);
 
 /// <summary>Maps DataLens reports to the analyze JSON envelope.</summary>
 public static class AnalyzeJson
