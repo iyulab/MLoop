@@ -148,6 +148,37 @@ public class CsvMergerTests : IDisposable
     }
 
     [Fact]
+    public async Task MergeAsync_LaterFileInAnotherColumnOrder_LandsUnderTheFirstFilesHeader()
+    {
+        var first = Path.Combine(_tempDirectory, "a.csv");
+        var second = Path.Combine(_tempDirectory, "b.csv");
+        await File.WriteAllTextAsync(first, "x,y,label\n1,2,A\n");
+        await File.WriteAllTextAsync(second, "label,x,y\nB,3,4\n");
+        var output = Path.Combine(_tempDirectory, "merged.csv");
+
+        var result = await _csvMerger.MergeAsync([first, second], output);
+
+        Assert.True(result.Success);
+        Assert.Equal(["x,y,label", "1,2,A", "3,4,B"], (await File.ReadAllLinesAsync(output)).Select(l => l.TrimStart('\uFEFF')));
+        Assert.Equal(new Dictionary<string, int> { ["a.csv"] = 1, ["b.csv"] = 1 }, result.RowsPerFile);
+    }
+
+    [Fact]
+    public async Task MergeAsync_FilesWithoutRows_FailsAndLeavesNoFile()
+    {
+        var first = Path.Combine(_tempDirectory, "a.csv");
+        var second = Path.Combine(_tempDirectory, "b.csv");
+        await File.WriteAllTextAsync(first, "x,y\n");
+        await File.WriteAllTextAsync(second, "x,y\n");
+        var output = Path.Combine(_tempDirectory, "merged.csv");
+
+        var result = await _csvMerger.MergeAsync([first, second], output);
+
+        Assert.False(result.Success);
+        Assert.Equal(["a.csv", "b.csv"], Directory.GetFiles(_tempDirectory).Select(Path.GetFileName).Order());
+    }
+
+    [Fact]
     public async Task MergeAsync_WithSchemaMismatch_ReturnsError()
     {
         // Arrange

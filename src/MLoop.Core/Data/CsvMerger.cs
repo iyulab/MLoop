@@ -130,29 +130,14 @@ public class CsvMerger : ICsvMerger
                 };
             }
 
-            var allData = new List<Dictionary<string, string>>();
-            var rowsPerFile = new Dictionary<string, int>();
+            // Every file has the same columns (validated above); the output takes the first file's order, with the
+            // defaults it lacks after them.
+            var firstHeaders = await _csvHelper.ReadHeadersAsync(paths[0], cancellationToken: cancellationToken).ConfigureAwait(false);
+            var columns = firstHeaders.Concat(MissingDefaults(firstHeaders, columnDefaults).Select(kv => kv.Key)).ToList();
+            var (rowsPerFile, totalRows) = await WriteMergedAsync(paths, outputPath, columns,
+                (_, headers) => Projection(columns, headers, MissingDefaults(headers, columnDefaults)), cancellationToken).ConfigureAwait(false);
 
-            // Use column order from first file
-            List<string>? columnOrder = null;
-
-            foreach (var path in paths)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var data = await _csvHelper.ReadAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
-                rowsPerFile[Path.GetFileName(path)] = data.Count;
-                FillMissingColumns(data, columnDefaults);
-
-                if (columnOrder == null && data.Count > 0)
-                {
-                    columnOrder = data[0].Keys.ToList();
-                }
-
-                allData.AddRange(data);
-            }
-
-            if (allData.Count == 0)
+            if (totalRows == 0)
             {
                 return new CsvMergeResult
                 {
@@ -161,14 +146,11 @@ public class CsvMerger : ICsvMerger
                 };
             }
 
-            // Write merged data
-            await _csvHelper.WriteAsync(outputPath, allData, cancellationToken: cancellationToken).ConfigureAwait(false);
-
             return new CsvMergeResult
             {
                 Success = true,
                 OutputPath = Path.GetFullPath(outputPath),
-                TotalRows = allData.Count,
+                TotalRows = totalRows,
                 SourceFileCount = paths.Count,
                 RowsPerFile = rowsPerFile
             };
@@ -264,20 +246,85 @@ public class CsvMerger : ICsvMerger
             ? []
             : columnDefaults.Where(kv => !headers.Contains(kv.Key, StringComparer.OrdinalIgnoreCase));
 
-    /// <summary>Gives each row of one file the default of every column the file lacks.</summary>
-    private static void FillMissingColumns(List<Dictionary<string, string>> rows, IReadOnlyDictionary<string, string>? columnDefaults)
+    /// <summary>
+    /// For one file: where each output column's value comes from — the file's own column, or a constant (a default
+    /// the file lacks, or filename metadata). A constant wins over a column of the same name, as the merges always had it.
+    /// </summary>
+    private static Func<string[], string>[] Projection(
+        IReadOnlyList<string> columns, IReadOnlyList<string> headers, IEnumerable<KeyValuePair<string, string>> constants)
     {
-        if (rows.Count == 0)
-            return;
-        var missing = MissingDefaults(rows[0].Keys, columnDefaults).ToList();
-        foreach (var row in rows)
-            foreach (var (column, value) in missing)
-                row[column] = value;
+        var fixedValues = new Dictionary<string, string>();
+        foreach (var (column, value) in constants)
+            fixedValues[column] = value;
+        return [.. columns.Select<string, Func<string[], string>>(column =>
+        {
+            if (fixedValues.TryGetValue(column, out var value))
+                return _ => value;
+            var index = IndexOf(headers, column);
+            return index < 0 ? _ => string.Empty : row => row[index];
+        })];
     }
 
     /// <summary>
-    /// Computes a schema identifier from column headers.
+    /// Streams every file's rows, projected onto <paramref name="columns"/>, into one file — written beside
+    /// <paramref name="outputPath"/> and moved into place only when it holds a row, so an empty merge leaves no file.
+    /// The rows are never held.
     /// </summary>
+    private async Task<(Dictionary<string, int> RowsPerFile, int TotalRows)> WriteMergedAsync(
+        IReadOnlyList<string> paths,
+        string outputPath,
+        IReadOnlyList<string> columns,
+        Func<string, IReadOnlyList<string>, Func<string[], string>[]> projectionFor,
+        CancellationToken cancellationToken)
+    {
+        var rowsPerFile = new Dictionary<string, int>();
+        var total = 0;
+        var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath))!;
+        Directory.CreateDirectory(directory);
+        var temporary = Path.Combine(directory, $".{Path.GetFileName(outputPath)}.{Guid.NewGuid():N}.tmp");
+
+        async IAsyncEnumerable<string[]> Rows()
+        {
+            foreach (var path in paths)
+            {
+                Func<string[], string>[] projection = [];
+                var count = 0;
+                await foreach (var row in _csvHelper.ReadRowsAsync(path, headers => projection = projectionFor(path, headers),
+                    cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    var values = new string[projection.Length];
+                    for (var i = 0; i < projection.Length; i++)
+                        values[i] = projection[i](row);
+                    count++;
+                    yield return values;
+                }
+                rowsPerFile[Path.GetFileName(path)] = count;
+                total += count;
+            }
+        }
+
+        try
+        {
+            await _csvHelper.WriteRowsAsync(temporary, columns, Rows(), cancellationToken).ConfigureAwait(false);
+            if (total > 0)
+                File.Move(temporary, outputPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+                File.Delete(temporary);
+        }
+        return (rowsPerFile, total);
+    }
+
+    private static int IndexOf(IReadOnlyList<string> headers, string name)
+    {
+        for (var i = 0; i < headers.Count; i++)
+            if (headers[i] == name)
+                return i;
+        return -1;
+    }
+
     private static string ComputeSchemaId(List<string> headers)
     {
         var normalized = string.Join("|", headers.Select(h => h.Trim().ToLowerInvariant()).OrderBy(h => h));
@@ -316,42 +363,19 @@ public class CsvMerger : ICsvMerger
                 };
             }
 
-            var allData = new List<Dictionary<string, string>>();
-            var rowsPerFile = new Dictionary<string, int>();
-
-            // Build metadata columns list
+            // The metadata columns first, then the first file's order; each file's rows carry the values its name
+            // gives (empty where the name does not match).
             var metadataColumns = GetMetadataColumns(metadataOptions);
-            List<string>? columnOrder = null;
-
-            foreach (var path in paths)
+            var firstHeaders = await _csvHelper.ReadHeadersAsync(paths[0], cancellationToken: cancellationToken).ConfigureAwait(false);
+            var columns = metadataColumns.Concat(firstHeaders).ToList();
+            var (rowsPerFile, totalRows) = await WriteMergedAsync(paths, outputPath, columns, (path, headers) =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                var metadata = ExtractFilenameMetadata(Path.GetFileName(path), metadataOptions);
+                var constants = metadataColumns.Select(c => KeyValuePair.Create(c, metadata.GetValueOrDefault(c, string.Empty)));
+                return Projection(columns, headers, constants);
+            }, cancellationToken).ConfigureAwait(false);
 
-                var fileName = Path.GetFileName(path);
-                var metadata = ExtractFilenameMetadata(fileName, metadataOptions);
-
-                var data = await _csvHelper.ReadAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
-                rowsPerFile[fileName] = data.Count;
-
-                if (columnOrder == null && data.Count > 0)
-                {
-                    columnOrder = data[0].Keys.ToList();
-                    // Add metadata columns to the front
-                    columnOrder = metadataColumns.Concat(columnOrder).ToList();
-                }
-
-                // Add metadata to each row
-                foreach (var row in data)
-                {
-                    foreach (var (key, value) in metadata)
-                    {
-                        row[key] = value;
-                    }
-                    allData.Add(row);
-                }
-            }
-
-            if (allData.Count == 0)
+            if (totalRows == 0)
             {
                 return new CsvMergeResult
                 {
@@ -360,14 +384,11 @@ public class CsvMerger : ICsvMerger
                 };
             }
 
-            // Write merged data with metadata columns first
-            await _csvHelper.WriteAsync(outputPath, allData, columnOrder, cancellationToken).ConfigureAwait(false);
-
             return new CsvMergeResult
             {
                 Success = true,
                 OutputPath = Path.GetFullPath(outputPath),
-                TotalRows = allData.Count,
+                TotalRows = totalRows,
                 SourceFileCount = paths.Count,
                 RowsPerFile = rowsPerFile
             };
