@@ -555,6 +555,7 @@ try
                 {
                     modelName,
                     experimentId = answeringId,
+                    modelSha256 = ModelFingerprint.Sha256(modelPath),
                     predictedAt = DateTime.UtcNow,
                     task = "forecasting",
                     count = forecastRows.Count,
@@ -676,6 +677,7 @@ try
             {
                 modelName,
                 experimentId = answeringId,
+                modelSha256 = ModelFingerprint.Sha256(modelPath),
                 predictedAt = DateTime.UtcNow,
                 task = result.TaskType,
                 count = predictions.Count,

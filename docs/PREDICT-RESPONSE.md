@@ -13,6 +13,7 @@ envelope around the rows.
 {
   "model": "default",
   "experimentId": "exp-001",
+  "modelSha256": "9c1e…",
   "task": "multiclass-classification",
   "count": 3,
   "predictions": [ /* rows */ ],
@@ -23,7 +24,9 @@ envelope around the rows.
 `experimentId` names the model that answered — production's experiment by default, the one you asked
 for with `--experiment <exp-id>` (a shadow prediction: a staging candidate answers, production stays
 where it is), and absent for a `--model <path>` file outside the project's experiments. Comparing a
-candidate with production is two calls on the same file, keyed by it.
+candidate with production is two calls on the same file, keyed by it. `modelSha256` is the answering model file's
+SHA-256: an experiment id is unique only inside one project's models folder, so a caller that records answers from
+several projects or machines keys them by the content, as it keys an encoder's answers by its `sha256`.
 
 `POST /predict` returns the same rows with more about where they came from:
 
@@ -31,6 +34,7 @@ candidate with production is two calls on the same file, keyed by it.
 {
   "modelName": "default",
   "experimentId": "exp-001",
+  "modelSha256": "9c1e…",
   "predictedAt": "2026-09-09T04:15:22.1147Z",
   "task": "multiclass-classification",
   "count": 3,

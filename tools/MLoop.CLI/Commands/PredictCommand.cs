@@ -564,6 +564,8 @@ public static class PredictCommand
                     // Which model answered: the consumer comparing a candidate with production keys
                     // the two documents by it.
                     experimentId,
+                    // The same model beyond this project: an experiment id is unique only inside it.
+                    modelSha256 = ModelFingerprint.Sha256(resolvedModelPath),
                     task = jsonResult.TaskType,
                     count = jsonResult.Rows.Count,
                     predictions = jsonResult.Rows,
@@ -1005,6 +1007,8 @@ public static class PredictCommand
         var payload = new
         {
             model = modelName,
+            experimentId,
+            modelSha256 = ModelFingerprint.Sha256(modelPath),
             task = "forecasting",
             count = forecast.ForecastedValues.Length,
             predictions = ForecastReplayService.BuildForecastRows(forecast),

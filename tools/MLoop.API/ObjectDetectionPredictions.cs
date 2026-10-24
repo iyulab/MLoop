@@ -88,6 +88,7 @@ public static class ObjectDetectionPredictions
         {
             modelName,
             experimentId,
+            modelSha256 = MLoop.Core.Models.ModelFingerprint.Sha256(modelPath),
             predictedAt = DateTime.UtcNow,
             task = "object-detection",
             count = predictions.Count,

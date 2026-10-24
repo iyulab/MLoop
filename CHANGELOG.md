@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `predict --json` and `POST /predict` name the answering model by its content: `modelSha256`, the model file's
+  SHA-256, beside `experimentId` — which is unique only inside one project. (`predict --json` for a forecasting model
+  now carries `experimentId` too.)
+
 - `POST /predict` answers an object-detection model: images by content (`{"images": [base64…]}` or a multipart form,
   as for image classification) in, and for each image its objects — label, score and box in pixels — named by the
   image's SHA-256 and logged under it with a `predictionId`. Rows sent to such a model are refused with how to send

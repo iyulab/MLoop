@@ -206,6 +206,9 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
         response.StatusCode.Should().Be(HttpStatusCode.OK, raw);
         var body = JsonSerializer.Deserialize<JsonElement>(raw);
         body.GetProperty("experimentId").GetString().Should().Be("exp-002");
+        body.GetProperty("modelSha256").GetString().Should().Be(
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(Path.Combine(candidate, "model.zip")))),
+            "the envelope names the answering model by its content, unique beyond the project");
         var id = body.GetProperty("predictions")[0].GetProperty("predictionId").GetString();
 
         var logs = JsonSerializer.Deserialize<JsonElement>(await _client.GetStringAsync($"/logs?name={modelName}"));

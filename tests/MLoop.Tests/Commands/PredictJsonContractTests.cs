@@ -147,6 +147,10 @@ public class PredictJsonContractTests : IDisposable
         var payload = ParsePayload(stdout);
         Assert.Equal("default", payload.GetProperty("model").GetString());
         Assert.Equal("exp-001", payload.GetProperty("experimentId").GetString());
+        // The answering model's content, unique beyond the project — the production file it read.
+        var production = Path.Combine(_testProjectRoot, "models", "default", "production", "model.zip");
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(production))),
+            payload.GetProperty("modelSha256").GetString());
         Assert.Equal("multiclass-classification", payload.GetProperty("task").GetString());
         Assert.Equal(2, payload.GetProperty("count").GetInt32());
 
