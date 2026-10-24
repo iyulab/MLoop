@@ -148,6 +148,17 @@ public sealed class JsonOutputScope : IDisposable
             inner.Write(value);
         }
 
+        // A block write goes through as one block: TextWriter's own implementation of these calls Write(char) once
+        // per character, which made a streamed document (JsonStdout) cost one console write per character.
+        public override void Write(char[] buffer, int index, int count) => Write(buffer.AsSpan(index, count));
+
+        public override void Write(ReadOnlySpan<char> buffer)
+        {
+            if (buffer.IsEmpty) return;
+            WroteAnything = true;
+            inner.Write(buffer);
+        }
+
         public override void WriteLine(string? value)
         {
             WroteAnything = true;

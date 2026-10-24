@@ -106,7 +106,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (and again to drop the missing ones). Those passes stream now: training on a million-row, six-column CSV (27 MB)
   peaked at 1.6 GB and now peaks at about 330 MB, with the same model. Merging several files (`--auto-merge`,
   `additionalDataFiles` of `POST /train`) streams too: two 500,000-row files, 830 MB → 330 MB. `mloop detect` keeps only
-  the series it reads (2 million rows: 4.5 GB → 3.4 GB, the same answer).
+  the series it reads and writes its `--json` document as it serializes it rather than as one string first
+  (2 million rows: 4.5 GB → 1.5 GB, the same bytes).
 - `mloop sample create --from` holds the sample, not the file: it read every row into memory first (1.6 GB for
   a 55 MB, 2-million-row CSV — sampling a file too large to profile was no way out) and now streams it (about
   150 MB for a 100,000-row sample of the same file). Random and stratified samples keep the rows in their file

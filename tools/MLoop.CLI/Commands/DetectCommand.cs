@@ -303,7 +303,7 @@ public static class DetectCommand
             })
         };
 
-        Console.WriteLine(JsonSerializer.Serialize(payload, options));
+        JsonStdout.Write(payload, options);
     }
 
     private static void OutputAsTable(string dataFile, string column, Detection result, string? outputPath)
