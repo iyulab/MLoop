@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Storage;
 using MLoop.Ops.Interfaces;
 
@@ -35,8 +36,29 @@ public sealed class FileModelComparer : IModelComparer
     {
         var candidateMetrics = await LoadMetricsAsync(modelName, candidateExpId, cancellationToken).ConfigureAwait(false);
         var baselineMetrics = await LoadMetricsAsync(modelName, baselineExpId, cancellationToken).ConfigureAwait(false);
+        var (task, metric) = await LoadObjectiveAsync(modelName, candidateExpId, cancellationToken).ConfigureAwait(false);
 
-        return CompareMetrics(candidateExpId, baselineExpId, candidateMetrics, baselineMetrics);
+        return CompareMetrics(candidateExpId, baselineExpId, candidateMetrics, baselineMetrics, task, metric);
+    }
+
+    // The candidate's task and the metric its run optimized, from its metadata.json — what the comparison is judged on,
+    // as promotion judges it. Absent fields leave the task's primary metric.
+    private async Task<(string? Task, string? Metric)> LoadObjectiveAsync(string modelName, string experimentId, CancellationToken cancellationToken)
+    {
+        var path = Path.Combine(GetExperimentPath(modelName, experimentId), ExperimentLayout.MetadataFileName);
+        if (!File.Exists(path))
+            return (null, null);
+        try
+        {
+            using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false));
+            var root = doc.RootElement;
+            string? Text(JsonElement e, string name) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            return (Text(root, "task"), root.TryGetProperty("config", out var config) ? Text(config, "metric") : null);
+        }
+        catch (JsonException)
+        {
+            return (null, null);
+        }
     }
 
     private async Task<Dictionary<string, double>> LoadMetricsAsync(
@@ -57,70 +79,49 @@ public sealed class FileModelComparer : IModelComparer
         return metrics ?? new Dictionary<string, double>();
     }
 
-    private ComparisonResult CompareMetrics(
+    // One metric decides — the one the candidate's run optimized (MetricNames.Canonical, as promotion reads it), or the
+    // task's primary one — in its direction. Averaging every metric added accuracies to RMSEs, and a majority of metrics
+    // let several correlated ones outvote the one the project chose; a metric one side lacked was read as 0, a win for
+    // any lower-is-better metric. A metric one side lacks is now left out.
+    private static ComparisonResult CompareMetrics(
         string candidateExpId,
         string baselineExpId,
         Dictionary<string, double> candidateMetrics,
-        Dictionary<string, double> baselineMetrics)
+        Dictionary<string, double> baselineMetrics,
+        string? task,
+        string? optimized)
     {
-        var metricDetails = new Dictionary<string, MetricComparison>();
-        var allMetrics = candidateMetrics.Keys.Union(baselineMetrics.Keys).ToList();
-
-        double candidateTotalScore = 0;
-        double baselineTotalScore = 0;
-        int betterCount = 0;
-        int totalCount = 0;
-
-        foreach (var metric in allMetrics)
+        var shared = candidateMetrics.Keys.Where(baselineMetrics.ContainsKey).ToList();
+        var metricDetails = shared.ToDictionary(m => m, m =>
         {
-            var candidateValue = candidateMetrics.GetValueOrDefault(metric, 0.0);
-            var baselineValue = baselineMetrics.GetValueOrDefault(metric, 0.0);
-            var difference = candidateValue - baselineValue;
+            var (candidate, baseline) = (candidateMetrics[m], baselineMetrics[m]);
+            return new MetricComparison(m, candidate, baseline, candidate - baseline,
+                IsLowerBetterMetric(m) ? candidate < baseline : candidate > baseline);
+        });
 
-            // Higher is better for most metrics (accuracy, f1, etc.)
-            // Lower is better for error metrics - handle by metric name
-            var isLowerBetter = IsLowerBetterMetric(metric);
-            var isBetter = isLowerBetter
-                ? candidateValue < baselineValue
-                : candidateValue > baselineValue;
-
-            metricDetails[metric] = new MetricComparison(
-                metric,
-                candidateValue,
-                baselineValue,
-                difference,
-                isBetter
-            );
-
-            candidateTotalScore += candidateValue;
-            baselineTotalScore += baselineValue;
-
-            if (isBetter) betterCount++;
-            totalCount++;
+        var wanted = MetricNames.Canonical(task, optimized ?? MetricNames.Auto);
+        var metric = wanted is not null && wanted != MetricNames.Auto && metricDetails.ContainsKey(wanted)
+            ? wanted
+            : TaskMetadata.PrimaryMetric(task) is { } primary && metricDetails.ContainsKey(primary) ? primary : null;
+        if (metric is null)
+        {
+            return new ComparisonResult(candidateExpId, baselineExpId, CandidateIsBetter: false, 0, 0, 0, metricDetails,
+                $"Keep {baselineExpId} - the two experiments share no metric to judge on" +
+                (wanted is null or MetricNames.Auto ? "" : $" ({wanted} is missing from one of them)"));
         }
 
-        var candidateScore = totalCount > 0 ? candidateTotalScore / totalCount : 0;
-        var baselineScore = totalCount > 0 ? baselineTotalScore / totalCount : 0;
-        var improvement = baselineScore != 0
-            ? (candidateScore - baselineScore) / Math.Abs(baselineScore) * 100
-            : (candidateScore > 0 ? 100 : 0);
-
-        var candidateIsBetter = betterCount > totalCount / 2;
+        var (candidateScore, baselineScore) = (candidateMetrics[metric], baselineMetrics[metric]);
+        var lowerIsBetter = IsLowerBetterMetric(metric);
+        var candidateIsBetter = metricDetails[metric].IsBetter;
+        var gain = lowerIsBetter ? baselineScore - candidateScore : candidateScore - baselineScore;
+        var improvement = baselineScore != 0 ? gain / Math.Abs(baselineScore) * 100 : 0;
 
         var recommendation = candidateIsBetter
-            ? $"Promote {candidateExpId} - better on {betterCount}/{totalCount} metrics ({improvement:F1}% improvement)"
-            : $"Keep {baselineExpId} - baseline is better on {totalCount - betterCount}/{totalCount} metrics";
+            ? $"Promote {candidateExpId} - better on {metric}: {candidateScore:0.####} vs {baselineScore:0.####} ({improvement:+0.0;-0.0}%)"
+            : $"Keep {baselineExpId} - {candidateExpId} does not beat it on {metric}: {candidateScore:0.####} vs {baselineScore:0.####}";
 
-        return new ComparisonResult(
-            CandidateExpId: candidateExpId,
-            BaselineExpId: baselineExpId,
-            CandidateIsBetter: candidateIsBetter,
-            CandidateScore: candidateScore,
-            BaselineScore: baselineScore,
-            Improvement: improvement,
-            MetricDetails: metricDetails,
-            Recommendation: recommendation
-        );
+        return new ComparisonResult(candidateExpId, baselineExpId, candidateIsBetter, candidateScore, baselineScore, improvement,
+            metricDetails, recommendation, metric);
     }
 
     private static bool IsLowerBetterMetric(string metricName)

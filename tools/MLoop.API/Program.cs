@@ -1231,6 +1231,8 @@ try
                 candidateExpId = result.CandidateExpId,
                 baselineExpId = result.BaselineExpId,
                 candidateIsBetter = result.CandidateIsBetter,
+                // The one metric the verdict and the scores are on — the run's optimized metric, as promotion judges.
+                metric = result.Metric,
                 candidateScore = result.CandidateScore,
                 baselineScore = result.BaselineScore,
                 improvement = result.Improvement,

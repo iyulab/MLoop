@@ -30,6 +30,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `GET /compare` averaged every metric's raw value — accuracies with RMSEs — and called the candidate better when it won
+  on more than half of them; a metric one experiment lacked was read as 0, a win for any lower-is-better metric. It now
+  judges on one metric, the one the candidate's run optimized (the task's primary metric for `auto`), in that metric's
+  direction, as promotion does; the response names it (`metric`), `improvement` is positive when the candidate is
+  better whichever way the metric points, and `metricDetails` lists only the metrics both experiments recorded.
+
 - On a training partition of 15,000 rows or more the search validates on one holdout and measures its standard error
   on five slices of it. The slices were cut in the file's order, so a file sorted by its label gave slices of one
   class: the AUC's standard error was missing and the others measured the sort (accuracy's 0.02 on 17,000 rows
