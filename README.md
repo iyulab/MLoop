@@ -368,7 +368,7 @@ The section above shows the ones a first project uses. This is the whole surface
 | `promote` | Promote an experiment to production |
 | `rollback` | Return production to the experiment it held before |
 | `threshold` | Choose a binary classifier's decision threshold for a target precision, or show or remove it |
-| `calibrate` | Fit a classifier's probability calibration on labeled rows without retraining, or show or remove it |
+| `calibrate` | Show, refit or remove a classifier's probability calibration — `train` fits one on the search's out-of-fold answers; refit it on labeled rows of your own without retraining |
 | `export` | Export a model as ONNX with a manifest, for runtimes without ML.NET (`export onnx [--verify]`) |
 | `list` | List all experiments |
 | `compare` | Compare experiments side by side |
