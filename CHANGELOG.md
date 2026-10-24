@@ -75,7 +75,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `mloop train --task image-classification --balance <ratio>` balances: the trainer oversamples the smaller classes of
   its training split (after the split, so no copy of an image is among the held-out ones), and the configuration table
-  shows the balance. Before, image classification accepted `--balance` and trained unbalanced without a word. The rule
+  shows the balance. The trainer's own early-stopping slice (10% of what it is given) is set aside per class before
+  balancing and passed as its validation set, so no copy is both trained and validated on. Before, image
+  classification accepted `--balance` and trained unbalanced without a word. The rule
   — which classes, by how many — is the same one the CSV classifiers use. `--balance` with object detection is refused
   as before (its classes are on boxes, not images).
 
