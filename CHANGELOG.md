@@ -140,6 +140,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   finite fit on rows the model separates: the slope grew until probabilities reached 0 and 1. It now fits Platt's
   targets, (N₊ + 1) / (N₊ + 2) and 1 / (N₋ + 2), and stays finite.
 
+## [0.45.1] - 2026-10-25
+
 ### Security
 
 - `POST /train` and `POST /evaluate` kept their data files inside the project by comparing the path with the
