@@ -405,12 +405,16 @@ public class TrainingEngine : ITrainingEngine
                 _mlContext.Model.Save(trained.ResidualModel, null, residualPath);
             }
 
+            // The probability calibration fitted with the model (a binary model's, on the search's out-of-fold
+            // answers) lives beside it, where every scoring path applies it; the run's metrics are the calibrated model's.
+            trained.Calibration?.WriteBeside(modelPath);
+
             await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config, modelPath, cancellationToken);
 
             // The project's metric scripts, over the rows the run's metrics were measured on — recorded with
             // them, and seen by the post-train hooks below.
             if (_metricEngine != null && trained.EvaluationData is { } evaluationData)
-                await _metricEngine.AddToAsync(trained.Metrics, _mlContext, trained.Model.Transform(evaluationData),
+                await _metricEngine.AddToAsync(trained.Metrics, _mlContext, trained.ScoringModel(_mlContext).Transform(evaluationData),
                     config.Task, config.LabelColumn, modelName, experimentId);
 
             // Execute PostTrain hooks
@@ -423,7 +427,7 @@ public class TrainingEngine : ITrainingEngine
                     HookName = string.Empty,  // Will be set by HookEngine
                     MLContext = _mlContext,
                     DataView = null,
-                    Model = trained.Model,
+                    Model = trained.ScoringModel(_mlContext),
                     ExperimentResult = trained,
                     Metrics = trained.Metrics,
                     ProjectRoot = _projectRoot!,

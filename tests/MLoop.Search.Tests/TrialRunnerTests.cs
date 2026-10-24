@@ -74,6 +74,46 @@ public sealed class TrialRunnerTests
     }
 
     [Fact]
+    public void KeptOutOfFoldAnswers_AreTheBestTrialsOnEveryRowOnce()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+
+        var result = new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 6) with { KeepOutOfFold = true }).Run(data, roles);
+
+        // Five folds validate every row of the partition once, each by the model fitted without its fold.
+        var outOfFold = Assert.IsType<MLoop.Search.Validation.OutOfFoldScores>(result.OutOfFold);
+        Assert.Equal(240, outOfFold.Count);
+        Assert.Equal(240, outOfFold.Label.Count(l => l) + outOfFold.Label.Count(l => !l));
+        Assert.All(outOfFold.Weight, w => Assert.Equal(1f, w));
+        // Its answers are the kept trial's: their AUC over all the rows sits with the folds' mean.
+        var positives = Enumerable.Range(0, outOfFold.Count).Where(i => outOfFold.Label[i]).Select(i => outOfFold.Score[i]).ToArray();
+        var negatives = Enumerable.Range(0, outOfFold.Count).Where(i => !outOfFold.Label[i]).Select(i => outOfFold.Score[i]).ToArray();
+        var pooled = positives.Sum(p => negatives.Count(n => n < p) + 0.5 * negatives.Count(n => n == p)) / ((double)positives.Length * negatives.Length);
+        Assert.InRange(pooled, result.Best.Metrics!["auc"] - 0.05, result.Best.Metrics!["auc"] + 0.05);
+        // Both candidates give a probability.
+        Assert.Equal(240, outOfFold.Probability!.Count);
+    }
+
+    [Fact]
+    public void OutOfFoldAnswers_AreNotKept_UnlessAsked_OrWhenTheLabelIsNotBinary()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+        Assert.Null(new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 2)).Run(data, roles).OutOfFold);
+
+        // A regression on the same rows: a Single label carries no binary answer.
+        var x = ml.Transforms.CopyColumns("Y", "X").Fit(data).Transform(data);
+        var regression = new SearchRequest(
+            CandidateCatalog.Regression(name => name == "FastTree"),
+            new Auc("rmse", HigherIsBetter: false),
+            scored => new Dictionary<string, double> { ["rmse"] = ml.Regression.Evaluate(scored, "Y").RootMeanSquaredError },
+            TimeSpan.FromMinutes(5), new SearchSettings(Seed: 3), Stratify: false, MaxTrials: 2, KeepOutOfFold: true);
+        var regressionRoles = new ColumnRoles("Y", [new("Z", ColumnRole.Numeric), new("Colour", ColumnRole.Categorical)]);
+        Assert.Null(new TrialRunner(regression).Run(x, regressionRoles).OutOfFold);
+    }
+
+    [Fact]
     public void TheFirstTrial_FinishesWhateverTheBudget()
     {
         var ml = new MLContext(seed: 1);

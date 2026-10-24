@@ -58,9 +58,31 @@ public sealed class CalibrateCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task ATrainedBinaryModel_ArrivesCalibratedOnItsOutOfFoldAnswers_AndClearGoesBackToTheTrainers()
+    {
+        await TrainAsync();
+
+        var shown = (await JsonAsync("calibrate")).GetProperty("calibration");
+        Assert.Equal("platt", shown.GetProperty("method").GetString());
+        Assert.Equal(MLoop.Core.Training.TrainingRunner.OutOfFoldSource, shown.GetProperty("fitOn").GetString());
+        Assert.True(File.Exists("models/default/staging/exp-001/calibration.json"));
+        Assert.True(File.Exists("models/default/production/calibration.json"));
+        var calibrated = (await JsonAsync("evaluate", "exp-001", "datasets/recheck.csv")).GetProperty("testMetrics");
+
+        Assert.Equal("cleared", (await JsonAsync("calibrate", "exp-001", "--clear")).GetProperty("status").GetString());
+        Assert.False(File.Exists("models/default/staging/exp-001/calibration.json"));
+        var own = (await JsonAsync("evaluate", "exp-001", "datasets/recheck.csv")).GetProperty("testMetrics");
+        // Same model, same rows, same ranking: only how sure it says it is moved.
+        Assert.Equal(own.GetProperty("auc").GetDouble(), calibrated.GetProperty("auc").GetDouble(), 9);
+        Assert.NotEqual(own.GetProperty("ece").GetDouble(), calibrated.GetProperty("ece").GetDouble());
+    }
+
+    [Fact]
     public async Task AFitCalibration_IsWhatEvaluateAndPredictAnswerWith_UntilCleared()
     {
         await TrainAsync();
+        // From the trainer's own probabilities: the calibration training fitted is cleared first.
+        await JsonAsync("calibrate", "--clear");
         var before = (await JsonAsync("evaluate", "exp-001", "datasets/recheck.csv")).GetProperty("testMetrics");
 
         var fit = await JsonAsync("calibrate", "--data", "datasets/recheck.csv", "--method", "isotonic");
@@ -113,6 +135,7 @@ public sealed class CalibrateCommandTests : IDisposable
         await TrainAsync();
         await JsonAsync("calibrate", "--data", "datasets/recheck.csv");
         Assert.Equal(0, (await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote")).ExitCode);
+        await JsonAsync("calibrate", "exp-002", "--clear");   // training calibrated it; this one is to have none
 
         Assert.Equal(0, (await CliRunner.RunAsync("promote", "exp-002", "--json", "--force")).ExitCode);
 

@@ -34,6 +34,21 @@ public class ProbabilityCalibrationTests
     }
 
     [Fact]
+    public void Platt_OnRowsTheModelSeparates_StaysAtPlattsTargets()
+    {
+        // Every row the model was sure of was right. With targets of 1 and 0 the fit has no finite slope and
+        // ends at probabilities of 0 and 1; Platt's targets put it at (N₊ + 1) / (N₊ + 2) and 1 / (N₋ + 2).
+        var rows = Enumerable.Range(0, 300).Select(i => (0.66, true, 1.0))
+            .Concat(Enumerable.Range(0, 300).Select(i => (0.34, false, 1.0))).ToList();
+
+        var calibration = ProbabilityCalibration.Fit(rows, "platt", "f", null, DateTimeOffset.UtcNow)!;
+
+        Assert.True(double.IsFinite(calibration.A!.Value) && calibration.A < 20, $"slope {calibration.A}");
+        Assert.Equal(301.0 / 302, calibration.Map(0.66), 3);
+        Assert.Equal(1.0 / 302, calibration.Map(0.34), 3);
+    }
+
+    [Fact]
     public void Isotonic_KeepsTheOrder()
     {
         var calibration = ProbabilityCalibration.Fit(Overconfident(), "isotonic", "f", null, DateTimeOffset.UtcNow)!;

@@ -154,10 +154,17 @@ public sealed record ProbabilityCalibration(
         };
     }
 
-    // Weighted logistic regression of the label on logit(p), by Newton's method with a small ridge so a
-    // separable sample stays finite.
+    // Weighted logistic regression of the label on logit(p), by Newton's method, against Platt's targets: a
+    // positive row counts as (N₊ + 1) / (N₊ + 2), a negative one as 1 / (N₋ + 2) — not 1 and 0 (Platt 1999, §2.2).
+    // On rows the model separates, 1 and 0 have no finite fit: the slope grows until every probability is 0 or 1
+    // (measured: slope 38, 5e-11 for a row 640 out-of-fold rows had never seen wrong). The targets are the
+    // estimate of how often such a row is positive given that many rows, and the slope stays where they put it.
     private static ProbabilityCalibration FitPlatt(List<(double Probability, bool Positive, double Weight)> rows)
     {
+        var positives = rows.Where(r => r.Positive).Sum(r => r.Weight);
+        var negatives = rows.Where(r => !r.Positive).Sum(r => r.Weight);
+        var positiveTarget = (positives + 1) / (positives + 2);
+        var negativeTarget = 1 / (negatives + 2);
         double a = 1, b = 0;
         for (var iteration = 0; iteration < 100; iteration++)
         {
@@ -166,7 +173,7 @@ public sealed record ProbabilityCalibration(
             {
                 var z = Logit(Math.Clamp(p, 0, 1));
                 var q = Sigmoid(a * z + b);
-                var r = (y ? 1 : 0) - q;
+                var r = (y ? positiveTarget : negativeTarget) - q;
                 ga += w * r * z;
                 gb += w * r;
                 var s = w * q * (1 - q);

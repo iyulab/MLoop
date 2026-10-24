@@ -21,6 +21,11 @@ namespace MLoop.Search;
 /// such as a column's mean never sees the rows that score it — and kept in the refit model. They transform
 /// columns in place: a column keeps its name and its type.
 /// </param>
+/// <param name="KeepOutOfFold">
+/// Keep a binary pipeline's answers on its validated parts (<see cref="OutOfFoldScores"/>), so the kept trial's can be
+/// returned (<see cref="SearchResult.OutOfFold"/>) — what a calibration of the refit model is fitted on. Costs one more
+/// pass over each validated part; trials whose score falls well outside the top's standard error drop theirs.
+/// </param>
 public sealed record SearchRequest(
     IReadOnlyList<TrainerCandidate> Candidates,
     IMetricPolicy Metric,
@@ -30,7 +35,8 @@ public sealed record SearchRequest(
     string? Weight = null,
     bool Stratify = true,
     int? MaxTrials = null,
-    IEstimator<ITransformer>? Preprocess = null);
+    IEstimator<ITransformer>? Preprocess = null,
+    bool KeepOutOfFold = false);
 
 /// <summary>A finished search: every trial, the best, and the best refit on the whole partition.</summary>
 /// <param name="Trials">Every trial in the order it finished, failures included.</param>
@@ -44,6 +50,10 @@ public sealed record SearchRequest(
 /// <param name="FallbackReason">Why <see cref="Model"/> is a fold's model, or <see langword="null"/>.</param>
 /// <param name="Folds">How the partition was validated.</param>
 /// <param name="TopScoring">The trial with the highest score — <see cref="Best"/> itself unless a smaller model scored within its standard error.</param>
+/// <param name="OutOfFold">
+/// <see cref="Best"/>'s answers on its validated parts, when the request kept them (<see cref="SearchRequest.KeepOutOfFold"/>)
+/// and the pipeline is binary; <see langword="null"/> otherwise.
+/// </param>
 public sealed record SearchResult(
     IReadOnlyList<TrialResult> Trials,
     TrialResult Best,
@@ -51,7 +61,8 @@ public sealed record SearchResult(
     ITransformer Model,
     string? FallbackReason,
     FoldPlan Folds,
-    TrialResult TopScoring);
+    TrialResult TopScoring,
+    OutOfFoldScores? OutOfFold = null);
 
 /// <summary>No trial of a search produced a score. <see cref="Trials"/> says why each failed.</summary>
 public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, string message) : Exception(message)
@@ -173,11 +184,22 @@ public sealed class TrialRunner
             // A trial cut by the budget records nothing, so its schema keeps the last finished duration.
             void Took(double seconds) => lastSeconds[schemaId] = seconds;
             IEstimator<ITransformer>? pipeline = null;
+            // The trial's answers on its validated parts, when the request keeps them; a part that is not binary ends it.
+            OutOfFoldScores? outOfFold = null;
+            var readable = _request.KeepOutOfFold;
+            void Keep(IDataView part)
+            {
+                if (readable && OutOfFoldScores.Read(part, roles.Label, _request.Weight, outOfFold) is { } rows)
+                    outOfFold = rows;
+                else
+                    (readable, outOfFold) = (false, null);
+            }
             try
             {
                 // Built inside the trial: a trainer that cannot even be constructed is a failed trial, not a failed search.
                 pipeline = PipelineIn(trialContext);
-                var score = Validator.Validate(trialContext, train, plan, pipeline, _request.Score, budgetCut.Token);
+                var score = Validator.Validate(trialContext, train, plan, pipeline, _request.Score, budgetCut.Token,
+                    _request.KeepOutOfFold ? Keep : null);
                 var seconds = (clock.Elapsed - started).TotalSeconds;
                 Took(seconds);
                 var trial = new TrialResult
@@ -195,10 +217,14 @@ public sealed class TrialRunner
                     var loss = _request.Metric.HigherIsBetter ? -value : value;
                     tuners[schemaId].Update(trialId, point, loss, schema.Candidate.InitialCost);
                     proposer.Update(schemaId, loss, schema.Candidate.InitialCost);
-                    var entry = new Scored(trial, value, score, PipelineIn, seconds / plan.Folds, TrainerCandidate.ModelSize(point));
+                    var entry = new Scored(trial, value, score, PipelineIn, seconds / plan.Folds, TrainerCandidate.ModelSize(point))
+                    {
+                        OutOfFold = outOfFold,
+                    };
                     scored.Add(entry);
                     if (best is null || _request.Metric.IsBetter(value, best.Value))
                         best = entry;
+                    DropDistantOutOfFold(scored, best);
                 }
                 else
                 {
@@ -257,15 +283,37 @@ public sealed class TrialRunner
             var fallbackContext = new MLContext(settings.Seed);
             model = winner.Pipeline(fallbackContext).Fit(fallbackContext.Data.FilterRowsByColumn(view, HoldoutView.ColumnName, 0, 0.5));
         }
-        return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial);
+        return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial, winner.OutOfFold);
     }
 
     private sealed record Scored(
-        TrialResult Trial, double Value, ValidationScore Score, Func<MLContext, IEstimator<ITransformer>> Pipeline, double FitSeconds, double Size);
+        TrialResult Trial, double Value, ValidationScore Score, Func<MLContext, IEstimator<ITransformer>> Pipeline, double FitSeconds, double Size)
+    {
+        /// <summary>The trial's answers on its validated parts, while it could still be kept (<see cref="DropDistantOutOfFold"/>).</summary>
+        public OutOfFoldScores? OutOfFold { get; set; }
+    }
+
+    // Out-of-fold answers are a few numbers per row per trial. Only a trial that Choose could keep needs them — the
+    // top, or one within its standard error — so a trial further than twice that from the top drops its own. The
+    // margin is read from the scores alone, so which trials keep theirs is as repeatable as the search.
+    private void DropDistantOutOfFold(List<Scored> scored, Scored top)
+    {
+        var margin = 2 * Margin(top);
+        var floor = _request.Metric.HigherIsBetter ? top.Value - margin : top.Value + margin;
+        foreach (var entry in scored)
+        {
+            if (entry.OutOfFold is not null && !ReferenceEquals(entry, top)
+                && (_request.Metric.HigherIsBetter ? entry.Value < floor : entry.Value > floor))
+                entry.OutOfFold = null;
+        }
+    }
+
+    private double Margin(Scored top)
+        => top.Score.StandardError is { } errors && errors.TryGetValue(_request.Metric.Name, out var se) && double.IsFinite(se) ? se : 0;
 
     private Scored Choose(List<Scored> scored, Scored top)
     {
-        var margin = top.Score.StandardError is { } errors && errors.TryGetValue(_request.Metric.Name, out var se) && double.IsFinite(se) ? se : 0;
+        var margin = Margin(top);
         return scored[Choose([.. scored.Select(t => (t.Value, t.Size))], scored.IndexOf(top), margin, _request.Metric)];
     }
 

@@ -617,6 +617,13 @@ right. `ece` (reported by `train` and `evaluate`) measures how far it is from ke
 confidence is used to skip a check, recalibrate it on labeled rows the model was not trained on —
 without retraining — and every path answers with the calibrated probability.
 
+A binary model arrives calibrated already: `train` fits a Platt calibration on the search's out-of-fold
+answers — each training row scored by the fold model that did not see it — and writes it beside the
+model (`fitOn: "out-of-fold (training partition)"`). A trainer's own probability is not fitted to the
+data (FastTree's is a fixed sigmoid of its score), so without it a model that ranks every row right can
+still say 0.66. The run's metrics are the calibrated model's. `mloop calibrate` replaces it with one fitted
+on your rows; `--clear` goes back to the trainer's probability.
+
 ```bash
 mloop calibrate --data datasets/recheck.csv                        # the production model, Platt
 mloop calibrate exp-004 --data datasets/recheck.csv --method isotonic --weight inv_pi

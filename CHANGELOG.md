@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- A binary model's probabilities are calibrated when it is trained. The search keeps the chosen trial's answers on the
+  rows each fold model did not see, fits a Platt calibration to them and saves it beside the model
+  (`calibration.json`, `fitOn: "out-of-fold (training partition)"`), where predict, serve, evaluate, threshold and
+  export already apply one. A trainer's own probability is not fitted to the data — FastTree's is a fixed sigmoid of
+  its score, so a model of a few trees that ranked every test row right answered 0.66 where it should have answered
+  0.99, and a caller that routes on `confidence` read it as unsure. The ranking (AUC) is unchanged; the answer is the
+  calibrated probability's at 0.5, and the run's metrics — accuracy, F1, log loss, ECE — are the calibrated model's.
+  `mloop calibrate` refits it on rows of your own; `mloop calibrate --clear` returns to the trainer's probability.
+
+### Fixed
+
+- A binary trainer that gives no probability (FastForest) had its Platt calibrator fitted on the test rows, so the
+  probability metrics reported for it were measured on rows the calibrator had seen. It is now fitted on the search's
+  out-of-fold answers.
+
+- Platt calibration (`mloop calibrate --method platt`, and the calibration above) fitted labels of 1 and 0, which has no
+  finite fit on rows the model separates: the slope grew until probabilities reached 0 and 1. It now fits Platt's
+  targets, (N₊ + 1) / (N₊ + 2) and 1 / (N₋ + 2), and stays finite.
+
 ## [0.45.0] - 2026-10-23
 
 ### Added

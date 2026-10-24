@@ -12,6 +12,7 @@ using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 using MLoop.Search;
 using MLoop.Search.Candidates;
+using MLoop.Search.Validation;
 // Microsoft.ML.AutoML has a TrialResult of its own; this is the search's.
 using TrialResult = MLoop.Search.TrialResult;
 
@@ -490,7 +491,7 @@ public partial class TrainingRunner
     /// </summary>
     private void ReplaceWithWeightedMetrics(TrainedModel result, IDataView testSet, TrainingConfig config)
     {
-        OverlayWeighted(result.Metrics, result.Model.Transform(testSet), config.Task, config.LabelColumn, config.WeightColumn!);
+        OverlayWeighted(result.Metrics, result.ScoringModel(_mlContext).Transform(testSet), config.Task, config.LabelColumn, config.WeightColumn!);
     }
 
     /// <summary>
@@ -530,11 +531,62 @@ public partial class TrainingRunner
         => RunWithMLoopSearchAsync(trainSet, testSet, config,
             CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
             OptimizingMetric(config), ScoreBinaryWithCalibrationError, progress, cancellationToken,
-            (model, predictions) => (
-                EnsureCalibratedModel(_mlContext, model, predictions, config.LabelColumn,
-                    predictions.Schema.GetColumnOrNull("Probability") != null),
-                ScoreBinaryWithCalibrationError(predictions, config.LabelColumn),
-                null));
+            (model, predictions, outOfFold) => FinishBinary(model, testSet, predictions, outOfFold, config));
+
+    /// <summary>What a calibration fitted on the search's out-of-fold answers records as the rows it was fitted on.</summary>
+    public const string OutOfFoldSource = "out-of-fold (training partition)";
+
+    /// <summary>
+    /// A binary model's saved form and test results. Its probabilities are recalibrated on the kept trial's
+    /// out-of-fold answers (<see cref="OutOfFoldScores"/>): a trainer's own probability is not fitted to the data —
+    /// FastTree's is a fixed sigmoid of twice its learning rate times the score, so a few shallow trees that rank
+    /// every test row right say 0.66 where they should say 0.99 — and a confidence a caller routes on has to mean
+    /// how often the answer is right. A Platt fit on the logit (<see cref="ProbabilityCalibration"/>, beside the
+    /// model) maps one to the other, keeps the order of the rows (AUC unchanged), and answers at its own 0.5 — so
+    /// the answer-based metrics are counted from the answers it gives, as <c>evaluate</c> counts them. A trainer
+    /// with no probability gets a Platt calibrator on its score, fitted on the same out-of-fold rows. The test
+    /// partition is the run's report: nothing is fitted on it.
+    /// </summary>
+    private (ITransformer Model, Dictionary<string, double> Metrics, ITransformer? ResidualModel, ProbabilityCalibration? Calibration) FinishBinary(
+        ITransformer model, IDataView testSet, IDataView predictions, OutOfFoldScores? outOfFold, TrainingConfig config)
+    {
+        if (predictions.Schema.GetColumnOrNull("Probability") is null)
+        {
+            model = outOfFold is null
+                ? EnsureCalibratedModel(_mlContext, model, predictions, config.LabelColumn, hasProbability: false)
+                : model.Append(_mlContext.BinaryClassification.Calibrators.Platt(labelColumnName: "Label", scoreColumnName: "Score")
+                    .Fit(_mlContext.Data.LoadFromEnumerable(Enumerable.Range(0, outOfFold.Count)
+                        .Select(i => new OutOfFoldScore { Label = outOfFold.Label[i], Score = outOfFold.Score[i] }))));
+            if (outOfFold is null)
+                _logger.Warning("No out-of-fold answers were kept for the chosen trial; its probability calibrator was fitted on the test rows.");
+            return (model, ScoreBinaryWithCalibrationError(model.Transform(testSet), config.LabelColumn), null, null);
+        }
+
+        var calibration = outOfFold?.Probability is { } probability
+            ? ProbabilityCalibration.Fit(
+                [.. Enumerable.Range(0, outOfFold.Count).Select(i => ((double)probability[i], outOfFold.Label[i], (double)outOfFold.Weight[i]))],
+                "platt", OutOfFoldSource, string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn, DateTimeOffset.UtcNow)
+            : null;
+        if (calibration is null)
+            return (model, ScoreBinaryWithCalibrationError(predictions, config.LabelColumn), null, null);
+
+        var calibrated = calibration.Apply(_mlContext, model).Transform(testSet);
+        var metrics = ScoreBinaryWithCalibrationError(calibrated, config.LabelColumn);
+        // ML.NET's binary evaluator re-derives each answer from the raw score at 0; the calibrated model answers at
+        // its own 0.5, so the metrics that depend on the answer are counted from the answers it gives.
+        if (BinaryCounts.Metrics(calibrated, config.LabelColumn) is { } answered)
+            foreach (var key in AnswerMetrics)
+                if (answered.TryGetValue(key, out var value)) metrics[key] = value;
+        return (model, metrics, null, calibration);
+    }
+
+    private static readonly string[] AnswerMetrics = ["accuracy", "precision", "recall", "negative_precision", "negative_recall", "f1_score"];
+
+    private sealed class OutOfFoldScore
+    {
+        public bool Label { get; set; }
+        public float Score { get; set; }
+    }
     /// <summary>
     /// A binary, multiclass or regression run on MLoop's trainer search (<see cref="TrialRunner"/>): column roles,
     /// portable-text step, the search — candidates, tuner, folds, refit — the test evaluation and the trial
@@ -551,7 +603,7 @@ public partial class TrainingRunner
         Func<IDataView, string, Dictionary<string, double>> score,
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken,
-        Func<ITransformer, IDataView, (ITransformer Model, Dictionary<string, double> Metrics, ITransformer? ResidualModel)>? finish = null)
+        Func<ITransformer, IDataView, OutOfFoldScores?, (ITransformer Model, Dictionary<string, double> Metrics, ITransformer? ResidualModel, ProbabilityCalibration? Calibration)>? finish = null)
     {
         var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         ITransformer? portableText = null;
@@ -568,7 +620,8 @@ public partial class TrainingRunner
             Weight: string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn,
             Stratify: !IsRegression(config),
             MaxTrials: config.SearchMaxTrials,
-            Preprocess: config.PreFeaturizer);
+            Preprocess: config.PreFeaturizer,
+            KeepOutOfFold: IsBinary(config));
 
         SearchResult search;
         try
@@ -598,9 +651,9 @@ public partial class TrainingRunner
 
         var bestModel = PortableTextFeaturizer.Prepend(portableText, search.Model);
         var predictions = bestModel.Transform(testSet);
-        var (model, metrics, residualModel) = finish is null
-            ? (bestModel, score(predictions, config.LabelColumn), null)
-            : finish(bestModel, predictions);
+        var (model, metrics, residualModel, calibration) = finish is null
+            ? (bestModel, score(predictions, config.LabelColumn), null, null)
+            : finish(bestModel, predictions, search.OutOfFold);
 
         return new TrainedModel
         {
@@ -613,6 +666,7 @@ public partial class TrainingRunner
             Model = model,
             Metrics = metrics,
             ResidualModel = residualModel,
+            Calibration = calibration,
             RowCount = RowsIn(trainSet),
             Trials = records,
             RankingMetric = metric,
@@ -1058,10 +1112,10 @@ public partial class TrainingRunner
         => RunWithMLoopSearchAsync(trainSet, testSet, config,
             CandidateCatalog.Regression(name => name != "LightGbm" || LightGbmLoads.Value),
             OptimizingMetric(config), ScoreRegression, progress, cancellationToken,
-            (model, predictions) =>
+            (model, predictions, _) =>
             {
                 var (metrics, residualModel) = FinishRegression(predictions, config.LabelColumn);
-                return (model, metrics, residualModel);
+                return (model, metrics, residualModel, null);
             });
     /// <summary>
     /// A regression model's test results: its metrics on the test predictions, the prediction-interval
@@ -2236,6 +2290,16 @@ public record TrainedModel
     /// the constant-width band. Persisted alongside the main model (see <c>ResidualModelFileName</c>).
     /// </summary>
     public ITransformer? ResidualModel { get; init; }
+
+    /// <summary>
+    /// The probability calibration fitted with the model — a binary model's, on the search's out-of-fold answers —
+    /// saved beside it (<see cref="ProbabilityCalibration.WriteBeside"/>), where every scoring path applies it. Null
+    /// where none was fitted. <see cref="Metrics"/> are the calibrated model's.
+    /// </summary>
+    public ProbabilityCalibration? Calibration { get; init; }
+
+    /// <summary><see cref="Model"/> as it answers once saved — with <see cref="Calibration"/> applied when there is one.</summary>
+    public ITransformer ScoringModel(MLContext mlContext) => Calibration?.Apply(mlContext, Model) ?? Model;
 
     /// <summary>
     /// Every trial the run completed and reported, in completion order — the leaderboard that used
