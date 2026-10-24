@@ -1128,9 +1128,10 @@ curl -X POST http://localhost:5000/predict \
   `POST /promote`. The completed job says which: `promoted`, and `keptInStagingReason` when it stayed in staging (the
   quality gate, the gate policy, production as good or better, a post-train hook, or `"promote": false`). The job
   reads `Completed` only after that decision, so production is in place by the time a poller sees it
-- The completed job's `warnings` are the performance diagnostics `mloop train` prints and reports as `--json`
-  warning events — a held-out score near-perfect on 500 rows or more (check for a leaked column), an accuracy that
-  hides one class; an empty list when there are none
+- The completed job's `warnings` are the warnings `mloop train` prints and reports as `--json` warning events:
+  about the data and the run (a row-number column, text the model cannot read, a class too small), then the
+  performance diagnostics — a held-out score near-perfect on 500 rows or more (check for a leaked column), an
+  accuracy that hides one class; an empty list when there are none
 - **Request limit per caller**: each caller — the subject of its token (`mloop token --subject <name>`) — may make
   600 requests a minute; past that it gets `429` with `Retry-After` until the minute turns, while other callers go
   on. Services behind one address keep their own allowance; `/health` probes are not counted. Set it with

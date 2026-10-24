@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using MLoop.API;
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Models;
@@ -82,6 +83,10 @@ public class TrainingJobRunner : BackgroundService
             _logger.LogInformation("Training job '{JobId}' started for model '{ModelName}'",
                 job.JobId, job.ModelName);
 
+            // Every warning the job raises — preparing the data and training, as `mloop train` prints them — is the
+            // job's to report; collected in this job's flow, so a prediction served meanwhile adds nothing to it.
+            using var warnings = WarningConsole.Collect();
+
             // Create a scoped service provider for this job
             using var scope = _serviceProvider.CreateScope();
             var trainingEngine = scope.ServiceProvider
@@ -154,7 +159,8 @@ public class TrainingJobRunner : BackgroundService
 
             var diagnostics = new MLoop.Core.Diagnostics.PerformanceDiagnostics().Analyze(
                 config.Task, result.Metrics, rowCount: (int)Math.Min(result.RowCount, int.MaxValue));
-            _jobStore.SetResult(job.JobId, result.ExperimentId, result.Metrics, result.BestTrainer, diagnostics.Warnings);
+            _jobStore.SetResult(job.JobId, result.ExperimentId, result.Metrics, result.BestTrainer,
+                [.. warnings.Warnings.Concat(diagnostics.Warnings).Distinct(StringComparer.Ordinal)]);
 
             // Decided before the job reads Completed, so a client that polls to completion and then reads
             // production sees the outcome — and the job says which it was.

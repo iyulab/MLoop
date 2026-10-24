@@ -216,8 +216,9 @@ public class TrainingJob
     /// <summary>Why the experiment stayed in staging, when it did.</summary>
     public string? KeptInStagingReason { get; set; }
     /// <summary>
-    /// The performance diagnostics' warnings about the trained model — the ones <c>mloop train</c> prints
-    /// and reports as <c>--json</c> warning events (a near-perfect held-out score that may be a leak, an
+    /// The warnings the job raised — the ones <c>mloop train</c> prints and reports as <c>--json</c> warning
+    /// events: about the data (an index column, text the model cannot read) and the training, then the
+    /// performance diagnostics' about the trained model (a near-perfect held-out score that may be a leak, an
     /// accuracy that hides a class). Empty when there are none; <c>null</c> until the job has a result.
     /// </summary>
     public IReadOnlyList<string>? Warnings { get; set; }

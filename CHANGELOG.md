@@ -111,6 +111,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A `POST /train` job's `warnings` carry every warning training raised, as `mloop train` prints them — about the
+  data (a row-number column, text the model cannot read, a class too small) and the run — followed by the
+  performance diagnostics'. The job reported only the diagnostics', so a client training through the API never
+  saw the rest. Each job collects its own: a prediction served meanwhile adds nothing to it.
+
 - `mloop logs` without `--name`, `GET /logs` without `name`, and every reader of more than one model's logs return
   the newest entries across models. Reading stopped at the first model directory that filled the limit, so another
   model's newer predictions were left out — which model depended on the order the directories were listed in.

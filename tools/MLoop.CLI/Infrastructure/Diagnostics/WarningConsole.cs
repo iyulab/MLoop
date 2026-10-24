@@ -24,6 +24,58 @@ namespace MLoop.CLI.Infrastructure.Diagnostics;
 /// </remarks>
 public static class WarningConsole
 {
+    // The collection open in this async flow, if any — flows into Task.Run and awaits, and not into another
+    // request's flow, which is what lets a server keep one job's warnings apart from the rest of its traffic.
+    private static readonly AsyncLocal<WarningCollection?> CurrentCollection = new();
+
+    /// <summary>
+    /// Collects every warning raised from here on in this async flow — the work it awaits and the tasks it starts
+    /// included — until the collection is disposed. <see cref="JsonOutputScope"/> keeps a command's warnings for its
+    /// document, and is one per process as a CLI command is; a server running a training job beside other requests
+    /// needs the job's own, and this is them.
+    /// </summary>
+    public static WarningCollection Collect()
+    {
+        var collection = new WarningCollection(CurrentCollection.Value);
+        CurrentCollection.Value = collection;
+        return collection;
+    }
+
+    /// <summary>The warnings raised while a <see cref="Collect"/> was open, plain text, in order.</summary>
+    public sealed class WarningCollection : IDisposable
+    {
+        private readonly List<string> _warnings = [];
+        private readonly WarningCollection? _outer;
+        private bool _disposed;
+
+        internal WarningCollection(WarningCollection? outer) => _outer = outer;
+
+        public IReadOnlyList<string> Warnings
+        {
+            get
+            {
+                lock (_warnings)
+                    return [.. _warnings];
+            }
+        }
+
+        internal void Add(string warning)
+        {
+            lock (_warnings)
+                _warnings.Add(warning);
+            _outer?.Add(warning);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            if (ReferenceEquals(CurrentCollection.Value, this))
+                CurrentCollection.Value = _outer;
+        }
+    }
+
     /// <summary>
     /// Renders a <c>Warning:</c> line (ambient console — silenced in machine mode) and reports the
     /// same text as a <c>warning</c> event when a machine-output scope is active.
@@ -36,6 +88,14 @@ public static class WarningConsole
         AnsiConsole.MarkupLine($"[yellow]Warning:[/] {markup}");
         MachineOutputScope.ReportWarning(markup);
         JsonOutputScope.ReportWarning(markup);
+        if (CurrentCollection.Value is { } collection)
+            collection.Add(Plain(markup));
+    }
+
+    private static string Plain(string markup)
+    {
+        try { return Markup.Remove(markup); }
+        catch (InvalidOperationException) { return markup; } // not valid markup — kept verbatim
     }
 
     /// <summary>

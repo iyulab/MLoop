@@ -208,6 +208,33 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         return path;
     }
 
+    /// <summary>
+    /// A job reports the warnings training raised about its data, as <c>mloop train</c> prints them — not only
+    /// the performance diagnostics': before, a row-number column was advised against at the terminal and the job
+    /// said nothing.
+    /// </summary>
+    [Fact]
+    public async Task AJob_ReportsTheWarningsTrainingRaised()
+    {
+        var csv = new StringBuilder("row,x,y\n");
+        var rng = new Random(3);
+        for (var i = 0; i < 200; i++)
+        {
+            var x = rng.NextDouble();
+            csv.Append(CultureInfo.InvariantCulture, $"{i + 1},{x:F4},{(x + rng.NextDouble() * 0.4 > 0.7 ? "yes" : "no")}\n");
+        }
+        var data = Path.Combine(_factory.TestProjectRoot, "datasets", "numbered.csv");
+        File.WriteAllText(data, csv.ToString());
+        WriteYaml("wwarn", "    task: binary-classification\n    label: y\n");
+
+        var job = await AwaitJobAsync(await _client.PostAsJsonAsync("/train",
+            new { dataFile = data, labelColumn = "y", task = "binary-classification", name = "wwarn", timeLimitSeconds = 5 }));
+
+        job.GetProperty("status").GetString().Should().Be("Completed", job.ToString());
+        job.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()).Should()
+            .Contain(w => w!.Contains("strictly increasing integers") && w.Contains("row"));
+    }
+
     private async Task<JsonElement> AwaitJobAsync(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
