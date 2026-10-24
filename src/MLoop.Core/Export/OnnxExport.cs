@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 
@@ -110,14 +111,17 @@ public static class OnnxExport
         }
 
         // The label is a graph input only if the pipeline reads it at scoring time; a model that
-        // scores without it does not make a runtime caller invent one.
+        // scores without it does not make a runtime caller invent one. The converter declares the
+        // graph's inputs from the data's source, not from a view over it — dropping the label from a
+        // view left it a declared input that some runtimes refuse to leave unfed — so the label is
+        // left out of the loader itself.
         var view = input;
         var unused = new List<OnnxTensorSpec>();
         if (labelColumn != null && input.Schema.GetColumnOrNull(labelColumn) is { } labelCol)
         {
             var withoutLabel = mlContext.Transforms.DropColumns(labelColumn).Fit(input).Transform(input);
             if (ScoresWithout(model, withoutLabel.Schema))
-                view = withoutLabel;
+                view = SourceWithout(mlContext, loader, labelColumn);
             else
                 unused.Add(Describe(labelCol, loader, header));
         }
@@ -161,6 +165,16 @@ public static class OnnxExport
             .ToList();
 
         return new OnnxExportResult(inputs, unused, outputs);
+    }
+
+    // An empty view with the loader's columns but one: the schema a graph's inputs are declared from.
+    private static IDataView SourceWithout(MLContext mlContext, TextLoader.Options loader, string column)
+    {
+        var options = new TextLoader.Options();
+        foreach (var field in typeof(TextLoader.Options).GetFields(BindingFlags.Public | BindingFlags.Instance))
+            field.SetValue(options, field.GetValue(loader));
+        options.Columns = [.. loader.Columns.Where(c => !string.Equals(c.Name, column, StringComparison.OrdinalIgnoreCase))];
+        return mlContext.Data.CreateTextLoader(options).Load(new MultiFileSource(null));
     }
 
     /// <summary>

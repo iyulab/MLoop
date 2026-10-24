@@ -64,6 +64,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- An exported binary or regression graph declared the label column as an input although no output
+  reads it and the manifest did not list it: the label was dropped from a view over the data, while the
+  converter declares a graph's inputs from the data's source. A caller feeding what the manifest names
+  was refused by runtimes that require every declared input (ONNX Runtime's Python binding:
+  `Required inputs (['y']) are missing`). The graph now declares exactly the manifest's `inputs` and
+  `unusedInputs`. `examples/onnx-consumer` scores an exported model from the graph and the manifest
+  alone, as `mloop predict` answers.
+
 - `mloop serve` passes a stop it receives (SIGTERM, SIGINT, SIGQUIT) on to the server it runs. It used to exit alone:
   `docker stop` — which signals `mloop serve`, the container's first process — skipped the server's graceful shutdown,
   and outside a container the server went on running and held the port.

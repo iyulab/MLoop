@@ -1459,7 +1459,10 @@ at 0.5). Binary without either: `PredictedLabel` true is the second class, `Scor
 The model was saved without an input schema, so the export reads one from data — by default the
 experiment's training file, through the same loader prediction uses. A column the model does not read
 (an identifier, a weight) is not an input. An input the graph declares but no output needs — a
-multiclass label — is listed under `unusedInputs`: a runtime still requires it, so feed any value.
+multiclass label — is listed under `unusedInputs`: a runtime still requires it, so feed any value. The graph declares
+no other input: `inputs` and `unusedInputs` together are every name a caller feeds.
+[`examples/onnx-consumer`](../examples/onnx-consumer/) answers from the two files with ONNX Runtime
+and numpy alone, as `mloop predict` answers.
 
 **`--verify`** runs the graph in ONNX Runtime on up to 1,000 rows of the data and compares every
 output with the model's: `Score` and `Probability` within 1e-4, `PredictedLabel` exactly. When the

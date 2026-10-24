@@ -388,6 +388,12 @@ public sealed class OnnxExportTests : IDisposable
     private static Dictionary<string, Output> Run(string onnxPath, IDataView data, OnnxExportResult result)
     {
         using var session = new InferenceSession(onnxPath);
+        // A caller feeds what the manifest names; the graph must declare nothing else. Some runtimes
+        // (ONNX Runtime's Python binding) refuse a run that leaves a declared input unfed, even one no
+        // output reads.
+        Assert.Equal(
+            result.Inputs.Concat(result.UnusedInputs).Select(i => i.Name).Order(StringComparer.Ordinal),
+            session.InputMetadata.Keys.Order(StringComparer.Ordinal));
         var rows = 0;
         using (var cursor = data.GetRowCursor([]))
             while (cursor.MoveNext()) rows++;
