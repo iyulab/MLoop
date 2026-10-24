@@ -103,6 +103,57 @@ public sealed class ObjectDetectionPredictorTests : IDisposable
         if (!TorchRuntimeInstalled())
             return; // libtorch not installed (CI); integration coverage runs only where the runtime exists.
 
+        var (ml, model, test, _) = TrainTinyDetector();
+        var results = ObjectDetectionPredictor.Predict(ml, model.Transform(test));
+
+        Assert.NotEmpty(results);
+        foreach (var image in results)
+        {
+            Assert.False(string.IsNullOrEmpty(image.ImagePath));
+            foreach (var d in image.Detections)
+                Assert.InRange(d.Score, 0.0f, 1.0f);
+        }
+    }
+
+    [Fact]
+    public void Detect_ReadsImagesWithoutAnnotations_InTheOrderGiven()
+    {
+        if (!TorchRuntimeInstalled())
+            return; // libtorch not installed (CI); integration coverage runs only where the runtime exists.
+
+        var (ml, model, _, images) = TrainTinyDetector();
+        // Pictures only — copied away from the labels/ folder, as a caller predicting new images has them.
+        var unlabelled = Path.Combine(_tempDir, "new");
+        Directory.CreateDirectory(unlabelled);
+        var paths = images.Take(3).Reverse().Select(path =>
+        {
+            var copy = Path.Combine(unlabelled, Path.GetFileName(path));
+            File.Copy(path, copy);
+            return copy;
+        }).ToList();
+
+        var results = ObjectDetectionPredictor.Detect(ml, model, paths, labelColumn: "Label");
+
+        Assert.Equal(paths, results.Select(r => r.ImagePath));
+        foreach (var d in results.SelectMany(r => r.Detections))
+        {
+            Assert.Equal("defect", d.Label);
+            Assert.InRange(d.Score, 0.0f, 1.0f);
+        }
+    }
+
+    [Fact]
+    public void Detect_NoImages_ReturnsNone()
+    {
+        var ml = new MLContext(seed: 42);
+        var model = ml.Transforms.CopyColumns("Copy", "ImagePath").Fit(ml.Data.LoadFromEnumerable(new[] { new { ImagePath = "a.jpg" } }));
+
+        Assert.Empty(ObjectDetectionPredictor.Detect(ml, model, []));
+    }
+
+    /// <summary>A one-epoch AutoFormerV2 on six blank 64-px images, built like <c>TrainingRunner.RunObjectDetectionAsync</c>.</summary>
+    private (MLContext Ml, ITransformer Model, IDataView Test, IReadOnlyList<string> Images) TrainTinyDetector()
+    {
         RuntimeManager.EnsureRuntimeForTask("object-detection");
 
         var (imagesDir, labelsDir) = (Path.Combine(_tempDir, "images"), Path.Combine(_tempDir, "labels"));
@@ -110,11 +161,14 @@ public sealed class ObjectDetectionPredictorTests : IDisposable
         Directory.CreateDirectory(labelsDir);
         File.WriteAllText(Path.Combine(_tempDir, "classes.txt"), "defect\n");
 
+        var images = new List<string>();
         for (int i = 0; i < 6; i++)
         {
             var stem = $"img{i:00}";
-            CreateBmp(Path.Combine(imagesDir, stem + ".bmp"), 64, 64);
+            var image = Path.Combine(imagesDir, stem + ".bmp");
+            CreateBmp(image, 64, 64);
             File.WriteAllText(Path.Combine(labelsDir, stem + ".txt"), "0 0.5 0.5 0.4 0.4\n");
+            images.Add(image);
         }
 
         var ml = new MLContext(seed: 42);
@@ -122,7 +176,6 @@ public sealed class ObjectDetectionPredictorTests : IDisposable
         var data = loader.LoadData(_tempDir, labelColumn: "Label", taskType: "object-detection");
         var (train, test) = loader.SplitData(data, testFraction: 0.34);
 
-        // Mirror TrainingRunner.RunObjectDetectionAsync so the scored schema matches production.
         var pipeline = ml.Transforms.LoadImages(
                 outputColumnName: "Image", imageFolder: string.Empty, inputColumnName: CocoDataLoader.ImagePathColumn)
             .Append(ml.Transforms.Conversion.MapValueToKey(
@@ -135,18 +188,7 @@ public sealed class ObjectDetectionPredictorTests : IDisposable
             .Append(ml.Transforms.Conversion.MapKeyToValue(
                 outputColumnName: "PredictedLabel", inputColumnName: "PredictedLabel"));
 
-        var model = pipeline.Fit(train);
-        var scored = model.Transform(test);
-
-        var results = ObjectDetectionPredictor.Predict(ml, scored);
-
-        Assert.NotEmpty(results);
-        foreach (var image in results)
-        {
-            Assert.False(string.IsNullOrEmpty(image.ImagePath));
-            foreach (var d in image.Detections)
-                Assert.InRange(d.Score, 0.0f, 1.0f);
-        }
+        return (ml, pipeline.Fit(train), test, images);
     }
 
     /// <summary>Writes a minimal valid 24-bit uncompressed BMP of the given dimensions.</summary>

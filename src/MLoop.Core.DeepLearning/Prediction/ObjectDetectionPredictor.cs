@@ -47,6 +47,44 @@ public static class ObjectDetectionPredictor
     private const int BoxStride = 4;
 
     /// <summary>
+    /// Detects objects in <paramref name="imagePaths"/> — pictures alone, no annotations. A prediction has
+    /// no labels to read, so the rows carry an empty label and box vector under the names the trained
+    /// pipeline's first steps expect (its label is mapped to keys before the trainer, a step that runs on
+    /// scoring too). The one way a detector is asked about images, for <c>mloop predict</c> and
+    /// <c>POST /predict</c> alike.
+    /// </summary>
+    /// <param name="mlContext">The ML.NET context.</param>
+    /// <param name="model">A trained object-detection model.</param>
+    /// <param name="imagePaths">The images, in the order their results are returned.</param>
+    /// <param name="labelColumn">The model's label column; <c>null</c> for the loaders' default.</param>
+    public static IReadOnlyList<ImageDetectionResult> Detect(
+        MLContext mlContext, ITransformer model, IEnumerable<string> imagePaths, string? labelColumn = null)
+    {
+        ArgumentNullException.ThrowIfNull(mlContext);
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(imagePaths);
+
+        var rows = imagePaths.Select(path => new UnlabelledImage { ImagePath = path }).ToList();
+        if (rows.Count == 0)
+            return [];
+
+        var input = mlContext.Data.LoadFromEnumerable(rows);
+        var label = string.IsNullOrWhiteSpace(labelColumn) ? MLoop.Core.Data.CocoDataLoader.DefaultLabelColumn : labelColumn;
+        if (!string.Equals(label, MLoop.Core.Data.CocoDataLoader.DefaultLabelColumn, StringComparison.Ordinal))
+            input = mlContext.Transforms.CopyColumns(label, MLoop.Core.Data.CocoDataLoader.DefaultLabelColumn).Fit(input).Transform(input);
+
+        return Predict(mlContext, model.Transform(input));
+    }
+
+    /// <summary>A row the loaders would produce for an image with no objects marked.</summary>
+    private sealed class UnlabelledImage
+    {
+        public string ImagePath { get; set; } = string.Empty;
+        public string[] Label { get; set; } = [];
+        public float[] BoundingBoxes { get; set; } = [];
+    }
+
+    /// <summary>
     /// Reads detections for every image in the scored data view.
     /// </summary>
     /// <param name="mlContext">The ML.NET context (reserved for symmetry with the evaluator).</param>

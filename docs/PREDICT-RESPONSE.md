@@ -132,6 +132,27 @@ signal.
 
 Both bounds are absent for a model trained before conformal bands, or for any non-regression task.
 
+### Object detection — boxes per image
+
+An object-detection model answers each image with the objects it found, so its rows are images, not table rows.
+`POST /predict` takes the images by their contents — `{"images": ["<base64>", …]}` or a multipart form, up to 64 per
+request, as `POST /embed` takes them; rows sent to it are a `400`. Each prediction is one image, in the order sent:
+
+```json
+{
+  "imageSha256": "4f2b0a41…",
+  "detections": [
+    { "label": "red", "score": 0.887, "x0": 72.5, "y0": 108.0, "x1": 105.8, "y1": 142.2 }
+  ],
+  "predictionId": "53b147ab28e14713"
+}
+```
+
+A box is in the image's pixels: `x0 y0` its top-left corner, `x1 y1` its bottom-right. `score` is the detector's
+confidence in that object; an image with nothing found has an empty `detections`. The image is named by its SHA-256
+— the server never sees a path — and is logged under it, with the detections as the answer and the highest score as
+the confidence. `mloop predict <images>` writes the same detections to a file (`ImagePath` in place of the hash).
+
 ## Errors
 
 `mloop predict --json` exits non-zero and writes one document to stdout — `{"error": "…"}` — with

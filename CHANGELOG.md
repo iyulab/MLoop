@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `POST /predict` answers an object-detection model: images by content (`{"images": [base64…]}` or a multipart form,
+  as for image classification) in, and for each image its objects — label, score and box in pixels — named by the
+  image's SHA-256 and logged under it with a `predictionId`. Rows sent to such a model are refused with how to send
+  images.
+
 - Each trial's record (`trials.ndjson`, `leaderboard.json`) carries `validation.standardError`: how far each metric's
   mean could move on other rows — the margin within which the search keeps a smaller model. A holdout's (one fold, no
   spread) comes from its slices.
@@ -29,6 +34,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   row's answer and order of classes: accuracy does not move, the log loss and the ECE do.
 
 ### Fixed
+
+- `mloop predict` with an object-detection model read only an annotated dataset — a folder of new pictures stopped at
+  «No COCO annotations file found». It now predicts over images alone: a folder at any depth, one image, or a
+  dataset's pictures (its annotations unread). A model trained with a label column of its own name scored with the
+  default name and failed.
 
 - `GET /compare` averaged every metric's raw value — accuracies with RMSEs — and called the candidate better when it won
   on more than half of them; a metric one experiment lacked was read as 0, a win for any lower-is-better metric. It now

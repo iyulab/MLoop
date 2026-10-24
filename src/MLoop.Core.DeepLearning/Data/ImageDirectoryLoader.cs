@@ -103,7 +103,8 @@ public sealed class ImageDirectoryLoader : DataProviderBase
         return counts;
     }
 
-    private static bool IsSupportedImage(string path) => SupportedExtensions.Contains(Path.GetExtension(path));
+    /// <summary>Whether <paramref name="path"/> has an extension the loader reads as an image.</summary>
+    public static bool IsSupportedImage(string path) => SupportedExtensions.Contains(Path.GetExtension(path));
 
     /// <summary>The image extensions the loader reads, for messages that name them.</summary>
     public static string SupportedExtensionList => string.Join(", ", SupportedExtensions.OrderBy(e => e, StringComparer.Ordinal));

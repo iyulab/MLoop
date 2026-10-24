@@ -563,6 +563,17 @@ try
                 });
             }
 
+            // Object detection answers each image with a list of boxes, not one row's value: its own branch,
+            // with no input schema or rows. Images come by content, as image classification takes them.
+            if (MLoop.Core.Models.TaskTypes.Canonical(taskType) == "object-detection")
+            {
+                if (images is null)
+                    return Results.BadRequest(new { error = $"'{modelName}' is an object-detection model: send images by content — {{\"images\": [base64…]}} or a multipart form." });
+                return await ObjectDetectionPredictions.RespondAsync(
+                    images, imageFiles, modelName, answeringId, modelPath, mlContext, modelCache, experimentStore,
+                    predictionLogger, configuration, logger, stopwatch, ct);
+            }
+
             // Load experiment data to get InputSchema
             var expData = await experimentStore.LoadAsync(modelName, answeringId, ct);
             var schema = expData?.Config?.InputSchema;
@@ -587,7 +598,7 @@ try
             if (images is not null)
             {
                 if (MLoop.Core.Models.TaskTypes.Canonical(taskType) != "image-classification")
-                    return Results.BadRequest(new { error = $"Images are predicted by an image-classification model; '{modelName}' answers {taskType}. Send its rows as JSON." });
+                    return Results.BadRequest(new { error = $"Images are predicted by an image-classification or object-detection model; '{modelName}' answers {taskType}. Send its rows as JSON." });
                 foreach (var image in images)
                 {
                     var file = MLoop.Core.Data.ScratchFiles.New("mloop_predict_image_", ".img");

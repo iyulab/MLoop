@@ -317,13 +317,13 @@ public static class PredictCommand
                 }
             }
 
-            // Object detection predicts over an image directory (COCO/YOLO) and emits detections
-            // (boxes + labels + scores) as JSON, so it bypasses the CSV-oriented resolution,
-            // schema validation, preprocessing, and categorical mapping below.
+            // Object detection predicts over images (a folder of them, one image, or a COCO/YOLO dataset's
+            // pictures) and emits detections (boxes + labels + scores) as JSON, so it bypasses the
+            // CSV-oriented resolution, schema validation, preprocessing, and categorical mapping below.
             if (taskType != null && taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
             {
                 return await PredictObjectDetectionAsync(
-                    projectRoot, resolvedModelPath, dataFile, output, resolvedModelName, fileSystem);
+                    projectRoot, resolvedModelPath, dataFile, output, resolvedModelName, configLabelColumn, fileSystem);
             }
 
             // Resolve data file path (Convention: datasets/predict.csv)
@@ -1080,10 +1080,10 @@ public static class PredictCommand
     }
 
     /// <summary>
-    /// Predicts object detections over an image directory (COCO/YOLO) and writes them as JSON.
-    /// Mirrors the evaluate OD path (directory load + Transform) but surfaces the raw detections
-    /// — labels, scores, and boxes — instead of mAP. The native runtime is already loaded by the
-    /// EnsureRuntimeForTask guard before this method is reached.
+    /// Predicts object detections over images and writes them as JSON — labels, scores, and boxes.
+    /// The input is pictures alone: a folder of them (any depth — a COCO or YOLO dataset's images
+    /// included, its annotations unread), one image, or a COCO annotations file's folder. The native
+    /// runtime is already loaded by the EnsureRuntimeForTask guard before this method is reached.
     /// </summary>
     private static async Task<int> PredictObjectDetectionAsync(
         string projectRoot,
@@ -1091,6 +1091,7 @@ public static class PredictCommand
         string? dataFile,
         string? output,
         string modelName,
+        string? labelColumn,
         FileSystemManager fileSystem)
     {
         // Resolve the input dataset directory (or a direct COCO .json).
@@ -1116,6 +1117,20 @@ public static class PredictCommand
                 ErrorConsole.Error($"Data not found: {resolvedDataDir}", ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
+        }
+
+        // The pictures: an image file is itself, a COCO annotations file stands for its folder.
+        IReadOnlyList<string> images = File.Exists(resolvedDataDir)
+            ? (ImageDirectoryLoader.IsSupportedImage(resolvedDataDir)
+                ? [Path.GetFullPath(resolvedDataDir)]
+                : ImageDirectoryLoader.ListImages(Path.GetDirectoryName(Path.GetFullPath(resolvedDataDir))!))
+            : ImageDirectoryLoader.ListImages(resolvedDataDir);
+        if (images.Count == 0)
+        {
+            ErrorConsole.Error(
+                $"No images found in {Path.GetRelativePath(projectRoot, resolvedDataDir)}.",
+                $"Object detection predicts over image files ({ImageDirectoryLoader.SupportedExtensionList}).");
+            return 1;
         }
 
         // Resolve output path — the convention itself lives in ProjectLayout, because `status`
@@ -1151,11 +1166,7 @@ public static class PredictCommand
                     var mlContext = new MLContext(seed: 42);
                     var model = ScoringModel.Load(mlContext, modelPath, "object-detection");
 
-                    var data = new ObjectDetectionDataLoader(mlContext)
-                        .LoadData(resolvedDataDir, labelColumn: null, taskType: "object-detection");
-                    var scored = model.Transform(data);
-
-                    detections = ObjectDetectionPredictor.Predict(mlContext, scored);
+                    detections = ObjectDetectionPredictor.Detect(mlContext, model, images, labelColumn);
                 });
 
                 ctx.Status("[green]Detection complete![/]");

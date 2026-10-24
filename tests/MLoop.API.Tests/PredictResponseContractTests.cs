@@ -298,7 +298,7 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
         var response = await _client.PostAsJsonAsync($"/predict?name={modelName}", new { images = new[] { Pattern } });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("image-classification");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("image-classification or object-detection");
     }
 
     [Fact]
@@ -345,7 +345,40 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
 
         // Read, decoded and then refused for the model's task — the same answer as the JSON form.
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("image-classification");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("image-classification or object-detection");
     }
 
+
+    // An object-detection model answers images, each with a list of boxes; rows sent to it are refused before the
+    // model is read (so a placeholder model file is enough here — the detection itself needs libtorch, covered by
+    // ObjectDetectionPredictorTests where the runtime is installed).
+    private string SeedObjectDetectionProductionModel()
+    {
+        const string modelName = "od";
+        var productionDir = Path.Combine(_factory.TestProjectRoot, "models", modelName, "production");
+        Directory.CreateDirectory(productionDir);
+        File.WriteAllBytes(Path.Combine(productionDir, "model.zip"), [0]);
+        File.WriteAllText(Path.Combine(productionDir, "metadata.json"), JsonSerializer.Serialize(new
+        {
+            modelName,
+            experimentId = "exp-001",
+            promotedAt = DateTime.UtcNow,
+            task = "object-detection",
+            bestTrainer = "ObjectDetection (AutoFormerV2)",
+            labelColumn = "Label",
+        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+        return modelName;
+    }
+
+    [Fact]
+    public async Task Rows_sent_to_an_object_detection_model_are_refused_with_how_to_send_images()
+    {
+        var modelName = SeedObjectDetectionProductionModel();
+
+        var response = await _client.PostAsJsonAsync($"/predict?name={modelName}", new[] { new { X1 = 1 } });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("object-detection").And.Contain("images");
+    }
 }

@@ -263,12 +263,16 @@ the AutoFormerV2 trainer expects. Conventional annotation file names — `annota
 annotations file. YOLO datasets (`images/` + `labels/*.txt`) are also auto-detected. The trainer
 uses the `torch` runtime, which must be installed first.
 
-After training, predict and evaluate run over the same directory layout:
+After training, predict reads pictures alone — a folder of them (no annotations needed), one image, or a dataset's
+images — and evaluate reads a labelled dataset:
 
 ```bash
-mloop predict datasets/yolo      # → predictions/<model>-detections-<ts>.json (label + score + box per image)
+mloop predict photos/            # → predictions/<model>-detections-<ts>.json (label + score + box per image)
 mloop evaluate exp-001 datasets/yolo   # → mAP (map_50 / map_50_95)
 ```
+
+`mloop serve` answers images sent to `POST /predict` by content with the same boxes
+([contract](docs/PREDICT-RESPONSE.md#object-detection--boxes-per-image)).
 
 **Full documentation**: [docs/GUIDE.md](docs/GUIDE.md)
 
