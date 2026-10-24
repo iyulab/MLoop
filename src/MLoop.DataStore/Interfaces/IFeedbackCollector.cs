@@ -86,6 +86,12 @@ public record FeedbackEntry(
 /// counts each prediction by its weight (<see cref="Weighted"/>) — the estimate a sample drawn with unequal
 /// probabilities needs; counts stay row counts.
 /// </summary>
+/// <param name="ModelName">The model name the metrics are for.</param>
+/// <param name="TotalFeedback">Predictions with feedback counted — each once, its latest entry standing (rows, not
+/// weights).</param>
+/// <param name="Accuracy">Share of counted predictions whose answer matched the feedback; null without feedback.</param>
+/// <param name="CalculatedAt">When these metrics were computed.</param>
+/// <param name="Weighted">Whether any entry carried a weight, so <see cref="Accuracy"/> is a weighted estimate.</param>
 /// <param name="EffectiveSampleSize">How many rows <see cref="Accuracy"/> is worth as evidence: the row count
 /// unweighted, Kish's (Σw)² ÷ Σw² weighted — a few heavy rows carry less certainty than as many equal ones. Null
 /// without feedback.</param>
@@ -95,11 +101,8 @@ public record FeedbackEntry(
 /// line names the experiment that answered (written before feedback recorded it, its log since pruned).</param>
 public record FeedbackMetrics(
     string ModelName,
-    int TotalPredictions,
     int TotalFeedback,
     double? Accuracy,
-    double? Precision,
-    double? Recall,
     DateTimeOffset CalculatedAt,
     bool Weighted = false,
     double? EffectiveSampleSize = null,

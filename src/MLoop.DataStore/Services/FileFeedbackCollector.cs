@@ -124,11 +124,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         {
             return new FeedbackMetrics(
                 modelName,
-                TotalPredictions: 0,
                 TotalFeedback: 0,
                 Accuracy: null,
-                Precision: null,
-                Recall: null,
                 CalculatedAt: DateTimeOffset.UtcNow,
                 ExperimentId: experimentId,
                 UnattributedFeedback: unattributed);
@@ -155,11 +152,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
 
         return new FeedbackMetrics(
             modelName,
-            TotalPredictions: feedback.Count,
             TotalFeedback: feedback.Count,
             Accuracy: accuracy,
-            Precision: null, // Would require class-specific calculation
-            Recall: null,    // Would require class-specific calculation
             CalculatedAt: DateTimeOffset.UtcNow,
             Weighted: weighted,
             EffectiveSampleSize: effectiveSize,

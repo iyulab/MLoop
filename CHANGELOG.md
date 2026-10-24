@@ -92,6 +92,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `.mloop/scripts/preprocess/` (`mloop preprocess`) or declare steps with `mloop prep plan` / `mloop prep run`; patterns
   in the data are reported by `mloop info --analyze` and `mloop analyze`. `mloop validate` warns when a detectors folder
   still holds scripts.
+- `precision`, `recall` and `totalPredictions` from `mloop feedback metrics --json` (and `FeedbackMetrics`). The first
+  two were never computed — always `null` — and `totalPredictions` repeated `totalFeedback`; the count of logged
+  predictions is `mloop sample stats`. Per-class precision and recall on labeled rows are `mloop evaluate`.
 
 ### Fixed
 

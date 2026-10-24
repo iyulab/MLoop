@@ -417,11 +417,8 @@ public static class FeedbackCommand
         Console.WriteLine(JsonSerializer.Serialize(new
         {
             metrics.ModelName,
-            metrics.TotalPredictions,
             metrics.TotalFeedback,
             metrics.Accuracy,
-            metrics.Precision,
-            metrics.Recall,
             metrics.Weighted,
             metrics.EffectiveSampleSize,
             metrics.ExperimentId,
@@ -454,16 +451,6 @@ public static class FeedbackCommand
         else
         {
             grid.AddRow("[grey]Accuracy:[/]", "[grey]N/A[/]");
-        }
-
-        if (metrics.Precision.HasValue)
-        {
-            grid.AddRow("[grey]Precision:[/]", $"[white]{metrics.Precision.Value:P2}[/]");
-        }
-
-        if (metrics.Recall.HasValue)
-        {
-            grid.AddRow("[grey]Recall:[/]", $"[white]{metrics.Recall.Value:P2}[/]");
         }
 
         grid.AddRow("[grey]Calculated At:[/]", $"[grey]{TimestampDisplay.Local(metrics.CalculatedAt)}[/]");
