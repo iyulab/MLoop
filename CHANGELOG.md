@@ -41,7 +41,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Dependencies: Spectre.Console 0.57.2, System.CommandLine 2.0.13, Microsoft.CodeAnalysis.CSharp (scripts) 5.9.0,
   Microsoft.Data.Analysis 0.23.1, Swashbuckle.AspNetCore 10.3.1, System.IdentityModel.Tokens.Jwt 8.23.0, DotNetEnv
-  3.2.0, YamlDotNet 18.1.0 (mloop.yaml reads and writes as before).
+  3.2.0, YamlDotNet 18.1.0 (mloop.yaml reads and writes as before), Microsoft.OpenApi 2.13.0 (the 2.x line
+  Swashbuckle is built against — 3.x still breaks `/swagger/v1/swagger.json`).
 
 - A binary model's probabilities are calibrated when it is trained. The search keeps the chosen trial's answers on the
   rows each fold model did not see, fits a Platt calibration to them and saves it beside the model

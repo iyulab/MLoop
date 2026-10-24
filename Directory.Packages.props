@@ -29,7 +29,6 @@
     <PackageVersion Include="AspNetCoreRateLimit" Version="5.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
     <!-- Logging Packages -->
     <!-- Pin the transitive Serilog core so CLI (Serilog.Sinks.Console → 4.0.0) and API
@@ -58,10 +57,12 @@
     <PackageVersion Include="System.CommandLine" Version="2.0.13" />
     <PackageVersion Include="DotNetEnv" Version="3.2.0" />
     <!-- Documentation / API -->
-    <!-- Stay on the Microsoft.OpenApi 2.x line: Swashbuckle.AspNetCore is built against 2.x
-         (3.x causes 500 on /swagger/v1/swagger.json). 2.10.0 is the latest 2.x and is past the
-         GHSA-v5pm-xwqc-g5wc patch (2.7.5), clearing NU1903 without leaving the compatible line. -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.10.0" />
+    <!-- Stay on the Microsoft.OpenApi 2.x line: Swashbuckle.AspNetCore is built against 2.x — with
+         10.3.1 and 3.11.0, /swagger/v1/swagger.json still answers 500 (re-measured; the Swagger tests
+         in MLoop.API.Tests catch it). Its nuspec says only ">= 2.7.5", so restore would not stop a 3.x.
+         Revisit when a Swashbuckle release depends on 3.x. 2.13.0 is the latest 2.x, past the
+         GHSA-v5pm-xwqc-g5wc patch (2.7.5). -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.13.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.3.1" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.12.0" />
