@@ -507,6 +507,20 @@ public static class PredictCommand
                 var jsonResult = new PredictionEngine().PredictWithService(
                     jsonRows, trainedSchema, resolvedModelPath, taskType, configLabelColumn, interval);
 
+                // --log under --json logs as `POST /predict` does, and each row carries the id it was logged
+                // under — the id `mloop feedback add` takes. Before, this branch returned before logging.
+                var jsonPredictions = jsonResult.Rows;
+                if (logPredictions && jsonPredictions.Count == jsonRows.Length)
+                {
+                    jsonPredictions = [.. await ServedPredictionLog.LogAsync(
+                        new FilePredictionLogger(projectRoot), resolvedModelName, experimentId ?? "unknown",
+                        jsonRows, jsonPredictions)];
+                }
+                else if (logPredictions)
+                {
+                    WarningConsole.Warn($"These predictions were not logged: {jsonPredictions.Count} answers for {jsonRows.Length} rows.");
+                }
+
                 var payload = new
                 {
                     model = resolvedModelName,
@@ -516,8 +530,8 @@ public static class PredictCommand
                     // The same model beyond this project: an experiment id is unique only inside it.
                     modelSha256 = ModelFingerprint.Sha256(resolvedModelPath),
                     task = jsonResult.TaskType,
-                    count = jsonResult.Rows.Count,
-                    predictions = jsonResult.Rows,
+                    count = jsonPredictions.Count,
+                    predictions = jsonPredictions,
                     warnings = JsonOutputScope.Warnings is { } reported ? [.. reported, .. jsonResult.Warnings ?? []] : jsonResult.Warnings,
                 };
                 Console.Out.WriteLine(JsonSerializer.Serialize(payload, PredictJsonOptions));

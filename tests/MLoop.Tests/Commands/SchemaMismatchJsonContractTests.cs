@@ -210,4 +210,26 @@ public class SchemaMismatchJsonContractTests : IDisposable
         Assert.False(payload.TryGetProperty("error", out _));
         Assert.Equal(5, payload.GetProperty("count").GetInt32());
     }
+
+    /// <summary>
+    /// <c>--log</c> under <c>--json</c> logs as <c>POST /predict</c> does, and each row carries the id it was logged
+    /// under — the id <c>mloop feedback add</c> takes. The JSON branch used to return before logging.
+    /// </summary>
+    [Fact]
+    public async Task Predict_Json_Log_LogsEveryRow_AndAnswersWithTheirIds()
+    {
+        await SeedRegressionWithSchemaAsync();
+        var matching = Path.Combine(_testProjectRoot, "predict-log.csv");
+        WriteLinearCsv(matching, rowCount: 5, seed: 7);
+
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", matching, "--json", "--log");
+
+        Assert.True(exitCode == 0, stdout + stderr);
+        var ids = ParsePayload(stdout).GetProperty("predictions").EnumerateArray()
+            .Select(row => row.GetProperty("predictionId").GetString()).ToList();
+        Assert.Equal(5, ids.Count);
+        Assert.All(ids, id => Assert.False(string.IsNullOrEmpty(id)));
+        var logged = await new MLoop.DataStore.Services.FilePredictionLogger(_testProjectRoot).GetLogsAsync("default");
+        Assert.Equal(ids.Order(), logged.Select(entry => entry.Id).Order());
+    }
 }

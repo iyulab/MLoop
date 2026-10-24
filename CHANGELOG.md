@@ -88,6 +88,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop predict --json --log` logs: the JSON branch returned before logging, so `--log` did nothing under
+  `--json`. Each row now carries the `predictionId` it was logged under, as `POST /predict` answers — the id
+  `mloop feedback add` takes. `feedback metrics` shows `effectiveSampleSize` (and, weighted, the effective rows).
+
 - A failing command always says why on stderr, and under `--json` answers with one `{"error": …}` document.
   `features select`, `prep plan`, `prep run`, `info` (empty file), `validate`, `preprocess` and the `predict` /
   `evaluate` schema check printed their error to stdout only, so the exit code was 1 with nothing on stderr;

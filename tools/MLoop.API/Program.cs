@@ -636,16 +636,8 @@ try
             {
                 try
                 {
-                    var loggedAt = DateTimeOffset.UtcNow;
-                    var ids = predictions.Select(_ => PredictionIds.New()).ToArray();
-                    await predictionLogger.LogBatchAsync(
-                        modelName,
-                        answeringId,
-                        predictions.Select((row, i) => new PredictionLogEntry(
-                            modelName, answeringId, loggedRows[i], PredictionLogOutput.Of(row), row.Confidence,
-                            loggedAt, ids[i])),
-                        ct);
-                    predictions = predictions.Select((row, i) => row with { PredictionId = ids[i] }).ToList();
+                    predictions = [.. await ServedPredictionLog.LogAsync(
+                        predictionLogger, modelName, answeringId, loggedRows, predictions, ct)];
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

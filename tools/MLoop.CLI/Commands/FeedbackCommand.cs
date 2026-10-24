@@ -422,6 +422,7 @@ public static class FeedbackCommand
             metrics.Precision,
             metrics.Recall,
             metrics.Weighted,
+            metrics.EffectiveSampleSize,
             CalculatedAt = metrics.CalculatedAt.ToString("o")
         }, options));
     }
@@ -444,6 +445,8 @@ public static class FeedbackCommand
                 : "red";
             grid.AddRow(metrics.Weighted ? "[grey]Accuracy (weighted):[/]" : "[grey]Accuracy:[/]",
                 $"[{accuracyColor}]{metrics.Accuracy.Value:P2}[/]");
+            if (metrics.Weighted && metrics.EffectiveSampleSize is { } effective)
+                grid.AddRow("[grey]Effective rows:[/]", $"[white]{effective:0.#}[/] [grey](what the weighted accuracy is worth as evidence)[/]");
         }
         else
         {
