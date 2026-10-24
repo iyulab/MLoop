@@ -649,7 +649,7 @@ public static class ValidateCommand
 
     /// <summary>
     /// The project's scripts compile and implement what their folder runs: hooks in each stage folder,
-    /// metric scripts, pattern detectors. A script that does not is an error — training would otherwise
+    /// metric scripts. A script that does not is an error — training would otherwise
     /// warn and go on without it — and a hook outside every stage folder, which nothing runs, a warning.
     /// The scripts are compiled into the project's script cache, so training starts from them.
     /// </summary>
@@ -667,7 +667,13 @@ public static class ValidateCommand
         foreach (var stage in Enum.GetValues<MLoop.Extensibility.Hooks.HookType>())
             await CheckAsync<MLoop.Extensibility.Hooks.IMLoopHook>(hooks.GetHookDirectory(stage), "IMLoopHook");
         await CheckAsync<MLoop.Extensibility.Metrics.IMLoopMetric>(Path.Combine(scripts, "metrics"), "IMLoopMetric");
-        await CheckAsync<MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts.IPatternDetector>(Path.Combine(scripts, "detectors"), "IPatternDetector");
+
+        // Pattern detectors fed `mloop preprocess --incremental`, which was removed: its rules were never applied.
+        var detectors = Path.Combine(scripts, "detectors");
+        if (Directory.Exists(detectors) && Directory.EnumerateFiles(detectors, "*.cs").Any())
+            warnings.Add(new ValidationWarning(ScriptPath(detectors),
+                "Pattern detectors are no longer read — rule discovery (`preprocess --incremental`) was removed. Transform the data " +
+                "with a script in .mloop/scripts/preprocess/ or declare steps with `mloop prep plan`"));
 
         string ScriptPath(string file) => Path.GetRelativePath(projectRoot, file).Replace(Path.DirectorySeparatorChar, '/');
 

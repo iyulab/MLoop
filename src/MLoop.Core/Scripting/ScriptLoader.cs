@@ -4,7 +4,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using MLoop.Core.Preprocessing.Incremental.RuleDiscovery.Contracts;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Preprocessing;
 
@@ -111,7 +110,7 @@ public class ScriptLoader
         additionalReferences.AddRange(GetMetadataReferences(
             typeof(object).Assembly,
             typeof(IPreprocessingScript).Assembly,
-            typeof(IPatternDetector).Assembly,                   // MLoop.Core (pattern detectors)
+            typeof(ScriptLoader).Assembly,                       // MLoop.Core
             typeof(Microsoft.Data.Analysis.DataFrame).Assembly, // Microsoft.Data.Analysis (DataFrameColumn)
             mlAssembly,
             filePrepperAssembly,
@@ -120,7 +119,7 @@ public class ScriptLoader
             typeof(System.IO.Path).Assembly,
             typeof(Console).Assembly,
             // BCL assemblies that live outside System.Private.CoreLib and are commonly used by
-            // user scripts (hooks/metrics/detectors). Without these, scripts referencing Regex or
+            // user scripts (hooks/metrics). Without these, scripts referencing Regex or
             // JsonSerializer fail to compile with "type could not be found ... add a reference".
             typeof(System.Text.RegularExpressions.Regex).Assembly,   // System.Text.RegularExpressions
             typeof(System.Text.Json.JsonSerializer).Assembly         // System.Text.Json

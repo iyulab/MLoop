@@ -1793,8 +1793,7 @@ Kept 2688 of 3000 rows
 ```
 
 Without `-o` the result stays in `.mloop/temp/preprocess/`. A script that does not compile is reported with the
-compiler's errors. `--incremental` runs a different workflow — pattern detectors that propose cleaning rules, with
-prompts to approve them (`--skip-hitl`, `--auto-approve`); the scripts above do not run in that mode.
+compiler's errors.
 
 ## Extensibility
 

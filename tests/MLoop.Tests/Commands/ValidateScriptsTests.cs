@@ -74,4 +74,15 @@ public class ValidateScriptsTests : IDisposable
         Assert.Empty(errors);
         Assert.Empty(warnings);
     }
+
+    [Fact]
+    public async Task ADetectorsFolderWithScripts_IsAWarning_ThatNothingReadsIt()
+    {
+        Write("detectors/CustomDetector.cs", "public class CustomDetector { }");
+
+        var (errors, warnings) = await ValidateAsync();
+
+        Assert.Empty(errors);
+        Assert.Contains(warnings, w => w.ToString().Contains("no longer read"));
+    }
 }

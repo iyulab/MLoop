@@ -37,6 +37,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   they are right (top-label ECE around 0.4 where a maximum-entropy model scored under 0.001). A temperature keeps every
   row's answer and order of classes: accuracy does not move, the log loss and the ECE do.
 
+### Removed
+
+- `mloop preprocess --incremental` (with `--skip-hitl` and `--auto-approve`) and the pattern detectors it read from
+  `.mloop/scripts/detectors/` (`IPatternDetector`). Rule discovery never reached application — every rule type answered
+  "not implemented", and a run that found rules wrote no cleaned data and exited 1. Transform data with a script in
+  `.mloop/scripts/preprocess/` (`mloop preprocess`) or declare steps with `mloop prep plan` / `mloop prep run`; patterns
+  in the data are reported by `mloop info --analyze` and `mloop analyze`. `mloop validate` warns when a detectors folder
+  still holds scripts.
+
 ### Fixed
 
 - `mloop serve` passes a stop it receives (SIGTERM, SIGINT, SIGQUIT) on to the server it runs. It used to exit alone:

@@ -2,7 +2,13 @@
 
 ## Status
 
-**Accepted** - 2024-12-30
+**Superseded** — the subsystem (`mloop preprocess --incremental`, `.mloop/scripts/detectors/`) was removed. Its rule
+discovery never reached application: every rule type answered "not implemented", so a run produced no cleaned data.
+Data is transformed by scripts in `.mloop/scripts/preprocess/` and by declared steps (`mloop prep plan` / `prep run`);
+patterns in the data are reported by `mloop info --analyze` and `mloop analyze`. The original decision follows for the
+record.
+
+Accepted - 2024-12-30
 
 ## Context
 
