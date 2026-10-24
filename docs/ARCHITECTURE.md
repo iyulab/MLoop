@@ -620,7 +620,7 @@ MLoop/
 ├── Directory.Packages.props       # Central package versions
 │
 ├── src/                           # Libraries
-│   ├── MLoop.Extensibility/       # Script interfaces: preprocessing, hooks, metrics, detectors
+│   ├── MLoop.Extensibility/       # Script interfaces: preprocessing, hooks, metrics (detectors: MLoop.Core)
 │   ├── MLoop.Search/              # Trainer search: candidates, tuner, folds, trial runner (ML.NET only)
 │   ├── MLoop.Core/                # Training runner, data loading, evaluation, prediction, storage layout, export
 │   ├── MLoop.Core.DeepLearning/   # Image and object-detection tasks (on-demand native runtimes)
