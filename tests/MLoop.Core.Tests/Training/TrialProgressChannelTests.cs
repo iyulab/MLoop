@@ -53,6 +53,9 @@ public class TrialProgressChannelTests
     public void ReportCompleted_carries_real_elapsed_time_never_zero()
     {
         var (channel, reported) = Build();
+        // Let the clock move: reported straight after construction, a real clock can still read zero (Apple
+        // silicon ticks at ~42 ns) — what this guards against is a hardcoded zero, not a fast machine.
+        Thread.Sleep(5);
 
         channel.ReportCompleted(TrainerDescriptor.Of("A"), "mae", 12.5);
 
