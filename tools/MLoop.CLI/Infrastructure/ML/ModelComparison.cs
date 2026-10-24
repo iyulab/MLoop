@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
@@ -41,6 +42,26 @@ public static class ModelComparison
             ? (trained, null)
             : (null, $"The training metrics are weighted by '{trained}' and this file has no such column, so the test " +
                      "metrics are unweighted — the training and test metrics describe different distributions.");
+    }
+
+    /// <summary>
+    /// The warning owed when <paramref name="testDataFile"/> is the very file <paramref name="experiment"/>
+    /// was trained on — the same bytes (<see cref="DataFingerprint"/>), whatever its name: most of its rows
+    /// were in the training partition, so the test metrics are not a measurement on unseen data. Taken over
+    /// the file as the caller gave it, before any conversion, as training took it. <c>null</c> when the
+    /// files differ or the experiment recorded no fingerprint.
+    /// </summary>
+    public static async Task<string?> TrainingDataWarningAsync(ExperimentData experiment, string testDataFile, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(experiment);
+        var trainedOn = experiment.Config.DataFileHash;
+        if (!DataFingerprint.IsFingerprint(trainedOn) || !File.Exists(testDataFile))
+            return null;
+        return await DataFingerprint.ComputeAsync(testDataFile, cancellationToken) == trainedOn
+            ? "This is the file the model was trained on (the same content as its training data), so most of these " +
+              "rows were in its training partition: the test metrics overstate how it does on rows it has not seen. " +
+              "Evaluate on data held out from training."
+            : null;
     }
 
     /// <summary>

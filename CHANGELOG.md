@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `mloop evaluate` and `POST /evaluate` warn when the file is the one the experiment was trained on — the
+  same content as its recorded `dataFileHash`, whatever the file is called: most of its rows were in the
+  training partition, so the test metrics overstate how the model does on unseen rows.
+
 - `mloop embed --patches` and `POST /embed?patches=true` add each image's patch vectors from the same encoder run —
   one unit vector per patch of the centre crop (`dinov2-small`: 16 × 16 patches of 14 pixels), row by row, with the
   grid and the crop the grid covers in the image's own pixels. One vector per image averages a small local difference
@@ -63,6 +67,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   still holds scripts.
 
 ### Fixed
+
+- `mloop evaluate --json` left its warnings out of the document — a test file whose column changed type, a
+  weight the file lacks — writing them only to stderr with the narration. The document carries them as
+  `warnings`, as `POST /evaluate` does.
 
 - An exported binary or regression graph declared the label column as an input although no output
   reads it and the manifest did not list it: the label was dropped from a view over the data, while the

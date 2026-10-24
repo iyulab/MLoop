@@ -98,11 +98,40 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
     [Fact]
     public async Task AWeightedExperiment_IsScoredByItsWeight_WhenTheFileHasIt()
     {
-        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = _withWeight });
+        var holdout = Path.Combine(_factory.TestProjectRoot, "datasets", "weighted-holdout.csv");
+        var csv = new StringBuilder("x,z,w,y\n");
+        var rng = new Random(11);
+        for (var i = 0; i < 80; i++)
+        {
+            var x = rng.NextDouble();
+            csv.Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{(x > 0.5 ? 3 : 1)},{(x + rng.NextDouble() * 0.4 > 0.7 ? "true" : "false")}\n");
+        }
+        await File.WriteAllTextAsync(holdout, csv.ToString());
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = holdout });
 
         status.Should().Be(HttpStatusCode.OK, body.ToString());
         body.GetProperty("weightColumn").GetString().Should().Be("w");
         body.TryGetProperty("warnings", out _).Should().BeFalse("the API leaves null fields out");
+    }
+
+    /// <summary>
+    /// The file the experiment was trained on — the same content, under any name — is mostly training
+    /// rows: the answer says so before any other warning.
+    /// </summary>
+    [Fact]
+    public async Task TheFileTheModelWasTrainedOn_IsScored_WithAWarningThatItIsTrainingData()
+    {
+        var renamed = Path.Combine(_factory.TestProjectRoot, "datasets", "same-content.csv");
+        File.Copy(_withWeight, renamed, overwrite: true);
+
+        foreach (var path in new[] { _withWeight, renamed })
+        {
+            var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = path });
+
+            status.Should().Be(HttpStatusCode.OK, body.ToString());
+            body.GetProperty("warnings")[0].GetString().Should().Contain("the file the model was trained on");
+        }
     }
 
     [Fact]

@@ -1337,6 +1337,7 @@ try
 
             // What `mloop evaluate` does before it measures: the file read as a table (Parquet, Excel, JSON, TSV),
             // then checked against the experiment's schema — a refused file is the caller's to fix, not a 500.
+            var trainingDataWarning = await ModelComparison.TrainingDataWarningAsync(experiment, resolvedTestPath, ct);
             resolvedTestPath = await TabularDataFile.AsCsvAsync(resolvedTestPath);
             var validation = await new SchemaValidator(fileSystem, projectDiscovery).ValidateAsync(resolvedTestPath, modelName, experimentId);
             if (!validation.IsValid)
@@ -1348,6 +1349,8 @@ try
                     suggestions = validation.Suggestions,
                 });
             var warnings = new List<string>(validation.Warnings);
+            if (trainingDataWarning is not null)
+                warnings.Insert(0, trainingDataWarning);
 
             var labelColumn = experiment.Config.LabelColumn;
             var taskType = experiment.Task;

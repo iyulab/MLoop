@@ -101,7 +101,8 @@ public static class EvaluateCommand
         IReadOnlyList<EvaluationSlices.Slice>? slices = null,
         string? weightColumn = null,
         Comparison? comparison = null,
-        ConfusionCounts? confusion = null)
+        ConfusionCounts? confusion = null,
+        IReadOnlyList<string>? warnings = null)
     {
         var payload = new
         {
@@ -117,6 +118,7 @@ public static class EvaluateCommand
             PossibleOverfitting = possibleOverfitting,
             SliceBy = sliceBy,
             Slices = slices,
+            Warnings = warnings is { Count: > 0 } ? warnings : null,
         };
 
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload,
@@ -141,6 +143,16 @@ public static class EvaluateCommand
         // duration — and the scope guarantees stdout still carries a document on an exit
         // that skips this command's own emitter.
         using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
+
+        // A warning reaches both audiences: the line a person reads, and the document's `warnings` —
+        // in --json mode the line goes to stderr with the rest of the narration, which a consumer of
+        // the document does not read (`POST /evaluate` answers the same list).
+        var warnings = new List<string>();
+        void Warn(string text)
+        {
+            WarningConsole.Warn(Markup.Escape(text));
+            warnings.Add(text);
+        }
 
         try
         {
@@ -297,6 +309,10 @@ public static class EvaluateCommand
             // Validate schema before evaluation (CSV-column validation; not applicable to image directories)
             if (!isDirectoryBased)
             {
+                // Before the file becomes a CSV copy: the experiment fingerprinted the file the user gave.
+                if (await ModelComparison.TrainingDataWarningAsync(experimentData!, resolvedTestDataFile) is { } leak)
+                    Warn(leak);
+
                 // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
                 resolvedTestDataFile = await TabularDataFile.AsCsvAsync(resolvedTestDataFile, records);
 
@@ -347,7 +363,7 @@ public static class EvaluateCommand
                 // Same reason as predict: a column that changed type passes validation, and the
                 // measurement it produces is computed on values the loader turned into missing.
                 foreach (var warning in validationResult.Warnings)
-                    WarningConsole.Warn(Markup.Escape(warning));
+                    Warn(warning);
 
                 AnsiConsole.MarkupLine("[green]>[/] Schema validation passed");
                 AnsiConsole.WriteLine();
@@ -358,7 +374,7 @@ public static class EvaluateCommand
             // metrics without one describe different distributions; saying so is the least owed.
             var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(weight, experimentData!, resolvedTestDataFile);
             if (weightWarning is not null)
-                WarningConsole.Warn(Markup.Escape(weightWarning));
+                Warn(weightWarning);
 
             // Perform evaluation with progress indicator
             Dictionary<string, double>? testMetrics = null;
@@ -467,7 +483,7 @@ public static class EvaluateCommand
             if (jsonOutput)
                 EmitJson(resolvedModelName, resolvedExperimentId, resolvedTestDataFile,
                     trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices, weightColumn: weightColumn,
-                    comparison: comparison, confusion: confusion);
+                    comparison: comparison, confusion: confusion, warnings: warnings);
 
             return 0;
         }

@@ -120,6 +120,7 @@ public class EvaluateCommandJsonTests : IDisposable
             Config = new ExperimentConfig
             {
                 DataFile = trainCsvPath,
+                DataFileHash = await DataFingerprint.ComputeAsync(trainCsvPath),
                 LabelColumn = LabelColumn,
                 TimeLimitSeconds = 10,
                 Metric = "r_squared",
@@ -165,6 +166,33 @@ public class EvaluateCommandJsonTests : IDisposable
         Assert.True(testMetrics.GetProperty("r_squared").GetDouble() > 0.9); // near-perfect linear fit
         Assert.True(doc.RootElement.GetProperty("trainingMetrics").GetProperty("r_squared").GetDouble() > 0);
         Assert.Equal(System.Text.Json.JsonValueKind.Null, doc.RootElement.GetProperty("confusion").ValueKind); // a regressor has none
+    }
+
+    /// <summary>
+    /// Evaluating on the training file — recognised by content, not name — is warned about in the
+    /// document as well as on the console; a held-out file carries no warnings.
+    /// </summary>
+    [Fact]
+    public async Task Evaluate_Json_OnTheFileTheModelWasTrainedOn_WarnsInTheDocument()
+    {
+        var testCsvPath = await CreateRegressionFixtureAsync("default", "exp-001");
+        var renamed = Path.Combine(_testProjectRoot, "renamed.csv");
+        File.Copy(Path.Combine(_testProjectRoot, "train.csv"), renamed);
+
+        foreach (var path in new[] { "train.csv", renamed })
+        {
+            var (exitCode, stdout, stderr) = await CliRunner.RunAsync("evaluate", "exp-001", path, "--json");
+
+            Assert.True(exitCode == 0, stdout + stderr);
+            using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+            var warning = Assert.Single(doc.RootElement.GetProperty("warnings").EnumerateArray());
+            Assert.Contains("the file the model was trained on", warning.GetString());
+        }
+
+        var (heldOutExit, heldOut, _) = await CliRunner.RunAsync("evaluate", "exp-001", testCsvPath, "--json");
+        Assert.Equal(0, heldOutExit);
+        using var heldOutDoc = System.Text.Json.JsonDocument.Parse(heldOut);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, heldOutDoc.RootElement.GetProperty("warnings").ValueKind);
     }
 
     [Fact]

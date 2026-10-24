@@ -983,6 +983,12 @@ mloop evaluate exp-003 datasets/rechecked.csv --weight inv_pi
 mloop evaluate exp-004 datasets/rechecked.csv --weight inv_pi --against production
 ```
 
+**The file the model was trained on is warned about.** Training records its data file's fingerprint
+(`dataFileHash`, the SHA-256 of its content); evaluating a file with the same content — under any name —
+says that most of its rows were in the training partition, so the test metrics overstate how the model
+does on rows it has not seen. Only the same bytes are recognised: a reordered or re-saved copy is not.
+Warnings are in `--json`'s `warnings` too (`POST /evaluate` answers the same list).
+
 A classifier's evaluation also shows its **confusion matrix** — rows are the actual classes, columns
 the predicted ones, in the label's own words (the binary class names the model was trained on, the
 multiclass label's values). Each cell is a weighted sum under `--weight`. Above 10 classes it stays in
