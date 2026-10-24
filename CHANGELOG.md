@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- `POST /train` and `POST /evaluate` kept their data files inside the project by comparing the path with the
+  project root as a string prefix, so a directory beside the project whose name begins with the root's
+  (`/srv/proj-other` beside `/srv/proj`, reached as `../proj-other/train.csv`) passed, and the server trained
+  on or evaluated a file outside the project. The check now compares path segments, with the file system's own
+  case rule. Both endpoints require the `admin` role.
+
 ## [0.45.0] - 2026-10-23
 
 ### Added

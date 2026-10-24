@@ -560,6 +560,33 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task TrainEndpoint_ADataFileInASiblingNamedLikeTheProject_IsRefused()
+    {
+        // `<root>-other` begins with the root's name: a prefix comparison took it for the project.
+        var root = _factory.TestProjectRoot.TrimEnd(Path.DirectorySeparatorChar);
+        var sibling = root + "-other";
+        Directory.CreateDirectory(sibling);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(sibling, "train.csv"), "x,target\n1,2\n");
+
+            var response = await _client.PostAsJsonAsync("/train", new
+            {
+                dataFile = $"../{Path.GetFileName(sibling)}/train.csv",
+                labelColumn = "target",
+                task = "regression",
+            });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("must be within the project directory");
+        }
+        finally
+        {
+            Directory.Delete(sibling, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task TrainEndpoint_WithUnknownMetric_ReturnsBadRequestNamingIt()
     {
         var request = new

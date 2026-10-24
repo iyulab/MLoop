@@ -1312,9 +1312,8 @@ try
                 return Results.BadRequest(new { error = "testDataPath is required." });
 
             // A relative path is the project's, as for POST /train.
-            var evalProjectRoot = Path.GetFullPath(projectRootPath.Value);
-            var resolvedTestPath = Path.GetFullPath(Path.IsPathRooted(testDataPath) ? testDataPath : Path.Combine(evalProjectRoot, testDataPath));
-            if (!resolvedTestPath.StartsWith(evalProjectRoot, StringComparison.OrdinalIgnoreCase))
+            var resolvedTestPath = ProjectPaths.Resolve(testDataPath, projectRootPath.Value);
+            if (!ProjectPaths.IsWithin(resolvedTestPath, projectRootPath.Value))
                 return Results.BadRequest(new { error = "Test data file must be within the project directory." });
 
             if (!TabularDataFile.Exists(resolvedTestPath))
@@ -1731,12 +1730,11 @@ try
 
         // Validate every data file exists and is within project root. A relative path is the project's — the
         // form POST /samples answers with — not the server process's working directory.
-        var trainProjectRoot = Path.GetFullPath(projectRootPath.Value);
-        string InProject(string file) => Path.GetFullPath(Path.IsPathRooted(file) ? file : Path.Combine(trainProjectRoot, file));
+        string InProject(string file) => ProjectPaths.Resolve(file, projectRootPath.Value);
         foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
         {
             var resolvedDataFile = InProject(file);
-            if (!resolvedDataFile.StartsWith(trainProjectRoot, StringComparison.OrdinalIgnoreCase))
+            if (!ProjectPaths.IsWithin(resolvedDataFile, projectRootPath.Value))
                 return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
             if (!File.Exists(resolvedDataFile))
                 return Results.BadRequest(new { error = $"Data file not found: {file}" });
