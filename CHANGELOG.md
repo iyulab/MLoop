@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Each trial's record (`trials.ndjson`, `leaderboard.json`) carries `validation.standardError`: how far each metric's
+  mean could move on other rows — the margin within which the search keeps a smaller model. A holdout's (one fold, no
+  spread) comes from its slices.
+
 ### Changed
 
 - A binary model's probabilities are calibrated when it is trained. The search keeps the chosen trial's answers on the
@@ -23,6 +29,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   row's answer and order of classes: accuracy does not move, the log loss and the ECE do.
 
 ### Fixed
+
+- On a training partition of 15,000 rows or more the search validates on one holdout and measures its standard error
+  on five slices of it. The slices were cut in the file's order, so a file sorted by its label gave slices of one
+  class: the AUC's standard error was missing and the others measured the sort (accuracy's 0.02 on 17,000 rows
+  instead of about 0.002), widening the margin within which a smaller model was kept. The slices are now stratified
+  random shares of the holdout, dealt with it.
 
 - A binary trainer that gives no probability (FastForest) had its Platt calibrator fitted on the test rows, so the
   probability metrics reported for it were measured on rows the calibrator had seen. It is now fitted on the search's

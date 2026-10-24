@@ -20,12 +20,20 @@ public sealed class FoldPlan
     /// <summary>The holdout's share at and above the threshold: one in ten rows.</summary>
     public const int HoldoutParts = 10;
 
-    private FoldPlan(int[] foldOf, int parts, IReadOnlyList<int> validated)
+    private FoldPlan(int[] foldOf, int parts, IReadOnlyList<int> validated, int[]? holdoutSliceOf)
     {
         FoldOf = foldOf;
         Parts = parts;
         Validated = validated;
+        HoldoutSliceOf = holdoutSliceOf;
     }
+
+    /// <summary>
+    /// For a holdout, the slice (0 to <see cref="Validator.HoldoutSlices"/> − 1) of each holdout row, the rows taken
+    /// in their order in the partition — what the holdout's standard error is measured over. Dealt with the holdout
+    /// itself, so a slice is a stratified random share of it whatever order the file is in. Null for k-fold.
+    /// </summary>
+    public IReadOnlyList<int>? HoldoutSliceOf { get; }
 
     /// <summary>The part each row (by position) belongs to.</summary>
     public IReadOnlyList<int> FoldOf { get; }
@@ -54,8 +62,23 @@ public sealed class FoldPlan
         var keys = LabelKeys(data, labelColumn);
         var holdout = keys.Length >= HoldoutThreshold;
         var parts = holdout ? HoldoutParts : folds;
-        var foldOf = Assign(keys, stratify, parts, seed);
-        return new FoldPlan(foldOf, parts, holdout ? [0] : [.. Enumerable.Range(0, parts)]);
+        var (foldOf, dealt) = Deal(keys, stratify, parts, seed);
+        return new FoldPlan(foldOf, parts, holdout ? [0] : [.. Enumerable.Range(0, parts)], holdout ? Slices(foldOf, dealt) : null);
+    }
+
+    // The holdout's rows in the order they were dealt — shuffled within each class, the classes one after another —
+    // dealt round the slices as the rows were dealt round the parts, then read back in the partition's order. Cut
+    // in the partition's order instead, a file sorted by its label gave slices of one class: the AUC of a slice was
+    // undefined and the others' spread measured the sort (accuracy's standard error 0.02 on 17,000 rows, where the
+    // binomial one is 0.0005).
+    private static int[] Slices(int[] foldOf, int[] dealt)
+    {
+        var sliceOfRow = new Dictionary<int, int>();
+        var next = 0;
+        foreach (var row in dealt)
+            if (foldOf[row] == 0)
+                sliceOfRow[row] = next++ % Validator.HoldoutSlices;
+        return [.. Enumerable.Range(0, foldOf.Length).Where(row => foldOf[row] == 0).Select(row => sliceOfRow[row])];
     }
 
     /// <summary>
@@ -63,9 +86,14 @@ public sealed class FoldPlan
     /// the parts, the deal carried on from one class to the next so the parts stay even.
     /// </summary>
     internal static int[] Assign(IReadOnlyList<string> keys, bool stratify, int parts, int seed)
+        => Deal(keys, stratify, parts, seed).FoldOf;
+
+    // The assignment and the order the rows were dealt in.
+    private static (int[] FoldOf, int[] Dealt) Deal(IReadOnlyList<string> keys, bool stratify, int parts, int seed)
     {
         var random = new Random(seed);
         var foldOf = new int[keys.Count];
+        var order = new List<int>(keys.Count);
         var groups = stratify
             ? keys.Select((k, i) => (k, i)).GroupBy(x => x.k, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
                 .Select(g => g.Select(x => x.i).ToArray())
@@ -79,9 +107,12 @@ public sealed class FoldPlan
                 (rows[i], rows[j]) = (rows[j], rows[i]);
             }
             foreach (var row in rows)
+            {
                 foldOf[row] = dealt++ % parts;
+                order.Add(row);
+            }
         }
-        return foldOf;
+        return (foldOf, [.. order]);
     }
 
     private static string[] LabelKeys(IDataView data, string labelColumn)

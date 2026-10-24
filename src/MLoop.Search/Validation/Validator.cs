@@ -74,7 +74,7 @@ public static class Validator
             folds.Add(score(scored));
             scoredPart?.Invoke(scored);
             if (plan.IsHoldout)
-                slices = Slices(mlContext, scored, plan.FoldOf.Count(f => f == part), score);
+                slices = Slices(mlContext, scored, plan.HoldoutSliceOf!, score);
         }
 
         var (mean, std) = Summarize(folds);
@@ -87,18 +87,17 @@ public static class Validator
         return new ValidationScore(folds, mean, std, plan.IsHoldout, standardError);
     }
 
-    // The holdout's metrics on each of HoldoutSlices runs of its rows. Fold assignment is random, so a run of the
-    // holdout's rows in order is a random slice of it. A slice its metric cannot be computed on (one class) is left out.
+    // The holdout's metrics on each of its HoldoutSlices slices (FoldPlan.HoldoutSliceOf — stratified random shares of
+    // it, by the row's position among the holdout's). A slice its metric cannot be computed on (one class) is left out.
     private static List<IReadOnlyDictionary<string, double>> Slices(
-        MLContext mlContext, IDataView scored, int rows, Func<IDataView, IReadOnlyDictionary<string, double>> score)
+        MLContext mlContext, IDataView scored, IReadOnlyList<int> sliceOf, Func<IDataView, IReadOnlyDictionary<string, double>> score)
     {
         var slices = new List<IReadOnlyDictionary<string, double>>();
-        var size = rows / HoldoutSlices;
-        if (size == 0)
+        if (sliceOf.Count < HoldoutSlices)
             return slices;
         for (var i = 0; i < HoldoutSlices; i++)
         {
-            var slice = mlContext.Data.TakeRows(i == 0 ? scored : mlContext.Data.SkipRows(scored, i * size), size);
+            var slice = mlContext.Data.FilterRowsByColumn(new HoldoutView(scored, sliceOf, i), HoldoutView.ColumnName, lowerBound: 0.5, upperBound: 1.5);
             try { slices.Add(score(slice)); }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { }
         }

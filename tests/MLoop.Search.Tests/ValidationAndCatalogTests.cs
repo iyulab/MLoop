@@ -49,6 +49,25 @@ public sealed class ValidationAndCatalogTests
     }
 
     [Fact]
+    public void AHoldoutsSlices_AreStratifiedRandomShares_WhateverOrderTheFileIsIn()
+    {
+        // A file sorted by its label: every negative, then every positive.
+        var ml = new MLContext(seed: 1);
+        var rows = Enumerable.Range(0, FoldPlan.HoldoutThreshold).Select(i => new Row { Label = i >= 12_000, Features = [i, 0] }).ToList();
+        var plan = FoldPlan.For(ml.Data.LoadFromEnumerable(rows), "Label", stratify: true, seed: 4);
+
+        Assert.True(plan.IsHoldout);
+        var holdout = Enumerable.Range(0, rows.Count).Where(i => plan.FoldOf[i] == 0).ToList();
+        Assert.Equal(holdout.Count, plan.HoldoutSliceOf!.Count);
+        for (var slice = 0; slice < Validator.HoldoutSlices; slice++)
+        {
+            var members = holdout.Where((_, k) => plan.HoldoutSliceOf[k] == slice).ToList();
+            Assert.InRange(members.Count, 299, 301);                                 // 1,500 holdout rows over 5
+            Assert.InRange(members.Count(i => rows[i].Label), 59, 61);               // a fifth of 300 positives in each
+        }
+    }
+
+    [Fact]
     public void Validate_AveragesEveryFold_AndEachFoldScoresOnlyItsOwnRows()
     {
         var ml = new MLContext(seed: 1);

@@ -209,6 +209,7 @@ public sealed class TrialRunner
                     Metrics = score.Mean,
                     Folds = score.Folds,
                     StandardDeviation = score.StandardDeviation,
+                    StandardError = score.StandardError,
                     RuntimeSeconds = seconds,
                 };
                 trials.Add(trial);

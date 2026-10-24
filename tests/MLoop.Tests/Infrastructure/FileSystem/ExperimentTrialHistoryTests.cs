@@ -214,7 +214,7 @@ public class ExperimentTrialHistoryTests : IDisposable
             Trainer = TrainerDescriptor.Of("FastTree"),
             Metrics = new Dictionary<string, double> { ["auc"] = 0.9 },
             RuntimeSeconds = 1.2,
-            Validation = new TrialValidation(5, new Dictionary<string, double> { ["auc"] = 0.02 })
+            Validation = new TrialValidation(5, new Dictionary<string, double> { ["auc"] = 0.02 }, new Dictionary<string, double> { ["auc"] = 0.009 })
         };
 
         var path = await SaveAsync([failed, scored, Trial(3, "Lbfgs", "auc", 0.8)], rankingMetric: "auc", task: "binary-classification");
@@ -225,6 +225,7 @@ public class ExperimentTrialHistoryTests : IDisposable
         Assert.False(rows[0].TryGetProperty("validation", out _));
         Assert.Equal(5, rows[1].GetProperty("validation").GetProperty("folds").GetInt32());
         Assert.Equal(0.02, rows[1].GetProperty("validation").GetProperty("standardDeviation").GetProperty("auc").GetDouble());
+        Assert.Equal(0.009, rows[1].GetProperty("validation").GetProperty("standardError").GetProperty("auc").GetDouble());
         Assert.False(rows[1].TryGetProperty("error", out _));
         Assert.False(rows[2].TryGetProperty("validation", out _));
 

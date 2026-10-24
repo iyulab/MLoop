@@ -20,6 +20,13 @@ public sealed record TrialResult
     /// <summary>Each metric's standard deviation over the <see cref="Folds"/>; null with them.</summary>
     public IReadOnlyDictionary<string, double>? StandardDeviation { get; init; }
 
+    /// <summary>
+    /// How far each metric's mean could move on other rows (<see cref="Validation.ValidationScore.StandardError"/>):
+    /// the folds' spread over √folds, or a holdout's from its slices — the margin the search's one-standard-error rule
+    /// reads. Null with the folds, and for a metric no two folds or slices defined.
+    /// </summary>
+    public IReadOnlyDictionary<string, double>? StandardError { get; init; }
+
     /// <summary>How long the trial ran, when that is known.</summary>
     public double? RuntimeSeconds { get; init; }
 

@@ -79,5 +79,12 @@ public sealed class TrialRecord
     };
 }
 
-/// <summary>A trial's validation over folds: how many, and each metric's standard deviation across them.</summary>
-public sealed record TrialValidation(int Folds, IReadOnlyDictionary<string, double> StandardDeviation);
+/// <summary>
+/// A trial's validation: how many folds, each metric's standard deviation across them, and each metric's standard
+/// error — the folds' spread over √folds, or for a holdout (one fold, no spread) the spread of its slices. The
+/// standard error is what tells two trials' scores apart: the search keeps a smaller model within one of it.
+/// </summary>
+public sealed record TrialValidation(
+    int Folds,
+    IReadOnlyDictionary<string, double> StandardDeviation,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, double>? StandardError = null);
