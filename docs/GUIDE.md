@@ -1430,10 +1430,15 @@ mloop trigger check --json                  # shouldRetrain, recommendedAction, 
 
 | Condition | Met when | Measured from |
 |-----------|----------|---------------|
-| `accuracy_threshold` (`AccuracyDrop`) | accuracy on feedback < 70% (`--accuracy`) | `mloop feedback add` / `POST /feedback` |
+| `accuracy_threshold` (`AccuracyDrop`) | accuracy on feedback is established below 70% (`--accuracy`): at least 30 rows of feedback, and the 95% interval's upper end below the threshold | `mloop feedback add` / `POST /feedback` |
 | `feedback_count` (`FeedbackVolume`) | ≥ 100 feedback entries (`--feedback`) | the same feedback |
 | `Scheduled Retraining` (`TimeBased`) | the model is older than 30 days | the production model's training time |
 | `input_drift` (`DataDrift`) | PSI ≥ 0.25 on any column, or on the model's answers | logged predictions against the training profile (`mloop drift`) |
+
+An accuracy drop is judged on evidence, not on the point estimate: with weighted feedback the count is the
+effective number of rows (`effectiveSampleSize` in `mloop feedback metrics --json`), and the details say which
+case holds — too few to judge, below on its face but not established, or below. Feedback is often reported
+mostly for wrong answers; the minimum keeps a handful of them from reading as a collapse.
 
 Any condition met recommends retraining. A condition that could not be measured — no feedback yet, fewer
 than 100 logged predictions — is not met and shows `-` (`currentValue: null` in `--json`): an accuracy
