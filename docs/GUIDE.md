@@ -1114,6 +1114,12 @@ curl -X POST http://localhost:5000/predict \
 - The completed job's `warnings` are the performance diagnostics `mloop train` prints and reports as `--json`
   warning events — a held-out score near-perfect on 500 rows or more (check for a leaked column), an accuracy that
   hides one class; an empty list when there are none
+- **Request limit per caller**: each caller — the subject of its token (`mloop token --subject <name>`) — may make
+  600 requests a minute; past that it gets `429` with `Retry-After` until the minute turns, while other callers go
+  on. Services behind one address keep their own allowance; `/health` probes are not counted. Set it with
+  `Serve:RateLimit:PermitsPerMinute` in `appsettings.json` or the environment (`Serve__RateLimit__PermitsPerMinute=3000`),
+  `0` for no limit. (Before 0.46 the limit was per address — `IpRateLimiting`, 60 predictions a minute; that
+  setting is no longer read and the server says so at startup.)
 - Swagger/OpenAPI documentation at `/swagger`
 - Single and batch predictions
 - JSON request/response format

@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
-using AspNetCoreRateLimit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
@@ -178,30 +177,8 @@ try
             policy.RequireAuthenticatedUser());
     });
 
-    // Add Rate Limiting (configurable via appsettings.json "IpRateLimiting" section)
-    builder.Services.AddMemoryCache();
-    var rateLimitSection = builder.Configuration.GetSection("IpRateLimiting");
-    if (rateLimitSection.Exists())
-    {
-        builder.Services.Configure<IpRateLimitOptions>(rateLimitSection);
-    }
-    else
-    {
-        builder.Services.Configure<IpRateLimitOptions>(options =>
-        {
-            options.EnableEndpointRateLimiting = true;
-            options.StackBlockedRequests = false;
-            options.HttpStatusCode = 429;
-            options.RealIpHeader = "X-Real-IP";
-            options.GeneralRules =
-            [
-                new() { Endpoint = "POST:/predict", Period = "1m", Limit = 60 },
-            new() { Endpoint = "*", Period = "1m", Limit = 100 }
-            ];
-        });
-    }
-    builder.Services.AddInMemoryRateLimiting();
-    builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+    // Requests per minute per caller (token subject; address when there is no token) — see CallerRateLimit.
+    CallerRateLimit.Add(builder.Services);
 
     // Add CORS (configurable via Cors:Origins in appsettings.json)
     var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>();
@@ -287,6 +264,9 @@ try
     });
 
     var app = builder.Build();
+    if (app.Configuration.GetSection(CallerRateLimit.RetiredSection).Exists())
+        Log.Warning("{Retired} is no longer read: the limit is per caller, {Key} (now {Permits}; 0 = no limit).",
+            CallerRateLimit.RetiredSection, CallerRateLimit.PermitsKey, CallerRateLimit.PermitsPerMinute(app.Configuration));
 
     // Resolve the project once, here, at startup. Eight service registrations and three endpoints used
     // to each resolve it themselves, and each of those carried a `?? Directory.GetCurrentDirectory()`
@@ -322,9 +302,10 @@ try
 
     app.UseCors();
 
-    app.UseIpRateLimiting();
-
+    // After authentication, so the limiter knows the caller; before authorization, so a request without a token
+    // is counted (by address) before it is refused.
     app.UseAuthentication();
+    app.UseRateLimiter();
     app.UseAuthorization();
 
     // Health check endpoint. HEAD is mapped alongside GET because probes send it: wget --spider,

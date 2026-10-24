@@ -39,6 +39,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Breaking** — `mloop serve` limits requests **per caller** (the token's subject), not per address:
+  `Serve:RateLimit:PermitsPerMinute`, default 600, `0` for none; `/health` is not counted; a refusal is `429` with
+  `Retry-After` and an `error` naming the setting. Before, every caller behind one address shared 60 predictions and
+  100 requests a minute, so a backend predicting faster than one image a second lost predictions to `429`; the
+  address also came from a client-supplied `X-Real-IP` header. Migration: the `IpRateLimiting` section is no longer
+  read (the server warns at startup when it is set) — set `Serve:RateLimit:PermitsPerMinute` instead. The
+  `AspNetCoreRateLimit` dependency is gone; the limiter is ASP.NET Core's own.
+
 - Dependencies: Spectre.Console 0.57.2, System.CommandLine 2.0.13, Microsoft.CodeAnalysis.CSharp (scripts) 5.9.0,
   Microsoft.Data.Analysis 0.23.1, Swashbuckle.AspNetCore 10.3.1, System.IdentityModel.Tokens.Jwt 8.23.0, DotNetEnv
   3.2.0, YamlDotNet 18.1.0 (mloop.yaml reads and writes as before), Microsoft.OpenApi 2.13.0 (the 2.x line

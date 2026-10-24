@@ -149,6 +149,9 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
 /// </summary>
 public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
+    /// <summary>The request header whose value becomes the token's <c>sub</c> claim.</summary>
+    public const string SubjectHeader = "X-Test-Subject";
+
     public TestAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
@@ -159,11 +162,14 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.Name, "Test User"),
-            new Claim(ClaimTypes.Role, "admin")  // Grant admin role for testing
+            new(ClaimTypes.Name, "Test User"),
+            new(ClaimTypes.Role, "admin")  // Grant admin role for testing
         };
+        // A test that tells callers apart names the token subject it stands for.
+        if (Request.Headers.TryGetValue(SubjectHeader, out var subject) && !string.IsNullOrEmpty(subject))
+            claims.Add(new Claim("sub", subject.ToString()));
         var identity = new ClaimsIdentity(claims, "Test");
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, "Test");
