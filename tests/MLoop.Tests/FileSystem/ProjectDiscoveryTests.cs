@@ -62,8 +62,7 @@ public class ProjectDiscoveryTests : IDisposable
         {
             Directory.CreateDirectory(isolatedDir);
 
-            if (HasMLoopAncestor(isolatedDir))
-                return; // Cannot test: ancestor has .mloop
+            Assert.SkipWhen(HasMLoopAncestor(isolatedDir), "A directory above the temp directory holds .mloop.");
 
             var discovery = new ProjectDiscovery(_fs);
 

@@ -37,7 +37,7 @@ public class ParallelGlobalStateContractTests
     ];
 
     private static readonly Regex SerializationDeclared = new(
-        @"\[\s*assembly\s*:\s*CollectionBehavior\s*\(\s*DisableTestParallelization\s*=\s*true",
+        @"\[\s*assembly\s*:\s*Parallelization\s*\(\s*Mode\s*=\s*ParallelMode\.None",
         RegexOptions.Compiled);
 
     [Fact]
@@ -65,7 +65,7 @@ public class ParallelGlobalStateContractTests
             offenders.Count == 0,
             "These run in an assembly whose classes execute in parallel, so the static they move "
             + "is moved out from under whatever else is running. Add "
-            + "[assembly: CollectionBehavior(DisableTestParallelization = true)] to that assembly "
+            + "[assembly: Parallelization(Mode = ParallelMode.None)] to that assembly "
             + "— a [Collection] attribute orders only the classes that share it:"
             + Environment.NewLine + string.Join(Environment.NewLine, offenders));
     }

@@ -383,7 +383,7 @@ public class TrainJsonEmitterTests
             .GetMethod(nameof(Phase_names_the_boundary_and_carries_only_the_facts_it_has))!
             .GetCustomAttributes(typeof(InlineDataAttribute), inherit: false)
             .Cast<InlineDataAttribute>()
-            .Select(a => (TrainingPhase)a.GetData(null!).Single()[0]!)
+            .Select(a => (TrainingPhase)a.Data[0]!)
             .ToHashSet();
 
         var missing = Enum.GetValues<TrainingPhase>().Where(p => !pinned.Contains(p)).ToArray();

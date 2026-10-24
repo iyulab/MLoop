@@ -13,7 +13,7 @@
     <!-- Tests only: ONNX Runtime with its native library, so graph tests (export verification, image encoders)
          run without the on-demand runtime. The product ships only the managed half. -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" />
-    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.v3.mtp-off" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 

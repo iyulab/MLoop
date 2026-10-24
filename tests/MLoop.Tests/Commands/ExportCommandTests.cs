@@ -114,7 +114,7 @@ public sealed class ExportCommandTests : IDisposable
         if (exit != 0)
         {
             Assert.Contains("mloop runtime install onnxruntime", output + error);
-            return;
+            Assert.Skip("onnxruntime is not installed: the refusal names the install, the graph was not run.");
         }
         using var doc = JsonDocument.Parse(output);
         var manifest = OnnxManifest.FromJson(await File.ReadAllTextAsync(doc.RootElement.GetProperty("manifestPath").GetString()!));

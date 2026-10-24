@@ -31,7 +31,7 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
         _client = factory.CreateClient();
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         var datasets = Path.Combine(_factory.TestProjectRoot, "datasets");
         _withWeight = Path.Combine(datasets, "weighted.csv");
@@ -65,7 +65,7 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
             }, progress: null, CancellationToken.None);
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private async Task<(HttpStatusCode Status, JsonElement Body)> EvaluateAsync(object request)
     {

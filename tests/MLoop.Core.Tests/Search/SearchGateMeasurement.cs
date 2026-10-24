@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.ML;
@@ -8,14 +9,16 @@ using MLoop.Core.Models;
 using MLoop.Core.Training;
 using MLoop.Search.Candidates;
 using MLoop.Tests.Common;
-using Xunit.Abstractions;
 
 namespace MLoop.Core.Tests.Search;
 
 /// <summary>Runs only when <c>MLOOP_SEARCH_GATE=1</c>: the measurement takes many minutes and is read, not merely passed.</summary>
 public sealed class SearchGateFactAttribute : FactAttribute
 {
-    public SearchGateFactAttribute()
+    public SearchGateFactAttribute(
+        [CallerFilePath] string? sourceFilePath = null,
+        [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         if (Environment.GetEnvironmentVariable("MLOOP_SEARCH_GATE") != "1")
             Skip = "The search comparison runs on request: set MLOOP_SEARCH_GATE=1.";

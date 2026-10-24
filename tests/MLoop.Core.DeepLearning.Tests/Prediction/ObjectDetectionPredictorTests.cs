@@ -100,8 +100,7 @@ public sealed class ObjectDetectionPredictorTests : IDisposable
     [Fact]
     public void Predict_OnRealScoredModel_ReturnsDetectionsPerImage()
     {
-        if (!TorchRuntimeInstalled())
-            return; // libtorch not installed (CI); integration coverage runs only where the runtime exists.
+        Assert.SkipUnless(TorchRuntimeInstalled(), "libtorch is not installed (mloop runtime install torch).");
 
         var (ml, model, test, _) = TrainTinyDetector();
         var results = ObjectDetectionPredictor.Predict(ml, model.Transform(test));
@@ -118,8 +117,7 @@ public sealed class ObjectDetectionPredictorTests : IDisposable
     [Fact]
     public void Detect_ReadsImagesWithoutAnnotations_InTheOrderGiven()
     {
-        if (!TorchRuntimeInstalled())
-            return; // libtorch not installed (CI); integration coverage runs only where the runtime exists.
+        Assert.SkipUnless(TorchRuntimeInstalled(), "libtorch is not installed (mloop runtime install torch).");
 
         var (ml, model, _, images) = TrainTinyDetector();
         // Pictures only — copied away from the labels/ folder, as a caller predicting new images has them.

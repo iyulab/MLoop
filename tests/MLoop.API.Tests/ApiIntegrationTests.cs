@@ -25,7 +25,12 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task CacheStatsEndpoint_InitiallyEmpty()
     {
-        var response = await _client.GetAsync("/cache/stats");
+        // A server of its own: the class fixture is shared, and the warm-path test below counts hits
+        // on it — "initially" held only while the runner happened to order this test first.
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/cache/stats");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();

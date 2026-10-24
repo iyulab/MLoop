@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using MLoop.Core.Detection;
 using Xunit;
 
@@ -13,7 +14,11 @@ using Xunit;
 /// </remarks>
 public sealed class TimeSeriesNativeFactAttribute : FactAttribute
 {
-    public TimeSeriesNativeFactAttribute()
+    // The caller's file and line reach the base so a skipped or failed test still points at its source.
+    public TimeSeriesNativeFactAttribute(
+        [CallerFilePath] string? sourceFilePath = null,
+        [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         if (!TimeSeriesNativeSupport.IsAvailable)
             Skip = TimeSeriesNativeSupport.UnavailableMessage;

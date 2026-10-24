@@ -360,8 +360,8 @@ public class TrainingEngineTests : IDisposable
     {
         // With the TF runtime installed, training would actually run (slow) — skip then.
         var runtime = RuntimeRegistry.GetRequiredByTask("image-classification");
-        if (runtime != null && new RuntimeManager().IsInstalled(runtime))
-            return;
+        Assert.SkipWhen(runtime != null && new RuntimeManager().IsInstalled(runtime),
+            "The runtime is installed here, so training would run past the gate this test checks.");
 
         var imageDir = Path.Combine(_tempDir, "images");
         CreateImageClass(imageDir, "OK", 4);
@@ -476,8 +476,8 @@ public class TrainingEngineTests : IDisposable
     {
         // With the TorchSharp runtime installed, training would actually run (slow) — skip then.
         var runtime = RuntimeRegistry.GetRequiredByTask("object-detection");
-        if (runtime != null && new RuntimeManager().IsInstalled(runtime))
-            return;
+        Assert.SkipWhen(runtime != null && new RuntimeManager().IsInstalled(runtime),
+            "The runtime is installed here, so training would run past the gate this test checks.");
 
         var cocoDir = Path.Combine(_tempDir, "coco");
         CreateCocoDataset(cocoDir);

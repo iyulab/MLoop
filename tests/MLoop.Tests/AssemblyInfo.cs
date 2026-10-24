@@ -1,4 +1,6 @@
 using Xunit;
+using Xunit.Sdk;
+using Xunit.v3;
 
 // System.Console.Out and Spectre.Console.AnsiConsole.Console are process-wide statics.
 // `[Collection("FileSystem")]`
@@ -9,4 +11,4 @@ using Xunit;
 // parallelization is the only fix that actually closes the race (confirmed: three consecutive
 // full-suite runs each failed a different assertion in a different --json capture test, while
 // the same tests run 100% clean in isolation or together).
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
+[assembly: Parallelization(Mode = ParallelMode.None)]

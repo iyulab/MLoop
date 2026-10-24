@@ -37,8 +37,7 @@ public sealed class ObjectDetectionEvaluatorTests : IDisposable
     [Fact]
     public void Evaluate_OnRealScoredModel_ReturnsMapMetricsInRange()
     {
-        if (!TorchRuntimeInstalled())
-            return; // libtorch not installed (CI); integration coverage runs only where the runtime exists.
+        Assert.SkipUnless(TorchRuntimeInstalled(), "libtorch is not installed (mloop runtime install torch).");
 
         RuntimeManager.EnsureRuntimeForTask("object-detection");
 

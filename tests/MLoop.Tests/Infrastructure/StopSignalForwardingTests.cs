@@ -12,8 +12,8 @@ public class StopSignalForwardingTests
     [Fact]
     public void Stop_ends_the_child_by_signal()
     {
-        if (OperatingSystem.IsWindows())
-            return; // No signal on Windows — the child is ended with its tree; Kill needs no test of ours.
+        // No signal on Windows — the child is ended with its tree; Kill needs no test of ours.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "No stop signal on Windows.");
 
         using var child = Process.Start(new ProcessStartInfo("sleep", "30") { UseShellExecute = false })!;
 

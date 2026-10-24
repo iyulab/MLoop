@@ -12,7 +12,7 @@ namespace MLoop.Tests.Infrastructure;
 /// Without the pin, <c>{share:P1}</c> rendered <c>97.5%</c> on a developer machine and
 /// <c>97.5 %</c> on a CI runner starting in the invariant culture — which is how a release
 /// pipeline failed on an assertion no local run could reproduce. The suite is serialized
-/// (<c>DisableTestParallelization</c>), so the culture these tests move is theirs alone.
+/// (<c>Parallelization(Mode = ParallelMode.None)</c>), so the culture these tests move is theirs alone.
 /// </remarks>
 public class OutputCultureTests
 {

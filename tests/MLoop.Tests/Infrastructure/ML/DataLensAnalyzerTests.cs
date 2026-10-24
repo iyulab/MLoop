@@ -34,8 +34,7 @@ public class DataLensAnalyzerTests : IDisposable
     public async Task ProfileAsync_ReturnsProfileForValidCsv()
     {
         var analyzer = new DataLensAnalyzer();
-        if (!analyzer.IsAvailable)
-            return; // Skip if library unavailable
+        Assert.SkipUnless(analyzer.IsAvailable, "The DataLens analyzer is not available.");
 
         var csvPath = CreateTestCsv("a,b,c\n1,2,3\n4,5,6\n7,8,9\n");
         var result = await analyzer.ProfileAsync(csvPath);
@@ -50,8 +49,7 @@ public class DataLensAnalyzerTests : IDisposable
     public async Task ProfileAsync_ReturnsNullForEmptyInput()
     {
         var analyzer = new DataLensAnalyzer();
-        if (!analyzer.IsAvailable)
-            return;
+        Assert.SkipUnless(analyzer.IsAvailable, "The DataLens analyzer is not available.");
 
         var csvPath = CreateTestCsv("");
         var result = await analyzer.ProfileAsync(csvPath);
@@ -66,8 +64,7 @@ public class DataLensAnalyzerTests : IDisposable
     public async Task AnalyzeAsync_ReturnsAnalysisResult()
     {
         var analyzer = new DataLensAnalyzer();
-        if (!analyzer.IsAvailable)
-            return;
+        Assert.SkipUnless(analyzer.IsAvailable, "The DataLens analyzer is not available.");
 
         var csvPath = CreateTestCsv("a,b,c\n1,2,3\n4,5,6\n7,8,9\n10,11,12\n13,14,15\n");
         var options = new DataLens.AnalysisOptions

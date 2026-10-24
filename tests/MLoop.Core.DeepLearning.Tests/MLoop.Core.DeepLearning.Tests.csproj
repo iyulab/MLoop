@@ -10,7 +10,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.v3.mtp-off" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <!-- Object-detection evaluation integration test drives the AutoFormerV2 trainer directly. -->
     <PackageReference Include="Microsoft.ML.TorchSharp" />

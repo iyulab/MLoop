@@ -1,4 +1,6 @@
 using Xunit;
+using Xunit.Sdk;
+using Xunit.v3;
 
 // This assembly mutates process-wide statics: System.Console.Out (output capture in
 // CsvDataLoaderTests) and MLoop.Core.Training.DeepLearningRegistry (registration in the
@@ -14,4 +16,4 @@ using Xunit;
 // Measured cost of this line: 5m03s -> 7m40s on 1167 tests. The alternative — removing the
 // mutations — means production code no longer writing to Console from a library, which is a
 // change to the product rather than to its tests.
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
+[assembly: Parallelization(Mode = ParallelMode.None)]
