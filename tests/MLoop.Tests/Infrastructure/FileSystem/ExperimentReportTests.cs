@@ -75,6 +75,18 @@ public class ExperimentReportTests
             Result = new ExperimentResult { BestTrainer = "none", TrainingTimeSeconds = 15.2 }
         };
 
+    [Theory]
+    [InlineData("/proj/datasets/train.csv", "datasets/train.csv")]
+    [InlineData("/proj/..data/train.csv", "..data/train.csv")]          // a directory whose name begins with two dots
+    [InlineData("/proj-other/train.csv", "/proj-other/train.csv")]      // beside the project, named like it
+    public void The_data_file_is_named_from_the_project_when_it_is_in_it(string dataFile, string shown)
+    {
+        var report = ExperimentReport.Render(Completed(dataFile: dataFile), [], Root, Version);
+
+        var expected = shown.StartsWith('/') ? dataFile : shown.Replace('/', Path.DirectorySeparatorChar);
+        Assert.Contains($"| Data | {expected} |", report);
+    }
+
     [Fact]
     public void A_fixed_budget_is_reported_as_the_seconds_it_was()
     {

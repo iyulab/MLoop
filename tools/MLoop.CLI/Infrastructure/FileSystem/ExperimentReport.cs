@@ -317,9 +317,6 @@ internal static class ExperimentReport
         if (string.IsNullOrEmpty(dataFile) || !Path.IsPathRooted(dataFile) || string.IsNullOrEmpty(projectRoot))
             return string.IsNullOrEmpty(dataFile) ? NoValue : dataFile;
 
-        var relative = Path.GetRelativePath(projectRoot, dataFile);
-        return relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative)
-            ? dataFile
-            : relative;
+        return ProjectPaths.IsWithin(dataFile, projectRoot) ? Path.GetRelativePath(projectRoot, dataFile) : dataFile;
     }
 }
