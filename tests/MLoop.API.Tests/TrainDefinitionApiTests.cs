@@ -298,13 +298,16 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task AJobWithANearPerfectScore_CarriesTheDiagnosticsWarning()
     {
-        // The label is the feature crossing a line: held out perfectly, on enough rows to mean something.
+        // The label is the feature crossing a line, on enough rows to mean something. The classes sit
+        // apart (no x in [0.4, 0.6)), so every split of the gap holds them out perfectly: the score does
+        // not depend on how many trials the 5-second budget bought. Without the gap a slow runner's
+        // FastTree left a boundary leaf mixed — AUC 0.9989, under the 0.999 line, no warning.
         var path = Path.Combine(_factory.TestProjectRoot, "datasets", "leak.csv");
         var random = new Random(5);
         var lines = new List<string> { "x,noise,y" };
         for (var i = 0; i < 800; i++)
         {
-            var x = random.NextDouble();
+            var x = random.NextDouble() * 0.4 + (random.Next(2) == 1 ? 0.6 : 0.0);
             lines.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{x:F4},{random.NextDouble():F4},{(x > 0.5 ? 1 : 0)}"));
         }
         File.WriteAllLines(path, lines);

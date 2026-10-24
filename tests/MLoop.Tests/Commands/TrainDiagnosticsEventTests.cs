@@ -42,12 +42,13 @@ public class TrainDiagnosticsEventTests : IDisposable
         var (initExit, initOutput, _) = await CliRunner.RunAsync("init", ".", "--task", "binary-classification", "--label", "label");
         Assert.True(initExit == 0, initOutput);
 
-        // The label is the feature crossing a line: a leak in its plainest form, held out perfectly.
+        // The label is the feature crossing a line: a leak in its plainest form. The classes sit apart
+        // (no x in [0.4, 0.6)), so they are held out perfectly however few trials the budget buys.
         var random = new Random(5);
         var csv = new StringBuilder("x,noise,label\n");
         for (var i = 0; i < 800; i++)
         {
-            var x = random.NextDouble();
+            var x = random.NextDouble() * 0.4 + (random.Next(2) == 1 ? 0.6 : 0.0);
             csv.Append(string.Create(CultureInfo.InvariantCulture, $"{x:F4},{random.NextDouble():F4},{(x > 0.5 ? "yes" : "no")}\n"));
         }
         File.WriteAllText(Path.Combine("datasets", "train.csv"), csv.ToString());
