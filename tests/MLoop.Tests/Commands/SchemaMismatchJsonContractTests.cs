@@ -167,7 +167,9 @@ public class SchemaMismatchJsonContractTests : IDisposable
         // Nothing on stdout but the document: the human rendering went to stderr — as an error, never a
         // warning, since the exit that follows is 1.
         Assert.Single(stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries));
-        Assert.Contains("Error: Schema validation failed.", stderr);
+        // Prefix and sentence apart: where stderr is a colour terminal (CI) the prefix carries escape codes.
+        Assert.Contains("Error:", stderr);
+        Assert.Contains("Schema validation failed.", stderr);
         Assert.DoesNotContain("Warning:", stderr);
     }
 
@@ -187,7 +189,9 @@ public class SchemaMismatchJsonContractTests : IDisposable
         Assert.StartsWith("Schema validation failed.", error);
         Assert.Contains("X2", error);
         Assert.Single(stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries));
-        Assert.Contains("Error: Schema validation failed.", stderr);
+        // Prefix and sentence apart: where stderr is a colour terminal (CI) the prefix carries escape codes.
+        Assert.Contains("Error:", stderr);
+        Assert.Contains("Schema validation failed.", stderr);
         Assert.DoesNotContain("Warning:", stderr);
     }
 
