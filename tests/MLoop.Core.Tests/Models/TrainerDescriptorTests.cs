@@ -103,4 +103,26 @@ public class TrainerDescriptorTests
         Assert.DoesNotContain("params", json);
         Assert.DoesNotContain("fallbackReason", json);
     }
+
+    [Fact]
+    public void Two_descriptors_of_one_configuration_are_equal()
+    {
+        var a = TrainerDescriptor.Of("FastTree", ("leaves", 4), ("trees", 10));
+        var b = TrainerDescriptor.Of("FastTree", ("leaves", 4), ("trees", 10));
+
+        Assert.Equal(a, b);
+        Assert.Equal(a.GetHashCode(), b.GetHashCode());
+        Assert.Single(new HashSet<TrainerDescriptor> { a, b });
+    }
+
+    [Fact]
+    public void Descriptors_differ_by_a_parameter_its_order_or_its_absence()
+    {
+        var a = TrainerDescriptor.Of("FastTree", ("leaves", 4), ("trees", 10));
+
+        Assert.NotEqual(a, TrainerDescriptor.Of("FastTree", ("leaves", 4), ("trees", 20)));
+        Assert.NotEqual(a, TrainerDescriptor.Of("FastTree", ("trees", 10), ("leaves", 4)));
+        Assert.NotEqual(a, TrainerDescriptor.Of("FastTree"));
+        Assert.NotEqual(TrainerDescriptor.Of("FastTree"), TrainerDescriptor.Of("FastTree") with { Parameters = [] });
+    }
 }

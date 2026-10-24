@@ -100,6 +100,33 @@ public sealed record TrainerDescriptor
     public TrainerFallbackKind FallbackKind { get; init; }
 
     /// <summary>
+    /// Value equality over every part, <see cref="Parameters"/> by its entries in order — the order
+    /// <see cref="Display"/> renders. A record compares a list property by reference, so two descriptors of the
+    /// same configuration would otherwise be unequal; no caller compares them yet, which is when such a trap is set.
+    /// </summary>
+    public bool Equals(TrainerDescriptor? other) =>
+        other is not null
+        && Name == other.Name
+        && FallbackReason == other.FallbackReason
+        && FallbackKind == other.FallbackKind
+        && (Parameters is null
+            ? other.Parameters is null
+            : other.Parameters is not null && Parameters.SequenceEqual(other.Parameters));
+
+    /// <inheritdoc/>
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(Name);
+        hash.Add(FallbackReason);
+        hash.Add(FallbackKind);
+        hash.Add(Parameters is null);
+        foreach (var parameter in Parameters ?? [])
+            hash.Add(parameter);
+        return hash.ToHashCode();
+    }
+
+    /// <summary>
     /// The human-facing form: <c>Name (k=v, k=v) [reason]</c>, with each part omitted when absent.
     /// The only place these parts are joined.
     /// </summary>
