@@ -421,4 +421,74 @@ models:
     }
 
     #endregion
+
+    #region SaveModelKeyAsync Tests
+
+    private const string Commented = """
+        # MLoop Project Configuration
+        project: p
+
+        # Model definitions
+        models:
+          default:
+            task: binary-classification
+            label: Label   # the column to predict
+            columns:
+              id:
+                type: ignore
+
+        # Default data paths
+        data:
+          train: datasets/train.csv
+        """;
+
+    [Fact]
+    public async Task SaveModelKeyAsync_WritesThePrepList_AndKeepsEveryComment()
+    {
+        _fs.SetTextFile("/project/mloop.yaml", Commented.ReplaceLineEndings("\n"));
+        var config = await _loader.LoadUserConfigAsync();
+        config.Models["default"].Prep = [new() { Type = "fill-missing", Method = "mean", Columns = ["a", "b"] }];
+
+        var inPlace = await _loader.SaveModelKeyAsync(config, "default", "prep", m => m.Prep);
+
+        Assert.True(inPlace);
+        var written = _fs.LastWrittenTextContent!;
+        Assert.Contains("# the column to predict", written);
+        Assert.Contains("# Default data paths", written);
+        var reread = await _loader.LoadUserConfigAsync();
+        var step = Assert.Single(reread.Models["default"].Prep!);
+        Assert.Equal(("fill-missing", "mean"), (step.Type, step.Method));
+        Assert.Equal(["a", "b"], step.Columns);
+        Assert.Equal("ignore", reread.Models["default"].Columns!["id"].Type);
+    }
+
+    [Fact]
+    public async Task SaveModelKeyAsync_ANullValue_RemovesTheKey_AndKeepsEveryComment()
+    {
+        _fs.SetTextFile("/project/mloop.yaml", Commented.ReplaceLineEndings("\n"));
+        var config = await _loader.LoadUserConfigAsync();
+        config.Models["default"].Columns = null;
+
+        Assert.True(await _loader.SaveModelKeyAsync(config, "default", "columns", m => m.Columns));
+
+        var written = _fs.LastWrittenTextContent!;
+        Assert.DoesNotContain("columns:", written);
+        Assert.Contains("# the column to predict", written);
+        Assert.Contains("# Default data paths", written);
+    }
+
+    [Fact]
+    public async Task SaveModelKeyAsync_ALayoutTheEditDoesNotKnow_IsWrittenWhole()
+    {
+        _fs.SetTextFile("/project/mloop.yaml", "project: p\nmodels: {default: {task: regression, label: y}}\n");
+        var config = await _loader.LoadUserConfigAsync();
+        config.Models["default"].Columns = new() { ["id"] = new() { Type = "ignore" } };
+
+        var inPlace = await _loader.SaveModelKeyAsync(config, "default", "columns", m => m.Columns);
+
+        Assert.False(inPlace);
+        Assert.Equal("ignore", (await _loader.LoadUserConfigAsync()).Models["default"].Columns!["id"].Type);
+    }
+
+    #endregion
 }

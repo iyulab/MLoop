@@ -146,11 +146,12 @@ public sealed class FeaturesCommand : Command
 
             // Drop an empty overrides map so OmitNull keeps `columns:` out of mloop.yaml.
             if (model.Columns is { Count: 0 }) model.Columns = null;
-            await ctx.ConfigLoader.SaveUserConfigAsync(config);
+            if (!await ctx.ConfigLoader.SaveModelKeyAsync(config, modelName, "columns", m => m.Columns))
+                WarningConsole.Warn(ConfigLoader.RewrittenWarning);
 
             if (json)
             {
-                var env = new FeaturesSelectEnvelope("features select", modelName, applied, ignored, Warnings: warnings);
+                var env = new FeaturesSelectEnvelope("features select", modelName, applied, ignored, Warnings: [.. warnings, .. JsonOutputScope.Warnings ?? []]);
                 Console.WriteLine(PolicyJson.Serialize(env));
             }
             else

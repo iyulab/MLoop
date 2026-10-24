@@ -12,6 +12,10 @@ public class ConfigLoader
     private const string ConfigJsonFileName = "config.json";
     private const string MLoopYamlFileName = "mloop.yaml";
 
+    /// <summary>What a command says when an in-place edit fell back to writing <c>mloop.yaml</c> whole.</summary>
+    public const string RewrittenWarning =
+        "mloop.yaml was rewritten from its settings, so its comments and key order were not kept — its layout is not one the in-place edit reads.";
+
     private readonly IFileSystemManager _fileSystem;
     private readonly IProjectDiscovery _projectDiscovery;
 
@@ -210,6 +214,39 @@ public class ConfigLoader
         return false;
     }
 
+    /// <summary>
+    /// Writes <paramref name="config"/>'s value of one key of <paramref name="modelName"/> — <c>prep</c> or
+    /// <c>columns</c>, as <paramref name="value"/> reads it — into <c>mloop.yaml</c> on that key's lines
+    /// (<see cref="MLoopYamlEdit.SetModelBlock"/>); a <see langword="null"/> value removes the key. The rest of
+    /// the file, its comments included, stays as written. A file not in that shape, or an edit that does not
+    /// read back as the intended value, is written whole as <see cref="SaveUserConfigAsync"/> does.
+    /// </summary>
+    /// <returns><see langword="true"/> when the file was edited in place; <see langword="false"/> when it was rewritten.</returns>
+    public async Task<bool> SaveModelKeyAsync(
+        MLoopConfig config,
+        string modelName,
+        string key,
+        Func<ModelDefinition, object?> value,
+        CancellationToken cancellationToken = default)
+    {
+        var yamlPath = _fileSystem.CombinePath(_projectDiscovery.FindRoot(), MLoopYamlFileName);
+        var text = _fileSystem.FileExists(yamlPath) ? await _fileSystem.ReadTextAsync(yamlPath, cancellationToken) : null;
+        var intended = value(config.Models[modelName]);
+        if (text is not null)
+        {
+            var block = intended is null ? null : Serializer().Serialize(new Dictionary<string, object> { [key] = intended });
+            var edited = MLoopYamlEdit.SetModelBlock(text, modelName, key, block);
+            if (edited is not null && ReadsAs(edited, modelName, value, intended))
+            {
+                await _fileSystem.WriteTextAsync(yamlPath, edited, cancellationToken);
+                return true;
+            }
+        }
+
+        await SaveUserConfigAsync(config, cancellationToken);
+        return text is null;   // no file, so nothing of the user's to keep
+    }
+
     private static ISerializer Serializer() => new SerializerBuilder()
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
@@ -234,6 +271,22 @@ public class ConfigLoader
             var read = Deserializer().Deserialize<MLoopConfig>(yaml);
             return read?.Models.TryGetValue(modelName, out var model) == true
                    && model.Task == intended.Task && model.Label == intended.Label && model.GroupColumn == intended.GroupColumn;
+        }
+        catch (YamlDotNet.Core.YamlException)
+        {
+            return false;
+        }
+    }
+
+    // The edited text parses, and the key reads as the intended value — compared as YAML, which is how
+    // the value is stored (the list and map types have no value equality of their own).
+    private static bool ReadsAs(string yaml, string modelName, Func<ModelDefinition, object?> value, object? intended)
+    {
+        try
+        {
+            var read = Deserializer().Deserialize<MLoopConfig>(yaml);
+            return read?.Models.TryGetValue(modelName, out var model) == true
+                   && Serializer().Serialize(value(model) ?? "") == Serializer().Serialize(intended ?? "");
         }
         catch (YamlDotNet.Core.YamlException)
         {

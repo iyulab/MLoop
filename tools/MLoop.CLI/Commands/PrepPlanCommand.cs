@@ -43,6 +43,12 @@ public static class PrepPlanCommand
         return cmd;
     }
 
+    private static async Task SavePrepAsync(CommandContext ctx, MLoopConfig config, string modelName)
+    {
+        if (!await ctx.ConfigLoader.SaveModelKeyAsync(config, modelName, "prep", m => m.Prep))
+            WarningConsole.Warn(ConfigLoader.RewrittenWarning);
+    }
+
     private static async Task<int> ExecuteAsync(string? set, string? remove, string? columnsCsv, bool list, string modelName, bool json)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
@@ -74,7 +80,7 @@ public static class PrepPlanCommand
                 var step = new PrepStep { Type = type, Method = method, Columns = columns };
                 PrepPlanEditor.SetStep(model.Prep, step);
                 if (model.Prep.Count == 0) model.Prep = null;
-                await ctx.ConfigLoader.SaveUserConfigAsync(config);
+                await SavePrepAsync(ctx, config, modelName);
                 model.Prep ??= new List<PrepStep>();
                 applied = new PrepPlanApplied("set", type, method, columns, RemovedCount: null);
                 appliedStep = step;
@@ -84,7 +90,7 @@ public static class PrepPlanCommand
                 var n = PrepPlanEditor.RemoveStep(model.Prep, remove, columns);
                 var prepForDisplay = model.Prep; // capture before nulling
                 if (model.Prep.Count == 0) model.Prep = null;
-                await ctx.ConfigLoader.SaveUserConfigAsync(config);
+                await SavePrepAsync(ctx, config, modelName);
                 model.Prep = prepForDisplay; // restore for display
                 applied = new PrepPlanApplied("remove", remove, Method: null, columns, RemovedCount: n);
             }
@@ -95,7 +101,7 @@ public static class PrepPlanCommand
             {
                 var views = PolicyJson.BuildStepViews(prep, model.Task);
                 var env = new PrepPlanEnvelope(
-                    "prep plan", modelName, model.Task, applied, views, PolicyJson.CollectWarnings(views));
+                    "prep plan", modelName, model.Task, applied, views, [.. PolicyJson.CollectWarnings(views), .. JsonOutputScope.Warnings ?? []]);
                 Console.WriteLine(PolicyJson.Serialize(env));
                 return 0;
             }

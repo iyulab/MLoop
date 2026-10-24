@@ -1217,7 +1217,7 @@ public static class TrainCommand
         try
         {
             if (!await configLoader.SaveModelAsync(userConfig, modelName, changes))
-                WarningConsole.Warn("mloop.yaml was rewritten from its settings, so its comments and key order were not kept — its layout is not one the in-place edit reads.");
+                WarningConsole.Warn(ConfigLoader.RewrittenWarning);
             var group = string.IsNullOrEmpty(effectiveDefinition.GroupColumn) ? "" : $", group_column={effectiveDefinition.GroupColumn}";
             var text = $"Updated mloop.yaml: model '{modelName}' → label={effectiveDefinition.Label}, task={effectiveDefinition.Task}{group}";
             AnsiConsole.MarkupLine($"[grey]{Markup.Escape(text)}[/]");

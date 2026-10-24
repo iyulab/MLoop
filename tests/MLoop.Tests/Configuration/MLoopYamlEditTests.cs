@@ -85,6 +85,46 @@ public class MLoopYamlEditTests
     }
 
     [Fact]
+    public void AMissingBlock_IsAddedAtTheEndOfTheModel_AndEveryCommentIsKept()
+    {
+        var edited = MLoopYamlEdit.SetModelBlock(Init, "default", "prep", "prep:\n- type: fill-missing\n  method: mean\n")!;
+
+        Assert.Contains("      test_split: 0.2\n    prep:\n    - type: fill-missing\n      method: mean\n\n# Add more models as needed:", edited);
+        Assert.Equal(Init.Split('#').Length, edited.Split('#').Length);
+    }
+
+    [Fact]
+    public void ABlockWrittenAsASequenceAtTheKeysIndentation_IsReplacedWhole()
+    {
+        var withPrep = MLoopYamlEdit.SetModelBlock(Init, "default", "prep", "prep:\n- type: fill-missing\n  method: mean\n- type: scale\n")!;
+
+        var edited = MLoopYamlEdit.SetModelBlock(withPrep, "default", "prep", "prep:\n- type: scale\n")!;
+
+        Assert.Contains("    prep:\n    - type: scale\n\n# Add more models", edited);
+        Assert.DoesNotContain("fill-missing", edited);
+    }
+
+    [Fact]
+    public void ANullBlock_RemovesTheKey_AndLeavesTheRest()
+    {
+        var withColumns = MLoopYamlEdit.SetModelBlock(Init, "default", "columns", "columns:\n  id:\n    type: ignore\n")!;
+
+        var edited = MLoopYamlEdit.SetModelBlock(withColumns, "default", "columns", null)!;
+
+        Assert.Equal(Init, edited);
+    }
+
+    [Fact]
+    public void ABlockInTheMiddleOfTheModel_KeepsTheKeysAfterIt()
+    {
+        var yaml = "models:\n  default:\n    columns:\n      id:\n        type: ignore\n    # the label\n    label: y\n";
+
+        var edited = MLoopYamlEdit.SetModelBlock(yaml, "default", "columns", "columns:\n  ts:\n    type: ignore\n")!;
+
+        Assert.Equal("models:\n  default:\n    columns:\n      ts:\n        type: ignore\n    # the label\n    label: y\n", edited);
+    }
+
+    [Fact]
     public void MixedLineEndings_AreReadAsLines_AndWrittenWithTheFilesOwnEnding()
     {
         // A CRLF file with a line appended by a tool that writes LF.

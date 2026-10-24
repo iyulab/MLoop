@@ -64,6 +64,58 @@ public static partial class MLoopYamlEdit
         return string.Join(newline, lines);
     }
 
+    /// <summary>
+    /// <paramref name="yaml"/> with <c>models.&lt;model&gt;.&lt;key&gt;</c> replaced by <paramref name="block"/> —
+    /// that key and its value as YAML, unindented, its first line <c>&lt;key&gt;:</c> — or removed when
+    /// <paramref name="block"/> is <see langword="null"/>. A key the model does not have is added at the end
+    /// of its block. Only the key's own lines change: comments elsewhere, and the ones after its value, stay.
+    /// </summary>
+    public static string? SetModelBlock(string yaml, string model, string key, string? block)
+    {
+        var (lines, newline) = Split(yaml);
+        if (FindModel(lines, model) is not { } found)
+            return null;
+
+        var at = -1;
+        for (var i = found.Start + 1; i < found.End; i++)
+        {
+            if (Indent(lines[i]) == found.ChildIndent && KeyOf(lines[i]) == key)
+            {
+                at = i;
+                break;
+            }
+        }
+
+        var end = at < 0 ? found.End : ValueEnd(lines, at, found.ChildIndent);
+        if (at < 0)
+            at = found.End;
+        else
+            lines.RemoveRange(at, end - at);
+
+        if (block is not null)
+        {
+            var indent = new string(' ', found.ChildIndent);
+            lines.InsertRange(at, Split(block.TrimEnd()).Lines.Select(l => l.Length == 0 ? l : indent + l));
+        }
+        return string.Join(newline, lines);
+    }
+
+    // The line after the value of the key on `lines[at]`: lines indented deeper, and the `- ` items of a
+    // sequence at the key's own indentation (the form YamlDotNet writes); comment lines after it are not its.
+    private static int ValueEnd(List<string> lines, int at, int indent)
+    {
+        var end = at + 1;
+        for (var i = at + 1; i < lines.Count; i++)
+        {
+            if (IsBlankOrComment(lines[i]))
+                continue;
+            if (Indent(lines[i]) < indent || (Indent(lines[i]) == indent && !lines[i].TrimStart().StartsWith('-')))
+                break;
+            end = i + 1;
+        }
+        return end;
+    }
+
     private sealed record Block(int Start, int End, int ChildIndent);
 
     // The `models:` mapping: its line, the line after its last child, the children's indentation.

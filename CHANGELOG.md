@@ -69,10 +69,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - `mloop train`'s update of `mloop.yaml` (a label, task or ranking group given on the command line, or a
-  model the file did not define) rewrote the whole file from its settings, dropping every comment — the
-  ones `mloop init` writes, the guide to `time_limit_seconds` among them — and the user's key order. It now
-  changes those lines in place and appends a new model to `models:`; a layout it cannot edit safely is
-  rewritten as before, with a warning that its comments were not kept.
+  model the file did not define), `mloop prep plan --set/--remove` and `mloop features select` rewrote the
+  whole file from its settings, dropping every comment — the ones `mloop init` writes, the guide to
+  `time_limit_seconds` among them — and the user's key order. They now change only their own lines (the
+  label or task line, the model's `prep:` or `columns:` block) and append a new model to `models:`; a
+  layout they cannot edit safely is rewritten as before, with a warning that its comments were not kept.
+  A file with both CRLF and LF line endings is read as lines and written with CRLF.
 
 - `--json` documents left out the warnings their commands raised — a column that no longer reads as its
   trained type, a weight the file lacks, a calibration worse than the model's own probabilities — writing
