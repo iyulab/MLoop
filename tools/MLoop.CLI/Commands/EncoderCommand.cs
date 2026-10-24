@@ -59,7 +59,8 @@ public static class EncoderCommand
             {
                 var d = e.Definition;
                 table.AddRow(Markup.Escape(d.Id), Markup.Escape(d.Version), d.Dimension.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    $"{d.Preprocessing.CropSize}²", Markup.Escape(d.Sha256?[..12] ?? "-"));
+                    d.Preprocessing is { } image ? $"{image.CropSize}²" : $"text, {d.Text?.MaxTokens} tokens",
+                    Markup.Escape(d.Sha256?[..12] ?? "-"));
             }
             AnsiConsole.Write(table);
             return 0;

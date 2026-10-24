@@ -38,7 +38,7 @@ public class ImageEmbedderTests
     [Fact]
     public void ThePreprocessedTensor_IsWhatPillowComputes()
     {
-        var tensor = ImagePreprocessor.ToTensor(Pattern, Tiny.Preprocessing);
+        var tensor = ImagePreprocessor.ToTensor(Pattern, Tiny.Preprocessing!);
 
         Assert.Equal(Reference.Value.Tensor.Length, tensor.Length);
         for (var i = 0; i < tensor.Length; i++)
@@ -56,7 +56,7 @@ public class ImageEmbedderTests
         var expected = JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "translucent.json"))).RootElement
             .GetProperty("tensor").EnumerateArray().Select(e => e.GetSingle()).ToArray();
 
-        var tensor = ImagePreprocessor.ToTensor(File.ReadAllBytes(Path.Combine(Fixtures, "translucent.png")), Tiny.Preprocessing);
+        var tensor = ImagePreprocessor.ToTensor(File.ReadAllBytes(Path.Combine(Fixtures, "translucent.png")), Tiny.Preprocessing!);
 
         Assert.Equal(expected.Length, tensor.Length);
         for (var i = 0; i < tensor.Length; i++)
@@ -206,7 +206,7 @@ public class ImageEmbedderTests
         };
 
         var tensors = new[] { "pattern.png", "translucent.png" }
-            .SelectMany(f => ImagePreprocessor.ToTensor(File.ReadAllBytes(Path.Combine(Fixtures, f)), Tiny.Preprocessing))
+            .SelectMany(f => ImagePreprocessor.ToTensor(File.ReadAllBytes(Path.Combine(Fixtures, f)), Tiny.Preprocessing!))
             .Select(v => Math.Round(v, 3).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture));
         var digest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(string.Join(",", tensors))));
 

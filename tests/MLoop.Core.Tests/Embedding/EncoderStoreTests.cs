@@ -49,7 +49,7 @@ public sealed class EncoderStoreTests : IDisposable
     public void ARequestWithoutAnEncoder_GetsTheOnlyOne_AndIsToldWhenThereAreSeveral()
     {
         var store = new EncoderStore(_root);
-        Assert.Contains("No encoder is installed", store.Resolve(null).Refusal);
+        Assert.Contains("No encoder of images is installed", store.Resolve(null).Refusal);
 
         store.Add(Tiny, Graph);
         Assert.Equal("tiny", store.Resolve(null).Encoder!.Definition.Id);
@@ -157,6 +157,11 @@ public sealed class EncoderStoreTests : IDisposable
             Assert.Null(e.Problem());
             Assert.StartsWith("https://", e.Url);
             Assert.Matches("^[0-9a-f]{64}$", e.Sha256!);
+            if (e.Kind == EncoderKind.Text)
+            {
+                Assert.StartsWith("https://", e.TokenizerUrl);
+                Assert.Matches("^[0-9a-f]{64}$", e.TokenizerSha256!);
+            }
         });
         Assert.Same(EncoderCatalog.DinoV2Small, EncoderCatalog.Find("DINOv2-small"));
     }
@@ -169,6 +174,121 @@ public sealed class EncoderStoreTests : IDisposable
         Assert.Contains("mloop encoder install dinov2-small", store.Resolve("dinov2-small").Refusal);
         Assert.Contains("mloop encoder install", store.Resolve(null).Refusal);
         Assert.Contains("mloop encoder add", store.Resolve("mine").Refusal);
+    }
+
+    private static readonly string TextGraph = Path.Combine(AppContext.BaseDirectory, "Fixtures", "embedding", "tiny-text-encoder.onnx");
+    private static readonly string Tokenizer = Path.Combine(AppContext.BaseDirectory, "Fixtures", "embedding", "tiny-tokenizer.model");
+
+    private static readonly EncoderDefinition TinyText = new(
+        "tiny-text", "1", 4, null, "input_ids", "last_hidden_state", EncoderPooling.MeanOfTokens,
+        Kind: EncoderKind.Text, Text: new TextPreprocessing(12));
+
+    [Fact]
+    public void ATextEncoder_IsAddedWithItsTokenizer_AndBothSha256sRecorded()
+    {
+        var store = new EncoderStore(_root);
+
+        var added = store.Add(TinyText, TextGraph, Tokenizer);
+
+        Assert.Equal(Sha256(File.ReadAllBytes(Tokenizer)), added.Definition.TokenizerSha256);
+        var found = store.Find("tiny-text")!;
+        Assert.Equal(added.Definition, found.Definition);
+        Assert.Equal(File.ReadAllBytes(Tokenizer), File.ReadAllBytes(found.TokenizerPath!));
+        var identity = EncoderIdentity.Of(found.Definition);
+        Assert.Equal((EncoderKind.Text, added.Definition.TokenizerSha256), (identity.Kind, identity.TokenizerSha256));
+    }
+
+    [Fact]
+    public void ATextEncoder_NeedsItsTokenizer_AndAnImageEncoderTakesNone()
+    {
+        var store = new EncoderStore(_root);
+
+        Assert.Throws<ArgumentException>(() => store.Add(TinyText, TextGraph));
+        Assert.Throws<ArgumentException>(() => store.Add(Tiny, Graph, Tokenizer));
+        Assert.Throws<InvalidOperationException>(() => store.Add(TinyText with { TokenizerSha256 = new string('0', 64) }, TextGraph, Tokenizer));
+        Assert.Empty(store.List());
+    }
+
+    [Fact]
+    public void ATextEncoderDirectory_WithoutItsTokenizer_IsNotAnEncoder()
+    {
+        var store = new EncoderStore(_root);
+        var added = store.Add(TinyText, TextGraph, Tokenizer);
+
+        File.Delete(added.TokenizerPath!);
+
+        Assert.Null(store.Find("tiny-text"));
+    }
+
+    [Fact]
+    public void ADefinitionWrittenBeforeKinds_ReadsAsAnImageEncoder()
+    {
+        var store = new EncoderStore(_root);
+        var added = store.Add(Tiny, Graph);
+        var file = Path.Combine(_root, "tiny", EncoderStore.DefinitionFileName);
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+        json.Remove("kind");
+        json.Remove("text");
+        File.WriteAllText(file, json.ToJsonString());
+
+        Assert.Equal(added.Definition, store.Find("tiny")!.Definition);
+        Assert.Equal(EncoderKind.Image, store.Find("tiny")!.Definition.Kind);
+    }
+
+    [Fact]
+    public void WithNoNameGiven_TheOnlyEncoderOfTheKindAsked_IsTheOneMeant()
+    {
+        var store = new EncoderStore(_root);
+        store.Add(Tiny, Graph);
+        store.Add(TinyText, TextGraph, Tokenizer);
+
+        Assert.Equal("tiny", store.Resolve(null, EncoderKind.Image).Encoder!.Definition.Id);
+        Assert.Equal("tiny-text", store.Resolve(null, EncoderKind.Text).Encoder!.Definition.Id);
+        Assert.Contains("reads text, not images", store.Resolve("tiny-text", EncoderKind.Image).Refusal);
+        Assert.Contains("reads images, not text", store.Resolve("tiny", EncoderKind.Text).Refusal);
+    }
+
+    [Fact]
+    public void NoTextEncoder_IsAnsweredWithTheTextCatalogsInstallCommand()
+    {
+        var refusal = new EncoderStore(_root).Resolve(null, EncoderKind.Text).Refusal;
+
+        Assert.Contains("No encoder of text", refusal);
+        Assert.Contains("mloop encoder install <multilingual-minilm>", refusal);
+        Assert.Contains("--tokenizer", refusal);
+    }
+
+    [Fact]
+    public async Task ATextInstall_DownloadsTheGraphAndTheTokenizer_EachPinned()
+    {
+        var graph = File.ReadAllBytes(TextGraph);
+        var tokenizer = File.ReadAllBytes(Tokenizer);
+        var entry = TinyText with
+        {
+            Url = "https://example.test/model.onnx",
+            Sha256 = Sha256(graph),
+            TokenizerUrl = "https://example.test/tokenizer.model",
+            TokenizerSha256 = Sha256(tokenizer),
+        };
+        var handler = new ServeEach(new() { [entry.Url] = graph, [entry.TokenizerUrl] = tokenizer });
+        var store = new EncoderStore(_root);
+
+        var installed = await store.InstallAsync(entry, new HttpClient(handler));
+
+        Assert.Equal(tokenizer, File.ReadAllBytes(installed.TokenizerPath!));
+        Assert.Equal(["tiny-text"], Directory.GetFileSystemEntries(_root).Select(Path.GetFileName));
+
+        var wrong = entry with { TokenizerSha256 = new string('0', 64) };
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.InstallAsync(wrong, new HttpClient(handler)));
+        Assert.Equal(installed.Definition, store.Find("tiny-text")!.Definition);
+        Assert.Equal(["tiny-text"], Directory.GetFileSystemEntries(_root).Select(Path.GetFileName));
+        await Assert.ThrowsAsync<ArgumentException>(() => store.InstallAsync(entry with { TokenizerUrl = null }, new HttpClient(handler)));
+    }
+
+    private sealed class ServeEach(Dictionary<string, byte[]> bodies) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(bodies[request.RequestUri!.ToString()]) });
     }
 
     // Progress<T> posts to a context; a test reads what was reported straight away.

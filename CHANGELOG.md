@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Text encoders: a pretrained sentence encoder turns text — Korean and some fifty other languages — into one
+  L2-normalised vector per text, through the encoder store image encoders use (`MLoop.Core.Embedding`:
+  `TextEmbedder`, `TextPreprocessor`). An encoder definition says what it reads (`kind`: `image`, the default, or
+  `text`); a text encoder keeps its SentencePiece tokenizer model (`tokenizer.model`) beside its graph, both
+  SHA-256s recorded, and its vectors are the mean of the encoder's output over the text's tokens. The catalog gains
+  `multilingual-minilm` (paraphrase-multilingual-MiniLM-L12-v2, Apache-2.0, 384 dimensions, 128 tokens), pinned
+  to one revision of its repository. A text longer than the encoder reads is counted (`truncated`), not cut
+  silently. Tokenization follows the encoder's own tokenizer, including one unknown piece for a run of characters
+  the vocabulary lacks (`Microsoft.ML.Tokenizers` gives one per character).
+
 - An experiment keeps the warnings its run raised — about the data, the run and the trained model, as `mloop train`
   printed them — as `warnings` in its `metadata.json` and a «Warnings» section of its `report.md`, failed runs
   included. Before, they were on the terminal and nowhere after.

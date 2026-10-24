@@ -21,6 +21,9 @@
          downloads the native half at the same version (RuntimeRegistry.OnnxRuntime reads it from
          the loaded assembly). The test project's full package must stay on this version too. -->
     <PackageVersion Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.31.0" />
+    <!-- Text encoders' tokenizer models (SentencePiece) — MLoop.Core.Embedding.TextPreprocessor. The ML.NET family's
+         tokenizer, the version Microsoft.ML.TorchSharp already brings. -->
+    <PackageVersion Include="Microsoft.ML.Tokenizers" Version="2.0.1" />
     <!-- Test-only: runs exported graphs to prove they answer what the ML.NET model answers. -->
     <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
     <PackageVersion Include="Microsoft.ML.TorchSharp" Version="0.23.1" />

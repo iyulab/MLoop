@@ -27,6 +27,8 @@ public sealed class ImageEmbedder : IDisposable
     public static ImageEmbedder Open(EncoderDefinition encoder, string modelPath)
     {
         ArgumentNullException.ThrowIfNull(encoder);
+        if (encoder.Kind != EncoderKind.Image)
+            throw new ArgumentException($"Encoder '{encoder.Id}' reads text, not images.", nameof(encoder));
         if (encoder.Problem() is { } problem)
             throw new ArgumentException($"Encoder '{encoder.Id}' cannot run: {problem}.", nameof(encoder));
         if (OnnxRuntimeNative.Unavailable() is { } unavailable)
@@ -62,7 +64,7 @@ public sealed class ImageEmbedder : IDisposable
         if (images.Count == 0)
             return patches ? new EmbeddingResult(identity, [], Encoder.Grid, []) : new EmbeddingResult(identity, []);
 
-        var p = Encoder.Preprocessing;
+        var p = Encoder.Preprocessing!;   // an image encoder's, which Open checked
         var size = 3 * p.CropSize * p.CropSize;
         var batch = new float[images.Count * size];
         var crops = new ImageRegion[images.Count];
@@ -76,7 +78,7 @@ public sealed class ImageEmbedder : IDisposable
         var input = new DenseTensor<float>(batch, [images.Count, 3, p.CropSize, p.CropSize]);
         using var results = _session.Run([NamedOnnxValue.CreateFromTensor(Encoder.InputName, input)], [Encoder.OutputName]);
         var output = results[0].AsTensor<float>();
-        float[][] vectors = [.. Enumerable.Range(0, images.Count).Select(i => Normalized(Pool(output, i)))];
+        float[][] vectors = [.. Enumerable.Range(0, images.Count).Select(i => EmbeddingVectors.Normalized(Pool(output, i)))];
         if (!patches)
             return new EmbeddingResult(identity, vectors);
 
@@ -122,20 +124,9 @@ public sealed class ImageEmbedder : IDisposable
             var vector = new float[Encoder.Dimension];
             for (var d = 0; d < vector.Length; d++)
                 vector[d] = output[row, first + t, d];
-            patches[t] = Normalized(vector);
+            patches[t] = EmbeddingVectors.Normalized(vector);
         }
         return patches;
-    }
-
-    private static float[] Normalized(float[] vector)
-    {
-        var norm = Math.Sqrt(vector.Sum(v => (double)v * v));
-        if (norm > 0)
-        {
-            for (var d = 0; d < vector.Length; d++)
-                vector[d] = (float)(vector[d] / norm);
-        }
-        return vector;
     }
 
     public void Dispose() => _session.Dispose();
