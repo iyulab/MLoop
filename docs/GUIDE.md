@@ -160,6 +160,7 @@ mloop train --auto-merge --label Status --task binary-classification
 # Class imbalance handling (v0.5.0+)
 mloop train data.csv --label is_fraud --task binary-classification --balance auto
 mloop train data.csv --label defect --task binary-classification --balance 5  # Target 5:1 ratio
+mloop train datasets/images --task image-classification --balance 3   # oversamples the smaller classes of the training split
 
 # Weighted rows — e.g. labels from a recheck sample, each row weighted 1/π
 mloop train data.csv --label risk --task binary-classification --weight inv_pi
