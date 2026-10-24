@@ -64,6 +64,8 @@ PY
 cat > "$WORK/run.sh" <<SH
 #!/bin/bash
 set -euo pipefail
+# A step that fails outside a check of its own still says which one it was — set -e alone exits without a word.
+trap 'echo "FAIL: line \$LINENO: \$BASH_COMMAND (exit \$?)"' ERR
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 PATH="\$PATH:/root/.dotnet/tools"
 dotnet tool install -g mloop --add-source /work/feed --version $VERSION >/dev/null
 fail() { echo "FAIL: \$*"; exit 1; }
@@ -71,7 +73,8 @@ fail() { echo "FAIL: \$*"; exit 1; }
 if [[ " ${RUNTIMES[*]} " == *" tf "* ]]; then
   echo "== tf"
   mloop runtime install tf
-  cd /tmp && mloop init vision --task image-classification >/dev/null && cd vision
+  cd /tmp && mloop init vision --task image-classification >/tmp/tf-init.log 2>&1 || { cat /tmp/tf-init.log; fail "mloop init (image classification)"; }
+  cd vision
   cp -r /work/data/images/* datasets/images/
   mloop train --task image-classification datasets/images >/tmp/tf-train.log 2>&1 || { tail -20 /tmp/tf-train.log; fail "image classification did not train"; }
   (mloop serve --port 5099 >/tmp/serve.log 2>&1 &)
@@ -90,7 +93,8 @@ fi
 if [[ " ${RUNTIMES[*]} " == *" torch "* ]]; then
   echo "== torch"
   mloop runtime install torch
-  cd /tmp && mloop init txt --task text-classification >/dev/null && cd txt
+  cd /tmp && mloop init txt --task text-classification >/tmp/torch-init.log 2>&1 || { cat /tmp/torch-init.log; fail "mloop init (text classification)"; }
+  cd txt
   cp /work/data/text.csv datasets/train.csv
   mloop train datasets/train.csv --label Label --task text-classification >/tmp/torch-train.log 2>&1 || { tail -20 /tmp/torch-train.log; fail "text classification did not train"; }
   out=\$(mloop predict /work/data/text-predict.csv --json 2>/dev/null | sed -n '/^{/,\$p')
