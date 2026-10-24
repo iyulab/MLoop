@@ -427,6 +427,119 @@ public class FileDataSamplerTests : IDisposable
         stats.NewestEntry.Should().NotBe(DateTimeOffset.MinValue);
     }
 
+    /// <summary>
+    /// Every strategy reads the logged predictions as a stream and holds only its pick. These pin what each keeps:
+    /// the rows a sort of the whole gave, across day files.
+    /// </summary>
+    [Theory]
+    [InlineData(SamplingStrategy.Random)]
+    [InlineData(SamplingStrategy.Recent)]
+    [InlineData(SamplingStrategy.LowConfidence)]
+    [InlineData(SamplingStrategy.FeedbackPriority)]
+    [InlineData(SamplingStrategy.Stratified)]
+    public async Task SampleAsync_PicksDistinctLoggedRows_OfTheSampleSize_AcrossDayFiles(SamplingStrategy strategy)
+    {
+        var day = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddDays(-1);
+        WriteDay(day.AddDays(-1), Enumerable.Range(0, 40), i => i % 4 == 0 ? "b" : "a");
+        WriteDay(day, Enumerable.Range(40, 40), i => i % 4 == 0 ? "b" : "a");
+        var outputPath = Path.Combine(_testDir, "out.csv");
+
+        var result = await _sampler.SampleAsync("m", 20, strategy, outputPath, Columns);
+
+        result.TotalAvailable.Should().Be(80);
+        result.SampledCount.Should().Be(20);
+        var indices = SampledIndices(outputPath);
+        indices.Should().OnlyHaveUniqueItems().And.HaveCount(20).And.OnlyContain(i => i >= 0 && i < 80);
+        switch (strategy)
+        {
+            case SamplingStrategy.Recent:
+                indices.Should().BeEquivalentTo(Enumerable.Range(60, 20));
+                break;
+            case SamplingStrategy.LowConfidence:
+                // Confidence falls with the index (WriteDay), so the least confident are the last twenty.
+                indices.Should().BeEquivalentTo(Enumerable.Range(60, 20));
+                break;
+            case SamplingStrategy.Stratified:
+                // 60 "a" and 20 "b": quotas 15 and 5.
+                indices.Count(i => i % 4 == 0).Should().Be(5);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Feedback rows come first; when they outnumber the sample, the sample is drawn from them alone — before it
+    /// was whichever were read first.
+    /// </summary>
+    [Fact]
+    public async Task SampleAsync_FeedbackPriority_TakesOnlyAnsweredRows_WhenTheyFillTheSample()
+    {
+        var ids = new List<string>();
+        for (var i = 0; i < 12; i++)
+            ids.Add(await CreatePredictionAndGetId("test-model", $"output_{i}"));
+        foreach (var id in ids.Take(6))
+            await _feedbackCollector.RecordFeedbackAsync(id, "answered");
+        var outputPath = Path.Combine(_testDir, "output.csv");
+
+        var result = await _sampler.SampleAsync("test-model", 4, SamplingStrategy.FeedbackPriority, outputPath, Columns);
+
+        result.SampledCount.Should().Be(4);
+        result.LabeledCount.Should().Be(4);
+    }
+
+    /// <summary>A uniform sample: over many draws every logged row is picked about equally often.</summary>
+    [Fact]
+    public async Task SampleAsync_Random_PicksEveryRowAboutEquallyOften()
+    {
+        var day = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddDays(-1);
+        WriteDay(day, Enumerable.Range(0, 10), _ => "a");
+        var picks = new int[10];
+        var outputPath = Path.Combine(_testDir, "out.csv");
+
+        for (var draw = 0; draw < 400; draw++)
+        {
+            await _sampler.SampleAsync("m", 3, SamplingStrategy.Random, outputPath, Columns);
+            foreach (var i in SampledIndices(outputPath))
+                picks[i]++;
+        }
+
+        // Expected 120 each (400 × 3 / 10); binomial σ ≈ 9.2 — a band of ±5σ.
+        picks.Should().OnlyContain(n => n > 74 && n < 166);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_CountsEveryDayFile()
+    {
+        var day = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddDays(-1);
+        WriteDay(day.AddDays(-1), Enumerable.Range(0, 5), _ => "a");
+        WriteDay(day, Enumerable.Range(5, 5), _ => "a");
+
+        var stats = await _sampler.GetStatisticsAsync("m");
+
+        stats.TotalPredictions.Should().Be(10);
+        stats.OldestEntry.Should().Be(day.AddDays(-1));
+        stats.NewestEntry.Should().Be(day.AddMinutes(9));
+    }
+
+    // Rows i of model "m" in the day file of day: input index = i, minute i after the day's start, confidence
+    // falling with i, output by outputOf.
+    private void WriteDay(DateTimeOffset day, IEnumerable<int> rows, Func<int, string> outputOf)
+    {
+        var dir = Path.Combine(_testDir, ".mloop", "logs", "m");
+        Directory.CreateDirectory(dir);
+        File.WriteAllLines(Path.Combine(dir, $"{day.UtcDateTime:yyyy-MM-dd}.jsonl"), rows.Select(i => JsonSerializer.Serialize(new
+        {
+            id = $"p{i}",
+            modelName = "m",
+            input = new Dictionary<string, object> { ["index"] = i },
+            output = outputOf(i),
+            confidence = 1.0 - i / 100.0,
+            timestamp = day.UtcDateTime.Date.AddMinutes(i),
+        })));
+    }
+
+    private static List<int> SampledIndices(string csv) =>
+        [.. File.ReadAllLines(csv).Skip(1).Select(line => int.Parse(line.Split(',')[0], System.Globalization.CultureInfo.InvariantCulture))];
+
     private async Task CreatePredictions(string modelName, int count)
     {
         for (int i = 0; i < count; i++)

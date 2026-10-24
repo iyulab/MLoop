@@ -91,7 +91,7 @@ public sealed class FilePredictionLogger : IPredictionLogger
         // The newest entries across every model directory: a directory is read newest day first until no older
         // day can displace what is kept. Stopping at the first directory that filled the limit returned that
         // model's entries even when another model's were newer.
-        var newest = new NewestEntries<PredictionLogEntry>(limit, e => e.Timestamp);
+        var newest = new TopEntries<PredictionLogEntry, DateTimeOffset>(limit, e => e.Timestamp);
 
         foreach (var dir in GetModelDirectories(modelName))
         {
@@ -99,7 +99,7 @@ public sealed class FilePredictionLogger : IPredictionLogger
             {
                 if (cancellationToken.IsCancellationRequested)
                     break;
-                if (JsonLines.EndOfDay(file) is { } end && newest.HoldsAllNewerThan(end))
+                if (JsonLines.EndOfDay(file) is { } end && newest.HoldsOnlyAtLeast(end))
                     break;
 
                 await foreach (var entry in ReadEntriesFromFileAsync(file, effectiveFrom, effectiveTo, cancellationToken).ConfigureAwait(false))
@@ -107,7 +107,7 @@ public sealed class FilePredictionLogger : IPredictionLogger
             }
         }
 
-        return newest.NewestFirst();
+        return newest.LargestFirst();
     }
 
     private async Task WriteEntryAsync(PredictionLogEntry entry, CancellationToken cancellationToken)

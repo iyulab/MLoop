@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using MLoop.Core.Prediction;
@@ -14,7 +15,6 @@ public sealed class FileDataSampler : IDataSampler
 {
     private readonly string _logsDirectory;
     private readonly FileFeedbackCollector _feedback;
-    private readonly JsonSerializerOptions _jsonOptions;
 
     public FileDataSampler(string baseDirectory)
     {
@@ -22,10 +22,6 @@ public sealed class FileDataSampler : IDataSampler
         // Feedback is read through its own store — one reader of the format, so a field it gains
         // (a weight) reaches sampling without a second parser to update.
         _feedback = new FileFeedbackCollector(baseDirectory);
-        _jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        };
     }
 
     /// <inheritdoc />
@@ -40,32 +36,27 @@ public sealed class FileDataSampler : IDataSampler
         ArgumentNullException.ThrowIfNull(columns);
         ArgumentException.ThrowIfNullOrWhiteSpace(columns.Label);
 
-        var predictions = await LoadPredictionsAsync(modelName, cancellationToken).ConfigureAwait(false);
         var feedback = await LoadFeedbackAsync(modelName, cancellationToken).ConfigureAwait(false);
 
-        if (predictions.Count == 0)
+        // Feedback can be recorded more than once for the same prediction (RecordFeedbackAsync appends — e.g. a
+        // user correcting a label): the latest stands.
+        var feedbackDict = FeedbackEntry.LatestPerPrediction(feedback)
+            .ToDictionary(f => f.PredictionId);
+
+        // The logged predictions are read as a stream and only the sample is held: a model logging 80,000
+        // predictions a day keeps millions over its retention period, and every one used to be held with its
+        // inputs parsed before the strategy chose a few hundred.
+        var (picked, total) = await ApplyStrategyAsync(modelName, Math.Max(sampleSize, 0), strategy, feedbackDict, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (total == 0)
         {
             throw new InvalidOperationException(
                 $"No predictions found for model '{modelName}'. " +
                 "Log predictions using 'mloop predict --log' first.");
         }
 
-        // Join predictions with feedback. Feedback can be recorded more than once for the same
-        // prediction (RecordFeedbackAsync appends — e.g. a user correcting a label): the latest stands.
-        var feedbackDict = FeedbackEntry.LatestPerPrediction(feedback)
-            .ToDictionary(f => f.PredictionId);
-        var joinedData = predictions
-            .Select(p => new JoinedSample(
-                p.PredictionId,
-                p.Input,
-                p.Output,
-                p.Confidence,
-                p.Timestamp,
-                feedbackDict.GetValueOrDefault(p.PredictionId)))
-            .ToList();
-
-        // Apply sampling strategy
-        var sampled = ApplyStrategy(joinedData, sampleSize, strategy);
+        var sampled = picked.Select(p => p.Join(feedbackDict)).ToList();
 
         // A weight column is written when the model trains with one (its rows must carry it), or when
         // feedback carries weights the model has not been told about yet.
@@ -89,7 +80,7 @@ public sealed class FileDataSampler : IDataSampler
         return new SamplingResult(
             OutputPath: outputPath,
             SampledCount: sampled.Count,
-            TotalAvailable: predictions.Count,
+            TotalAvailable: (int)Math.Min(total, int.MaxValue),
             StrategyUsed: strategy,
             CreatedAt: DateTimeOffset.UtcNow,
             LabeledCount: sampled.Count(s => s.Feedback is not null),
@@ -102,190 +93,233 @@ public sealed class FileDataSampler : IDataSampler
         string modelName,
         CancellationToken cancellationToken = default)
     {
-        var predictions = await LoadPredictionsAsync(modelName, cancellationToken).ConfigureAwait(false);
         var feedback = await LoadFeedbackAsync(modelName, cancellationToken).ConfigureAwait(false);
+        var feedbackIds = new HashSet<string>(feedback.Select(f => f.PredictionId));
 
-        if (predictions.Count == 0)
+        long total = 0, withFeedback = 0, lowConfidence = 0;
+        var oldest = DateTimeOffset.MaxValue;
+        var newest = DateTimeOffset.MinValue;
+        await foreach (var p in ReadPredictionsAsync(modelName, cancellationToken).ConfigureAwait(false))
         {
-            return new SamplingStatistics(
+            total++;
+            if (feedbackIds.Contains(p.PredictionId))
+                withFeedback++;
+            if (p.Confidence is < 0.7)
+                lowConfidence++;
+            if (p.Timestamp < oldest)
+                oldest = p.Timestamp;
+            if (p.Timestamp > newest)
+                newest = p.Timestamp;
+        }
+
+        static int Clamp(long n) => (int)Math.Min(n, int.MaxValue);
+        return total == 0
+            ? new SamplingStatistics(
                 ModelName: modelName,
                 TotalPredictions: 0,
                 PredictionsWithFeedback: 0,
                 LowConfidenceCount: 0,
                 OldestEntry: DateTimeOffset.MinValue,
-                NewestEntry: DateTimeOffset.MinValue);
-        }
-
-        var feedbackIds = new HashSet<string>(feedback.Select(f => f.PredictionId));
-        var withFeedback = predictions.Count(p => feedbackIds.Contains(p.PredictionId));
-        var lowConfidence = predictions.Count(p => p.Confidence.HasValue && p.Confidence.Value < 0.7);
-
-        return new SamplingStatistics(
-            ModelName: modelName,
-            TotalPredictions: predictions.Count,
-            PredictionsWithFeedback: withFeedback,
-            LowConfidenceCount: lowConfidence,
-            OldestEntry: predictions.Min(p => p.Timestamp),
-            NewestEntry: predictions.Max(p => p.Timestamp));
+                NewestEntry: DateTimeOffset.MinValue)
+            : new SamplingStatistics(
+                ModelName: modelName,
+                TotalPredictions: Clamp(total),
+                PredictionsWithFeedback: Clamp(withFeedback),
+                LowConfidenceCount: Clamp(lowConfidence),
+                OldestEntry: oldest,
+                NewestEntry: newest);
     }
 
-    private List<JoinedSample> ApplyStrategy(
-        List<JoinedSample> data,
-        int sampleSize,
-        SamplingStrategy strategy)
-    {
-        var actualSize = Math.Min(sampleSize, data.Count);
-
-        return strategy switch
-        {
-            SamplingStrategy.Random => RandomSample(data, actualSize),
-            SamplingStrategy.Recent => RecentSample(data, actualSize),
-            SamplingStrategy.FeedbackPriority => FeedbackPrioritySample(data, actualSize),
-            SamplingStrategy.Stratified => StratifiedSample(data, actualSize),
-            SamplingStrategy.LowConfidence => LowConfidenceSample(data, actualSize),
-            _ => RandomSample(data, actualSize)
-        };
-    }
-
-    private static List<JoinedSample> RandomSample(List<JoinedSample> data, int size)
-    {
-        var random = new Random();
-        return data.OrderBy(_ => random.Next()).Take(size).ToList();
-    }
-
-    private static List<JoinedSample> RecentSample(List<JoinedSample> data, int size)
-    {
-        return data.OrderByDescending(d => d.Timestamp).Take(size).ToList();
-    }
-
-    private static List<JoinedSample> FeedbackPrioritySample(List<JoinedSample> data, int size)
-    {
-        // Prioritize samples with feedback, then fill with random
-        var withFeedback = data.Where(d => d.Feedback != null).ToList();
-        var withoutFeedback = data.Where(d => d.Feedback == null).ToList();
-
-        var result = new List<JoinedSample>();
-        result.AddRange(withFeedback.Take(size));
-
-        if (result.Count < size)
-        {
-            var random = new Random();
-            var remaining = size - result.Count;
-            result.AddRange(withoutFeedback.OrderBy(_ => random.Next()).Take(remaining));
-        }
-
-        return result;
-    }
-
-    private static List<JoinedSample> LowConfidenceSample(List<JoinedSample> data, int size)
-    {
-        return data
-            .Where(d => d.Confidence.HasValue)
-            .OrderBy(d => d.Confidence!.Value)
-            .Take(size)
-            .ToList();
-    }
-
-    private static List<JoinedSample> StratifiedSample(List<JoinedSample> data, int size)
-    {
-        // Group by output value to maintain class distribution
-        var groups = data
-            .GroupBy(d => d.Output?.ToString() ?? "_null_")
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        if (groups.Count == 0)
-            return new List<JoinedSample>();
-
-        var result = new List<JoinedSample>();
-        var random = new Random();
-
-        // Calculate proportional sample size for each group
-        var totalCount = data.Count;
-        var remaining = size;
-
-        foreach (var (key, group) in groups.OrderByDescending(g => g.Value.Count))
-        {
-            // Calculate proportional count for this group
-            var proportion = (double)group.Count / totalCount;
-            var groupSampleSize = Math.Max(1, (int)Math.Round(size * proportion));
-            groupSampleSize = Math.Min(groupSampleSize, remaining);
-            groupSampleSize = Math.Min(groupSampleSize, group.Count);
-
-            if (groupSampleSize > 0)
-            {
-                var sampled = group.OrderBy(_ => random.Next()).Take(groupSampleSize);
-                result.AddRange(sampled);
-                remaining -= groupSampleSize;
-            }
-
-            if (remaining <= 0)
-                break;
-        }
-
-        // Fill remaining slots with random samples if needed
-        if (remaining > 0 && result.Count < size)
-        {
-            var usedIds = new HashSet<string>(result.Select(r => r.PredictionId));
-            var unused = data.Where(d => !usedIds.Contains(d.PredictionId)).ToList();
-            var additional = unused.OrderBy(_ => random.Next()).Take(remaining);
-            result.AddRange(additional);
-        }
-
-        return result;
-    }
-
-    private async Task<List<PredictionRecord>> LoadPredictionsAsync(
+    /// <summary>
+    /// The strategy's pick from the logged predictions, holding only what it may keep, and how many were logged.
+    /// Each strategy keeps the rows a sort of the whole would have given: random = a uniform sample without
+    /// replacement, recent = the newest, low confidence = the least confident, feedback priority = rows with
+    /// feedback first (a uniform sample of them when they are more than the sample) then a uniform sample of the
+    /// rest, stratified = per output value in proportion (a counting pass first).
+    /// </summary>
+    private async Task<(List<LoggedPrediction> Picked, long Total)> ApplyStrategyAsync(
         string modelName,
+        int size,
+        SamplingStrategy strategy,
+        Dictionary<string, FeedbackEntry> feedback,
         CancellationToken cancellationToken)
     {
-        var predictions = new List<PredictionRecord>();
+        var random = new Random();
+        var predictions = ReadPredictionsAsync(modelName, cancellationToken);
+
+        switch (strategy)
+        {
+            case SamplingStrategy.Recent:
+                {
+                    var newest = new TopEntries<LoggedPrediction, DateTimeOffset>(size, p => p.Timestamp);
+                    var total = 0L;
+                    await foreach (var p in predictions.ConfigureAwait(false))
+                    {
+                        total++;
+                        newest.Add(p);
+                    }
+                    return (newest.LargestFirst(), total);
+                }
+
+            case SamplingStrategy.LowConfidence:
+                {
+                    // Rows without a confidence are not candidates; the least confident first.
+                    var least = new TopEntries<LoggedPrediction, double>(size, p => -p.Confidence!.Value);
+                    var total = 0L;
+                    await foreach (var p in predictions.ConfigureAwait(false))
+                    {
+                        total++;
+                        if (p.Confidence.HasValue)
+                            least.Add(p);
+                    }
+                    return (least.LargestFirst(), total);
+                }
+
+            case SamplingStrategy.FeedbackPriority:
+                {
+                    var answered = new Reservoir<LoggedPrediction>(size, random);
+                    var rest = new Reservoir<LoggedPrediction>(size, random);
+                    await foreach (var p in predictions.ConfigureAwait(false))
+                        (feedback.ContainsKey(p.PredictionId) ? answered : rest).Add(p);
+
+                    var picked = answered.Kept.ToList();
+                    picked.AddRange(rest.Kept.Take(size - picked.Count));
+                    return (picked, answered.Seen + rest.Seen);
+                }
+
+            case SamplingStrategy.Stratified:
+                return await StratifiedAsync(modelName, size, random, cancellationToken).ConfigureAwait(false);
+
+            default:
+                {
+                    var reservoir = new Reservoir<LoggedPrediction>(size, random);
+                    await foreach (var p in predictions.ConfigureAwait(false))
+                        reservoir.Add(p);
+                    return (reservoir.Kept, reservoir.Seen);
+                }
+        }
+    }
+
+    /// <summary>
+    /// Stratified by output value: a first pass counts each value, the quotas follow the proportions — every value
+    /// at least one row while the sample has room, largest values first — and a slot the rounding left over goes to
+    /// a value with rows still unpicked, in proportion to how many; a second pass keeps a uniform sample of each
+    /// value's quota.
+    /// </summary>
+    private async Task<(List<LoggedPrediction> Picked, long Total)> StratifiedAsync(
+        string modelName, int size, Random random, CancellationToken cancellationToken)
+    {
+        var counts = new Dictionary<string, long>(StringComparer.Ordinal);
+        var order = new List<string>();
+        var total = 0L;
+        await foreach (var p in ReadPredictionsAsync(modelName, cancellationToken).ConfigureAwait(false))
+        {
+            total++;
+            var key = p.StratumKey;
+            if (counts.TryGetValue(key, out var n))
+                counts[key] = n + 1;
+            else
+            {
+                counts[key] = 1;
+                order.Add(key);
+            }
+        }
+
+        if (total == 0)
+            return ([], 0);
+
+        var actualSize = (int)Math.Min(size, total);
+        var quotas = new Dictionary<string, int>(StringComparer.Ordinal);
+        var remaining = actualSize;
+        foreach (var key in order.OrderByDescending(k => counts[k]))
+        {
+            if (remaining <= 0)
+                break;
+            var quota = (int)Math.Min(Math.Min(Math.Max(1, (long)Math.Round(actualSize * (double)counts[key] / total)), remaining), counts[key]);
+            quotas[key] = quota;
+            remaining -= quota;
+        }
+
+        // Left-over slots: each one to a value drawn in proportion to its unpicked rows — the distribution a
+        // uniform draw from all unpicked rows gives.
+        while (remaining > 0)
+        {
+            var spare = order.Select(k => (Key: k, Spare: counts[k] - quotas.GetValueOrDefault(k))).Where(s => s.Spare > 0).ToList();
+            var totalSpare = spare.Sum(s => s.Spare);
+            if (totalSpare == 0)
+                break;
+            var draw = random.NextInt64(totalSpare);
+            foreach (var (key, free) in spare)
+            {
+                if (draw < free)
+                {
+                    quotas[key] = quotas.GetValueOrDefault(key) + 1;
+                    break;
+                }
+                draw -= free;
+            }
+            remaining--;
+        }
+
+        var reservoirs = quotas.ToDictionary(q => q.Key, q => new Reservoir<LoggedPrediction>(q.Value, random), StringComparer.Ordinal);
+        await foreach (var p in ReadPredictionsAsync(modelName, cancellationToken).ConfigureAwait(false))
+            if (reservoirs.TryGetValue(p.StratumKey, out var reservoir))
+                reservoir.Add(p);
+
+        return ([.. order.Where(reservoirs.ContainsKey).SelectMany(k => reservoirs[k].Kept)], total);
+    }
+
+    /// <summary>
+    /// The model's logged predictions, oldest day file first, one line at a time. The inputs are not parsed here —
+    /// the line is kept, and parsed only for a row the strategy picks.
+    /// </summary>
+    private async IAsyncEnumerable<LoggedPrediction> ReadPredictionsAsync(
+        string modelName,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         var modelDir = Path.Combine(_logsDirectory, SanitizeFileName(modelName));
-
         if (!Directory.Exists(modelDir))
-            return predictions;
+            yield break;
 
-        var logFiles = Directory.GetFiles(modelDir, "*.jsonl");
-        foreach (var file in logFiles)
+        foreach (var file in Directory.GetFiles(modelDir, "*.jsonl").Order(StringComparer.Ordinal))
         {
             if (cancellationToken.IsCancellationRequested)
-                break;
+                yield break;
 
             await foreach (var line in JsonLines.ReadAsync(file, cancellationToken).ConfigureAwait(false))
             {
+                LoggedPrediction? prediction = null;
                 try
                 {
                     using var doc = JsonDocument.Parse(line);
                     var root = doc.RootElement;
 
-                    var id = root.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
-                    if (id == null) continue;
+                    if (root.TryGetProperty("id", out var idEl) && idEl.GetString() is { } id)
+                    {
+                        var output = root.TryGetProperty("output", out var outputEl)
+                            ? GetObjectFromJson(outputEl)
+                            : null;
 
-                    var input = root.TryGetProperty("input", out var inputEl)
-                        ? ParseInput(inputEl)
-                        : new Dictionary<string, object>();
+                        var confidence = root.TryGetProperty("confidence", out var confEl) && confEl.ValueKind == JsonValueKind.Number
+                            ? confEl.GetDouble()
+                            : (double?)null;
 
-                    var output = root.TryGetProperty("output", out var outputEl)
-                        ? GetObjectFromJson(outputEl)
-                        : null;
+                        var timestamp = root.TryGetProperty("timestamp", out var tsEl)
+                            ? tsEl.GetDateTimeOffset()
+                            : DateTimeOffset.MinValue;
 
-                    var confidence = root.TryGetProperty("confidence", out var confEl) && confEl.ValueKind == JsonValueKind.Number
-                        ? confEl.GetDouble()
-                        : (double?)null;
-
-                    var timestamp = root.TryGetProperty("timestamp", out var tsEl)
-                        ? tsEl.GetDateTimeOffset()
-                        : DateTimeOffset.MinValue;
-
-                    predictions.Add(new PredictionRecord(id, input, output, confidence, timestamp));
+                        prediction = new LoggedPrediction(id, output, confidence, timestamp, line);
+                    }
                 }
                 catch (JsonException)
                 {
                     // Skip malformed entries
                 }
+
+                if (prediction is not null)
+                    yield return prediction;
             }
         }
-
-        return predictions;
     }
 
     private Task<IReadOnlyList<FeedbackEntry>> LoadFeedbackAsync(
@@ -402,12 +436,27 @@ public sealed class FileDataSampler : IDataSampler
         return sb.ToString();
     }
 
-    private record PredictionRecord(
+    /// <summary>A logged prediction as read for sampling: what the strategies look at, and its line.</summary>
+    private sealed record LoggedPrediction(
         string PredictionId,
-        Dictionary<string, object> Input,
         object? Output,
         double? Confidence,
-        DateTimeOffset Timestamp);
+        DateTimeOffset Timestamp,
+        string Line)
+    {
+        /// <summary>The output value a stratified sample groups by.</summary>
+        public string StratumKey => Output?.ToString() ?? "_null_";
+
+        /// <summary>The row with its inputs parsed and its feedback, if any — done only for a picked row.</summary>
+        public JoinedSample Join(Dictionary<string, FeedbackEntry> feedback)
+        {
+            using var doc = JsonDocument.Parse(Line);
+            var input = doc.RootElement.TryGetProperty("input", out var inputEl)
+                ? ParseInput(inputEl)
+                : new Dictionary<string, object>();
+            return new JoinedSample(PredictionId, input, Output, Confidence, Timestamp, feedback.GetValueOrDefault(PredictionId));
+        }
+    }
 
     private record JoinedSample(
         string PredictionId,

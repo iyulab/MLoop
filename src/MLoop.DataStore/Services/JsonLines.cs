@@ -56,7 +56,7 @@ internal static class JsonLines
 
     /// <summary>
     /// A model's day files, newest day first. A file whose name is not a day sorts by name among them and is never
-    /// passed over by <see cref="NewestEntries{T}.HoldsAllNewerThan"/>.
+    /// passed over by <see cref="TopEntries{T, TKey}.HoldsOnlyAtLeast"/>.
     /// </summary>
     public static IEnumerable<string> DayFilesNewestFirst(string directory, DateTimeOffset from, DateTimeOffset to) =>
         Directory.GetFiles(directory, "*.jsonl")
@@ -71,14 +71,16 @@ internal static class JsonLines
 }
 
 /// <summary>
-/// The newest <c>limit</c> entries of everything added, by time — held in a heap of that size, so reading a large
-/// store for its latest few entries costs memory for the few.
+/// The <c>limit</c> entries with the largest key of everything added — held in a heap of that size, so reading a
+/// large store for its few newest (or least confident) entries costs memory for the few. Among entries of one key,
+/// the earlier-added one is kept and listed first, as a stable sort of the whole would.
 /// </summary>
-internal sealed class NewestEntries<T>(int limit, Func<T, DateTimeOffset> timeOf)
+internal sealed class TopEntries<T, TKey>(int limit, Func<T, TKey> keyOf)
+    where TKey : IComparable<TKey>
 {
-    // Min-heap on time: the root is the oldest entry kept, the one a newer arrival displaces. The sequence number
-    // breaks ties so that, among entries of one time, the earlier-read one is kept — as the List + stable sort did.
-    private readonly PriorityQueue<T, (DateTimeOffset Time, long Order)> _heap = new();
+    // Min-heap: the root is the smallest entry kept, the one a larger arrival displaces. The negated sequence
+    // number ranks an earlier arrival above a later one of the same key.
+    private readonly PriorityQueue<T, Rank> _heap = new();
     private long _added;
 
     public bool IsFull => limit <= 0 || _heap.Count >= limit;
@@ -88,25 +90,60 @@ internal sealed class NewestEntries<T>(int limit, Func<T, DateTimeOffset> timeOf
         if (limit <= 0)
             return;
 
-        var priority = (timeOf(entry), -_added++);
+        var rank = new Rank(keyOf(entry), -_added++);
         if (_heap.Count < limit)
-            _heap.Enqueue(entry, priority);
-        else if (_heap.TryPeek(out _, out var oldest) && priority.CompareTo(oldest) > 0)
-            _heap.DequeueEnqueue(entry, priority);
+            _heap.Enqueue(entry, rank);
+        else if (_heap.TryPeek(out _, out var smallest) && rank.CompareTo(smallest) > 0)
+            _heap.DequeueEnqueue(entry, rank);
     }
 
     /// <summary>
-    /// Whether every entry kept is at or after <paramref name="time"/> and no more are wanted — then nothing older
-    /// than <paramref name="time"/> can enter, and a day file that ends there need not be read.
+    /// Whether no more entries are wanted and every one kept has a key of at least <paramref name="key"/> — then
+    /// nothing below it can enter, and a source whose keys all fall below it need not be read.
     /// </summary>
-    public bool HoldsAllNewerThan(DateTimeOffset time) =>
-        IsFull && (limit <= 0 || (_heap.TryPeek(out _, out var oldest) && oldest.Time >= time));
+    public bool HoldsOnlyAtLeast(TKey key) =>
+        IsFull && (limit <= 0 || (_heap.TryPeek(out _, out var smallest) && smallest.Key.CompareTo(key) >= 0));
 
-    /// <summary>The entries kept, newest first.</summary>
-    public List<T> NewestFirst()
+    /// <summary>The entries kept, largest key first.</summary>
+    public List<T> LargestFirst()
     {
         var items = _heap.UnorderedItems.ToList();
         items.Sort((a, b) => b.Priority.CompareTo(a.Priority));
         return [.. items.Select(i => i.Element)];
     }
+
+    private readonly record struct Rank(TKey Key, long Order) : IComparable<Rank>
+    {
+        public int CompareTo(Rank other)
+        {
+            var byKey = Key.CompareTo(other.Key);
+            return byKey != 0 ? byKey : Order.CompareTo(other.Order);
+        }
+    }
+}
+
+/// <summary>
+/// A uniform sample without replacement of <c>size</c> entries from a stream of unknown length (reservoir sampling,
+/// Algorithm R) — what ordering the whole by a random key and taking the first <c>size</c> gave, without holding the
+/// whole.
+/// </summary>
+internal sealed class Reservoir<T>(int size, Random random)
+{
+    private readonly List<T> _kept = [];
+    private long _seen;
+
+    public long Seen => _seen;
+
+    public void Add(T entry)
+    {
+        _seen++;
+        if (size <= 0)
+            return;
+        if (_kept.Count < size)
+            _kept.Add(entry);
+        else if (random.NextInt64(_seen) is var slot && slot < size)
+            _kept[(int)slot] = entry;
+    }
+
+    public List<T> Kept => _kept;
 }

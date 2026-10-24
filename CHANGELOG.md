@@ -110,6 +110,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   read every line of each day file to find one prediction. Measured on a model logging 80,000 predictions a day
   (20 MB day file): `logs --limit 5` 282 → 83 MB, `feedback add` 136 → 85 MB. `logs --json` writes its document as
   it is serialized.
+- `mloop sample create --model`, `mloop sample stats` and `POST /samples` read the logged predictions as a stream and
+  hold only the sample: every prediction over the retention period was held with its inputs parsed before the
+  strategy chose its rows. Measured on 800,000 logged predictions (ten days of 80,000): 883 → 104 MB, 2.7 → 1.8 s,
+  the same rows for `low-confidence`. `feedback-priority` draws uniformly among the rows with feedback when they
+  outnumber the sample (it took whichever were read first), and `stratified` gives a slot its rounding left over to a
+  class in proportion to its rows not yet picked — the distribution the earlier uniform fill had.
 
 - `mloop train` held the whole data file as dictionaries to count its classes and missing labels before training
   (and again to drop the missing ones). Those passes stream now: training on a million-row, six-column CSV (27 MB)

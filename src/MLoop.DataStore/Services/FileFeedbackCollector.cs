@@ -78,19 +78,19 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         if (!Directory.Exists(modelDir))
             return [];
 
-        var newest = new NewestEntries<FeedbackEntry>(limit, e => e.Timestamp);
+        var newest = new TopEntries<FeedbackEntry, DateTimeOffset>(limit, e => e.Timestamp);
         foreach (var file in JsonLines.DayFilesNewestFirst(modelDir, effectiveFrom, effectiveTo))
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
-            if (JsonLines.EndOfDay(file) is { } end && newest.HoldsAllNewerThan(end))
+            if (JsonLines.EndOfDay(file) is { } end && newest.HoldsOnlyAtLeast(end))
                 break;
 
             await foreach (var entry in ReadEntriesFromFileAsync(file, effectiveFrom, effectiveTo, cancellationToken).ConfigureAwait(false))
                 newest.Add(entry);
         }
 
-        return newest.NewestFirst();
+        return newest.LargestFirst();
     }
 
     /// <inheritdoc />
