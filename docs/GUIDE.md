@@ -287,7 +287,8 @@ any of those spellings for it, or a JSON `true`/`false` (`mloop serve`); drift c
 not spelling. A column that holds `0`/`1` is a number, and one with a missing value or a third value is
 a category.
 
-This writes column overrides into `mloop.yaml`, which you can also edit directly. An explicit type
+This writes column overrides into `mloop.yaml` — the model's `columns:` lines only, so the rest of the file and its
+comments stay as written — which you can also edit directly. An explicit type
 override is honoured over inference, and — for the identifier rule — over the heuristic: a column
 you declare as `text`, `categorical` or `numeric` is never dropped as an identifier, and neither is
 a ranking `group_column` or a recommendation `user_column`/`item_column`.
@@ -1335,7 +1336,8 @@ x1,x2,churn,weight
   balancing the train part after the test part is split off — and a request without `timeLimitSeconds` or
   `testSplit` leaves them to `mloop.yaml`. A `balance` the run cannot honour (not `auto`/`none`/a ratio, a task that
   is not classification, a weight column) is refused with 400 before a job exists.
-- `mloop sample create --from <csv>` samples a plain CSV instead (`random`, `head`, `stratified --label <col>`);
+- `mloop sample create --from <csv>` samples a plain CSV instead (`random`, `head`, `stratified --label <col>`) — a
+  relative path is the project's, as for every command, and the current directory's outside a project;
   `mloop sample stats --model <name>` reports how many logged predictions have feedback.
 
 ---
@@ -1632,7 +1634,8 @@ MLoop integrates with **FilePrepper** for high-performance CSV preprocessing.
 ### `mloop prep` — preprocessing declared in `mloop.yaml`
 
 Steps under a model's `prep:` run on every `mloop train`, in order. `prep plan` edits the declaration (no data
-changes); `prep run` applies it to a file so you can look at the result.
+changes) — the model's `prep:` lines only, each step with the options it was given; the rest of `mloop.yaml` and its
+comments stay as written — and `prep run` applies it to a file so you can look at the result.
 
 ```bash
 mloop prep plan --set normalize:z-score --columns age,income   # add or replace a step
@@ -2093,8 +2096,9 @@ Two rules hold across every command:
 - **stdout carries the result, not the diagnostics.** Under `--json`, stdout is the document and
   nothing else — progress, warnings and errors go to stderr, so `mloop … --json > out.json` yields a
   parseable file even on the runs that print warnings. A warning is also in the document, as
-  `warnings` (`evaluate`, `predict`, `calibrate`, `threshold`, `compare`; `train`'s stream reports each
-  as a `warning` event), so a consumer reading only stdout still learns of it.
+  `warnings` (`evaluate`, `predict`, `calibrate`, `threshold`, `compare`, `info`, `analyze`, `validate`,
+  `prep plan`, `features select`; `train`'s stream reports each as a `warning` event) — the data loaders'
+  warnings too, a possible multi-row header among them — so a consumer reading only stdout still learns of it.
 
 An outcome that is not a failure exits `0` even when nothing happened. `mloop evaluate` exits `0`
 and reports `skipped` when the model has no production version yet — a pipeline that evaluates
