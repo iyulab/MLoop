@@ -38,25 +38,61 @@ public class FeedbackBasedTriggerTests : IDisposable
     }
 
     [Fact]
-    public async Task EvaluateAsync_AccuracyDrop_TriggersWhenBelowThreshold()
+    public async Task EvaluateAsync_AccuracyDrop_TriggersWhenEstablishedBelowThreshold()
     {
-        // Arrange - 2 correct, 3 wrong = 40% accuracy
-        await CreateFeedbackScenario("test-model", correctCount: 2, wrongCount: 3);
+        // 12 correct of 60 = 20%; even the 95% interval's best case (about 32%) is below 50%.
+        await CreateFeedbackScenario("test-model", correctCount: 12, wrongCount: 48);
 
         var conditions = new[]
         {
             new RetrainingCondition(ConditionType.AccuracyDrop, "accuracy_check", 0.5)
         };
 
-        // Act
         var result = await _trigger.EvaluateAsync("test-model", conditions);
 
-        // Assert
         result.ShouldRetrain.Should().BeTrue();
         result.ConditionResults.Should().HaveCount(1);
         result.ConditionResults[0].IsMet.Should().BeTrue();
-        result.ConditionResults[0].CurrentValue.Should().BeApproximately(0.4, 0.01);
+        result.ConditionResults[0].CurrentValue.Should().BeApproximately(0.2, 0.01);
+        result.ConditionResults[0].Details.Should().Contain("95% interval");
         result.RecommendedAction.Should().Contain("accuracy_check");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AccuracyDrop_AHandfulOfWrongAnswersIsNotADrop()
+    {
+        // 2 correct, 3 wrong = 40% — on five rows, not evidence of anything.
+        await CreateFeedbackScenario("test-model", correctCount: 2, wrongCount: 3);
+
+        var result = await _trigger.EvaluateAsync("test-model",
+            [new RetrainingCondition(ConditionType.AccuracyDrop, "accuracy_check", 0.5)]);
+
+        result.ShouldRetrain.Should().BeFalse();
+        result.ConditionResults[0].CurrentValue.Should().BeApproximately(0.4, 0.01);
+        result.ConditionResults[0].Details.Should().Contain("too few to judge");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AccuracyDrop_BelowOnItsFaceButWithinTheInterval_IsNotEstablished()
+    {
+        // 26 of 40 = 65% against 70%: the interval reaches about 78%.
+        await CreateFeedbackScenario("test-model", correctCount: 26, wrongCount: 14);
+
+        var result = await _trigger.EvaluateAsync("test-model",
+            [new RetrainingCondition(ConditionType.AccuracyDrop, "accuracy_check", 0.7)]);
+
+        result.ShouldRetrain.Should().BeFalse();
+        result.ConditionResults[0].Details.Should().Contain("not established");
+    }
+
+    [Theory]
+    [InlineData(0.5, 100, 0.5962)]
+    [InlineData(0.2, 60, 0.3178)]
+    [InlineData(1.0, 30, 1.0)]
+    [InlineData(0.0, 30, 0.1135)]
+    public void AccuracyUpperBound_IsTheWilsonUpperEnd(double accuracy, double n, double expected)
+    {
+        RetrainingDefaults.AccuracyUpperBound(accuracy, n).Should().BeApproximately(expected, 0.0005);
     }
 
     [Fact]

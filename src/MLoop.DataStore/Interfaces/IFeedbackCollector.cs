@@ -84,6 +84,9 @@ public record FeedbackEntry(
 /// counts each prediction by its weight (<see cref="Weighted"/>) — the estimate a sample drawn with unequal
 /// probabilities needs; counts stay row counts.
 /// </summary>
+/// <param name="EffectiveSampleSize">How many rows <see cref="Accuracy"/> is worth as evidence: the row count
+/// unweighted, Kish's (Σw)² ÷ Σw² weighted — a few heavy rows carry less certainty than as many equal ones. Null
+/// without feedback.</param>
 public record FeedbackMetrics(
     string ModelName,
     int TotalPredictions,
@@ -92,4 +95,5 @@ public record FeedbackMetrics(
     double? Precision,
     double? Recall,
     DateTimeOffset CalculatedAt,
-    bool Weighted = false);
+    bool Weighted = false,
+    double? EffectiveSampleSize = null);

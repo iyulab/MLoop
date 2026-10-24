@@ -127,15 +127,17 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         // Each prediction counts by its weight: a sample reviewed with unequal probabilities misstates
         // accuracy when its rows are counted alike. Without weights every row counts 1 — plain accuracy.
         var weighted = feedback.Any(e => e.Weight is not null);
-        double total = 0, correct = 0;
+        double total = 0, correct = 0, squares = 0;
         foreach (var entry in feedback)
         {
             total += entry.EffectiveWeight;
+            squares += entry.EffectiveWeight * entry.EffectiveWeight;
             if (FeedbackValueComparer.ValuesMatch(entry.PredictedValue, entry.ActualValue))
                 correct += entry.EffectiveWeight;
         }
 
         double? accuracy = total > 0 ? correct / total : null;
+        double? effectiveSize = squares > 0 ? total * total / squares : null;
 
         return new FeedbackMetrics(
             modelName,
@@ -145,7 +147,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             Precision: null, // Would require class-specific calculation
             Recall: null,    // Would require class-specific calculation
             CalculatedAt: DateTimeOffset.UtcNow,
-            Weighted: weighted);
+            Weighted: weighted,
+            EffectiveSampleSize: effectiveSize);
     }
 
     private async Task WriteEntryAsync(SerializableFeedbackEntry entry, CancellationToken cancellationToken)

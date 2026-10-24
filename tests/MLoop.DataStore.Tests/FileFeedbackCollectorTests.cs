@@ -180,6 +180,7 @@ public class FileFeedbackCollectorTests : IDisposable
         // Assert
         metrics.TotalFeedback.Should().Be(5);
         metrics.Accuracy.Should().BeApproximately(0.6, 0.01);
+        metrics.EffectiveSampleSize.Should().Be(5); // unweighted: one row is one row of evidence
     }
 
     [Fact]
@@ -272,6 +273,8 @@ public class FileFeedbackCollectorTests : IDisposable
         metrics.Weighted.Should().BeTrue();
         metrics.Accuracy.Should().BeApproximately(0.75, 1e-12);
         metrics.TotalFeedback.Should().Be(2);
+        // Kish: (3 + 1)² ÷ (3² + 1²) = 1.6 — two unequal rows are worth less than two equal ones.
+        metrics.EffectiveSampleSize.Should().BeApproximately(1.6, 1e-12);
     }
 
     [Fact]

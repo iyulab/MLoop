@@ -76,16 +76,31 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
                 Details: "No accuracy data available (no feedback collected)");
         }
 
+        // An established drop, not a point estimate: enough feedback, and even the interval's best case below the
+        // threshold. Three answers with two wrong read as 33% accuracy and used to recommend retraining.
         var currentAccuracy = metrics.Accuracy.Value;
-        var isMet = currentAccuracy < condition.Threshold;
+        var n = metrics.EffectiveSampleSize ?? metrics.TotalFeedback;
+        var evidence = metrics.Weighted ? $"{n:0.#} effective rows of feedback" : $"{n:0} feedback";
+        if (n < RetrainingDefaults.MinimumAccuracyFeedback)
+        {
+            return new ConditionResult(
+                condition,
+                IsMet: false,
+                CurrentValue: currentAccuracy,
+                Details: $"Accuracy {currentAccuracy:P1} on {evidence} — too few to judge (needs {RetrainingDefaults.MinimumAccuracyFeedback})");
+        }
 
-        return new ConditionResult(
-            condition,
-            IsMet: isMet,
-            CurrentValue: currentAccuracy,
-            Details: isMet
-                ? $"Accuracy {currentAccuracy:P1} is below threshold {condition.Threshold:P1}"
-                : $"Accuracy {currentAccuracy:P1} is at or above threshold {condition.Threshold:P1}");
+        var upper = RetrainingDefaults.AccuracyUpperBound(currentAccuracy, n);
+        var isMet = upper < condition.Threshold;
+        string details;
+        if (isMet)
+            details = $"Accuracy {currentAccuracy:P1} (95% interval up to {upper:P1}, {evidence}) is below threshold {condition.Threshold:P1}";
+        else if (currentAccuracy < condition.Threshold)
+            details = $"Accuracy {currentAccuracy:P1} is below threshold {condition.Threshold:P1}, but its 95% interval reaches {upper:P1} on {evidence} — not established";
+        else
+            details = $"Accuracy {currentAccuracy:P1} is at or above threshold {condition.Threshold:P1} ({evidence})";
+
+        return new ConditionResult(condition, IsMet: isMet, CurrentValue: currentAccuracy, Details: details);
     }
 
     private static ConditionResult EvaluateFeedbackVolume(

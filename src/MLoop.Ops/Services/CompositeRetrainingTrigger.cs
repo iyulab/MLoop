@@ -29,6 +29,31 @@ public static class RetrainingDefaults
     /// <summary>Retrain when any input column's PSI against the training profile reaches this (significant drift).</summary>
     public const double DriftThreshold = MLoop.Core.Monitoring.DriftMeasure.SignificantThreshold;
 
+    /// <summary>
+    /// The feedback an accuracy judgment needs before it can recommend retraining — below it, a handful of wrong
+    /// answers would read as a collapse. Counted as <see cref="FeedbackMetrics.EffectiveSampleSize"/>.
+    /// </summary>
+    public const int MinimumAccuracyFeedback = 30;
+
+    /// <summary>The normal quantile of the accuracy interval: 95% two-sided.</summary>
+    public const double AccuracyConfidenceZ = 1.959964;
+
+    /// <summary>
+    /// The upper end of the Wilson score interval for an accuracy of <paramref name="accuracy"/> on
+    /// <paramref name="n"/> rows — the most accurate the model can plausibly be. Accuracy has dropped below a
+    /// threshold when this is below it, not when the point estimate is: Wilson rather than the normal
+    /// approximation because it stays inside [0, 1] and honest at the small counts feedback starts with.
+    /// </summary>
+    public static double AccuracyUpperBound(double accuracy, double n)
+    {
+        if (n <= 0)
+            return 1;
+        var z2 = AccuracyConfidenceZ * AccuracyConfidenceZ;
+        var centre = accuracy + z2 / (2 * n);
+        var margin = AccuracyConfidenceZ * Math.Sqrt(accuracy * (1 - accuracy) / n + z2 / (4 * n * n));
+        return Math.Min(1, (centre + margin) / (1 + z2 / n));
+    }
+
     public static RetrainingCondition Accuracy(double threshold = AccuracyThreshold) =>
         new(ConditionType.AccuracyDrop, AccuracyName, threshold,
             $"Trigger retraining when accuracy drops below {threshold:P0}");

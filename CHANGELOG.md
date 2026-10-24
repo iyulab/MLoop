@@ -39,6 +39,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The accuracy retraining condition (`mloop trigger check`, `GET /trigger`) recommends retraining only when the
+  drop is established: at least 30 rows of feedback, and the 95% Wilson interval's upper end below the threshold.
+  Before, the point estimate decided — three answers with two wrong read as 33% accuracy and recommended
+  retraining. The details say which case holds (too few to judge, below on its face but not established, below).
+  Feedback metrics gain `effectiveSampleSize` — the row count, or Kish's (Σw)² ÷ Σw² with weights, which is the n
+  the interval uses.
+
 - **Breaking** — `mloop serve` limits requests **per caller** (the token's subject), not per address:
   `Serve:RateLimit:PermitsPerMinute`, default 600, `0` for none; `/health` is not counted; a refusal is `429` with
   `Retry-After` and an `error` naming the setting. Before, every caller behind one address shared 60 predictions and
