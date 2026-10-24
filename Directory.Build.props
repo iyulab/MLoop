@@ -23,7 +23,12 @@
     <IsPackable>false</IsPackable>
 
     <!-- Build settings -->
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- A warning fails the build: the tree builds clean on every OS CI runs, and warnings that
+         only printed went unread (documentation comments naming half of two records' parameters,
+         twelve per build). Vulnerability advisories stay warnings — a new advisory against a pinned
+         package is news for the security scan, not a reason the tree stops building. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 

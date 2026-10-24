@@ -23,10 +23,14 @@ public interface IModelComparer
 /// Result of comparing two models — judged on one metric, the one the candidate's run optimized
 /// (<see cref="Metric"/>), in its direction; the other metrics both experiments recorded are listed, not counted.
 /// </summary>
+/// <param name="CandidateExpId">The experiment being judged.</param>
+/// <param name="BaselineExpId">The experiment it is judged against.</param>
+/// <param name="CandidateIsBetter">Whether the candidate is better on <see cref="Metric"/>, in its direction.</param>
 /// <param name="CandidateScore">The candidate's value of <see cref="Metric"/>.</param>
 /// <param name="BaselineScore">The baseline's value of <see cref="Metric"/>.</param>
 /// <param name="Improvement">How much better the candidate is on <see cref="Metric"/>, in percent of the baseline — positive is better whichever way the metric points.</param>
 /// <param name="MetricDetails">Every metric both experiments recorded.</param>
+/// <param name="Recommendation">One sentence for a reader: promote the candidate, or keep the baseline, and why.</param>
 /// <param name="Metric">The metric judged on; <see langword="null"/> when the two share none to judge on.</param>
 public record ComparisonResult(
     string CandidateExpId,
