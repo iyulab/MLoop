@@ -201,15 +201,15 @@ public static class DetectCommand
     internal static async Task<(IReadOnlyList<double> Values, string Column)?> LoadSeriesAsync(
         string dataFile, string? column, bool jsonOutput)
     {
-        // CsvHelperImpl handles encoding auto-detection (CP949/EUC-KR → UTF-8).
-        var rows = await new CsvHelperImpl().ReadAsync(dataFile);
-        if (rows.Count == 0)
+        // CsvHelperImpl handles encoding auto-detection (CP949/EUC-KR → UTF-8). The file is streamed: only the
+        // series is kept, as doubles.
+        var csv = new CsvHelperImpl();
+        var headers = await csv.ReadHeadersAsync(dataFile);
+        if (headers.Count == 0)
         {
             ErrorConsole.Error(Markup.Escape("The CSV file contains no data rows."));
             return null;
         }
-
-        var headers = rows[0].Keys.ToList();
 
         string? resolved;
         if (column != null)
@@ -232,19 +232,26 @@ public static class DetectCommand
             return null;
         }
 
-        var values = new List<double>(rows.Count);
-        for (int i = 0; i < rows.Count; i++)
+        var index = headers.IndexOf(resolved);
+        var values = new List<double>();
+        await foreach (var row in csv.ReadRowsAsync(dataFile))
         {
-            var raw = rows[i].GetValueOrDefault(resolved);
+            var raw = row[index];
             if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
             {
                 // Row numbering: +2 = 1-based + header line. The transform needs a contiguous numeric
                 // series, so a gap is an input error, not something to silently skip.
-                ErrorConsole.Error(Markup.Escape($"Column '{resolved}' has a non-numeric value '{raw}' at data row {i + 2} — " +
+                ErrorConsole.Error(Markup.Escape($"Column '{resolved}' has a non-numeric value '{raw}' at data row {values.Count + 2} — " +
                            "the series must be fully numeric with no gaps."));
                 return null;
             }
             values.Add(v);
+        }
+
+        if (values.Count == 0)
+        {
+            ErrorConsole.Error(Markup.Escape("The CSV file contains no data rows."));
+            return null;
         }
 
         return (values, resolved);
