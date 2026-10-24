@@ -1,0 +1,39 @@
+name: Runtime smoke
+
+# Drives the deep-learning runtimes end to end (scripts/runtime-smoke.sh): TensorFlow image classification —
+# install, train, serve, POST /predict with images — and libtorch text classification. CI installs neither
+# runtime, so these paths run nowhere else. Run on request when a runtime, its loading, or the image or text
+# paths change. A Linux x64 runner runs the script's linux/amd64 container natively, without emulation.
+on:
+  workflow_dispatch:
+    inputs:
+      runtime:
+        description: 'Which runtime to drive'
+        type: choice
+        options: [both, tf, torch]
+        default: both
+
+concurrency:
+  group: runtime-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Run
+      run: ./scripts/runtime-smoke.sh ${{ inputs.runtime != 'both' && inputs.runtime || '' }}
