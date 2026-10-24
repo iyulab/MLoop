@@ -35,6 +35,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Training an object-detection model recorded no metrics, so the quality gate had nothing to judge and no detector was
+  promoted without `--force`; the diagnostics block printed an empty warning line. Training now scores the test images
+  with mAP — `map_50_95` (COCO's, the task's metric when `metric: auto`) and `map_50` — and the gate refuses a detector
+  whose boxes match nothing (mAP 0), saying so and suggesting another run — on CPU the same data and seed can give
+  mAP 0 on one run and a working detector on the next. `mloop init --task object-detection` writes `metric: map_50_95`.
+
 - `mloop predict` with an object-detection model read only an annotated dataset — a folder of new pictures stopped at
   «No COCO annotations file found». It now predicts over images alone: a folder at any depth, one image, or a
   dataset's pictures (its annotations unread). A model trained with a label column of its own name scored with the

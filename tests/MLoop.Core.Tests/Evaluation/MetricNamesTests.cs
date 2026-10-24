@@ -56,7 +56,8 @@ public class MetricNamesTests
         Assert.Equal("accuracy", MetricNames.Canonical("binary-classification", "auto"));
         Assert.Equal("r_squared", MetricNames.Canonical("regression", "auto"));
         // A task with no primary keeps the auto value: nothing else would be true.
-        Assert.Equal(MetricNames.Auto, MetricNames.Canonical("object-detection", "auto"));
+        Assert.Equal(MetricNames.Auto, MetricNames.Canonical("unknown-task", "auto"));
+        Assert.Equal("map_50_95", MetricNames.Canonical("object-detection", "auto"));
     }
 
     /// <summary>

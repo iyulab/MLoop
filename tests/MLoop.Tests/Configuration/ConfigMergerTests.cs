@@ -274,16 +274,16 @@ public class ConfigMergerTests
     }
 
     [Fact]
-    public void GetEffectiveModelDefinition_TaskWithoutPrimaryMetric_KeepsAutoSentinel()
+    public void GetEffectiveModelDefinition_ObjectDetection_ResolvesAutoToMap()
     {
-        // Object detection has no thresholded scalar primary, so "auto" is a legitimate *result*
-        // there — resolution must not invent a metric for it.
+        // Object detection was the one task left at "auto" while training recorded no mAP; it now
+        // records mAP on the test images, and the gate and promotion judge it.
         var config = new MLoopConfig { Models = new Dictionary<string, ModelDefinition>() };
 
         var result = _merger.GetEffectiveModelDefinition(
             config, "detector", cliLabel: "Label", cliTask: "object-detection");
 
-        Assert.Equal(ConfigDefaults.DefaultMetric, result.Training?.Metric);
+        Assert.Equal("map_50_95", result.Training?.Metric);
     }
 
     #endregion

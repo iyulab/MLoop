@@ -46,6 +46,8 @@ public static class MetricScale
         "log_loss_reduction",
         "exact_match",
         "char_f1",
+        "map_50",
+        "map_50_95",
         "entity_precision",
         "entity_recall",
         "entity_f1",

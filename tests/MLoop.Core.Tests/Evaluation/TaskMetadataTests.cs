@@ -26,13 +26,13 @@ public class TaskMetadataTests
     [InlineData("forecasting", "mae")]
     [InlineData("time-series-anomaly", "detection_rate")]
     [InlineData("recommendation", "rmse")]
+    [InlineData("object-detection", "map_50_95")]
     public void PrimaryMetric_ReturnsCanonicalMetricPerTask(string task, string expected)
     {
         Assert.Equal(expected, TaskMetadata.PrimaryMetric(task));
     }
 
     [Theory]
-    [InlineData("object-detection")]  // mAP has no universal threshold → no scalar primary
     [InlineData("unknown-task")]
     [InlineData(null)]
     public void PrimaryMetric_NoCanonicalMetric_ReturnsNull(string? task)
@@ -51,7 +51,7 @@ public class TaskMetadataTests
     [Fact]
     public void PrimaryMetricOrAuto_FallsBackToAuto_WhenNoCanonicalMetric()
     {
-        Assert.Equal("auto", TaskMetadata.PrimaryMetricOrAuto("object-detection"));
+        Assert.Equal("auto", TaskMetadata.PrimaryMetricOrAuto("unknown-task"));
         Assert.Equal("auto", TaskMetadata.PrimaryMetricOrAuto(null));
         Assert.Equal("r_squared", TaskMetadata.PrimaryMetricOrAuto("regression"));
     }
@@ -113,7 +113,7 @@ public class TaskMetadataTests
     public void ResolvePrimaryMetricValue_NoCanonicalPrimary_ReturnsFirstAvailable()
     {
         var metrics = new Dictionary<string, double> { ["mAP"] = 0.42 };
-        Assert.Equal(0.42, TaskMetadata.ResolvePrimaryMetricValue(metrics, "auto", "object-detection"));
+        Assert.Equal(0.42, TaskMetadata.ResolvePrimaryMetricValue(metrics, "auto", "unknown-task"));
     }
 
     [Theory]

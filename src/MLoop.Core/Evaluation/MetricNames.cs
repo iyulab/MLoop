@@ -41,7 +41,7 @@ public static class MetricNames
     private static readonly string[] Regression =
         ["r_squared", "rmse", "mae", "mse"];
     private static readonly string[] Other =
-        ["average_distance", "davies_bouldin_index", "ndcg", "detection_rate", "mape", "exact_match", "char_f1", CalibrationError.MetricName];
+        ["average_distance", "davies_bouldin_index", "ndcg", "detection_rate", "mape", "exact_match", "char_f1", "map_50", "map_50_95", CalibrationError.MetricName];
 
     // Names that will not be optimized, with why — each was accepted once and optimized the wrong
     // thing. top_k_accuracy needs a K, and trials are scored with ML.NET's default of none, which

@@ -61,7 +61,7 @@ public class InitCommandTests
     [InlineData("text-classification", "micro_accuracy")]  // was "auto" → the skipped-gate family
     [InlineData("anomaly-detection", "auc")]
     [InlineData("forecasting", "mae")]
-    [InlineData("object-detection", "auto")]               // no canonical metric → defers
+    [InlineData("object-detection", "map_50_95")]
     public void GetYamlTemplate_ContainsCorrectMetric(string task, string expectedMetric)
     {
         var yaml = InitCommand.GetYamlTemplate("test-project", task, "default", "Label");

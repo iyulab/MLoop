@@ -76,8 +76,9 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 > Detection (COCO/YOLO loader → AutoFormerV2, `torch` runtime) are wired end-to-end through the runtime
 > gate. Install the matching runtime to train. Both support the full `train → predict → evaluate` loop
 > over image directories: image classification `evaluate` reports multiclass accuracy, object detection
-> `predict` emits per-image detections (label + score + box) as JSON and `evaluate` reports mAP
-> (`map_50` / `map_50_95`) via ML.NET's built-in object-detection evaluator.
+> `predict` emits per-image detections (label + score + box) as JSON, and training and `evaluate` report mAP
+> (`map_50` / `map_50_95`) via ML.NET's built-in object-detection evaluator — `map_50_95` (COCO's) is what the quality
+> gate and promotion judge.
 
 **What the text and vision trainers can and cannot do — measured.** Text classification, sentence
 similarity, NER and question answering each train, predict and evaluate end to end. Their limits come

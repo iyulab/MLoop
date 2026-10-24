@@ -29,6 +29,7 @@ public class MetricVocabularyRoundTripTests
             "davies_bouldin_index",  // clustering's second metric
             "mape",                  // forecasting's second metric
             "exact_match",           // question answering's second metric
+            "map_50",                // object detection's second metric
             CalibrationError.MetricName,
         ];
         var optimizable = new[] { "binary-classification", "multiclass-classification", "regression" }

@@ -48,6 +48,8 @@ public class MetricPolicyTests
     [InlineData("auc", 0.5)]
     [InlineData("accuracy", 0.0)]
     [InlineData("f1_score", 0.0)]
+    [InlineData("map_50", 0.0)]
+    [InlineData("map_50_95", 0.0)]
     public void GetMinimumMetricThreshold_ReturnsExpectedValues(string metric, double expected)
     {
         var threshold = MetricPolicy.GetMinimumMetricThreshold(metric);
@@ -148,14 +150,15 @@ public class MetricPolicyTests
     [InlineData("auto", "multiclass-classification", "macro_accuracy")]
     [InlineData("auto", "anomaly-detection", "auc")]
     [InlineData("f1", "binary-classification", "f1_score")]   // explicit metric still wins
-    [InlineData("auto", "object-detection", null)]            // no canonical floor → null
+    [InlineData("auto", "object-detection", "map_50_95")]
+    [InlineData("auto", "no-such-task", null)]
     [InlineData("auto", null, null)]
     public void ResolveCanonicalMetricKey_FallsBackToTaskDefault(string metric, string? task, string? expected)
     {
         var available = new[]
         {
             "accuracy", "micro_accuracy", "macro_accuracy", "log_loss",
-            "auc", "f1_score", "r_squared", "map_50"
+            "auc", "f1_score", "r_squared", "map_50", "map_50_95"
         };
         Assert.Equal(expected, MetricPolicy.ResolveCanonicalMetricKey(metric, task, available));
     }

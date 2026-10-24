@@ -271,19 +271,24 @@ internal static class DeepLearningHandlers
             // slower CPU training, so it is applied unconditionally rather than gated on success.
             TorchSharp.torch.set_num_threads(1);
 
-            // No trial is reported: this handler computes no metrics (see the empty Metrics below),
-            // and the progress channel carries a metric value by construction — the previous
-            // report said accuracy=0, which for a detector reads as "found nothing".
+            // No trial is reported: a fixed-epoch fit has one result, scored once below on the test
+            // partition, and the progress channel carries a metric value by construction.
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Object detection (AutoFormerV2)", log))
                 model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
-            var predictions = model.Transform(testSet);
+            // mAP on the held-out images, as `mloop evaluate` scores them — what the quality gate and
+            // promotion judge. A value the evaluator could not define (no test image) is left out.
+            var metrics = ObjectDetectionEvaluator.Evaluate(mlContext, model.Transform(testSet))
+                .Where(m => double.IsFinite(m.Value))
+                .ToDictionary(m => m.Key, m => m.Value);
+            foreach (var (name, value) in metrics)
+                log($"Object detection: {name} = {value:F4} on the test images");
 
             return new TrainedModel
             {
                 Trainer = TrainerDescriptor.Of("ObjectDetection (AutoFormerV2)"),
                 Model = model,
-                Metrics = new Dictionary<string, double>(),
+                Metrics = metrics,
                 RowCount = trainSet.GetRowCount() ?? 0
             };
         }, cancellationToken).ConfigureAwait(false);

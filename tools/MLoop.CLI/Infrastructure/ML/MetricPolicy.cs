@@ -77,8 +77,7 @@ public static class MetricPolicy
     /// unresolvable). <see cref="ResolveMetricKey"/> handles explicit metrics and aliases;
     /// this adds task-awareness so directory-based tasks — which init leaves as "auto" — still
     /// engage the gate instead of silently skipping it. Returns null when neither the
-    /// requested metric nor the task default is present (e.g. object detection's mAP has no
-    /// universal threshold).
+    /// requested metric nor the task default is present.
     /// </summary>
     public static string? ResolveCanonicalMetricKey(string metricName, string? task, IEnumerable<string> availableKeys)
     {
@@ -133,6 +132,8 @@ public static class MetricPolicy
                 : 0.0,
             // Question answering: a model whose answers share nothing with the truth has learned nothing.
             "char_f1" or "exact_match" => 0.0,
+            // Object detection: a detector none of whose boxes matches an object has learned nothing.
+            "map_50" or "map_50_95" => 0.0,
             _ => null                                    // No threshold for unknown/error metrics
         };
     }

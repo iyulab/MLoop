@@ -27,8 +27,7 @@ public static class TaskMetadata
 {
     /// <summary>
     /// task (normalized) → canonical primary metric. A task absent from this map has no scalar
-    /// primary metric with a defined threshold (object detection's mAP, unknown tasks); consumers
-    /// treat that as the deferred "auto" / gate-skip case.
+    /// primary metric (unknown tasks); consumers treat that as the deferred "auto" / gate-skip case.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> PrimaryMetrics =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -52,11 +51,14 @@ public static class TaskMetadata
             ["forecasting"] = "mae",
             ["time-series-anomaly"] = "detection_rate",
             ["recommendation"] = "rmse",
+            // COCO's primary score: mAP averaged over IoU 0.5–0.95, so a box must be placed well, not
+            // only near the object. map_50 (PASCAL VOC) is reported beside it and can be chosen.
+            ["object-detection"] = "map_50_95",
         };
 
     /// <summary>
     /// The canonical metric a task optimizes when none is explicitly chosen, or <c>null</c> for
-    /// tasks without a thresholded scalar primary (object detection, unknown). Input is trimmed
+    /// tasks without a scalar primary (unknown). Input is trimmed
     /// and matched case-insensitively.
     /// </summary>
     public static string? PrimaryMetric(string? task)

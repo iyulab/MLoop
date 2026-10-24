@@ -65,9 +65,26 @@ public class PerformanceDiagnostics
             case "recommendation":
                 AnalyzeRecommendation(result);
                 break;
+            case "object-detection":
+                // A detector is graded by mAP, not by a class accuracy it never reports — reading
+                // macro_accuracy here left the diagnostics block an empty warning line. No band is
+                // established for mAP the way R² or AUC have one, so this states the numbers.
+                result.OverallAssessment = PerformanceLevel.Unknown;
+                result.Summary = result.Metrics.TryGetValue("map_50_95", out var map5095)
+                    ? $"Detection: mAP@0.5:0.95 {map5095:F4}, mAP@0.5 {result.Metrics.GetValueOrDefault("map_50"):F4} on the test images"
+                    : "Detection: no mAP — no test image could be scored";
+                // Measured: on CPU the same images, settings and seed gave mAP 0 on one run and 0.8 on
+                // another (libtorch is not repeatable across processes), so a detector that learned
+                // nothing is worth training again before the data is blamed.
+                if (result.Metrics.TryGetValue("map_50", out var map50) && map50 <= 0)
+                {
+                    result.OverallAssessment = PerformanceLevel.Poor;
+                    result.Warnings.Add("No box matched an object in the test images — the detector learned nothing");
+                    result.Suggestions.Add("Train again: object-detection training is not repeatable on CPU, and the same data can give a working detector on another run");
+                }
+                break;
             case "image-classification":
             case "text-classification":
-            case "object-detection":
             case "ner":
                 AnalyzeMulticlassClassification(result);
                 break;

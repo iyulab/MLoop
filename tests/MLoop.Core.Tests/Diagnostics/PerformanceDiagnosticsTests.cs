@@ -14,6 +14,37 @@ public class PerformanceDiagnosticsTests
         _diagnostics = new PerformanceDiagnostics();
     }
 
+    [Fact]
+    public void Analyze_ObjectDetection_StatesTheMapItWasScoredOn()
+    {
+        var result = _diagnostics.Analyze("object-detection",
+            new Dictionary<string, double> { ["map_50"] = 0.8333, ["map_50_95"] = 0.775 });
+
+        Assert.Equal(PerformanceLevel.Unknown, result.OverallAssessment);
+        Assert.Contains("mAP@0.5:0.95 0.7750", result.Summary);
+        Assert.Contains("mAP@0.5 0.8333", result.Summary);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public void Analyze_ObjectDetection_ThatMatchedNothing_WarnsAndSuggestsTrainingAgain()
+    {
+        var result = _diagnostics.Analyze("object-detection",
+            new Dictionary<string, double> { ["map_50"] = 0, ["map_50_95"] = 0 });
+
+        Assert.Equal(PerformanceLevel.Poor, result.OverallAssessment);
+        Assert.Contains(result.Warnings, w => w.Contains("learned nothing"));
+        Assert.Contains(result.Suggestions, s => s.Contains("Train again"));
+    }
+
+    [Fact]
+    public void Analyze_ObjectDetection_WithoutMap_SaysSoRatherThanNothing()
+    {
+        var result = _diagnostics.Analyze("object-detection", new Dictionary<string, double>());
+
+        Assert.False(string.IsNullOrWhiteSpace(result.Summary));
+    }
+
     [Theory]
     [InlineData(0.95, PerformanceLevel.Excellent)]
     [InlineData(0.85, PerformanceLevel.Good)]

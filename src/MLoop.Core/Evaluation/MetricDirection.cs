@@ -79,5 +79,6 @@ public static class MetricDirection
         || lower.Contains("ndcg")
         || lower.Contains("dcg")
         || lower == "detection_rate"
-        || lower == "exact_match";
+        || lower == "exact_match"
+        || lower.StartsWith("map_", StringComparison.Ordinal);
 }
