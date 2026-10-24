@@ -569,7 +569,7 @@ public static class PredictCommand
                     task = jsonResult.TaskType,
                     count = jsonResult.Rows.Count,
                     predictions = jsonResult.Rows,
-                    warnings = jsonResult.Warnings,
+                    warnings = JsonOutputScope.Warnings is { } reported ? [.. reported, .. jsonResult.Warnings ?? []] : jsonResult.Warnings,
                 };
                 Console.Out.WriteLine(JsonSerializer.Serialize(payload, PredictJsonOptions));
                 return 0;
@@ -1012,7 +1012,7 @@ public static class PredictCommand
             task = "forecasting",
             count = forecast.ForecastedValues.Length,
             predictions = ForecastReplayService.BuildForecastRows(forecast),
-            warnings = new List<string>(),
+            warnings = JsonOutputScope.Warnings ?? [],
         };
         Console.Out.WriteLine(JsonSerializer.Serialize(payload, PredictJsonOptions));
         return 0;

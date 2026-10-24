@@ -40,6 +40,7 @@ public sealed class JsonOutputScope : IDisposable
     private readonly ObservingWriter _stdout;
     private readonly JsonOutputScope? _previousScope;
     private string? _reportedError;
+    private readonly List<string> _warnings = [];
 
     /// <summary>
     /// The active scope, or null outside <c>--json</c> mode. Static for the same reason
@@ -82,6 +83,27 @@ public sealed class JsonOutputScope : IDisposable
 
         scope._reportedError = plain;
     }
+
+    /// <summary>
+    /// Called by <see cref="WarningConsole"/> for every warning. In this scope the warning's line goes to
+    /// stderr with the rest of the narration, which a consumer of the document does not read — so the
+    /// scope keeps it for the command's document (<see cref="Warnings"/>). Markup is stripped.
+    /// </summary>
+    public static void ReportWarning(string message)
+    {
+        if (Current is not { } scope)
+            return;
+        var plain = message;
+        try { plain = Markup.Remove(message); }
+        catch (InvalidOperationException) { /* not valid markup — keep it verbatim */ }
+        scope._warnings.Add(plain);
+    }
+
+    /// <summary>
+    /// The warnings reported while the active scope was open, in order, or <c>null</c> when there were
+    /// none — what a command's document carries as <c>warnings</c>.
+    /// </summary>
+    public static IReadOnlyList<string>? Warnings => Current is { _warnings.Count: > 0 } scope ? [.. scope._warnings] : null;
 
     public void Dispose()
     {

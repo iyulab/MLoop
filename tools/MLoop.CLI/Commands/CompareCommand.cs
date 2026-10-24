@@ -463,6 +463,7 @@ public static class CompareCommand
         {
             // The ranking below compares metrics measured over different distributions when true.
             weightsDiffer = WeightsDiffer(experiments),
+            warnings = JsonOutputScope.Warnings,
             metric,
             direction,
             directionSource,

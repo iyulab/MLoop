@@ -2092,7 +2092,9 @@ Two rules hold across every command:
   is enough; you never need stdout to find out what went wrong.
 - **stdout carries the result, not the diagnostics.** Under `--json`, stdout is the document and
   nothing else — progress, warnings and errors go to stderr, so `mloop … --json > out.json` yields a
-  parseable file even on the runs that print warnings.
+  parseable file even on the runs that print warnings. A warning is also in the document, as
+  `warnings` (`evaluate`, `predict`, `calibrate`, `threshold`, `compare`; `train`'s stream reports each
+  as a `warning` event), so a consumer reading only stdout still learns of it.
 
 An outcome that is not a failure exits `0` even when nothing happened. `mloop evaluate` exits `0`
 and reports `skipped` when the model has no production version yet — a pipeline that evaluates

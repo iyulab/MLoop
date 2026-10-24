@@ -175,7 +175,7 @@ public static class ThresholdCommand
     {
         if (jsonOutput)
         {
-            Console.WriteLine(JsonSerializer.Serialize(new { model, experimentId, status, inProduction, threshold },
+            Console.WriteLine(JsonSerializer.Serialize(new { model, experimentId, status, inProduction, threshold, warnings = JsonOutputScope.Warnings },
                 new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
             return 0;
         }

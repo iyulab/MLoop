@@ -5,7 +5,8 @@ namespace MLoop.CLI.Infrastructure.Diagnostics;
 /// <summary>
 /// The single seam a training warning goes through, mirroring <see cref="ErrorConsole"/> for the
 /// non-fatal channel. A warning renders as a <c>Warning:</c> line for a human and, in machine mode,
-/// is reported as a <c>warning</c> event — from one call site, so the two audiences cannot drift.
+/// is reported as a <c>warning</c> event (<c>train</c>'s stream) or kept for the command's document
+/// (<see cref="JsonOutputScope.Warnings"/>) — from one call site, so the audiences cannot drift.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -34,6 +35,7 @@ public static class WarningConsole
         markup = WithoutOwnWarningSign(markup);
         AnsiConsole.MarkupLine($"[yellow]Warning:[/] {markup}");
         MachineOutputScope.ReportWarning(markup);
+        JsonOutputScope.ReportWarning(markup);
     }
 
     /// <summary>

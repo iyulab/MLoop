@@ -176,7 +176,7 @@ public static class CalibrateCommand
     {
         if (jsonOutput)
         {
-            Console.WriteLine(JsonSerializer.Serialize(new { model, experimentId, status, inProduction, calibration },
+            Console.WriteLine(JsonSerializer.Serialize(new { model, experimentId, status, inProduction, calibration, warnings = JsonOutputScope.Warnings },
                 new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
             return 0;
         }

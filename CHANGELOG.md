@@ -68,9 +68,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- `mloop evaluate --json` left its warnings out of the document — a test file whose column changed type, a
-  weight the file lacks — writing them only to stderr with the narration. The document carries them as
-  `warnings`, as `POST /evaluate` does.
+- `--json` documents left out the warnings their commands raised — a column that no longer reads as its
+  trained type, a weight the file lacks, a calibration worse than the model's own probabilities — writing
+  them only to stderr with the narration. `evaluate`, `predict`, `calibrate`, `threshold` and `compare`
+  documents carry them as `warnings` (`evaluate`'s as `POST /evaluate` does); only `train`'s event stream
+  had them before.
 
 - An exported binary or regression graph declared the label column as an input although no output
   reads it and the manifest did not list it: the label was dropped from a view over the data, while the

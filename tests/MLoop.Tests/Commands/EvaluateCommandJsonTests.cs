@@ -195,6 +195,26 @@ public class EvaluateCommandJsonTests : IDisposable
         Assert.Equal(System.Text.Json.JsonValueKind.Null, heldOutDoc.RootElement.GetProperty("warnings").ValueKind);
     }
 
+    /// <summary>
+    /// The same seam for <c>predict</c>: a column that no longer reads as its trained type is warned
+    /// about, and under <c>--json</c> the warning is in the document beside the predictions (it went
+    /// only to stderr before). Shares this file's trained fixture.
+    /// </summary>
+    [Fact]
+    public async Task Predict_Json_ASchemaWarning_IsInTheDocument()
+    {
+        await CreateRegressionFixtureAsync("default", "exp-001");
+        var typed = Path.Combine(_testProjectRoot, "typed.csv");
+        File.WriteAllLines(typed, ["X1,X2", "low,1.5", "2.0,2.5", "3.0,3.5"]);
+
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", typed, "--experiment", "exp-001", "--json");
+
+        Assert.True(exitCode == 0, stdout + stderr);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal(3, doc.RootElement.GetProperty("count").GetInt32());
+        Assert.Contains(doc.RootElement.GetProperty("warnings").EnumerateArray(), w => w.GetString()!.Contains("'X1' was trained as"));
+    }
+
     [Fact]
     public async Task Evaluate_Json_UnknownExperiment_EmitsErrorPayload()
     {
