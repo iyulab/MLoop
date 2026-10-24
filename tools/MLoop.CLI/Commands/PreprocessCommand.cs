@@ -82,8 +82,7 @@ public static class PreprocessCommand
         }
         catch (InvalidOperationException ex)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/]");
-            AnsiConsole.WriteLine(ex.Message);
+            ErrorConsole.Error(Markup.Escape(ex.Message));
             return 1;
         }
         catch (Exception ex)

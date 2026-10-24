@@ -88,8 +88,8 @@ public static class PrepRunCommand
             // Resolve model name
             if (!config.Models.TryGetValue(resolvedModelName, out var modelDef))
             {
-                AnsiConsole.MarkupLine($"[red]Model '{resolvedModelName}' not found in mloop.yaml.[/]");
-                AnsiConsole.MarkupLine($"[grey]Available models: {string.Join(", ", config.Models.Keys)}[/]");
+                ErrorConsole.Error($"Model '{Markup.Escape(resolvedModelName)}' not found in mloop.yaml.",
+                    $"Available models: {Markup.Escape(string.Join(", ", config.Models.Keys))}");
                 EmitJson(resolvedModelName, dryRun, null, null, null,
                     [$"Model '{resolvedModelName}' not found in mloop.yaml"], null, null, jsonOutput);
                 return 1;
@@ -115,13 +115,12 @@ public static class PrepRunCommand
             var validationErrors = ConfigValidator.ValidatePrepSteps(modelDef.Prep);
             if (validationErrors.Count > 0)
             {
-                AnsiConsole.MarkupLine("[red]Prep step validation failed:[/]");
+                // Same display-boundary rule as the validate report: a validation message carries
+                // user data (step index, column names) and must not be parsed as markup.
+                ErrorConsole.Error($"Prep step validation failed: {validationErrors.Count} error(s).");
+                var err = ErrorConsole.Out;
                 foreach (var error in validationErrors)
-                {
-                    // Same display-boundary rule as the validate report: a validation message carries
-                    // user data (step index, column names) and must not be parsed as markup.
-                    AnsiConsole.MarkupLine($"  [red]✗[/] {Markup.Escape(error)}");
-                }
+                    err.MarkupLine($"  [red]✗[/] {Markup.Escape(error)}");
                 EmitJson(resolvedModelName, dryRun, null, null, modelDef.Prep, validationErrors, null, null, jsonOutput);
                 return 1;
             }
@@ -143,8 +142,8 @@ public static class PrepRunCommand
 
             if (!File.Exists(resolvedInput))
             {
-                AnsiConsole.MarkupLine($"[red]Input file not found: {resolvedInput}[/]");
-                AnsiConsole.MarkupLine("[grey]Use --input to specify the CSV file path.[/]");
+                ErrorConsole.Error($"Input file not found: {Markup.Escape(resolvedInput)}",
+                    "Use --input to specify the CSV file path.");
                 EmitJson(resolvedModelName, dryRun, resolvedInput, null, modelDef.Prep,
                     [$"Input file not found: {resolvedInput}"], null, null, jsonOutput);
                 return 1;

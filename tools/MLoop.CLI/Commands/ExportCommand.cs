@@ -105,7 +105,7 @@ public static class ExportCommand
             }
             catch (InvalidOperationException)
             {
-                WriteError("Not inside a MLoop project. Run 'mloop init' to create a new project.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape("Not inside a MLoop project. Run 'mloop init' to create a new project."));
                 return 1;
             }
 
@@ -121,7 +121,7 @@ public static class ExportCommand
                 var production = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
                 if (production is null)
                 {
-                    WriteError($"Model '{resolvedModelName}' has no production model. Name an experiment: mloop export onnx <experiment-id>", jsonOutput);
+                    ErrorConsole.Error(Markup.Escape($"Model '{resolvedModelName}' has no production model. Name an experiment: mloop export onnx <experiment-id>"));
                     return 1;
                 }
                 experimentId = production.ExperimentId;
@@ -131,14 +131,14 @@ public static class ExportCommand
             var (modelPath, refusal) = ExperimentModels.Find(experimentStore, resolvedModelName, experimentId);
             if (modelPath is null)
             {
-                WriteError($"{refusal} Run 'mloop list --name {resolvedModelName}' to see all experiments.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"{refusal} Run 'mloop list --name {resolvedModelName}' to see all experiments."));
                 return 1;
             }
 
             // Checked before any work: a verification that cannot run is a refusal, not a skipped step.
             if (verify && OnnxRuntimeNative.Unavailable() is { } unavailable)
             {
-                WriteError($"--verify needs ONNX Runtime. {unavailable}", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"--verify needs ONNX Runtime. {unavailable}"));
                 return 1;
             }
 
@@ -146,7 +146,7 @@ public static class ExportCommand
             var task = TaskTypes.Canonical(experiment.Task) ?? experiment.Task ?? "unknown";
             if (!SupportedTasks.Contains(task))
             {
-                WriteError($"ONNX export supports {string.Join(", ", SupportedTasks.Order())} models; '{experimentId}' is {task}.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"ONNX export supports {string.Join(", ", SupportedTasks.Order())} models; '{experimentId}' is {task}."));
                 return 1;
             }
 
@@ -161,9 +161,9 @@ public static class ExportCommand
                     : null;
             if (dataPath is null || !TabularDataFile.Exists(dataPath))
             {
-                WriteError(dataPath is null
+                ErrorConsole.Error(Markup.Escape(dataPath is null
                     ? "No data file to read the model's input columns from. Pass one: --data <file>"
-                    : $"Data file not found: {dataPath}. Pass one with the model's input columns: --data <file>", jsonOutput);
+                    : $"Data file not found: {dataPath}. Pass one with the model's input columns: --data <file>"));
                 return 1;
             }
             dataPath = await TabularDataFile.AsCsvAsync(dataPath);
@@ -239,9 +239,8 @@ public static class ExportCommand
 
             if (verification is { Passed: false })
             {
-                WriteError(
-                    $"The exported graph disagrees with the model on {verification.Rows} rows checked "
-                    + $"({Describe(verification)}); it was not kept. The comparison is in {manifestPath}.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"The exported graph disagrees with the model on {verification.Rows} rows checked "
+                    + $"({Describe(verification)}); it was not kept. The comparison is in {manifestPath}."));
                 return 1;
             }
 
@@ -283,16 +282,11 @@ public static class ExportCommand
         }
         catch (OnnxExportException ex)
         {
-            WriteError(ex.Message, jsonOutput);
+            ErrorConsole.Error(Markup.Escape(ex.Message));
             return 1;
         }
         catch (Exception ex)
         {
-            if (jsonOutput)
-            {
-                WriteError(ex.Message, jsonOutput: true);
-                return 1;
-            }
             ErrorSuggestions.DisplayError(ex, "export");
             return 1;
         }
@@ -378,16 +372,4 @@ public static class ExportCommand
         return columns.Count > 0 ? columns : null;
     }
 
-    private static void WriteError(string message, bool jsonOutput)
-    {
-        if (jsonOutput)
-        {
-            JsonError.Emit(message);
-            Console.Error.WriteLine(message);
-        }
-        else
-        {
-            ErrorConsole.Out.MarkupLineInterpolated($"[red]Error:[/] {message}");
-        }
-    }
 }

@@ -69,19 +69,19 @@ public static class ThresholdCommand
         try
         {
             if (clear && precision is not null)
-                return Fail("--clear removes the threshold and --precision chooses one: give one of them.", jsonOutput);
+                return Fail("--clear removes the threshold and --precision chooses one: give one of them.");
             if (precision is { } p && (p <= 0 || p > 1 || double.IsNaN(p)))
-                return Fail($"--precision is a share above 0 and at most 1, not {p.ToString(CultureInfo.InvariantCulture)}.", jsonOutput);
+                return Fail($"--precision is a share above 0 and at most 1, not {p.ToString(CultureInfo.InvariantCulture)}.");
             if (precisionOf is not null && precision is null)
-                return Fail("--precision-of names the class whose precision --precision targets: give --precision too.", jsonOutput);
+                return Fail("--precision-of names the class whose precision --precision targets: give --precision too.");
             if (precision is not null && string.IsNullOrWhiteSpace(data))
-                return Fail("--precision needs --data: the labeled rows the threshold is chosen on.", jsonOutput);
+                return Fail("--precision needs --data: the labeled rows the threshold is chosen on.");
 
             var fileSystem = new FileSystemManager();
             var discovery = new ProjectDiscovery(fileSystem);
             string projectRoot;
             try { projectRoot = discovery.FindRoot(); }
-            catch (InvalidOperationException) { return Fail(ProjectDiscovery.NotInsideProjectCause, jsonOutput); }
+            catch (InvalidOperationException) { return Fail(ProjectDiscovery.NotInsideProjectCause); }
 
             var name = CommandContext.ResolveModelName(modelName);
             var store = new ExperimentStore(fileSystem, discovery);
@@ -89,13 +89,13 @@ public static class ThresholdCommand
             var production = await registry.GetProductionAsync(name, CancellationToken.None);
             var id = string.IsNullOrWhiteSpace(experimentId) ? production?.ExperimentId : experimentId.Trim();
             if (id is null)
-                return Fail($"No model is in production for '{name}' — name an experiment.", jsonOutput);
+                return Fail($"No model is in production for '{name}' — name an experiment.");
             var (modelPath, refusal) = ExperimentModels.Find(store, name, id);
             if (modelPath is null)
-                return Fail(refusal!, jsonOutput);
+                return Fail(refusal!);
             var experiment = await store.LoadAsync(name, id, CancellationToken.None);
             if (TaskTypes.Canonical(experiment.Task) != "binary-classification")
-                return Fail($"A decision threshold is a binary classifier's; {id} is {experiment.Task}.", jsonOutput);
+                return Fail($"A decision threshold is a binary classifier's; {id} is {experiment.Task}.");
 
             // The class is named the way the label was written; which side of the threshold it is on
             // is the training conversion's decision, read from the saved schema.
@@ -118,7 +118,7 @@ public static class ThresholdCommand
 
             var dataPath = ProjectPaths.Resolve(data!, projectRoot);
             if (!TabularDataFile.Exists(dataPath))
-                return Fail($"Data not found: {data}", jsonOutput);
+                return Fail($"Data not found: {data}");
             dataPath = await TabularDataFile.AsCsvAsync(dataPath, records);
             var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(weight, experiment, dataPath);
             if (weightWarning is not null)
@@ -126,15 +126,15 @@ public static class ThresholdCommand
 
             var (ofPositive, className, classError) = ResolveClass(precisionOf, vocabulary);
             if (classError is not null)
-                return Fail(classError, jsonOutput);
+                return Fail(classError);
 
             var rows = await new EvaluationEngine().ThresholdRowsAsync(modelPath, dataPath, experiment.Config.LabelColumn,
                 experiment.Config.InputSchema, weightColumn);
             if (rows is null)
-                return Fail($"{id} gives no probability (its trainer is not calibrated), and a decision threshold is a probability.", jsonOutput);
+                return Fail($"{id} gives no probability (its trainer is not calibrated), and a decision threshold is a probability.");
             if (DecisionThreshold.Choose(rows, target, ofPositive) is not { } chosen)
                 return Fail(string.Create(CultureInfo.InvariantCulture,
-                    $"No threshold reaches a precision of {target:0.###} for {className ?? "the positive class"} on {Path.GetFileName(data)} — not even answering it only for the rows the model is most confident about."), jsonOutput);
+                    $"No threshold reaches a precision of {target:0.###} for {className ?? "the positive class"} on {Path.GetFileName(data)} — not even answering it only for the rows the model is most confident about."));
 
             var threshold = new DecisionThreshold(chosen.Threshold, target, chosen.Precision, chosen.Recall, rows.Count,
                 Path.GetFileName(data!), weightColumn, DateTimeOffset.UtcNow, className);
@@ -145,7 +145,7 @@ public static class ThresholdCommand
         catch (Exception ex)
         {
             if (jsonOutput)
-                return Fail(ex.Message, jsonOutput: true);
+                return Fail(ex.Message);
             ErrorSuggestions.DisplayError(ex, "threshold");
             return 1;
         }
@@ -198,17 +198,9 @@ public static class ThresholdCommand
         return 0;
     }
 
-    private static int Fail(string message, bool jsonOutput)
+    private static int Fail(string message)
     {
-        if (jsonOutput)
-        {
-            JsonError.Emit(message);
-            Console.Error.WriteLine(message);
-        }
-        else
-        {
-            ErrorConsole.Error(message);
-        }
+        ErrorConsole.Error(Markup.Escape(message));
         return 1;
     }
 }

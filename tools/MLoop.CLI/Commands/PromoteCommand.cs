@@ -122,9 +122,9 @@ public static class PromoteCommand
             var selectorCount = (experimentId != null ? 1 : 0) + (latest ? 1 : 0) + (best ? 1 : 0);
             if (selectorCount != 1)
             {
-                WriteError(selectorCount == 0
+                ErrorConsole.Error(Markup.Escape(selectorCount == 0
                     ? "Specify an experiment: an explicit ID, --latest, or --best."
-                    : "Use only one of: an explicit experiment ID, --latest, --best.", jsonOutput);
+                    : "Use only one of: an explicit experiment ID, --latest, --best."));
                 return 1;
             }
 
@@ -140,7 +140,7 @@ public static class PromoteCommand
             }
             catch (InvalidOperationException)
             {
-                WriteError("Not inside a MLoop project. Run 'mloop init' to create a new project.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape("Not inside a MLoop project. Run 'mloop init' to create a new project."));
                 return 1;
             }
 
@@ -175,7 +175,7 @@ public static class PromoteCommand
                 var (selected, reason, error) = SelectExperiment(candidates, resolvedModelName, best, refusals);
                 if (selected == null)
                 {
-                    WriteError(error!, jsonOutput);
+                    ErrorConsole.Error(Markup.Escape(error!));
                     return 1;
                 }
                 experimentId = selected;
@@ -185,8 +185,8 @@ public static class PromoteCommand
             // Verify experiment exists for this model
             if (!experimentStore.ExperimentExists(resolvedModelName, experimentId))
             {
-                WriteError($"Experiment '{experimentId}' not found for model '{resolvedModelName}'. " +
-                           $"Run 'mloop list --name {resolvedModelName}' to see all experiments.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"Experiment '{experimentId}' not found for model '{resolvedModelName}'. " +
+                           $"Run 'mloop list --name {resolvedModelName}' to see all experiments."));
                 return 1;
             }
 
@@ -196,8 +196,8 @@ public static class PromoteCommand
             // Check if experiment is completed
             if (!experiment.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
             {
-                WriteError($"Cannot promote experiment with status '{experiment.Status}'. " +
-                           "Only completed experiments can be promoted.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"Cannot promote experiment with status '{experiment.Status}'. " +
+                           "Only completed experiments can be promoted."));
                 return 1;
             }
 
@@ -208,8 +208,8 @@ public static class PromoteCommand
             {
                 if (!force)
                 {
-                    WriteError($"'{experimentId}' does not pass the quality gate: {refusal}. "
-                               + "Use --force to promote it anyway.", jsonOutput);
+                    ErrorConsole.Error(Markup.Escape($"'{experimentId}' does not pass the quality gate: {refusal}. "
+                               + "Use --force to promote it anyway."));
                     return 1;
                 }
 
@@ -224,8 +224,8 @@ public static class PromoteCommand
             {
                 if (!force)
                 {
-                    WriteError($"'{experimentId}' does not pass the gate policy: {policyRefusal}. "
-                               + "Use --force to promote it anyway.", jsonOutput);
+                    ErrorConsole.Error(Markup.Escape($"'{experimentId}' does not pass the gate policy: {policyRefusal}. "
+                               + "Use --force to promote it anyway."));
                     return 1;
                 }
                 AnsiConsole.MarkupLineInterpolated(
@@ -313,11 +313,6 @@ public static class PromoteCommand
         }
         catch (Exception ex)
         {
-            if (jsonOutput)
-            {
-                WriteError(ex.Message, jsonOutput: true);
-                return 1;
-            }
             ErrorSuggestions.DisplayError(ex, "promote");
             return 1;
         }
@@ -525,7 +520,7 @@ public static class PromoteCommand
     private static int HistoryConflict(bool jsonOutput)
     {
         using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
-        WriteError("--history lists the promotions and changes nothing: it takes no experiment, --latest, --best, --force or --decide-only.", jsonOutput);
+        ErrorConsole.Error(Markup.Escape("--history lists the promotions and changes nothing: it takes no experiment, --latest, --best, --force or --decide-only."));
         return 1;
     }
 
@@ -543,7 +538,7 @@ public static class PromoteCommand
         }
         catch (InvalidOperationException)
         {
-            WriteError("Not inside a MLoop project. Run 'mloop init' to create a new project.", jsonOutput);
+            ErrorConsole.Error(Markup.Escape("Not inside a MLoop project. Run 'mloop init' to create a new project."));
             return 1;
         }
 
@@ -608,19 +603,4 @@ public static class PromoteCommand
         return 0;
     }
 
-    private static void WriteError(string message, bool jsonOutput)
-    {
-        if (jsonOutput)
-        {
-            // The JSON envelope stays on stdout — that is what a --json consumer parses — but the
-            // cause is mirrored to stderr so "exit != 0 ⇒ stderr has a cause" holds in every mode,
-            // including for consumers that only check the exit code and read stderr.
-            JsonError.Emit(message);
-            Console.Error.WriteLine(message);
-        }
-        else
-        {
-            ErrorConsole.Out.MarkupLineInterpolated($"[red]Error:[/] {message}");
-        }
-    }
 }

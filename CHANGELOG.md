@@ -81,6 +81,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A failing command always says why on stderr, and under `--json` answers with one `{"error": …}` document.
+  `features select`, `prep plan`, `prep run`, `info` (empty file), `validate`, `preprocess` and the `predict` /
+  `evaluate` schema check printed their error to stdout only, so the exit code was 1 with nothing on stderr;
+  `prep plan --json` with an unknown model left stdout empty; `compare --metrics-file` wrote its error to the
+  JSON document only; and a model name containing `[` crashed the message instead of printing it.
+
 - `mloop train --task image-classification --balance <ratio>` balances: the trainer oversamples the smaller classes of
   its training split (after the split, so no copy of an image is among the held-out ones), and the configuration table
   shows the balance. The trainer's own early-stopping slice (10% of what it is given) is set aside per class before

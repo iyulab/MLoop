@@ -49,20 +49,13 @@ public static class JsonError
     /// Writes <c>{"error": "&lt;message&gt;"}</c> to stdout, verbatim.
     /// <para>
     /// The message is <b>plain text</b>, not markup: whatever is passed reaches the consumer
-    /// unaltered, so a path or column name containing brackets survives intact. Use
-    /// <see cref="EmitMarkup(string)"/> for a call site whose string is Spectre markup.
+    /// unaltered, so a path or column name containing brackets survives intact. A command does not call
+    /// this: it reports through <see cref="ErrorConsole"/> and its <see cref="JsonOutputScope"/> writes the
+    /// document. What is left here serves the failures that happen before any command runs (a parse error).
     /// </para>
     /// </summary>
     public static void Emit(string message) =>
         Console.WriteLine(JsonSerializer.Serialize(new { error = message }));
-
-    /// <summary>
-    /// Emits a message written as Spectre markup, with the tags removed — for the common case where
-    /// one string literal serves both <see cref="ErrorConsole.Error(string)"/> and this payload, so
-    /// the two channels cannot describe the same failure differently. The payload carries the
-    /// sentence a consumer would print, not the rendering instructions.
-    /// </summary>
-    public static void EmitMarkup(string markup) => Emit(Plain(markup));
 
     /// <summary>
     /// The error and its tip as one payload, mirroring <see cref="ErrorConsole.Error(string, string)"/>:

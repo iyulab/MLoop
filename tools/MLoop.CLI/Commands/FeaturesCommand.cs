@@ -60,8 +60,8 @@ public sealed class FeaturesCommand : Command
             var config = await ctx.ConfigLoader.LoadUserConfigAsync();
             if (!config.Models.TryGetValue(modelName, out var model))
             {
-                AnsiConsole.MarkupLine($"[red]Model '{modelName}' not found in mloop.yaml.[/]");
-                AnsiConsole.MarkupLine($"[grey]Available models: {string.Join(", ", config.Models.Keys)}[/]");
+                ErrorConsole.Error($"Model '{Markup.Escape(modelName)}' not found in mloop.yaml.",
+                    $"Available models: {Markup.Escape(string.Join(", ", config.Models.Keys))}");
                 return 1;
             }
             model.Columns ??= new Dictionary<string, ColumnOverride>();
@@ -72,7 +72,7 @@ public sealed class FeaturesCommand : Command
                 + (!string.IsNullOrWhiteSpace(keepCsv) ? 1 : 0);
             if (modeCount > 1)
             {
-                AnsiConsole.MarkupLine("[red]Specify only one of --drop, --keep, or --reset.[/]");
+                ErrorConsole.Error("Specify only one of --drop, --keep, or --reset.");
                 return 1;
             }
 
@@ -123,8 +123,8 @@ public sealed class FeaturesCommand : Command
                 var trainPath = ResolveTrainPath(ctx, config);
                 if (trainPath == null || !File.Exists(trainPath))
                 {
-                    AnsiConsole.MarkupLine("[red]--keep requires train data to compute the complement.[/]");
-                    AnsiConsole.MarkupLine("[grey]Expected datasets/train.csv or data.train in mloop.yaml.[/]");
+                    ErrorConsole.Error("--keep requires train data to compute the complement.",
+                        "Expected datasets/train.csv or data.train in mloop.yaml.");
                     return 1;
                 }
                 var kept = SplitCsv(keepCsv);

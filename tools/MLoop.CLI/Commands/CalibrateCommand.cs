@@ -66,13 +66,13 @@ public static class CalibrateCommand
         try
         {
             if (clear && data is not null)
-                return Fail("--clear removes the calibration and --data fits one: give one of them.", jsonOutput);
+                return Fail("--clear removes the calibration and --data fits one: give one of them.");
 
             var fileSystem = new FileSystemManager();
             var discovery = new ProjectDiscovery(fileSystem);
             string projectRoot;
             try { projectRoot = discovery.FindRoot(); }
-            catch (InvalidOperationException) { return Fail(ProjectDiscovery.NotInsideProjectCause, jsonOutput); }
+            catch (InvalidOperationException) { return Fail(ProjectDiscovery.NotInsideProjectCause); }
 
             var name = CommandContext.ResolveModelName(modelName);
             var store = new ExperimentStore(fileSystem, discovery);
@@ -80,10 +80,10 @@ public static class CalibrateCommand
             var production = await registry.GetProductionAsync(name, CancellationToken.None);
             var id = string.IsNullOrWhiteSpace(experimentId) ? production?.ExperimentId : experimentId.Trim();
             if (id is null)
-                return Fail($"No model is in production for '{name}' — name an experiment.", jsonOutput);
+                return Fail($"No model is in production for '{name}' — name an experiment.");
             var (modelPath, refusal) = ExperimentModels.Find(store, name, id);
             if (modelPath is null)
-                return Fail(refusal!, jsonOutput);
+                return Fail(refusal!);
             var experiment = await store.LoadAsync(name, id, CancellationToken.None);
             var task = TaskTypes.Canonical(experiment.Task);
             var methods = task switch
@@ -93,10 +93,10 @@ public static class CalibrateCommand
                 _ => null,
             };
             if (methods is null)
-                return Fail($"Probability calibration is a classifier's; {id} is {experiment.Task}.", jsonOutput);
+                return Fail($"Probability calibration is a classifier's; {id} is {experiment.Task}.");
             method = method?.Trim().ToLowerInvariant() ?? methods[0];
             if (!methods.Contains(method))
-                return Fail($"--method {method} does not calibrate a {task} model: {string.Join(", ", methods)}.", jsonOutput);
+                return Fail($"--method {method} does not calibrate a {task} model: {string.Join(", ", methods)}.");
             var binary = task == "binary-classification";
 
             // Production answers from its own copy: a calibration fit on the experiment in production is set there too.
@@ -118,11 +118,11 @@ public static class CalibrateCommand
 
             if (binary && DecisionThreshold.ReadBeside(modelPath) is not null)
                 return Fail($"{id} has a decision threshold, chosen on the probabilities a calibration replaces — it would no longer reach the precision it was chosen for. " +
-                            $"Remove it (mloop threshold {id} --clear), calibrate, then choose it again.", jsonOutput);
+                            $"Remove it (mloop threshold {id} --clear), calibrate, then choose it again.");
 
             var dataPath = ProjectPaths.Resolve(data, projectRoot);
             if (!TabularDataFile.Exists(dataPath))
-                return Fail($"Data not found: {data}", jsonOutput);
+                return Fail($"Data not found: {data}");
             dataPath = await TabularDataFile.AsCsvAsync(dataPath, records);
             var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(weight, experiment, dataPath);
             if (weightWarning is not null)
@@ -136,20 +136,20 @@ public static class CalibrateCommand
                 var rows = await engine.ThresholdRowsAsync(modelPath, dataPath, experiment.Config.LabelColumn,
                     experiment.Config.InputSchema, weightColumn, CancellationToken.None, ScoringLayers.None);
                 if (rows is null)
-                    return Fail($"{id} gives no probability (its trainer is not calibrated), so there is no probability to calibrate.", jsonOutput);
+                    return Fail($"{id} gives no probability (its trainer is not calibrated), so there is no probability to calibrate.");
                 calibration = ProbabilityCalibration.Fit(rows, method, Path.GetFileName(data), weightColumn, DateTimeOffset.UtcNow);
                 if (calibration is null)
-                    return Fail($"{Path.GetFileName(data)} holds one class only: a calibration needs both.", jsonOutput);
+                    return Fail($"{Path.GetFileName(data)} holds one class only: a calibration needs both.");
             }
             else
             {
                 var rows = await engine.MulticlassCalibrationRowsAsync(modelPath, dataPath, experiment.Config.LabelColumn,
                     experiment.Config.InputSchema, weightColumn, CancellationToken.None, ScoringLayers.None);
                 if (rows is null)
-                    return Fail($"{id} gives no class probabilities to calibrate.", jsonOutput);
+                    return Fail($"{id} gives no class probabilities to calibrate.");
                 calibration = ProbabilityCalibration.FitTemperature(rows, Path.GetFileName(data), weightColumn, DateTimeOffset.UtcNow);
                 if (calibration is null)
-                    return Fail($"{Path.GetFileName(data)} has no labeled rows to calibrate on.", jsonOutput);
+                    return Fail($"{Path.GetFileName(data)} has no labeled rows to calibrate on.");
             }
 
             foreach (var path in targets)
@@ -166,7 +166,7 @@ public static class CalibrateCommand
         catch (Exception ex)
         {
             if (jsonOutput)
-                return Fail(ex.Message, jsonOutput: true);
+                return Fail(ex.Message);
             ErrorSuggestions.DisplayError(ex, "calibrate");
             return 1;
         }
@@ -205,17 +205,9 @@ public static class CalibrateCommand
 
     private static string Format(double? ece) => ece is { } v ? v.ToString("0.000", CultureInfo.InvariantCulture) : "—";
 
-    private static int Fail(string message, bool jsonOutput)
+    private static int Fail(string message)
     {
-        if (jsonOutput)
-        {
-            JsonError.Emit(message);
-            Console.Error.WriteLine(message);
-        }
-        else
-        {
-            ErrorConsole.Error(message);
-        }
+        ErrorConsole.Error(Markup.Escape(message));
         return 1;
     }
 }

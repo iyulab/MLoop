@@ -64,8 +64,8 @@ public static class PrepPlanCommand
             var config = await ctx.ConfigLoader.LoadUserConfigAsync();
             if (!config.Models.TryGetValue(modelName, out var model))
             {
-                AnsiConsole.MarkupLine($"[red]Model '{modelName}' not found in mloop.yaml.[/]");
-                AnsiConsole.MarkupLine($"[grey]Available models: {string.Join(", ", config.Models.Keys)}[/]");
+                ErrorConsole.Error($"Model '{Markup.Escape(modelName)}' not found in mloop.yaml.",
+                    $"Available models: {Markup.Escape(string.Join(", ", config.Models.Keys))}");
                 return 1;
             }
 

@@ -66,7 +66,7 @@ public static class RollbackCommand
             }
             catch (InvalidOperationException)
             {
-                WriteError("Not inside a MLoop project. Run 'mloop init' to create a new project.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape("Not inside a MLoop project. Run 'mloop init' to create a new project."));
                 return 1;
             }
 
@@ -83,14 +83,14 @@ public static class RollbackCommand
             var (target, error) = RollbackTarget.Resolve(history, current, to?.Trim());
             if (target is null)
             {
-                WriteError(error!, jsonOutput);
+                ErrorConsole.Error(Markup.Escape(error!));
                 return 1;
             }
 
             if (!experimentStore.ExperimentExists(resolvedModelName, target))
             {
-                WriteError($"'{target}' is no longer in staging, so it cannot be restored from there. "
-                           + $"Its copy from when it was production is under models/{resolvedModelName}/backups/.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"'{target}' is no longer in staging, so it cannot be restored from there. "
+                           + $"Its copy from when it was production is under models/{resolvedModelName}/backups/."));
                 return 1;
             }
 
@@ -121,26 +121,9 @@ public static class RollbackCommand
         }
         catch (Exception ex)
         {
-            if (jsonOutput)
-            {
-                WriteError(ex.Message, jsonOutput: true);
-                return 1;
-            }
             ErrorSuggestions.DisplayError(ex, "rollback");
             return 1;
         }
     }
 
-    private static void WriteError(string message, bool jsonOutput)
-    {
-        if (jsonOutput)
-        {
-            JsonError.Emit(message);
-            Console.Error.WriteLine(message);
-        }
-        else
-        {
-            ErrorConsole.Out.MarkupLineInterpolated($"[red]Error:[/] {message}");
-        }
-    }
 }

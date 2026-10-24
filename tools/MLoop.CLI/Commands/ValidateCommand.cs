@@ -158,7 +158,7 @@ public static class ValidateCommand
             // Return appropriate exit code
             if (errors.Count > 0)
             {
-                AnsiConsole.MarkupLine("[red]Validation failed.[/] Please fix the errors above.");
+                ErrorConsole.Error($"Validation failed: {errors.Count} error(s) above — fix them and run mloop validate again.");
                 EmitJson(errors, warnings, jsonOutput);
                 return 1;
             }

@@ -116,8 +116,8 @@ public static class DetectCommand
             if (parseResult.GetResult(removedPeriodOption) is not null)
             {
                 using var _ = json ? new JsonOutputScope() : null;
-                WriteError("--period was removed: detection no longer takes a period, so one could not change "
-                           + "the result. The series' own period is reported instead (\"period\" in --json).", json);
+                ErrorConsole.Error(Markup.Escape("--period was removed: detection no longer takes a period, so one could not change "
+                           + "the result. The series' own period is reported instead (\"period\" in --json)."));
                 return Task.FromResult(1);
             }
             return ExecuteAsync(dataFile, column, threshold, sensitivity, output, json, parseResult.GetValue(recordsOption));
@@ -146,20 +146,20 @@ public static class DetectCommand
             // the library property it becomes.
             if (!(threshold > 0) || !double.IsFinite(threshold))
             {
-                WriteError(string.Create(CultureInfo.InvariantCulture,
-                    $"--threshold must be greater than 0 (got {threshold})."), jsonOutput);
+                ErrorConsole.Error(Markup.Escape(string.Create(CultureInfo.InvariantCulture,
+                    $"--threshold must be greater than 0 (got {threshold}).")));
                 return 1;
             }
             if (!(sensitivity > 0 && sensitivity < 100))
             {
-                WriteError(string.Create(CultureInfo.InvariantCulture,
-                    $"--sensitivity must be between 0 and 100, exclusive (got {sensitivity})."), jsonOutput);
+                ErrorConsole.Error(Markup.Escape(string.Create(CultureInfo.InvariantCulture,
+                    $"--sensitivity must be between 0 and 100, exclusive (got {sensitivity}).")));
                 return 1;
             }
 
             if (!TabularDataFile.Exists(dataFile))
             {
-                WriteError($"Data file not found: {dataFile}", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"Data file not found: {dataFile}"));
                 return 1;
             }
 
@@ -187,16 +187,11 @@ public static class DetectCommand
             // The parameter-name suffix .NET appends ("(Parameter 'series')") names a variable in
             // library code, not anything the user typed.
             var message = ex.ParamName is { } name ? ex.Message.Replace($" (Parameter '{name}')", "") : ex.Message;
-            WriteError(message, jsonOutput);
+            ErrorConsole.Error(Markup.Escape(message));
             return 1;
         }
         catch (Exception ex)
         {
-            if (jsonOutput)
-            {
-                WriteError(ex.Message, jsonOutput: true);
-                return 1;
-            }
             ErrorSuggestions.DisplayError(ex, "detect");
             return 1;
         }
@@ -210,7 +205,7 @@ public static class DetectCommand
         var rows = await new CsvHelperImpl().ReadAsync(dataFile);
         if (rows.Count == 0)
         {
-            WriteError("The CSV file contains no data rows.", jsonOutput);
+            ErrorConsole.Error(Markup.Escape("The CSV file contains no data rows."));
             return null;
         }
 
@@ -222,7 +217,7 @@ public static class DetectCommand
             resolved = headers.FirstOrDefault(h => string.Equals(h, column, StringComparison.OrdinalIgnoreCase));
             if (resolved == null)
             {
-                WriteError($"Column '{column}' not found. Available columns: {string.Join(", ", headers)}", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"Column '{column}' not found. Available columns: {string.Join(", ", headers)}"));
                 return null;
             }
         }
@@ -232,8 +227,8 @@ public static class DetectCommand
         }
         else
         {
-            WriteError($"The CSV has {headers.Count} columns — specify the series with --column. " +
-                       $"Available columns: {string.Join(", ", headers)}", jsonOutput);
+            ErrorConsole.Error(Markup.Escape($"The CSV has {headers.Count} columns — specify the series with --column. " +
+                       $"Available columns: {string.Join(", ", headers)}"));
             return null;
         }
 
@@ -245,8 +240,8 @@ public static class DetectCommand
             {
                 // Row numbering: +2 = 1-based + header line. The transform needs a contiguous numeric
                 // series, so a gap is an input error, not something to silently skip.
-                WriteError($"Column '{resolved}' has a non-numeric value '{raw}' at data row {i + 2} — " +
-                           "the series must be fully numeric with no gaps.", jsonOutput);
+                ErrorConsole.Error(Markup.Escape($"Column '{resolved}' has a non-numeric value '{raw}' at data row {i + 2} — " +
+                           "the series must be fully numeric with no gaps."));
                 return null;
             }
             values.Add(v);
@@ -357,16 +352,4 @@ public static class DetectCommand
             AnsiConsole.MarkupLine("[grey]Use [blue]--output result.csv[/] for per-point control limits or [blue]--json[/] for machine-readable output.[/]");
     }
 
-    private static void WriteError(string message, bool jsonOutput)
-    {
-        // The JSON envelope stays on stdout for --json consumers; the cause goes to stderr through
-        // the shared sink either way, so "exit != 0 ⇒ stderr has a cause" holds in every mode and the
-        // "Error:" prefix reads the same as every other command. The message is escaped rather than
-        // interpolated as markup: it carries user data (file paths, column names) that may contain
-        // brackets Spectre would otherwise try to parse.
-        if (jsonOutput)
-            JsonError.Emit(message);
-
-        ErrorConsole.Error(Markup.Escape(message));
-    }
 }

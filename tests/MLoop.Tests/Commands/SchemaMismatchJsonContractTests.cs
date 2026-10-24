@@ -164,9 +164,11 @@ public class SchemaMismatchJsonContractTests : IDisposable
         // also produce an error document, and this test exists for the branch behind the model load.
         Assert.StartsWith("Schema validation failed.", error);
         Assert.Contains("X2", error);
-        // Nothing on stdout but the document: the four-part rendering went to stderr.
-        Assert.DoesNotContain("Schema Validation Failed:", stdout);
-        Assert.Contains("Schema Validation Failed:", stderr);
+        // Nothing on stdout but the document: the human rendering went to stderr — as an error, never a
+        // warning, since the exit that follows is 1.
+        Assert.Single(stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        Assert.Contains("Error: Schema validation failed.", stderr);
+        Assert.DoesNotContain("Warning:", stderr);
     }
 
     [Fact]
@@ -184,8 +186,9 @@ public class SchemaMismatchJsonContractTests : IDisposable
         Assert.NotNull(error);
         Assert.StartsWith("Schema validation failed.", error);
         Assert.Contains("X2", error);
-        Assert.DoesNotContain("Schema Validation Failed:", stdout);
-        Assert.Contains("Schema Validation Failed:", stderr);
+        Assert.Single(stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        Assert.Contains("Error: Schema validation failed.", stderr);
+        Assert.DoesNotContain("Warning:", stderr);
     }
 
     /// <summary>

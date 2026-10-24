@@ -85,10 +85,7 @@ public static class ListCommand
             {
                 var tip = "Run mloop list --name " + resolvedModelName + " to see available experiment IDs.";
                 ErrorConsole.Error($"Experiment not found: {resolvedModelName}/{experimentId}", tip);
-                // An error exit is still an exit point: under --json the consumer gets a payload to
-                // parse rather than an empty stdout, which fails JSON.parse exactly as prose would.
-                if (jsonOutput)
-                    JsonError.EmitMarkup($"Experiment not found: {resolvedModelName}/{experimentId}", tip);
+                // Under --json the scope turns this report into the document, so stdout is never empty.
                 return 1;
             }
 
@@ -100,8 +97,6 @@ public static class ListCommand
                 var tip = "Only tasks AutoML searches over (e.g. binary/multiclass/regression, or a hand-rolled " +
                           "sweep like clustering's K) produce one; a single fixed-pipeline run has nothing to rank.";
                 ErrorConsole.Error($"No trial leaderboard for experiment '{experimentId}'.", tip);
-                if (jsonOutput)
-                    JsonError.EmitMarkup($"No trial leaderboard for experiment '{experimentId}'.", tip);
                 return 1;
             }
 

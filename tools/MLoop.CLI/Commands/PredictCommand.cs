@@ -431,52 +431,7 @@ public static class PredictCommand
 
             if (!validationResult.IsValid)
             {
-                AnsiConsole.MarkupLine("[red]Schema Validation Failed:[/]");
-                AnsiConsole.WriteLine();
-
-                if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
-                {
-                    AnsiConsole.MarkupLine($"[red]Error: {validationResult.ErrorMessage}[/]");
-                    AnsiConsole.WriteLine();
-                }
-
-                if (validationResult.MissingColumns.Any())
-                {
-                    AnsiConsole.MarkupLine("[red]Missing columns in prediction data:[/]");
-                    foreach (var col in validationResult.MissingColumns)
-                    {
-                        AnsiConsole.MarkupLine($"  [grey]-[/] {col}");
-                    }
-                    AnsiConsole.WriteLine();
-                }
-
-                if (validationResult.Suggestions.Any())
-                {
-                    AnsiConsole.MarkupLine("[yellow]Suggestions:[/]");
-                    foreach (var suggestion in validationResult.Suggestions)
-                    {
-                        AnsiConsole.MarkupLine($"  [grey]-[/] {suggestion}");
-                    }
-                    AnsiConsole.WriteLine();
-                }
-
-                // A --json consumer owes a parseable document at every exit, this one included.
-                // The human channel above renders the same finding in parts; the document carries
-                // it as one sentence so nothing here is reachable only by reading the terminal.
-                if (json)
-                {
-                    var parts = new List<string>();
-                    if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
-                        parts.Add(validationResult.ErrorMessage);
-                    // Only when the message did not already name them: it usually does, and the
-                    // human channel above lists them separately because it has the room to.
-                    if (parts.Count == 0 && validationResult.MissingColumns.Any())
-                        parts.Add("Missing columns: " + string.Join(", ", validationResult.MissingColumns));
-                    parts.AddRange(validationResult.Suggestions);
-
-                    JsonError.Emit("Schema validation failed. " + string.Join(" ", parts));
-                }
-
+                SchemaValidationReport.Refuse(validationResult, "prediction data");
                 return 1;
             }
 

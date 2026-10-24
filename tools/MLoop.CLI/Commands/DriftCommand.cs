@@ -57,16 +57,12 @@ public static class DriftCommand
         catch (InvalidOperationException)
         {
             ErrorConsole.Error(ProjectDiscovery.NotInsideProjectCause, ProjectDiscovery.NotInsideProjectGuidance);
-            if (jsonOutput)
-                JsonError.EmitMarkup(ProjectDiscovery.NotInsideProjectCause, ProjectDiscovery.NotInsideProjectGuidance);
             return 1;
         }
         if (rows < DriftEvaluator.MinimumRows)
         {
             var cause = $"--rows must be at least {DriftEvaluator.MinimumRows}.";
             ErrorConsole.Error(cause);
-            if (jsonOutput)
-                JsonError.Emit(cause);
             return 1;
         }
 

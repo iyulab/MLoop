@@ -139,8 +139,6 @@ public static class CompareCommand
                     const string cause = "Model name is required when not specifying experiment IDs.";
                     const string tip = "Usage: mloop compare exp-001 exp-002, or mloop compare --name <model>";
                     ErrorConsole.Error(cause, tip);
-                    if (jsonOutput)
-                        JsonError.EmitMarkup(cause, tip);
                     return 1;
                 }
 
@@ -373,8 +371,6 @@ public static class CompareCommand
         catch (Exception ex)
         {
             ErrorSuggestions.DisplayError(ex, "compare");
-            if (jsonOutput)
-                JsonError.Emit(ex.Message);
             return 1;
         }
     }
@@ -611,6 +607,9 @@ public static class CompareCommand
 
     private static async Task<int> ExecuteProvidedStateAsync(string metricsFile, string? metric)
     {
+        // This mode answers only in JSON: the scope keeps stdout for the document and turns a reported
+        // failure into one, while the cause also reaches stderr.
+        using var machineOutput = new JsonOutputScope();
         try
         {
             string content;
@@ -624,7 +623,7 @@ public static class CompareCommand
             }
             else
             {
-                JsonError.Emit($"Metrics file not found: {metricsFile}");
+                ErrorConsole.Error(Markup.Escape($"Metrics file not found: {metricsFile}"));
                 return 1;
             }
 
@@ -634,7 +633,7 @@ public static class CompareCommand
         }
         catch (Exception ex) when (ex is ArgumentException or JsonException or IOException)
         {
-            JsonError.Emit(ex.Message);
+            ErrorConsole.Error(Markup.Escape(ex.Message));
             return 1;
         }
     }

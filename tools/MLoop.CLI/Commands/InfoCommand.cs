@@ -266,7 +266,7 @@ public static class InfoCommand
 
         if (string.IsNullOrEmpty(firstLine))
         {
-            AnsiConsole.MarkupLine("[red]File is empty[/]");
+            ErrorConsole.Error("File is empty");
             EmitJson(reportedDataFile, labelColumn, labelSource, analyze, null, null, null, null, null,
                 ["File is empty"], jsonOutput);
             return 1;
