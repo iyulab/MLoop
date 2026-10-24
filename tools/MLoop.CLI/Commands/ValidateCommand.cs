@@ -8,6 +8,7 @@ using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
+using MLoop.Core.Storage;
 using MLoop.Core.Training;
 using Spectre.Console;
 
@@ -123,7 +124,7 @@ public static class ValidateCommand
                     ValidateModel(modelName, modelDef, errors, warnings);
                     // The gate policy's evaluation set is a path: a promotion would refuse every model without it.
                     if (modelDef.Gate is { HasRules: true, Data: { Length: > 0 } gateData }
-                        && !MLoop.Core.Data.TabularDataFile.Exists(Path.IsPathRooted(gateData) ? gateData : Path.Combine(ctx.ProjectRoot, gateData)))
+                        && !MLoop.Core.Data.TabularDataFile.Exists(ProjectPaths.Resolve(gateData, ctx.ProjectRoot)))
                         errors.Add(new ValidationError($"models.{modelName}.gate.data",
                             $"The gate policy's evaluation set was not found: {gateData} — every promotion of this model would be refused"));
                 }

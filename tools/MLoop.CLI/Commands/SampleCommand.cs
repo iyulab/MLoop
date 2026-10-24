@@ -7,6 +7,7 @@ using MLoop.CLI.Infrastructure.Display;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
+using MLoop.Core.Storage;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using Spectre.Console;
@@ -139,11 +140,13 @@ public static class SampleCommand
                 return 1;
             }
 
-            // Resolve input path
-            var resolvedInput = Path.GetFullPath(fromPath);
+            // The project's, as every command's — or the working directory's outside a project, where this one also works.
+            var projectRoot = ProjectRootOrNull();
+            var resolvedInput = ProjectPaths.Resolve(fromPath, projectRoot);
             if (!File.Exists(resolvedInput))
             {
-                ErrorConsole.Error($"File not found: {resolvedInput}", ErrorConsole.PathNotFoundTipCwd());
+                ErrorConsole.Error($"File not found: {resolvedInput}",
+                    projectRoot is null ? ErrorConsole.PathNotFoundTipCwd() : ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
 
@@ -400,6 +403,20 @@ public static class SampleCommand
 
         AnsiConsole.Write(grid);
         AnsiConsole.WriteLine();
+    }
+
+    // The project root when the working directory is inside one; null outside, without an error — `--from`
+    // samples any CSV.
+    private static string? ProjectRootOrNull()
+    {
+        try
+        {
+            return new ProjectDiscovery(new FileSystemManager()).FindRoot();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static string? FindProjectRoot()

@@ -113,8 +113,8 @@ public static class ErrorConsole
         $"A relative path resolves against the project root ([cyan]{Markup.Escape(projectRoot)}[/]) — pass an absolute path if the file lives elsewhere.";
 
     /// <summary>
-    /// Same as <see cref="PathNotFoundTip(string)"/>, for the one command (<c>sample create --from</c>)
-    /// that resolves its explicit path against the current directory instead of the project root.
+    /// Same as <see cref="PathNotFoundTip(string)"/>, outside a project — where a relative path is the current
+    /// directory's (<c>sample create --from</c>, which samples any CSV).
     /// </summary>
     public static string PathNotFoundTipCwd() =>
         $"A relative path resolves against the current directory ([cyan]{Markup.Escape(Directory.GetCurrentDirectory())}[/]) — pass an absolute path if the file lives elsewhere.";

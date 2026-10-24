@@ -462,7 +462,7 @@ public static class TrainCommand
                 var resolvedPaths = new List<string>();
                 foreach (var path in dataPaths)
                 {
-                    var resolved = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(projectRoot, path));
+                    var resolved = ProjectPaths.Resolve(path, projectRoot);
                     if (!TabularDataFile.Exists(resolved))
                     {
                         ErrorConsole.Error($"Data file not found: {path}", ErrorConsole.PathNotFoundTip(projectRoot));
@@ -1120,18 +1120,15 @@ public static class TrainCommand
     /// </summary>
     private static string? ResolveDirectoryDataset(string task, string? dataFile, string[]? dataPaths, string projectRoot)
     {
-        static string Full(string root, string p) =>
-            Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(root, p));
-
         if (!string.IsNullOrWhiteSpace(dataFile))
         {
-            var p = Full(projectRoot, dataFile);
+            var p = ProjectPaths.Resolve(dataFile, projectRoot);
             return Directory.Exists(p) ? p : null;
         }
 
         if (dataPaths is { Length: > 0 } && !string.IsNullOrWhiteSpace(dataPaths[0]))
         {
-            var p = Full(projectRoot, dataPaths[0]);
+            var p = ProjectPaths.Resolve(dataPaths[0], projectRoot);
             return Directory.Exists(p) ? p : null;
         }
 

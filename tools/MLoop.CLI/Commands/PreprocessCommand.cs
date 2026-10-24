@@ -4,6 +4,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Preprocessing;
 using MLoop.Core.Scripting;
+using MLoop.Core.Storage;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Preprocessing;
 using Spectre.Console;
@@ -135,9 +136,7 @@ public static class PreprocessCommand
         else
         {
             // Validate explicit input file
-            resolvedInputFile = Path.IsPathRooted(inputFile)
-                ? inputFile
-                : Path.Combine(projectRoot, inputFile);
+            resolvedInputFile = ProjectPaths.Resolve(inputFile, projectRoot);
 
             if (!File.Exists(resolvedInputFile))
             {
@@ -159,9 +158,7 @@ public static class PreprocessCommand
         // Copy to specified output location if provided
         if (!string.IsNullOrEmpty(output))
         {
-            var resolvedOutput = Path.IsPathRooted(output)
-                ? output
-                : Path.Combine(projectRoot, output);
+            var resolvedOutput = ProjectPaths.Resolve(output, projectRoot);
 
             var outputDir = Path.GetDirectoryName(resolvedOutput);
             if (!string.IsNullOrEmpty(outputDir))

@@ -3,6 +3,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
+using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
@@ -29,7 +30,7 @@ public static class GatePolicyCheck
             return null;
         if (string.IsNullOrWhiteSpace(policy.Data))
             return "the gate policy has rules but no evaluation set (gate.data)";
-        var data = Path.GetFullPath(Path.IsPathRooted(policy.Data) ? policy.Data : Path.Combine(projectRoot, policy.Data));
+        var data = ProjectPaths.Resolve(policy.Data, projectRoot);
         if (!TabularDataFile.Exists(data))
             return $"the gate policy's evaluation set was not found: {policy.Data}";
         data = await TabularDataFile.AsCsvAsync(data);

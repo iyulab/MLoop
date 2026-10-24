@@ -9,6 +9,7 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
 using MLoop.Core.Prediction;
+using MLoop.Core.Storage;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -105,15 +106,7 @@ public static class InfoCommand
 
             // Resolve data file path (a folder named with a trailing separator still has a name)
             dataFile = Path.TrimEndingDirectorySeparator(dataFile);
-            string resolvedDataFile;
-            if (projectRoot != null && !Path.IsPathRooted(dataFile))
-            {
-                resolvedDataFile = Path.Combine(projectRoot, dataFile);
-            }
-            else
-            {
-                resolvedDataFile = dataFile;
-            }
+            var resolvedDataFile = ProjectPaths.Resolve(dataFile, projectRoot);
 
             // A folder of data files is one table, profiled below like a file; any other folder is
             // described as an image dataset, or named as a folder.

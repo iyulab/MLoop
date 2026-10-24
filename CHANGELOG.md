@@ -58,6 +58,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   they are right (top-label ECE around 0.4 where a maximum-entropy model scored under 0.001). A temperature keeps every
   row's answer and order of classes: accuracy does not move, the log loss and the ECE do.
 
+- `mloop sample create --from` reads a relative path as the project's, as every other command does — it used the
+  current directory, so the same `--from datasets/train.csv` found the file from the project root and not from
+  `datasets/`. Outside a project, where it also works, a relative path is still the current directory's.
+
 ### Removed
 
 - `mloop preprocess --incremental` (with `--skip-hitl` and `--auto-approve`) and the pattern detectors it read from

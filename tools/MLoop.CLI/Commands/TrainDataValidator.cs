@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
+using MLoop.Core.Storage;
 using MLoop.Core.Training;
 using Spectre.Console;
 
@@ -77,9 +78,7 @@ internal static class TrainDataValidator
     {
         if (!string.IsNullOrEmpty(dataFile))
         {
-            var resolvedPath = Path.IsPathRooted(dataFile)
-                ? dataFile
-                : Path.Combine(projectRoot, dataFile);
+            var resolvedPath = ProjectPaths.Resolve(dataFile, projectRoot);
 
             return TabularDataFile.Exists(resolvedPath)
                 ? Task.FromResult<string?>(resolvedPath)
@@ -89,9 +88,7 @@ internal static class TrainDataValidator
         // Try config data path
         if (!string.IsNullOrEmpty(userConfig.Data?.Train))
         {
-            var configPath = Path.IsPathRooted(userConfig.Data.Train)
-                ? userConfig.Data.Train
-                : Path.Combine(projectRoot, userConfig.Data.Train);
+            var configPath = ProjectPaths.Resolve(userConfig.Data.Train, projectRoot);
 
             if (File.Exists(configPath))
             {

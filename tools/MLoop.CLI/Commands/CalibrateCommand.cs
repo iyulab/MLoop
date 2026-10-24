@@ -120,7 +120,7 @@ public static class CalibrateCommand
                 return Fail($"{id} has a decision threshold, chosen on the probabilities a calibration replaces — it would no longer reach the precision it was chosen for. " +
                             $"Remove it (mloop threshold {id} --clear), calibrate, then choose it again.", jsonOutput);
 
-            var dataPath = Path.GetFullPath(Path.IsPathRooted(data) ? data : Path.Combine(projectRoot, data));
+            var dataPath = ProjectPaths.Resolve(data, projectRoot);
             if (!TabularDataFile.Exists(dataPath))
                 return Fail($"Data not found: {data}", jsonOutput);
             dataPath = await TabularDataFile.AsCsvAsync(dataPath, records);

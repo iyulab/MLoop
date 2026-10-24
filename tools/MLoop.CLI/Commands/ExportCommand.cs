@@ -155,9 +155,9 @@ public static class ExportCommand
             // The input schema comes from data, because the model was saved without one; the
             // training file is the natural default — it has exactly the columns the model was fit on.
             var dataPath = dataFile is { Length: > 0 }
-                ? Path.GetFullPath(Path.IsPathRooted(dataFile) ? dataFile : Path.Combine(projectRoot, dataFile))
+                ? ProjectPaths.Resolve(dataFile, projectRoot)
                 : experiment.Config?.DataFile is { Length: > 0 } recorded
-                    ? Path.GetFullPath(Path.IsPathRooted(recorded) ? recorded : Path.Combine(projectRoot, recorded))
+                    ? ProjectPaths.Resolve(recorded, projectRoot)
                     : null;
             if (dataPath is null || !TabularDataFile.Exists(dataPath))
             {
@@ -175,7 +175,7 @@ public static class ExportCommand
                 PreserveColumns(experiment.Config), tempFiles, layers: ScoringLayers.None);
 
             var outputDirectory = outputDir is { Length: > 0 }
-                ? Path.GetFullPath(Path.IsPathRooted(outputDir) ? outputDir : Path.Combine(projectRoot, outputDir))
+                ? ProjectPaths.Resolve(outputDir, projectRoot)
                 : experimentPath;
             Directory.CreateDirectory(outputDirectory);
             var onnxPath = Path.Combine(outputDirectory, ExperimentLayout.OnnxModelFileName);

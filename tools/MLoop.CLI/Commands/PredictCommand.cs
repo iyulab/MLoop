@@ -258,9 +258,7 @@ public static class PredictCommand
             else
             {
                 // Use specified model path
-                resolvedModelPath = Path.IsPathRooted(modelPath)
-                    ? modelPath
-                    : Path.Combine(projectRoot, modelPath);
+                resolvedModelPath = ProjectPaths.Resolve(modelPath, projectRoot);
 
                 if (!File.Exists(resolvedModelPath))
                 {
@@ -349,9 +347,7 @@ public static class PredictCommand
             else
             {
                 // Validate explicit data file
-                resolvedDataFile = Path.IsPathRooted(dataFile)
-                    ? dataFile
-                    : Path.Combine(projectRoot, dataFile);
+                resolvedDataFile = ProjectPaths.Resolve(dataFile, projectRoot);
 
                 if (Directory.Exists(resolvedDataFile)
                     && string.Equals(taskType, "image-classification", StringComparison.OrdinalIgnoreCase))
@@ -400,9 +396,7 @@ public static class PredictCommand
             }
             else
             {
-                resolvedOutputPath = Path.IsPathRooted(output)
-                    ? output
-                    : Path.Combine(projectRoot, output);
+                resolvedOutputPath = ProjectPaths.Resolve(output, projectRoot);
 
                 // Create output directory if needed
                 var outputDir = Path.GetDirectoryName(resolvedOutputPath);
@@ -1115,7 +1109,7 @@ public static class PredictCommand
         }
         else
         {
-            resolvedDataDir = Path.IsPathRooted(dataFile) ? dataFile : Path.Combine(projectRoot, dataFile);
+            resolvedDataDir = ProjectPaths.Resolve(dataFile, projectRoot);
             if (!Directory.Exists(resolvedDataDir) && !File.Exists(resolvedDataDir))
             {
                 ErrorConsole.Error($"Data not found: {resolvedDataDir}", ErrorConsole.PathNotFoundTip(projectRoot));
@@ -1151,7 +1145,7 @@ public static class PredictCommand
         }
         else
         {
-            resolvedOutputPath = Path.IsPathRooted(output) ? output : Path.Combine(projectRoot, output);
+            resolvedOutputPath = ProjectPaths.Resolve(output, projectRoot);
             var outputDir = Path.GetDirectoryName(resolvedOutputPath);
             if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
                 await fileSystem.CreateDirectoryAsync(outputDir, CancellationToken.None);

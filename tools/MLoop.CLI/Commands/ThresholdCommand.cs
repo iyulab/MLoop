@@ -116,7 +116,7 @@ public static class ThresholdCommand
             if (precision is not { } target)
                 return Emit(name, id, DecisionThreshold.ReadBeside(modelPath), "current", productionModel is not null, jsonOutput, vocabulary);
 
-            var dataPath = Path.GetFullPath(Path.IsPathRooted(data!) ? data! : Path.Combine(projectRoot, data!));
+            var dataPath = ProjectPaths.Resolve(data!, projectRoot);
             if (!TabularDataFile.Exists(dataPath))
                 return Fail($"Data not found: {data}", jsonOutput);
             dataPath = await TabularDataFile.AsCsvAsync(dataPath, records);
