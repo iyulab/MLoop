@@ -134,7 +134,7 @@ public class TrainingEngine : ITrainingEngine
                 {
                     tempEncodingFile = convertedPath;
                     dataFilePath = convertedPath;
-                    Console.WriteLine($"[Info] Converted {detection.EncodingName} \u2192 UTF-8: {Path.GetFileName(originalDataFile)}");
+                    CoreNarration.Write($"[Info] Converted {detection.EncodingName} \u2192 UTF-8: {Path.GetFileName(originalDataFile)}");
                 }
 
                 // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
@@ -177,7 +177,7 @@ public class TrainingEngine : ITrainingEngine
                     // Blank entries are visual spacing between console blocks, not findings —
                     // they keep their spacing role but must not become empty warning events.
                     if (string.IsNullOrWhiteSpace(warning))
-                        Console.WriteLine();
+                        AnsiConsole.WriteLine();
                     else
                         WarningConsole.Warn(Markup.Escape(warning));
                 }
@@ -185,12 +185,12 @@ public class TrainingEngine : ITrainingEngine
                 // Show suggestions if any
                 if (qualityResult.Suggestions.Any())
                 {
-                    Console.WriteLine("[Suggestions]");
+                    CoreNarration.Write("[Suggestions]");
                     foreach (var suggestion in qualityResult.Suggestions)
                     {
-                        Console.WriteLine($"  {suggestion}");
+                        CoreNarration.Write($"  {suggestion}");
                     }
-                    Console.WriteLine();
+                    AnsiConsole.WriteLine();
                 }
 
                 // Decide once, here, which columns featurization drops. Everything downstream — the
@@ -294,7 +294,7 @@ public class TrainingEngine : ITrainingEngine
                     // presence of TestDataFile alone.
                     config = config with { DataFile = split.TrainFile, TestDataFile = split.TestFile };
 
-                    Console.WriteLine(
+                    CoreNarration.Write(
                         $"[Info] Stratified split: train={split.TrainRows}, test={split.TestRows} " +
                         $"({string.Join(", ", split.PerClass.OrderBy(c => c.Value.Train + c.Value.Test)
                             .Select(c => $"'{c.Key}' {c.Value.Train}/{c.Value.Test}"))} as train/test)");
@@ -1012,7 +1012,7 @@ public class TrainingEngine : ITrainingEngine
                     && featureExclusions?.Any(e => e.Name.Equals(colName, StringComparison.OrdinalIgnoreCase)) != true)
                 {
                     purpose = "Feature";
-                    Console.WriteLine($"[Info] Column '{colName}' reclassified: Ignored → Text Feature");
+                    CoreNarration.Write($"[Info] Column '{colName}' reclassified: Ignored → Text Feature");
                 }
 
                 // A string feature's recorded type is what training does with it: Categorical when the
@@ -1071,7 +1071,7 @@ public class TrainingEngine : ITrainingEngine
                         // it came from mloop.yaml or --weight; name it for what it is, not where it was not.
                         var origin = string.Equals(colName, weightColumn, StringComparison.OrdinalIgnoreCase)
                             ? "weight column" : "mloop.yaml";
-                        Console.WriteLine($"[Info] Column '{colName}' overridden: {originalType}/{originalPurpose} → {dataType}/{purpose} ({origin})");
+                        CoreNarration.Write($"[Info] Column '{colName}' overridden: {originalType}/{originalPurpose} → {dataType}/{purpose} ({origin})");
                     }
                 }
 
@@ -1154,7 +1154,7 @@ public class TrainingEngine : ITrainingEngine
                 var (values, count) = CollectCategoricalValues(colIndex, dataLines);
                 if (count > 0 && dataLines.Length > 0 && LooksLikeText(colIndex, dataLines, count))
                 {
-                    Console.WriteLine($"[Info] Column '{columnName}' reclassified: Categorical → Text (text-like content: {count} unique values in {dataLines.Length} rows)");
+                    CoreNarration.Write($"[Info] Column '{columnName}' reclassified: Categorical → Text (text-like content: {count} unique values in {dataLines.Length} rows)");
                     return (SchemaDataTypes.Text, null, count);
                 }
                 return (SchemaDataTypes.Categorical, values, count);

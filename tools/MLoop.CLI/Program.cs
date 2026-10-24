@@ -35,7 +35,6 @@ internal class Program
             if (File.Exists(envPath))
             {
                 Env.Load(envPath);
-                // Console.WriteLine($"Loaded environment from {envPath}");
             }
         }
         var rootCommand = BuildRootCommand();

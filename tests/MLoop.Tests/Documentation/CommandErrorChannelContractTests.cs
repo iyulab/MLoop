@@ -23,6 +23,13 @@ public class CommandErrorChannelContractTests
     /// <summary>stderr written past the error channel.</summary>
     private static readonly Regex DirectStderr = new(@"Console\.Error\.Write", RegexOptions.Compiled);
 
+    /// <summary>
+    /// A line of narration written to the raw console — past the ambient one a command's scope redirects, so it
+    /// lands on stdout ahead of a <c>--json</c> document (and in a server's stdout from a training job). Literal text
+    /// only: a serialized document or a printed token is what stdout is for.
+    /// </summary>
+    private static readonly Regex RawNarration = new(@"(?<![\w.])Console\.Write(Line)?\(\$?""", RegexOptions.Compiled);
+
     /// <summary>A JSON error document built by a command instead of by its scope.</summary>
     private static readonly Regex HandBuiltJsonError = new(@"JsonError\.Emit", RegexOptions.Compiled);
 
@@ -34,7 +41,7 @@ public class CommandErrorChannelContractTests
     private static IEnumerable<string> Offenders(Regex shape, IEnumerable<string> files) =>
         from file in files
         from line in File.ReadAllLines(file).Select((text, i) => (text, number: i + 1))
-        where shape.IsMatch(line.text)
+        where !line.text.TrimStart().StartsWith("//", StringComparison.Ordinal) && shape.IsMatch(line.text)
         select $"{Path.GetFileName(file)}:{line.number}: {line.text.Trim()}";
 
     [Fact]
@@ -73,6 +80,24 @@ public class CommandErrorChannelContractTests
     [Fact]
     public void NoCommandWritesStderrPastTheErrorChannel() =>
         Assert.Empty(Offenders(DirectStderr, CommandFiles()));
+
+    [Theory]
+    [InlineData(@"Console.WriteLine($""[Info] Converted {name} → UTF-8"");", true)]
+    [InlineData(@"    Console.WriteLine(""[Suggestions]"");", true)]
+    [InlineData(@"Console.WriteLine(JsonSerializer.Serialize(payload, options));", false)]
+    [InlineData(@"AnsiConsole.WriteLine(""spacing"");", false)]
+    [InlineData(@"CoreNarration.Write($""[Info] Stratified split"");", false)]
+    public void RawNarrationIsToldApartFromADocument(string line, bool narration) =>
+        Assert.Equal(narration, RawNarration.IsMatch(line));
+
+    [Fact]
+    public void NoCliCodeNarratesToTheRawConsole()
+    {
+        var files = RepoSourceTree.ProductionSourceFiles(Path.Combine("tools", "MLoop.CLI")).ToList();
+        Assert.Contains(files, f => Path.GetFileName(f) == "TrainingEngine.cs");
+
+        Assert.Empty(Offenders(RawNarration, files));
+    }
 
     [Fact]
     public void NoCommandBuildsItsOwnJsonErrorDocument() =>
