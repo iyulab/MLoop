@@ -118,6 +118,7 @@ internal static class DeepLearningHandlers
                 ?? throw new InvalidOperationException("No text column found for text classification.");
 
             log($"Text classification: text='{textCol}', label='{config.LabelColumn}'");
+            WarnOfUnreadableText(log, "Text classification", trainSet, PretrainedTextAlphabet.ClassifyInstead, textCol);
 
             var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
                 .Append(mlContext.MulticlassClassification.Trainers.TextClassification(
@@ -168,6 +169,7 @@ internal static class DeepLearningHandlers
                 throw new InvalidOperationException("Sentence similarity requires at least two text columns.");
 
             log($"Sentence similarity: s1='{textCols[0]}', s2='{textCols[1]}', label='{config.LabelColumn}'");
+            WarnOfUnreadableText(log, "Sentence similarity", trainSet, instead: null, textCols[0], textCols[1]);
 
             var pipeline = mlContext.Regression.Trainers.SentenceSimilarity(
                 labelColumnName: config.LabelColumn,
@@ -216,6 +218,7 @@ internal static class DeepLearningHandlers
                 ?? throw new InvalidOperationException("No text column found for NER.");
 
             log($"NER: text='{textCol}', label='{config.LabelColumn}' (one tag per word, space-separated)");
+            WarnOfUnreadableText(log, "NER", trainSet, instead: null, textCol);
 
             // The trainer wants a vector of tag keys per sentence; a CSV cell holds the tags as one
             // string. The split is fitted here and applied to the training and test data only — kept
@@ -346,6 +349,7 @@ internal static class DeepLearningHandlers
                     $"numbers where '{contextCol}' read from that position gives '{answerCol}'. No column did.");
 
             log($"Question answering: context='{contextCol}', question='{questionCol}', answer='{answerCol}', start='{startCol}'");
+            WarnOfUnreadableText(log, "Question answering", trainSet, instead: null, contextCol, questionCol);
 
             // The answer and its start are what the trainer learns from; a prediction needs only the passage
             // and the question. So the training rows are prepared outside the model, as NER prepares its
@@ -354,7 +358,7 @@ internal static class DeepLearningHandlers
             var (prepared, dropped, writable, kept) = PrepareQuestionAnswerRows(mlContext, trainSet, contextCol, questionCol, answerCol, startCol);
             if (dropped > 0)
                 log($"Question answering: {dropped} row(s) left out — the answer is not in the passage at the recorded position");
-            if (QuestionAnswerAlphabet.Warning(writable, kept) is { } unwritable)
+            if (PretrainedTextAlphabet.AnswerWarning(writable, kept) is { } unwritable)
                 log(unwritable);
             const string start = QuestionAnswerRow.StartColumn;
 
@@ -391,6 +395,14 @@ internal static class DeepLearningHandlers
                 TrainingOnlyColumns = [startCol]
             };
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Warns, per column, when the text model cannot read much of what it is given (<see cref="PretrainedTextAlphabet"/>).</summary>
+    private static void WarnOfUnreadableText(Action<string> log, string task, IDataView data, string? instead, params string[] columns)
+    {
+        foreach (var column in columns)
+            if (PretrainedTextAlphabet.ReadingWarning(task, column, PretrainedTextAlphabet.DroppedShare(data, column), instead) is { } warning)
+                log(warning);
     }
 
     private static double MeanLength(IDataView data, string column)
@@ -440,7 +452,7 @@ internal static class DeepLearningHandlers
             if (AnswerStartColumn.Locate(c.Span, a.Span, position()) is { } at)
             {
                 rows.Add(new QuestionAnswerRow { Context = c.ToString(), Question = q.ToString(), Answer = a.ToString(), Start = at });
-                if (QuestionAnswerAlphabet.CanWrite(a.Span))
+                if (PretrainedTextAlphabet.CanWrite(a.Span))
                     writable++;
             }
             else

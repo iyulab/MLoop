@@ -366,6 +366,21 @@ Notes:
 - CSV-only steps (encoding conversion, sampling, balancing, multi-line flattening) are skipped for image
   directories. The loader warns about empty class folders, single-class datasets, and severe class imbalance.
 
+### Text tasks and language
+
+Text classification, sentence similarity, NER and question answering train ML.NET's pretrained English
+models (NAS-BERT, RoBERTa), which read text through an English tokenizer that **drops every character above
+U+00FF on the way in**. Latin-1 text is read whole; Korean, Chinese, Japanese, Cyrillic and similar text
+reaches the model as nothing — `음악을 들으면서` is read as one space — and the model learns from the digits,
+Latin letters and punctuation left over. On Korean news, dialogue and sentence sets that was 82–89% of the
+characters. Training warns, per text column, when more than 5% of its characters are dropped, with the share.
+
+For classification, a tabular model reads such text: `--task multiclass-classification` (or
+`binary-classification`) featurizes a text column by word and character n-grams over every character. On a
+Korean four-class sentence-type set (800 training sentences, 200 held out) it scored a macro accuracy of 0.72
+where text classification scored 0.25 — chance, and kept in staging by the quality gate. The warning for text
+classification says so.
+
 ### Named Entity Recognition (NER)
 
 NER tags every word of a sentence. The data is two columns: the sentence, and its tags — one per
@@ -373,7 +388,7 @@ word, separated by spaces, in the order the words appear. Words outside every en
 
 ```csv
 Sentence,Label
-우리는 내일 오후 7시에 만나요,O B-DATE B-TIME I-TIME O
+We meet tomorrow at 7 pm,O O B-DATE O B-TIME I-TIME
 Alice lives in Paris,B-PER O O B-LOC
 ```
 
@@ -419,7 +434,8 @@ context,question,answer,answer_start
 - **Language**: ML.NET's question-answering model does not cut its answer out of the passage; it
   decodes it from English RoBERTa tokens, one byte per character. An answer outside Latin-1 —
   Korean, Chinese, Japanese, Cyrillic — comes out with those characters missing, so it can never
-  match exactly. Training says how many answers are like that and where `exact_match` stops.
+  match exactly. Training says how many answers are like that and where `exact_match` stops. The
+  passage and the question lose the same characters on the way in (below).
 - A prediction needs only the passage and the question. Its `predictedLabel` is the model's best answer
   and `score` that answer's model score (not a probability).
 

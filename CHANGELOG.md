@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Training a text model (text classification, sentence similarity, NER, question answering) warns, per text column,
+  when more than 5% of its characters are ones the model cannot read, with the share. ML.NET's text trainers read
+  text through an English tokenizer that drops every character above U+00FF on the way in, so Korean, Chinese,
+  Japanese or Cyrillic text reaches the model as nothing (82–89% of the characters on Korean news, dialogue and
+  sentence sets) — the README said such text trained "from English sub-word pieces". Before, only question
+  answering's answers were checked. For text classification the warning names the tabular classifier, which
+  featurizes text by word and character n-grams over every character (on a Korean four-class sentence set: macro
+  accuracy 0.72 against text classification's 0.25).
+
 - `ICsvHelper.ReadRowsAsync` and `WriteRowsAsync` (preprocessing scripts' `context.Csv`): stream a CSV's rows as
   arrays in header order, under the reading rules `ReadAsync` has, and write them back — for a file too large to
   hold as `ReadAsync`'s list of dictionaries; scripts compile against `System.Linq.AsyncEnumerable`, so LINQ works on

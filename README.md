@@ -84,8 +84,12 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 similarity, NER and question answering each train, predict and evaluate end to end. Their limits come
 from the ML.NET trainers underneath, so they are stated here rather than discovered:
 
-- **The text trainers start from English pretrained models** (NAS-BERT, RoBERTa). Other languages
-  train, but from English sub-word pieces.
+- **The text trainers read only Latin-1 text.** They start from English pretrained models (NAS-BERT,
+  RoBERTa) and read text through an English tokenizer that drops every character above U+00FF on the
+  way in: Korean, Chinese, Japanese or Cyrillic text reaches the model as nothing, and it learns from
+  the digits, Latin letters and punctuation left over — on Korean news, dialogue and sentence sets,
+  82–89% of the characters. Training warns when a text column loses more than 5% this way. For
+  classification, a tabular model (`--task multiclass-classification`) reads every character.
 - **NER tags whole words** — one label per space-separated word. Where words carry attached particles,
   as in Korean, an entity often starts or ends inside a word: on a Korean time-expression set, 67% of
   entity spans did, so the model learns `8월20일부터` as a date as a whole.
