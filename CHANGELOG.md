@@ -76,6 +76,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   label or task line, the model's `prep:` or `columns:` block) and append a new model to `models:`; a
   layout they cannot edit safely is rewritten as before, with a warning that its comments were not kept.
   A file with both CRLF and LF line endings is read as lines and written with CRLF.
+- A prep step written to `mloop.yaml` carried every option of every step type — `remove_original: false`,
+  `keep_first: true`, `window_size: 0`, `count: 0`, `seed: 42` under a `fill-missing` step. Options at their
+  default are no longer written; a file that has them reads as before.
 
 - `--json` documents left out the warnings their commands raised — a column that no longer reads as its
   trained type, a weight the file lacks, a calibration worse than the model's own probabilities — writing

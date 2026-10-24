@@ -463,6 +463,30 @@ models:
     }
 
     [Fact]
+    public async Task APrepStep_IsWrittenWithTheOptionsItWasGiven_AndADefaultChangedReadsBack()
+    {
+        _fs.SetTextFile("/project/mloop.yaml", Commented.ReplaceLineEndings("\n"));
+        var config = await _loader.LoadUserConfigAsync();
+        config.Models["default"].Prep =
+        [
+            new() { Type = "fill-missing", Method = "mean" },
+            new() { Type = "drop-duplicates", KeepFirst = false, Seed = 7, RemoveOriginal = true, WindowSize = 3, Count = 5 },
+        ];
+
+        await _loader.SaveModelKeyAsync(config, "default", "prep", m => m.Prep);
+
+        var written = _fs.LastWrittenTextContent!;
+        var first = written[written.IndexOf("- type: fill-missing", StringComparison.Ordinal)..written.IndexOf("- type: drop-duplicates", StringComparison.Ordinal)];
+        Assert.DoesNotContain("keep_first", first);
+        Assert.DoesNotContain("seed", first);
+        Assert.DoesNotContain("remove_original", first);
+        var step = (await _loader.LoadUserConfigAsync()).Models["default"].Prep![1];
+        Assert.Equal((false, 7, true, 3, 5), (step.KeepFirst, step.Seed, step.RemoveOriginal, step.WindowSize, step.Count));
+        var plain = (await _loader.LoadUserConfigAsync()).Models["default"].Prep![0];
+        Assert.Equal((true, 42), (plain.KeepFirst, plain.Seed));
+    }
+
+    [Fact]
     public async Task SaveModelKeyAsync_ANullValue_RemovesTheKey_AndKeepsEveryComment()
     {
         _fs.SetTextFile("/project/mloop.yaml", Commented.ReplaceLineEndings("\n"));

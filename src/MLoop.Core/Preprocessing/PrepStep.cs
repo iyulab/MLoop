@@ -1,9 +1,17 @@
+using System.ComponentModel;
+using YamlDotNet.Serialization;
+
 namespace MLoop.Core.Preprocessing;
 
 /// <summary>
 /// A single preprocessing step defined in mloop.yaml.
 /// Each step maps to a FilePrepper DataPipeline operation.
 /// </summary>
+/// <remarks>
+/// The value-typed options are written to mloop.yaml only when they differ from their default — a step reads
+/// as what it was given, not as every option of every step type. Each default is declared once, on the
+/// property (<see cref="DefaultValueAttribute"/>), so the writer and the initializer cannot disagree.
+/// </remarks>
 public class PrepStep
 {
     /// <summary>
@@ -36,6 +44,7 @@ public class PrepStep
     /// <summary>
     /// Whether to remove the original column after transformation
     /// </summary>
+    [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
     public bool RemoveOriginal { get; set; }
 
     /// <summary>
@@ -46,6 +55,8 @@ public class PrepStep
     /// <summary>
     /// Whether to keep first occurrence when deduplicating (default: true)
     /// </summary>
+    [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
+    [DefaultValue(true)]
     public bool KeepFirst { get; set; } = true;
 
     /// <summary>
@@ -76,6 +87,7 @@ public class PrepStep
     /// <summary>
     /// Window size for rolling aggregation
     /// </summary>
+    [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
     public int WindowSize { get; set; }
 
     /// <summary>
@@ -101,10 +113,13 @@ public class PrepStep
     /// <summary>
     /// Sample count for data-sampling step (absolute number if >= 1, ratio if 0 &lt; value &lt; 1)
     /// </summary>
+    [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
     public int Count { get; set; }
 
     /// <summary>
     /// Random seed for data-sampling step (default: 42 for reproducibility)
     /// </summary>
+    [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
+    [DefaultValue(42)]
     public int Seed { get; set; } = 42;
 }
