@@ -11,6 +11,9 @@ public sealed class UnreadableImageException(int index, string reason, Exception
     public int Index { get; } = index;
 }
 
+/// <summary>A rectangle of an image in its own pixels: left, top, right, bottom.</summary>
+public sealed record ImageRegion(double X0, double Y0, double X1, double Y1);
+
 /// <summary>
 /// Turns an encoded image (PNG, JPEG, …) into an encoder's input — the steps of <see cref="ImagePreprocessing"/>, with
 /// the arithmetic of the image processors encoders are published with.
@@ -26,14 +29,42 @@ public static class ImagePreprocessor
     private const int PrecisionBits = 32 - 8 - 2;
     private const double BicubicSupport = 2.0;
 
+    /// <summary>
+    /// Which arithmetic this is, part of a vector's identity beside the encoder's weights: the same weights give other
+    /// vectors when the way an image becomes their input changes. Raised whenever the tensor for some image changes —
+    /// 1 premultiplied translucent pixels by their alpha (0.44.0), 2 reads the colour stored under them.
+    /// </summary>
+    public const string Revision = "pillow/2";
+
     /// <summary>The encoder input for one image: <c>3 × crop × crop</c> floats, channel-major (RGB).</summary>
     /// <exception cref="UnreadableImageException">The bytes are not an image ML.NET can decode.</exception>
-    public static float[] ToTensor(ReadOnlySpan<byte> encoded, ImagePreprocessing preprocessing, int index = 0)
+    public static float[] ToTensor(ReadOnlySpan<byte> encoded, ImagePreprocessing preprocessing, int index = 0) =>
+        Prepare(encoded, preprocessing, index).Tensor;
+
+    /// <summary>
+    /// The encoder input for one image, with the part of the image it covers — the centre crop, in the image's own
+    /// pixels.
+    /// </summary>
+    /// <exception cref="UnreadableImageException">The bytes are not an image ML.NET can decode.</exception>
+    public static (float[] Tensor, ImageRegion Crop) Prepare(ReadOnlySpan<byte> encoded, ImagePreprocessing preprocessing, int index = 0)
     {
         var (rgb, width, height) = Decode(encoded, index);
         var (newWidth, newHeight) = ResizedSize(width, height, preprocessing.ShortestEdge);
         var resized = Resize(rgb, width, height, newWidth, newHeight);
-        return Normalize(resized, newWidth, newHeight, preprocessing);
+        return (Normalize(resized, newWidth, newHeight, preprocessing), CropRegion(width, height, preprocessing));
+    }
+
+    /// <summary>
+    /// The region of a <paramref name="width"/> × <paramref name="height"/> image the centre crop takes, in that image's
+    /// pixels: the crop is cut from the resized image, so its corners scale back by the resize.
+    /// </summary>
+    public static ImageRegion CropRegion(int width, int height, ImagePreprocessing preprocessing)
+    {
+        var (newWidth, newHeight) = ResizedSize(width, height, preprocessing.ShortestEdge);
+        var crop = preprocessing.CropSize;
+        var (top, left) = ((newHeight - crop) / 2, (newWidth - crop) / 2);
+        var (sx, sy) = ((double)width / newWidth, (double)height / newHeight);
+        return new ImageRegion(left * sx, top * sy, (left + crop) * sx, (top + crop) * sy);
     }
 
     /// <summary>The size an image is resized to: shortest edge <paramref name="shortestEdge"/>, the other in proportion, truncated.</summary>

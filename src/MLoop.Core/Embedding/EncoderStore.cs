@@ -189,7 +189,7 @@ public sealed class EncoderStore
             return null;
         try
         {
-            var definition = ReadDefinition(definitionPath);
+            var definition = WithCatalogPatches(ReadDefinition(definitionPath));
             return definition.Id == id ? new InstalledEncoder(definition, modelPath) : null;
         }
         catch (JsonException)
@@ -197,6 +197,14 @@ public sealed class EncoderStore
             return null;
         }
     }
+
+    // An install recorded before the catalog declared patch sizes: the same weights are the same graph, so the catalog's
+    // patch size holds for it. Any other definition keeps what it says.
+    private static EncoderDefinition WithCatalogPatches(EncoderDefinition definition) =>
+        definition.PatchSize is null && definition.Sha256 is not null
+        && EncoderCatalog.All.FirstOrDefault(e => e.Sha256 == definition.Sha256) is { PatchSize: { } patch }
+            ? definition with { PatchSize = patch }
+            : definition;
 
     // The catalog's command when the catalog names this encoder (or, with no name, any); adding a file otherwise.
     private static string HowToInstall(string? id)

@@ -1581,16 +1581,27 @@ with other contents. Encoders run on ONNX Runtime (`mloop runtime install onnxru
 
 ```bash
 mloop embed a.png b.jpg                    # one vector per image (first values shown)
-mloop embed a.png b.jpg --json             # {"encoder": {id, version, sha256, dimension, normalized}, "vectors": [[…], …]}
+mloop embed a.png b.jpg --json             # {"encoder": {id, version, sha256, dimension, normalized, preprocessor}, "vectors": [[…], …]}
 mloop embed *.png --encoder my-encoder     # when more than one encoder is installed
+mloop embed a.png --patches --json         # also one vector per patch: "grid" and, per image, "patches": [{crop, vectors}]
 ```
 
-Vectors are L2-normalised, so the cosine similarity of two is their dot product. The encoder's id and SHA-256 come
-with every answer: vectors from different weights are not comparable, so whoever keeps vectors re-embeds when they
-change. At most 64 images per call. The same is served as `POST /embed` (`mloop serve`): a JSON body
+Vectors are L2-normalised, so the cosine similarity of two is their dot product. The encoder's id, SHA-256 and
+`preprocessor` (the revision of the arithmetic that turns an image into the encoder's input, e.g. `pillow/2`) come with
+every answer: vectors are comparable only when all three match, so whoever keeps vectors re-embeds when one changes.
+At most 64 images per call.
+
+`--patches` (`?patches=true` on `POST /embed`) adds the encoder's patch vectors from the same run — for a vision
+transformer, one per patch of the centre crop (`dinov2-small`: 16 × 16 patches of 14 pixels). One vector per image
+averages a small local difference away under normal variation; a vector per patch keeps it, and says where it is.
+The answer has `grid` (`rows`, `columns`, `patchSize`, `cropSize`) and, per image, `crop` — the part of the image the
+grid covers, in the image's own pixels (`x0`, `y0`, `x1`, `y1`) — with `vectors`, row by row: patch *(r, c)* covers
+the *r*-th of `rows` equal bands of the crop's height and the *c*-th of `columns` of its width. Each patch vector is
+L2-normalised. A patch grid is large (`dinov2-small`: ~1 MB of JSON per image), so at most 8 images per call. An
+encoder gives patches when its definition has `patchSize`; asking one without it is a 409. The same is served as `POST /embed` (`mloop serve`): a JSON body
 `{"images": ["<base64>", …]}` or image files as multipart form data, `?encoder=` to choose one. It takes the images'
 contents, not paths. An image that cannot be decoded is a 400 naming its position (`index`). A missing encoder or
-runtime is a 409 saying how to install it. More than 64 images is a 413.
+runtime is a 409 saying how to install it. More than 64 images (8 with patches) is a 413.
 
 In a container made by `mloop docker`, embedding is opt-in. The Dockerfile has a commented
 `RUN mloop runtime install onnxruntime` line, and `docker-compose.yml` has a commented `MLOOP_ENCODERS` variable and a

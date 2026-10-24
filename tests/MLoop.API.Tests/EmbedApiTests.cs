@@ -23,7 +23,12 @@ public class EmbedApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     private void InstallTiny() => new EncoderStore(_factory.EncoderRoot).Add(
-        new EncoderDefinition("tiny", "1", 4, ImagePreprocessing.ImageNet(8, 6), "pixel_values", "last_hidden_state", EncoderPooling.FirstToken),
+        new EncoderDefinition("tiny", "1", 4, ImagePreprocessing.ImageNet(8, 6), "pixel_values", "last_hidden_state", EncoderPooling.FirstToken,
+            PatchSize: 3),
+        Path.Combine(Fixtures, "tiny-patch-encoder.onnx"));
+
+    private void InstallWithoutPatches() => new EncoderStore(_factory.EncoderRoot).Add(
+        new EncoderDefinition("plain", "1", 4, ImagePreprocessing.ImageNet(8, 6), "pixel_values", "last_hidden_state", EncoderPooling.FirstToken),
         Path.Combine(Fixtures, "tiny-encoder.onnx"));
 
     private static string Pattern => Convert.ToBase64String(File.ReadAllBytes(Path.Combine(Fixtures, "pattern.png")));
@@ -36,7 +41,7 @@ public class EmbedApiTests : IClassFixture<TestWebApplicationFactory>
     {
         InstallTiny();
 
-        var response = await _client.PostAsJsonAsync("/embed", new { images = new[] { Pattern, Pattern } });
+        var response = await _client.PostAsJsonAsync("/embed?encoder=tiny", new { images = new[] { Pattern, Pattern } });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -45,6 +50,8 @@ public class EmbedApiTests : IClassFixture<TestWebApplicationFactory>
         Assert.Equal(64, encoder.GetProperty("sha256").GetString()!.Length);
         Assert.Equal(4, encoder.GetProperty("dimension").GetInt32());
         Assert.True(encoder.GetProperty("normalized").GetBoolean());
+        Assert.Equal(ImagePreprocessor.Revision, encoder.GetProperty("preprocessor").GetString());
+        Assert.False(doc.RootElement.TryGetProperty("patches", out _));
         var vectors = doc.RootElement.GetProperty("vectors");
         Assert.Equal(2, vectors.GetArrayLength());
         var expected = Expected();
@@ -74,7 +81,7 @@ public class EmbedApiTests : IClassFixture<TestWebApplicationFactory>
     {
         InstallTiny();
 
-        var response = await _client.PostAsJsonAsync("/embed", new { images = new[] { Pattern, Convert.ToBase64String("not an image"u8.ToArray()) } });
+        var response = await _client.PostAsJsonAsync("/embed?encoder=tiny", new { images = new[] { Pattern, Convert.ToBase64String("not an image"u8.ToArray()) } });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -94,6 +101,45 @@ public class EmbedApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task MoreImagesThanOneRequestTakes_Is413()
     {
         var response = await _client.PostAsJsonAsync("/embed", new { images = Enumerable.Repeat(Pattern, EmbedderPool.MaxImages + 1) });
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Patches_AreGivenPerImage_WithTheGridAndTheCrop()
+    {
+        InstallTiny();
+
+        var response = await _client.PostAsJsonAsync("/embed?encoder=tiny&patches=true", new { images = new[] { Pattern, Pattern } });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var grid = doc.RootElement.GetProperty("grid");
+        Assert.Equal(2, grid.GetProperty("rows").GetInt32());
+        Assert.Equal(2, grid.GetProperty("columns").GetInt32());
+        Assert.Equal(3, grid.GetProperty("patchSize").GetInt32());
+        var patches = doc.RootElement.GetProperty("patches");
+        Assert.Equal(2, patches.GetArrayLength());
+        Assert.Equal(4, patches[0].GetProperty("vectors").GetArrayLength());
+        Assert.Equal(9.25, patches[0].GetProperty("crop").GetProperty("x0").GetDouble(), 9);
+        Assert.Equal(2, doc.RootElement.GetProperty("vectors").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task PatchesOfAnEncoderWithoutAGrid_Are409()
+    {
+        InstallWithoutPatches();
+
+        var response = await _client.PostAsJsonAsync("/embed?encoder=plain&patches=true", new { images = new[] { Pattern } });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("patchSize", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task MorePatchImagesThanOneRequestTakes_Is413()
+    {
+        var response = await _client.PostAsJsonAsync("/embed?patches=true", new { images = Enumerable.Repeat(Pattern, EmbedderPool.MaxPatchImages + 1) });
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
     }

@@ -6,27 +6,33 @@ namespace MLoop.API;
 
 /// <summary>
 /// <c>POST /embed</c> — images to vectors with an installed pretrained encoder (<see cref="EmbedderPool"/>). Takes the
-/// images' contents, never a path: a path assumes the client and the server share a disk.
+/// images' contents, never a path: a path assumes the client and the server share a disk. <c>?patches=true</c> adds each
+/// image's patch vectors and the grid they lie on (at most <see cref="EmbedderPool.MaxPatchImages"/> images).
 /// </summary>
 public static class EmbedEndpoint
 {
     public static void MapEmbed(this WebApplication app)
     {
-        app.MapPost("/embed", async (HttpRequest request, [FromQuery] string? encoder, EmbedderPool pool, CancellationToken ct) =>
+        app.MapPost("/embed", async (HttpRequest request, [FromQuery] string? encoder, [FromQuery] bool? patches, EmbedderPool pool, CancellationToken ct) =>
         {
             var (images, unreadable) = await ReadImagesAsync(request, ct);
             if (images is null)
                 return Results.BadRequest(new { error = unreadable });
             if (ImageInputs.Refusal(images) is { } refused)
                 return refused;
+            var withPatches = patches == true;
+            if (EmbedderPool.TooMany(images.Count, withPatches) is { } tooMany)
+                return Results.Json(new { error = tooMany }, statusCode: StatusCodes.Status413PayloadTooLarge);
 
             var (embedder, refusal) = pool.Get(encoder);
             if (embedder is null)
                 return Results.Conflict(new { error = refusal });
+            if (withPatches && ImageEmbedder.NoPatches(embedder.Encoder) is { } noPatches)
+                return Results.Conflict(new { error = noPatches });
 
             try
             {
-                return Results.Ok(new EmbeddingResult(EncoderIdentity.Of(embedder.Encoder), embedder.Embed(images)));
+                return Results.Ok(embedder.Embed(images, withPatches));
             }
             catch (UnreadableImageException ex)
             {

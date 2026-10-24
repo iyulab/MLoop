@@ -172,6 +172,31 @@ public sealed class EncoderStoreTests : IDisposable
     }
 
     // Progress<T> posts to a context; a test reads what was reported straight away.
+    /// <summary>
+    /// An install made before the catalog declared patch sizes has no <c>patchSize</c> in its encoder.json; its weights
+    /// are the catalog entry's, so the entry's patch size applies to it — another definition keeps what it says.
+    /// </summary>
+    [Fact]
+    public void AnInstallOfCatalogWeights_WithoutAPatchSize_TakesTheCatalogs()
+    {
+        var store = new EncoderStore(_root);
+        var dir = Directory.CreateDirectory(Path.Combine(_root, "dinov2-small")).FullName;
+        var old = EncoderCatalog.DinoV2Small with { PatchSize = null };
+        File.WriteAllText(Path.Combine(dir, EncoderStore.DefinitionFileName),
+            System.Text.Json.JsonSerializer.Serialize(old, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+                Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.KebabCaseLower) },
+            }));
+        File.Copy(Graph, Path.Combine(dir, EncoderStore.ModelFileName));
+        store.Add(Tiny, Graph);
+
+        Assert.DoesNotContain("patchSize", File.ReadAllText(Path.Combine(dir, EncoderStore.DefinitionFileName)));
+        Assert.Equal(14, store.Find("dinov2-small")!.Definition.PatchSize);
+        Assert.Null(store.Find("tiny")!.Definition.PatchSize);
+    }
+
     private sealed class SyncProgress(Action<(long Downloaded, long? Total)> report) : IProgress<(long Downloaded, long? Total)>
     {
         public void Report((long Downloaded, long? Total) value) => report(value);

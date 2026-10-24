@@ -7,6 +7,9 @@
   shaped like a vision transformer's output so the CLS pooling path is the one exercised.
 - expected.json: the preprocessed tensor (shortest edge 8, centre crop 6, ImageNet mean/std) as an image processor
   with Pillow's bicubic resize computes it, and the L2-normalised embedding of that tensor.
+- tiny-patch-encoder.onnx: the same class token, then one register token, then a 2 x 2 grid of 3-pixel patches (each
+  patch's mean x W), row by row -> [N,6,4] "last_hidden_state" — a vision transformer with registers.
+- patches.json: the L2-normalised patch vectors of pattern.png, row by row, and the centre crop in its own pixels.
 """
 import json
 import os
@@ -72,3 +75,39 @@ cropped = resized[top:top + CROP, left:left + CROP].astype(np.float32) * np.floa
 translucent = ((cropped - MEAN) / STD).transpose(2, 0, 1)
 with open(os.path.join(HERE, "translucent.json"), "w") as f:
     json.dump({"tensor": [float(v) for v in translucent.flatten()]}, f, indent=1)
+
+# tiny-patch-encoder.onnx / patches.json: a class token, a register token, then the patch tokens row by row.
+PATCH = 3
+patch_graph = helper.make_graph(
+    [
+        helper.make_node("ReduceMean", ["pixel_values"], ["pooled"], axes=[2, 3], keepdims=0),
+        helper.make_node("MatMul", ["pooled", "W"], ["projected"]),
+        helper.make_node("Unsqueeze", ["projected", "axes"], ["cls"]),
+        helper.make_node("Neg", ["cls"], ["register"]),
+        helper.make_node("AveragePool", ["pixel_values"], ["cells"], kernel_shape=[PATCH, PATCH], strides=[PATCH, PATCH]),
+        helper.make_node("Reshape", ["cells", "cells_shape"], ["flat"]),
+        helper.make_node("Transpose", ["flat"], ["tokens"], perm=[0, 2, 1]),
+        helper.make_node("MatMul", ["tokens", "W"], ["patches"]),
+        helper.make_node("Concat", ["cls", "register", "patches"], ["last_hidden_state"], axis=1),
+    ],
+    "tiny-patch-encoder",
+    [helper.make_tensor_value_info("pixel_values", TensorProto.FLOAT, ["N", 3, CROP, CROP])],
+    [helper.make_tensor_value_info("last_hidden_state", TensorProto.FLOAT, ["N", 6, 4])],
+    [helper.make_tensor("W", TensorProto.FLOAT, [3, 4], W.flatten().tolist()),
+     helper.make_tensor("axes", TensorProto.INT64, [1], [1]),
+     helper.make_tensor("cells_shape", TensorProto.INT64, [3], [0, 3, -1])],
+)
+patch_model = helper.make_model(patch_graph, opset_imports=[helper.make_opsetid("", 13)], producer_name="mloop-fixture")
+patch_model.ir_version = 8
+onnx.checker.check_model(patch_model)
+onnx.save(patch_model, os.path.join(HERE, "tiny-patch-encoder.onnx"))
+
+g = CROP // PATCH
+patches = []
+for r in range(g):
+    for c in range(g):
+        v = tensor[:, r * PATCH:(r + 1) * PATCH, c * PATCH:(c + 1) * PATCH].mean(axis=(1, 2)) @ W
+        patches.append([float(x) for x in v / np.linalg.norm(v)])
+crop_region = [left * w / nw, top * h / nh, (left + CROP) * w / nw, (top + CROP) * h / nh]
+with open(os.path.join(HERE, "patches.json"), "w") as f:
+    json.dump({"patches": patches, "crop": crop_region}, f, indent=1)

@@ -68,9 +68,9 @@ public class ImageEmbedderTests
     {
         using var embedder = ImageEmbedder.Open(Tiny, Path.Combine(Fixtures, "tiny-encoder.onnx"));
 
-        var vectors = embedder.Embed([Pattern, Pattern]);
+        var vectors = embedder.Embed([Pattern, Pattern]).Vectors;
 
-        Assert.Equal(2, vectors.Length);
+        Assert.Equal(2, vectors.Count);
         Assert.All(vectors, v =>
         {
             Assert.Equal(4, v.Length);
@@ -108,5 +108,115 @@ public class ImageEmbedderTests
         var ex = Assert.Throws<InvalidOperationException>(() => embedder.Embed([Pattern]));
 
         Assert.Contains("384", ex.Message);
+    }
+
+    private static readonly EncoderDefinition TinyPatches = Tiny with { PatchSize = 3 };
+
+    private sealed record ExpectedPatches(float[][] Patches, double[] Crop);
+
+    private static ExpectedPatches PatchReference => JsonSerializer.Deserialize<ExpectedPatches>(
+        File.ReadAllText(Path.Combine(Fixtures, "patches.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+    /// <summary>
+    /// The graph puts a class token and a register token before its 2 × 2 patches: the patches are the last four tokens,
+    /// row by row, each a unit vector, and the grid covers the centre crop — given in the image's own pixels.
+    /// </summary>
+    [Fact]
+    public void Patches_AreTheLastTokens_RowByRow_OverTheCentreCrop()
+    {
+        using var embedder = ImageEmbedder.Open(TinyPatches, Path.Combine(Fixtures, "tiny-patch-encoder.onnx"));
+
+        var result = embedder.Embed([Pattern, Pattern], patches: true);
+
+        Assert.Equal(new PatchGrid(2, 2, 3, 6), result.Grid);
+        var reference = PatchReference;
+        Assert.Equal(2, result.Patches!.Count);
+        Assert.All(result.Patches, image =>
+        {
+            Assert.Equal(new ImageRegion(reference.Crop[0], reference.Crop[1], reference.Crop[2], reference.Crop[3]), image.Crop);
+            Assert.Equal(4, image.Vectors.Count);
+            for (var t = 0; t < 4; t++)
+                for (var d = 0; d < 4; d++)
+                    Assert.Equal(reference.Patches[t][d], image.Vectors[t][d], 4);
+        });
+        for (var d = 0; d < 4; d++)
+            Assert.Equal(Reference.Value.Embedding[d], result.Vectors[0][d], 4);   // the class token, as without patches
+    }
+
+    [Fact]
+    public void WithoutPatches_TheAnswerCarriesNoGrid()
+    {
+        using var embedder = ImageEmbedder.Open(TinyPatches, Path.Combine(Fixtures, "tiny-patch-encoder.onnx"));
+
+        var result = embedder.Embed([Pattern]);
+
+        Assert.Null(result.Grid);
+        Assert.Null(result.Patches);
+    }
+
+    [Fact]
+    public void PatchesOfAnEncoderThatDeclaresNoPatchSize_AreRefused()
+    {
+        using var embedder = ImageEmbedder.Open(Tiny, Path.Combine(Fixtures, "tiny-encoder.onnx"));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => embedder.Embed([Pattern], patches: true));
+
+        Assert.Contains("patchSize", ex.Message);
+    }
+
+    [Fact]
+    public void AGridLargerThanTheOutput_IsRefused_NotReadFromTheClassToken()
+    {
+        using var embedder = ImageEmbedder.Open(Tiny with { PatchSize = 2 }, Path.Combine(Fixtures, "tiny-patch-encoder.onnx"));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => embedder.Embed([Pattern], patches: true));
+
+        Assert.Contains("6 tokens", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(4, "does not tile")]
+    [InlineData(0, "does not tile")]
+    public void APatchSizeThatDoesNotTileTheCrop_CannotRun(int patch, string reason) =>
+        Assert.Contains(reason, (Tiny with { PatchSize = patch }).Problem());
+
+    [Fact]
+    public void TheCropRegion_ScalesTheCentreCropBackToTheImage()
+    {
+        // 480 × 640 → 256 × 341; the 224 crop starts at (16, 58) of the resized image.
+        var region = ImagePreprocessor.CropRegion(480, 640, ImagePreprocessing.ImageNet(256, 224));
+
+        Assert.Equal(16 * 480 / 256.0, region.X0, 9);
+        Assert.Equal(58 * 640 / 341.0, region.Y0, 9);
+        Assert.Equal(240 * 480 / 256.0, region.X1, 9);
+        Assert.Equal(282 * 640 / 341.0, region.Y1, 9);
+    }
+
+    /// <summary>
+    /// The preprocessor's revision is part of every vector's identity, so the tensors it makes are pinned to it: when one
+    /// changes, this fails until <see cref="ImagePreprocessor.Revision"/> is raised and the digest below replaced. Rounded
+    /// to 1e-3 — one 8-bit level is 0.017 in the tensor, so any change of a pixel shows.
+    /// </summary>
+    [Fact]
+    public void TheTensorsThePreprocessorMakes_ArePinnedToItsRevision()
+    {
+        var digests = new Dictionary<string, string>
+        {
+            ["pillow/2"] = "75743d96d6ad5373d0dc048f33f617fa0ebbfe1782ca754db65c7ebd35ca8cf2",
+        };
+
+        var tensors = new[] { "pattern.png", "translucent.png" }
+            .SelectMany(f => ImagePreprocessor.ToTensor(File.ReadAllBytes(Path.Combine(Fixtures, f)), Tiny.Preprocessing))
+            .Select(v => Math.Round(v, 3).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture));
+        var digest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(string.Join(",", tensors))));
+
+        Assert.True(digests.TryGetValue(ImagePreprocessor.Revision, out var pinned), $"no digest pinned for {ImagePreprocessor.Revision}");
+        Assert.True(pinned == digest, $"The tensors changed under revision {ImagePreprocessor.Revision} (digest {digest}): raise ImagePreprocessor.Revision and pin the new digest.");
+    }
+
+    [Fact]
+    public void AVectorsIdentity_NamesThePreprocessorRevision()
+    {
+        Assert.Equal(ImagePreprocessor.Revision, EncoderIdentity.Of(Tiny).Preprocessor);
     }
 }

@@ -13,7 +13,12 @@ namespace MLoop.CLI.Commands;
 /// </summary>
 public static class EmbedCommand
 {
-    private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    // Absent fields are left out, as `POST /embed` leaves them out — one shape for both.
+    private static readonly JsonSerializerOptions Json = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     public static Command Create()
     {
@@ -24,11 +29,16 @@ public static class EmbedCommand
         };
         var encoderOption = new Option<string?>("--encoder") { Description = "The encoder to use; may be left out when only one is installed" };
         var jsonOption = new Option<bool>("--json") { Description = "Emit the encoder and every vector as JSON to stdout" };
+        var patchesOption = new Option<bool>("--patches")
+        {
+            Description = $"Also one vector per patch of each image, on the encoder's grid (at most {EmbedderPool.MaxPatchImages} images)",
+        };
 
         var command = new Command("embed", "Embed images as vectors with a pretrained encoder");
         command.Arguments.Add(imagesArg);
         command.Options.Add(encoderOption);
         command.Options.Add(jsonOption);
+        command.Options.Add(patchesOption);
 
         command.SetAction(parseResult =>
         {
@@ -46,7 +56,7 @@ public static class EmbedCommand
             string? refusal;
             try
             {
-                (result, refusal) = pool.Embed(parseResult.GetValue(encoderOption), [.. paths.Select(File.ReadAllBytes)]);
+                (result, refusal) = pool.Embed(parseResult.GetValue(encoderOption), [.. paths.Select(File.ReadAllBytes)], parseResult.GetValue(patchesOption));
             }
             catch (UnreadableImageException ex)
             {
@@ -76,6 +86,8 @@ public static class EmbedCommand
                 table.AddRow(Markup.Escape(Path.GetFileName(paths[i])), $"{head}{(result.Vectors[i].Length > 4 ? ", …" : "")}");
             }
             AnsiConsole.Write(table);
+            if (result.Grid is { } grid)
+                AnsiConsole.MarkupLine($"Patches: {grid.Rows} × {grid.Columns} of {grid.PatchSize} px over the {grid.CropSize} px centre crop, per image.");
             AnsiConsole.MarkupLine("[dim]Vectors are L2-normalised. --json gives them in full.[/]");
             return 0;
         });

@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `mloop embed --patches` and `POST /embed?patches=true` add each image's patch vectors from the same encoder run —
+  one unit vector per patch of the centre crop (`dinov2-small`: 16 × 16 patches of 14 pixels), row by row, with the
+  grid and the crop the grid covers in the image's own pixels. One vector per image averages a small local difference
+  away under normal variation; a vector per patch keeps it and locates it. At most 8 images per call with patches. An
+  encoder definition declares its patch grid with `patchSize`; an installed catalog encoder without it takes the
+  catalog's.
+
+- The encoder identity in every `mloop embed --json` and `POST /embed` answer carries `preprocessor` — the revision of
+  the arithmetic that turns an image into the encoder's input (`pillow/2`). The same weights give other vectors when it
+  changes, as 0.45.0's handling of translucent pixels did under an unchanged `sha256`; vectors are comparable only when
+  `id`, `sha256` and `preprocessor` all match.
+
 - `predict --json` and `POST /predict` name the answering model by its content: `modelSha256`, the model file's
   SHA-256, beside `experimentId` — which is unique only inside one project. (`predict --json` for a forecasting model
   now carries `experimentId` too.)
