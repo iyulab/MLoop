@@ -116,6 +116,13 @@ public class ExperimentData
     /// <c>f1_score</c> when AUC turns out to be undefined.
     /// </summary>
     public string? RankingMetric { get; init; }
+
+    /// <summary>
+    /// The warnings the run raised, in order — about the data (a row-number column, text the model cannot read), the
+    /// run, and the trained model (the performance diagnostics). Kept with the experiment so a person reviewing it
+    /// later sees what the terminal said; empty when there were none and on experiments recorded before the field.
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
 /// <summary>

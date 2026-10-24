@@ -61,6 +61,7 @@ internal static class ExperimentReport
 
         RenderOverview(sb, experiment, projectRoot);
         RenderResult(sb, experiment);
+        RenderWarnings(sb, experiment);
         RenderMetrics(sb, experiment);
         RenderTrials(sb, experiment, rankedTrials);
         RenderColumns(sb, experiment);
@@ -132,6 +133,20 @@ internal static class ExperimentReport
         if (!string.IsNullOrEmpty(result.Trainer?.FallbackReason))
             Row(sb, "Fallback", result.Trainer.FallbackReason);
         Row(sb, "Training time", Seconds(result.TrainingTimeSeconds));
+        sb.AppendLine();
+    }
+
+    // What the run warned about, as it said it — the part of a run's output that matters most to a reviewer and the
+    // only part that left no file behind before.
+    private static void RenderWarnings(StringBuilder sb, ExperimentData experiment)
+    {
+        if (experiment.Warnings.Count == 0)
+            return;
+
+        sb.AppendLine("## Warnings");
+        sb.AppendLine();
+        foreach (var warning in experiment.Warnings)
+            sb.AppendLine($"- {warning.ReplaceLineEndings(" ")}");
         sb.AppendLine();
     }
 

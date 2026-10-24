@@ -146,6 +146,49 @@ public class ExperimentStoreTests : IDisposable
     }
 
     /// <summary>
+    /// The run's warnings stay with the experiment: written to its metadata, read back, and shown in its report —
+    /// before, they were on the terminal and nowhere after. An experiment recorded without them reads back none.
+    /// </summary>
+    [Fact]
+    public async Task SaveAsync_KeepsTheRunsWarnings_InTheMetadataAndTheReport()
+    {
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        var warned = CreateExperimentData(experimentId, result: new ExperimentResult
+        {
+            BestTrainer = "FastForestRegression",
+            TrainingTimeSeconds = 3.0
+        });
+        warned = new ExperimentData
+        {
+            ModelName = warned.ModelName,
+            ExperimentId = warned.ExperimentId,
+            Timestamp = warned.Timestamp,
+            Status = warned.Status,
+            Task = warned.Task,
+            Config = warned.Config,
+            Result = warned.Result,
+            Metrics = warned.Metrics,
+            Warnings = ["Possible ID/index column(s) (strictly increasing integers): row", "A | pipe\nand a line break"]
+        };
+
+        await _experimentStore.SaveAsync(DefaultModelName, warned, CancellationToken.None);
+        var loaded = await _experimentStore.LoadAsync(DefaultModelName, experimentId, CancellationToken.None);
+        var report = await File.ReadAllTextAsync(Path.Combine(
+            _experimentStore.GetExperimentPath(DefaultModelName, experimentId), ExperimentLayout.ReportFileName));
+
+        Assert.Equal(warned.Warnings, loaded.Warnings);
+        Assert.Contains("## Warnings", report);
+        Assert.Contains("- Possible ID/index column(s) (strictly increasing integers): row", report);
+        Assert.Contains("- A | pipe and a line break", report);
+
+        var plainId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        await _experimentStore.SaveAsync(DefaultModelName, CreateExperimentData(plainId), CancellationToken.None);
+        Assert.Empty((await _experimentStore.LoadAsync(DefaultModelName, plainId, CancellationToken.None)).Warnings);
+        Assert.DoesNotContain("## Warnings", await File.ReadAllTextAsync(Path.Combine(
+            _experimentStore.GetExperimentPath(DefaultModelName, plainId), ExperimentLayout.ReportFileName)));
+    }
+
+    /// <summary>
     /// The failure record — no trainer, no metrics, no trials, no schema — is saved from a catch
     /// block. It gets a report too, and writing it must not throw over the training error.
     /// </summary>

@@ -116,6 +116,7 @@ public class ExperimentStore : IExperimentStore
             },
             experiment.Config,
             experiment.Result,
+            experiment.Warnings,
             Versions = new
             {
                 MlNet = "5.0.0",
@@ -286,9 +287,16 @@ public class ExperimentStore : IExperimentStore
             Task = metadata["task"].ToString()!,
             Config = config,
             Result = result,
-            Metrics = metrics
+            Metrics = metrics,
+            Warnings = ParseWarnings(metadata)
         };
     }
+
+    /// <summary>The persisted <c>warnings</c> array; empty when absent (an experiment recorded before it existed).</summary>
+    private static IReadOnlyList<string> ParseWarnings(Dictionary<string, object> metadata) =>
+        metadata.TryGetValue("warnings", out var value) && value is JsonElement { ValueKind: JsonValueKind.Array } array
+            ? [.. array.EnumerateArray().Where(w => w.ValueKind == JsonValueKind.String).Select(w => w.GetString()!)]
+            : [];
 
     /// <summary>
     /// Reconstructs <see cref="ExperimentResult"/> from the persisted metadata "result" block

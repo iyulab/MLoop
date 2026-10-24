@@ -69,6 +69,8 @@ public class TrainingEngine : ITrainingEngine
     {
         var stopwatch = Stopwatch.StartNew();
         var modelName = config.ModelName;
+        // What this run warns about is kept with its experiment (metadata.json, report.md), not only shown.
+        using var warnings = WarningConsole.Collect();
 
         // Generate experiment ID for this model
         var experimentId = await _experimentStore.GenerateIdAsync(modelName, cancellationToken);
@@ -486,7 +488,12 @@ public class TrainingEngine : ITrainingEngine
                 },
                 Metrics = trained.Metrics,
                 Trials = trained.Trials,
-                RankingMetric = trained.RankingMetric
+                RankingMetric = trained.RankingMetric,
+                // The run's warnings, then what the performance diagnostics say about the model — the ones `mloop
+                // train` prints after it, recorded here so the experiment holds both.
+                Warnings = [.. warnings.Warnings.Concat(new MLoop.Core.Diagnostics.PerformanceDiagnostics()
+                    .Analyze(config.Task, trained.Metrics, rowCount: (int)Math.Min(trained.RowCount, int.MaxValue)).Warnings)
+                    .Distinct(StringComparer.Ordinal)]
             };
 
             // Save experiment metadata
@@ -540,7 +547,8 @@ public class TrainingEngine : ITrainingEngine
                 {
                     BestTrainer = "none",
                     TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds
-                }
+                },
+                Warnings = warnings.Warnings
             };
 
             await _experimentStore.SaveAsync(modelName, experimentData, cancellationToken);

@@ -233,6 +233,13 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         job.GetProperty("status").GetString().Should().Be("Completed", job.ToString());
         job.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()).Should()
             .Contain(w => w!.Contains("strictly increasing integers") && w.Contains("row"));
+
+        // And the experiment keeps them, for whoever reviews it later.
+        var metadata = Path.Combine(_factory.TestProjectRoot, MLoop.Core.Storage.ExperimentLayout.ModelsDirectory, "wwarn",
+            MLoop.Core.Storage.ExperimentLayout.StagingDirectory, job.GetProperty("experimentId").GetString()!,
+            MLoop.Core.Storage.ExperimentLayout.MetadataFileName);
+        JsonDocument.Parse(File.ReadAllText(metadata)).RootElement.GetProperty("warnings").EnumerateArray()
+            .Select(w => w.GetString()).Should().Contain(w => w!.Contains("strictly increasing integers"));
     }
 
     private async Task<JsonElement> AwaitJobAsync(HttpResponseMessage response)

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- An experiment keeps the warnings its run raised — about the data, the run and the trained model, as `mloop train`
+  printed them — as `warnings` in its `metadata.json` and a «Warnings» section of its `report.md`, failed runs
+  included. Before, they were on the terminal and nowhere after.
+
 - Training a text model (text classification, sentence similarity, NER, question answering) warns, per text column,
   when more than 5% of its characters are ones the model cannot read, with the share. ML.NET's text trainers read
   text through an English tokenizer that drops every character above U+00FF on the way in, so Korean, Chinese,
