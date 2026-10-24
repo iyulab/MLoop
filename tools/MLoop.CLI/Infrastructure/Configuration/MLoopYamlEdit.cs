@@ -103,11 +103,17 @@ public static partial class MLoopYamlEdit
         return childIndent < 0 ? null : new Block(start, end, childIndent);
     }
 
+    // Lines split on either ending — a file with both (a CRLF file a tool appended LF lines to) still reads
+    // as lines — and written back with the file's own: CRLF when it has any.
     private static (List<string> Lines, string Newline) Split(string text)
     {
         var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        return ([.. text.Split(newline)], newline);
+        return ([.. LineBreak().Split(text)], newline);
     }
+
+    // CRLF or LF only — `ReplaceLineEndings` would also break a value at a form feed or U+2028.
+    [GeneratedRegex(@"\r?\n")]
+    private static partial Regex LineBreak();
 
     private static bool IsBlankOrComment(string line) => line.TrimStart() is "" or ['#', ..];
 

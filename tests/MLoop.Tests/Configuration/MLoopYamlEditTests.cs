@@ -9,8 +9,9 @@ namespace MLoop.Tests.Configuration;
 /// </summary>
 public class MLoopYamlEditTests
 {
-    // The shape `mloop init` writes.
-    private const string Init = """
+    // The shape `mloop init` writes — with LF endings whatever the checkout gave this file (a Windows
+    // clone converts the literal to CRLF, and every expectation below is written in LF).
+    private static readonly string Init = """
         # MLoop Project Configuration
         # Multi-model MLOps with minimal cost
 
@@ -35,7 +36,7 @@ public class MLoopYamlEditTests
         # Default data paths
         data:
           train: datasets/train.csv
-        """;
+        """.ReplaceLineEndings("\n");
 
     [Fact]
     public void ALabelChange_EditsThatLineOnly()
@@ -80,6 +81,19 @@ public class MLoopYamlEditTests
         var edited = MLoopYamlEdit.SetModelScalars(Init.Replace("\n", "\r\n"), "default", [("label", "y")])!;
 
         Assert.Contains("    label: y\r\n", edited);
+        Assert.DoesNotContain("\r\r", edited);
+    }
+
+    [Fact]
+    public void MixedLineEndings_AreReadAsLines_AndWrittenWithTheFilesOwnEnding()
+    {
+        // A CRLF file with a line appended by a tool that writes LF.
+        var mixed = Init.Replace("\n", "\r\n") + "\nextra: 1\n";
+
+        var edited = MLoopYamlEdit.SetModelScalars(mixed, "default", [("label", "y")])!;
+
+        Assert.Contains("    label: y\r\n", edited);
+        Assert.Contains("\r\nextra: 1\r\n", edited);
         Assert.DoesNotContain("\r\r", edited);
     }
 
