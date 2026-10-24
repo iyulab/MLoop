@@ -330,6 +330,39 @@ public class ImageDirectoryLoaderTests : IDisposable
         Assert.Contains("already meets", outcome.Message);
     }
 
+    [Fact]
+    public void HoldOut_TakesEachClassShare_AndNoImageIsOnBothSides()
+    {
+        CreateClass("OK", 30);
+        CreateClass("NG", 10);
+        CreateClass("RARE", 1);
+        var data = _loader.LoadData(_tempDirectory);
+
+        var (train, validation) = ImageDirectoryLoader.HoldOut(_mlContext, data, null, 0.1);
+
+        Assert.NotNull(validation);
+        var held = validation!.GetColumn<string>(ImageDirectoryLoader.DefaultLabelColumn).ToList();
+        Assert.Equal(3, held.Count(l => l == "OK"));
+        Assert.Equal(1, held.Count(l => l == "NG"));
+        Assert.DoesNotContain("RARE", held); // one image cannot be spared
+        var trainPaths = train.GetColumn<string>(ImageDirectoryLoader.ImagePathColumn).ToHashSet();
+        Assert.Equal(37, trainPaths.Count);
+        Assert.DoesNotContain(validation.GetColumn<string>(ImageDirectoryLoader.ImagePathColumn), trainPaths.Contains);
+    }
+
+    [Fact]
+    public void HoldOut_WhenNoClassCanSpareAnImage_ReturnsNoValidation()
+    {
+        CreateClass("OK", 5);
+        CreateClass("NG", 1);
+        var data = _loader.LoadData(_tempDirectory);
+
+        var (train, validation) = ImageDirectoryLoader.HoldOut(_mlContext, data, null, 0.1);
+
+        Assert.Null(validation);
+        Assert.Same(data, train);
+    }
+
     /// <summary>Creates a class subfolder with <paramref name="count"/> placeholder image files.</summary>
     private void CreateClass(string label, int count)
     {

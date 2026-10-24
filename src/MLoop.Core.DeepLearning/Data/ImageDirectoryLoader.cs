@@ -76,33 +76,51 @@ public sealed class ImageDirectoryLoader : DataProviderBase
     }
 
     /// <summary>
+    /// Sets aside about <paramref name="fraction"/> of each class of a partition this loader produced (stratified,
+    /// <see cref="ClassBalance.Seed"/>) — the slice a trainer validates on while it trains. Taken before balancing,
+    /// so no copy of an image is on both sides. A class too small to spare an image (fewer than two, or a share
+    /// that rounds to none) gives none; <c>Validation</c> is null when no class gave any.
+    /// </summary>
+    public static (IDataView Train, IDataView? Validation) HoldOut(
+        MLContext mlContext, IDataView data, string? labelColumn, double fraction)
+    {
+        ArgumentNullException.ThrowIfNull(mlContext);
+        var label = LabelOf(labelColumn);
+        var (paths, labels, byClass) = Read(data, label);
+
+        var random = new Random(ClassBalance.Seed);
+        var heldOut = new HashSet<int>();
+        foreach (var members in byClass.Values)
+        {
+            var take = members.Count < 2 ? 0 : (int)Math.Floor(members.Count * fraction);
+            foreach (var i in members.OrderBy(_ => random.Next()).Take(take))
+                heldOut.Add(i);
+        }
+        if (heldOut.Count == 0)
+            return (data, null);
+
+        var train = Enumerable.Range(0, paths.Count).Where(i => !heldOut.Contains(i))
+            .Select(i => new ImageSample { ImagePath = paths[i], Label = labels[i] });
+        var validation = heldOut.Order().Select(i => new ImageSample { ImagePath = paths[i], Label = labels[i] });
+        return (View(mlContext, train, label), View(mlContext, validation, label));
+    }
+
+    /// <summary>
     /// Oversamples the classes of a training partition this loader produced — <c>--balance</c> for image
-    /// classification, by <see cref="ClassBalance"/>. Called on the training partition after the split, so a copied
-    /// image never lands among the held-out images. Returns the partition unchanged when nothing applied.
+    /// classification, by <see cref="ClassBalance"/>. Called on the training partition after the split (and after
+    /// <see cref="HoldOut"/>), so a copied image never lands among the held-out images. Returns the partition
+    /// unchanged when nothing applied.
     /// </summary>
     public static (IDataView Data, ClassBalance.Outcome<string> Outcome) Balance(
         MLContext mlContext, IDataView trainSet, string? labelColumn, string balance)
     {
         ArgumentNullException.ThrowIfNull(mlContext);
-        ArgumentNullException.ThrowIfNull(trainSet);
-        var label = string.IsNullOrWhiteSpace(labelColumn) ? DefaultLabelColumn : labelColumn;
-        var paths = trainSet.GetColumn<string>(ImagePathColumn).ToList();
-        var labels = trainSet.GetColumn<string>(label).ToList();
+        var label = LabelOf(labelColumn);
+        var (paths, labels, byClass) = Read(trainSet, label);
 
-        var byClass = new List<KeyValuePair<string, IReadOnlyList<string>>>();
-        var index = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        for (var i = 0; i < paths.Count; i++)
-        {
-            if (!index.TryGetValue(labels[i], out var members))
-            {
-                members = [];
-                index[labels[i]] = members;
-                byClass.Add(KeyValuePair.Create(labels[i], (IReadOnlyList<string>)members));
-            }
-            members.Add(paths[i]);
-        }
-
-        var outcome = ClassBalance.Oversample(byClass, balance);
+        var outcome = ClassBalance.Oversample(
+            byClass.Select(c => KeyValuePair.Create(c.Key, (IReadOnlyList<string>)c.Value.Select(i => paths[i]).ToList())).ToList(),
+            balance);
         if (!outcome.Applied)
             return (trainSet, outcome);
 
@@ -110,13 +128,36 @@ public sealed class ImageDirectoryLoader : DataProviderBase
         for (var i = 0; i < paths.Count; i++)
             labelOf[paths[i]] = labels[i];
         var samples = paths.Select((path, i) => new ImageSample { ImagePath = path, Label = labels[i] })
-            .Concat(outcome.Copies.Select(path => new ImageSample { ImagePath = path, Label = labelOf[path] }))
-            .ToList();
+            .Concat(outcome.Copies.Select(path => new ImageSample { ImagePath = path, Label = labelOf[path] }));
+        return (View(mlContext, samples, label), outcome);
+    }
 
-        IDataView balanced = mlContext.Data.LoadFromEnumerable(samples);
-        if (!string.Equals(label, DefaultLabelColumn, StringComparison.Ordinal))
-            balanced = mlContext.Transforms.CopyColumns(label, DefaultLabelColumn).Fit(balanced).Transform(balanced);
-        return (balanced, outcome);
+    private static string LabelOf(string? labelColumn) =>
+        string.IsNullOrWhiteSpace(labelColumn) ? DefaultLabelColumn : labelColumn;
+
+    /// <summary>The partition's paths and labels, and each class's row indices in reading order.</summary>
+    private static (List<string> Paths, List<string> Labels, Dictionary<string, List<int>> ByClass) Read(IDataView data, string label)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        var paths = data.GetColumn<string>(ImagePathColumn).ToList();
+        var labels = data.GetColumn<string>(label).ToList();
+        var byClass = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        for (var i = 0; i < paths.Count; i++)
+        {
+            if (!byClass.TryGetValue(labels[i], out var members))
+                byClass[labels[i]] = members = [];
+            members.Add(i);
+        }
+        return (paths, labels, byClass);
+    }
+
+    /// <summary>The loader's own schema over <paramref name="samples"/>, a custom label column included.</summary>
+    private static IDataView View(MLContext mlContext, IEnumerable<ImageSample> samples, string label)
+    {
+        IDataView view = mlContext.Data.LoadFromEnumerable(samples.ToList());
+        return string.Equals(label, DefaultLabelColumn, StringComparison.Ordinal)
+            ? view
+            : mlContext.Transforms.CopyColumns(label, DefaultLabelColumn).Fit(view).Transform(view);
     }
 
     /// <summary>

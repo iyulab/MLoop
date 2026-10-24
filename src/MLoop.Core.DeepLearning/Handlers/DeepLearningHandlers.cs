@@ -21,6 +21,9 @@ namespace MLoop.Core.DeepLearning;
 /// </summary>
 internal static class DeepLearningHandlers
 {
+    /// <summary>The share of its input <c>ImageClassificationTrainer</c> validates on by default (10%).</summary>
+    private const double TrainerValidationFraction = 0.1;
+
     public static async Task<TrainedModel> RunImageClassificationAsync(
         MLContext mlContext, Action<string> log,
         IDataView trainSet, IDataView testSet, TrainingConfig config,
@@ -31,8 +34,13 @@ internal static class DeepLearningHandlers
             log($"Image classification: label='{config.LabelColumn}', TensorFlow transfer learning");
 
             // --balance oversamples the training partition only — the split has already set the held-out images aside.
-            if (ClassBalance.Requested(config.Balance))
+            // The trainer validates on a slice of what it is given (10% unless told otherwise) to stop early; that
+            // slice is taken here, before balancing, so no copy of an image is both trained and validated on.
+            IDataView? validation = null;
+            var balancing = ClassBalance.Requested(config.Balance);
+            if (balancing)
             {
+                (trainSet, validation) = ImageDirectoryLoader.HoldOut(mlContext, trainSet, config.LabelColumn, TrainerValidationFraction);
                 var (balanced, outcome) = ImageDirectoryLoader.Balance(mlContext, trainSet, config.LabelColumn, config.Balance!);
                 trainSet = balanced;
                 log($"Balance (training split): {outcome.Message}");
@@ -43,17 +51,28 @@ internal static class DeepLearningHandlers
             // LoadRawImageBytes reads each file into a VarVector<byte> before fitting.
             var images = trainSet.GetColumn<string>(ImageDirectoryLoader.ImagePathColumn).Count();
             var fitProgress = new ImageClassificationProgress(progress, "Image classification (TensorFlow)", images);
-            var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
+            var inputs = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
                 .Append(mlContext.Transforms.LoadRawImageBytes(
-                    outputColumnName: "ImageBytes", imageFolder: null, inputColumnName: "ImagePath"))
-                .Append(mlContext.MulticlassClassification.Trainers.ImageClassification(
-                    new ImageClassificationTrainer.Options
-                    {
-                        FeatureColumnName = "ImageBytes",
-                        LabelColumnName = "Label",
-                        Epoch = ImageClassificationProgress.MaxEpochs,
-                        MetricsCallback = fitProgress.OnMetrics
-                    }))
+                    outputColumnName: "ImageBytes", imageFolder: null, inputColumnName: "ImagePath"));
+            var options = new ImageClassificationTrainer.Options
+            {
+                FeatureColumnName = "ImageBytes",
+                LabelColumnName = "Label",
+                Epoch = ImageClassificationProgress.MaxEpochs,
+                MetricsCallback = fitProgress.OnMetrics
+            };
+            if (balancing)
+            {
+                // The validation slice in the trainer's input schema: the key mapping fitted on the same training rows
+                // the pipeline fits on, so the keys agree. No slice (classes too small to spare one) → no fraction of
+                // the balanced rows either, which would hold copies.
+                if (validation is not null)
+                    options.ValidationSet = inputs.Fit(trainSet).Transform(validation);
+                else
+                    options.ValidationSetFraction = null;
+            }
+            var pipeline = inputs
+                .Append(mlContext.MulticlassClassification.Trainers.ImageClassification(options))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             log($"Image classification featurizes {images:N0} images once, then trains for at most " +
