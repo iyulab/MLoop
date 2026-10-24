@@ -30,6 +30,14 @@ internal static class DeepLearningHandlers
         {
             log($"Image classification: label='{config.LabelColumn}', TensorFlow transfer learning");
 
+            // --balance oversamples the training partition only — the split has already set the held-out images aside.
+            if (ClassBalance.Requested(config.Balance))
+            {
+                var (balanced, outcome) = ImageDirectoryLoader.Balance(mlContext, trainSet, config.LabelColumn, config.Balance!);
+                trainSet = balanced;
+                log($"Balance (training split): {outcome.Message}");
+            }
+
             // The ImageClassification trainer requires raw image bytes as its feature
             // column. ImageDirectoryLoader produces an "ImagePath" string column, so
             // LoadRawImageBytes reads each file into a VarVector<byte> before fitting.

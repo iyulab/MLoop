@@ -73,6 +73,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop train --task image-classification --balance <ratio>` balances: the trainer oversamples the smaller classes of
+  its training split (after the split, so no copy of an image is among the held-out ones), and the configuration table
+  shows the balance. Before, image classification accepted `--balance` and trained unbalanced without a word. The rule
+  — which classes, by how many — is the same one the CSV classifiers use. `--balance` with object detection is refused
+  as before (its classes are on boxes, not images).
+
 - `mloop train`'s update of `mloop.yaml` (a label, task or ranking group given on the command line, or a
   model the file did not define), `mloop prep plan --set/--remove` and `mloop features select` rewrote the
   whole file from its settings, dropping every comment — the ones `mloop init` writes, the guide to

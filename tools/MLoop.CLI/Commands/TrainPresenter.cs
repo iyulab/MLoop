@@ -75,7 +75,7 @@ internal static class TrainPresenter
     /// </summary>
     public static void DisplayTrainingConfig(
         string dataFile, string modelName, ModelDefinition definition, string? testDataFile = null, bool useAutoTime = false,
-        string? sourceFile = null)
+        string? sourceFile = null, string? balance = null)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[blue]Training Configuration[/]").LeftJustified());
@@ -110,6 +110,9 @@ internal static class TrainPresenter
         {
             table.AddRow("Test Split", $"{(definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit) * 100:F0}%");
         }
+
+        if (ClassBalance.Requested(balance))
+            table.AddRow("Balance", $"{Markup.Escape(balance!)} — oversamples the smaller classes in the training split");
 
         if (definition.Columns is { Count: > 0 })
         {

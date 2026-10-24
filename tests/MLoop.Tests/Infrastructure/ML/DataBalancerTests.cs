@@ -38,7 +38,7 @@ public class DataBalancerTests : IDisposable
         Assert.True(result.Applied);
         Assert.NotNull(result.BalancedFilePath);
         Assert.Equal(50.0, result.OriginalRatio);
-        Assert.True(result.NewRatio <= DataBalancer.DefaultTargetRatio);
+        Assert.True(result.NewRatio <= MLoop.Core.Training.ClassBalance.DefaultTargetRatio);
         Assert.Contains("Oversampled", result.Message);
     }
 

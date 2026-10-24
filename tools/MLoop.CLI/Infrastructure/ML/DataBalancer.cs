@@ -1,13 +1,14 @@
-using System.Globalization;
 using System.Text;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
 using MLoop.Core.Prediction;
+using MLoop.Core.Training;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
 /// <summary>
-/// Balances class distribution in training data by oversampling minority classes
+/// Balances class distribution in a CSV training file by oversampling minority classes — the rule is
+/// <see cref="ClassBalance"/>; this reads the rows and writes the balanced file.
 /// </summary>
 public class DataBalancer
 {
@@ -24,29 +25,6 @@ public class DataBalancer
         public double OriginalRatio { get; set; }
         public double NewRatio { get; set; }
     }
-
-    /// <summary>
-    /// Default target ratio for 'auto' mode (10:1)
-    /// </summary>
-    public const double DefaultTargetRatio = 10.0;
-
-    /// <summary>
-    /// Minimum imbalance ratio to trigger auto-balancing
-    /// </summary>
-    public const double AutoTriggerThreshold = 10.0;
-
-    /// <summary>
-    /// Why <paramref name="balanceOption"/> is not a balance option — <c>auto</c>, <c>none</c> or a positive ratio — or
-    /// null when it is (absent included). Checked before anything runs, so a misspelt option refuses rather than
-    /// training unbalanced.
-    /// </summary>
-    public static string? OptionError(string? balanceOption) =>
-        string.IsNullOrWhiteSpace(balanceOption)
-        || balanceOption.Equals("none", StringComparison.OrdinalIgnoreCase)
-        || balanceOption.Equals("auto", StringComparison.OrdinalIgnoreCase)
-        || (double.TryParse(balanceOption, NumberStyles.Float, CultureInfo.InvariantCulture, out var ratio) && ratio > 0)
-            ? null
-            : $"Invalid balance option: '{balanceOption}'. Use 'auto', 'none', or a number (e.g., '5' for 5:1)";
 
     /// <summary>
     /// Balances the dataset by oversampling minority class
@@ -106,80 +84,13 @@ public class DataBalancer
             }
         }
 
-        if (classCounts.Count < 2)
-        {
-            result.Message = "Only one class found, no balancing needed";
+        var outcome = ClassBalance.Oversample(
+            classCounts.Select(c => KeyValuePair.Create(c.Key, (IReadOnlyList<string>)c.Value)).ToList(), balanceOption);
+        result.Message = outcome.Message;
+        result.OriginalMinorityCount = outcome.OriginalMinorityCount;
+        result.OriginalRatio = outcome.OriginalRatio;
+        if (!outcome.Applied)
             return result;
-        }
-
-        // Find majority and minority classes
-        var sortedClasses = classCounts
-            .OrderByDescending(x => x.Value.Count)
-            .ToList();
-
-        var majorityClass = sortedClasses.First();
-        var minorityClass = sortedClasses.Last();
-
-        result.OriginalMinorityCount = minorityClass.Value.Count;
-        result.OriginalRatio = (double)majorityClass.Value.Count / minorityClass.Value.Count;
-
-        // Determine target ratio
-        double targetRatio;
-        if (balanceOption.Equals("auto", StringComparison.OrdinalIgnoreCase))
-        {
-            // Auto mode: balance to DefaultTargetRatio if ratio exceeds threshold
-            if (result.OriginalRatio <= AutoTriggerThreshold)
-            {
-                result.Message = $"Class ratio {result.OriginalRatio:F1}:1 is within acceptable range (threshold: {AutoTriggerThreshold}:1)";
-                return result;
-            }
-            targetRatio = DefaultTargetRatio;
-        }
-        else if (double.TryParse(balanceOption, NumberStyles.Float, CultureInfo.InvariantCulture, out var customRatio) && customRatio > 0)
-        {
-            targetRatio = customRatio;
-        }
-        else
-        {
-            result.Message = $"Invalid balance option: '{balanceOption}'. Use 'auto', 'none', or a number (e.g., '5' for 5:1)";
-            return result;
-        }
-
-        // Already balanced enough?
-        if (result.OriginalRatio <= targetRatio)
-        {
-            result.Message = $"Class ratio {result.OriginalRatio:F1}:1 already meets target ratio {targetRatio}:1";
-            return result;
-        }
-
-        // Calculate target count per class
-        var targetMinorityCount = (int)Math.Ceiling(majorityClass.Value.Count / targetRatio);
-
-        // Oversample ALL classes below target count
-        var random = new Random(42); // Fixed seed for reproducibility
-        var oversampledRows = new List<string>();
-        var oversampledClasses = new List<string>();
-
-        foreach (var cls in sortedClasses)
-        {
-            if (cls.Key == majorityClass.Key) continue; // Skip majority class
-
-            var samplesToAdd = targetMinorityCount - cls.Value.Count;
-            if (samplesToAdd <= 0) continue;
-
-            for (int i = 0; i < samplesToAdd; i++)
-            {
-                var randomIndex = random.Next(cls.Value.Count);
-                oversampledRows.Add(cls.Value[randomIndex]);
-            }
-            oversampledClasses.Add($"'{cls.Key}' ({cls.Value.Count} → {cls.Value.Count + samplesToAdd})");
-        }
-
-        if (oversampledRows.Count == 0)
-        {
-            result.Message = "No oversampling needed";
-            return result;
-        }
 
         // Write balanced file
         var outputPath = Path.Combine(
@@ -188,15 +99,14 @@ public class DataBalancer
 
         var balancedLines = new List<string> { header };
         balancedLines.AddRange(dataRows);
-        balancedLines.AddRange(oversampledRows);
+        balancedLines.AddRange(outcome.Copies);
 
         File.WriteAllLines(outputPath, balancedLines, Encoding.UTF8);
 
         result.Applied = true;
         result.BalancedFilePath = outputPath;
-        result.NewMinorityCount = minorityClass.Value.Count + (targetMinorityCount - minorityClass.Value.Count);
-        result.NewRatio = (double)majorityClass.Value.Count / result.NewMinorityCount;
-        result.Message = $"Oversampled {oversampledClasses.Count} class(es): {string.Join(", ", oversampledClasses)} (ratio: {result.OriginalRatio:F1}:1 → {result.NewRatio:F1}:1)";
+        result.NewMinorityCount = outcome.NewMinorityCount;
+        result.NewRatio = outcome.NewRatio;
 
         return result;
     }

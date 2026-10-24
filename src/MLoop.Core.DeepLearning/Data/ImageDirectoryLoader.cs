@@ -1,6 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.Diagnostics;
+using MLoop.Core.Training;
 
 namespace MLoop.Core.Data;
 
@@ -72,6 +73,50 @@ public sealed class ImageDirectoryLoader : DataProviderBase
         }
 
         return dataView;
+    }
+
+    /// <summary>
+    /// Oversamples the classes of a training partition this loader produced — <c>--balance</c> for image
+    /// classification, by <see cref="ClassBalance"/>. Called on the training partition after the split, so a copied
+    /// image never lands among the held-out images. Returns the partition unchanged when nothing applied.
+    /// </summary>
+    public static (IDataView Data, ClassBalance.Outcome<string> Outcome) Balance(
+        MLContext mlContext, IDataView trainSet, string? labelColumn, string balance)
+    {
+        ArgumentNullException.ThrowIfNull(mlContext);
+        ArgumentNullException.ThrowIfNull(trainSet);
+        var label = string.IsNullOrWhiteSpace(labelColumn) ? DefaultLabelColumn : labelColumn;
+        var paths = trainSet.GetColumn<string>(ImagePathColumn).ToList();
+        var labels = trainSet.GetColumn<string>(label).ToList();
+
+        var byClass = new List<KeyValuePair<string, IReadOnlyList<string>>>();
+        var index = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        for (var i = 0; i < paths.Count; i++)
+        {
+            if (!index.TryGetValue(labels[i], out var members))
+            {
+                members = [];
+                index[labels[i]] = members;
+                byClass.Add(KeyValuePair.Create(labels[i], (IReadOnlyList<string>)members));
+            }
+            members.Add(paths[i]);
+        }
+
+        var outcome = ClassBalance.Oversample(byClass, balance);
+        if (!outcome.Applied)
+            return (trainSet, outcome);
+
+        var labelOf = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < paths.Count; i++)
+            labelOf[paths[i]] = labels[i];
+        var samples = paths.Select((path, i) => new ImageSample { ImagePath = path, Label = labels[i] })
+            .Concat(outcome.Copies.Select(path => new ImageSample { ImagePath = path, Label = labelOf[path] }))
+            .ToList();
+
+        IDataView balanced = mlContext.Data.LoadFromEnumerable(samples);
+        if (!string.Equals(label, DefaultLabelColumn, StringComparison.Ordinal))
+            balanced = mlContext.Transforms.CopyColumns(label, DefaultLabelColumn).Fit(balanced).Transform(balanced);
+        return (balanced, outcome);
     }
 
     /// <summary>
@@ -226,7 +271,7 @@ public sealed class ImageDirectoryLoader : DataProviderBase
             var min = classCounts.Values.Min();
             if (min > 0 && max >= min * 10)
                 _log(CoreMessage.Warning($"Severe class imbalance detected (largest {max} vs smallest {min} images). " +
-                     "Consider balancing the dataset for better accuracy."));
+                     "--balance <ratio> (e.g. --balance 3) oversamples the smaller classes in the training split."));
         }
 
         _log($"[Info] Loaded {totalImages} images across {classCounts.Count} class(es): " +

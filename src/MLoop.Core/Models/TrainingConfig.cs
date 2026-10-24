@@ -105,6 +105,14 @@ public record TrainingConfig
     private readonly Dictionary<string, string>? _columnOverrides;
 
     /// <summary>
+    /// <c>--balance</c> for a trainer that holds its own examples — image classification, whose examples are image
+    /// paths read from a directory, not rows of a file balanced before training. The trainer oversamples its
+    /// training partition by <see cref="Training.ClassBalance"/> after the split, so the held-out images stay
+    /// distinct. Null for every task whose data file is balanced up front (the CSV classifiers).
+    /// </summary>
+    public string? Balance { get; init; }
+
+    /// <summary>
     /// The column whose values weight the rows — the relative frequency each row should have (for a
     /// row sampled with probability π, 1/π). Null for unweighted training. Never a feature.
     /// </summary>

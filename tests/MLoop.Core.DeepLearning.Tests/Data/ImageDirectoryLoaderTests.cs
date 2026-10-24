@@ -285,6 +285,51 @@ public class ImageDirectoryLoaderTests : IDisposable
         }
     }
 
+    [Fact]
+    public void Balance_OversamplesTheSmallerClassToTheRatio_WithItsOwnImages()
+    {
+        CreateClass("OK", 9);
+        CreateClass("NG", 1);
+        var data = _loader.LoadData(_tempDirectory);
+
+        var (balanced, outcome) = ImageDirectoryLoader.Balance(_mlContext, data, null, "3");
+
+        var labels = balanced.GetColumn<string>(ImageDirectoryLoader.DefaultLabelColumn).ToList();
+        var paths = balanced.GetColumn<string>(ImageDirectoryLoader.ImagePathColumn).ToList();
+        Assert.True(outcome.Applied);
+        Assert.Equal(9, labels.Count(l => l == "OK"));
+        Assert.Equal(3, labels.Count(l => l == "NG")); // ⌈9 ÷ 3⌉
+        var ngImage = Path.Combine(_tempDirectory, "NG", "NG_0.jpg");
+        Assert.All(paths.Where((_, i) => labels[i] == "NG"), p => Assert.Equal(ngImage, p));
+    }
+
+    [Fact]
+    public void Balance_KeepsACustomLabelColumn()
+    {
+        CreateClass("OK", 6);
+        CreateClass("NG", 1);
+        var data = _loader.LoadData(_tempDirectory, labelColumn: "defect");
+
+        var (balanced, _) = ImageDirectoryLoader.Balance(_mlContext, data, "defect", "2");
+
+        Assert.Equal(3, balanced.GetColumn<string>("defect").Count(l => l == "NG"));
+        Assert.Contains(balanced.Schema, c => c.Name == ImageDirectoryLoader.DefaultLabelColumn);
+    }
+
+    [Fact]
+    public void Balance_WhenTheRatioIsAlreadyMet_ReturnsThePartitionUnchanged()
+    {
+        CreateClass("OK", 4);
+        CreateClass("NG", 2);
+        var data = _loader.LoadData(_tempDirectory);
+
+        var (balanced, outcome) = ImageDirectoryLoader.Balance(_mlContext, data, null, "3");
+
+        Assert.False(outcome.Applied);
+        Assert.Same(data, balanced);
+        Assert.Contains("already meets", outcome.Message);
+    }
+
     /// <summary>Creates a class subfolder with <paramref name="count"/> placeholder image files.</summary>
     private void CreateClass(string label, int count)
     {

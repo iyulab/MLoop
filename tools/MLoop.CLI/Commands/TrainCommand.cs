@@ -857,7 +857,7 @@ public static class TrainCommand
 
             // Display training configuration (auto-time shows an "auto" limit, not the yaml/default seconds,
             // so the summary matches what the engine actually does — honest record vs. actual)
-            TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition, testDataFile, useAutoTime, sourceDataFile);
+            TrainPresenter.DisplayTrainingConfig(resolvedDataFile, resolvedModelName, effectiveDefinition, testDataFile, useAutoTime, sourceDataFile, balance);
 
             // Validate label column exists (skip for unsupervised and directory-based tasks)
             if (requiresLabel && !isDirectoryBased)
@@ -885,6 +885,9 @@ public static class TrainCommand
                 useAutoTime,
                 preFeaturizer,
                 preFeaturizerColumns);
+            // A directory of images is not a file to balance up front: the trainer oversamples its own training split.
+            if (DataLoaderFactory.IsDirectoryBased(trainingConfig.Task) && ClassBalance.Requested(balance))
+                trainingConfig = trainingConfig with { Balance = balance };
 
             // The project's pre- and post-train hooks run inside TrainingEngine, the one place for
             // `mloop train` and `POST /train` alike. They used to run here as well, so each ran twice.

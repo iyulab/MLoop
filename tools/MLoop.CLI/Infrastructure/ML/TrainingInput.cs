@@ -81,12 +81,14 @@ public static class TrainingInput
     public static string? BalanceConflict(ModelDefinition definition, string? balance)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        if (DataBalancer.OptionError(balance) is { } optionError)
+        if (ClassBalance.OptionError(balance) is { } optionError)
             return optionError;
         if (string.IsNullOrEmpty(balance) || balance.Equals("none", StringComparison.OrdinalIgnoreCase))
             return null;
         if (!TrainingRunner.IsClassification(definition.Task))
-            return $"--balance applies to classification tasks; '{definition.Task}' has no classes to balance.";
+            return DataLoaderFactory.IsDirectoryBased(definition.Task)
+                ? $"--balance oversamples whole examples by their one class; '{definition.Task}' labels the boxes in an image, so an image has no single class to balance."
+                : $"--balance applies to classification tasks; '{definition.Task}' has no classes to balance.";
         return ModelTrainingConfig.WeightConflict(definition, balance);
     }
 

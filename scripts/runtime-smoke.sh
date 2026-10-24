@@ -3,7 +3,7 @@
 # Drives the deep-learning runtimes end to end in a Linux x64 container — the paths CI does not run, because it
 # installs no TensorFlow or libtorch:
 #
-#   tf     runtime install → image classification training → mloop serve → POST /predict with images (base64 and
+#   tf     runtime install → image classification training (imbalanced, --balance) → mloop serve → POST /predict with images (base64 and
 #          multipart) → no scratch file left behind
 #   torch  runtime install → text classification training → predictions whose probabilities sum to one
 #
@@ -42,9 +42,10 @@ def png(path, w, h, pixel):
         f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
                 + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
 
-for name, base in (("red", (200, 40, 40)), ("blue", (40, 40, 200))):
+# 24 red to 8 blue: imbalanced, so the train step's --balance has something to do.
+for name, base, count in (("red", (200, 40, 40), 24), ("blue", (40, 40, 200), 8)):
     os.makedirs(f"{root}/images/{name}")
-    for i in range(24):
+    for i in range(count):
         tint = [max(0, min(255, v + random.randint(-30, 30))) for v in base]
         png(f"{root}/images/{name}/{i}.png", 64, 48,
             lambda x, y, t=tint: [random.randrange(256)] * 3 if random.random() < 0.01 else t)
@@ -76,7 +77,8 @@ if [[ " ${RUNTIMES[*]} " == *" tf "* ]]; then
   cd /tmp && mloop init vision --task image-classification >/tmp/tf-init.log 2>&1 || { cat /tmp/tf-init.log; fail "mloop init (image classification)"; }
   cd vision
   cp -r /work/data/images/* datasets/images/
-  mloop train --task image-classification datasets/images >/tmp/tf-train.log 2>&1 || { tail -20 /tmp/tf-train.log; fail "image classification did not train"; }
+  mloop train --task image-classification datasets/images --balance 2 >/tmp/tf-train.log 2>&1 || { tail -20 /tmp/tf-train.log; fail "image classification did not train"; }
+  grep -q "Balance (training split): Oversampled" /tmp/tf-train.log || { tail -20 /tmp/tf-train.log; fail "--balance did not oversample the training split"; }
   (mloop serve --port 5099 >/tmp/serve.log 2>&1 &)
   up=0; for _ in \$(seq 1 180); do if curl -sf localhost:5099/health >/dev/null; then up=1; break; fi; sleep 1; done
   [[ \$up == 1 ]] || { tail -30 /tmp/serve.log; fail "mloop serve did not come up"; }

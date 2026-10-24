@@ -30,12 +30,17 @@ public sealed class TrainingInputBalanceTests : IDisposable
     public void AnOptionTheRunCanHonour_HasNoConflict(string? balance)
         => Assert.Null(TrainingInput.BalanceConflict(Definition(), balance));
 
+    [Fact]
+    public void ImageClassification_TakesABalance()
+        => Assert.Null(TrainingInput.BalanceConflict(Definition("image-classification"), "3"));
+
     [Theory]
     [InlineData("binary-classification", null, "lots", "Invalid balance option")]
     [InlineData("binary-classification", null, "0", "Invalid balance option")]
     [InlineData("binary-classification", null, "2,5", "Invalid balance option")]   // a ratio is invariant: 2.5, not 2,5
     [InlineData("regression", null, "auto", "classification")]
     [InlineData("binary-classification", "w", "auto", "--balance")]
+    [InlineData("object-detection", null, "3", "labels the boxes")]
     public void AnOptionTheRunCouldNotHonour_IsRefusedWithTheReason(string task, string? weight, string balance, string expected)
         => Assert.Contains(expected, TrainingInput.BalanceConflict(Definition(task, weight), balance));
 
