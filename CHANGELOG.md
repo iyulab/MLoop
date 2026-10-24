@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `ICsvHelper.ReadRowsAsync` and `WriteRowsAsync` (preprocessing scripts' `context.Csv`): stream a CSV's rows as
+  arrays in header order, under the reading rules `ReadAsync` has, and write them back — for a file too large to
+  hold as `ReadAsync`'s list of dictionaries; scripts compile against `System.Linq.AsyncEnumerable`, so LINQ works on
+  the stream (GUIDE, Data Preprocessing). A class implementing `ICsvHelper` itself must add both.
 - `mloop evaluate` and `POST /evaluate` warn when the file is the one the experiment was trained on — the
   same content as its recorded `dataFileHash`, whatever the file is called: most of its rows were in the
   training partition, so the test metrics overstate how the model does on unseen rows.
@@ -98,6 +102,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop train` held the whole data file as dictionaries to count its classes and missing labels before training
+  (and again to drop the missing ones). Those passes stream now: training on a million-row, six-column CSV (27 MB)
+  peaked at 1.6 GB and now peaks at about 330 MB, with the same model.
 - `mloop sample create --from` holds the sample, not the file: it read every row into memory first (1.6 GB for
   a 55 MB, 2-million-row CSV — sampling a file too large to profile was no way out) and now streams it (about
   150 MB for a 100,000-row sample of the same file). Random and stratified samples keep the rows in their file

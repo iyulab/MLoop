@@ -28,12 +28,48 @@ public interface ICsvHelper
     /// </code>
     /// </para>
     /// <para>
-    /// For large files (>100MB), consider streaming or FilePrepper integration.
+    /// This holds the whole file. For a large file, stream it with <see cref="ReadRowsAsync"/>.
     /// </para>
     /// </remarks>
     Task<List<Dictionary<string, string>>> ReadAsync(
         string path,
         Encoding? encoding = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Streams a CSV file's rows under the same reading rules as <see cref="ReadAsync"/>, without holding the file:
+    /// each row is its values in header order (a new array per row). Stop early by leaving the loop.
+    /// </summary>
+    /// <param name="path">Path to CSV file</param>
+    /// <param name="onHeaders">Receives the header before the first row</param>
+    /// <param name="encoding">File encoding (detected when null)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <remarks>
+    /// <code>
+    /// var kept = 0;
+    /// await foreach (var row in context.Csv.ReadRowsAsync("datasets/raw/big.csv"))
+    ///     if (row[0] != "") kept++;
+    /// </code>
+    /// </remarks>
+    IAsyncEnumerable<string[]> ReadRowsAsync(
+        string path,
+        Action<IReadOnlyList<string>>? onHeaders = null,
+        Encoding? encoding = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Writes rows given as values in <paramref name="headers"/> order (UTF-8, comma-delimited, header first) —
+    /// the streaming counterpart of <see cref="WriteAsync(string, List{Dictionary{string, string}}, List{string}?, CancellationToken)"/>.
+    /// </summary>
+    /// <param name="path">Output file path (parent directories are created)</param>
+    /// <param name="headers">Column names, in the order the values come</param>
+    /// <param name="rows">Rows, each its values in <paramref name="headers"/> order; enumerated once</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Absolute path of the written file</returns>
+    Task<string> WriteRowsAsync(
+        string path,
+        IReadOnlyList<string> headers,
+        IAsyncEnumerable<string[]> rows,
         CancellationToken cancellationToken = default);
 
     /// <summary>

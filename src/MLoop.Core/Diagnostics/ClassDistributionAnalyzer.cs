@@ -32,33 +32,20 @@ public class ClassDistributionAnalyzer
             throw new FileNotFoundException($"CSV file not found: {csvPath}");
         }
 
-        var data = await _csvHelper.ReadAsync(csvPath, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        if (data.Count == 0)
-        {
-            return new ClassDistributionResult
-            {
-                LabelColumn = labelColumn,
-                TotalRows = 0,
-                Error = "Empty dataset"
-            };
-        }
-
-        if (!data[0].ContainsKey(labelColumn))
-        {
-            return new ClassDistributionResult
-            {
-                LabelColumn = labelColumn,
-                TotalRows = data.Count,
-                Error = $"Label column '{labelColumn}' not found"
-            };
-        }
-
-        // Count class occurrences
+        // Streamed: only the label column's counts are kept, never the rows.
         var classCounts = new Dictionary<string, int>();
-        foreach (var row in data)
+        var totalRows = 0;
+        var labelIndex = -1;
+        await foreach (var row in _csvHelper.ReadRowsAsync(csvPath, headers => labelIndex = IndexOf(headers, labelColumn),
+            cancellationToken: cancellationToken).ConfigureAwait(false))
         {
-            var value = row.TryGetValue(labelColumn, out var v) ? v : "";
+            totalRows++;
+            if (labelIndex < 0)
+            {
+                continue;
+            }
+
+            var value = row[labelIndex];
             if (string.IsNullOrWhiteSpace(value))
             {
                 value = "(empty)";
@@ -68,8 +55,27 @@ public class ClassDistributionAnalyzer
             classCounts[value] = count + 1;
         }
 
+        if (totalRows == 0)
+        {
+            return new ClassDistributionResult
+            {
+                LabelColumn = labelColumn,
+                TotalRows = 0,
+                Error = "Empty dataset"
+            };
+        }
+
+        if (labelIndex < 0)
+        {
+            return new ClassDistributionResult
+            {
+                LabelColumn = labelColumn,
+                TotalRows = totalRows,
+                Error = $"Label column '{labelColumn}' not found"
+            };
+        }
+
         // Calculate distribution metrics
-        var totalRows = data.Count;
         var classCount = classCounts.Count;
         var classDistribution = classCounts
             .OrderByDescending(kv => kv.Value)
@@ -106,6 +112,18 @@ public class ClassDistributionAnalyzer
         AddWarningsAndSuggestions(result);
 
         return result;
+    }
+
+    private static int IndexOf(IReadOnlyList<string> headers, string name)
+    {
+        for (var i = 0; i < headers.Count; i++)
+        {
+            if (headers[i] == name)
+            {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static ClassBalanceLevel DetermineBalanceLevel(double imbalanceRatio, int classCount)

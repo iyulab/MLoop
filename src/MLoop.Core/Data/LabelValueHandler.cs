@@ -34,9 +34,33 @@ public class LabelValueHandler
             throw new FileNotFoundException($"CSV file not found: {csvPath}");
         }
 
-        var data = await _csvHelper.ReadAsync(csvPath, cancellationToken: cancellationToken).ConfigureAwait(false);
+        // Streamed: only the label column's counts are kept, never the rows.
+        int totalRows = 0;
+        int missingCount = 0;
+        var valueCounts = new Dictionary<string, int>();
+        var labelIndex = -1;
+        await foreach (var row in _csvHelper.ReadRowsAsync(csvPath, headers => labelIndex = IndexOf(headers, labelColumn),
+            cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            totalRows++;
+            if (labelIndex < 0)
+            {
+                continue;
+            }
 
-        if (data.Count == 0)
+            var value = row[labelIndex];
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                missingCount++;
+            }
+            else
+            {
+                valueCounts.TryGetValue(value, out var count);
+                valueCounts[value] = count + 1;
+            }
+        }
+
+        if (totalRows == 0)
         {
             return new LabelAnalysisResult
             {
@@ -49,11 +73,11 @@ public class LabelValueHandler
         }
 
         // Check if label column exists
-        if (!data[0].ContainsKey(labelColumn))
+        if (labelIndex < 0)
         {
             return new LabelAnalysisResult
             {
-                TotalRows = data.Count,
+                TotalRows = totalRows,
                 MissingCount = 0,
                 ValidCount = 0,
                 HasMissingValues = false,
@@ -62,31 +86,13 @@ public class LabelValueHandler
             };
         }
 
-        int missingCount = 0;
-        var valueCounts = new Dictionary<string, int>();
-
-        foreach (var row in data)
-        {
-            var value = row.TryGetValue(labelColumn, out var v) ? v : null;
-
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                missingCount++;
-            }
-            else
-            {
-                valueCounts.TryGetValue(value, out var count);
-                valueCounts[value] = count + 1;
-            }
-        }
-
         return new LabelAnalysisResult
         {
-            TotalRows = data.Count,
+            TotalRows = totalRows,
             MissingCount = missingCount,
-            ValidCount = data.Count - missingCount,
+            ValidCount = totalRows - missingCount,
             HasMissingValues = missingCount > 0,
-            MissingPercentage = data.Count > 0 ? (missingCount * 100.0 / data.Count) : 0,
+            MissingPercentage = missingCount * 100.0 / totalRows,
             LabelColumn = labelColumn,
             UniqueValueCount = valueCounts.Count,
             ValueDistribution = valueCounts
@@ -112,49 +118,77 @@ public class LabelValueHandler
             throw new FileNotFoundException($"CSV file not found: {csvPath}");
         }
 
-        var data = await _csvHelper.ReadAsync(csvPath, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        if (data.Count == 0)
+        // One streamed pass writes the kept rows to a temporary file beside the output and counts both kinds;
+        // the file takes the output's place only when something was dropped and something is left — so the
+        // output may be the input itself, and the rows are never held.
+        var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath))!;
+        Directory.CreateDirectory(directory);
+        var temporary = Path.Combine(directory, $".{Path.GetFileName(outputPath)}.{Guid.NewGuid():N}.tmp");
+        int originalCount = 0, keptCount = 0;
+        var labelIndex = -1;
+        try
         {
+            var headers = await _csvHelper.ReadHeadersAsync(csvPath, cancellationToken: cancellationToken).ConfigureAwait(false);
+            labelIndex = headers.IndexOf(labelColumn);
+            if (labelIndex >= 0)
+            {
+                await _csvHelper.WriteRowsAsync(temporary, headers, Kept(), cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await foreach (var _ in _csvHelper.ReadRowsAsync(csvPath, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    originalCount++;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            File.Delete(temporary);
             return new LabelCleanResult
+            {
+                Success = false,
+                Error = $"Failed to write cleaned data: {ex.Message}",
+                OriginalRowCount = originalCount,
+                DroppedRowCount = originalCount - keptCount,
+                FinalRowCount = keptCount
+            };
+        }
+
+        async IAsyncEnumerable<string[]> Kept()
+        {
+            await foreach (var row in _csvHelper.ReadRowsAsync(csvPath, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                originalCount++;
+                if (!string.IsNullOrWhiteSpace(row[labelIndex]))
+                {
+                    keptCount++;
+                    yield return row;
+                }
+            }
+        }
+
+        var droppedCount = originalCount - keptCount;
+        LabelCleanResult? unchanged = originalCount == 0
+            ? new LabelCleanResult
             {
                 Success = false,
                 Error = "Data file is empty",
                 OriginalRowCount = 0,
                 DroppedRowCount = 0,
                 FinalRowCount = 0
-            };
-        }
-
-        // Check if label column exists
-        if (!data[0].ContainsKey(labelColumn))
-        {
-            return new LabelCleanResult
+            }
+            : labelIndex < 0
+            ? new LabelCleanResult
             {
                 Success = false,
                 Error = $"Label column '{labelColumn}' not found in data",
-                OriginalRowCount = data.Count,
+                OriginalRowCount = originalCount,
                 DroppedRowCount = 0,
-                FinalRowCount = data.Count
-            };
-        }
-
-        var originalCount = data.Count;
-
-        // Filter out rows with missing labels
-        var cleanedData = data
-            .Where(row =>
-            {
-                var value = row.TryGetValue(labelColumn, out var v) ? v : null;
-                return !string.IsNullOrWhiteSpace(value);
-            })
-            .ToList();
-
-        var droppedCount = originalCount - cleanedData.Count;
-
-        if (droppedCount == 0)
-        {
-            return new LabelCleanResult
+                FinalRowCount = originalCount
+            }
+            : droppedCount == 0
+            ? new LabelCleanResult
             {
                 Success = true,
                 OutputPath = csvPath,
@@ -162,50 +196,49 @@ public class LabelValueHandler
                 DroppedRowCount = 0,
                 FinalRowCount = originalCount,
                 Message = "No missing labels found, no changes made"
-            };
-        }
-
-        if (cleanedData.Count == 0)
-        {
-            return new LabelCleanResult
+            }
+            : keptCount == 0
+            ? new LabelCleanResult
             {
                 Success = false,
                 Error = "All rows have missing labels - cannot create training data",
                 OriginalRowCount = originalCount,
                 DroppedRowCount = droppedCount,
                 FinalRowCount = 0
-            };
-        }
-
-        // Write cleaned data
-        try
+            }
+            : null;
+        if (unchanged is not null)
         {
-            var finalPath = await _csvHelper.WriteAsync(outputPath, cleanedData, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            _logger.Warning($"Dropped {droppedCount}/{originalCount} rows with missing labels ({droppedCount * 100.0 / originalCount:F1}%)");
-
-            return new LabelCleanResult
-            {
-                Success = true,
-                OutputPath = finalPath,
-                OriginalRowCount = originalCount,
-                DroppedRowCount = droppedCount,
-                FinalRowCount = cleanedData.Count,
-                DroppedPercentage = droppedCount * 100.0 / originalCount,
-                Message = $"Dropped {droppedCount} rows with missing labels"
-            };
+            File.Delete(temporary);
+            return unchanged;
         }
-        catch (Exception ex)
+
+        File.Move(temporary, outputPath, overwrite: true);
+        _logger.Warning($"Dropped {droppedCount}/{originalCount} rows with missing labels ({droppedCount * 100.0 / originalCount:F1}%)");
+
+        return new LabelCleanResult
         {
-            return new LabelCleanResult
+            Success = true,
+            OutputPath = Path.GetFullPath(outputPath),
+            OriginalRowCount = originalCount,
+            DroppedRowCount = droppedCount,
+            FinalRowCount = keptCount,
+            DroppedPercentage = droppedCount * 100.0 / originalCount,
+            Message = $"Dropped {droppedCount} rows with missing labels"
+        };
+    }
+
+
+    private static int IndexOf(IReadOnlyList<string> headers, string name)
+    {
+        for (var i = 0; i < headers.Count; i++)
+        {
+            if (headers[i] == name)
             {
-                Success = false,
-                Error = $"Failed to write cleaned data: {ex.Message}",
-                OriginalRowCount = originalCount,
-                DroppedRowCount = droppedCount,
-                FinalRowCount = cleanedData.Count
-            };
+                return i;
+            }
         }
+        return -1;
     }
 }
 

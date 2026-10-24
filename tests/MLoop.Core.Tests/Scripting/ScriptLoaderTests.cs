@@ -1,6 +1,7 @@
 using MLoop.Core.Scripting;
 using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Metrics;
+using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.Core.Tests.Scripting;
 
@@ -239,6 +240,34 @@ public class RegexHook : IMLoopHook
 
         Assert.Single(hooks);
         Assert.Equal("abc<*>", hooks[0].Name);
+    }
+
+    [Fact]
+    public async Task LoadScriptAsync_WithLinqOverStreamedRows_CompilesAndLoads()
+    {
+        // ICsvHelper.ReadRowsAsync is an IAsyncEnumerable; LINQ over it lives in System.Linq.AsyncEnumerable,
+        // its own assembly — without the reference `.Where` on it does not compile (the type arguments cannot be
+        // inferred against Enumerable.Where). The GUIDE's streaming preprocessing example has this shape.
+        var scriptPath = Path.Combine(_testDirectory, "StreamedRows.cs");
+        var scriptContent = @"
+using System.Linq;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Preprocessing;
+
+public class StreamedRows : IPreprocessingScript
+{
+    public async Task<string> ExecuteAsync(PreprocessContext context)
+    {
+        var header = await context.Csv.ReadHeadersAsync(context.InputPath);
+        var kept = context.Csv.ReadRowsAsync(context.InputPath).Where(row => row[0] != """");
+        return await context.Csv.WriteRowsAsync(System.IO.Path.Combine(context.OutputDirectory, ""out.csv""), header, kept);
+    }
+}";
+        await File.WriteAllTextAsync(scriptPath, scriptContent);
+
+        var scripts = await _scriptLoader.LoadScriptAsync<IPreprocessingScript>(scriptPath);
+
+        Assert.Single(scripts);
     }
 
     [Fact]

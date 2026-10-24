@@ -118,6 +118,32 @@ public class LabelValueHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task DropMissingLabelsAsync_IntoTheInputItself_RewritesItInPlace_AndLeavesNoTemporaryFile()
+    {
+        var path = Path.Combine(_tempDirectory, "train.csv");
+        await File.WriteAllTextAsync(path, "Feature,Label\n1,A\n2,\n3,B\n4,\n5,A");
+
+        var result = await _labelHandler.DropMissingLabelsAsync(path, path, "Label");
+
+        Assert.True(result.Success);
+        Assert.Equal(3, result.FinalRowCount);
+        var rows = await _csvHelper.ReadAsync(path);
+        Assert.Equal(["1", "3", "5"], rows.Select(r => r["Feature"]));
+        Assert.Equal(["train.csv"], Directory.GetFiles(_tempDirectory).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public async Task DropMissingLabelsAsync_NothingToDrop_LeavesNoTemporaryFile()
+    {
+        var input = Path.Combine(_tempDirectory, "input.csv");
+        await File.WriteAllTextAsync(input, "Feature,Label\n1,A\n2,B");
+
+        await _labelHandler.DropMissingLabelsAsync(input, Path.Combine(_tempDirectory, "output.csv"), "Label");
+
+        Assert.Equal(["input.csv"], Directory.GetFiles(_tempDirectory).Select(Path.GetFileName));
+    }
+
+    [Fact]
     public async Task DropMissingLabelsAsync_WithNoMissingValues_DoesNotModify()
     {
         // Arrange

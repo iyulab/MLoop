@@ -25,34 +25,22 @@ public class CsvHelperImpl : ICsvHelper
     {
         var records = new List<Dictionary<string, string>>();
         IReadOnlyList<string> headers = [];
-        headers = await ReadRowsAsync(path, values =>
+        await foreach (var values in ReadRowsAsync(path, h => headers = h, encoding, cancellationToken).ConfigureAwait(false))
         {
             var record = new Dictionary<string, string>(headers.Count);
             for (var i = 0; i < headers.Count; i++)
                 record[headers[i]] = values[i];
             records.Add(record);
-            return true;
-        }, encoding, onHeaders: h => headers = h, cancellationToken).ConfigureAwait(false);
+        }
         return records;
     }
 
-    /// <summary>
-    /// Streams a CSV file's rows under the same reading rules as <see cref="ReadAsync"/> (encoding detection,
-    /// trimming, thousands separators removed from numbers) without holding the file: each row reaches
-    /// <paramref name="onRow"/> as its values in header order — a new array per row — and reading stops when it
-    /// returns false. Returns the header.
-    /// </summary>
-    /// <param name="path">The CSV file.</param>
-    /// <param name="onRow">Receives each row's values; return false to stop reading.</param>
-    /// <param name="encoding">The file's encoding; detected (CP949/EUC-KR included) when null.</param>
-    /// <param name="onHeaders">Receives the header before the first row.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task<IReadOnlyList<string>> ReadRowsAsync(
+    /// <inheritdoc />
+    public async IAsyncEnumerable<string[]> ReadRowsAsync(
         string path,
-        Func<string[], bool> onRow,
-        System.Text.Encoding? encoding = null,
         Action<IReadOnlyList<string>>? onHeaders = null,
-        CancellationToken cancellationToken = default)
+        System.Text.Encoding? encoding = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (!File.Exists(path))
         {
@@ -103,11 +91,8 @@ public class CsvHelperImpl : ICsvHelper
                     // Automatically clean comma-formatted numbers (e.g., "2,000" → "2000")
                     values[i] = CleanNumericString(csv.GetField(headers[i]) ?? string.Empty);
                 }
-                if (!onRow(values))
-                    break;
+                yield return values;
             }
-
-            return headers;
         }
         finally
         {
@@ -217,17 +202,16 @@ public class CsvHelperImpl : ICsvHelper
         // Use specified column order or get from first record
         var headers = columnOrder ?? data[0].Keys.ToList();
         return await WriteRowsAsync(path, headers,
-            data.Select(record => headers.Select(h => record.TryGetValue(h, out var value) ? value : string.Empty).ToArray()),
+            data.Select(record => headers.Select(h => record.TryGetValue(h, out var value) ? value : string.Empty).ToArray())
+                .ToAsyncEnumerable(),
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Writes rows given as values in <paramref name="headers"/> order (UTF-8, comma-delimited, header first).
-    /// </summary>
+    /// <inheritdoc />
     public async Task<string> WriteRowsAsync(
         string path,
         IReadOnlyList<string> headers,
-        IEnumerable<string[]> rows,
+        IAsyncEnumerable<string[]> rows,
         CancellationToken cancellationToken = default)
     {
         // Ensure directory exists
@@ -252,9 +236,8 @@ public class CsvHelperImpl : ICsvHelper
         }
         await csv.NextRecordAsync().ConfigureAwait(false);
 
-        foreach (var row in rows)
+        await foreach (var row in rows.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            cancellationToken.ThrowIfCancellationRequested();
             foreach (var value in row)
             {
                 csv.WriteField(value);

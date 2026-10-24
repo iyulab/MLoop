@@ -116,6 +116,7 @@ public class ScriptLoader
             filePrepperAssembly,
             typeof(System.Threading.Tasks.Task).Assembly,
             typeof(System.Linq.Enumerable).Assembly,
+            typeof(System.Linq.AsyncEnumerable).Assembly,         // LINQ over ICsvHelper.ReadRowsAsync
             typeof(System.IO.Path).Assembly,
             typeof(Console).Assembly,
             // BCL assemblies that live outside System.Private.CoreLib and are commonly used by

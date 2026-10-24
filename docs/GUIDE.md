@@ -1813,6 +1813,17 @@ public class DropLowA : IPreprocessingScript
 }
 ```
 
+`ReadAsync` holds the whole file as dictionaries. For a large file, stream it: `ReadRowsAsync` gives each row as its
+values in header order, and `WriteRowsAsync` writes such rows back — LINQ works on the stream as on a list.
+
+```csharp
+var header = await context.Csv.ReadHeadersAsync(context.InputPath);
+var a = header.IndexOf("a");
+var kept = context.Csv.ReadRowsAsync(context.InputPath)
+    .Where(row => double.Parse(row[a], CultureInfo.InvariantCulture) >= 0.1);
+return await context.Csv.WriteRowsAsync(System.IO.Path.Combine(context.OutputDirectory, "01_out.csv"), header, kept);
+```
+
 ```bash
 mloop preprocess                          # datasets/train.csv
 mloop preprocess datasets/raw.csv -o datasets/clean.csv

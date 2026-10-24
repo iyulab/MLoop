@@ -80,7 +80,7 @@ public sealed class CsvSampler
         if (totalRows == 0)
             throw new InvalidOperationException("Input CSV file is empty (no data rows).");
 
-        await _csvHelper.WriteRowsAsync(outputPath, headers, sampled, cancellationToken).ConfigureAwait(false);
+        await _csvHelper.WriteRowsAsync(outputPath, headers, sampled.ToAsyncEnumerable(), cancellationToken).ConfigureAwait(false);
 
         return new CsvSamplingResult(
             OutputPath: Path.GetFullPath(outputPath),
@@ -92,22 +92,23 @@ public sealed class CsvSampler
     // Head reads on past its rows only to count the file's — TotalRows is reported — and keeps nothing more.
     private async Task<(IReadOnlyList<string>, List<string[]>, int)> HeadAsync(string path, int size, CancellationToken ct)
     {
+        IReadOnlyList<string> headers = [];
         var taken = new List<string[]>();
         var seen = 0;
-        var headers = await _csvHelper.ReadRowsAsync(path, row =>
+        await foreach (var row in _csvHelper.ReadRowsAsync(path, h => headers = h, cancellationToken: ct).ConfigureAwait(false))
         {
             if (seen++ < size)
                 taken.Add(row);
-            return true;
-        }, cancellationToken: ct).ConfigureAwait(false);
+        }
         return (headers, taken, seen);
     }
 
     private async Task<(IReadOnlyList<string>, List<string[]>, int)> RandomAsync(string path, int size, CancellationToken ct)
     {
+        IReadOnlyList<string> headers = [];
         var reservoir = new Reservoir(size, _random);
-        var headers = await _csvHelper.ReadRowsAsync(path, row => { reservoir.Offer(row); return true; },
-            cancellationToken: ct).ConfigureAwait(false);
+        await foreach (var row in _csvHelper.ReadRowsAsync(path, h => headers = h, cancellationToken: ct).ConfigureAwait(false))
+            reservoir.Offer(row);
         return (headers, reservoir.InFileOrder(), reservoir.Seen);
     }
 
@@ -115,21 +116,22 @@ public sealed class CsvSampler
         string path, int size, string labelColumn, CancellationToken ct)
     {
         // First pass: how many rows each class has.
-        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        IReadOnlyList<string> headers = [];
         var labelIndex = -1;
-        var headers = await _csvHelper.ReadRowsAsync(path, row =>
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        await foreach (var row in _csvHelper.ReadRowsAsync(path, h =>
         {
-            var key = Key(row[labelIndex]);
-            counts[key] = counts.GetValueOrDefault(key) + 1;
-            return true;
-        }, onHeaders: h =>
-        {
+            headers = h;
             labelIndex = IndexOf(h, labelColumn);
             if (labelIndex < 0)
                 throw new ArgumentException(
                     $"Label column '{labelColumn}' not found in CSV. Available columns: {string.Join(", ", h)}",
                     nameof(labelColumn));
-        }, cancellationToken: ct).ConfigureAwait(false);
+        }, cancellationToken: ct).ConfigureAwait(false))
+        {
+            var key = Key(row[labelIndex]);
+            counts[key] = counts.GetValueOrDefault(key) + 1;
+        }
 
         var total = counts.Values.Sum();
         if (total == 0)
@@ -139,13 +141,12 @@ public sealed class CsvSampler
         var reservoirs = Quotas(counts, Math.Min(size, total))
             .ToDictionary(q => q.Key, q => new Reservoir(q.Value, _random), StringComparer.Ordinal);
         var index = 0;
-        await _csvHelper.ReadRowsAsync(path, row =>
+        await foreach (var row in _csvHelper.ReadRowsAsync(path, cancellationToken: ct).ConfigureAwait(false))
         {
             if (reservoirs.TryGetValue(Key(row[labelIndex]), out var reservoir))
                 reservoir.Offer(row, index);
             index++;
-            return true;
-        }, cancellationToken: ct).ConfigureAwait(false);
+        }
 
         var sampled = reservoirs.Values.SelectMany(r => r.Kept).OrderBy(k => k.Index).Select(k => k.Row).ToList();
         return (headers, sampled, total);
