@@ -93,6 +93,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   printed as plain lines even then (`mloop info --json` reported success with a multi-row header warning on
   stderr only); they now reach the document's `warnings` and a training run's `warning` events.
 
+- `mloop validate --json` on a `mloop.yaml` in the old single-model format printed the format warning on stdout
+  ahead of its document, which no JSON parser read, and reported no warnings. The warning is in `warnings`
+  (path `mloop.yaml`) and on stderr.
+
 - An exported binary or regression graph declared the label column as an input although no output
   reads it and the manifest did not list it: the label was dropped from a view over the data, while the
   converter declares a graph's inputs from the data's source. A caller feeding what the manifest names

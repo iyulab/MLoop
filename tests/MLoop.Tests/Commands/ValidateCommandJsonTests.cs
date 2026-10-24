@@ -39,6 +39,24 @@ public class ValidateCommandJsonTests : IDisposable
     private void WriteYaml(string content) =>
         File.WriteAllText(Path.Combine(_testProjectRoot, "mloop.yaml"), content);
 
+    /// <summary>
+    /// Loading the old single-model format warns. The warning was written to stdout ahead of the document, so
+    /// <c>validate --json</c> printed something no JSON parser reads, with an empty <c>warnings</c>.
+    /// </summary>
+    [Fact]
+    public async Task Validate_Json_OldFormat_IsADocument_CarryingTheFormatWarning()
+    {
+        WriteYaml("project_name: p\ntask: regression\nlabel_column: y\n");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("validate", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var warning = Assert.Single(doc.RootElement.GetProperty("warnings").EnumerateArray(),
+            w => w.GetProperty("message").GetString()!.Contains("old mloop.yaml format", StringComparison.Ordinal));
+        Assert.Equal("mloop.yaml", warning.GetProperty("path").GetString());
+    }
+
     [Fact]
     public async Task Validate_Json_ValidConfig_ReportsValidTrue()
     {

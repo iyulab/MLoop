@@ -1,3 +1,4 @@
+using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -79,7 +80,7 @@ public class ConfigLoader
         var oldConfig = TryLoadOldFormat(yamlContent, deserializer);
         if (oldConfig != null)
         {
-            Console.WriteLine("[Warning] Detected old mloop.yaml format. Consider migrating to new multi-model format.");
+            WarningConsole.Warn("Detected old mloop.yaml format. Consider migrating to new multi-model format.");
             return oldConfig;
         }
 

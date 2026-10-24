@@ -1113,7 +1113,7 @@ public class TrainingEngine : ITrainingEngine
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Warning] Failed to capture input schema: {ex.Message}");
+            WarningConsole.Warn($"Failed to capture input schema: {Markup.Escape(ex.Message)}");
             return null;
         }
     }

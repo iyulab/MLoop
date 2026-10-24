@@ -195,7 +195,9 @@ public static class ValidateCommand
         {
             Valid = errors.Count == 0,
             Errors = errors.Select(e => new { e.Path, e.Message }),
+            // The findings of this validation, then what loading the configuration warned of (the old format).
             Warnings = warnings.Select(w => new { w.Path, w.Message })
+                .Concat((JsonOutputScope.Warnings ?? []).Select(w => new { Path = "mloop.yaml", Message = w }))
         };
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
         {
