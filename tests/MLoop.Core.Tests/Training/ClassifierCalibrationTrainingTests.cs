@@ -10,13 +10,13 @@ using MLoop.Tests.Common;
 namespace MLoop.Core.Tests.Training;
 
 /// <summary>
-/// A binary run's probabilities are recalibrated on the search's out-of-fold answers: on rows a few shallow trees
+/// A classifier run's probabilities are recalibrated on the search's out-of-fold answers (binary: Platt; multiclass: a temperature): on rows a few shallow trees
 /// already rank perfectly, FastTree's own probability is a fixed sigmoid that says about 0.66, and the run reports
 /// — and saves — what the calibrated model says, fitted on no test row.
 /// </summary>
 [Collection("FileSystem")]
 [Trait(TestCategories.Category, TestCategories.Integration)]
-public class BinaryCalibrationTrainingTests
+public class ClassifierCalibrationTrainingTests
 {
     private sealed class Row
     {
@@ -80,5 +80,48 @@ public class BinaryCalibrationTrainingTests
         Assert.Equal(calibrated, result.Metrics[CalibrationError.MetricName], 6);
         // The answers the run counts are the calibrated model's.
         Assert.Equal(BinaryCounts.Metrics(result.ScoringModel(ctx).Transform(testSet), "Label")!["accuracy"], result.Metrics["accuracy"], 6);
+    }
+
+    private sealed class ClassRow
+    {
+        public float X { get; set; }
+        public float Noise { get; set; }
+        public string Label { get; set; } = "";
+    }
+
+    [Fact]
+    public async Task AMulticlassRun_IsTemperedOnItsOutOfFoldAnswers_AndKeepsItsAnswers()
+    {
+        var ctx = new MLContext(seed: 42);
+        var random = new Random(3);
+        var rows = Enumerable.Range(0, 600).Select(_ =>
+        {
+            var x = (float)random.NextDouble();
+            var label = random.NextDouble() < 0.15 ? "abc"[random.Next(3)].ToString() : x < 0.33 ? "a" : x < 0.66 ? "b" : "c";
+            return new ClassRow { X = x, Noise = (float)random.NextDouble(), Label = label };
+        }).ToList();
+        var data = ctx.Data.LoadFromEnumerable(rows);
+        var config = new TrainingConfig
+        {
+            ModelName = "m",
+            DataFile = "synthetic",
+            LabelColumn = "Label",
+            Task = "multiclass-classification",
+            TimeLimitSeconds = 30,
+            Metric = "macro_accuracy",
+            SearchMaxTrials = 3,
+        };
+
+        var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
+
+        var calibration = Assert.IsType<ProbabilityCalibration>(result.Calibration);
+        Assert.Equal("temperature", calibration.Method);
+        Assert.Equal(TrainingRunner.OutOfFoldSource, calibration.FitOn);
+        Assert.True(calibration.EceAfter <= calibration.EceBefore, $"ECE {calibration.EceBefore} → {calibration.EceAfter}");
+        // A temperature keeps every row's answer.
+        var (_, testSet) = new InMemoryDataProvider(ctx, data).SplitData(data);
+        var own = result.Model.Transform(testSet).GetColumn<string>("PredictedLabel").ToArray();
+        var tempered = result.ScoringModel(ctx).Transform(testSet).GetColumn<string>("PredictedLabel").ToArray();
+        Assert.Equal(own, tempered);
     }
 }

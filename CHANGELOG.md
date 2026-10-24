@@ -17,6 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   calibrated probability's at 0.5, and the run's metrics — accuracy, F1, log loss, ECE — are the calibrated model's.
   `mloop calibrate` refits it on rows of your own; `mloop calibrate --clear` returns to the trainer's probability.
 
+- A multiclass model's class probabilities are calibrated the same way, by a temperature fitted on the out-of-fold
+  answers. One-versus-all trainers normalize fixed per-class sigmoids, and their probabilities were far from how often
+  they are right (top-label ECE around 0.4 where a maximum-entropy model scored under 0.001). A temperature keeps every
+  row's answer and order of classes: accuracy does not move, the log loss and the ECE do.
+
 ### Fixed
 
 - A binary trainer that gives no probability (FastForest) had its Platt calibrator fitted on the test rows, so the

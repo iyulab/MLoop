@@ -96,13 +96,34 @@ public sealed class TrialRunnerTests
     }
 
     [Fact]
-    public void OutOfFoldAnswers_AreNotKept_UnlessAsked_OrWhenTheLabelIsNotBinary()
+    public void AMulticlassSearch_KeepsEachRowsClassProbabilities_AndItsTrueSlot()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, _) = Data(ml);
+        var keyed = ml.Transforms.Conversion.MapValueToKey("Class", "Colour").Fit(data).Transform(data);
+        var request = new SearchRequest(
+            CandidateCatalog.Multiclass(name => name == "LbfgsMaximumEntropy"),
+            new Auc("macro_accuracy"),
+            scored => new Dictionary<string, double> { ["macro_accuracy"] = ml.MulticlassClassification.Evaluate(scored, "Class").MacroAccuracy },
+            TimeSpan.FromMinutes(5), new SearchSettings(Seed: 3), MaxTrials: 2, KeepOutOfFold: true);
+        var roles = new ColumnRoles("Class", [new("X", ColumnRole.Numeric), new("Z", ColumnRole.Numeric)]);
+
+        var outOfFold = Assert.IsType<MLoop.Search.Validation.OutOfFoldScores>(new TrialRunner(request).Run(keyed, roles).OutOfFold);
+
+        Assert.True(outOfFold.IsMulticlass);
+        Assert.Equal(240, outOfFold.Count);
+        Assert.All(outOfFold.ClassProbabilities, p => Assert.Equal(3, p.Length));
+        Assert.All(outOfFold.Class, c => Assert.InRange(c, 0, 2));
+    }
+
+    [Fact]
+    public void OutOfFoldAnswers_AreNotKept_UnlessAsked_OrForARegression()
     {
         var ml = new MLContext(seed: 1);
         var (data, roles) = Data(ml);
         Assert.Null(new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 2)).Run(data, roles).OutOfFold);
 
-        // A regression on the same rows: a Single label carries no binary answer.
+        // A regression on the same rows: a Single label carries no class answer.
         var x = ml.Transforms.CopyColumns("Y", "X").Fit(data).Transform(data);
         var regression = new SearchRequest(
             CandidateCatalog.Regression(name => name == "FastTree"),

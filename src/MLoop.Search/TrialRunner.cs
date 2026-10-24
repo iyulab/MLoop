@@ -22,7 +22,7 @@ namespace MLoop.Search;
 /// columns in place: a column keeps its name and its type.
 /// </param>
 /// <param name="KeepOutOfFold">
-/// Keep a binary pipeline's answers on its validated parts (<see cref="OutOfFoldScores"/>), so the kept trial's can be
+/// Keep a classifier's answers on its validated parts (<see cref="OutOfFoldScores"/>), so the kept trial's can be
 /// returned (<see cref="SearchResult.OutOfFold"/>) — what a calibration of the refit model is fitted on. Costs one more
 /// pass over each validated part; trials whose score falls well outside the top's standard error drop theirs.
 /// </param>
@@ -52,7 +52,7 @@ public sealed record SearchRequest(
 /// <param name="TopScoring">The trial with the highest score — <see cref="Best"/> itself unless a smaller model scored within its standard error.</param>
 /// <param name="OutOfFold">
 /// <see cref="Best"/>'s answers on its validated parts, when the request kept them (<see cref="SearchRequest.KeepOutOfFold"/>)
-/// and the pipeline is binary; <see langword="null"/> otherwise.
+/// and the pipeline is a classifier; <see langword="null"/> otherwise.
 /// </param>
 public sealed record SearchResult(
     IReadOnlyList<TrialResult> Trials,

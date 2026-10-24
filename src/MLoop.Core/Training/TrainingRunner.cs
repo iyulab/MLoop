@@ -621,7 +621,7 @@ public partial class TrainingRunner
             Stratify: !IsRegression(config),
             MaxTrials: config.SearchMaxTrials,
             Preprocess: config.PreFeaturizer,
-            KeepOutOfFold: IsBinary(config));
+            KeepOutOfFold: IsBinary(config) || config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase));
 
         SearchResult search;
         try
@@ -1102,7 +1102,30 @@ public partial class TrainingRunner
         CancellationToken cancellationToken)
         => RunWithMLoopSearchAsync(trainSet, testSet, config,
             CandidateCatalog.Multiclass(name => name != "LightGbm" || LightGbmLoads.Value),
-            OptimizingMetric(config), ScoreMulticlass, progress, cancellationToken);
+            OptimizingMetric(config), ScoreMulticlass, progress, cancellationToken,
+            (model, predictions, outOfFold) => FinishMulticlass(model, testSet, predictions, outOfFold, config));
+
+    /// <summary>
+    /// A multiclass model's test results, its class probabilities recalibrated by a temperature fitted on the kept
+    /// trial's out-of-fold answers — the multiclass counterpart of <see cref="FinishBinary"/>. One-versus-all trainers
+    /// normalize fixed per-class sigmoids, and their probabilities were measured far from how often they are right
+    /// (top-label ECE 0.32 to 0.43, where a maximum-entropy model on the same rows was below 0.001). A temperature
+    /// scales every class's log-probability alike, so each row's answer and order of classes stay: accuracy does not
+    /// move, the log loss and the ECE do.
+    /// </summary>
+    private (ITransformer Model, Dictionary<string, double> Metrics, ITransformer? ResidualModel, ProbabilityCalibration? Calibration) FinishMulticlass(
+        ITransformer model, IDataView testSet, IDataView predictions, OutOfFoldScores? outOfFold, TrainingConfig config)
+    {
+        var calibration = outOfFold is { IsMulticlass: true, Count: > 0 }
+            ? ProbabilityCalibration.FitTemperature(
+                [.. Enumerable.Range(0, outOfFold.Count).Select(i => (outOfFold.ClassProbabilities[i], outOfFold.Class[i], (double)outOfFold.Weight[i]))],
+                OutOfFoldSource, string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn, DateTimeOffset.UtcNow)
+            : null;
+        return calibration is null
+            ? (model, ScoreMulticlass(predictions, config.LabelColumn), null, null)
+            : (model, ScoreMulticlass(calibration.Apply(_mlContext, model).Transform(testSet), config.LabelColumn), null, calibration);
+    }
+
     private Task<TrainedModel> RunRegressionAsync(
         IDataView trainSet,
         IDataView testSet,
