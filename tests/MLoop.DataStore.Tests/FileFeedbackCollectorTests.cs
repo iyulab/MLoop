@@ -291,10 +291,60 @@ public class FileFeedbackCollectorTests : IDisposable
     /// <summary>
     /// Helper to create a prediction log and return its ID.
     /// </summary>
-    private async Task<string> CreatePredictionLog(string modelName, object output)
+    [Fact]
+    public async Task RecordFeedbackAsync_NamesTheExperimentThatAnswered()
+    {
+        var id = await CreatePredictionLog("model", "yes", experimentId: "exp-007");
+
+        await _collector.RecordFeedbackAsync(id, "no");
+
+        (await _collector.GetFeedbackAsync("model")).Single().ExperimentId.Should().Be("exp-007");
+    }
+
+    [Fact]
+    public async Task CalculateMetricsAsync_ForOneExperiment_CountsOnlyItsAnswers_AndThoseNamingNone()
+    {
+        var old = await CreatePredictionLog("model", "yes", experimentId: "exp-001");
+        var current = await CreatePredictionLog("model", "yes", experimentId: "exp-002");
+        await _collector.RecordFeedbackAsync(old, "no");      // the replaced model, wrong
+        await _collector.RecordFeedbackAsync(current, "yes"); // production, right
+        // Feedback written before entries named their experiment.
+        var legacy = Path.Combine(_testDir, ".mloop", "feedback", "model", "2026-01-01.jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacy)!);
+        await File.WriteAllTextAsync(legacy,
+            """{"predictionId":"legacy","modelName":"model","predictedValue":"yes","actualValue":"no","timestamp":"2026-01-01T00:00:00+00:00"}""" + "\n");
+
+        var scoped = await _collector.CalculateMetricsAsync("model", experimentId: "exp-002");
+        var whole = await _collector.CalculateMetricsAsync("model");
+
+        scoped.Accuracy.Should().Be(1.0);
+        scoped.TotalFeedback.Should().Be(1);
+        scoped.ExperimentId.Should().Be("exp-002");
+        scoped.UnattributedFeedback.Should().Be(1);
+        whole.TotalFeedback.Should().Be(3);
+        whole.UnattributedFeedback.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CalculateMetricsAsync_ForOneExperiment_ReadsOlderFeedbackAgainstItsPredictionLog()
+    {
+        // Feedback written before entries named their experiment, for a prediction whose log line is still on disk.
+        var id = await CreatePredictionLog("model", "yes", experimentId: "exp-002");
+        var legacy = Path.Combine(_testDir, ".mloop", "feedback", "model", "2026-01-02.jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacy)!);
+        await File.WriteAllTextAsync(legacy,
+            $$"""{"predictionId":"{{id}}","modelName":"model","predictedValue":"yes","actualValue":"yes","timestamp":"2026-01-02T00:00:00+00:00"}""" + "\n");
+
+        var scoped = await _collector.CalculateMetricsAsync("model", experimentId: "exp-002");
+
+        scoped.TotalFeedback.Should().Be(1);
+        scoped.UnattributedFeedback.Should().Be(0);
+    }
+
+    private async Task<string> CreatePredictionLog(string modelName, object output, string experimentId = "exp-001")
     {
         var input = new Dictionary<string, object> { ["feature"] = "value" };
-        await _logger.LogPredictionAsync(modelName, "exp-001", input, output, 0.9);
+        await _logger.LogPredictionAsync(modelName, experimentId, input, output, 0.9);
 
         // Read the log file to get the prediction ID
         var logsPath = Path.Combine(_testDir, ".mloop", "logs", modelName);

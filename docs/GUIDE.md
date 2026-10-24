@@ -1438,7 +1438,9 @@ mloop trigger check --json                  # shouldRetrain, recommendedAction, 
 An accuracy drop is judged on evidence, not on the point estimate: with weighted feedback the count is the
 effective number of rows (`effectiveSampleSize` in `mloop feedback metrics --json`), and the details say which
 case holds — too few to judge, below on its face but not established, or below. Feedback is often reported
-mostly for wrong answers; the minimum keeps a handful of them from reading as a collapse.
+mostly for wrong answers; the minimum keeps a handful of them from reading as a collapse. The accuracy is the
+production experiment's own: feedback names the experiment that answered (`experimentId`), so after a promotion
+the replaced model's errors — or a shadow candidate's (`predict --experiment`) — are not counted against it.
 
 Any condition met recommends retraining. A condition that could not be measured — no feedback yet, fewer
 than 100 logged predictions — is not met and shows `-` (`currentValue: null` in `--json`): an accuracy

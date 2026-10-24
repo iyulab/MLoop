@@ -226,7 +226,36 @@ public class FeedbackBasedTriggerTests : IDisposable
         conditions.Should().Contain(c => c.Type == ConditionType.FeedbackVolume);
     }
 
-    private async Task CreateFeedbackScenario(string modelName, int correctCount, int wrongCount)
+    [Fact]
+    public async Task EvaluateAsync_AccuracyDrop_JudgesProductionsOwnAnswers()
+    {
+        // exp-001 answered wrong 60 times before exp-002 replaced it; exp-002 has answered 40 times, 38 right.
+        await CreateFeedbackScenario("test-model", correctCount: 0, wrongCount: 60, experimentId: "exp-001");
+        await CreateFeedbackScenario("test-model", correctCount: 38, wrongCount: 2, experimentId: "exp-002");
+        var trigger = new FeedbackBasedTrigger(_feedbackCollector, (_, _) => Task.FromResult<string?>("exp-002"));
+
+        var result = await trigger.EvaluateAsync("test-model",
+            [new RetrainingCondition(ConditionType.AccuracyDrop, "accuracy_check", 0.7)]);
+
+        result.ShouldRetrain.Should().BeFalse("the replaced model's errors are not the production model's");
+        result.ConditionResults[0].CurrentValue.Should().BeApproximately(0.95, 0.001);
+        result.ConditionResults[0].Details.Should().Contain("exp-002's answers");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AccuracyDrop_WithoutAProductionModel_ReadsEveryAnswer()
+    {
+        await CreateFeedbackScenario("test-model", correctCount: 0, wrongCount: 60, experimentId: "exp-001");
+        var trigger = new FeedbackBasedTrigger(_feedbackCollector, (_, _) => Task.FromResult<string?>(null));
+
+        var result = await trigger.EvaluateAsync("test-model",
+            [new RetrainingCondition(ConditionType.AccuracyDrop, "accuracy_check", 0.7)]);
+
+        result.ShouldRetrain.Should().BeTrue();
+        result.ConditionResults[0].Details.Should().NotContain("answers;");
+    }
+
+    private async Task CreateFeedbackScenario(string modelName, int correctCount, int wrongCount, string experimentId = "exp-001")
     {
         var predictions = new List<string>();
 
@@ -235,7 +264,7 @@ public class FeedbackBasedTriggerTests : IDisposable
         {
             var output = i < correctCount ? "ClassA" : "ClassB";
             var input = new Dictionary<string, object> { ["feature"] = $"value_{i}" };
-            await _logger.LogPredictionAsync(modelName, "exp-001", input, output, 0.9);
+            await _logger.LogPredictionAsync(modelName, experimentId, input, output, 0.9);
 
             // Get the prediction ID
             var logsPath = Path.Combine(_testDir, ".mloop", "logs", modelName);

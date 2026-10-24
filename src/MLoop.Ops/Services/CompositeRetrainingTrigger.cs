@@ -1,3 +1,4 @@
+using MLoop.Core.Storage;
 using MLoop.DataStore.Interfaces;
 using MLoop.Ops.Interfaces;
 
@@ -89,13 +90,19 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
 
     public CompositeRetrainingTrigger(string projectRoot, IFeedbackCollector feedbackCollector, IPredictionLogger predictionLogs)
     {
-        _feedback = new FeedbackBasedTrigger(feedbackCollector);
+        _feedback = new FeedbackBasedTrigger(feedbackCollector, ProductionExperimentAsync);
         _time = new TimeBasedTrigger(projectRoot);
         _projectRoot = projectRoot;
         _predictionLogs = predictionLogs ?? throw new ArgumentNullException(nameof(predictionLogs));
     }
 
     /// <inheritdoc />
+    private async Task<string?> ProductionExperimentAsync(string modelName, CancellationToken cancellationToken)
+    {
+        var production = Path.Combine(_projectRoot, ExperimentLayout.ModelsDirectory, modelName, ExperimentLayout.ProductionDirectory);
+        return (await ProductionMetadata.ReadAsync(production, cancellationToken).ConfigureAwait(false))?.ExperimentId;
+    }
+
     public async Task<TriggerEvaluation> EvaluateAsync(
         string modelName,
         IEnumerable<RetrainingCondition> conditions,

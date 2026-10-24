@@ -39,6 +39,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Feedback names the experiment that answered (`experimentId`, copied from the prediction log), and the accuracy
+  retraining condition judges the production experiment's answers alone. Before, every answer under the model name
+  counted: after a promotion the replaced model's errors were read as the new one's accuracy, and a shadow
+  candidate's (`predict --experiment`) as production's. Feedback recorded before this release is read against its
+  prediction's log line; only what no log line records any more (pruned) is left out, and the details count it. `feedback list --json` and `feedback metrics --json`
+  carry `experimentId` (and `unattributedFeedback`).
+
 - The accuracy retraining condition (`mloop trigger check`, `GET /trigger`) recommends retraining only when the
   drop is established: at least 30 rows of feedback, and the 95% Wilson interval's upper end below the threshold.
   Before, the point estimate decided — three answers with two wrong read as 33% accuracy and recommended

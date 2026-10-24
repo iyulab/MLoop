@@ -51,6 +51,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         {
             PredictionId = predictionId,
             ModelName = prediction.Value.ModelName,
+            ExperimentId = prediction.Value.ExperimentId,
             PredictedValue = prediction.Value.Output,
             ActualValue = actualValue,
             Source = source,
@@ -104,9 +105,20 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         string modelName,
         DateTimeOffset? from = null,
         DateTimeOffset? to = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? experimentId = null)
     {
         var feedback = await GetFeedbackAsync(modelName, from, to, int.MaxValue, cancellationToken).ConfigureAwait(false);
+        // One model's accuracy: the answers of the experiment named, not of whatever answered under the model name
+        // before a promotion or as a shadow candidate. Feedback recorded before it named its experiment is read
+        // against its prediction's log line; what no log line answers any more is left out — and counted.
+        var unattributed = 0;
+        if (experimentId is not null)
+        {
+            feedback = await AttributeAsync(modelName, feedback, cancellationToken).ConfigureAwait(false);
+            unattributed = feedback.Count(e => e.ExperimentId is null);
+            feedback = [.. feedback.Where(e => string.Equals(e.ExperimentId, experimentId, StringComparison.Ordinal))];
+        }
 
         if (feedback.Count == 0)
         {
@@ -117,7 +129,9 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                 Accuracy: null,
                 Precision: null,
                 Recall: null,
-                CalculatedAt: DateTimeOffset.UtcNow);
+                CalculatedAt: DateTimeOffset.UtcNow,
+                ExperimentId: experimentId,
+                UnattributedFeedback: unattributed);
         }
 
         // Recording feedback again for a prediction corrects it — the latest actual value stands, as
@@ -148,7 +162,9 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             Recall: null,    // Would require class-specific calculation
             CalculatedAt: DateTimeOffset.UtcNow,
             Weighted: weighted,
-            EffectiveSampleSize: effectiveSize);
+            EffectiveSampleSize: effectiveSize,
+            ExperimentId: experimentId,
+            UnattributedFeedback: unattributed);
     }
 
     private async Task WriteEntryAsync(SerializableFeedbackEntry entry, CancellationToken cancellationToken)
@@ -166,7 +182,49 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         await Task.CompletedTask;
     }
 
-    private async Task<(string ModelName, object Output)?> FindPredictionByIdAsync(
+    /// <summary>
+    /// Names the experiment of feedback that does not — written before feedback recorded it — from its prediction's
+    /// log line, reading <paramref name="modelName"/>'s logs once and only when such feedback exists.
+    /// </summary>
+    private async Task<IReadOnlyList<FeedbackEntry>> AttributeAsync(
+        string modelName, IReadOnlyList<FeedbackEntry> feedback, CancellationToken cancellationToken)
+    {
+        var wanted = feedback.Where(e => e.ExperimentId is null).Select(e => e.PredictionId).ToHashSet(StringComparer.Ordinal);
+        var modelLogs = Path.Combine(_logsDirectory, SanitizeFileName(modelName));
+        if (wanted.Count == 0 || !Directory.Exists(modelLogs))
+            return feedback;
+
+        var found = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var file in Directory.GetFiles(modelLogs, "*.jsonl"))
+        {
+            foreach (var line in await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false))
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("id", out var id) && id.GetString() is { } predictionId && wanted.Contains(predictionId)
+                        && root.TryGetProperty("experimentId", out var experiment) && experiment.ValueKind == JsonValueKind.String
+                        && experiment.GetString() is { Length: > 0 } answered)
+                        found[predictionId] = answered;
+                }
+                catch (JsonException)
+                {
+                    // A torn line names nothing.
+                }
+            }
+            if (found.Count == wanted.Count)
+                break;
+        }
+
+        return found.Count == 0
+            ? feedback
+            : [.. feedback.Select(e => e.ExperimentId is null && found.TryGetValue(e.PredictionId, out var answered) ? e with { ExperimentId = answered } : e)];
+    }
+
+    private async Task<(string ModelName, string? ExperimentId, object Output)?> FindPredictionByIdAsync(
         string predictionId,
         CancellationToken cancellationToken)
     {
@@ -206,7 +264,13 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                                 ? GetObjectFromJsonElement(outputElement)
                                 : new object();
 
-                            return (modelName, output);
+                            var experimentId = root.TryGetProperty("experimentId", out var experimentElement)
+                                               && experimentElement.ValueKind == JsonValueKind.String
+                                               && experimentElement.GetString() is { Length: > 0 } answered
+                                ? answered
+                                : null;
+
+                            return (modelName, experimentId, output);
                         }
                     }
                     catch (JsonException)
@@ -252,7 +316,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                             serializable.ActualValue ?? new object(),
                             serializable.Source,
                             serializable.Timestamp,
-                            serializable.Weight);
+                            serializable.Weight,
+                            serializable.ExperimentId);
 
                         if (entry.Timestamp >= from && entry.Timestamp <= to)
                         {
@@ -320,6 +385,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
     {
         public string? PredictionId { get; set; }
         public string? ModelName { get; set; }
+        public string? ExperimentId { get; set; }
         public object? PredictedValue { get; set; }
         public object? ActualValue { get; set; }
         public string? Source { get; set; }

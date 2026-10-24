@@ -355,6 +355,7 @@ public static class FeedbackCommand
             f.ActualValue,
             f.Source,
             f.Weight,
+            f.ExperimentId,
             Timestamp = f.Timestamp.ToString("o")
         });
 
@@ -423,6 +424,8 @@ public static class FeedbackCommand
             metrics.Recall,
             metrics.Weighted,
             metrics.EffectiveSampleSize,
+            metrics.ExperimentId,
+            metrics.UnattributedFeedback,
             CalculatedAt = metrics.CalculatedAt.ToString("o")
         }, options));
     }

@@ -42,7 +42,8 @@ public interface IFeedbackCollector
         string modelName,
         DateTimeOffset? from = null,
         DateTimeOffset? to = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? experimentId = null);
 }
 
 /// <summary>
@@ -55,7 +56,8 @@ public record FeedbackEntry(
     object ActualValue,
     string? Source,
     DateTimeOffset Timestamp,
-    double? Weight = null)
+    double? Weight = null,
+    string? ExperimentId = null)
 {
     /// <summary>The weight this entry counts with — 1 when none was recorded.</summary>
     public double EffectiveWeight => Weight ?? 1.0;
@@ -87,6 +89,10 @@ public record FeedbackEntry(
 /// <param name="EffectiveSampleSize">How many rows <see cref="Accuracy"/> is worth as evidence: the row count
 /// unweighted, Kish's (Σw)² ÷ Σw² weighted — a few heavy rows carry less certainty than as many equal ones. Null
 /// without feedback.</param>
+/// <param name="ExperimentId">The experiment these metrics are scoped to, or null for every answer under the model
+/// name.</param>
+/// <param name="UnattributedFeedback">Scoped metrics only: feedback left out because neither it nor a prediction log
+/// line names the experiment that answered (written before feedback recorded it, its log since pruned).</param>
 public record FeedbackMetrics(
     string ModelName,
     int TotalPredictions,
@@ -96,4 +102,6 @@ public record FeedbackMetrics(
     double? Recall,
     DateTimeOffset CalculatedAt,
     bool Weighted = false,
-    double? EffectiveSampleSize = null);
+    double? EffectiveSampleSize = null,
+    string? ExperimentId = null,
+    int UnattributedFeedback = 0);
