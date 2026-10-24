@@ -35,6 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop serve` passes a stop it receives (SIGTERM, SIGINT, SIGQUIT) on to the server it runs. It used to exit alone:
+  `docker stop` — which signals `mloop serve`, the container's first process — skipped the server's graceful shutdown,
+  and outside a container the server went on running and held the port.
+
 - Training an object-detection model recorded no metrics, so the quality gate had nothing to judge and no detector was
   promoted without `--force`; the diagnostics block printed an empty warning line. Training now scores the test images
   with mAP — `map_50_95` (COCO's, the task's metric when `metric: auto`) and `map_50` — and the gate refuses a detector

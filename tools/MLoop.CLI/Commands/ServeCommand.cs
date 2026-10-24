@@ -175,6 +175,8 @@ public class ServeCommand : Command
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
 
+                // A stop sent to `mloop serve` (docker stop, a supervisor, kill) is the server's to act on.
+                using var forwarding = StopSignalForwarding.To(process);
                 await process.WaitForExitAsync();
 
                 // The child is the server; if it failed, serve failed. Reporting 0 here would tell
