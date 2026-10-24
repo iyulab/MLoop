@@ -1182,15 +1182,25 @@ public static class TrainCommand
         if (!needsUpdate)
             return;
 
+        var changes = new List<(string Key, string Value)>();
         if (yamlModel != null)
         {
             // Update existing model definition
             if (!string.IsNullOrEmpty(cliLabel))
+            {
                 yamlModel.Label = cliLabel;
+                changes.Add(("label", cliLabel));
+            }
             if (!string.IsNullOrEmpty(cliTask))
+            {
                 yamlModel.Task = cliTask;
+                changes.Add(("task", cliTask));
+            }
             if (!string.IsNullOrEmpty(cliGroupColumn))
+            {
                 yamlModel.GroupColumn = cliGroupColumn;
+                changes.Add(("group_column", cliGroupColumn));
+            }
         }
         else
         {
@@ -1206,7 +1216,8 @@ public static class TrainCommand
 
         try
         {
-            await configLoader.SaveUserConfigAsync(userConfig);
+            if (!await configLoader.SaveModelAsync(userConfig, modelName, changes))
+                WarningConsole.Warn("mloop.yaml was rewritten from its settings, so its comments and key order were not kept — its layout is not one the in-place edit reads.");
             var group = string.IsNullOrEmpty(effectiveDefinition.GroupColumn) ? "" : $", group_column={effectiveDefinition.GroupColumn}";
             var text = $"Updated mloop.yaml: model '{modelName}' → label={effectiveDefinition.Label}, task={effectiveDefinition.Task}{group}";
             AnsiConsole.MarkupLine($"[grey]{Markup.Escape(text)}[/]");

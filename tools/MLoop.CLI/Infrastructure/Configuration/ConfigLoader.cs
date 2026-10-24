@@ -170,12 +170,74 @@ public class ConfigLoader
         var projectRoot = _projectDiscovery.FindRoot();
         var yamlPath = _fileSystem.CombinePath(projectRoot, MLoopYamlFileName);
 
-        var serializer = new SerializerBuilder()
-            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-            .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
-            .Build();
-
-        var yamlContent = serializer.Serialize(config);
+        var yamlContent = Serializer().Serialize(config);
         await _fileSystem.WriteTextAsync(yamlPath, yamlContent, cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes <paramref name="changes"/> (YAML key → value: <c>task</c>, <c>label</c>, <c>group_column</c>)
+    /// into <c>mloop.yaml</c>'s definition of <paramref name="modelName"/> — or, when the file does not
+    /// define it, <paramref name="config"/>'s definition of it as a new entry — on the file's own lines,
+    /// so its comments and key order stay as written (<see cref="MLoopYamlEdit"/>). A file not in the
+    /// shape those edits know, or one whose edit does not read back as intended, is written whole from
+    /// <paramref name="config"/> as <see cref="SaveUserConfigAsync"/> does.
+    /// </summary>
+    /// <returns><see langword="true"/> when the file was edited in place; <see langword="false"/> when it was rewritten.</returns>
+    public async Task<bool> SaveModelAsync(
+        MLoopConfig config,
+        string modelName,
+        IReadOnlyList<(string Key, string Value)> changes,
+        CancellationToken cancellationToken = default)
+    {
+        var yamlPath = _fileSystem.CombinePath(_projectDiscovery.FindRoot(), MLoopYamlFileName);
+        var text = _fileSystem.FileExists(yamlPath) ? await _fileSystem.ReadTextAsync(yamlPath, cancellationToken) : null;
+        if (text is null)
+        {
+            await SaveUserConfigAsync(config, cancellationToken);
+            return true;   // no file, so nothing of the user's to keep
+        }
+
+        var edited = Defines(text, modelName)
+                ? MLoopYamlEdit.SetModelScalars(text, modelName, changes)
+                : MLoopYamlEdit.AddModel(text, Serializer().Serialize(new Dictionary<string, ModelDefinition> { [modelName] = config.Models[modelName] }));
+        if (edited is not null && ReadsAs(edited, modelName, config.Models[modelName]))
+        {
+            await _fileSystem.WriteTextAsync(yamlPath, edited, cancellationToken);
+            return true;
+        }
+
+        await SaveUserConfigAsync(config, cancellationToken);
+        return false;
+    }
+
+    private static ISerializer Serializer() => new SerializerBuilder()
+        .WithNamingConvention(UnderscoredNamingConvention.Instance)
+        .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
+        .Build();
+
+    private static IDeserializer Deserializer() => new DeserializerBuilder()
+        .WithNamingConvention(UnderscoredNamingConvention.Instance)
+        .IgnoreUnmatchedProperties()
+        .Build();
+
+    private static bool Defines(string yaml, string modelName)
+    {
+        try { return Deserializer().Deserialize<MLoopConfig>(yaml)?.Models.ContainsKey(modelName) == true; }
+        catch (YamlDotNet.Core.YamlException) { return false; }
+    }
+
+    // The edited text parses, and the model's task, label and group column are the intended ones.
+    private static bool ReadsAs(string yaml, string modelName, ModelDefinition intended)
+    {
+        try
+        {
+            var read = Deserializer().Deserialize<MLoopConfig>(yaml);
+            return read?.Models.TryGetValue(modelName, out var model) == true
+                   && model.Task == intended.Task && model.Label == intended.Label && model.GroupColumn == intended.GroupColumn;
+        }
+        catch (YamlDotNet.Core.YamlException)
+        {
+            return false;
+        }
     }
 }
