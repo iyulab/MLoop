@@ -28,9 +28,21 @@ public record CsvSamplingResult(
 /// General-purpose CSV file sampler with encoding detection.
 /// Supports head, random, and stratified sampling strategies.
 /// </summary>
+/// <remarks>
+/// The file is streamed, never held: memory follows the sample, not the file — the point of sampling a file too large
+/// to profile whole. Random and stratified samples are drawn by reservoir sampling (one pass; stratified counts the
+/// classes in a first pass), and every sample keeps the rows in their file order.
+/// </remarks>
 public sealed class CsvSampler
 {
     private readonly CsvHelperImpl _csvHelper = new();
+    private readonly Random _random;
+
+    /// <summary>Creates a sampler; <paramref name="seed"/> makes random and stratified samples repeatable.</summary>
+    public CsvSampler(int? seed = null)
+    {
+        _random = seed is { } s ? new Random(s) : Random.Shared;
+    }
 
     /// <summary>
     /// Samples rows from a CSV file and writes the result to an output file.
@@ -58,87 +70,154 @@ public sealed class CsvSampler
         if (strategy == CsvSamplingStrategy.Stratified && string.IsNullOrWhiteSpace(labelColumn))
             throw new ArgumentException("Label column is required for stratified sampling.", nameof(labelColumn));
 
-        var data = await _csvHelper.ReadAsync(inputPath, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        if (data.Count == 0)
-            throw new InvalidOperationException("Input CSV file is empty (no data rows).");
-
-        // Validate label column exists for stratified sampling
-        if (strategy == CsvSamplingStrategy.Stratified && !data[0].ContainsKey(labelColumn!))
-            throw new ArgumentException(
-                $"Label column '{labelColumn}' not found in CSV. Available columns: {string.Join(", ", data[0].Keys)}",
-                nameof(labelColumn));
-
-        var actualSize = Math.Min(rows, data.Count);
-        var sampled = strategy switch
+        var (headers, sampled, totalRows) = strategy switch
         {
-            CsvSamplingStrategy.Head => HeadSample(data, actualSize),
-            CsvSamplingStrategy.Random => RandomSample(data, actualSize),
-            CsvSamplingStrategy.Stratified => StratifiedSample(data, actualSize, labelColumn!),
-            _ => RandomSample(data, actualSize)
+            CsvSamplingStrategy.Head => await HeadAsync(inputPath, rows, cancellationToken).ConfigureAwait(false),
+            CsvSamplingStrategy.Stratified => await StratifiedAsync(inputPath, rows, labelColumn!, cancellationToken).ConfigureAwait(false),
+            _ => await RandomAsync(inputPath, rows, cancellationToken).ConfigureAwait(false)
         };
 
-        var columnOrder = data[0].Keys.ToList();
-        await _csvHelper.WriteAsync(outputPath, sampled, columnOrder, cancellationToken).ConfigureAwait(false);
+        if (totalRows == 0)
+            throw new InvalidOperationException("Input CSV file is empty (no data rows).");
+
+        await _csvHelper.WriteRowsAsync(outputPath, headers, sampled, cancellationToken).ConfigureAwait(false);
 
         return new CsvSamplingResult(
             OutputPath: Path.GetFullPath(outputPath),
             SampledCount: sampled.Count,
-            TotalRows: data.Count,
+            TotalRows: totalRows,
             StrategyUsed: strategy);
     }
 
-    private static List<Dictionary<string, string>> HeadSample(
-        List<Dictionary<string, string>> data, int size)
+    // Head reads on past its rows only to count the file's — TotalRows is reported — and keeps nothing more.
+    private async Task<(IReadOnlyList<string>, List<string[]>, int)> HeadAsync(string path, int size, CancellationToken ct)
     {
-        return data.Take(size).ToList();
-    }
-
-    private static List<Dictionary<string, string>> RandomSample(
-        List<Dictionary<string, string>> data, int size)
-    {
-        return data.OrderBy(_ => Random.Shared.Next()).Take(size).ToList();
-    }
-
-    private static List<Dictionary<string, string>> StratifiedSample(
-        List<Dictionary<string, string>> data, int size, string labelColumn)
-    {
-        var groups = data.GroupBy(row =>
-            row.TryGetValue(labelColumn, out var v) ? v : "_missing_")
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        if (groups.Count == 0)
-            return new List<Dictionary<string, string>>();
-
-        var result = new List<Dictionary<string, string>>();
-        var totalCount = data.Count;
-        var remaining = size;
-
-        foreach (var (_, group) in groups.OrderByDescending(g => g.Value.Count))
+        var taken = new List<string[]>();
+        var seen = 0;
+        var headers = await _csvHelper.ReadRowsAsync(path, row =>
         {
-            var proportion = (double)group.Count / totalCount;
-            var groupSize = Math.Max(1, (int)Math.Round(size * proportion));
-            groupSize = Math.Min(groupSize, remaining);
-            groupSize = Math.Min(groupSize, group.Count);
+            if (seen++ < size)
+                taken.Add(row);
+            return true;
+        }, cancellationToken: ct).ConfigureAwait(false);
+        return (headers, taken, seen);
+    }
 
-            if (groupSize > 0)
-            {
-                result.AddRange(group.OrderBy(_ => Random.Shared.Next()).Take(groupSize));
-                remaining -= groupSize;
-            }
+    private async Task<(IReadOnlyList<string>, List<string[]>, int)> RandomAsync(string path, int size, CancellationToken ct)
+    {
+        var reservoir = new Reservoir(size, _random);
+        var headers = await _csvHelper.ReadRowsAsync(path, row => { reservoir.Offer(row); return true; },
+            cancellationToken: ct).ConfigureAwait(false);
+        return (headers, reservoir.InFileOrder(), reservoir.Seen);
+    }
 
-            if (remaining <= 0)
+    private async Task<(IReadOnlyList<string>, List<string[]>, int)> StratifiedAsync(
+        string path, int size, string labelColumn, CancellationToken ct)
+    {
+        // First pass: how many rows each class has.
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var labelIndex = -1;
+        var headers = await _csvHelper.ReadRowsAsync(path, row =>
+        {
+            var key = Key(row[labelIndex]);
+            counts[key] = counts.GetValueOrDefault(key) + 1;
+            return true;
+        }, onHeaders: h =>
+        {
+            labelIndex = IndexOf(h, labelColumn);
+            if (labelIndex < 0)
+                throw new ArgumentException(
+                    $"Label column '{labelColumn}' not found in CSV. Available columns: {string.Join(", ", h)}",
+                    nameof(labelColumn));
+        }, cancellationToken: ct).ConfigureAwait(false);
+
+        var total = counts.Values.Sum();
+        if (total == 0)
+            return (headers, [], 0);
+
+        // Second pass: a reservoir per class, sized in proportion to the class.
+        var reservoirs = Quotas(counts, Math.Min(size, total))
+            .ToDictionary(q => q.Key, q => new Reservoir(q.Value, _random), StringComparer.Ordinal);
+        var index = 0;
+        await _csvHelper.ReadRowsAsync(path, row =>
+        {
+            if (reservoirs.TryGetValue(Key(row[labelIndex]), out var reservoir))
+                reservoir.Offer(row, index);
+            index++;
+            return true;
+        }, cancellationToken: ct).ConfigureAwait(false);
+
+        var sampled = reservoirs.Values.SelectMany(r => r.Kept).OrderBy(k => k.Index).Select(k => k.Row).ToList();
+        return (headers, sampled, total);
+    }
+
+    private static string Key(string label) => string.IsNullOrEmpty(label) ? "_missing_" : label;
+
+    private static int IndexOf(IReadOnlyList<string> headers, string name)
+    {
+        for (var i = 0; i < headers.Count; i++)
+            if (headers[i] == name)
+                return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// Each class's share of <paramref name="size"/> rows — the class's proportion, by largest remainder, so the shares
+    /// add up to the sample — with at least one row for every class when the sample has a row for each; a share never
+    /// exceeds the class's rows.
+    /// </summary>
+    internal static Dictionary<string, int> Quotas(IReadOnlyDictionary<string, int> counts, int size)
+    {
+        double total = counts.Values.Sum();
+        var order = counts.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
+        var exact = order.ToDictionary(k => k, k => size * (counts[k] / total), StringComparer.Ordinal);
+        var quotas = order.ToDictionary(k => k, k => Math.Min(counts[k], (int)Math.Floor(exact[k])), StringComparer.Ordinal);
+
+        if (size >= order.Count)
+            foreach (var k in order.Where(k => quotas[k] == 0))
+                quotas[k] = 1;
+
+        // The floors of one row can overshoot: take back from the shares furthest above their exact value.
+        while (quotas.Values.Sum() > size)
+        {
+            var largest = order.Where(k => quotas[k] > 1).MaxBy(k => quotas[k] - exact[k])!;
+            quotas[largest]--;
+        }
+        // Rows rounding left over go to the largest remainders among classes with rows to give.
+        while (quotas.Values.Sum() < size)
+        {
+            var next = order.Where(k => quotas[k] < counts[k]).MaxBy(k => exact[k] - quotas[k]);
+            if (next is null)
                 break;
+            quotas[next]++;
         }
+        return quotas.Where(q => q.Value > 0).ToDictionary(q => q.Key, q => q.Value, StringComparer.Ordinal);
+    }
 
-        // Fill remaining if rounding left gaps
-        if (remaining > 0)
+    /// <summary>Algorithm R: a uniform sample of fixed size from a stream of unknown length.</summary>
+    private sealed class Reservoir(int size, Random random)
+    {
+        private readonly List<(int Index, string[] Row)> _kept = new(Math.Min(size, 1 << 16));
+
+        public int Seen { get; private set; }
+
+        public IEnumerable<(int Index, string[] Row)> Kept => _kept;
+
+        public void Offer(string[] row) => Offer(row, Seen);
+
+        public void Offer(string[] row, int index)
         {
-            var usedSet = new HashSet<Dictionary<string, string>>(result, ReferenceEqualityComparer.Instance);
-            var unused = data.Where(r => !usedSet.Contains(r)).ToList();
-            result.AddRange(unused.OrderBy(_ => Random.Shared.Next()).Take(remaining));
+            Seen++;
+            if (_kept.Count < size)
+            {
+                _kept.Add((index, row));
+                return;
+            }
+            var slot = random.NextInt64(Seen);
+            if (slot < size)
+                _kept[(int)slot] = (index, row);
         }
 
-        return result;
+        public List<string[]> InFileOrder() => [.. _kept.OrderBy(k => k.Index).Select(k => k.Row)];
     }
 }

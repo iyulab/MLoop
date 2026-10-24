@@ -23,6 +23,37 @@ public class CsvHelperImpl : ICsvHelper
         System.Text.Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
+        var records = new List<Dictionary<string, string>>();
+        IReadOnlyList<string> headers = [];
+        headers = await ReadRowsAsync(path, values =>
+        {
+            var record = new Dictionary<string, string>(headers.Count);
+            for (var i = 0; i < headers.Count; i++)
+                record[headers[i]] = values[i];
+            records.Add(record);
+            return true;
+        }, encoding, onHeaders: h => headers = h, cancellationToken).ConfigureAwait(false);
+        return records;
+    }
+
+    /// <summary>
+    /// Streams a CSV file's rows under the same reading rules as <see cref="ReadAsync"/> (encoding detection,
+    /// trimming, thousands separators removed from numbers) without holding the file: each row reaches
+    /// <paramref name="onRow"/> as its values in header order — a new array per row — and reading stops when it
+    /// returns false. Returns the header.
+    /// </summary>
+    /// <param name="path">The CSV file.</param>
+    /// <param name="onRow">Receives each row's values; return false to stop reading.</param>
+    /// <param name="encoding">The file's encoding; detected (CP949/EUC-KR included) when null.</param>
+    /// <param name="onHeaders">Receives the header before the first row.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<IReadOnlyList<string>> ReadRowsAsync(
+        string path,
+        Func<string[], bool> onRow,
+        System.Text.Encoding? encoding = null,
+        Action<IReadOnlyList<string>>? onHeaders = null,
+        CancellationToken cancellationToken = default)
+    {
         if (!File.Exists(path))
         {
             throw new FileNotFoundException($"CSV file not found: {path}");
@@ -58,25 +89,25 @@ public class CsvHelperImpl : ICsvHelper
             using var reader = new StreamReader(readPath, targetEncoding, detectEncodingFromByteOrderMarks: true);
             using var csv = new CsvReader(reader, config);
 
-            var records = new List<Dictionary<string, string>>();
-
             await csv.ReadAsync().ConfigureAwait(false);
             csv.ReadHeader();
             var headers = csv.HeaderRecord ?? throw new InvalidOperationException("No headers found in CSV");
+            onHeaders?.Invoke(headers);
 
             while (await csv.ReadAsync().ConfigureAwait(false))
             {
-                var record = new Dictionary<string, string>();
-                foreach (var header in headers)
+                cancellationToken.ThrowIfCancellationRequested();
+                var values = new string[headers.Length];
+                for (var i = 0; i < headers.Length; i++)
                 {
-                    var value = csv.GetField(header) ?? string.Empty;
                     // Automatically clean comma-formatted numbers (e.g., "2,000" → "2000")
-                    record[header] = CleanNumericString(value);
+                    values[i] = CleanNumericString(csv.GetField(headers[i]) ?? string.Empty);
                 }
-                records.Add(record);
+                if (!onRow(values))
+                    break;
             }
 
-            return records;
+            return headers;
         }
         finally
         {
@@ -183,8 +214,22 @@ public class CsvHelperImpl : ICsvHelper
             throw new ArgumentException("Data cannot be null or empty", nameof(data));
         }
 
-        var targetEncoding = System.Text.Encoding.UTF8;
+        // Use specified column order or get from first record
+        var headers = columnOrder ?? data[0].Keys.ToList();
+        return await WriteRowsAsync(path, headers,
+            data.Select(record => headers.Select(h => record.TryGetValue(h, out var value) ? value : string.Empty).ToArray()),
+            cancellationToken).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// Writes rows given as values in <paramref name="headers"/> order (UTF-8, comma-delimited, header first).
+    /// </summary>
+    public async Task<string> WriteRowsAsync(
+        string path,
+        IReadOnlyList<string> headers,
+        IEnumerable<string[]> rows,
+        CancellationToken cancellationToken = default)
+    {
         // Ensure directory exists
         var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
@@ -198,25 +243,21 @@ public class CsvHelperImpl : ICsvHelper
             HasHeaderRecord = true
         };
 
-        using var writer = new StreamWriter(path, false, targetEncoding);
+        using var writer = new StreamWriter(path, false, System.Text.Encoding.UTF8);
         using var csv = new CsvWriter(writer, config);
 
-        // Use specified column order or get from first record
-        var headers = columnOrder ?? data[0].Keys.ToList();
-
-        // Write header
         foreach (var header in headers)
         {
             csv.WriteField(header);
         }
         await csv.NextRecordAsync().ConfigureAwait(false);
 
-        // Write records
-        foreach (var record in data)
+        foreach (var row in rows)
         {
-            foreach (var header in headers)
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var value in row)
             {
-                csv.WriteField(record.TryGetValue(header, out var value) ? value : string.Empty);
+                csv.WriteField(value);
             }
             await csv.NextRecordAsync().ConfigureAwait(false);
         }

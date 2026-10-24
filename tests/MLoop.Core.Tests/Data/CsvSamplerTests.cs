@@ -206,6 +206,94 @@ public class CsvSamplerTests : IDisposable
 
     #endregion
 
+    #region Streaming draw
+
+    private string NumberedCsv(int rows, Func<int, string> label)
+    {
+        var lines = new List<string> { "Id,Label" };
+        for (var i = 0; i < rows; i++) lines.Add($"{i},{label(i)}");
+        return CreateCsvFile($"numbered-{rows}.csv", string.Join("\n", lines));
+    }
+
+    private static async Task<List<int>> IdsAsync(string path) =>
+        [.. (await new CsvHelperImpl().ReadAsync(path)).Select(r => int.Parse(r["Id"], System.Globalization.CultureInfo.InvariantCulture))];
+
+    [Theory]
+    [InlineData(CsvSamplingStrategy.Random)]
+    [InlineData(CsvSamplingStrategy.Stratified)]
+    public async Task SampleAsync_KeepsTheRowsInFileOrder(CsvSamplingStrategy strategy)
+    {
+        var input = NumberedCsv(500, i => i % 3 == 0 ? "a" : "b");
+        var output = Path.Combine(_tempDirectory, "ordered.csv");
+
+        await new CsvSampler(seed: 1).SampleAsync(input, output, 50, strategy, labelColumn: "Label");
+
+        var ids = await IdsAsync(output);
+        Assert.Equal(50, ids.Count);
+        Assert.Equal(ids.Order().ToList(), ids);
+    }
+
+    [Fact]
+    public async Task SampleAsync_SameSeed_SameSample_OtherSeed_Other()
+    {
+        var input = NumberedCsv(1000, _ => "x");
+        async Task<List<int>> Draw(int seed, string name)
+        {
+            var output = Path.Combine(_tempDirectory, name);
+            await new CsvSampler(seed).SampleAsync(input, output, 20);
+            return await IdsAsync(output);
+        }
+
+        Assert.Equal(await Draw(7, "a.csv"), await Draw(7, "b.csv"));
+        Assert.NotEqual(await Draw(7, "c.csv"), await Draw(8, "d.csv"));
+    }
+
+    [Fact]
+    public async Task SampleAsync_Random_DrawsFromTheWholeFile()
+    {
+        // A reservoir that kept only early rows would leave the second half empty.
+        var input = NumberedCsv(10_000, _ => "x");
+        var output = Path.Combine(_tempDirectory, "spread.csv");
+
+        await new CsvSampler(seed: 3).SampleAsync(input, output, 1000);
+
+        var late = (await IdsAsync(output)).Count(id => id >= 5000);
+        Assert.InRange(late, 400, 600);
+    }
+
+    [Fact]
+    public async Task SampleAsync_Head_CountsTheWholeFile()
+    {
+        var input = NumberedCsv(300, _ => "x");
+        var output = Path.Combine(_tempDirectory, "head.csv");
+
+        var result = await _sampler.SampleAsync(input, output, 10, CsvSamplingStrategy.Head);
+
+        Assert.Equal(300, result.TotalRows);
+        Assert.Equal(Enumerable.Range(0, 10).ToList(), await IdsAsync(output));
+    }
+
+    [Fact]
+    public void Quotas_AddUpToTheSample_AndGiveEveryClassARow()
+    {
+        var quotas = CsvSampler.Quotas(new Dictionary<string, int> { ["rare"] = 3, ["common"] = 997 }, 10);
+
+        Assert.Equal(10, quotas.Values.Sum());
+        Assert.Equal(1, quotas["rare"]);
+
+        // Large files: shares are proportions of the file, not products that overflow (100,000 × 1,870,921 > int).
+        var large = CsvSampler.Quotas(new Dictionary<string, int> { ["0"] = 1_870_921, ["1"] = 129_079 }, 100_000);
+        Assert.Equal(100_000, large.Values.Sum());
+        Assert.InRange(large["1"], 6_453, 6_455);
+
+        // Rounding leaves rows over; they go to classes that still have rows to give.
+        var tight = CsvSampler.Quotas(new Dictionary<string, int> { ["a"] = 2, ["b"] = 2, ["c"] = 2 }, 5);
+        Assert.Equal(5, tight.Values.Sum());
+        Assert.All(tight, q => Assert.InRange(q.Value, 1, 2));
+    }
+
+    #endregion
+
     #region Edge Cases
 
     [Fact]

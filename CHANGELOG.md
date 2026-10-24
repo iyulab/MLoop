@@ -98,6 +98,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop sample create --from` holds the sample, not the file: it read every row into memory first (1.6 GB for
+  a 55 MB, 2-million-row CSV — sampling a file too large to profile was no way out) and now streams it (about
+  150 MB for a 100,000-row sample of the same file). Random and stratified samples keep the rows in their file
+  order (a random sample came out shuffled), and a stratified sample gives every class a row when the sample has
+  room for one — rounding the largest classes first could leave a rare class with none.
 - `mloop predict --json --log` logs: the JSON branch returned before logging, so `--log` did nothing under
   `--json`. Each row now carries the `predictionId` it was logged under, as `POST /predict` answers — the id
   `mloop feedback add` takes. `feedback metrics` shows `effectiveSampleSize` (and, weighted, the effective rows).
