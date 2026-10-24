@@ -28,7 +28,7 @@
     <!-- ASP.NET Core Packages -->
     <PackageVersion Include="AspNetCoreRateLimit" Version="5.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
     <!-- Logging Packages -->
@@ -47,22 +47,22 @@
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.13" />
     <!-- Roslyn / Code Analysis -->
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.3.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.9.0" />
     <!-- Data Processing -->
     <PackageVersion Include="CsvHelper" Version="33.1.0" />
-    <PackageVersion Include="Microsoft.Data.Analysis" Version="0.23.0" />
-    <PackageVersion Include="YamlDotNet" Version="17.0.1" />
+    <PackageVersion Include="Microsoft.Data.Analysis" Version="0.23.1" />
+    <PackageVersion Include="YamlDotNet" Version="18.1.0" />
     <!-- CLI / Console -->
-    <PackageVersion Include="Spectre.Console" Version="0.55.0" />
-    <PackageVersion Include="System.CommandLine" Version="2.0.10" />
-    <PackageVersion Include="DotNetEnv" Version="3.1.1" />
+    <PackageVersion Include="Spectre.Console" Version="0.57.2" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.13" />
+    <PackageVersion Include="DotNetEnv" Version="3.2.0" />
     <!-- Documentation / API -->
     <!-- Stay on the Microsoft.OpenApi 2.x line: Swashbuckle.AspNetCore is built against 2.x
          (3.x causes 500 on /swagger/v1/swagger.json). 2.10.0 is the latest 2.x and is past the
          GHSA-v5pm-xwqc-g5wc patch (2.7.5), clearing NU1903 without leaving the compatible line. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.10.0" />
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.3.1" />
     <!-- External Dependencies -->
     <PackageVersion Include="FilePrepper" Version="0.12.0" />
     <PackageVersion Include="DataLens" Version="0.19.2" />
@@ -71,12 +71,12 @@
     <!-- Security: Override transitive dependency (CVE-2026-26127, GHSA-73j8-2gch-69rq) -->
     <PackageVersion Include="Microsoft.Bcl.Memory" Version="9.0.14" />
     <!-- Testing Packages -->
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="coverlet.collector" Version="8.0.1" />
-    <PackageVersion Include="FluentAssertions" Version="8.9.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
+    <PackageVersion Include="coverlet.collector" Version="10.1.0" />
+    <PackageVersion Include="FluentAssertions" Version="8.11.0" />
     <!-- Source Link for debugging -->
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.402" />
   </ItemGroup>
 </Project>
