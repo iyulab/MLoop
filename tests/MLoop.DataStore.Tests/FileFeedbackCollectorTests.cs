@@ -110,6 +110,49 @@ public class FileFeedbackCollectorTests : IDisposable
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    /// <summary>
+    /// A prediction whose id the serializer escapes in its log line (a caller-handed id with <c>+</c>) is still
+    /// found: lines are passed over unparsed only when the id would appear in them verbatim.
+    /// </summary>
+    [Fact]
+    public async Task RecordFeedbackAsync_FindsAPredictionWhoseIdIsEscapedInItsLine()
+    {
+        const string predictionId = "row+1/<a>";
+        await _logger.LogBatchAsync("test-model", "exp-001",
+            [new PredictionLogEntry("test-model", "exp-001", new Dictionary<string, object> { ["x"] = 1 }, "yes", 0.9, DateTimeOffset.UtcNow, predictionId)]);
+        File.ReadAllText(Directory.GetFiles(Path.Combine(_testDir, ".mloop", "logs", "test-model")).Single())
+            .Should().NotContain(predictionId, "the case only means something when the line escapes the id");
+
+        await _collector.RecordFeedbackAsync(predictionId, "no");
+
+        (await _collector.GetFeedbackAsync("test-model")).Should().ContainSingle(f => f.PredictionId == predictionId);
+    }
+
+    /// <summary>The newest feedback across day files, newest first, within the limit.</summary>
+    [Fact]
+    public async Task GetFeedbackAsync_ReturnsTheNewestWithinTheLimit_AcrossDays()
+    {
+        var today = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddHours(1);
+        var dir = Path.Combine(_testDir, ".mloop", "feedback", "m");
+        Directory.CreateDirectory(dir);
+        foreach (var at in new[] { today.AddDays(-1), today })
+            File.WriteAllLines(Path.Combine(dir, $"{at.UtcDateTime:yyyy-MM-dd}.jsonl"),
+                Enumerable.Range(0, 3).Select(i => JsonSerializer.Serialize(new
+                {
+                    predictionId = $"{at.UtcDateTime:dd}-{i}",
+                    modelName = "m",
+                    predictedValue = "a",
+                    actualValue = "b",
+                    timestamp = at.AddMinutes(i),
+                })));
+
+        var feedback = await _collector.GetFeedbackAsync("m", limit: 4);
+
+        feedback.Select(f => f.Timestamp).Should().BeInDescendingOrder();
+        feedback.Should().HaveCount(4);
+        feedback.Count(f => f.Timestamp >= today).Should().Be(3);
+    }
+
     [Fact]
     public async Task GetFeedbackAsync_ReturnsEmpty_WhenNoFeedback()
     {

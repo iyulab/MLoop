@@ -215,4 +215,59 @@ public class FilePredictionLoggerTests : IDisposable
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         }
     }
+
+    /// <summary>
+    /// The newest entries across models. Reading stopped at the first model directory that filled the limit, so
+    /// another model's newer entries were left out — which model won depended on the order the directories were
+    /// listed in, hence both orders.
+    /// </summary>
+    [Theory]
+    [InlineData("aaa", "zzz")]
+    [InlineData("zzz", "aaa")]
+    public async Task GetLogsAsync_WithoutModelName_ReturnsTheNewestAcrossModels(string busy, string recent)
+    {
+        var start = DateTimeOffset.UtcNow.AddHours(-2);
+        await _logger.LogBatchAsync(busy, "exp", [.. Enumerable.Range(0, 50).Select(i => Entry(busy, start.AddSeconds(i)))]);
+        await _logger.LogBatchAsync(recent, "exp", [.. Enumerable.Range(0, 3).Select(i => Entry(recent, start.AddHours(1).AddSeconds(i)))]);
+
+        var logs = await _logger.GetLogsAsync(limit: 5);
+
+        logs.Select(l => l.ModelName).Should().Equal(recent, recent, recent, busy, busy);
+        logs.Select(l => l.Timestamp).Should().BeInDescendingOrder();
+    }
+
+    /// <summary>
+    /// The limit is filled from the newest day first and carries on into an older day only for what is still
+    /// wanted — and the entries come back newest first whichever file they were read from.
+    /// </summary>
+    [Fact]
+    public async Task GetLogsAsync_FillsTheLimitNewestDayFirst()
+    {
+        var today = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddHours(1);
+        var yesterday = today.AddDays(-1);
+        WriteDay("m", yesterday, Enumerable.Range(0, 4).Select(i => ($"y{i}", yesterday.AddMinutes(i))));
+        WriteDay("m", today, Enumerable.Range(0, 3).Select(i => ($"t{i}", today.AddMinutes(i))));
+
+        (await _logger.GetLogsAsync("m", limit: 2)).Select(l => l.Id).Should().Equal("t2", "t1");
+        (await _logger.GetLogsAsync("m", limit: 5)).Select(l => l.Id).Should().Equal("t2", "t1", "t0", "y3", "y2");
+    }
+
+    private static PredictionLogEntry Entry(string model, DateTimeOffset at) =>
+        new(model, "exp", new Dictionary<string, object> { ["x"] = 1 }, "yes", 0.9, at, PredictionIds.New());
+
+    private void WriteDay(string model, DateTimeOffset day, IEnumerable<(string Id, DateTimeOffset At)> entries)
+    {
+        var dir = Path.Combine(_testDir, ".mloop", "logs", model);
+        Directory.CreateDirectory(dir);
+        File.WriteAllLines(
+            Path.Combine(dir, $"{day.UtcDateTime:yyyy-MM-dd}.jsonl"),
+            entries.Select(e => System.Text.Json.JsonSerializer.Serialize(new
+            {
+                id = e.Id,
+                modelName = model,
+                input = new Dictionary<string, object> { ["x"] = 1 },
+                output = "yes",
+                timestamp = e.At,
+            })));
+    }
 }

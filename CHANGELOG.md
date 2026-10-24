@@ -102,6 +102,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop logs` without `--name`, `GET /logs` without `name`, and every reader of more than one model's logs return
+  the newest entries across models. Reading stopped at the first model directory that filled the limit, so another
+  model's newer predictions were left out — which model depended on the order the directories were listed in.
+- Prediction logs and feedback are read a line at a time and only the newest `limit` entries are held: `mloop logs`
+  (default 20) read and parsed the whole day file, and recording feedback (`mloop feedback add`, `POST /feedback`)
+  read every line of each day file to find one prediction. Measured on a model logging 80,000 predictions a day
+  (20 MB day file): `logs --limit 5` 282 → 83 MB, `feedback add` 136 → 85 MB. `logs --json` writes its document as
+  it is serialized.
+
 - `mloop train` held the whole data file as dictionaries to count its classes and missing labels before training
   (and again to drop the missing ones). Those passes stream now: training on a million-row, six-column CSV (27 MB)
   peaked at 1.6 GB and now peaks at about 330 MB, with the same model. Merging several files (`--auto-merge`,

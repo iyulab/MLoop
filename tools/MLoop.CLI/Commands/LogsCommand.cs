@@ -255,7 +255,8 @@ public static class LogsCommand
             Timestamp = l.Timestamp.ToString("o")
         });
 
-        Console.WriteLine(JsonSerializer.Serialize(output, options));
+        // --limit is the caller's, so the document can be large: written as it is serialized (JsonStdout).
+        JsonStdout.Write(output, options);
     }
 
     private static void OutputAsTable(IReadOnlyList<PredictionLogEntry> logs, string? modelName)

@@ -250,49 +250,38 @@ public sealed class FileDataSampler : IDataSampler
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            try
+            await foreach (var line in JsonLines.ReadAsync(file, cancellationToken).ConfigureAwait(false))
             {
-                var lines = await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false);
-                foreach (var line in lines)
+                try
                 {
-                    if (string.IsNullOrWhiteSpace(line))
-                        continue;
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
 
-                    try
-                    {
-                        using var doc = JsonDocument.Parse(line);
-                        var root = doc.RootElement;
+                    var id = root.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                    if (id == null) continue;
 
-                        var id = root.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
-                        if (id == null) continue;
+                    var input = root.TryGetProperty("input", out var inputEl)
+                        ? ParseInput(inputEl)
+                        : new Dictionary<string, object>();
 
-                        var input = root.TryGetProperty("input", out var inputEl)
-                            ? ParseInput(inputEl)
-                            : new Dictionary<string, object>();
+                    var output = root.TryGetProperty("output", out var outputEl)
+                        ? GetObjectFromJson(outputEl)
+                        : null;
 
-                        var output = root.TryGetProperty("output", out var outputEl)
-                            ? GetObjectFromJson(outputEl)
-                            : null;
+                    var confidence = root.TryGetProperty("confidence", out var confEl) && confEl.ValueKind == JsonValueKind.Number
+                        ? confEl.GetDouble()
+                        : (double?)null;
 
-                        var confidence = root.TryGetProperty("confidence", out var confEl) && confEl.ValueKind == JsonValueKind.Number
-                            ? confEl.GetDouble()
-                            : (double?)null;
+                    var timestamp = root.TryGetProperty("timestamp", out var tsEl)
+                        ? tsEl.GetDateTimeOffset()
+                        : DateTimeOffset.MinValue;
 
-                        var timestamp = root.TryGetProperty("timestamp", out var tsEl)
-                            ? tsEl.GetDateTimeOffset()
-                            : DateTimeOffset.MinValue;
-
-                        predictions.Add(new PredictionRecord(id, input, output, confidence, timestamp));
-                    }
-                    catch (JsonException)
-                    {
-                        // Skip malformed entries
-                    }
+                    predictions.Add(new PredictionRecord(id, input, output, confidence, timestamp));
                 }
-            }
-            catch (IOException)
-            {
-                // Skip inaccessible files
+                catch (JsonException)
+                {
+                    // Skip malformed entries
+                }
             }
         }
 

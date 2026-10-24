@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -70,34 +71,26 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         int limit = 1000,
         CancellationToken cancellationToken = default)
     {
-        var results = new List<FeedbackEntry>();
         var effectiveFrom = from ?? DateTimeOffset.MinValue;
         var effectiveTo = to ?? DateTimeOffset.MaxValue;
 
         var modelDir = Path.Combine(_feedbackDirectory, SanitizeFileName(modelName));
         if (!Directory.Exists(modelDir))
-            return results;
+            return [];
 
-        var feedbackFiles = Directory.GetFiles(modelDir, "*.jsonl")
-            .Where(f => TimestampKeys.DayFileCovers(f, effectiveFrom, effectiveTo))
-            .OrderByDescending(f => f);
-
-        foreach (var file in feedbackFiles)
+        var newest = new NewestEntries<FeedbackEntry>(limit, e => e.Timestamp);
+        foreach (var file in JsonLines.DayFilesNewestFirst(modelDir, effectiveFrom, effectiveTo))
         {
-            if (cancellationToken.IsCancellationRequested || results.Count >= limit)
+            if (cancellationToken.IsCancellationRequested)
+                break;
+            if (JsonLines.EndOfDay(file) is { } end && newest.HoldsAllNewerThan(end))
                 break;
 
-            var entries = await ReadEntriesFromFileAsync(file, effectiveFrom, effectiveTo, cancellationToken).ConfigureAwait(false);
-            results.AddRange(entries);
-
-            if (results.Count >= limit)
-                break;
+            await foreach (var entry in ReadEntriesFromFileAsync(file, effectiveFrom, effectiveTo, cancellationToken).ConfigureAwait(false))
+                newest.Add(entry);
         }
 
-        return results
-            .OrderByDescending(e => e.Timestamp)
-            .Take(limit)
-            .ToList();
+        return newest.NewestFirst();
     }
 
     /// <inheritdoc />
@@ -191,10 +184,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         var found = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var file in Directory.GetFiles(modelLogs, "*.jsonl"))
         {
-            foreach (var line in await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false))
+            await foreach (var line in JsonLines.ReadAsync(file, cancellationToken).ConfigureAwait(false))
             {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
                 try
                 {
                     using var doc = JsonDocument.Parse(line);
@@ -233,90 +224,41 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             .SelectMany(modelDir => Directory.GetFiles(modelDir, "*.jsonl").Select(file => (ModelName: Path.GetFileName(modelDir), File: file)))
             .OrderByDescending(f => Path.GetFileName(f.File), StringComparer.Ordinal);
 
+        // An id the serializer writes as it is (the store's own ids are hex) appears in its line verbatim, so a line
+        // without it is passed over unparsed — a day of a busy model is tens of thousands of lines. An id with a
+        // character the serializer escapes is looked for by parsing every line.
+        var idIsVerbatim = predictionId.Length > 0 && predictionId.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or ':');
+
         foreach (var (modelName, file) in logFiles)
         {
             if (cancellationToken.IsCancellationRequested)
                 return null;
 
-            try
+            await foreach (var line in JsonLines.ReadAsync(file, cancellationToken).ConfigureAwait(false))
             {
-                var lines = await File.ReadAllLinesAsync(file, cancellationToken).ConfigureAwait(false);
-                foreach (var line in lines)
-                {
-                    if (string.IsNullOrWhiteSpace(line))
-                        continue;
-
-                    try
-                    {
-                        using var doc = JsonDocument.Parse(line);
-                        var root = doc.RootElement;
-
-                        if (root.TryGetProperty("id", out var idElement) &&
-                            idElement.GetString() == predictionId)
-                        {
-                            var output = root.TryGetProperty("output", out var outputElement)
-                                ? GetObjectFromJsonElement(outputElement)
-                                : new object();
-
-                            var experimentId = root.TryGetProperty("experimentId", out var experimentElement)
-                                               && experimentElement.ValueKind == JsonValueKind.String
-                                               && experimentElement.GetString() is { Length: > 0 } answered
-                                ? answered
-                                : null;
-
-                            return (modelName, experimentId, output);
-                        }
-                    }
-                    catch (JsonException)
-                    {
-                        // Skip malformed entries
-                    }
-                }
-            }
-            catch (IOException)
-            {
-                // File might be locked or inaccessible
-            }
-        }
-
-        return null;
-    }
-
-    private async Task<IEnumerable<FeedbackEntry>> ReadEntriesFromFileAsync(
-        string filePath,
-        DateTimeOffset from,
-        DateTimeOffset to,
-        CancellationToken cancellationToken)
-    {
-        var entries = new List<FeedbackEntry>();
-
-        try
-        {
-            var lines = await File.ReadAllLinesAsync(filePath, cancellationToken).ConfigureAwait(false);
-            foreach (var line in lines)
-            {
-                if (string.IsNullOrWhiteSpace(line))
+                // Every line of a day is a candidate; only the ones that can name this id are parsed.
+                if (idIsVerbatim && !line.Contains(predictionId, StringComparison.Ordinal))
                     continue;
 
                 try
                 {
-                    var serializable = JsonSerializer.Deserialize<SerializableFeedbackEntry>(line, _jsonOptions);
-                    if (serializable != null)
-                    {
-                        var entry = new FeedbackEntry(
-                            serializable.PredictionId ?? string.Empty,
-                            serializable.ModelName ?? string.Empty,
-                            serializable.PredictedValue ?? new object(),
-                            serializable.ActualValue ?? new object(),
-                            serializable.Source,
-                            serializable.Timestamp,
-                            serializable.Weight,
-                            serializable.ExperimentId);
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
 
-                        if (entry.Timestamp >= from && entry.Timestamp <= to)
-                        {
-                            entries.Add(entry);
-                        }
+                    if (root.TryGetProperty("id", out var idElement) &&
+                        idElement.GetString() == predictionId)
+                    {
+                        var output = root.TryGetProperty("output", out var outputElement)
+                            ? GetObjectFromJsonElement(outputElement)
+                            : new object();
+
+                        var experimentId = root.TryGetProperty("experimentId", out var experimentElement)
+                                           && experimentElement.ValueKind == JsonValueKind.String
+                                           && experimentElement.GetString() is { Length: > 0 } answered
+                            ? answered
+                            : null;
+
+                        return (modelName, experimentId, output);
                     }
                 }
                 catch (JsonException)
@@ -325,12 +267,44 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                 }
             }
         }
-        catch (IOException)
-        {
-            // File might be locked or inaccessible
-        }
 
-        return entries;
+        return null;
+    }
+
+    private async IAsyncEnumerable<FeedbackEntry> ReadEntriesFromFileAsync(
+        string filePath,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var line in JsonLines.ReadAsync(filePath, cancellationToken).ConfigureAwait(false))
+        {
+            SerializableFeedbackEntry? serializable;
+            try
+            {
+                serializable = JsonSerializer.Deserialize<SerializableFeedbackEntry>(line, _jsonOptions);
+            }
+            catch (JsonException)
+            {
+                continue; // A malformed or torn line is skipped.
+            }
+
+            if (serializable is null)
+                continue;
+
+            var entry = new FeedbackEntry(
+                serializable.PredictionId ?? string.Empty,
+                serializable.ModelName ?? string.Empty,
+                serializable.PredictedValue ?? new object(),
+                serializable.ActualValue ?? new object(),
+                serializable.Source,
+                serializable.Timestamp,
+                serializable.Weight,
+                serializable.ExperimentId);
+
+            if (entry.Timestamp >= from && entry.Timestamp <= to)
+                yield return entry;
+        }
     }
 
     private string GetFeedbackFilePath(string modelName, DateTimeOffset timestamp)
