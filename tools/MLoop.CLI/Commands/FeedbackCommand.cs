@@ -55,19 +55,26 @@ public static class FeedbackCommand
                 + "(for a row reviewed with probability p, 1/p). Default 1"
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the recorded feedback as JSON to stdout (narration goes to stderr)"
+        };
+
         var command = new Command("add", "Record feedback for a prediction");
         command.Options.Add(predictionIdOption);
         command.Options.Add(actualValueOption);
         command.Options.Add(sourceOption);
         command.Options.Add(weightOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
+            var json = parseResult.GetValue(jsonOption);
             var predictionId = parseResult.GetValue(predictionIdOption)!;
             var actualValue = parseResult.GetValue(actualValueOption)!;
             var source = parseResult.GetValue(sourceOption);
             var weight = parseResult.GetValue(weightOption);
-            return ExecuteAddAsync(predictionId, actualValue, source, weight);
+            return ExecuteAddAsync(predictionId, actualValue, source, weight, json);
         });
 
         return command;
@@ -167,8 +174,10 @@ public static class FeedbackCommand
         string predictionId,
         string actualValue,
         string? source,
-        double? weight)
+        double? weight,
+        bool jsonOutput)
     {
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
         try
         {
             var projectRoot = FindProjectRoot();
@@ -192,6 +201,21 @@ public static class FeedbackCommand
             {
                 AnsiConsole.MarkupLine($"  Weight: [grey]{w.ToString(CultureInfo.InvariantCulture)}[/]");
             }
+
+            if (jsonOutput)
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    predictionId,
+                    actualValue,
+                    source,
+                    weight,
+                    warnings = JsonOutputScope.Warnings
+                }, new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                }));
 
             return 0;
         }

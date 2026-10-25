@@ -1,5 +1,7 @@
 using System.CommandLine;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -56,12 +58,18 @@ public static class InitCommand
             DefaultValueFactory = _ => false
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the created project as JSON to stdout (narration goes to stderr)"
+        };
+
         var command = new Command("init", "Initialize a new ML project with multi-model support");
         command.Arguments.Add(projectNameArg);
         command.Options.Add(taskOption);
         command.Options.Add(nameOption);
         command.Options.Add(labelOption);
         command.Options.Add(forceOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
@@ -70,7 +78,8 @@ public static class InitCommand
             var model = parseResult.GetValue(nameOption)!;
             var label = parseResult.GetValue(labelOption)!;
             var force = parseResult.GetValue(forceOption);
-            return ExecuteAsync(projectName, task, model, label, force);
+            var json = parseResult.GetValue(jsonOption);
+            return ExecuteAsync(projectName, task, model, label, force, json);
         });
 
         return command;
@@ -81,8 +90,10 @@ public static class InitCommand
         string task,
         string modelName,
         string labelColumn,
-        bool force)
+        bool force,
+        bool json = false)
     {
+        using var machineOutput = json ? new JsonOutputScope() : null;
         try
         {
             AnsiConsole.MarkupLine($"[blue]Initializing MLoop project:[/] [green]{projectName}[/]");
@@ -293,6 +304,24 @@ public static class InitCommand
             AnsiConsole.MarkupLine("  mloop list --name churn      [cyan]# List model experiments[/]");
             AnsiConsole.MarkupLine("  mloop predict --name churn   [cyan]# Predict with specific model[/]");
             AnsiConsole.WriteLine();
+
+            if (json)
+            {
+                // What the human summary says, as a document: the configuration is the existing
+                // mloop.yaml's when it was kept, so the task and label are only claimed otherwise.
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    project = displayName,
+                    path = projectPath,
+                    reinitialized = isReinitialize,
+                    configurationKept = keptConfiguration,
+                    model = keptConfiguration ? null : modelName,
+                    task = keptConfiguration ? null : task,
+                    label = keptConfiguration ? null : labelColumn,
+                    kept,
+                    warnings = JsonOutputScope.Warnings
+                }, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull }));
+            }
 
             return 0;
         }

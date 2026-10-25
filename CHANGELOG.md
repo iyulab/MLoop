@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `--json` on `mloop init`, `mloop feedback add` and `mloop sample create` — the last commands that handed a caller
+  prose. Stdout is one document at every exit (`init`: `project`, `path`, `model`, `task`, `label`, `kept`;
+  `feedback add`: the recorded `predictionId`, `actualValue`, `source`, `weight`; `sample create`: `outputPath`,
+  `sampled`, the totals and, from logs, `withFeedback` and the label/weight columns), a failure is `{"error": …}`
+  with exit 1, and the narration goes to stderr.
 - `mloop train --json` ends a run with a `promotion` event after `result`: `promoted`, and `keptInStagingReason` when
   the experiment stayed in staging (the quality gate, the gate policy, not beating production, a post-train hook,
   `--no-promote`) — the same facts, by the same judgment, a `POST /train` job reports. A stream consumer could not

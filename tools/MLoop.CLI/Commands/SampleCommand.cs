@@ -65,6 +65,11 @@ public static class SampleCommand
             Description = "Label column for stratified sampling"
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the sampling result as JSON to stdout (narration goes to stderr)"
+        };
+
         var command = new Command("create", "Create a sampled dataset from CSV file or prediction logs");
         command.Options.Add(nameOption);
         command.Options.Add(fromOption);
@@ -72,9 +77,11 @@ public static class SampleCommand
         command.Options.Add(strategyOption);
         command.Options.Add(outputOption);
         command.Options.Add(labelOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
+            var json = parseResult.GetValue(jsonOption);
             var modelName = parseResult.GetValue(nameOption);
             var fromPath = parseResult.GetValue(fromOption);
             var size = parseResult.GetValue(sizeOption);
@@ -83,11 +90,12 @@ public static class SampleCommand
             var label = parseResult.GetValue(labelOption);
 
             if (!string.IsNullOrEmpty(fromPath))
-                return ExecuteFromCsvAsync(fromPath, size, strategy, output, label);
+                return ExecuteFromCsvAsync(fromPath, size, strategy, output, label, json);
 
             if (!string.IsNullOrEmpty(modelName))
-                return ExecuteCreateAsync(modelName, size, strategy, output);
+                return ExecuteCreateAsync(modelName, size, strategy, output, json);
 
+            using var missingSource = json ? new JsonOutputScope() : null;
             ErrorConsole.Error(
                 "Either --from <csv-file> or --model <name> is required.",
                 "Examples: mloop sample create --from train.csv --rows 100, or mloop sample create --model default --rows 500");
@@ -129,8 +137,10 @@ public static class SampleCommand
         int rows,
         string strategyName,
         string? outputPath,
-        string? labelColumn)
+        string? labelColumn,
+        bool jsonOutput)
     {
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
         try
         {
             var csvStrategy = ParseCsvStrategy(strategyName);
@@ -174,6 +184,16 @@ public static class SampleCommand
                 });
 
             OutputCsvResult(result!);
+            if (jsonOutput)
+                EmitJson(new
+                {
+                    source = "csv",
+                    outputPath = result!.OutputPath,
+                    sampled = result.SampledCount,
+                    totalRows = result.TotalRows,
+                    strategy = result.StrategyUsed.ToString(),
+                    warnings = JsonOutputScope.Warnings
+                });
             return 0;
         }
         catch (Exception ex)
@@ -187,8 +207,10 @@ public static class SampleCommand
         string modelName,
         int sampleSize,
         string strategyName,
-        string? outputPath)
+        string? outputPath,
+        bool jsonOutput)
     {
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
         try
         {
             var projectRoot = FindProjectRoot();
@@ -215,6 +237,7 @@ public static class SampleCommand
                 outputPath = FeedbackSamples.DefaultPath(projectRoot, modelName);
 
             var sampler = new FileDataSampler(projectRoot);
+            SamplingResult? created = null;
 
             await AnsiConsole.Status()
                 .StartAsync($"Sampling {sampleSize} entries from {modelName}...", async ctx =>
@@ -227,6 +250,22 @@ public static class SampleCommand
                         columns);
 
                     OutputCreateResult(result);
+                    created = result;
+                });
+
+            if (jsonOutput && created is not null)
+                EmitJson(new
+                {
+                    source = "logs",
+                    outputPath = created.OutputPath,
+                    sampled = created.SampledCount,
+                    withFeedback = created.LabeledCount,
+                    totalAvailable = created.TotalAvailable,
+                    strategy = created.StrategyUsed.ToString(),
+                    labelColumn = created.LabelColumn,
+                    weightColumn = created.WeightColumn,
+                    createdAt = created.CreatedAt,
+                    warnings = JsonOutputScope.Warnings
                 });
 
             return 0;
@@ -295,6 +334,14 @@ public static class SampleCommand
             _ => null
         };
     }
+
+    private static void EmitJson(object document) =>
+        Console.WriteLine(JsonSerializer.Serialize(document, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        }));
 
     private static void OutputCsvResult(CsvSamplingResult result)
     {

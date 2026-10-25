@@ -1394,6 +1394,7 @@ x1,x2,churn,weight
   `testSplit` leaves them to `mloop.yaml`. A `balance` the run cannot honour (not `auto`/`none`/a ratio, a task that
   is not classification, a weight column) is refused with 400 before a job exists.
 - `mloop sample create --from <csv>` samples a plain CSV instead (`random`, `head`, `stratified --label <col>`) — a
+- `--json` on `sample create`, `feedback add` and `init` prints one document on stdout (the narration goes to stderr); a failure is `{"error": …}` with exit 1.
   relative path is the project's, as for every command, and the current directory's outside a project. The file is
   streamed, so memory follows the sample, not the file (a 100,000-row sample of a 2-million-row CSV ≈ 150 MB); the
   sampled rows keep their file order, and `stratified` gives every class at least one row when the sample has room;
