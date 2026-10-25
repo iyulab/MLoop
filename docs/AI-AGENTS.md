@@ -35,10 +35,20 @@ human-readable progress on stderr. An agent reads stdout and the exit code (`0` 
 do what was asked — the reason is in `{"error": "..."}`):
 
 ```bash
-mloop train datasets/train.csv --label Churn --time 300 --json
 mloop predict datasets/predict.csv --json
 mloop evaluate --json
 ```
+
+`mloop train --json` is the one stream: a JSON object per line as the run goes — `phase`, `trial`, `warning`, then
+`result` (the experiment and its metrics) and `promotion` (`promoted`, and `keptInStagingReason` when it stayed in
+staging), or `error`:
+
+```bash
+mloop train datasets/train.csv --label Churn --time 300 --json
+```
+
+Through mloop-mcp the training tools turn that stream into MCP progress notifications, and cancelling a tool call
+stops the command it runs.
 
 ## See also
 
