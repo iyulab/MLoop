@@ -146,6 +146,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop serve` says the server started only once it answers `/health`. It used to say so as soon as the server
+  process launched: on a port another process already held, the new server exited moments later — after
+  `--detach` had reported it running in the background with its PID and exited 0 — and in the meantime the other
+  process answered requests in its place. A port in use is now refused before starting
+  (`Port <n> is already in use`, exit 1), and a server that exits while starting fails `--detach` with its exit code.
+
 - `mloop serve --host` takes only a host name or address (or `*`): the value is part of the API process's command line,
   so a host with spaces in it added arguments of its own — another `--urls`, a signing key.
 - An error or warning naming a path or name the user gave with square brackets (`data[1].csv`) printed

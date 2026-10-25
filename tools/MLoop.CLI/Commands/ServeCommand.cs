@@ -66,6 +66,9 @@ public class ServeCommand : Command
     /// ("every command's top-level catch funnels here before returning a non-zero exit code");
     /// serve was the command that did not hold up its half.
     /// </remarks>
+    // How long a starting server may take to answer /health — loading preloaded models included.
+    private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(60);
+
     /// <summary>Whether <paramref name="host"/> is something a server binds to: a host name, an address, or <c>*</c> / <c>+</c>.</summary>
     internal static bool IsBindableHost(string host) =>
         host is "*" or "+" || Uri.CheckHostName(host.Trim('[', ']')) != UriHostNameType.Unknown;
@@ -108,6 +111,16 @@ public class ServeCommand : Command
                     "MLoop.API assembly not found.",
                     "Point MLOOP_API_PATH at the built assembly (MLOOP_API_PATH=<path>/MLoop.API.dll), "
                     + "or build from source: dotnet build MLoop.slnx");
+                return 1;
+            }
+
+            // A port another process holds would let the server exit moments after starting, and in that window the
+            // other process answers in its name — a different project's model read as this one's.
+            if (ServerReadiness.PortInUse(host, port))
+            {
+                ErrorConsole.Error(
+                    $"Port {port} is already in use on {host} — another server (an earlier mloop serve?) answers there.",
+                    $"Stop it, or serve on another port: mloop serve --port {port + 1}");
                 return 1;
             }
 
@@ -169,6 +182,19 @@ public class ServeCommand : Command
 
             if (detach)
             {
+                // Started means answering: a process that exits while binding is not a server in the background.
+                if (!await ServerReadiness.WaitUntilAnsweringAsync(process, host, port, ReadinessTimeout))
+                {
+                    if (process.HasExited)
+                    {
+                        ErrorConsole.Error(
+                            $"MLoop.API exited with code {process.ExitCode} before it answered on http://{host}:{port}.",
+                            "Run mloop serve without --detach to see why.");
+                        return process.ExitCode == 0 ? 1 : process.ExitCode;
+                    }
+                    WarningConsole.Warn($"The server (PID {process.Id}) is running but did not answer http://{host}:{port}/health within {ReadinessTimeout.TotalSeconds:0} s.");
+                    return 0;
+                }
                 AnsiConsole.MarkupLine($"[green]✅ Server started in background (PID: {process.Id})[/]");
                 AnsiConsole.MarkupLine($"[blue]📖 API Documentation: http://{host}:{port}/swagger[/]");
                 AnsiConsole.MarkupLine($"[blue]❤️  Health Check: http://{host}:{port}/health[/]");
@@ -179,18 +205,27 @@ public class ServeCommand : Command
             }
             else
             {
-                AnsiConsole.MarkupLine("[green]✅ Server started. Press Ctrl+C to stop.[/]");
-                AnsiConsole.MarkupLine($"[blue]📖 API Documentation: http://{host}:{port}/swagger[/]");
-                AnsiConsole.MarkupLine($"[blue]❤️  Health Check: http://{host}:{port}/health[/]");
-                AnsiConsole.MarkupLine($"[blue]📊 Model Info: http://{host}:{port}/info[/]");
-                AnsiConsole.MarkupLine($"[blue]🔮 Predictions: POST http://{host}:{port}/predict[/]");
-                AnsiConsole.WriteLine();
-
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
 
                 // A stop sent to `mloop serve` (docker stop, a supervisor, kill) is the server's to act on.
                 using var forwarding = StopSignalForwarding.To(process);
+
+                // Started means answering; a server that exits first reports through its exit code below.
+                if (await ServerReadiness.WaitUntilAnsweringAsync(process, host, port, ReadinessTimeout))
+                {
+                    AnsiConsole.MarkupLine("[green]✅ Server started. Press Ctrl+C to stop.[/]");
+                    AnsiConsole.MarkupLine($"[blue]📖 API Documentation: http://{host}:{port}/swagger[/]");
+                    AnsiConsole.MarkupLine($"[blue]❤️  Health Check: http://{host}:{port}/health[/]");
+                    AnsiConsole.MarkupLine($"[blue]📊 Model Info: http://{host}:{port}/info[/]");
+                    AnsiConsole.MarkupLine($"[blue]🔮 Predictions: POST http://{host}:{port}/predict[/]");
+                    AnsiConsole.WriteLine();
+                }
+                else if (!process.HasExited)
+                {
+                    WarningConsole.Warn($"The server is running but did not answer http://{host}:{port}/health within {ReadinessTimeout.TotalSeconds:0} s.");
+                }
+
                 await process.WaitForExitAsync();
 
                 // The child is the server; if it failed, serve failed. Reporting 0 here would tell
