@@ -94,7 +94,18 @@ public class PretrainedTextAlphabetTests
         var warning = PretrainedTextAlphabet.ReadingWarning("Text classification", "Text", 0.82, PretrainedTextAlphabet.ClassifyInstead);
 
         Assert.Contains("--task multiclass-classification", warning);
+        Assert.Contains("encoder: multilingual-minilm", warning);
         Assert.DoesNotContain("--task", PretrainedTextAlphabet.ReadingWarning("NER", "Text", 0.82));
+    }
+
+    [Fact]
+    public void A_sentence_similarity_warning_names_the_regression_over_two_encoded_columns()
+    {
+        var warning = PretrainedTextAlphabet.ReadingWarning("Sentence similarity", "s1", 0.85, PretrainedTextAlphabet.CompareInstead);
+
+        Assert.Contains("--task regression", warning);
+        Assert.Contains("encoder: multilingual-minilm", warning);
+        Assert.Contains("cosine", warning);
     }
 
     private sealed class Row

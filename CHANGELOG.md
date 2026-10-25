@@ -25,7 +25,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A text column can be trained on through a text encoder: `type: text` with `encoder: <id>` under the model's
   `columns:` in `mloop.yaml` (binary classification, multiclass classification, regression). Training embeds the
   column's texts once and the trainers read their sentence vectors (`<column>.embedding`) beside the column's own
-  n-gram features; the experiment records the encoder
+  n-gram features, and two columns of one encoder also their cosine (`<first>~<second>.cosine`) — a regression over
+  two such sentence columns is a sentence-similarity model for Korean and other non-Latin text. The text
+  classification and sentence similarity warnings for unreadable text name this route. The experiment records the encoder
   beside its model (`text-encoders.json`, copied on promote), and predict, evaluate, calibrate, threshold and
   `mloop serve` read the column's text through the same encoder. A model whose encoder is missing, or installed with
   other weights, tokenizer or preprocessing, refuses to score and says which. `mloop validate` refuses an encoder on

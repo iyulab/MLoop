@@ -169,7 +169,7 @@ internal static class DeepLearningHandlers
                 throw new InvalidOperationException("Sentence similarity requires at least two text columns.");
 
             log($"Sentence similarity: s1='{textCols[0]}', s2='{textCols[1]}', label='{config.LabelColumn}'");
-            WarnOfUnreadableText(log, "Sentence similarity", trainSet, instead: null, textCols[0], textCols[1]);
+            WarnOfUnreadableText(log, "Sentence similarity", trainSet, PretrainedTextAlphabet.CompareInstead, textCols[0], textCols[1]);
 
             var pipeline = mlContext.Regression.Trainers.SentenceSimilarity(
                 labelColumnName: config.LabelColumn,

@@ -319,6 +319,11 @@ Japanese, Chinese, …) that n-grams do not; the n-grams carry the endings and s
 Korean review snippets (three sentiment classes, 800 training rows, 200 held out) macro accuracy rose from 0.45
 with n-grams alone to 0.68 with both (0.58 with the vector alone); on a Korean sentence-type set, where the
 classes follow the endings, both scored as n-grams alone did (0.68 against 0.71) and the vector alone 0.54.
+Two columns read through one encoder also gain the cosine of their vectors (`<first>~<second>.cosine`) — how close
+the two texts are in meaning, which a pair of texts is usually asked about. A regression over two such columns is
+a sentence-similarity model that reads Korean: on a Korean sentence-pair set (1,500 training pairs, 500 held out)
+it reached R² 0.45, where the same regression over n-grams alone was below the mean (−0.14) and two vectors
+without their cosine 0.08.
 Binary classification, multiclass classification and regression only (`mloop validate` says so). The experiment keeps
 the encoder's identity beside the model (`text-encoders.json`, copied on promote); predict, evaluate and `mloop serve`
 read the column's text through the same encoder, and a model whose encoder is no longer installed — or has other
@@ -400,8 +405,11 @@ classification says so.
 
 A text encoder reads such text: `multilingual-minilm` (`mloop encoder install multilingual-minilm`) turns Korean and
 some fifty other languages into sentence vectors — `mloop embed --text`, `POST /embed` — whose cosine says how close
-two texts are in meaning. It gives one vector per text; NER and question answering, which answer per word, are not
-served by it.
+two texts are in meaning. Declared on a text column (`encoder:` — see Column overrides), a classification or
+regression model reads those vectors beside the column's n-grams; for sentence similarity, a regression over the two
+sentence columns, each with the encoder, learns from their cosine. The warnings for text classification and sentence
+similarity say so. It gives one vector per text; NER and question answering, which answer per word, are not served
+by it.
 
 ### Named Entity Recognition (NER)
 

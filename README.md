@@ -90,8 +90,9 @@ from the ML.NET trainers underneath, so they are stated here rather than discove
   the digits, Latin letters and punctuation left over — on Korean news, dialogue and sentence sets,
   82–89% of the characters. Training warns when a text column loses more than 5% this way. For
   classification, a tabular model (`--task multiclass-classification`) reads every character; a text
-  encoder (`mloop encoder install multilingual-minilm`, `mloop embed --text`) turns such text into
-  sentence vectors.
+  encoder (`mloop encoder install multilingual-minilm`) declared on a column (`encoder:`) adds its
+  sentence vector, and on two columns their cosine — a regression over two sentence columns reads
+  Korean sentence pairs.
 - **NER tags whole words** — one label per space-separated word. Where words carry attached particles,
   as in Korean, an entity often starts or ends inside a word: on a Korean time-expression set, 67% of
   entity spans did, so the model learns `8월20일부터` as a date as a whole.

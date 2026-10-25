@@ -36,7 +36,17 @@ public static class PretrainedTextAlphabet
     /// </summary>
     public const string ClassifyInstead =
         "A tabular classifier reads every character — train with --task multiclass-classification "
-        + "(binary-classification for two classes): it featurizes a text column by word and character n-grams.";
+        + "(binary-classification for two classes): it featurizes a text column by word and character n-grams; "
+        + "with a text encoder on the column (mloop.yaml columns: encoder: multilingual-minilm) it reads its meaning too.";
+
+    /// <summary>
+    /// What sentence similarity's warning adds: a regression over the two columns, each read through a multilingual text
+    /// encoder, takes the cosine of their sentence vectors as a feature. On a Korean sentence-pair set (1,500 training
+    /// pairs, 500 held out) that regression reached R² 0.45 where n-grams alone were below the mean (−0.14).
+    /// </summary>
+    public const string CompareInstead =
+        "A regression over the two columns reads them — train with --task regression and a text encoder on both "
+        + "(mloop.yaml columns: type: text, encoder: multilingual-minilm): it learns from the cosine of their sentence vectors.";
 
     /// <summary>Whether every character of <paramref name="text"/> is one the model can write.</summary>
     public static bool CanWrite(ReadOnlySpan<char> text)

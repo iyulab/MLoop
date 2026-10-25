@@ -37,6 +37,14 @@ public sealed record TextEncodings(IReadOnlyList<EncodedTextColumn> Columns)
     /// </summary>
     public static string VectorColumnOf(string column) => column + ".embedding";
 
+    /// <summary>
+    /// The column the cosine of two encoded columns' vectors is read from, <c>&lt;first&gt;~&lt;second&gt;.cosine</c> — added for
+    /// every pair of columns encoded by one encoder, in declaration order: how close two texts are in meaning is what a
+    /// pair of texts is asked about (similarity, duplicates, a question and its answer), and no trainer derives it from
+    /// the two vectors' numbers on its own.
+    /// </summary>
+    public static string CosineColumnOf(string first, string second) => $"{first}~{second}.cosine";
+
     /// <summary>Why <paramref name="task"/> cannot read a text column through an encoder, or <see langword="null"/>.</summary>
     public static string? Unsupported(string task) => Tasks.Contains(task, StringComparer.OrdinalIgnoreCase)
         ? null
@@ -135,7 +143,34 @@ public sealed class TextEncodingLayer : ITransformer
     {
         ArgumentNullException.ThrowIfNull(mlContext);
         _columns = [.. columns.Select(c => new Column(c.Name, c.Embedder))];
-        _chain = new TransformerChain<ITransformer>([.. _columns.Select(c => c.Mapping(mlContext))]);
+        // Vectors in one space are compared: each pair of columns of one encoder gets its cosine — the dot product, as
+        // the vectors are unit length.
+        var pairs = from i in Enumerable.Range(0, _columns.Count)
+                    from j in Enumerable.Range(i + 1, _columns.Count - i - 1)
+                    where ReferenceEquals(_columns[i].Embedder, _columns[j].Embedder)
+                    select Cosine(mlContext, _columns[i], _columns[j]);
+        _chain = new TransformerChain<ITransformer>([.. _columns.Select(c => c.Mapping(mlContext)), .. pairs]);
+    }
+
+    private static ITransformer Cosine(MLContext mlContext, Column first, Column second)
+    {
+        var vector = new VectorDataViewType(NumberDataViewType.Single, first.Embedder.Encoder.Dimension);
+        var input = SchemaDefinition.Create(typeof(PairIn));
+        var a = input.Single(c => c.MemberName == nameof(PairIn.A));
+        var b = input.Single(c => c.MemberName == nameof(PairIn.B));
+        (a.ColumnName, a.ColumnType) = (TextEncodings.VectorColumnOf(first.Name), vector);
+        (b.ColumnName, b.ColumnType) = (TextEncodings.VectorColumnOf(second.Name), vector);
+        var output = SchemaDefinition.Create(typeof(CosineOut));
+        output[0].ColumnName = TextEncodings.CosineColumnOf(first.Name, second.Name);
+        return mlContext.Transforms.CustomMapping<PairIn, CosineOut>(
+                (row, result) =>
+                {
+                    var dot = 0.0;
+                    for (var d = 0; d < row.A.Length && d < row.B.Length; d++)
+                        dot += (double)row.A[d] * row.B[d];
+                    result.Cosine = (float)dot;
+                }, contractName: null, input, output)
+            .Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<PairIn>(), input));
     }
 
     /// <summary>The columns encoded, each with the encoder's identity — what <see cref="TextEncodings"/> records.</summary>
@@ -199,6 +234,18 @@ public sealed class TextEncodingLayer : ITransformer
         }
 
         private float[] Vector(string text) => _vectors.TryGetValue(text, out var vector) ? vector : Embedder.Embed([text]).Vectors[0];
+    }
+
+    private sealed class PairIn
+    {
+        public float[] A { get; set; } = [];
+
+        public float[] B { get; set; } = [];
+    }
+
+    private sealed class CosineOut
+    {
+        public float Cosine { get; set; }
     }
 
     private sealed class TextIn
