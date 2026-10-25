@@ -413,7 +413,7 @@ public static class PredictCommand
             var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(resolvedDataFile);
             if (detection.WasConverted && detection.EncodingName != "UTF-8")
             {
-                AnsiConsole.MarkupLine($"[green]>[/] Converted {detection.EncodingName} → UTF-8: [cyan]{Path.GetFileName(resolvedDataFile)}[/]");
+                AnsiConsole.MarkupLineInterpolated($"[green]>[/] Converted {detection.EncodingName} → UTF-8: [cyan]{Path.GetFileName(resolvedDataFile)}[/]");
                 resolvedDataFile = convertedPath;
             }
 

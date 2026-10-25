@@ -403,7 +403,7 @@ public static class PromoteCommand
         AnsiConsole.WriteLine();
 
         if (autoSelectionReason != null)
-            AnsiConsole.MarkupLine($"[grey]Auto-selected ({autoSelectionReason})[/]");
+            AnsiConsole.MarkupLineInterpolated($"[grey]Auto-selected ({autoSelectionReason})[/]");
 
         var table = new Table()
             .Border(TableBorder.Rounded)

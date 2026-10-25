@@ -131,7 +131,7 @@ public sealed class FeaturesCommand : Command
                 var allColumns = ReadHeaderColumns(trainPath);
                 FeatureSelector.ApplyKeep(model.Columns, allColumns, kept, model.Label);
                 applied = new FeaturesApplied("keep", kept, ResetCount: null);
-                if (!json) AnsiConsole.MarkupLine($"[green]Kept:[/] {keepCsv} [grey](+ label {model.Label}); others excluded[/]");
+                if (!json) AnsiConsole.MarkupLineInterpolated($"[green]Kept:[/] {keepCsv} [grey](+ label {model.Label}); others excluded[/]");
             }
             else
             {

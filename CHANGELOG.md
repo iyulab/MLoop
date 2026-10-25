@@ -145,6 +145,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   "Unbalanced markup stack" — or failed with an unhandled exception — instead of the message: the text was read
   as console markup. Every value interpolated into an error or warning line is now shown as given — the lines take
   their `$"…"` as markup in the literal and text in the values, so a new message cannot forget to escape one.
+  Progress lines and tables that show the data's own names — column names in `mloop info`, the label, a data or
+  output file, a class value — show them as given too: `mloop info` on a file with a column named `score[1]` stopped
+  at "Encountered malformed markup tag".
 - `mloop train <file>` with a file that does not exist said "No data file specified and datasets/train.csv not
   found"; it now says the file was not found, as `--data` does.
 - An encoder's definition file no longer carries `grid`, which is derived from its patch size.

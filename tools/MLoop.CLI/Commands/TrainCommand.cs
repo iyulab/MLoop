@@ -543,7 +543,7 @@ public static class TrainCommand
                             AnsiConsole.MarkupLine($"[green]✓[/] Merged [cyan]{mergeResult.TotalRows}[/] rows into [cyan]train.csv[/]");
                             foreach (var (fileName, rowCount) in mergeResult.RowsPerFile)
                             {
-                                AnsiConsole.MarkupLine($"    [grey]• {fileName}: {rowCount} rows[/]");
+                                AnsiConsole.MarkupLineInterpolated($"    [grey]• {fileName}: {rowCount} rows[/]");
                             }
                             AnsiConsole.WriteLine();
 
@@ -681,7 +681,7 @@ public static class TrainCommand
 
                     if (!string.IsNullOrEmpty(labelAnalysis.Error))
                     {
-                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Label analysis error: {labelAnalysis.Error}");
+                        AnsiConsole.MarkupLineInterpolated($"[yellow]Warning:[/] Label analysis error: {labelAnalysis.Error}");
                     }
                     else if (labelAnalysis.HasMissingValues)
                     {
@@ -714,7 +714,7 @@ public static class TrainCommand
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"[green]✓[/] Label column '{effectiveDefinition.Label}' has no missing values ({labelAnalysis.ValidCount} rows, {labelAnalysis.UniqueValueCount} unique values)");
+                        AnsiConsole.MarkupLineInterpolated($"[green]✓[/] Label column '{effectiveDefinition.Label}' has no missing values ({labelAnalysis.ValidCount} rows, {labelAnalysis.UniqueValueCount} unique values)");
                     }
                 }
 
@@ -736,7 +736,7 @@ public static class TrainCommand
                     }
                     catch (Exception ex)
                     {
-                        AnsiConsole.MarkupLine($"[yellow]Warning:[/] Class distribution analysis failed: {ex.Message}");
+                        AnsiConsole.MarkupLineInterpolated($"[yellow]Warning:[/] Class distribution analysis failed: {ex.Message}");
                     }
                 }
 
@@ -824,7 +824,7 @@ public static class TrainCommand
                         AnsiConsole.WriteLine();
                         AnsiConsole.Write(new Rule(balanced.Split is null ? "[blue]Class Balancing[/]" : "[blue]Class Balancing (train only)[/]").LeftJustified());
                         AnsiConsole.WriteLine();
-                        AnsiConsole.MarkupLine($"[green]✓[/] {balanceResult.Message}");
+                        AnsiConsole.MarkupLineInterpolated($"[green]✓[/] {balanceResult.Message}");
                         ValueLine.Write(balanced.Split is null ? "[green]>[/] Using balanced data: " : "[green]>[/] Balanced train: ",
                             Path.GetRelativePath(projectRoot, balanceResult.BalancedFilePath));
                         if (balanced.TestFile is { } cleanTest)
@@ -839,7 +839,7 @@ public static class TrainCommand
                     }
                     else if (!string.IsNullOrEmpty(balanceResult.Message))
                     {
-                        AnsiConsole.MarkupLine($"[grey]Balance:[/] {balanceResult.Message}");
+                        AnsiConsole.MarkupLineInterpolated($"[grey]Balance:[/] {balanceResult.Message}");
                     }
                     resolvedDataFile = balanced.TrainFile;
                 }
@@ -1229,7 +1229,7 @@ public static class TrainCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[yellow]Warning:[/] Could not update mloop.yaml: {ex.Message}");
+            AnsiConsole.MarkupLineInterpolated($"[yellow]Warning:[/] Could not update mloop.yaml: {ex.Message}");
         }
     }
 

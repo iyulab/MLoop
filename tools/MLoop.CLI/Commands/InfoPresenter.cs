@@ -58,7 +58,7 @@ internal static class InfoPresenter
                     displayPurpose = "[grey]Excluded[/]";
             }
 
-            table.AddRow((i + 1).ToString(), columns[i], displayDataType, displayPurpose);
+            table.AddRow((i + 1).ToString(), Markup.Escape(columns[i]), displayDataType, displayPurpose);
         }
 
         AnsiConsole.Write(table);
@@ -123,6 +123,7 @@ internal static class InfoPresenter
         {
             var colName = columns[i];
             if (!columnStats.TryGetValue(colName, out var stats)) continue;
+            var shownName = Markup.Escape(colName);   // a table cell is markup; the data's column name is text
 
             var missingPct = lineCount > 0 ? (stats.MissingCount / (double)lineCount) * 100 : 0;
             var uniqueStr = stats.UniqueCount > 0 ? $"~{stats.UniqueCount}" : "N/A";
@@ -140,7 +141,7 @@ internal static class InfoPresenter
 
                 bool isNumeric = summary.Mean.HasValue;
                 table.AddRow(
-                    colName,
+                    shownName,
                     stats.MissingCount.ToString("N0"),
                     $"{missingPct:F2}%",
                     uniqueStr,
@@ -153,7 +154,7 @@ internal static class InfoPresenter
             else if (hasEnhanced)
             {
                 table.AddRow(
-                    colName,
+                    shownName,
                     stats.MissingCount.ToString("N0"),
                     $"{missingPct:F2}%",
                     uniqueStr,
@@ -162,7 +163,7 @@ internal static class InfoPresenter
             else
             {
                 table.AddRow(
-                    colName,
+                    shownName,
                     stats.MissingCount.ToString("N0"),
                     $"{missingPct:F2}%",
                     uniqueStr);
@@ -237,7 +238,7 @@ internal static class InfoPresenter
 
             foreach (var pair in report.HighCorrelationPairs.OrderByDescending(p => p.AbsValue))
             {
-                table.AddRow(pair.Column1, pair.Column2, ColorCorrelation(pair.Value));
+                table.AddRow(Markup.Escape(pair.Column1), Markup.Escape(pair.Column2), ColorCorrelation(pair.Value));
             }
 
             AnsiConsole.Write(table);
@@ -281,7 +282,7 @@ internal static class InfoPresenter
             var bar = new string('#', Math.Max(0, barLen));
             var color = item.Score >= maxScore * 0.7 ? "green" :
                        item.Score >= maxScore * 0.4 ? "yellow" : "grey";
-            table.AddRow(item.Name, item.Score.ToString("F4"), $"[{color}]{bar}[/]");
+            table.AddRow(Markup.Escape(item.Name), item.Score.ToString("F4"), $"[{color}]{bar}[/]");
         }
 
         AnsiConsole.Write(table);
@@ -337,7 +338,7 @@ internal static class InfoPresenter
         table.AddRow("Jarque-Bera", dist.JbStatistic.ToString("F4"), FormatPValue(dist.JbPValue));
         table.AddRow("Anderson-Darling", dist.AdStatistic.ToString("F4"), FormatPValue(dist.AdPValue));
 
-        AnsiConsole.MarkupLine($"  [cyan]{dist.Name}[/]: {normalStr} (n={dist.SampleSize})");
+        AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape(dist.Name)}[/]: {normalStr} (n={dist.SampleSize})");
         AnsiConsole.Write(table);
     }
 
@@ -401,7 +402,7 @@ internal static class InfoPresenter
         if (skewed.Count > 0)
         {
             var names = string.Join(", ", skewed.Select(c => c.Name));
-            AnsiConsole.MarkupLine($"[yellow]Note:[/] {skewed.Count} column(s) are highly skewed: {names}");
+            AnsiConsole.MarkupLineInterpolated($"[yellow]Note:[/] {skewed.Count} column(s) are highly skewed: {names}");
             AnsiConsole.MarkupLine("[grey]  Consider log-transform or normalization before training.[/]");
         }
 
@@ -479,7 +480,7 @@ internal static class InfoPresenter
         foreach (var pair in labelDistribution.OrderByDescending(p => p.Value))
         {
             var percent = lineCount > 0 ? (pair.Value / (double)lineCount) * 100 : 0;
-            table.AddRow(pair.Key, pair.Value.ToString("N0"), $"{percent:F2}%");
+            table.AddRow(Markup.Escape(pair.Key), pair.Value.ToString("N0"), $"{percent:F2}%");
         }
 
         AnsiConsole.Write(table);
@@ -507,7 +508,7 @@ internal static class InfoPresenter
                 if (rareClasses.Count > 0)
                 {
                     var names = string.Join(", ", rareClasses.Select(c => c.Key));
-                    AnsiConsole.MarkupLine($"[yellow]Warning:[/] {rareClasses.Count} class(es) have fewer than 10 samples: {names}");
+                    AnsiConsole.MarkupLineInterpolated($"[yellow]Warning:[/] {rareClasses.Count} class(es) have fewer than 10 samples: {names}");
                 }
             }
             AnsiConsole.WriteLine();

@@ -306,7 +306,7 @@ public static class SampleCommand
         grid.AddColumn();
         grid.AddColumn();
 
-        grid.AddRow("[grey]Output File:[/]", $"[white]{result.OutputPath}[/]");
+        grid.AddRow("[grey]Output File:[/]", $"[white]{Markup.Escape(result.OutputPath)}[/]");
         grid.AddRow("[grey]Rows Sampled:[/]", $"[green]{result.SampledCount:N0}[/]");
         grid.AddRow("[grey]Total Rows:[/]", $"[white]{result.TotalRows:N0}[/]");
         grid.AddRow("[grey]Strategy:[/]", $"[yellow]{result.StrategyUsed}[/]");
@@ -325,7 +325,7 @@ public static class SampleCommand
         grid.AddColumn();
         grid.AddColumn();
 
-        grid.AddRow("[grey]Output File:[/]", $"[white]{result.OutputPath}[/]");
+        grid.AddRow("[grey]Output File:[/]", $"[white]{Markup.Escape(result.OutputPath)}[/]");
         grid.AddRow("[grey]Samples Created:[/]", $"[green]{result.SampledCount:N0}[/]");
         grid.AddRow("[grey]With Feedback:[/]", $"[white]{result.LabeledCount:N0}[/]");
         grid.AddRow("[grey]Total Available:[/]", $"[white]{result.TotalAvailable:N0}[/]");

@@ -148,7 +148,7 @@ public static class InfoCommand
             ValueLine.Write("[blue]Analyzing:[/] ", Path.GetFileName(resolvedDataFile));
             if (labelSource != null)
             {
-                AnsiConsole.MarkupLine($"[blue]Label column:[/] [green]{labelColumn}[/] (from {labelSource})");
+                AnsiConsole.MarkupLineInterpolated($"[blue]Label column:[/] [green]{labelColumn}[/] (from {labelSource})");
             }
             AnsiConsole.WriteLine();
 
@@ -386,7 +386,7 @@ public static class InfoCommand
         {
             if (DateTimeDetector.IsDateTimeColumnName(columns[ci]))
             {
-                AnsiConsole.MarkupLine($"[yellow]Note:[/] Column '[cyan]{columns[ci]}[/]' appears to be a date/time column. ML.NET will treat it as text -- consider excluding it if not relevant to the prediction task.");
+                AnsiConsole.MarkupLineInterpolated($"[yellow]Note:[/] Column '[cyan]{columns[ci]}[/]' appears to be a date/time column. ML.NET will treat it as text -- consider excluding it if not relevant to the prediction task.");
                 AnsiConsole.WriteLine();
                 break;
             }

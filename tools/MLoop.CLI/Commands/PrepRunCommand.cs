@@ -172,7 +172,7 @@ public static class PrepRunCommand
             AnsiConsole.Write(stepsTable);
             AnsiConsole.WriteLine();
 
-            AnsiConsole.MarkupLine($"[grey]Input:  {resolvedInput}[/]");
+            AnsiConsole.MarkupLineInterpolated($"[grey]Input:  {resolvedInput}[/]");
 
             if (dryRun)
             {
@@ -192,7 +192,7 @@ public static class PrepRunCommand
                 resolvedOutput = Path.Combine(dir, $"{name}_prep{ext}");
             }
 
-            AnsiConsole.MarkupLine($"[grey]Output: {resolvedOutput}[/]");
+            AnsiConsole.MarkupLineInterpolated($"[grey]Output: {resolvedOutput}[/]");
             AnsiConsole.WriteLine();
 
             // Execute pipeline
@@ -212,7 +212,7 @@ public static class PrepRunCommand
 
             AnsiConsole.MarkupLine("[green]Pipeline executed successfully![/]");
             AnsiConsole.MarkupLine($"[grey]  Rows: {inputLines - 1} → {outputLines - 1}[/]");
-            AnsiConsole.MarkupLine($"[grey]  Output: {resolvedOutput}[/]");
+            AnsiConsole.MarkupLineInterpolated($"[grey]  Output: {resolvedOutput}[/]");
             AnsiConsole.WriteLine();
 
             EmitJson(resolvedModelName, dryRun, resolvedInput, resolvedOutput, modelDef.Prep, null,

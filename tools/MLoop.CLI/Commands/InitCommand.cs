@@ -244,12 +244,12 @@ public static class InitCommand
                 .AddColumn("Setting")
                 .AddColumn("Value");
 
-            table.AddRow("Project", displayName);
+            table.AddRow("Project", Markup.Escape(displayName));
             if (!keptConfiguration)
             {
                 table.AddRow("Model", $"[cyan]{modelName}[/]");
                 table.AddRow("Task", task);
-                table.AddRow("Label Column", labelColumn);
+                table.AddRow("Label Column", Markup.Escape(labelColumn));
             }
 
             AnsiConsole.Write(table);

@@ -49,7 +49,7 @@ internal static class TrainPresenter
             table.AddRow("Rows", $"[cyan]{rowCount:N0}[/]");
             table.AddRow("Columns", $"[cyan]{columns}[/]");
             table.AddRow("Features", $"[cyan]{columns - 1}[/]");
-            table.AddRow("Label", $"[cyan]{labelColumn}[/]");
+            table.AddRow("Label", $"[cyan]{Markup.Escape(labelColumn)}[/]");
 
             // Check file size
             var fileSize = TabularDataFile.SizeOf(sourceFile ?? dataFile);
@@ -88,7 +88,7 @@ internal static class TrainPresenter
 
         table.AddRow("Model", $"[cyan]{modelName}[/]");
         table.AddRow("Task", definition.Task);
-        table.AddRow("Data File", Path.GetFileName(sourceFile ?? dataFile));
+        table.AddRow("Data File", Markup.Escape(Path.GetFileName(sourceFile ?? dataFile)));
         table.AddRow("Label Column", definition.Label);
         table.AddRow("Time Limit", TrainingRunner.TimeBudgetUnused(definition.Task) is { } unused
             ? $"not used — {unused}"
@@ -477,7 +477,7 @@ internal static class TrainPresenter
             AnsiConsole.MarkupLine("[grey]  Unused files:[/]");
             foreach (var file in scanResult.UnusedFiles)
             {
-                AnsiConsole.MarkupLine($"[grey]    {Emoji.Known.SmallBlueDiamond} {file.DisplayName} ({file.SizeFormatted})[/]");
+                AnsiConsole.MarkupLineInterpolated($"[grey]    {Emoji.Known.SmallBlueDiamond} {file.DisplayName} ({file.SizeFormatted})[/]");
             }
         }
         else
@@ -486,7 +486,7 @@ internal static class TrainPresenter
             AnsiConsole.MarkupLine("[grey]  Unused files:[/]");
             foreach (var file in scanResult.UnusedFiles.Take(3))
             {
-                AnsiConsole.MarkupLine($"[grey]    {Emoji.Known.SmallBlueDiamond} {file.DisplayName} ({file.SizeFormatted})[/]");
+                AnsiConsole.MarkupLineInterpolated($"[grey]    {Emoji.Known.SmallBlueDiamond} {file.DisplayName} ({file.SizeFormatted})[/]");
             }
             AnsiConsole.MarkupLine($"[grey]    ... and {remaining} more[/]");
         }

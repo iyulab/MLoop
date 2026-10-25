@@ -51,6 +51,19 @@ public sealed class UserTextInMessagesTests : IDisposable
         Assert.DoesNotContain("No data file specified", stdout + stderr);
     }
 
+    // Progress lines name the data's own columns: a column called score[1] is a column, not a style tag.
+    [Fact]
+    public async Task AColumnNamedWithBrackets_IsShownByInfo()
+    {
+        File.WriteAllText("rows.csv", "x,score[1]\n1,a\n2,b\n3,a\n4,b\n");
+
+        var (exit, stdout, stderr) = await CliRunner.RunAsync("info", "rows.csv", "--label", "score[1]");
+
+        Assert.True(exit == 0, stdout + stderr);
+        Assert.Contains("score[1]", stdout + stderr);
+        Assert.DoesNotContain("Unbalanced markup", stdout + stderr);
+    }
+
     [Fact]
     public async Task InstallingAnEncoderNotInTheCatalog_PrintsTheAddCommandWithItsOptionalTokenizer()
     {
