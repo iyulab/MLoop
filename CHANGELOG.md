@@ -125,6 +125,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- An error or warning naming a path or name the user gave with square brackets (`data[1].csv`) printed
+  "Unbalanced markup stack" — or failed with an unhandled exception — instead of the message: the text was read
+  as console markup. Paths, names and exception messages in those lines are now shown as given.
+- `mloop train <file>` with a file that does not exist said "No data file specified and datasets/train.csv not
+  found"; it now says the file was not found, as `--data` does.
+
 - A `POST /train` job's `warnings` carry every warning training raised, as `mloop train` prints them — about the
   data (a row-number column, text the model cannot read, a class too small) and the run — followed by the
   performance diagnostics'. The job reported only the diagnostics', so a client training through the API never

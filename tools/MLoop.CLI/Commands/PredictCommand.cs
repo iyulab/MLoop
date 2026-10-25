@@ -262,7 +262,7 @@ public static class PredictCommand
 
                 if (!File.Exists(resolvedModelPath))
                 {
-                    ErrorConsole.Error($"Model file not found: {resolvedModelPath}");
+                    ErrorConsole.Error($"Model file not found: {Markup.Escape(resolvedModelPath)}");
                     return 1;
                 }
 
@@ -1081,7 +1081,7 @@ public static class PredictCommand
             resolvedDataDir = ProjectPaths.Resolve(dataFile, projectRoot);
             if (!Directory.Exists(resolvedDataDir) && !File.Exists(resolvedDataDir))
             {
-                ErrorConsole.Error($"Data not found: {resolvedDataDir}", ErrorConsole.PathNotFoundTip(projectRoot));
+                ErrorConsole.Error($"Data not found: {Markup.Escape(resolvedDataDir)}", ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
         }

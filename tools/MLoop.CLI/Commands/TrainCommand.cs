@@ -317,7 +317,7 @@ public static class TrainCommand
             }
             catch (InvalidOperationException ex)
             {
-                ErrorConsole.Error($"{ex.Message}");
+                ErrorConsole.Error($"{Markup.Escape(ex.Message)}");
                 return 1;
             }
 
@@ -465,7 +465,7 @@ public static class TrainCommand
                     var resolved = ProjectPaths.Resolve(path, projectRoot);
                     if (!TabularDataFile.Exists(resolved))
                     {
-                        ErrorConsole.Error($"Data file not found: {path}", ErrorConsole.PathNotFoundTip(projectRoot));
+                        ErrorConsole.Error($"Data file not found: {Markup.Escape(path)}", ErrorConsole.PathNotFoundTip(projectRoot));
                         return 1;
                     }
                     resolvedPaths.Add(resolved);
@@ -572,6 +572,11 @@ public static class TrainCommand
                 resolvedDataFile = await TrainDataValidator.ResolveDataFileAsync(dataFile, userConfig, projectRoot, datasetDiscovery, fileSystem);
             }
 
+            if (resolvedDataFile == null && !string.IsNullOrEmpty(dataFile))
+            {
+                ErrorConsole.Error(Markup.Escape($"Data file not found: {dataFile}"), ErrorConsole.PathNotFoundTip(projectRoot));
+                return 1;
+            }
             if (resolvedDataFile == null)
             {
                 ErrorConsole.Error(
@@ -973,7 +978,7 @@ public static class TrainCommand
 
             if (result == null)
             {
-                ErrorConsole.Error($"Training failed for model '[cyan]{resolvedModelName}[/]'");
+                ErrorConsole.Error($"Training failed for model '[cyan]{Markup.Escape(resolvedModelName)}[/]'");
                 ErrorConsole.Out.WriteLine();
                 ErrorConsole.Out.MarkupLine("[yellow]Suggestions:[/]");
                 ErrorConsole.Out.MarkupLine("  [blue]>[/] Try increasing the time limit: [cyan]--time 120[/]");
@@ -1084,7 +1089,7 @@ public static class TrainCommand
 
                 // Promoted or not, a model that ranks but answers one class at its threshold is told so.
                 if (result.Metrics != null && MetricPolicy.SingleClassAtThreshold(result.Metrics) is { } gateWarning)
-                    WarningConsole.Warn($"Quality: {gateWarning}.");
+                    WarningConsole.Warn($"Quality: {Markup.Escape(gateWarning)}.");
             }
 
             // T4.6: Unused data warning - only scan project's datasets/ directory.

@@ -189,7 +189,7 @@ public static class RuntimeCommand
             }
             catch (Exception ex) when (ex is PlatformNotSupportedException or InvalidOperationException or HttpRequestException or IOException)
             {
-                ErrorConsole.Error($"{runtime.DisplayName} was not installed: {ex.Message}");
+                ErrorConsole.Error($"{Markup.Escape(runtime.DisplayName)} was not installed: {Markup.Escape(ex.Message)}");
                 return 1;
             }
 
