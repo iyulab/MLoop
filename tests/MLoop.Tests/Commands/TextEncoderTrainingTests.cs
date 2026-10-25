@@ -90,6 +90,9 @@ public sealed class TextEncoderTrainingTests : IDisposable
         Assert.Equal(("tiny-text", EncoderKind.Text), (column.Encoder.Id, column.Encoder.Kind));
         Assert.NotNull(column.Encoder.TokenizerSha256);
         Assert.True(File.Exists(Path.Combine("models", "default", "production", ExperimentLayout.TextEncodersFileName)));
+        var report = File.ReadAllText(Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.ReportFileName));
+        Assert.Contains("| Text encoder | `review` → tiny-text 1 (4 dimensions", report);
+        Assert.DoesNotContain("textEncodings", File.ReadAllText(Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.MetadataFileName)));
 
         var (predicted, json, predictErr) = await CliRunner.RunAsync("predict", "datasets/predict.csv", "--json");
         Assert.True(predicted == 0, json + predictErr);

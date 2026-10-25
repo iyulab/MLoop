@@ -123,6 +123,14 @@ public class ExperimentData
     /// later sees what the terminal said; empty when there were none and on experiments recorded before the field.
     /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>
+    /// The text columns the model also reads through a text encoder, for the report to name. Not part of
+    /// <c>metadata.json</c>: the record is <see cref="ExperimentLayout.TextEncodersFileName"/> beside the model, which every
+    /// loading path reads — one copy, so the two cannot disagree.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public MLoop.Core.Models.TextEncodings? TextEncodings { get; init; }
 }
 
 /// <summary>

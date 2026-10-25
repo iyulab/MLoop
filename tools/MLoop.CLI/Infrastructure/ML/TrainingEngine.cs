@@ -493,6 +493,7 @@ public class TrainingEngine : ITrainingEngine
                 RankingMetric = trained.RankingMetric,
                 // The run's warnings, then what the performance diagnostics say about the model — the ones `mloop
                 // train` prints after it, recorded here so the experiment holds both.
+                TextEncodings = trained.TextEncodings,
                 Warnings = [.. warnings.Warnings.Concat(new MLoop.Core.Diagnostics.PerformanceDiagnostics()
                     .Analyze(config.Task, trained.Metrics, rowCount: (int)Math.Min(trained.RowCount, int.MaxValue)).Warnings)
                     .Distinct(StringComparer.Ordinal)]

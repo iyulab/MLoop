@@ -97,6 +97,12 @@ internal static class ExperimentReport
             Row(sb, "Item column", config.ItemColumn);
         if (!string.IsNullOrEmpty(config.WeightColumn))
             Row(sb, "Weight", config.WeightColumn);
+        foreach (var encoded in experiment.TextEncodings?.Columns ?? [])
+        {
+            var e = encoded.Encoder;
+            Row(sb, "Text encoder", $"`{encoded.Column}` → {e.Id} {e.Version} ({e.Dimension} dimensions, " +
+                $"weights `{e.Sha256?[..Math.Min(12, e.Sha256.Length)] ?? NoValue}`) — `{TextEncodings.VectorColumnOf(encoded.Column)}`");
+        }
         Row(sb, "Test split", Percent(config.TestSplit));
         var seconds = $"{config.TimeLimitSeconds.ToString(CultureInfo.InvariantCulture)} s";
         Row(sb, "Time limit", config.AutoTime == true ? $"auto — {seconds} granted" : seconds);

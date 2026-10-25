@@ -147,7 +147,7 @@ public sealed class TextEncodingLayer : ITransformer
         // the vectors are unit length.
         var pairs = from i in Enumerable.Range(0, _columns.Count)
                     from j in Enumerable.Range(i + 1, _columns.Count - i - 1)
-                    where ReferenceEquals(_columns[i].Embedder, _columns[j].Embedder)
+                    where EncoderIdentity.Of(_columns[i].Embedder.Encoder) == EncoderIdentity.Of(_columns[j].Embedder.Encoder)
                     select Cosine(mlContext, _columns[i], _columns[j]);
         _chain = new TransformerChain<ITransformer>([.. _columns.Select(c => c.Mapping(mlContext)), .. pairs]);
     }
