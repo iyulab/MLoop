@@ -58,6 +58,66 @@ public sealed class EmbedCommandTests : IDisposable
         Assert.Equal(64, result.RootElement.GetProperty("encoder").GetProperty("sha256").GetString()!.Length);
     }
 
+    private Task<(int ExitCode, string Stdout, string Stderr)> AddTinyText()
+    {
+        File.WriteAllText(Path.Combine(_dir, "text-encoder.json"), """
+            {
+              "id": "tiny-text", "version": "1", "dimension": 4, "kind": "text",
+              "text": { "maxTokens": 12, "tokenIds": "xlm-roberta" },
+              "inputName": "input_ids", "outputName": "last_hidden_state", "pooling": "mean-of-tokens"
+            }
+            """);
+        return CliRunner.RunAsync("encoder", "add", Path.Combine(_dir, "text-encoder.json"),
+            "--model", Path.Combine(Fixtures, "tiny-text-encoder.onnx"), "--tokenizer", Path.Combine(Fixtures, "tiny-tokenizer.model"));
+    }
+
+    [Fact]
+    public async Task AnAddedTextEncoder_EmbedsTexts_FromOptionsAndAFile_AndCountsTheTruncated()
+    {
+        var (added, _, addErr) = await AddTinyText();
+        Assert.True(added == 0, addErr);
+        var cases = JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "text.json"))).RootElement.GetProperty("cases");
+        var file = Path.Combine(_dir, "texts.txt");
+        File.WriteAllLines(file, cases.EnumerateArray().Skip(1).Select(c => c.GetProperty("text").GetString()!).Where(t => t.Length > 0));
+
+        var (exit, json, stderr) = await CliRunner.RunAsync("embed", "--text", cases[0].GetProperty("text").GetString()!, "--text-file", file, "--json");
+
+        Assert.True(exit == 0, stderr);
+        using var doc = JsonDocument.Parse(json);
+        var vectors = doc.RootElement.GetProperty("vectors");
+        Assert.Equal(cases.GetArrayLength() - 1, vectors.GetArrayLength());   // the file's empty line is skipped
+        Assert.Equal(cases[0].GetProperty("vector")[0].GetSingle(), vectors[0][0].GetSingle(), 4);
+        Assert.Equal("text", doc.RootElement.GetProperty("encoder").GetProperty("kind").GetString());
+        Assert.Equal(cases.EnumerateArray().Count(c => c.GetProperty("truncated").GetBoolean()), doc.RootElement.GetProperty("truncated").GetInt32());
+        Assert.Contains("longer than encoder 'tiny-text' reads", doc.RootElement.GetProperty("warnings")[0].GetString());
+    }
+
+    [Fact]
+    public async Task ImagesAndTextsTogether_OrNothing_IsRefused()
+    {
+        var (both, _, bothErr) = await CliRunner.RunAsync("embed", Path.Combine(Fixtures, "pattern.png"), "--text", "a");
+        var (none, _, noneErr) = await CliRunner.RunAsync("embed");
+
+        Assert.Equal(1, both);
+        Assert.Contains("not both", bothErr);
+        Assert.Equal(1, none);
+        Assert.Contains("Nothing to embed", noneErr);
+    }
+
+    [Fact]
+    public async Task ATextEncoderAddedWithoutItsTokenizer_IsRefused()
+    {
+        File.WriteAllText(Path.Combine(_dir, "text-encoder.json"), """
+            { "id": "t", "version": "1", "dimension": 4, "kind": "text", "text": { "maxTokens": 12 },
+              "inputName": "input_ids", "outputName": "last_hidden_state", "pooling": "mean-of-tokens" }
+            """);
+
+        var (exit, _, stderr) = await CliRunner.RunAsync("encoder", "add", Path.Combine(_dir, "text-encoder.json"), "--model", Path.Combine(Fixtures, "tiny-text-encoder.onnx"));
+
+        Assert.Equal(1, exit);
+        Assert.Contains("tokenizer", stderr);
+    }
+
     [Fact]
     public async Task EmbedWithoutAnEncoder_SaysHowToAddOne()
     {

@@ -82,7 +82,7 @@ public static class EncoderCommand
             var json = parseResult.GetValue(jsonOption);
             if (EncoderCatalog.Find(id) is not { } entry)
             {
-                ErrorConsole.Error($"'{id}' is not in the encoder catalog ({EncoderCatalog.Ids}). An encoder of your own is added with: mloop encoder add <encoder.json> --model <model.onnx>");
+                ErrorConsole.Error(Markup.Escape($"'{id}' is not in the encoder catalog ({EncoderCatalog.Ids}). An encoder of your own is added with: mloop encoder add <encoder.json> --model <model.onnx> [--tokenizer <tokenizer.model>]"));
                 return 1;
             }
 
@@ -119,7 +119,7 @@ public static class EncoderCommand
             catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or UnauthorizedAccessException
                                          or TaskCanceledException { CancellationToken.IsCancellationRequested: false })
             {
-                ErrorConsole.Error($"Encoder '{entry.Id}' was not installed: {ex.Message}");
+                ErrorConsole.Error(Markup.Escape($"Encoder '{entry.Id}' was not installed: {ex.Message}"));
                 return 1;
             }
         });
@@ -130,9 +130,11 @@ public static class EncoderCommand
     {
         var definitionArg = new Argument<string>("definition") { Description = "The encoder's definition (encoder.json)" };
         var modelOption = new Option<string>("--model") { Description = "The encoder's ONNX graph", Required = true };
-        var command = new Command("add", "Install an encoder from its definition and ONNX graph");
+        var tokenizerOption = new Option<string?>("--tokenizer") { Description = "A text encoder's tokenizer model (SentencePiece .model)" };
+        var command = new Command("add", "Install an encoder from its definition and ONNX graph (and, for text, its tokenizer model)");
         command.Arguments.Add(definitionArg);
         command.Options.Add(modelOption);
+        command.Options.Add(tokenizerOption);
 
         command.SetAction(parseResult =>
         {
@@ -140,14 +142,14 @@ public static class EncoderCommand
             var modelPath = parseResult.GetValue(modelOption)!;
             try
             {
-                var installed = new EncoderStore().Add(EncoderStore.ReadDefinition(definitionPath), modelPath);
+                var installed = new EncoderStore().Add(EncoderStore.ReadDefinition(definitionPath), modelPath, parseResult.GetValue(tokenizerOption));
                 AnsiConsole.MarkupLine($"[green]✓[/] Encoder [cyan]{Markup.Escape(installed.Definition.Id)}[/] installed " +
                                        $"({installed.Definition.Dimension} dimensions, SHA-256 {installed.Definition.Sha256![..12]}…)");
                 return 0;
             }
             catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException or ArgumentException or InvalidOperationException or UnauthorizedAccessException)
             {
-                ErrorConsole.Error(ex.Message);
+                ErrorConsole.Error(Markup.Escape(ex.Message));
                 return 1;
             }
         });

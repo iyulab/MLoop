@@ -31,6 +31,72 @@ public class EmbedApiTests : IClassFixture<TestWebApplicationFactory>
         new EncoderDefinition("plain", "1", 4, ImagePreprocessing.ImageNet(8, 6), "pixel_values", "last_hidden_state", EncoderPooling.FirstToken),
         Path.Combine(Fixtures, "tiny-encoder.onnx"));
 
+    private void InstallText() => new EncoderStore(_factory.EncoderRoot).Add(
+        new EncoderDefinition("tiny-text", "1", 4, null, "input_ids", "last_hidden_state", EncoderPooling.MeanOfTokens,
+            Kind: EncoderKind.Text, Text: new TextPreprocessing(12)),
+        Path.Combine(Fixtures, "tiny-text-encoder.onnx"), Path.Combine(Fixtures, "tiny-tokenizer.model"));
+
+    private static JsonElement TextCases() => JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "text.json"))).RootElement.GetProperty("cases");
+
+    [Fact]
+    public async Task Texts_BecomeUnitVectors_FromTheTextEncoder_WithItsTokenizerInTheIdentity()
+    {
+        InstallText();
+        var cases = TextCases();
+        string[] texts = [.. cases.EnumerateArray().Select(c => c.GetProperty("text").GetString()!)];
+
+        var response = await _client.PostAsJsonAsync("/embed?encoder=tiny-text", new { texts });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var encoder = doc.RootElement.GetProperty("encoder");
+        Assert.Equal("text", encoder.GetProperty("kind").GetString());
+        Assert.Equal(TextPreprocessor.Revision(TextTokenIds.XlmRoberta), encoder.GetProperty("preprocessor").GetString());
+        Assert.Equal(64, encoder.GetProperty("tokenizerSha256").GetString()!.Length);
+        Assert.Equal(cases.EnumerateArray().Count(c => c.GetProperty("truncated").GetBoolean()), doc.RootElement.GetProperty("truncated").GetInt32());
+        var vectors = doc.RootElement.GetProperty("vectors");
+        for (var i = 0; i < texts.Length; i++)
+            Assert.Equal(cases[i].GetProperty("vector")[0].GetSingle(), vectors[i][0].GetSingle(), 4);
+    }
+
+    [Fact]
+    public async Task TextsToAnImageEncoder_OrImagesToATextEncoder_Are409()
+    {
+        InstallTiny();
+        InstallText();
+
+        var texts = await _client.PostAsJsonAsync("/embed?encoder=tiny", new { texts = new[] { "a" } });
+        var images = await _client.PostAsJsonAsync("/embed?encoder=tiny-text", new { images = new[] { Pattern } });
+
+        Assert.Equal(HttpStatusCode.Conflict, texts.StatusCode);
+        Assert.Contains("reads images, not text", await texts.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Conflict, images.StatusCode);
+        Assert.Contains("reads text, not images", await images.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task ImagesAndTextsTogether_TextsThatAreNotStrings_AndPatchesOfText_Are400()
+    {
+        InstallText();
+
+        var both = await _client.PostAsJsonAsync("/embed?encoder=tiny-text", new { texts = new[] { "a" }, images = new[] { Pattern } });
+        var numbers = await _client.PostAsJsonAsync("/embed?encoder=tiny-text", new { texts = new[] { 1, 2 } });
+        var patches = await _client.PostAsJsonAsync("/embed?encoder=tiny-text&patches=true", new { texts = new[] { "a" } });
+        var none = await _client.PostAsJsonAsync("/embed?encoder=tiny-text", new { texts = Array.Empty<string>() });
+
+        Assert.All([both, numbers, patches, none], r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
+    }
+
+    [Fact]
+    public async Task MoreTextsThanOneRequestTakes_Are413()
+    {
+        InstallText();
+
+        var response = await _client.PostAsJsonAsync("/embed?encoder=tiny-text", new { texts = Enumerable.Repeat("a", EmbedderPool.MaxTexts + 1) });
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+    }
+
     private static string Pattern => Convert.ToBase64String(File.ReadAllBytes(Path.Combine(Fixtures, "pattern.png")));
 
     private static float[] Expected() => JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "expected.json")))

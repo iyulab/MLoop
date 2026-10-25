@@ -381,6 +381,11 @@ Korean four-class sentence-type set (800 training sentences, 200 held out) it sc
 where text classification scored 0.25 — chance, and kept in staging by the quality gate. The warning for text
 classification says so.
 
+A text encoder reads such text: `multilingual-minilm` (`mloop encoder install multilingual-minilm`) turns Korean and
+some fifty other languages into sentence vectors — `mloop embed --text`, `POST /embed` — whose cosine says how close
+two texts are in meaning. It gives one vector per text; NER and question answering, which answer per word, are not
+served by it.
+
 ### Named Entity Recognition (NER)
 
 NER tags every word of a sentence. The data is two columns: the sentence, and its tags — one per
@@ -1578,23 +1583,27 @@ A task whose runtime is missing stops before training with the `runtime install`
 
 ### `mloop encoder`
 
-Pretrained image encoders — graphs MLoop runs but does not train — for `mloop embed` and `POST /embed`. They are kept
-outside any project, in `~/.mloop/encoders/` (or the directory `MLOOP_ENCODERS` names), one directory per encoder
-with its definition and its ONNX graph. They are not experiments: nothing promotes, gates or retrains them.
+Pretrained encoders of images and of text — graphs MLoop runs but does not train — for `mloop embed` and
+`POST /embed`. They are kept outside any project, in `~/.mloop/encoders/` (or the directory `MLOOP_ENCODERS` names),
+one directory per encoder with its definition and its ONNX graph (and, for a text encoder, its tokenizer model). They
+are not experiments: nothing promotes, gates or retrains them.
 
 The catalog `mloop encoder install` knows:
 
 | Encoder | Weights | License | Vector | Preprocessing |
 |---|---|---|---|---|
 | `dinov2-small` | DINOv2 ViT-S/14 as ONNX (88.5 MB), one pinned revision of `onnx-community/dinov2-small` | Apache-2.0 (`facebook/dinov2-small`) | 384, the class token | shortest edge 256 (bicubic), centre crop 224, ImageNet mean/std |
+| `multilingual-minilm` | paraphrase-multilingual-MiniLM-L12-v2 as ONNX (470 MB) and its SentencePiece model (5 MB), one pinned revision of `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Apache-2.0 | 384, the mean of the text's tokens | text, some fifty languages (Korean, Japanese, Chinese, …), at most 128 tokens |
 
 The product ships no weights: `install` downloads them once, refuses a file whose SHA-256 is not the pinned one, and
-installs them like `add` does. Its vectors match the encoder's own image processor and the same graph run from Python
-(cosine 1.000 on photographs and screenshots, transparent ones included).
+installs them like `add` does. Their vectors match the encoders' own processors and the same weights run from Python
+(cosine 1.000 — `dinov2-small` on photographs and screenshots, transparent ones included; `multilingual-minilm`
+against sentence-transformers on Korean, Japanese and mixed-script text, an over-long text and an empty one).
 
 ```bash
 mloop encoder install dinov2-small                  # download a catalog encoder; its SHA-256 is checked against the pin
 mloop encoder add encoder.json --model model.onnx   # install your own; records the graph's SHA-256
+mloop encoder add text.json --model model.onnx --tokenizer sentencepiece.bpe.model   # a text encoder: graph and tokenizer
 mloop encoder list                                  # id, version, dimension, input size, SHA-256
 mloop encoder list --json
 mloop encoder remove my-encoder
@@ -1621,6 +1630,31 @@ Pillow computes it — the resampling most published image processors use), crop
 centre, scaled to [0, 1] and normalised per channel. Adding a `sha256` to the definition makes `add` refuse a graph
 with other contents. Encoders run on ONNX Runtime (`mloop runtime install onnxruntime`).
 
+A text encoder's definition says `"kind": "text"` and how text becomes its input instead of the image preprocessing
+(a definition without `kind` is of images):
+
+```json
+{
+  "id": "my-text-encoder",
+  "version": "1",
+  "dimension": 384,
+  "kind": "text",
+  "text": { "maxTokens": 128, "tokenIds": "xlm-roberta", "prefix": "" },
+  "inputName": "input_ids",
+  "outputName": "last_hidden_state",
+  "pooling": "mean-of-tokens"
+}
+```
+
+The tokenizer model is a SentencePiece `.model` file; `tokenIds` says how its pieces are numbered in the encoder's
+vocabulary — `xlm-roberta` is fairseq's numbering (`<s>` 0, `<pad>` 1, `</s>` 2, `<unk>` 3, every other piece one
+above its SentencePiece number), which XLM-RoBERTa and the sentence encoders built on its vocabulary use. A text is
+`<s>`, its pieces, `</s>`, cut at `maxTokens`; `prefix` goes before every text (an encoder trained with one, such as
+`query: `). The graph takes `input_ids` and `attention_mask` — and `token_type_ids`, all zeros, when it has that
+input. `pooling` is `mean-of-tokens` (the mean of the output over the text's tokens, padding left out — a sentence
+encoder's pooling), `first-token` or `none`. A `tokenizerSha256` in the definition pins the tokenizer as `sha256` pins
+the graph.
+
 ### `mloop embed`
 
 ```bash
@@ -1628,12 +1662,18 @@ mloop embed a.png b.jpg                    # one vector per image (first values 
 mloop embed a.png b.jpg --json             # {"encoder": {id, version, sha256, dimension, normalized, preprocessor}, "vectors": [[…], …]}
 mloop embed *.png --encoder my-encoder     # when more than one encoder is installed
 mloop embed a.png --patches --json         # also one vector per patch: "grid" and, per image, "patches": [{crop, vectors}]
+mloop embed --text "배송이 빨라서 좋았어요" --text "The delivery was fast"   # one vector per text, with a text encoder
+mloop embed --text-file reviews.txt --json # texts one per line; "truncated" counts those longer than the encoder reads
 ```
 
 Vectors are L2-normalised, so the cosine similarity of two is their dot product. The encoder's id, SHA-256 and
 `preprocessor` (the revision of the arithmetic that turns an image into the encoder's input, e.g. `pillow/2`) come with
 every answer: vectors are comparable only when all three match, so whoever keeps vectors re-embeds when one changes.
-At most 64 images per call.
+At most 64 images per call. A text encoder's answer adds `kind` (`text`) and `tokenizerSha256` to the encoder —
+the tokenizer belongs to the identity as the weights do — and `truncated`: how many texts were longer than the
+encoder reads (their vectors are of their beginning; `mloop embed` warns). At most 256 texts per call. Without
+`--encoder`, the one installed encoder of the kind asked is used — images go to an image encoder, texts to a text
+encoder.
 
 `--patches` (`?patches=true` on `POST /embed`) adds the encoder's patch vectors from the same run — for a vision
 transformer, one per patch of the centre crop (`dinov2-small`: 16 × 16 patches of 14 pixels). One vector per image
@@ -1645,7 +1685,9 @@ L2-normalised. A patch grid is large (`dinov2-small`: ~1 MB of JSON per image), 
 encoder gives patches when its definition has `patchSize`; asking one without it is a 409. The same is served as `POST /embed` (`mloop serve`): a JSON body
 `{"images": ["<base64>", …]}` or image files as multipart form data, `?encoder=` to choose one. It takes the images'
 contents, not paths. An image that cannot be decoded is a 400 naming its position (`index`). A missing encoder or
-runtime is a 409 saying how to install it. More than 64 images (8 with patches) is a 413.
+runtime is a 409 saying how to install it. More than 64 images (8 with patches) is a 413. Texts come as
+`{"texts": ["…", …]}` (at most 256 — 413) and go to a text encoder; images and texts in one body, texts that are not
+strings or `?patches=true` with texts are a 400, and an encoder of the other kind is a 409.
 
 In a container made by `mloop docker`, embedding is opt-in. The Dockerfile has a commented
 `RUN mloop runtime install onnxruntime` line, and `docker-compose.yml` has a commented `MLOOP_ENCODERS` variable and a

@@ -17,6 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to one revision of its repository. A text longer than the encoder reads is counted (`truncated`), not cut
   silently. Tokenization follows the encoder's own tokenizer, including one unknown piece for a run of characters
   the vocabulary lacks (`Microsoft.ML.Tokenizers` gives one per character).
+  `mloop embed --text <text>` (repeatable) and `--text-file <file>` (one text per line) embed texts;
+  `POST /embed` takes `{"texts": [...]}` (at most 256). `mloop encoder add` takes `--tokenizer` for a text
+  encoder. The encoder in an answer carries `kind` and, for text, `tokenizerSha256`; a text answer carries
+  `truncated`. Without `--encoder` / `?encoder=`, the one installed encoder of the kind asked is used, and an
+  encoder of the other kind is refused (409).
 
 - An experiment keeps the warnings its run raised — about the data, the run and the trained model, as `mloop train`
   printed them — as `warnings` in its `metadata.json` and a «Warnings» section of its `report.md`, failed runs
@@ -130,6 +135,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   as console markup. Paths, names and exception messages in those lines are now shown as given.
 - `mloop train <file>` with a file that does not exist said "No data file specified and datasets/train.csv not
   found"; it now says the file was not found, as `--data` does.
+- An encoder's definition file no longer carries `grid`, which is derived from its patch size.
 
 - A `POST /train` job's `warnings` carry every warning training raised, as `mloop train` prints them — about the
   data (a row-number column, text the model cannot read, a class too small) and the run — followed by the

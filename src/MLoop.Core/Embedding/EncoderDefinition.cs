@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace MLoop.Core.Embedding;
 
 /// <summary>
@@ -81,6 +84,7 @@ public sealed record EncoderDefinition(
     }
 
     /// <summary>The patch grid of one image, or <see langword="null"/> when the encoder gives no patch vectors.</summary>
+    [JsonIgnore]   // derived from the patch size and the crop: not part of the definition file
     public PatchGrid? Grid => PatchSize is { } patch && Preprocessing is not null
         ? new PatchGrid(Preprocessing.CropSize / patch, Preprocessing.CropSize / patch, patch, Preprocessing.CropSize)
         : null;
@@ -136,7 +140,8 @@ public enum TextTokenIds
     XlmRoberta,
 }
 
-/// <summary>What an encoder reads.</summary>
+/// <summary>What an encoder reads — written as <c>image</c> / <c>text</c> wherever it is serialized.</summary>
+[JsonConverter(typeof(KebabCaseEnumConverter<EncoderKind>))]
 public enum EncoderKind
 {
     /// <summary>Images: pixel values in, through <see cref="ImagePreprocessing"/>.</summary>
@@ -161,3 +166,7 @@ public enum EncoderPooling
     /// </summary>
     MeanOfTokens,
 }
+
+/// <summary>An enum written as its kebab-case name (<c>image</c>), as the encoder definition file spells it.</summary>
+public sealed class KebabCaseEnumConverter<TEnum>() : JsonStringEnumConverter<TEnum>(JsonNamingPolicy.KebabCaseLower)
+    where TEnum : struct, Enum;

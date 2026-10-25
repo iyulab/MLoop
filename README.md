@@ -89,7 +89,9 @@ from the ML.NET trainers underneath, so they are stated here rather than discove
   way in: Korean, Chinese, Japanese or Cyrillic text reaches the model as nothing, and it learns from
   the digits, Latin letters and punctuation left over — on Korean news, dialogue and sentence sets,
   82–89% of the characters. Training warns when a text column loses more than 5% this way. For
-  classification, a tabular model (`--task multiclass-classification`) reads every character.
+  classification, a tabular model (`--task multiclass-classification`) reads every character; a text
+  encoder (`mloop encoder install multilingual-minilm`, `mloop embed --text`) turns such text into
+  sentence vectors.
 - **NER tags whole words** — one label per space-separated word. Where words carry attached particles,
   as in Korean, an entity often starts or ends inside a word: on a Korean time-expression set, 67% of
   entity spans did, so the model learns `8월20일부터` as a date as a whole.
@@ -399,8 +401,8 @@ The section above shows the ones a first project uses. This is the whole surface
 | `docker` | Generate Docker configuration for model deployment |
 | `new` | Generate new project components (hooks) |
 | `runtime` | Manage on-demand ML runtime downloads |
-| `encoder` | Install a catalog encoder (`install dinov2-small`), add your own, list or remove the encoders `embed` runs |
-| `embed` | Embed images as vectors with a pretrained encoder |
+| `encoder` | Install a catalog encoder (`install dinov2-small`, `install multilingual-minilm`), add your own, list or remove the encoders `embed` runs |
+| `embed` | Embed images, or text in some fifty languages (`--text`), as vectors with a pretrained encoder |
 | `update` | Check for and install CLI updates |
 
 ## Scripting MLoop
