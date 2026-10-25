@@ -32,19 +32,19 @@ public static class FeedbackCommand
 
     private static Command CreateAddCommand()
     {
-        var predictionIdOption = new Option<string>("--prediction-id", "-p")
+        var predictionIdOption = new Option<string>("--prediction-id")
         {
             Description = "ID of the prediction to provide feedback for",
             Required = true
         };
 
-        var actualValueOption = new Option<string>("--actual-value", "-v")
+        var actualValueOption = new Option<string>("--actual-value")
         {
             Description = "The actual (ground truth) value",
             Required = true
         };
 
-        var sourceOption = new Option<string?>("--source", "-s")
+        var sourceOption = new Option<string?>("--source")
         {
             Description = "Where the value came from (e.g., 'user', 'reviewer-llm', 'system')"
         };
@@ -82,13 +82,13 @@ public static class FeedbackCommand
 
     private static Command CreateListCommand()
     {
-        var nameOption = new Option<string>("--model", "-m")
+        var nameOption = new Option<string>("--name", "-n")
         {
             Description = "Model name",
             DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
         };
 
-        var limitOption = new Option<int>("--limit", "-l")
+        var limitOption = new Option<int>("--limit")
         {
             Description = "Maximum number of entries to show",
             DefaultValueFactory = _ => 20
@@ -131,7 +131,7 @@ public static class FeedbackCommand
 
     private static Command CreateMetricsCommand()
     {
-        var nameOption = new Option<string>("--model", "-m")
+        var nameOption = new Option<string>("--name", "-n")
         {
             Description = "Model name",
             DefaultValueFactory = _ => ConfigDefaults.DefaultModelName

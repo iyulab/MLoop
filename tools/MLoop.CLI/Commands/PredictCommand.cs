@@ -63,7 +63,7 @@ public static class PredictCommand
             DefaultValueFactory = _ => "auto"
         };
 
-        var logOption = new Option<bool>("--log", "-l")
+        var logOption = new Option<bool>("--log")
         {
             Description = "Log predictions to .mloop/logs/ for monitoring and analysis"
         };

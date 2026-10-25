@@ -1510,7 +1510,7 @@ try
     .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
     .RequireAuthorization();
 
-    // A retraining set from logged predictions and their feedback — `mloop sample create --model` over HTTP.
+    // A retraining set from logged predictions and their feedback — `mloop sample create --name` over HTTP.
     // The file it writes is what POST /train takes in additionalDataFiles.
     app.MapPost("/samples", async (
         [FromBody] SampleRequest request,
@@ -1929,7 +1929,7 @@ public record EvaluateRequest(
     string? Against = null,
     string? SliceBy = null);
 
-/// <summary>A <c>POST /samples</c> body — the options of <c>mloop sample create --model</c>.</summary>
+/// <summary>A <c>POST /samples</c> body — the options of <c>mloop sample create --name</c>.</summary>
 public record SampleRequest(string? Name = null, int? Rows = null, string? Strategy = null);
 
 public record FeedbackRequest(

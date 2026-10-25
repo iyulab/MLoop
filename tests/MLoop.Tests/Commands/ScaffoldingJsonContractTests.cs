@@ -131,7 +131,7 @@ public class ScaffoldingJsonContractTests
             Assert.Equal(0, Run(scratch.FullName, "init", "proj").ExitCode);
             var project = Path.Combine(scratch.FullName, "proj");
 
-            var (exit, stdout, _) = Run(project, "feedback", "add", "-p", "no-such-id", "-v", "1", "--json");
+            var (exit, stdout, _) = Run(project, "feedback", "add", "--prediction-id", "no-such-id", "--actual-value", "1", "--json");
 
             Assert.Equal(1, exit);
             using var document = JsonDocument.Parse(stdout);

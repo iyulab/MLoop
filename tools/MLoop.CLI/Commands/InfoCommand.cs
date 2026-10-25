@@ -37,7 +37,7 @@ public static class InfoCommand
             DefaultValueFactory = _ => "default"
         };
 
-        var analyzeOption = new Option<bool>("--analyze", "-a")
+        var analyzeOption = new Option<bool>("--analyze")
         {
             Description = "Run deep analysis: correlation, feature importance, distribution, anomaly detection"
         };

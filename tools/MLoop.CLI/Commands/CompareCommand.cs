@@ -28,12 +28,12 @@ public static class CompareCommand
             Description = "Model name (required when comparing all experiments)"
         };
 
-        var bestOption = new Option<int?>("--best", "-b")
+        var bestOption = new Option<int?>("--best")
         {
             Description = "Compare top N experiments by metric (default: all completed)"
         };
 
-        var metricOption = new Option<string?>("--metric", "-m")
+        var metricOption = new Option<string?>("--metric")
         {
             Description = "Sort by specific metric (default: best metric from training)"
         };

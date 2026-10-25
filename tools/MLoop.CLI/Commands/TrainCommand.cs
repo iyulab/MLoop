@@ -53,7 +53,7 @@ public static class TrainCommand
             Description = "Training time limit in seconds"
         };
 
-        var metricOption = new Option<string?>("--metric", "-m")
+        var metricOption = new Option<string?>("--metric")
         {
             Description = "Optimization metric (accuracy, auc, f1, r_squared, etc.)"
         };
@@ -110,7 +110,7 @@ public static class TrainCommand
             DefaultValueFactory = _ => false
         };
 
-        var balanceOption = new Option<string?>("--balance", "-b")
+        var balanceOption = new Option<string?>("--balance")
         {
             Description = "Class balancing strategy: 'auto' (balance to 10:1 if ratio > 10:1), 'none' (no balancing), or target ratio (e.g., '5' for 5:1). Use without value for 'auto'.",
             Arity = ArgumentArity.ZeroOrOne

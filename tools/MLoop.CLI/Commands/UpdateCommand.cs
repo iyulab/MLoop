@@ -10,7 +10,7 @@ public static class UpdateCommand
 {
     public static Command Create()
     {
-        var checkOption = new Option<bool>("--check", "-c")
+        var checkOption = new Option<bool>("--check")
         {
             Description = "Check for updates without installing",
             DefaultValueFactory = _ => false

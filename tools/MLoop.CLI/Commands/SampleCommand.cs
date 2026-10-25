@@ -16,7 +16,7 @@ namespace MLoop.CLI.Commands;
 
 /// <summary>
 /// CLI command for sampling data.
-/// Two modes: prediction log sampling (--model) and general CSV sampling (--from).
+/// Two modes: prediction log sampling (--name) and general CSV sampling (--from).
 /// </summary>
 public static class SampleCommand
 {
@@ -32,24 +32,24 @@ public static class SampleCommand
 
     private static Command CreateCreateCommand()
     {
-        var nameOption = new Option<string?>("--model", "-m")
+        var nameOption = new Option<string?>("--name", "-n")
         {
             Description = "Model name to sample from (prediction log mode)"
         };
 
-        var fromOption = new Option<string?>("--from", "-f")
+        var fromOption = new Option<string?>("--from")
         {
             Description = "CSV file to sample from (general-purpose mode)"
         };
 
-        var sizeOption = new Option<int>("--rows", "-n")
+        var sizeOption = new Option<int>("--rows")
         {
             Description = "Number of rows to sample",
             DefaultValueFactory = _ => 1000
         };
         sizeOption.Aliases.Add("--size");
 
-        var strategyOption = new Option<string>("--strategy", "-s")
+        var strategyOption = new Option<string>("--strategy")
         {
             Description = "Sampling strategy: random, head, stratified (CSV) / random, recent, feedback-priority, stratified, low-confidence (logs)",
             DefaultValueFactory = _ => "random"
@@ -97,8 +97,8 @@ public static class SampleCommand
 
             using var missingSource = json ? new JsonOutputScope() : null;
             ErrorConsole.Error(
-                "Either --from <csv-file> or --model <name> is required.",
-                "Examples: mloop sample create --from train.csv --rows 100, or mloop sample create --model default --rows 500");
+                "Either --from <csv-file> or --name <model> is required.",
+                "Examples: mloop sample create --from train.csv --rows 100, or mloop sample create --name default --rows 500");
             return Task.FromResult(1);
         });
 
@@ -107,7 +107,7 @@ public static class SampleCommand
 
     private static Command CreateStatsCommand()
     {
-        var nameOption = new Option<string>("--model", "-m")
+        var nameOption = new Option<string>("--name", "-n")
         {
             Description = "Model name",
             DefaultValueFactory = _ => ConfigDefaults.DefaultModelName

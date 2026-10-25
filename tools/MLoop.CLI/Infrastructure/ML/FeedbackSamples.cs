@@ -6,7 +6,7 @@ using MLoop.DataStore.Interfaces;
 namespace MLoop.CLI.Infrastructure.ML;
 
 /// <summary>
-/// What a retraining set from feedback is written with — <c>mloop sample create --model</c> and
+/// What a retraining set from feedback is written with — <c>mloop sample create --name</c> and
 /// <c>POST /samples</c> read it here, so the two surfaces write one file the same way.
 /// </summary>
 public static class FeedbackSamples

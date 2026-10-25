@@ -19,7 +19,7 @@ public static class PrepPlanCommand
     {
         var setOption = new Option<string?>("--set") { Description = "Add/replace a prep step: type[:method] (e.g. normalize:z-score)" };
         var removeOption = new Option<string?>("--remove") { Description = "Remove prep step(s) of this type" };
-        var columnsOption = new Option<string?>("--columns", "-c") { Description = "Comma-separated target columns" };
+        var columnsOption = new Option<string?>("--columns") { Description = "Comma-separated target columns" };
         var listOption = new Option<bool>("--list") { Description = "List current prep steps" };
         var nameOption = new Option<string>("--name", "-n") { Description = "Model name", DefaultValueFactory = _ => ConfigDefaults.DefaultModelName };
         var jsonOption = new Option<bool>("--json") { Description = "Output the resulting plan as structured JSON instead of a console table" };
