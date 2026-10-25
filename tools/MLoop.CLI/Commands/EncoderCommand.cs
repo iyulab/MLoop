@@ -45,7 +45,7 @@ public static class EncoderCommand
             if (encoders.Count == 0)
             {
                 AnsiConsole.MarkupLine($"[dim]No encoder installed in {Markup.Escape(store.Root)}.[/]");
-                AnsiConsole.MarkupLine($"Install one with: [cyan]mloop encoder install <{Markup.Escape(EncoderCatalog.Ids)}>[/], or add your own: [cyan]mloop encoder add <encoder.json> --model <model.onnx>[/]");
+                AnsiConsole.MarkupLine($"Install one with: [cyan]{Markup.Escape(EncoderCatalog.InstallCommand()!)}[/], or add your own: [cyan]{Markup.Escape("mloop encoder add <encoder.json> --model <model.onnx> [--tokenizer <tokenizer.model>]")}[/]");
                 return 0;
             }
 

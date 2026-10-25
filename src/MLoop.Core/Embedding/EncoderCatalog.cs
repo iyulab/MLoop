@@ -55,6 +55,19 @@ public static class EncoderCatalog
     /// <summary>The ids, for a message that lists what can be installed.</summary>
     public static string Ids => string.Join(", ", All.Select(e => e.Id));
 
-    /// <summary>The ids of the entries of <paramref name="kind"/>, for a message that lists what can be installed.</summary>
-    public static string IdsOf(EncoderKind kind) => string.Join(", ", All.Where(e => e.Kind == kind).Select(e => e.Id));
+    /// <summary>
+    /// The command that installs a catalog encoder — of <paramref name="kind"/>, or of any kind — for a message to give
+    /// as is: the id itself when there is one, the choices as a placeholder (<c>&lt;a|b&gt;</c>) when there are more;
+    /// <see langword="null"/> when the catalog has none of the kind.
+    /// </summary>
+    public static string? InstallCommand(EncoderKind? kind = null)
+    {
+        var ids = All.Where(e => kind is null || e.Kind == kind).Select(e => e.Id).ToList();
+        return ids.Count switch
+        {
+            0 => null,
+            1 => $"mloop encoder install {ids[0]}",
+            _ => $"mloop encoder install <{string.Join('|', ids)}>",
+        };
+    }
 }

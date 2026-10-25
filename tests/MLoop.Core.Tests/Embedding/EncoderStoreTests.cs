@@ -254,8 +254,17 @@ public sealed class EncoderStoreTests : IDisposable
         var refusal = new EncoderStore(_root).Resolve(null, EncoderKind.Text).Refusal;
 
         Assert.Contains("No encoder of text", refusal);
-        Assert.Contains("mloop encoder install <multilingual-minilm>", refusal);
+        // A command that runs as given: the one text encoder of the catalog by name, not as a placeholder around it.
+        Assert.Contains("Install one with: mloop encoder install multilingual-minilm,", refusal);
         Assert.Contains("--tokenizer", refusal);
+    }
+
+    [Fact]
+    public void TheInstallCommand_NamesTheOnlyEntry_AndOffersTheChoicesWhenThereAreMore()
+    {
+        Assert.Equal("mloop encoder install multilingual-minilm", EncoderCatalog.InstallCommand(EncoderKind.Text));
+        Assert.Equal("mloop encoder install dinov2-small", EncoderCatalog.InstallCommand(EncoderKind.Image));
+        Assert.Equal("mloop encoder install <dinov2-small|multilingual-minilm>", EncoderCatalog.InstallCommand());
     }
 
     [Fact]

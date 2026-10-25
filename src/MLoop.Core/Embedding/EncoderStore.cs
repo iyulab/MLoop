@@ -260,9 +260,8 @@ public sealed class EncoderStore
             : "mloop encoder add <encoder.json> --model <model.onnx>";
         if (EncoderCatalog.Find(id) is { } entry)
             return $"Install it with: mloop encoder install {entry.Id}";
-        var ids = EncoderCatalog.IdsOf(kind);
         return id is null
-            ? (ids.Length > 0 ? $"Install one with: mloop encoder install <{ids}>, or add your own: {add}" : $"Add one with: {add}")
+            ? (EncoderCatalog.InstallCommand(kind) is { } install ? $"Install one with: {install}, or add your own: {add}" : $"Add one with: {add}")
             : $"Add it with: {add}";
     }
 
