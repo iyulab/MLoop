@@ -303,6 +303,13 @@ public static class ValidateCommand
                     errors.Add(new ValidationError($"{colPrefix}.type",
                         $"Invalid column type '{colOverride.Type}'. Valid values: {string.Join(", ", ValidColumnTypes)}"));
                 }
+                if (!string.IsNullOrWhiteSpace(colOverride.Encoder))
+                {
+                    if (!string.Equals(colOverride.Type?.Trim(), "text", StringComparison.OrdinalIgnoreCase))
+                        errors.Add(new ValidationError($"{colPrefix}.encoder", "A text encoder reads a text column: set type: text"));
+                    if (MLoop.Core.Models.TextEncodings.Unsupported(model.Task ?? "") is { } unsupported)
+                        errors.Add(new ValidationError($"{colPrefix}.encoder", unsupported));
+                }
             }
 
             // Warn if label column has an override

@@ -200,6 +200,13 @@ public class ColumnOverride
     public required string Type { get; set; }
 
     /// <summary>
+    /// A text column's text encoder (<c>mloop encoder install multilingual-minilm</c>): the column is also read as its
+    /// sentence vector, beside its word and character n-grams — for what the n-grams cannot carry, such as meaning across
+    /// paraphrases. Needs <c>type: text</c>; binary, multiclass and regression only.
+    /// </summary>
+    public string? Encoder { get; set; }
+
+    /// <summary>
     /// Optional description for documentation
     /// </summary>
     public string? Description { get; set; }

@@ -22,6 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   encoder. The encoder in an answer carries `kind` and, for text, `tokenizerSha256`; a text answer carries
   `truncated`. Without `--encoder` / `?encoder=`, the one installed encoder of the kind asked is used, and an
   encoder of the other kind is refused (409).
+- A text column can be trained on through a text encoder: `type: text` with `encoder: <id>` under the model's
+  `columns:` in `mloop.yaml` (binary classification, multiclass classification, regression). Training embeds the
+  column's texts once and the trainers read their sentence vectors (`<column>.embedding`) beside the column's own
+  n-gram features; the experiment records the encoder
+  beside its model (`text-encoders.json`, copied on promote), and predict, evaluate, calibrate, threshold and
+  `mloop serve` read the column's text through the same encoder. A model whose encoder is missing, or installed with
+  other weights, tokenizer or preprocessing, refuses to score and says which. `mloop validate` refuses an encoder on
+  a column that is not `type: text` or for another task; `mloop export onnx` and `portable:` refuse such a model.
 
 - An experiment keeps the warnings its run raised — about the data, the run and the trained model, as `mloop train`
   printed them — as `warnings` in its `metadata.json` and a «Warnings» section of its `report.md`, failed runs

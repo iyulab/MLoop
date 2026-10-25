@@ -410,6 +410,8 @@ public class TrainingEngine : ITrainingEngine
             // The probability calibration fitted with the model (a binary model's, on the search's out-of-fold
             // answers) lives beside it, where every scoring path applies it; the run's metrics are the calibrated model's.
             trained.Calibration?.WriteBeside(modelPath);
+            // The encoders of the text columns it reads as vectors — every loading path puts them in front of it.
+            trained.TextEncodings?.WriteBeside(modelPath);
 
             await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config, modelPath, cancellationToken);
 

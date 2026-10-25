@@ -274,6 +274,30 @@ public partial class TrainingRunner
         if (!string.IsNullOrEmpty(config.WeightColumn))
             CheckWeightedTask(testSet, config);
 
+        // Text read through an encoder: each such column gets its sentence vector beside it, embedded once for both
+        // partitions and kept in memory — a numeric vector column the trainers read with the text's own featurization.
+        // The saved schema is the data's, since that is what a prediction is given.
+        var schemaSource = trainSet;
+        TextEncodings? textEncodings = null;
+        if (config.TextEncoders is { Count: > 0 } encoders)
+        {
+            if (TextEncodings.Unsupported(config.Task) is { } unsupported)
+                throw new InvalidOperationException(unsupported);
+            var opened = new List<(string, Embedding.TextEmbedder)>();
+            foreach (var (column, id) in encoders)
+            {
+                if (trainSet.Schema.GetColumnOrNull(column) is not { Type: TextDataViewType })
+                    throw new InvalidOperationException($"Column '{column}' is declared to be read through text encoder '{id}', but the data has no text column of that name.");
+                var (embedder, refusal) = Embedding.EmbedderPool.Shared.GetText(id);
+                opened.Add((column, embedder ?? throw new InvalidOperationException($"Column '{column}': {refusal}")));
+            }
+            var layer = new TextEncodingLayer(_mlContext, opened);
+            _logger.Info($"Embedding {string.Join(", ", encoders.Select(e => $"'{e.Key}' with {e.Value}"))}...");
+            trainSet = _mlContext.Data.Cache(layer.Transform(trainSet));
+            testSet = ReferenceEquals(testSet, schemaSource) ? trainSet : _mlContext.Data.Cache(layer.Transform(testSet));
+            textEncodings = layer.Encodings;
+        }
+
         // Ensure the task's on-demand native runtime is installed and loaded (no-op for tabular tasks).
         Runtime.RuntimeManager.EnsureRuntimeForTask(config.Task);
 
@@ -326,11 +350,11 @@ public partial class TrainingRunner
         {
             result = result with
             {
-                Schema = CaptureInputSchema(trainSet, config.LabelColumn, mergedColumnGroups)
+                Schema = CaptureInputSchema(schemaSource, config.LabelColumn, mergedColumnGroups)
             };
         }
 
-        return result with { EvaluationData = result.EvaluationData ?? testSet };
+        return result with { EvaluationData = result.EvaluationData ?? testSet, TextEncodings = textEncodings };
     }
 
     /// <summary>
@@ -2321,6 +2345,14 @@ public record TrainedModel
     /// where none was fitted. <see cref="Metrics"/> are the calibrated model's.
     /// </summary>
     public ProbabilityCalibration? Calibration { get; init; }
+
+    /// <summary>
+    /// The text columns the model also reads through a text encoder, with the encoders' identities — saved beside it
+    /// (<see cref="TextEncodings.WriteBeside"/>), where every loading path puts the same encoding in front of the model.
+    /// Null when the model reads no encoded column. <see cref="Model"/> itself takes the vectors beside the text
+    /// (<see cref="TextEncodings.VectorColumnOf"/>), and <see cref="EvaluationData"/> carries them.
+    /// </summary>
+    public TextEncodings? TextEncodings { get; init; }
 
     /// <summary><see cref="Model"/> as it answers once saved — with <see cref="Calibration"/> applied when there is one.</summary>
     public ITransformer ScoringModel(MLContext mlContext) => Calibration?.Apply(mlContext, Model) ?? Model;

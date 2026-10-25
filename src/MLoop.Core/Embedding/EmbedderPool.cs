@@ -67,6 +67,15 @@ public sealed class EmbedderPool(EncoderStore store) : IDisposable
 
     private readonly ConcurrentDictionary<string, Lazy<IDisposable>> _open = new(StringComparer.Ordinal);
 
+    private static readonly ConcurrentDictionary<string, EmbedderPool> SharedPools = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The process's pool over the default store (<see cref="EncoderStore.DefaultRoot"/>, read each time — a test or a
+    /// container may move it) — what training and a loaded model that reads encoded text open their encoders from, so
+    /// models sharing an encoder share one opened graph. Lives as long as the process.
+    /// </summary>
+    public static EmbedderPool Shared => SharedPools.GetOrAdd(EncoderStore.DefaultRoot, root => new EmbedderPool(new EncoderStore(root)));
+
     /// <summary>The store encoders are read from.</summary>
     public EncoderStore Store { get; } = store ?? throw new ArgumentNullException(nameof(store));
 

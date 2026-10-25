@@ -156,6 +156,14 @@ public record TrainingConfig
     public IReadOnlyCollection<string>? CategoryColumns { get; init; }
 
     /// <summary>
+    /// Text columns read through a text encoder, each with the encoder's id (<c>mloop.yaml</c> column
+    /// <c>encoder:</c>): the run embeds them once and trains on their sentence vectors beside their own featurization,
+    /// and the model keeps the
+    /// encoders' identities beside it (<see cref="TextEncodings"/>). Binary, multiclass and regression only.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? TextEncoders { get; init; }
+
+    /// <summary>
     /// The type every load of this run reads the label as — decided once from the saved schema
     /// (<see cref="LabelKinds"/>), like <see cref="FeatureExclusions"/>. Null leaves each load to infer
     /// it, which two partitions of a file sorted by its label do differently.
@@ -235,6 +243,7 @@ public record TrainingConfig
             if (!string.IsNullOrEmpty(ItemColumn)) claimed.Add(ItemColumn);
             if (!string.IsNullOrEmpty(WeightColumn)) claimed.Add(WeightColumn);
             if (PreFeaturizerColumns is { Count: > 0 }) claimed.AddRange(PreFeaturizerColumns);
+            if (TextEncoders is { Count: > 0 }) claimed.AddRange(TextEncoders.Keys);
             if (ColumnOverrides is not null)
             {
                 claimed.AddRange(ColumnOverrides

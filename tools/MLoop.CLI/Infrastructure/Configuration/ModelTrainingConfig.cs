@@ -37,6 +37,7 @@ public static class ModelTrainingConfig
             TestDataFile = testDataFile,
             UseAutoTime = useAutoTime,
             ColumnOverrides = definition.Columns?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Type),
+            TextEncoders = TextEncodersOf(definition),
             NumClusters = definition.NumClusters ?? 0,
             GroupColumn = definition.GroupColumn,
             Horizon = definition.Horizon ?? 0,
@@ -55,9 +56,24 @@ public static class ModelTrainingConfig
     /// silently did nothing would leave a model the user expects to export unexportable.
     /// </summary>
     public static string? PortableConflict(ModelDefinition definition)
-        => definition.Portable == true && !MLoop.Core.Training.TrainingRunner.SupportsPreFeaturizer(definition.Task)
-            ? $"portable: a portable model is trained for binary-classification, multiclass-classification or regression, not '{definition.Task}'."
+    {
+        if (definition.Portable != true)
+            return null;
+        if (!MLoop.Core.Training.TrainingRunner.SupportsPreFeaturizer(definition.Task))
+            return $"portable: a portable model is trained for binary-classification, multiclass-classification or regression, not '{definition.Task}'.";
+        return TextEncodersOf(definition) is { } encoders
+            ? $"portable: column {string.Join(", ", encoders.Keys.Select(c => $"'{c}'"))} is read through a text encoder, which an exported graph does not carry."
             : null;
+    }
+
+    /// <summary>The columns <paramref name="definition"/> reads through a text encoder, with the encoders' ids; null when none.</summary>
+    public static IReadOnlyDictionary<string, string>? TextEncodersOf(ModelDefinition definition)
+    {
+        var encoders = definition.Columns?
+            .Where(c => !string.IsNullOrWhiteSpace(c.Value.Encoder))
+            .ToDictionary(c => c.Key, c => c.Value.Encoder!.Trim());
+        return encoders is { Count: > 0 } ? encoders : null;
+    }
 
     /// <summary>
     /// Why the weight column in <paramref name="definition"/> cannot be honoured, or <c>null</c>.

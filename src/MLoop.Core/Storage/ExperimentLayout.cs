@@ -55,6 +55,14 @@ public static class ExperimentLayout
     /// </summary>
     public const string CalibrationFileName = "calibration.json";
 
+    /// <summary>
+    /// The text columns a model reads through a text encoder, each with the encoder's identity
+    /// (<c>MLoop.Core.Models.TextEncodings</c>) — the model was trained on their sentence vectors. Beside
+    /// <see cref="ModelFileName"/>, put in front of the model by every path that loads it, and copied on promote
+    /// like the calibration. Absent: the model reads no encoded column.
+    /// </summary>
+    public const string TextEncodersFileName = "text-encoders.json";
+
     /// <summary>② regression wave (heteroscedastic): the optional auxiliary σ(x) model that gives the
     /// conformal band its per-row width. Sits beside <see cref="ModelFileName"/> in <c>staging/{expId}/</c>
     /// and the promoted <c>production/</c> slot, and is copied on promote when present. Absent for

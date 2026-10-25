@@ -13,7 +13,8 @@ namespace MLoop.Core.Models;
 /// has to be present before deserialization; a classifier that scores with logits has them turned into class
 /// probabilities (<see cref="ClassScores"/>); the probability calibration and the decision threshold
 /// beside the model (<see cref="ProbabilityCalibration"/>, <see cref="DecisionThreshold"/>) have to
-/// be applied, in that order; and a regression model may carry a σ-model
+/// be applied, in that order; the text columns it reads through a text encoder (<see cref="TextEncodings"/>) are
+/// encoded in front of it; and a regression model may carry a σ-model
 /// sibling (<see cref="ExperimentLayout.ResidualModelFileName"/>) that widens its band per row. Each
 /// path used to do its own subset — the threshold at five sites, the sibling's path rebuilt at four —
 /// and a path that forgot one gave a different answer to the same row.
@@ -24,7 +25,7 @@ public static class ScoringModel
     /// The model at <paramref name="modelPath"/>, ready to score: its task's runtime ensured (when
     /// <paramref name="task"/> is given), then the <paramref name="layers"/> beside it applied in their
     /// order — the probability calibration, then the decision threshold, which answers from the
-    /// calibrated probability. A caller that converts the saved model itself passes
+    /// calibrated probability — and, always, the text encodings beside it (<see cref="TextEncodings"/>) in front. A caller that converts the saved model itself passes
     /// <see cref="ScoringLayers.None"/> (ONNX export: the graph carries the trained model, the manifest
     /// names the layers); fitting a calibration reads the model's own probabilities the same way.
     /// </summary>
@@ -47,7 +48,9 @@ public static class ScoringModel
             model = ProbabilityCalibration.ApplyBeside(mlContext, model, modelPath);
         if (layers.HasFlag(ScoringLayers.DecisionThreshold))
             model = DecisionThreshold.ApplyBeside(mlContext, model, modelPath);
-        return model;
+        // In front of the model, whatever the layers: the text columns it reads as sentence vectors are how it reads its
+        // input at all, not a change to its answer.
+        return Models.TextEncodings.ApplyBeside(mlContext, model, modelPath);
     }
 
     /// <inheritdoc cref="Load(MLContext, string, out DataViewSchema, string?, ScoringLayers)"/>

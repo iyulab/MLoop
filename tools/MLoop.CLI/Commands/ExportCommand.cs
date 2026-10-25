@@ -151,6 +151,14 @@ public static class ExportCommand
             }
 
             var experimentPath = experimentStore.GetExperimentPath(resolvedModelName, experimentId);
+            if (TextEncodings.ReadBeside(modelPath) is { Columns.Count: > 0 } encodings)
+            {
+                // The graph reads the columns' sentence vectors; the encoders that make them are not in it.
+                ErrorConsole.Error(Markup.Escape(
+                    $"'{experimentId}' reads {string.Join(", ", encodings.Columns.Select(c => $"'{c.Column}'"))} through a text encoder, " +
+                    "which an ONNX graph of the model does not carry; it cannot be exported."));
+                return 1;
+            }
 
             // The input schema comes from data, because the model was saved without one; the
             // training file is the natural default — it has exactly the columns the model was fit on.
