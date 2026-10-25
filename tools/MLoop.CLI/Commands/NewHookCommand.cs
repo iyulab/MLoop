@@ -88,7 +88,7 @@ public static class NewHookCommand
 
             if (File.Exists(filePath))
             {
-                ErrorConsole.Error($"Hook already exists: {Markup.Escape(fileName)}", $"Path: {Markup.Escape(filePath)}");
+                ErrorConsole.Error($"Hook already exists: {fileName}", $"Path: {filePath}");
                 return 1;
             }
 
@@ -142,7 +142,7 @@ public static class NewHookCommand
 
         if (!validTypes.TryGetValue(type, out var hookType))
         {
-            ErrorConsole.Error($"Invalid hook type '{Markup.Escape(type)}'", "Valid types: pre-train, post-train, pre-predict, post-evaluate");
+            ErrorConsole.Error($"Invalid hook type '{type}'", "Valid types: pre-train, post-train, pre-predict, post-evaluate");
             return null;
         }
 

@@ -54,9 +54,9 @@ internal static class TrainDataValidator
             var columnList = Markup.Escape(string.Join(", ", availableColumns));
             AnsiConsole.WriteLine();
             ErrorConsole.Error(
-                $"Label column '[cyan]{Markup.Escape(labelColumn)}[/]' not found in data for model " +
-                $"'[cyan]{Markup.Escape(modelName)}[/]'. Available columns: {columnList}",
-                $"Update the label in mloop.yaml or use --label option for --name {Markup.Escape(modelName)}");
+                $"Label column '[cyan]{labelColumn}[/]' not found in data for model " +
+                $"'[cyan]{modelName}[/]'. Available columns: {columnList}",
+                $"Update the label in mloop.yaml or use --label option for --name {modelName}");
             AnsiConsole.WriteLine();
 
             throw new ArgumentException(

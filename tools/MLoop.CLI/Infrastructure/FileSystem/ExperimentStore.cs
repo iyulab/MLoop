@@ -182,7 +182,7 @@ public class ExperimentStore : IExperimentStore
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            WarningConsole.Warn($"Could not write {ReportFileName}: {Markup.Escape(ex.Message)}");
+            WarningConsole.Warn($"Could not write {ReportFileName}: {ex.Message}");
         }
     }
 

@@ -262,7 +262,7 @@ public static class PredictCommand
 
                 if (!File.Exists(resolvedModelPath))
                 {
-                    ErrorConsole.Error($"Model file not found: {Markup.Escape(resolvedModelPath)}");
+                    ErrorConsole.Error($"Model file not found: {resolvedModelPath}");
                     return 1;
                 }
 
@@ -310,7 +310,7 @@ public static class PredictCommand
                 }
                 catch (InvalidOperationException ex)
                 {
-                    ErrorConsole.Error($"{Markup.Escape(ex.Message)}");
+                    ErrorConsole.Error($"{ex.Message}");
                     return 1;
                 }
             }
@@ -963,7 +963,7 @@ public static class PredictCommand
         if (forecast is null)
         {
             // AnsiConsole is rerouted to stderr in --json mode, keeping stdout pure.
-            ErrorConsole.Error($"{Markup.Escape(error ?? "Forecast failed.")}");
+            ErrorConsole.Error($"{error ?? "Forecast failed."}");
             return 1;
         }
 
@@ -1081,7 +1081,7 @@ public static class PredictCommand
             resolvedDataDir = ProjectPaths.Resolve(dataFile, projectRoot);
             if (!Directory.Exists(resolvedDataDir) && !File.Exists(resolvedDataDir))
             {
-                ErrorConsole.Error($"Data not found: {Markup.Escape(resolvedDataDir)}", ErrorConsole.PathNotFoundTip(projectRoot));
+                ErrorConsole.Error($"Data not found: {resolvedDataDir}", ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
         }

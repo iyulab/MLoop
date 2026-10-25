@@ -288,7 +288,7 @@ public static class InfoCommand
         {
             if (!string.IsNullOrEmpty(labelColumn) && !columns.Contains(labelColumn))
             {
-                WarningConsole.Warn($"Label column '{Markup.Escape(labelColumn)}' not found in file");
+                WarningConsole.Warn($"Label column '{labelColumn}' not found in file");
             }
 
             // Heuristic: prefer common label column names (case-insensitive)

@@ -143,7 +143,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - An error or warning naming a path or name the user gave with square brackets (`data[1].csv`) printed
   "Unbalanced markup stack" — or failed with an unhandled exception — instead of the message: the text was read
-  as console markup. Paths, names and exception messages in those lines are now shown as given.
+  as console markup. Every value interpolated into an error or warning line is now shown as given — the lines take
+  their `$"…"` as markup in the literal and text in the values, so a new message cannot forget to escape one.
 - `mloop train <file>` with a file that does not exist said "No data file specified and datasets/train.csv not
   found"; it now says the file was not found, as `--data` does.
 - An encoder's definition file no longer carries `grid`, which is derived from its patch size.

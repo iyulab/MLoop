@@ -236,9 +236,7 @@ public class TrainingEngine : ITrainingEngine
                 foreach (var group in readsFeatures ? featureExclusions.GroupBy(c => c.Reason) : [])
                 {
                     WarningConsole.Warn(
-                        $"Excluded from features ({Markup.Escape(group.Key)}): " +
-                        Markup.Escape(string.Join(", ", group.Select(c => c.Name))) +
-                        Markup.Escape(ExclusionReason(group.Key)));
+                        $"Excluded from features ({group.Key}): {string.Join(", ", group.Select(c => c.Name))}{ExclusionReason(group.Key)}");
                 }
 
                 // A column of strictly increasing integers reads as a row number — judged here, on the whole file
@@ -254,9 +252,9 @@ public class TrainingEngine : ITrainingEngine
                 if (indexLike.Count > 0)
                 {
                     WarningConsole.Warn(
-                        $"Possible ID/index column(s) (strictly increasing integers): {Markup.Escape(string.Join(", ", indexLike))} — " +
+                        $"Possible ID/index column(s) (strictly increasing integers): {string.Join(", ", indexLike)} — " +
                         $"read as a feature, a row number lets the model learn the order of the rows. To exclude: " +
-                        $"[cyan]mloop features select --drop {Markup.Escape(indexLike[0])}[/]");
+                        $"[cyan]mloop features select --drop {indexLike[0]}[/]");
                 }
 
                 // Capture input schema before training (using enhanced detection).
@@ -895,7 +893,7 @@ public class TrainingEngine : ITrainingEngine
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException or FormatException)
         {
-            WarningConsole.Warn($"Could not write {ExperimentLayout.DriftProfileFileName}: {Markup.Escape(ex.Message)} — drift cannot be measured for this model.");
+            WarningConsole.Warn($"Could not write {ExperimentLayout.DriftProfileFileName}: {ex.Message} — drift cannot be measured for this model.");
         }
     }
 
@@ -934,7 +932,7 @@ public class TrainingEngine : ITrainingEngine
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            WarningConsole.Warn($"Could not profile the model's answers: {Markup.Escape(ex.Message)} — answer drift cannot be measured for this model.");
+            WarningConsole.Warn($"Could not profile the model's answers: {ex.Message} — answer drift cannot be measured for this model.");
             return null;
         }
     }
@@ -1124,7 +1122,7 @@ public class TrainingEngine : ITrainingEngine
         }
         catch (Exception ex)
         {
-            WarningConsole.Warn($"Failed to capture input schema: {Markup.Escape(ex.Message)}");
+            WarningConsole.Warn($"Failed to capture input schema: {ex.Message}");
             return null;
         }
     }

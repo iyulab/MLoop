@@ -404,21 +404,21 @@ internal static class TrainPresenter
                 // Refused for a reason the two messages above do not cover — a model that answers one
                 // class scores well on its own metric. Said here, or the staging line has no reason.
                 WarningConsole.Warn(
-                    $"Not promoted: {Markup.Escape(gateRefusal)}. Saved to staging; `mloop promote {result.ExperimentId} --force` " +
-                    "promotes it anyway.");
+                    $"Not promoted: {gateRefusal}. Saved to staging; `mloop promote {result.ExperimentId} --force` " +
+                    $"promotes it anyway.");
             }
             else if (policyRefusal is not null)
             {
                 // The project's own rules (mloop.yaml `gate:`) held it back, judged on their evaluation set.
                 WarningConsole.Warn(
-                    $"Not promoted — the gate policy refuses it: {Markup.Escape(policyRefusal)}. Saved to staging; " +
+                    $"Not promoted — the gate policy refuses it: {policyRefusal}. Saved to staging; " +
                     $"`mloop promote {result.ExperimentId} --force` promotes it anyway.");
             }
             else if (incomparable is not null && production is not null)
             {
                 // Weighted against unweighted (or two different weights): no "better" was decided.
                 WarningConsole.Warn(
-                    $"Not compared with production: {Markup.Escape(incomparable)}. Saved to staging and production is " +
+                    $"Not compared with production: {incomparable}. Saved to staging and production is " +
                     $"unchanged. Score both on one evaluation set (mloop evaluate <experiment> <file> --weight <column>) " +
                     $"and promote the one you want: mloop promote {result.ExperimentId}");
             }

@@ -77,10 +77,16 @@ public static class WarningConsole
     }
 
     /// <summary>
+    /// <see cref="Warn(string)"/> from <c>$"…"</c>: the literal is markup, each interpolated value is text
+    /// (<see cref="MarkupText"/>) — a path or name with brackets is shown as given.
+    /// </summary>
+    public static void Warn(MarkupText markup) => Warn(markup.ToString());
+
+    /// <summary>
     /// Renders a <c>Warning:</c> line (ambient console — silenced in machine mode) and reports the
     /// same text as a <c>warning</c> event when a machine-output scope is active.
-    /// <paramref name="markup"/> is Spectre markup — escape interpolated user data with
-    /// <see cref="Markup.Escape"/>.
+    /// <paramref name="markup"/> is Spectre markup, used as given — a string built elsewhere escapes its user data with
+    /// <see cref="Markup.Escape"/>; <c>$"…"</c> goes to <see cref="Warn(MarkupText)"/>, which does.
     /// </summary>
     public static void Warn(string markup)
     {

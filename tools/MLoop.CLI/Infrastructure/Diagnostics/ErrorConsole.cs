@@ -59,8 +59,24 @@ public static class ErrorConsole
     private const int DiagnosticLineWidth = 4096;
 
     /// <summary>
-    /// Writes an <c>Error:</c> line to stderr. <paramref name="markup"/> is Spectre markup — escape
-    /// interpolated user data with <see cref="Markup.Escape"/>.
+    /// Writes an <c>Error:</c> line to stderr from <c>$"…"</c>: the literal is markup, each interpolated value is
+    /// text (<see cref="MarkupText"/>) — a path or name with brackets is shown as given.
+    /// </summary>
+    public static void Error(MarkupText markup) => Error(markup.ToString());
+
+    /// <inheritdoc cref="Error(string, string)"/>
+    public static void Error(MarkupText markup, string tip) => Error(markup.ToString(), tip);
+
+    /// <inheritdoc cref="Error(string, string)"/>
+    public static void Error(string markup, MarkupText tip) => Error(markup, tip.ToString());
+
+    /// <inheritdoc cref="Error(string, string)"/>
+    public static void Error(MarkupText markup, MarkupText tip) => Error(markup.ToString(), tip.ToString());
+
+    /// <summary>
+    /// Writes an <c>Error:</c> line to stderr. <paramref name="markup"/> is Spectre markup, used as given — a string
+    /// built elsewhere escapes its user data with <see cref="Markup.Escape"/>; <c>$"…"</c> goes to
+    /// <see cref="Error(MarkupText)"/>, which does.
     /// </summary>
     public static void Error(string markup)
     {

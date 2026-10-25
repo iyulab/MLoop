@@ -88,8 +88,8 @@ public static class PrepRunCommand
             // Resolve model name
             if (!config.Models.TryGetValue(resolvedModelName, out var modelDef))
             {
-                ErrorConsole.Error($"Model '{Markup.Escape(resolvedModelName)}' not found in mloop.yaml.",
-                    $"Available models: {Markup.Escape(string.Join(", ", config.Models.Keys))}");
+                ErrorConsole.Error($"Model '{resolvedModelName}' not found in mloop.yaml.",
+                    $"Available models: {string.Join(", ", config.Models.Keys)}");
                 EmitJson(resolvedModelName, dryRun, null, null, null,
                     [$"Model '{resolvedModelName}' not found in mloop.yaml"], null, null, jsonOutput);
                 return 1;
@@ -142,7 +142,7 @@ public static class PrepRunCommand
 
             if (!File.Exists(resolvedInput))
             {
-                ErrorConsole.Error($"Input file not found: {Markup.Escape(resolvedInput)}",
+                ErrorConsole.Error($"Input file not found: {resolvedInput}",
                     "Use --input to specify the CSV file path.");
                 EmitJson(resolvedModelName, dryRun, resolvedInput, null, modelDef.Prep,
                     [$"Input file not found: {resolvedInput}"], null, null, jsonOutput);

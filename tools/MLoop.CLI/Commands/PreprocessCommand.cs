@@ -139,7 +139,7 @@ public static class PreprocessCommand
 
             if (!File.Exists(resolvedInputFile))
             {
-                ErrorConsole.Error($"Input file not found: {Markup.Escape(resolvedInputFile)}", ErrorConsole.PathNotFoundTip(projectRoot));
+                ErrorConsole.Error($"Input file not found: {resolvedInputFile}", ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
 

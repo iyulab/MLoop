@@ -136,7 +136,7 @@ public static class SampleCommand
             var csvStrategy = ParseCsvStrategy(strategyName);
             if (csvStrategy == null)
             {
-                ErrorConsole.Error($"Unknown strategy '{Markup.Escape(strategyName)}'", "Valid strategies for CSV: random, head, stratified");
+                ErrorConsole.Error($"Unknown strategy '{strategyName}'", "Valid strategies for CSV: random, head, stratified");
                 return 1;
             }
 
@@ -145,7 +145,7 @@ public static class SampleCommand
             var resolvedInput = ProjectPaths.Resolve(fromPath, projectRoot);
             if (!File.Exists(resolvedInput))
             {
-                ErrorConsole.Error($"File not found: {Markup.Escape(resolvedInput)}",
+                ErrorConsole.Error($"File not found: {resolvedInput}",
                     projectRoot is null ? ErrorConsole.PathNotFoundTipCwd() : ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
@@ -197,7 +197,7 @@ public static class SampleCommand
             var strategy = FeedbackSamples.ParseStrategy(strategyName);
             if (strategy == null)
             {
-                ErrorConsole.Error($"Unknown strategy '{Markup.Escape(strategyName)}'",
+                ErrorConsole.Error($"Unknown strategy '{strategyName}'",
                     FeedbackSamples.StrategyGuidance);
                 return 1;
             }

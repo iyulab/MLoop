@@ -317,7 +317,7 @@ public static class TrainCommand
             }
             catch (InvalidOperationException ex)
             {
-                ErrorConsole.Error($"{Markup.Escape(ex.Message)}");
+                ErrorConsole.Error($"{ex.Message}");
                 return 1;
             }
 
@@ -465,7 +465,7 @@ public static class TrainCommand
                     var resolved = ProjectPaths.Resolve(path, projectRoot);
                     if (!TabularDataFile.Exists(resolved))
                     {
-                        ErrorConsole.Error($"Data file not found: {Markup.Escape(path)}", ErrorConsole.PathNotFoundTip(projectRoot));
+                        ErrorConsole.Error($"Data file not found: {path}", ErrorConsole.PathNotFoundTip(projectRoot));
                         return 1;
                     }
                     resolvedPaths.Add(resolved);
@@ -708,7 +708,7 @@ public static class TrainCommand
                         {
                             ErrorConsole.Error(
                                 $"Failed to clean label data: {cleanResult.Error}",
-                                $"Run [blue]mloop info {Markup.Escape(Path.GetRelativePath(projectRoot, resolvedDataFile))}[/] to check the label column '{Markup.Escape(effectiveDefinition.Label)}' exists and has values.");
+                                $"Run [blue]mloop info {Path.GetRelativePath(projectRoot, resolvedDataFile)}[/] to check the label column '{effectiveDefinition.Label}' exists and has values.");
                             return 1;
                         }
                     }
@@ -978,7 +978,7 @@ public static class TrainCommand
 
             if (result == null)
             {
-                ErrorConsole.Error($"Training failed for model '[cyan]{Markup.Escape(resolvedModelName)}[/]'");
+                ErrorConsole.Error($"Training failed for model '[cyan]{resolvedModelName}[/]'");
                 ErrorConsole.Out.WriteLine();
                 ErrorConsole.Out.MarkupLine("[yellow]Suggestions:[/]");
                 ErrorConsole.Out.MarkupLine("  [blue]>[/] Try increasing the time limit: [cyan]--time 120[/]");
@@ -1019,7 +1019,7 @@ public static class TrainCommand
             {
                 AnsiConsole.WriteLine();
                 WarningConsole.Warn(
-                    $"Kept in staging: a post-train hook refused it — {Markup.Escape(hookRefusal)}. " +
+                    $"Kept in staging: a post-train hook refused it — {hookRefusal}. " +
                     $"[blue]mloop promote {result.ExperimentId}[/] promotes it anyway.");
             }
             // Auto-promote to production if enabled
@@ -1089,7 +1089,7 @@ public static class TrainCommand
 
                 // Promoted or not, a model that ranks but answers one class at its threshold is told so.
                 if (result.Metrics != null && MetricPolicy.SingleClassAtThreshold(result.Metrics) is { } gateWarning)
-                    WarningConsole.Warn($"Quality: {Markup.Escape(gateWarning)}.");
+                    WarningConsole.Warn($"Quality: {gateWarning}.");
             }
 
             // T4.6: Unused data warning - only scan project's datasets/ directory.

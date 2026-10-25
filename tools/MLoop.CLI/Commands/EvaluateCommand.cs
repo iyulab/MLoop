@@ -286,7 +286,7 @@ public static class EvaluateCommand
                     : TabularDataFile.Exists(resolvedTestDataFile);
                 if (!exists)
                 {
-                    ErrorConsole.Error($"Test data not found: {Markup.Escape(resolvedTestDataFile)}", ErrorConsole.PathNotFoundTip(projectRoot));
+                    ErrorConsole.Error($"Test data not found: {resolvedTestDataFile}", ErrorConsole.PathNotFoundTip(projectRoot));
                     return 1;
                 }
 
