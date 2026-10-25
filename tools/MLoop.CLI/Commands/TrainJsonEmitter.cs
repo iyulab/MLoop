@@ -172,6 +172,21 @@ public sealed class TrainJsonEmitter(TextWriter output)
     });
 
     /// <summary>
+    /// Whether the finished experiment went to production, after <see cref="Result"/>: <c>promoted</c>, and when it
+    /// stayed in staging <c>keptInStagingReason</c> — the same two facts, by the same names and the same judgment
+    /// (<c>ModelRegistry.KeptInStagingReasonAsync</c>), as a <c>POST /train</c> job reports. Without it a consumer of the
+    /// stream could not tell a promoted model from one the quality gate held back.
+    /// </summary>
+    public void Promotion(string experimentId, bool promoted, string? keptInStagingReason) => Write(new
+    {
+        @event = "promotion",
+        experimentId,
+        promoted,
+        keptInStagingReason,
+        ts = Now()
+    });
+
+    /// <summary>
     /// The run's terminal failure. Written to stdout so a consumer reading only the event stream
     /// learns why it ended; the caller still writes the same cause to stderr, because "exit != 0 ⇒
     /// stderr is not empty" is a separate contract that predates this one.

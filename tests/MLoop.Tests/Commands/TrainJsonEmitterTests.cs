@@ -329,6 +329,24 @@ public class TrainJsonEmitterTests
     }
 
     [Fact]
+    public void Promotion_says_whether_the_experiment_went_to_production_and_why_not()
+    {
+        var (emitter, sink) = Build();
+
+        emitter.Promotion("exp-004", promoted: true, keptInStagingReason: null);
+        emitter.Promotion("exp-005", promoted: false, "it does not beat production (exp-004) on auc: 0.81 vs 0.83");
+
+        var events = Events(sink);
+        Assert.Equal("promotion", events[0].GetProperty("event").GetString());
+        Assert.Equal("exp-004", events[0].GetProperty("experimentId").GetString());
+        Assert.True(events[0].GetProperty("promoted").GetBoolean());
+        // A promoted experiment has no reason to stay — the field is absent, not empty.
+        Assert.False(events[0].TryGetProperty("keptInStagingReason", out _));
+        Assert.False(events[1].GetProperty("promoted").GetBoolean());
+        Assert.StartsWith("it does not beat production", events[1].GetProperty("keptInStagingReason").GetString());
+    }
+
+    [Fact]
     public void Every_event_is_its_own_line_so_the_stream_can_be_read_as_it_arrives()
     {
         var (emitter, sink) = Build();

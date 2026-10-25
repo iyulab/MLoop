@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `mloop train --json` ends a run with a `promotion` event after `result`: `promoted`, and `keptInStagingReason` when
+  the experiment stayed in staging (the quality gate, the gate policy, not beating production, a post-train hook,
+  `--no-promote`) — the same facts, by the same judgment, a `POST /train` job reports. A stream consumer could not
+  tell a promoted model from one held back before.
 - Text encoders: a pretrained sentence encoder turns text — Korean and some fifty other languages — into one
   L2-normalised vector per text, through the encoder store image encoders use (`MLoop.Core.Embedding`:
   `TextEmbedder`, `TextPreprocessor`). An encoder definition says what it reads (`kind`: `image`, the default, or

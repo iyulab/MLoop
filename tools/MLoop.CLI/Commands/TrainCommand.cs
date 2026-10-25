@@ -151,7 +151,7 @@ public static class TrainCommand
 
         var jsonOption = new Option<bool>("--json")
         {
-            Description = "Emit newline-delimited JSON events (phase/trial/warning/result/error) on stdout instead of the rich display",
+            Description = "Emit newline-delimited JSON events (phase/trial/warning/result/promotion/error) on stdout instead of the rich display",
             DefaultValueFactory = _ => false
         };
 
@@ -1015,15 +1015,21 @@ public static class TrainCommand
                 MachineOutputScope.ReportWarning(Markup.Escape(warning));
 
             // A post-train hook that refused the model keeps it from being promoted automatically.
-            if (!noPromote && result.HookRefusal is { } hookRefusal)
+            if (noPromote)
+            {
+                events?.Promotion(result.ExperimentId, promoted: false,
+                    $"--no-promote was given — mloop promote {result.ExperimentId} promotes it");
+            }
+            else if (result.HookRefusal is { } hookRefusal)
             {
                 AnsiConsole.WriteLine();
                 WarningConsole.Warn(
                     $"Kept in staging: a post-train hook refused it — {hookRefusal}. " +
                     $"[blue]mloop promote {result.ExperimentId}[/] promotes it anyway.");
+                events?.Promotion(result.ExperimentId, promoted: false, $"a post-train hook refused it ({hookRefusal})");
             }
-            // Auto-promote to production if enabled
-            else if (!noPromote)
+            // Auto-promote to production
+            else
             {
                 AnsiConsole.WriteLine();
                 var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
@@ -1086,6 +1092,13 @@ public static class TrainCommand
                 // every TryGetValue miss, so the staging *reason* silently vanished instead of
                 // being shown.
                 TrainPresenter.DisplayPromotionResult(promoted, displayMetricKey ?? primaryMetric, result, production, minThreshold, majorityClassRatio, gateRefusal, incomparable, policyRefusal);
+
+                // Asked only of a stream consumer: the reason can run the gate policy's evaluation again.
+                if (events != null)
+                    events.Promotion(result.ExperimentId, promoted, promoted
+                        ? null
+                        : await modelRegistry.KeptInStagingReasonAsync(resolvedModelName, result.ExperimentId, primaryMetric, CancellationToken.None)
+                          ?? "it does not beat production");
 
                 // Promoted or not, a model that ranks but answers one class at its threshold is told so.
                 if (result.Metrics != null && MetricPolicy.SingleClassAtThreshold(result.Metrics) is { } gateWarning)

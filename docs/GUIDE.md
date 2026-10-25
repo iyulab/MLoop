@@ -145,8 +145,11 @@ mloop train <data-file> <label-column> [options]
 #                               without training
 #   --generate-script <path>    Write a preprocessing script from that analysis
 #   --no-promote                Skip automatic promotion to production
-#   --json                      Newline-delimited JSON events (phase/trial/warning/result/error)
+#   --json                      Newline-delimited JSON events (phase/trial/warning/result/promotion/error)
 #                               on stdout instead of the rich display
+#                               — after `result`, `promotion` says whether the
+#                               experiment went to production (`promoted`) and, when not, why
+#                               (`keptInStagingReason`), as a POST /train job does
 
 # Examples
 mloop train datasets/train.csv --label price --time 120
