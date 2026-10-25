@@ -209,7 +209,7 @@ COPY {ExperimentLayout.ModelsDirectory}/ ./{ExperimentLayout.ModelsDirectory}/
 {(encoded ? $@"# The models read text through encoders ({string.Join(", ", textEncoders!.Select(e => e.Id))}), which run on ONNX Runtime
 # (~{MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.ApproximateSizeMB} MB). The encoders themselves are not in the image: they are mounted, as docker-compose.yml shows.
 RUN mloop runtime install {MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.Id} --quiet
-ENV {EncoderStore.RootVariable}=/encoders" : $@"# POST /embed (pretrained image encoders) runs on ONNX Runtime, whose native library this image carries only when
+ENV {EncoderStore.RootVariable}=/encoders" : $@"# POST /embed (pretrained image and text encoders) runs on ONNX Runtime, whose native library this image carries only when
 # asked — uncomment to install it (~{MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.ApproximateSizeMB} MB), and mount the encoders as docker-compose.yml shows:
 # RUN mloop runtime install {MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.Id} --quiet")}
 

@@ -7,7 +7,7 @@ using Spectre.Console;
 namespace MLoop.CLI.Commands;
 
 /// <summary>
-/// <c>mloop encoder</c> — the pretrained image encoders <c>mloop embed</c> and <c>POST /embed</c> run, kept outside any
+/// <c>mloop encoder</c> — the pretrained image and text encoders <c>mloop embed</c> and <c>POST /embed</c> run, kept outside any
 /// project (<see cref="EncoderStore"/>).
 /// </summary>
 public static class EncoderCommand
@@ -16,7 +16,7 @@ public static class EncoderCommand
 
     public static Command Create()
     {
-        var command = new Command("encoder", "Manage the pretrained image encoders mloop embed runs");
+        var command = new Command("encoder", "Manage the pretrained image and text encoders that mloop embed and encoder-read text columns run");
         command.Subcommands.Add(CreateListCommand());
         command.Subcommands.Add(CreateInstallCommand());
         command.Subcommands.Add(CreateAddCommand());
