@@ -33,7 +33,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `mloop serve` read the column's text through the same encoder. A model whose encoder is missing, or installed with
   other weights, tokenizer or preprocessing, refuses to score and says which. `mloop validate` refuses an encoder on
   a column that is not `type: text` or for another task; `mloop export onnx` and `portable:` refuse such a model.
-
+  `mloop docker` generates, for a project whose models read text through an encoder, the ONNX Runtime install, the
+  encoder directory variable and its mount (commented otherwise), and names the encoders to install on the host.
 - An experiment keeps the warnings its run raised — about the data, the run and the trained model, as `mloop train`
   printed them — as `warnings` in its `metadata.json` and a «Warnings» section of its `report.md`, failed runs
   included. Before, they were on the terminal and nowhere after.

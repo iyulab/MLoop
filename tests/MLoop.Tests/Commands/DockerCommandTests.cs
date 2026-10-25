@@ -185,6 +185,56 @@ public class DockerCommandTests
         Assert.Contains("~/.mloop/encoders:/encoders:ro", ((List<object>)service["volumes"]).Cast<string>());
     }
 
+    private static readonly MLoop.Core.Embedding.EncoderIdentity TextEncoder = new(
+        "multilingual-minilm", "1", "abc", 384, Normalized: true, "xlm-roberta/1", MLoop.Core.Embedding.EncoderKind.Text, "def");
+
+    /// <summary>
+    /// A model trained on a text column through an encoder refuses to load without that encoder and ONNX Runtime
+    /// (<see cref="MLoop.Core.Models.TextEncodings"/>), so for such a project the lines are on — not left commented for
+    /// <c>POST /embed</c> — and the compose service carries the variable and the mount as YAML.
+    /// </summary>
+    [Fact]
+    public void ModelsThatReadTextThroughAnEncoder_GetTheRuntimeAndTheMount()
+    {
+        var dockerfile = DockerCommand.GenerateDockerfile("default", 5000, [TextEncoder]);
+        Assert.Contains("\nRUN mloop runtime install onnxruntime --quiet", dockerfile);
+        Assert.DoesNotContain("# RUN mloop runtime install", dockerfile);
+        Assert.Contains("multilingual-minilm", dockerfile);
+        Assert.Contains($"ENV {MLoop.Core.Embedding.EncoderStore.RootVariable}=/encoders", dockerfile);
+
+        var service = (Dictionary<object, object>)((Dictionary<object, object>)
+            new YamlDotNet.Serialization.Deserializer().Deserialize<Dictionary<object, object>>(
+                DockerCommand.GenerateDockerCompose("default", 5000, [TextEncoder]))["services"])["mloop-api"];
+        Assert.Contains($"{MLoop.Core.Embedding.EncoderStore.RootVariable}=/encoders", ((List<object>)service["environment"]).Cast<string>());
+        Assert.Contains("~/.mloop/encoders:/encoders:ro", ((List<object>)service["volumes"]).Cast<string>());
+    }
+
+    [Fact]
+    public void TextEncodersUnder_ReadsEveryModelsEncodings_OncePerId()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mloop-docker-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var models = Path.Combine(root, ExperimentLayout.ModelsDirectory, "default");
+            foreach (var dir in new[] { Path.Combine(models, ExperimentLayout.ProductionDirectory), Path.Combine(models, ExperimentLayout.StagingDirectory, "exp-002") })
+            {
+                Directory.CreateDirectory(dir);
+                new MLoop.Core.Models.TextEncodings([new("review", TextEncoder), new("title", TextEncoder)])
+                    .WriteBeside(Path.Combine(dir, ExperimentLayout.ModelFileName));
+            }
+            Directory.CreateDirectory(Path.Combine(models, ExperimentLayout.StagingDirectory, "exp-001"));
+
+            var found = DockerCommand.TextEncodersUnder(root);
+
+            Assert.Equal("multilingual-minilm", Assert.Single(found).Id);
+            Assert.Empty(DockerCommand.TextEncodersUnder(Path.Combine(root, "nowhere")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void GenerateDockerCompose_ContainsRestartPolicy()
     {

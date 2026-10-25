@@ -1582,6 +1582,12 @@ distribution — the `aspnet` image already carries the runtime the tool needs. 
 `.mloop/` and `mloop.yaml` are copied in, so the image serves without a mounted volume; the compose
 file additionally mounts `models/` read-only so a promoted model can be picked up without rebuilding.
 
+**Models that read text through an encoder** (a column with `encoder:`) cannot load without that encoder and ONNX
+Runtime. When any model under `models/` was trained that way, `mloop docker` switches both on: the Dockerfile installs
+ONNX Runtime and sets `MLOOP_ENCODERS=/encoders`, the compose file mounts `~/.mloop/encoders` read-only, and the
+command lists the encoders to `mloop encoder install` on the host — the image never carries the encoders themselves.
+Otherwise those lines stay commented, for `POST /embed` only.
+
 **docker-compose.yml Features**:
 - Health check that issues a GET (a HEAD-only probe is answered 405 by a GET route, which reads to
   the orchestrator as a dead container even while the service is healthy). A successful probe is

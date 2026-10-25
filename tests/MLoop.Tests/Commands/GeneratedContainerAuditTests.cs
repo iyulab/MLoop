@@ -53,6 +53,8 @@ public class GeneratedContainerAuditTests
     public void GeneratedDockerfile_PassesTheAudit()
     {
         Assert.Empty(Audit(DockerCommand.GenerateDockerfile("default", 5000)));
+        Assert.Empty(Audit(DockerCommand.GenerateDockerfile("default", 5000,
+            [new("multilingual-minilm", "1", "abc", 384, Normalized: true, "xlm-roberta/1", MLoop.Core.Embedding.EncoderKind.Text)])));
     }
 
     [Fact]

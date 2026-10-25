@@ -2,6 +2,8 @@ using System.CommandLine;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Update;
+using MLoop.Core.Embedding;
+using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using Spectre.Console;
 
@@ -65,9 +67,13 @@ public static class DockerCommand
             AnsiConsole.Write(new Rule("[blue]Docker Configuration Generator[/]").LeftJustified());
             AnsiConsole.WriteLine();
 
+            // A model that reads a text column through an encoder cannot load without that encoder and ONNX Runtime,
+            // so the image is generated with both switched on rather than left to fail at the first prediction.
+            var textEncoders = TextEncodersUnder(projectRoot);
+
             // Generate Dockerfile
             var dockerfilePath = Path.Combine(projectRoot, "Dockerfile");
-            var dockerfileContent = GenerateDockerfile(modelName, port);
+            var dockerfileContent = GenerateDockerfile(modelName, port, textEncoders);
             await File.WriteAllTextAsync(dockerfilePath, dockerfileContent);
 
             ValueLine.Write("[green]✓[/] Generated: ", dockerfilePath);
@@ -81,7 +87,7 @@ public static class DockerCommand
 
             // Generate docker-compose.yml
             var composePath = Path.Combine(projectRoot, "docker-compose.yml");
-            var composeContent = GenerateDockerCompose(modelName, port);
+            var composeContent = GenerateDockerCompose(modelName, port, textEncoders);
             await File.WriteAllTextAsync(composePath, composeContent);
 
             ValueLine.Write("[green]✓[/] Generated: ", composePath);
@@ -91,12 +97,23 @@ public static class DockerCommand
             AnsiConsole.Write(new Rule("[yellow]Usage Instructions[/]").LeftJustified());
             AnsiConsole.WriteLine();
 
+            if (textEncoders.Count > 0)
+            {
+                AnsiConsole.MarkupLine("[bold]Text encoders:[/] the models read text through encoders the image does not carry —");
+                AnsiConsole.MarkupLine("  install them on this host (the container mounts ~/.mloop/encoders):");
+                foreach (var encoder in textEncoders)
+                    ValueLine.Write("  mloop encoder install ", encoder.Id);
+                AnsiConsole.WriteLine();
+            }
+
             AnsiConsole.MarkupLine("[bold]Build Docker image:[/]");
             AnsiConsole.MarkupLine($"  docker build -t mloop-{modelName}:latest .");
             AnsiConsole.WriteLine();
 
             AnsiConsole.MarkupLine("[bold]Run container:[/]");
-            AnsiConsole.MarkupLine($"  docker run -p {port}:{port} mloop-{modelName}:latest");
+            AnsiConsole.MarkupLine(textEncoders.Count > 0
+                ? $"  docker run -p {port}:{port} -v ~/.mloop/encoders:/encoders:ro mloop-{modelName}:latest"
+                : $"  docker run -p {port}:{port} mloop-{modelName}:latest");
             AnsiConsole.WriteLine();
 
             AnsiConsole.MarkupLine("[bold]Or use docker-compose (serves in Production, so it requires a signing key):[/]");
@@ -116,8 +133,27 @@ public static class DockerCommand
         }
     }
 
-    internal static string GenerateDockerfile(string modelName, int port)
+    /// <summary>
+    /// The text encoders the models under <paramref name="projectRoot"/> were trained with (<see cref="TextEncodings"/> beside
+    /// each experiment and production model), one per id — the image copies every model, so any of them can be served.
+    /// </summary>
+    internal static IReadOnlyList<EncoderIdentity> TextEncodersUnder(string projectRoot)
     {
+        var models = Path.Combine(projectRoot, ExperimentLayout.ModelsDirectory);
+        if (!Directory.Exists(models))
+            return [];
+        return Directory.EnumerateFiles(models, ExperimentLayout.TextEncodersFileName, SearchOption.AllDirectories)
+            .Select(path => TextEncodings.ReadBeside(Path.Combine(Path.GetDirectoryName(path)!, ExperimentLayout.ModelFileName)))
+            .SelectMany(encodings => encodings?.Columns ?? [])
+            .Select(column => column.Encoder)
+            .DistinctBy(encoder => encoder.Id, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(encoder => encoder.Id, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    internal static string GenerateDockerfile(string modelName, int port, IReadOnlyList<EncoderIdentity>? textEncoders = null)
+    {
+        var encoded = textEncoders is { Count: > 0 };
         // The tool is installed in the SDK stage and its output directory copied into the runtime
         // stage. The runtime image already ships Microsoft.NETCore.App and Microsoft.AspNetCore.App,
         // so nothing here installs a .NET distribution — an earlier revision added the Microsoft
@@ -170,9 +206,12 @@ COPY mloop.yaml ./
 COPY .mloop/ ./.mloop/
 COPY {ExperimentLayout.ModelsDirectory}/ ./{ExperimentLayout.ModelsDirectory}/
 
-# POST /embed (pretrained image encoders) runs on ONNX Runtime, whose native library this image carries only when
+{(encoded ? $@"# The models read text through encoders ({string.Join(", ", textEncoders!.Select(e => e.Id))}), which run on ONNX Runtime
+# (~{MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.ApproximateSizeMB} MB). The encoders themselves are not in the image: they are mounted, as docker-compose.yml shows.
+RUN mloop runtime install {MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.Id} --quiet
+ENV {EncoderStore.RootVariable}=/encoders" : $@"# POST /embed (pretrained image encoders) runs on ONNX Runtime, whose native library this image carries only when
 # asked — uncomment to install it (~{MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.ApproximateSizeMB} MB), and mount the encoders as docker-compose.yml shows:
-# RUN mloop runtime install {MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.Id} --quiet
+# RUN mloop runtime install {MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.Id} --quiet")}
 
 ENV ASPNETCORE_URLS=http://+:{port}
 ENV MLOOP_PROJECT_ROOT=/app
@@ -230,8 +269,9 @@ obj/
 ";
     }
 
-    internal static string GenerateDockerCompose(string modelName, int port)
+    internal static string GenerateDockerCompose(string modelName, int port, IReadOnlyList<EncoderIdentity>? textEncoders = null)
     {
+        var encoded = textEncoders is { Count: > 0 };
         return $@"# MLoop Docker Compose Configuration
 # Auto-generated by 'mloop docker'
 
@@ -254,12 +294,14 @@ services:
       # than defaulted: compose stops with this message when JWT_SIGNING_KEY is unset, instead of
       # starting a container that crash-loops on a fatal it cannot recover from.
       - Jwt__Key=${{JWT_SIGNING_KEY:?set JWT_SIGNING_KEY to a random secret of at least 32 characters}}
-      # POST /embed: the encoders `mloop encoder install` (or `add`) put on the host, mounted (the image carries none), with the
+{(encoded ? $@"      # The models read text through encoders ({string.Join(", ", textEncoders!.Select(e => e.Id))}): the ones `mloop encoder install`
+      # put on the host, mounted (the image carries none). A model refuses to load when its encoder is missing or another.
+      - {EncoderStore.RootVariable}=/encoders" : $@"      # POST /embed: the encoders `mloop encoder install` (or `add`) put on the host, mounted (the image carries none), with the
       # Dockerfile's ONNX Runtime line uncommented:
-      # - {MLoop.Core.Embedding.EncoderStore.RootVariable}=/encoders
+      # - {EncoderStore.RootVariable}=/encoders")}
     volumes:
       - ./{ExperimentLayout.ModelsDirectory}:/app/{ExperimentLayout.ModelsDirectory}:ro  # Read-only model access
-      # - ~/.mloop/encoders:/encoders:ro
+      {(encoded ? "" : "# ")}- ~/.mloop/encoders:/encoders:ro
     restart: unless-stopped
     healthcheck:
       test: [""CMD"", ""wget"", ""--quiet"", ""--tries=1"", ""-O"", ""/dev/null"", ""http://127.0.0.1:{port}/health""]
