@@ -66,12 +66,26 @@ public class ServeCommand : Command
     /// ("every command's top-level catch funnels here before returning a non-zero exit code");
     /// serve was the command that did not hold up its half.
     /// </remarks>
+    /// <summary>Whether <paramref name="host"/> is something a server binds to: a host name, an address, or <c>*</c> / <c>+</c>.</summary>
+    internal static bool IsBindableHost(string host) =>
+        host is "*" or "+" || Uri.CheckHostName(host.Trim('[', ']')) != UriHostNameType.Unknown;
+
     private static async Task<int> ExecuteAsync(
         int port,
         string host,
         bool detach,
         IProjectDiscovery projectDiscovery)
     {
+        // The host becomes part of the API's command line (--urls http://<host>:<port>), so only a host name or address
+        // is taken: a value with spaces in it would add arguments of its own — another --urls, a signing key.
+        if (!IsBindableHost(host))
+        {
+            ErrorConsole.Error(
+                Markup.Escape($"'{host}' is not a host to bind to."),
+                "Give a host name or address — localhost, 127.0.0.1, ::1, 0.0.0.0 — or * for every address.");
+            return 1;
+        }
+
         try
         {
             // Verify we're in an MLoop project

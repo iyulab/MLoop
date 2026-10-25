@@ -69,4 +69,23 @@ public class ServeCommandTests
 
         Assert.Null(result);
     }
+
+    [Theory]
+    [InlineData("localhost")]
+    [InlineData("127.0.0.1")]
+    [InlineData("0.0.0.0")]
+    [InlineData("::1")]
+    [InlineData("[::1]")]
+    [InlineData("api.example.com")]
+    [InlineData("*")]
+    [InlineData("+")]
+    public void A_host_name_or_address_is_bound(string host) => Assert.True(ServeCommand.IsBindableHost(host));
+
+    /// <summary>The host is spliced into the API's command line, so a value that carries arguments is refused.</summary>
+    [Theory]
+    [InlineData("127.0.0.1 --Jwt:Key=0123456789abcdef0123456789abcdef")]
+    [InlineData("localhost\" --urls http://0.0.0.0:80 \"")]
+    [InlineData("")]
+    [InlineData("a b")]
+    public void A_value_that_is_not_a_host_is_refused(string host) => Assert.False(ServeCommand.IsBindableHost(host));
 }

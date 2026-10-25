@@ -146,6 +146,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop serve --host` takes only a host name or address (or `*`): the value is part of the API process's command line,
+  so a host with spaces in it added arguments of its own — another `--urls`, a signing key.
 - An error or warning naming a path or name the user gave with square brackets (`data[1].csv`) printed
   "Unbalanced markup stack" — or failed with an unhandled exception — instead of the message: the text was read
   as console markup. Every value interpolated into an error or warning line is now shown as given — the lines take
