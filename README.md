@@ -86,7 +86,7 @@ from the ML.NET trainers underneath, so they are stated here rather than discove
 
 - **The text trainers read only Latin-1 text.** They start from English pretrained models (NAS-BERT,
   RoBERTa) and read text through an English tokenizer that drops every character above U+00FF on the
-  way in: Korean, Chinese, Japanese or Cyrillic text reaches the model as nothing, and it learns from
+  way in ([dotnet/machinelearning#7858](https://github.com/dotnet/machinelearning/issues/7858)): Korean, Chinese, Japanese or Cyrillic text reaches the model as nothing, and it learns from
   the digits, Latin letters and punctuation left over — on Korean news, dialogue and sentence sets,
   82–89% of the characters. Training warns when a text column loses more than 5% this way. For
   classification, a tabular model (`--task multiclass-classification`) reads every character; a text

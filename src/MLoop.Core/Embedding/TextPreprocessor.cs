@@ -82,7 +82,7 @@ public sealed class TextPreprocessor
     // SentencePiece's Unigram encoder merges a run of characters it has no piece for into one unknown piece (the encoders'
     // tokenizers — sentencepiece, HF tokenizers — do); Microsoft.ML.Tokenizers 2.0.1 gives one per character, so
     // "魑魅" would be two <unk> where the encoder was trained on one.
-    // TODO(upstream): drop once Microsoft.ML.Tokenizers merges a run of unknown pieces itself (TextEmbedderTests pins the ids).
+    // TODO(upstream: https://github.com/dotnet/machinelearning/issues/7859) — drop once Microsoft.ML.Tokenizers merges a run of unknown pieces itself (TextEmbedderTests pins the ids).
     private static IReadOnlyList<int> UnknownRunsMerged(IReadOnlyList<int> pieces, int unknown)
     {
         var merged = new List<int>(pieces.Count);

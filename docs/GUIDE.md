@@ -392,7 +392,7 @@ Notes:
 
 Text classification, sentence similarity, NER and question answering train ML.NET's pretrained English
 models (NAS-BERT, RoBERTa), which read text through an English tokenizer that **drops every character above
-U+00FF on the way in**. Latin-1 text is read whole; Korean, Chinese, Japanese, Cyrillic and similar text
+U+00FF on the way in** ([dotnet/machinelearning#7858](https://github.com/dotnet/machinelearning/issues/7858)). Latin-1 text is read whole; Korean, Chinese, Japanese, Cyrillic and similar text
 reaches the model as nothing — `음악을 들으면서` is read as one space — and the model learns from the digits,
 Latin letters and punctuation left over. On Korean news, dialogue and sentence sets that was 82–89% of the
 characters. Training warns, per text column, when more than 5% of its characters are dropped, with the share.
