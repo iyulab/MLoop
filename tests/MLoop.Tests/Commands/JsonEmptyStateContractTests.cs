@@ -65,7 +65,7 @@ public class JsonEmptyStateContractTests : IDisposable
     [Fact]
     public async Task FeedbackList_Json_NoFeedback_EmitsEmptyArray()
     {
-        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("feedback", "list", "--model", "default", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("feedback", "list", "--name", "default", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -75,7 +75,7 @@ public class JsonEmptyStateContractTests : IDisposable
     [Fact]
     public async Task FeedbackMetrics_Json_NoFeedback_EmitsZeroedPayload()
     {
-        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("feedback", "metrics", "--model", "default", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("feedback", "metrics", "--name", "default", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -85,7 +85,7 @@ public class JsonEmptyStateContractTests : IDisposable
     [Fact]
     public async Task SampleStats_Json_NoPredictions_EmitsZeroedPayload()
     {
-        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("sample", "stats", "--model", "default", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("sample", "stats", "--name", "default", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = ParseStdout(stdout, stderr);
@@ -95,7 +95,7 @@ public class JsonEmptyStateContractTests : IDisposable
     [Fact]
     public async Task TriggerCheck_Json_ProgressLineDoesNotReachStdout()
     {
-        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("trigger", "check", "--model", "default", "--json");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("trigger", "check", "--name", "default", "--json");
 
         Assert.Equal(0, exitCode);
         using var doc = ParseStdout(stdout, stderr);

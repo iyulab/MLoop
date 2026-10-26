@@ -78,12 +78,9 @@ public class TrainingEngine : ITrainingEngine
 
         // Track original data file and temp file for cleanup (encoding conversion)
         string originalDataFile = config.DataFile;
-        string? tempEncodingFile = null;
-        string? stratifiedSplitDirectory = null;
-        // The fingerprint of the data as the user has it — taken before any conversion or split
-        // makes a temporary copy, so the record names a file the user can check, not one only
-        // this process ever saw. Null for directory-based tasks, whose input is not one file.
-        string? dataFileHash = null;
+        // What the data preparation leaves to clean up (a converted copy, a split directory) and the data's
+        // fingerprint are recorded here as they are made, so the finally below sees them on any path.
+        var input = new PreparedTrainingInput(config);
         // The budget training was actually granted. A fixed run is granted what it asked for;
         // auto-time replaces the configured value with the budgets it chose (probe, then main when
         // it runs), so the record states what ran rather than a default nobody used.
@@ -99,207 +96,10 @@ public class TrainingEngine : ITrainingEngine
             // Create experiment directory
             await _fileSystem.CreateDirectoryAsync(experimentPath, cancellationToken);
 
-            string dataFilePath = config.DataFile;
-            InputSchemaInfo? inputSchema;
-
-            if (DataLoaderFactory.IsDirectoryBased(config.Task))
-            {
-                // Image classification: config.DataFile is a directory whose subfolders are
-                // class labels (folder name = label). CSV preprocessing \u2014 encoding detection,
-                // multi-line flattening, CSV quality validation, and column inference \u2014 does
-                // not apply to an image directory, so it is bypassed entirely here.
-                if (!Directory.Exists(dataFilePath))
-                {
-                    throw new DirectoryNotFoundException(
-                        $"Image classification expects a dataset directory, but it was not found: {dataFilePath}\n" +
-                        "Lay images out as one subfolder per class (e.g. datasets/images/OK, datasets/images/NG).");
-                }
-
-                // For image classification the class count is the number of class subfolders;
-                // it feeds the promotion quality gate's 1/N threshold. Object detection's
-                // classes live in annotations, not folders, so leave it unknown there.
-                int? classCount = string.Equals(config.Task, "image-classification", StringComparison.OrdinalIgnoreCase)
-                    ? ImageDirectoryLoader.CountClasses(dataFilePath)
-                    : null;
-                inputSchema = BuildDirectoryInputSchema(config.LabelColumn, config.Task, classCount);
-            }
-            else
-            {
-                dataFileHash = await DataFingerprint.ComputeAsync(originalDataFile, cancellationToken);
-
-                // Handle encoding detection/conversion for non-UTF8 files (e.g., CP949/EUC-KR)
-                // This ensures Korean and other non-ASCII text is read correctly throughout training
-                var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(config.DataFile);
-
-                // Use converted path for all training operations, original path for metadata
-                if (detection.WasConverted)
-                {
-                    tempEncodingFile = convertedPath;
-                    dataFilePath = convertedPath;
-                    CoreNarration.Write($"[Info] Converted {detection.EncodingName} \u2192 UTF-8: {Path.GetFileName(originalDataFile)}");
-                }
-
-                // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
-                dataFilePath = CsvDataLoader.FlattenMultiLineQuotedFields(dataFilePath, CoreNarration.Sink);
-
-                // Flatten multi-line quoted headers (ML.NET doesn't support them)
-                dataFilePath = CsvDataLoader.FlattenMultiLineHeaders(dataFilePath, CoreNarration.Sink);
-
-                // Update config DataFile so TrainingRunner uses the processed file
-                if (dataFilePath != config.DataFile)
-                {
-                    // `with` rather than a re-listed constructor: the previous hand-written copy
-                    // omitted TestDataFile and the pre-featurizer fields, so any dataset needing an
-                    // encoding conversion silently lost its pre-split test set and prep featurizer.
-                    config = config with { DataFile = dataFilePath };
-                }
-
-                // Validate data quality before training (label column + dataset size)
-                var dataQualityValidator = new DataQualityValidator(_mlContext);
-                var qualityResult = dataQualityValidator.ValidateTrainingData(dataFilePath, config.LabelColumn, config.Task);
-
-                if (!qualityResult.IsValid)
-                {
-                    // Data quality issue detected - fail fast with clear error
-                    // Joined rather than concatenated with fixed separators: the second field this
-                    // used to interpolate was null on most of the paths that reach here, so the
-                    // message a user saw carried a blank line where an explanation was supposed to
-                    // be. Empty parts are dropped instead of rendered.
-                    throw new InvalidOperationException(
-                        string.Join("\n", new[] { qualityResult.ErrorMessage }
-                            .Concat(qualityResult.Suggestions)
-                            .Where(part => !string.IsNullOrWhiteSpace(part))));
-                }
-
-                // Show warnings if any. Through the warning seam, not Console directly: data-quality
-                // findings (class imbalance, starved classes) are exactly what a --json consumer
-                // asked to receive as events instead of parsing "[Warning]" prose.
-                foreach (var warning in qualityResult.Warnings)
-                {
-                    // Blank entries are visual spacing between console blocks, not findings —
-                    // they keep their spacing role but must not become empty warning events.
-                    if (string.IsNullOrWhiteSpace(warning))
-                        AnsiConsole.WriteLine();
-                    else
-                        WarningConsole.Warn(Markup.Escape(warning));
-                }
-
-                // Show suggestions if any
-                if (qualityResult.Suggestions.Any())
-                {
-                    CoreNarration.Write("[Suggestions]");
-                    foreach (var suggestion in qualityResult.Suggestions)
-                    {
-                        CoreNarration.Write($"  {suggestion}");
-                    }
-                    AnsiConsole.WriteLine();
-                }
-
-                // Decide once, here, which columns featurization drops. Everything downstream — the
-                // saved schema below, the train partition, the test partition — consumes this one
-                // decision instead of re-deriving it from whatever slice it happens to hold. Deciding
-                // per slice is unsound because the rules are data-dependent: a column that is
-                // constant only inside one partition narrows that partition alone, and the pipeline
-                // fitted on one width then fails on the other ("Schema mismatch for feature column
-                // 'Features': expected Vector<Single, 30>, got Vector<Single, 29>").
-                //
-                // The full dataset is the deciding slice, matching the schema capture below: a column
-                // is dropped because it carries no signal in the data as a whole, not because one
-                // random partition happened to flatten it.
-                // A model that reads no feature columns (a series, matrix factorization, a deep-learning
-                // input) loses nothing to these exclusions, so they are made without being announced.
-                // The removal chain runs silent: the warning below is the one announcement, and the
-                // chain's own narration of the same columns printed each of them twice.
-                var readsFeatures = TrainingRunner.ReadsFeatureColumns(config.Task);
-                var featureExclusions = CsvDataLoader.DetermineExcludedColumns(
-                    dataFilePath, config.LabelColumn, log: null, config.ClaimedColumns);
-                config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
-
-                // Which untyped string columns hold categories (one-hot) rather than language (text
-                // featurization) — decided once, from the full file, like the exclusions above, so the
-                // training partition, the test partition and the saved schema all agree.
-                IReadOnlyList<string> categoryColumns = readsFeatures
-                    ? CategoryColumns.Decide(dataFilePath,
-                        skip: new[] { config.LabelColumn }
-                            .Concat(config.FeatureExclusions)
-                            .Concat(config.ClaimedColumns)
-                            .Concat(config.ColumnOverrides?.Keys ?? Enumerable.Empty<string>()))
-                    : [];
-                config = config with { CategoryColumns = categoryColumns };
-
-                // Say which columns the model will not see, and why. The removal chain narrates this
-                // as it goes, but as prose on the info channel — so a --json consumer, whose stdout
-                // carries only events, learned nothing about it and had to re-derive the post-exclusion
-                // schema to know what was actually trained on. The reasons are already structured
-                // here, which is why this is a warning raised from the decision rather than a string
-                // scraped out of the chain.
-                foreach (var group in readsFeatures ? featureExclusions.GroupBy(c => c.Reason) : [])
-                {
-                    WarningConsole.Warn(
-                        $"Excluded from features ({group.Key}): {string.Join(", ", group.Select(c => c.Name))}{ExclusionReason(group.Key)}");
-                }
-
-                // A column of strictly increasing integers reads as a row number — judged here, on the whole file
-                // before the split, as the exclusions are: the shuffled partitions the loader sees no longer
-                // increase, so a check there never fired in training. Advice, not an exclusion — a day counter can
-                // be a real feature of a trend.
-                var indexLike = readsFeatures
-                    ? CsvDataLoader.DetectMonotonicColumns(dataFilePath, config.LabelColumn)
-                        .Where(c => !config.FeatureExclusions.Contains(c, StringComparer.OrdinalIgnoreCase)
-                                    && !config.ClaimedColumns.Contains(c, StringComparer.OrdinalIgnoreCase))
-                        .ToList()
-                    : [];
-                if (indexLike.Count > 0)
-                {
-                    WarningConsole.Warn(
-                        $"Possible ID/index column(s) (strictly increasing integers): {string.Join(", ", indexLike)} — " +
-                        $"read as a feature, a row number lets the model learn the order of the rows. To exclude: " +
-                        $"[cyan]mloop features select --drop {indexLike[0]}[/]");
-                }
-
-                // Capture input schema before training (using enhanced detection).
-                // Deliberately from the full dataset, not the train split — the schema must describe
-                // every category the model may be asked to predict on.
-                inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides, featureExclusions, config.CategoryColumns, config.WeightColumn);
-
-                // The label's type, decided from the whole file once — the schema just captured is what
-                // evaluate and predict will load it as, so both partitions are loaded the same way.
-                if (LabelKinds.AppliesAtTraining(config.Task)
-                    && inputSchema?.Columns.FirstOrDefault(c => c.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) is { } labelSchema)
-                {
-                    config = config with { LabelKind = LabelKinds.For(config.Task, labelSchema.DataType) };
-                }
-
-                // Stratify the train/test split for classification. The unstratified alternative is
-                // ML.NET's TrainTestSplit (DataProviderBase.SplitData), which draws rows uniformly and
-                // therefore leaves a rare class out of the test partition entirely with high probability
-                // — 3 positives in 357 rows lands a positive-free test set about half the time, and every
-                // classification metric that needs both classes is then undefined, which is what the
-                // AUC-fallback chain was built to paper over.
-                //
-                // Note ML.NET's samplingKeyColumnName is NOT stratification: it is grouping (keeping equal
-                // keys on one side to prevent leakage), so passing the label there would guarantee the
-                // failure instead of preventing it. The split has to be done on the rows themselves.
-                if (RequiresStratifiedSplit(config))
-                {
-                    stratifiedSplitDirectory = Path.Combine(
-                        Path.GetTempPath(), "mloop-split-" + Guid.NewGuid().ToString("N"));
-
-                    var split = new CsvSplitter().StratifiedSplit(
-                        dataFilePath, config.LabelColumn, config.TestSplit,
-                        outputDirectory: stratifiedSplitDirectory);
-
-                    // TestSplit stays on the config for provenance (the experiment records the fraction
-                    // that was actually requested); TrainingRunner switches to the pre-split path on the
-                    // presence of TestDataFile alone.
-                    config = config with { DataFile = split.TrainFile, TestDataFile = split.TestFile };
-
-                    CoreNarration.Write(
-                        $"[Info] Stratified split: train={split.TrainRows}, test={split.TestRows} " +
-                        $"({string.Join(", ", split.PerClass.OrderBy(c => c.Value.Train + c.Value.Test)
-                            .Select(c => $"'{c.Key}' {c.Value.Train}/{c.Value.Test}"))} as train/test)");
-                }
-            }
+            await PrepareInputAsync(input, cancellationToken);
+            config = input.Config;
+            var dataFilePath = input.DataFilePath;
+            var inputSchema = input.Schema;
 
             // Execute PreTrain hooks
             _hookEngine?.WarnAboutUnplacedHooks();
@@ -471,7 +271,7 @@ public class TrainingEngine : ITrainingEngine
                 Config = new ExperimentConfig
                 {
                     DataFile = originalDataFile, // Store original path, not converted temp file
-                    DataFileHash = dataFileHash,
+                    DataFileHash = input.DataFileHash,
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = grantedSeconds.Value,
                     AutoTime = autoTimed ? true : null,
@@ -537,7 +337,7 @@ public class TrainingEngine : ITrainingEngine
                 Config = new ExperimentConfig
                 {
                     DataFile = originalDataFile, // Store original path, not converted temp file
-                    DataFileHash = dataFileHash,
+                    DataFileHash = input.DataFileHash,
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = grantedSeconds.Value,
                     AutoTime = autoTimed ? true : null,
@@ -567,16 +367,16 @@ public class TrainingEngine : ITrainingEngine
         {
             // Clean up temp file from encoding conversion
             // ML.NET may have lazily loaded data, but by now training is complete
-            if (tempEncodingFile != null && File.Exists(tempEncodingFile))
+            if (input.TempEncodingFile != null && File.Exists(input.TempEncodingFile))
             {
-                try { File.Delete(tempEncodingFile); } catch (IOException) { /* Ignore cleanup errors */ }
+                try { File.Delete(input.TempEncodingFile); } catch (IOException) { /* Ignore cleanup errors */ }
             }
 
             // The stratified split writes to a temp directory rather than datasets/, so routine
             // training leaves no artifacts behind for the user to wonder about or accidentally commit.
-            if (stratifiedSplitDirectory != null && Directory.Exists(stratifiedSplitDirectory))
+            if (input.StratifiedSplitDirectory != null && Directory.Exists(input.StratifiedSplitDirectory))
             {
-                try { Directory.Delete(stratifiedSplitDirectory, recursive: true); }
+                try { Directory.Delete(input.StratifiedSplitDirectory, recursive: true); }
                 catch (IOException) { /* Ignore cleanup errors */ }
                 catch (UnauthorizedAccessException) { /* Ignore cleanup errors */ }
             }
@@ -718,6 +518,241 @@ public class TrainingEngine : ITrainingEngine
         // The better of probe and main by validation score — the same rows for both (one seed, one partition).
         var (mainMetric, _) = SelectionScore(mainResult, config);
         return (higherIsBetter ? mainMetric >= bestMetric : mainMetric <= bestMetric) ? mainResult : probeTrainedModel;
+    }
+
+    /// <summary>
+    /// What a run does to its data before any hook or fit: fingerprint it, convert its encoding and flatten
+    /// multi-line fields, validate it, decide the columns featurization drops and the categorical ones, capture
+    /// the input schema and, for classification, stratify the split. What it leaves behind that needs cleaning
+    /// up is recorded on <paramref name="input"/> as it is made, so a failure part-way still cleans up.
+    /// </summary>
+    private async Task PrepareInputAsync(PreparedTrainingInput input, CancellationToken cancellationToken)
+    {
+        var config = input.Config;
+        var originalDataFile = config.DataFile;
+        string dataFilePath = config.DataFile;
+        InputSchemaInfo? inputSchema;
+
+        if (DataLoaderFactory.IsDirectoryBased(config.Task))
+        {
+            // Image classification: config.DataFile is a directory whose subfolders are
+            // class labels (folder name = label). CSV preprocessing \u2014 encoding detection,
+            // multi-line flattening, CSV quality validation, and column inference \u2014 does
+            // not apply to an image directory, so it is bypassed entirely here.
+            if (!Directory.Exists(dataFilePath))
+            {
+                throw new DirectoryNotFoundException(
+                    $"Image classification expects a dataset directory, but it was not found: {dataFilePath}\n" +
+                    "Lay images out as one subfolder per class (e.g. datasets/images/OK, datasets/images/NG).");
+            }
+
+            // For image classification the class count is the number of class subfolders;
+            // it feeds the promotion quality gate's 1/N threshold. Object detection's
+            // classes live in annotations, not folders, so leave it unknown there.
+            int? classCount = string.Equals(config.Task, "image-classification", StringComparison.OrdinalIgnoreCase)
+                ? ImageDirectoryLoader.CountClasses(dataFilePath)
+                : null;
+            inputSchema = BuildDirectoryInputSchema(config.LabelColumn, config.Task, classCount);
+        }
+        else
+        {
+            input.DataFileHash = await DataFingerprint.ComputeAsync(originalDataFile, cancellationToken);
+
+            // Handle encoding detection/conversion for non-UTF8 files (e.g., CP949/EUC-KR)
+            // This ensures Korean and other non-ASCII text is read correctly throughout training
+            var (convertedPath, detection) = EncodingDetector.ConvertToUtf8WithBom(config.DataFile);
+
+            // Use converted path for all training operations, original path for metadata
+            if (detection.WasConverted)
+            {
+                input.TempEncodingFile = convertedPath;
+                dataFilePath = convertedPath;
+                CoreNarration.Write($"[Info] Converted {detection.EncodingName} \u2192 UTF-8: {Path.GetFileName(originalDataFile)}");
+            }
+
+            // Flatten multi-line quoted fields in data rows (RFC 4180 multiline support)
+            dataFilePath = CsvDataLoader.FlattenMultiLineQuotedFields(dataFilePath, CoreNarration.Sink);
+
+            // Flatten multi-line quoted headers (ML.NET doesn't support them)
+            dataFilePath = CsvDataLoader.FlattenMultiLineHeaders(dataFilePath, CoreNarration.Sink);
+
+            // Update config DataFile so TrainingRunner uses the processed file
+            if (dataFilePath != config.DataFile)
+            {
+                // `with` rather than a re-listed constructor: the previous hand-written copy
+                // omitted TestDataFile and the pre-featurizer fields, so any dataset needing an
+                // encoding conversion silently lost its pre-split test set and prep featurizer.
+                config = config with { DataFile = dataFilePath };
+            }
+
+            // Validate data quality before training (label column + dataset size)
+            var dataQualityValidator = new DataQualityValidator(_mlContext);
+            var qualityResult = dataQualityValidator.ValidateTrainingData(dataFilePath, config.LabelColumn, config.Task);
+
+            if (!qualityResult.IsValid)
+            {
+                // Data quality issue detected - fail fast with clear error
+                // Joined rather than concatenated with fixed separators: the second field this
+                // used to interpolate was null on most of the paths that reach here, so the
+                // message a user saw carried a blank line where an explanation was supposed to
+                // be. Empty parts are dropped instead of rendered.
+                throw new InvalidOperationException(
+                    string.Join("\n", new[] { qualityResult.ErrorMessage }
+                        .Concat(qualityResult.Suggestions)
+                        .Where(part => !string.IsNullOrWhiteSpace(part))));
+            }
+
+            // Show warnings if any. Through the warning seam, not Console directly: data-quality
+            // findings (class imbalance, starved classes) are exactly what a --json consumer
+            // asked to receive as events instead of parsing "[Warning]" prose.
+            foreach (var warning in qualityResult.Warnings)
+            {
+                // Blank entries are visual spacing between console blocks, not findings —
+                // they keep their spacing role but must not become empty warning events.
+                if (string.IsNullOrWhiteSpace(warning))
+                    AnsiConsole.WriteLine();
+                else
+                    WarningConsole.Warn(Markup.Escape(warning));
+            }
+
+            // Show suggestions if any
+            if (qualityResult.Suggestions.Any())
+            {
+                CoreNarration.Write("[Suggestions]");
+                foreach (var suggestion in qualityResult.Suggestions)
+                {
+                    CoreNarration.Write($"  {suggestion}");
+                }
+                AnsiConsole.WriteLine();
+            }
+
+            // Decide once, here, which columns featurization drops. Everything downstream — the
+            // saved schema below, the train partition, the test partition — consumes this one
+            // decision instead of re-deriving it from whatever slice it happens to hold. Deciding
+            // per slice is unsound because the rules are data-dependent: a column that is
+            // constant only inside one partition narrows that partition alone, and the pipeline
+            // fitted on one width then fails on the other ("Schema mismatch for feature column
+            // 'Features': expected Vector<Single, 30>, got Vector<Single, 29>").
+            //
+            // The full dataset is the deciding slice, matching the schema capture below: a column
+            // is dropped because it carries no signal in the data as a whole, not because one
+            // random partition happened to flatten it.
+            // A model that reads no feature columns (a series, matrix factorization, a deep-learning
+            // input) loses nothing to these exclusions, so they are made without being announced.
+            // The removal chain runs silent: the warning below is the one announcement, and the
+            // chain's own narration of the same columns printed each of them twice.
+            var readsFeatures = TrainingRunner.ReadsFeatureColumns(config.Task);
+            var featureExclusions = CsvDataLoader.DetermineExcludedColumns(
+                dataFilePath, config.LabelColumn, log: null, config.ClaimedColumns);
+            config = config with { FeatureExclusions = featureExclusions.Select(c => c.Name).ToList() };
+
+            // Which untyped string columns hold categories (one-hot) rather than language (text
+            // featurization) — decided once, from the full file, like the exclusions above, so the
+            // training partition, the test partition and the saved schema all agree.
+            IReadOnlyList<string> categoryColumns = readsFeatures
+                ? CategoryColumns.Decide(dataFilePath,
+                    skip: new[] { config.LabelColumn }
+                        .Concat(config.FeatureExclusions)
+                        .Concat(config.ClaimedColumns)
+                        .Concat(config.ColumnOverrides?.Keys ?? Enumerable.Empty<string>()))
+                : [];
+            config = config with { CategoryColumns = categoryColumns };
+
+            // Say which columns the model will not see, and why. The removal chain narrates this
+            // as it goes, but as prose on the info channel — so a --json consumer, whose stdout
+            // carries only events, learned nothing about it and had to re-derive the post-exclusion
+            // schema to know what was actually trained on. The reasons are already structured
+            // here, which is why this is a warning raised from the decision rather than a string
+            // scraped out of the chain.
+            foreach (var group in readsFeatures ? featureExclusions.GroupBy(c => c.Reason) : [])
+            {
+                WarningConsole.Warn(
+                    $"Excluded from features ({group.Key}): {string.Join(", ", group.Select(c => c.Name))}{ExclusionReason(group.Key)}");
+            }
+
+            // A column of strictly increasing integers reads as a row number — judged here, on the whole file
+            // before the split, as the exclusions are: the shuffled partitions the loader sees no longer
+            // increase, so a check there never fired in training. Advice, not an exclusion — a day counter can
+            // be a real feature of a trend.
+            var indexLike = readsFeatures
+                ? CsvDataLoader.DetectMonotonicColumns(dataFilePath, config.LabelColumn)
+                    .Where(c => !config.FeatureExclusions.Contains(c, StringComparer.OrdinalIgnoreCase)
+                                && !config.ClaimedColumns.Contains(c, StringComparer.OrdinalIgnoreCase))
+                    .ToList()
+                : [];
+            if (indexLike.Count > 0)
+            {
+                WarningConsole.Warn(
+                    $"Possible ID/index column(s) (strictly increasing integers): {string.Join(", ", indexLike)} — " +
+                    $"read as a feature, a row number lets the model learn the order of the rows. To exclude: " +
+                    $"[cyan]mloop features select --drop {indexLike[0]}[/]");
+            }
+
+            // Capture input schema before training (using enhanced detection).
+            // Deliberately from the full dataset, not the train split — the schema must describe
+            // every category the model may be asked to predict on.
+            inputSchema = CaptureInputSchemaEnhanced(dataFilePath, config.LabelColumn, config.Task, config.ColumnOverrides, featureExclusions, config.CategoryColumns, config.WeightColumn);
+
+            // The label's type, decided from the whole file once — the schema just captured is what
+            // evaluate and predict will load it as, so both partitions are loaded the same way.
+            if (LabelKinds.AppliesAtTraining(config.Task)
+                && inputSchema?.Columns.FirstOrDefault(c => c.Name.Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase)) is { } labelSchema)
+            {
+                config = config with { LabelKind = LabelKinds.For(config.Task, labelSchema.DataType) };
+            }
+
+            // Stratify the train/test split for classification. The unstratified alternative is
+            // ML.NET's TrainTestSplit (DataProviderBase.SplitData), which draws rows uniformly and
+            // therefore leaves a rare class out of the test partition entirely with high probability
+            // — 3 positives in 357 rows lands a positive-free test set about half the time, and every
+            // classification metric that needs both classes is then undefined, which is what the
+            // AUC-fallback chain was built to paper over.
+            //
+            // Note ML.NET's samplingKeyColumnName is NOT stratification: it is grouping (keeping equal
+            // keys on one side to prevent leakage), so passing the label there would guarantee the
+            // failure instead of preventing it. The split has to be done on the rows themselves.
+            if (RequiresStratifiedSplit(config))
+            {
+                input.StratifiedSplitDirectory = Path.Combine(
+                    Path.GetTempPath(), "mloop-split-" + Guid.NewGuid().ToString("N"));
+
+                var split = new CsvSplitter().StratifiedSplit(
+                    dataFilePath, config.LabelColumn, config.TestSplit,
+                    outputDirectory: input.StratifiedSplitDirectory);
+
+                // TestSplit stays on the config for provenance (the experiment records the fraction
+                // that was actually requested); TrainingRunner switches to the pre-split path on the
+                // presence of TestDataFile alone.
+                config = config with { DataFile = split.TrainFile, TestDataFile = split.TestFile };
+
+                CoreNarration.Write(
+                    $"[Info] Stratified split: train={split.TrainRows}, test={split.TestRows} " +
+                    $"({string.Join(", ", split.PerClass.OrderBy(c => c.Value.Train + c.Value.Test)
+                        .Select(c => $"'{c.Key}' {c.Value.Train}/{c.Value.Test}"))} as train/test)");
+            }
+        }
+
+        input.Config = config;
+        input.DataFilePath = dataFilePath;
+        input.Schema = inputSchema;
+    }
+
+    /// <summary>The data a run trains on as <see cref="PrepareInputAsync"/> leaves it, with the temporary files it made.</summary>
+    private sealed class PreparedTrainingInput(TrainingConfig config)
+    {
+        public TrainingConfig Config { get; set; } = config;
+        public string DataFilePath { get; set; } = config.DataFile;
+        public InputSchemaInfo? Schema { get; set; }
+
+        /// <summary>
+        /// The fingerprint of the data as the user has it — taken before any conversion or split makes a
+        /// temporary copy, so the record names a file the user can check, not one only this process ever saw.
+        /// Null for directory-based tasks, whose input is not one file.
+        /// </summary>
+        public string? DataFileHash { get; set; }
+
+        public string? TempEncodingFile { get; set; }
+        public string? StratifiedSplitDirectory { get; set; }
     }
 
     /// <summary>

@@ -1227,7 +1227,7 @@ them — and says which one wins on the metric the training actually optimized.
 ```bash
 mloop compare exp-001 exp-002      # two named experiments
 mloop compare --name churn --best 3  # the top three for a model
-mloop compare --name churn -m rmse   # ranked by a metric you choose
+mloop compare --name churn --metric rmse   # ranked by a metric you choose
 ```
 
 | Argument / Option | Short | Description |
@@ -1347,9 +1347,9 @@ Once the actual value of a logged prediction is known, record it. Feedback is wh
 metrics` and `mloop trigger check` measure the model with, and what a retraining dataset is built from.
 
 ```bash
-mloop feedback add -p 2869808376524814 -v no -s reviewer-llm -w 4   # the actual value, where it came from, its weight
-mloop feedback list [--model <name>] [--json]
-mloop feedback metrics [--model <name>] [--json]
+mloop feedback add --prediction-id 2869808376524814 --actual-value no --source reviewer-llm -w 4   # the actual value, where it came from, its weight
+mloop feedback list [--name <model>] [--json]
+mloop feedback metrics [--name <model>] [--json]
 ```
 
 | Option (`add`) | Short | Description |
@@ -1368,10 +1368,10 @@ model's accuracy.
 
 ### `mloop sample`
 
-`mloop sample create --model <name>` turns the logged predictions and their feedback into a training file:
+`mloop sample create --name <model>` turns the logged predictions and their feedback into a training file:
 
 ```bash
-mloop sample create --model default --rows 1000 --strategy feedback-priority -o feedback.csv
+mloop sample create --name default --rows 1000 --strategy feedback-priority -o feedback.csv
 mloop train --data datasets/train.csv feedback.csv --weight weight   # the original rows count 1
 ```
 
@@ -1400,10 +1400,11 @@ x1,x2,churn,weight
   `testSplit` leaves them to `mloop.yaml`. A `balance` the run cannot honour (not `auto`/`none`/a ratio, a task that
   is not classification, a weight column) is refused with 400 before a job exists.
 - `mloop sample create --from <csv>` samples a plain CSV instead (`random`, `head`, `stratified --label <col>`) — a
+- `--json` on `sample create`, `feedback add` and `init` prints one document on stdout (the narration goes to stderr); a failure is `{"error": …}` with exit 1.
   relative path is the project's, as for every command, and the current directory's outside a project. The file is
   streamed, so memory follows the sample, not the file (a 100,000-row sample of a 2-million-row CSV ≈ 150 MB); the
   sampled rows keep their file order, and `stratified` gives every class at least one row when the sample has room;
-  `mloop sample stats --model <name>` reports how many logged predictions have feedback.
+  `mloop sample stats --name <model>` reports how many logged predictions have feedback.
 
 ---
 

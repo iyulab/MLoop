@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `--json` on `mloop init`, `mloop feedback add` and `mloop sample create` — the last commands that handed a caller
+  prose. Stdout is one document at every exit (`init`: `project`, `path`, `model`, `task`, `label`, `kept`;
+  `feedback add`: the recorded `predictionId`, `actualValue`, `source`, `weight`; `sample create`: `outputPath`,
+  `sampled`, the totals and, from logs, `withFeedback` and the label/weight columns), a failure is `{"error": …}`
+  with exit 1, and the narration goes to stderr.
+
+### Changed
+
+- **Breaking — a short option letter now means one long option across the whole CLI**, and `--model` means a model
+  *file* wherever it appears. Before, `-f` was `--force`, `--from` or `--feedback`; `-l` a label, a limit or a log
+  flag; `-m` a model name, a model path or a metric — so a letter learned on one command did something else on the
+  next (`ShortOptionMeaningContractTests` now reads the live command tree and refuses a second meaning). Moving over:
+  - the model *name* is `--name` / `-n` on every command: `feedback list|metrics`, `sample create|stats` and
+    `trigger check` took `--model` (and `-m`) before — use `--name`. `--model` stays the path of `predict --model`
+    and `encoder add --model`;
+  - these long options lost their short letter (the long form is unchanged): `trigger check --accuracy|--feedback`,
+    `list --all`, `info --analyze`, `train --balance|--metric`, `compare --best|--metric`, `update --check`,
+    `serve --detach`, `sample create --from|--rows|--strategy`, `feedback list|add --limit|--prediction-id|--source|
+    --actual-value`, `logs --limit`, `predict --log`, `token --subject`, `prep plan --columns`.
+  Kept: `-n` name, `-o` output, `-l` label, `-t` task, `-m` model file, `-f` force, `-p` port, `-v` verbose, `-q` quiet,
+  `-w` weight, `-e` experiment, `-d` data, `-c` column, `-i` input, `-r` role.
+
 ### Fixed
 
 - A column a prep step declares — `normalize`, `scale` or `fill-missing` with `method: mean` — could not be read after

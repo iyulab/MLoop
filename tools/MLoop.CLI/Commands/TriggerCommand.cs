@@ -29,18 +29,18 @@ public static class TriggerCommand
 
     private static Command CreateCheckCommand()
     {
-        var nameOption = new Option<string>("--name", "-n", "--model", "-m")
+        var nameOption = new Option<string>("--name", "-n")
         {
             Description = "Model name to evaluate",
             DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
         };
 
-        var accuracyOption = new Option<double?>("--accuracy", "-a")
+        var accuracyOption = new Option<double?>("--accuracy")
         {
             Description = "Accuracy threshold (0.0-1.0). Triggers if accuracy drops below this value."
         };
 
-        var feedbackOption = new Option<int?>("--feedback", "-f")
+        var feedbackOption = new Option<int?>("--feedback")
         {
             Description = "Feedback volume threshold. Triggers once the feedback count reaches this value."
         };
@@ -222,7 +222,7 @@ public static class TriggerCommand
         // Usage hint
         if (result.ShouldRetrain)
         {
-            AnsiConsole.MarkupLine("[grey]Run [blue]mloop sample create --model {0}[/] to create retraining dataset.[/]",
+            AnsiConsole.MarkupLine("[grey]Run [blue]mloop sample create --name {0}[/] to create retraining dataset.[/]",
                 modelName);
         }
     }

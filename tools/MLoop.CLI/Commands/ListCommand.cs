@@ -23,7 +23,7 @@ public static class ListCommand
             Description = "Filter by model name (shows all models if omitted)"
         };
 
-        var allOption = new Option<bool>("--all", "-a")
+        var allOption = new Option<bool>("--all")
         {
             Description = "Show all experiments including failed ones (default: completed only)",
             DefaultValueFactory = _ => false

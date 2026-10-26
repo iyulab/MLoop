@@ -32,19 +32,19 @@ public static class FeedbackCommand
 
     private static Command CreateAddCommand()
     {
-        var predictionIdOption = new Option<string>("--prediction-id", "-p")
+        var predictionIdOption = new Option<string>("--prediction-id")
         {
             Description = "ID of the prediction to provide feedback for",
             Required = true
         };
 
-        var actualValueOption = new Option<string>("--actual-value", "-v")
+        var actualValueOption = new Option<string>("--actual-value")
         {
             Description = "The actual (ground truth) value",
             Required = true
         };
 
-        var sourceOption = new Option<string?>("--source", "-s")
+        var sourceOption = new Option<string?>("--source")
         {
             Description = "Where the value came from (e.g., 'user', 'reviewer-llm', 'system')"
         };
@@ -55,19 +55,26 @@ public static class FeedbackCommand
                 + "(for a row reviewed with probability p, 1/p). Default 1"
         };
 
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the recorded feedback as JSON to stdout (narration goes to stderr)"
+        };
+
         var command = new Command("add", "Record feedback for a prediction");
         command.Options.Add(predictionIdOption);
         command.Options.Add(actualValueOption);
         command.Options.Add(sourceOption);
         command.Options.Add(weightOption);
+        command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
         {
+            var json = parseResult.GetValue(jsonOption);
             var predictionId = parseResult.GetValue(predictionIdOption)!;
             var actualValue = parseResult.GetValue(actualValueOption)!;
             var source = parseResult.GetValue(sourceOption);
             var weight = parseResult.GetValue(weightOption);
-            return ExecuteAddAsync(predictionId, actualValue, source, weight);
+            return ExecuteAddAsync(predictionId, actualValue, source, weight, json);
         });
 
         return command;
@@ -75,13 +82,13 @@ public static class FeedbackCommand
 
     private static Command CreateListCommand()
     {
-        var nameOption = new Option<string>("--model", "-m")
+        var nameOption = new Option<string>("--name", "-n")
         {
             Description = "Model name",
             DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
         };
 
-        var limitOption = new Option<int>("--limit", "-l")
+        var limitOption = new Option<int>("--limit")
         {
             Description = "Maximum number of entries to show",
             DefaultValueFactory = _ => 20
@@ -124,7 +131,7 @@ public static class FeedbackCommand
 
     private static Command CreateMetricsCommand()
     {
-        var nameOption = new Option<string>("--model", "-m")
+        var nameOption = new Option<string>("--name", "-n")
         {
             Description = "Model name",
             DefaultValueFactory = _ => ConfigDefaults.DefaultModelName
@@ -167,8 +174,10 @@ public static class FeedbackCommand
         string predictionId,
         string actualValue,
         string? source,
-        double? weight)
+        double? weight,
+        bool jsonOutput)
     {
+        using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
         try
         {
             var projectRoot = FindProjectRoot();
@@ -192,6 +201,21 @@ public static class FeedbackCommand
             {
                 AnsiConsole.MarkupLine($"  Weight: [grey]{w.ToString(CultureInfo.InvariantCulture)}[/]");
             }
+
+            if (jsonOutput)
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    predictionId,
+                    actualValue,
+                    source,
+                    weight,
+                    warnings = JsonOutputScope.Warnings
+                }, new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                }));
 
             return 0;
         }

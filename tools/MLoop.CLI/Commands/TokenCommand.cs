@@ -25,7 +25,7 @@ public class TokenCommand : Command
         {
             Description = "Role claim — use 'admin' for write endpoints (promote/train/evaluate/cache). Omit for read-only/predict."
         };
-        var subjectOption = new Option<string>("--subject", "-s")
+        var subjectOption = new Option<string>("--subject")
         {
             Description = "Subject (sub) claim identifying the caller",
             DefaultValueFactory = _ => "mloop-cli"

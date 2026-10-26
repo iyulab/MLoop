@@ -353,6 +353,47 @@ public class TrainingEngineTests : IDisposable
 
     #endregion
 
+    #region Cleanup when preparation fails
+
+    // PrepareInputAsync records what it must clean up on a holder as it is made, so the finally block in
+    // TrainAsync still sees the converted copy when a later preparation step throws.
+    [Fact]
+    public async Task TrainAsync_FailingAfterAnEncodingConversion_LeavesNoConvertedCopy()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var cp949 = System.Text.Encoding.GetEncoding(949);
+
+        // A CP949 table whose label column is not in it: the data-quality check fails after the conversion.
+        var csv = new System.Text.StringBuilder("이름,나이,결과\n");
+        for (var i = 0; i < 40; i++)
+            csv.Append($"홍길동{i},{20 + i},합격\n");
+        var path = Path.Combine(_tempDir, "cp949.csv");
+        File.WriteAllBytes(path, cp949.GetBytes(csv.ToString()));
+
+        // The scan has to be able to see the copy: the same file, converted on its own, makes one.
+        var (probe, detection) = MLoop.Core.Data.EncodingDetector.ConvertToUtf8WithBom(path);
+        Assert.True(detection.WasConverted, "the fixture must be re-encoded, or the test checks nothing");
+        Assert.Contains(probe, Directory.GetFiles(Path.GetTempPath(), "mloop_utf8_*"));
+        MLoop.Core.Data.ScratchFiles.Release(probe);
+
+        var before = Directory.GetFiles(Path.GetTempPath(), "mloop_utf8_*");
+        var engine = NewEngine();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.TrainAsync(new TrainingConfig
+        {
+            ModelName = "cp949",
+            DataFile = path,
+            LabelColumn = "Label",
+            Task = "binary-classification",
+            TimeLimitSeconds = 5
+        }));
+
+        Assert.Contains("Label", ex.Message);
+        Assert.Empty(Directory.GetFiles(Path.GetTempPath(), "mloop_utf8_*").Except(before));
+    }
+
+    #endregion
+
     #region Image classification (directory bypass)
 
     [Fact]

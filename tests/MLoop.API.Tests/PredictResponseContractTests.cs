@@ -160,7 +160,7 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
             .Select(f => f.GetProperty("weight").GetDouble())
             .Should().Equal(4.0);
 
-        // The feedback becomes a retraining set over HTTP, as `mloop sample create --model`: the actual value
+        // The feedback becomes a retraining set over HTTP, as `mloop sample create --name`: the actual value
         // under the model's label, and the weight the feedback carried.
         var sample = await _client.PostAsJsonAsync("/samples", new { name = modelName, rows = 10, strategy = "feedback-priority" });
         sample.StatusCode.Should().Be(HttpStatusCode.OK, await sample.Content.ReadAsStringAsync());

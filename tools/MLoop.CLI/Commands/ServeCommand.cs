@@ -29,7 +29,7 @@ public class ServeCommand : Command
             DefaultValueFactory = _ => "localhost"
         };
 
-        var detachOption = new Option<bool>("--detach", "-d")
+        var detachOption = new Option<bool>("--detach")
         {
             Description = "Run server in background",
             DefaultValueFactory = _ => false

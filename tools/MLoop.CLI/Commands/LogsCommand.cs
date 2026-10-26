@@ -23,7 +23,7 @@ public static class LogsCommand
             Description = $"Model name (default: '{ConfigDefaults.DefaultModelName}')"
         };
 
-        var limitOption = new Option<int>("--limit", "-l")
+        var limitOption = new Option<int>("--limit")
         {
             Description = "Maximum number of entries to show",
             DefaultValueFactory = _ => 20
