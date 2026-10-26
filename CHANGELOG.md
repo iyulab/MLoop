@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-10-26
+
 ### Added
 
 - `mloop train --json` ends a run with a `promotion` event after `result`: `promoted`, and `keptInStagingReason` when
@@ -87,6 +89,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- FilePrepper 0.13.0 and DataLens 0.20.0: a table is held by column, so `mloop info` and `mloop analyze profile` on a
+  million-row, six-column CSV peak at about 1.2 GB, and 2 million rows at about 2.3 GB. `docs/GUIDE.md` states the envelope and the sampling route for a file larger than memory allows.
 - Feedback names the experiment that answered (`experimentId`, copied from the prediction log), and the accuracy
   retraining condition judges the production experiment's answers alone. Before, every answer under the model name
   counted: after a promotion the replaced model's errors were read as the new one's accuracy, and a shadow
