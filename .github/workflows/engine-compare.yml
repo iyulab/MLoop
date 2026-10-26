@@ -1,0 +1,92 @@
+name: Engine compare
+
+# Compares MLoop's trainer search with FLAML and stand-alone LightGBM / XGBoost on public OpenML tables
+# (benchmarks/engine-compare). Run on request: a sweep takes about an hour per split seed and its output is a table
+# to read, not a pass/fail signal. Linux x64, where MLoop's LightGBM native library is available.
+on:
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: 'Time budget in seconds for each searching system and dataset'
+        default: '60'
+      datasets:
+        description: 'Comma-separated dataset names from benchmarks/engine-compare/datasets.json (empty = all)'
+        default: ''
+
+concurrency:
+  group: engine-compare-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      matrix:
+        seed: [0, 1, 2]
+      fail-fast: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install Python packages
+      run: pip install flaml lightgbm xgboost scikit-learn pandas numpy
+
+    - name: Build the CLI
+      run: dotnet build tools/MLoop.CLI --configuration Release
+
+    - name: Sweep
+      run: >
+        python benchmarks/engine-compare/run.py run
+        --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll"
+        --seeds ${{ matrix.seed }} --budget ${{ inputs.budget }}
+        --datasets "${{ inputs.datasets }}" --out results-${{ matrix.seed }}.jsonl
+
+    - name: Keep the results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: engine-compare-seed-${{ matrix.seed }}
+        path: results-${{ matrix.seed }}.jsonl
+        retention-days: 30
+
+  summary:
+    needs: sweep
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install Python packages
+      run: pip install numpy
+
+    - name: Download the results
+      uses: actions/download-artifact@v4
+      with:
+        pattern: engine-compare-seed-*
+        merge-multiple: true
+
+    - name: Summarize
+      run: python benchmarks/engine-compare/run.py summarize results-*.jsonl | tee -a "$GITHUB_STEP_SUMMARY"

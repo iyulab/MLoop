@@ -1,0 +1,18 @@
+[
+  {"id": 46918, "name": "credit-g", "task": "binary", "target": "good_or_bad_customer"},
+  {"id": 46952, "name": "qsar-biodeg", "task": "binary", "target": "Biodegradable"},
+  {"id": 46915, "name": "churn", "task": "binary", "target": "CustomerChurned"},
+  {"id": 46910, "name": "bank-marketing", "task": "binary", "target": "SubscribeTermDeposit"},
+  {"id": 46947, "name": "online_shoppers_intention", "task": "binary", "target": "Revenue"},
+  {"id": 46962, "name": "taiwanese_bankruptcy_prediction", "task": "binary", "target": "Bankrupt"},
+  {"id": 46979, "name": "jm1", "task": "binary", "target": "defects"},
+  {"id": 46950, "name": "polish_companies_bankruptcy", "task": "binary", "target": "company_bankrupt"},
+  {"id": 46958, "name": "splice", "task": "multiclass", "target": "SiteType"},
+  {"id": 46960, "name": "students_dropout_and_academic_success", "task": "multiclass", "target": "AcademicOutcome"},
+  {"id": 46906, "name": "anneal", "task": "multiclass", "target": "classes"},
+  {"id": 46917, "name": "concrete_compressive_strength", "task": "regression", "target": "ConcreteCompressiveStrength"},
+  {"id": 46904, "name": "airfoil_self_noise", "task": "regression", "target": "scaled-sound-pressure"},
+  {"id": 46964, "name": "wine_quality", "task": "regression", "target": "median_wine_quality"},
+  {"id": 46934, "name": "houses", "task": "regression", "target": "LnMedianHouseValue"},
+  {"id": 46923, "name": "diamonds", "task": "regression", "target": "price"}
+]

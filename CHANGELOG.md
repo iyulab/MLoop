@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `benchmarks/engine-compare` and the `Engine compare` workflow (`workflow_dispatch`): MLoop's trainer search against
+  FLAML and stand-alone LightGBM / XGBoost on 16 public OpenML tables, from the same train and test files, with the
+  protocol and how to read it in the folder's README. Nothing is stored in the repository — the tables are fetched by
+  OpenML data id.
 - `--json` on `mloop init`, `mloop feedback add` and `mloop sample create` — the last commands that handed a caller
   prose. Stdout is one document at every exit (`init`: `project`, `path`, `model`, `task`, `label`, `kept`;
   `feedback add`: the recorded `predictionId`, `actualValue`, `source`, `weight`; `sample create`: `outputPath`,
