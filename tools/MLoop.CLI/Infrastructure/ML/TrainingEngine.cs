@@ -455,6 +455,11 @@ public class TrainingEngine : ITrainingEngine
             if (inputSchema is not null && trained.TrainingOnlyColumns is { Count: > 0 } trainingOnly)
                 inputSchema = inputSchema.WithTrainingOnly(trainingOnly);
 
+            // The columns a prep step's featurizer names were loaded as columns of their own; say so, or every
+            // reader after training merges them into the feature vector and the model cannot find them.
+            if (inputSchema is not null && config.PreFeaturizerColumns is { Count: > 0 } byName)
+                inputSchema = inputSchema.WithReadByName(byName);
+
             // Prepare experiment data
             var experimentData = new ExperimentData
             {

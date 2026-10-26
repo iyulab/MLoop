@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MLoop.Core.Models;
 
 /// <summary>
@@ -26,10 +28,39 @@ public class InputSchemaInfo
                     CategoricalValues = c.CategoricalValues,
                     UniqueValueCount = c.UniqueValueCount,
                     MajorityClassRatio = c.MajorityClassRatio,
+                    ReadByName = c.ReadByName,
                 }
                 : c)
             .ToList()
     };
+
+    /// <summary>
+    /// This schema with <paramref name="columns"/> marked <see cref="ColumnSchema.ReadByName"/>: the columns a
+    /// featurizer in the model's own pipeline names (a prep step's normalize or fill-missing), which training
+    /// loaded as columns of their own rather than as slots of the merged feature vector.
+    /// </summary>
+    public InputSchemaInfo WithReadByName(IReadOnlyCollection<string> columns) => new()
+    {
+        CapturedAt = CapturedAt,
+        Columns = Columns
+            .Select(c => columns.Contains(c.Name, StringComparer.OrdinalIgnoreCase) && c.Purpose == "Feature"
+                ? new ColumnSchema
+                {
+                    Name = c.Name,
+                    DataType = c.DataType,
+                    Purpose = c.Purpose,
+                    CategoricalValues = c.CategoricalValues,
+                    UniqueValueCount = c.UniqueValueCount,
+                    MajorityClassRatio = c.MajorityClassRatio,
+                    ReadByName = true,
+                }
+                : c)
+            .ToList()
+    };
+
+    /// <summary>The names of the columns the model reads by their own name (<see cref="ColumnSchema.ReadByName"/>).</summary>
+    [JsonIgnore]
+    public IEnumerable<string> ReadByNameColumns => Columns.Where(c => c.ReadByName).Select(c => c.Name);
 }
 
 /// <summary>
@@ -67,4 +98,13 @@ public class ColumnSchema
     /// </para>
     /// </summary>
     public double? MajorityClassRatio { get; init; }
+
+    /// <summary>
+    /// The model's pipeline reads this column by its own name — a prep step's featurizer (normalize, fill-missing
+    /// mean) names it — so training loaded it as a column of its own, not as a slot of the merged feature vector,
+    /// and every reader after training must load it that way too. A property of training, not of the file
+    /// being read. False for a schema written before this field existed, which is how those models were read.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ReadByName { get; init; }
 }

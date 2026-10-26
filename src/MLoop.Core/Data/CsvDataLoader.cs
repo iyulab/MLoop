@@ -356,8 +356,10 @@ public class CsvDataLoader : DataProviderBase
         //    dicts) load as a single column rather than splitting the row.
         options.AllowQuoting = true;
 
-        // 3. Split preserved group/user/item columns back out of any merged Features range.
-        ApplyColumnPreservation(options, csvPath, preserveColumns);
+        // 3. Split preserved group/user/item columns back out of any merged Features range — and the columns the
+        //    model's own featurizers name, which the saved schema records: the caller does not know them.
+        ApplyColumnPreservation(options, csvPath,
+            (preserveColumns ?? []).Concat(trainedSchema?.ReadByNameColumns ?? []));
     }
 
     /// <summary>

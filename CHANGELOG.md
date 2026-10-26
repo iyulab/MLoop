@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A column a prep step declares — `normalize`, `scale` or `fill-missing` with `method: mean` — could not be read after
+  training: `mloop evaluate`, `predict`, `threshold`, `calibrate` and `export onnx` failed with `Could not find input
+  column 'a'`, and training warned that it could not profile the model's answers. The model's featurizer reads that
+  column by name, so training loads it as a column of its own; nothing recorded that, and every reader loaded it as a
+  slot of the merged feature vector. The saved schema now marks such a column (`readByName`), file readers and
+  `POST /predict` read it as training did. A model trained before this release has no such mark: retrain it.
+
 ## [0.46.0] - 2026-10-26
 
 ### Added

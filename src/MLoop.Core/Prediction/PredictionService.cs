@@ -964,6 +964,8 @@ public class PredictionService
         var featureColumns = schema.Columns
             .Where(c => c.DataType.Equals(SchemaDataTypes.Numeric, StringComparison.OrdinalIgnoreCase)
                      && !c.Purpose.Equals("Exclude", StringComparison.OrdinalIgnoreCase)
+                     // A column the model's own featurizer names stays a column of its own, as training loaded it.
+                     && !c.ReadByName
                      && (labelColumn is null || !c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)))
             .Select(c => c.Name)
             .ToArray();
