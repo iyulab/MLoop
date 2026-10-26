@@ -22,6 +22,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **The trainer search tries a tree trainer's own defaults before it starts walking.** The search began every trainer
+  at a deliberately cheap point (4 trees of 4 leaves) and walked outwards a tenth of the range at a time, so a trainer's
+  library defaults were never tried: on a 1,000-row table the search ended at an RMSE of 6.0 after 240 seconds where
+  ML.NET's own FastTree defaults give 3.8 in a fifth of a second. FastTree, FastForest and LightGBM now start from
+  their defaults (100 trees; FastTree 20 leaves at rate 0.2, FastForest 20 leaves on 70% of the features, LightGBM 31
+  leaves at rate 0.1) as the first trial, and the local search begins from the better of that and the cheap start
+  (FLAML's `points_to_evaluate`). Over 16 public tables × 3 splits at a 60-second budget, against the search before the
+  change: better on 9, equal on 6, worse on 1 (`benchmarks/engine-compare`); the regression tables gain most
+  (RMSE 6.05 → 4.17 on concrete strength, 2.00 → 1.35 on airfoil noise, 595 → 546 on diamonds). The tuner's trace
+  against ML.NET AutoML's is unchanged when no starting point is given.
 - **Breaking — a short option letter now means one long option across the whole CLI**, and `--model` means a model
   *file* wherever it appears. Before, `-f` was `--force`, `--from` or `--feedback`; `-l` a label, a limit or a log
   flag; `-m` a model name, a model path or a metric — so a letter learned on one command did something else on the

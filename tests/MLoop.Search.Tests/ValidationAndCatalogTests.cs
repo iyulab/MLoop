@@ -164,6 +164,32 @@ public sealed class ValidationAndCatalogTests
     }
 
     [Fact]
+    public void EveryStartingPoint_IsAPointOfItsCandidatesSpace()
+    {
+        var all = CandidateCatalog.Binary().Concat(CandidateCatalog.Multiclass()).Concat(CandidateCatalog.Regression()).ToList();
+        var withStarts = all.Where(c => c.StartingPoints.Count > 0).ToList();
+
+        Assert.NotEmpty(withStarts);
+        foreach (var candidate in withStarts)
+            foreach (var start in candidate.StartingPoints)
+                candidate.Space.PointOf(start);          // throws when a name or a value is not the space's
+    }
+
+    [Fact]
+    public void TheTreeTrainers_StartAtTheirLibrarysDefaults_AndTheLinearOnesNeedNoStart()
+    {
+        // The documented defaults, written out: ML.NET's FastTree is 100 trees of 20 leaves at rate 0.2, its
+        // FastForest the same with 70% of the features, and a change of them is a decision, not a surprise.
+        var tree = CandidateCatalog.Binary().Single(c => c.Name == "FastTree").StartingPoints.Single();
+        var forest = CandidateCatalog.Regression().Single(c => c.Name == "FastForest").StartingPoints.Single();
+
+        Assert.Equal((100d, 20d, 0.2), (tree["NumberOfTrees"], tree["NumberOfLeaves"], Math.Round(tree["LearningRate"], 6)));
+        Assert.Equal((100d, 20d, 0.7), (forest["NumberOfTrees"], forest["NumberOfLeaves"], Math.Round(forest["FeatureFraction"], 6)));
+        Assert.Equal(CandidateCatalog.Multiclass().Single(c => c.Name == "FastTreeOva").StartingPoints.Single(), tree);
+        Assert.All(CandidateCatalog.Binary().Where(c => CandidateCatalog.LinearTrainers.Contains(c.Name)), c => Assert.Empty(c.StartingPoints));
+    }
+
+    [Fact]
     public void EveryBinaryCandidate_BuildsFromItsStartAndFits()
     {
         var ml = new MLContext(seed: 1);

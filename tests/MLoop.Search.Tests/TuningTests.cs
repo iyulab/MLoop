@@ -63,6 +63,82 @@ public sealed class TuningTests
         Assert.NotEqual(first.ToString(), second.ToString());       // then it moves
     }
 
+    private static SearchSpace TreeSpace { get; } = new([
+        SearchDimension.Integer("NumberOfTrees", 4, 32768, logBase: true, defaultValue: 4),
+        SearchDimension.Integer("NumberOfLeaves", 4, 32768, logBase: true, defaultValue: 4),
+    ]);
+
+    private static IReadOnlyDictionary<string, double> Trees(int trees, int leaves)
+        => new Dictionary<string, double> { ["NumberOfTrees"] = trees, ["NumberOfLeaves"] = leaves };
+
+    [Fact]
+    public void TheTuner_TriesItsStartingPointsFirst_ThenTheCheapDefault()
+    {
+        var tuner = new CostFrugalTuner(TreeSpace, seed: 1, startingPoints: [TreeSpace.PointOf(Trees(100, 20))]);
+
+        var first = tuner.Propose(0);
+        tuner.Update(0, first, 0.4, 10);
+        var second = tuner.Propose(1);
+
+        Assert.Equal((100, 20), (first.Int("NumberOfTrees"), first.Int("NumberOfLeaves")));
+        Assert.Equal((4, 4), (second.Int("NumberOfTrees"), second.Int("NumberOfLeaves")));
+    }
+
+    [Fact]
+    public void TheWalk_BeginsAtAStartingPointThatBeatTheDefault()
+    {
+        var tuner = new CostFrugalTuner(TreeSpace, seed: 1, startingPoints: [TreeSpace.PointOf(Trees(100, 20))]);
+
+        tuner.Update(0, tuner.Propose(0), 0.2, 10);                 // the starting point: a good loss
+        var cheap = tuner.Propose(1);
+        tuner.Update(1, cheap, 0.5, 10);                            // the cheap default: a worse one
+        var walked = tuner.Propose(2);
+
+        Assert.Equal((4, 4), (cheap.Int("NumberOfTrees"), cheap.Int("NumberOfLeaves")));
+        // The step is a tenth of the log range, so the next point lies near 100 × 20, not near 4 × 4.
+        Assert.InRange(walked.Int("NumberOfTrees"), 30, 400);
+        Assert.InRange(walked.Int("NumberOfLeaves"), 6, 70);
+    }
+
+    [Fact]
+    public void TheWalk_StaysAtTheDefault_WhenTheStartingPointLost()
+    {
+        var tuner = new CostFrugalTuner(TreeSpace, seed: 1, startingPoints: [TreeSpace.PointOf(Trees(100, 20))]);
+
+        tuner.Update(0, tuner.Propose(0), 0.6, 10);
+        var cheap = tuner.Propose(1);
+        tuner.Update(1, cheap, 0.3, 10);
+        var walked = tuner.Propose(2);
+
+        Assert.InRange(walked.Int("NumberOfTrees"), 4, 12);
+        Assert.InRange(walked.Int("NumberOfLeaves"), 4, 12);
+    }
+
+    [Fact]
+    public void AStartingPointThatFailed_IsSkipped_AndTheDefaultStillStartsTheWalk()
+    {
+        var tuner = new CostFrugalTuner(TreeSpace, seed: 1, startingPoints: [TreeSpace.PointOf(Trees(100, 20))]);
+
+        tuner.Update(0, tuner.Propose(0), double.MaxValue, 10);
+        var cheap = tuner.Propose(1);
+        tuner.Update(1, cheap, 0.3, 10);
+
+        Assert.Equal((4, 4), (cheap.Int("NumberOfTrees"), cheap.Int("NumberOfLeaves")));
+        Assert.NotNull(tuner.Propose(2));
+    }
+
+    [Fact]
+    public void PointOf_TakesTheValuesAsGiven_AndRefusesWhatIsNotInTheSpace()
+    {
+        var point = TreeSpace.PointOf(Trees(100, 20));
+
+        Assert.Equal(100, point.Int("NumberOfTrees"));                 // not a cube coordinate rounded down
+        Assert.Throws<ArgumentException>(() => TreeSpace.PointOf(new Dictionary<string, double> { ["NumberOfTrees"] = 100 }));
+        Assert.Throws<ArgumentException>(() => TreeSpace.PointOf(new Dictionary<string, double> { ["NumberOfTrees"] = 100, ["NumberOfLeaves"] = 20, ["Depth"] = 3 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TreeSpace.PointOf(Trees(2, 20)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => TreeSpace.PointOf(Trees(100, 40000)));
+    }
+
     [Fact]
     public void TheTuner_IsDeterministicUnderASeed()
     {

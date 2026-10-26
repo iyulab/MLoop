@@ -77,6 +77,20 @@ public sealed class TrialRunnerTests
     }
 
     [Fact]
+    public void ATreeTrainer_IsTriedAtItsLibrarysDefaults_BeforeTheCheapStart()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+
+        var result = new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 12), null).Run(data, roles);
+
+        var trees = result.Trials.Where(t => t.Trainer == "FastTree").ToList();
+        Assert.Equal("100", trees[0].Parameters!.Single(p => p.Key == "NumberOfTrees").Value);
+        Assert.Equal("20", trees[0].Parameters!.Single(p => p.Key == "NumberOfLeaves").Value);
+        Assert.Equal("4", trees[1].Parameters!.Single(p => p.Key == "NumberOfTrees").Value);   // then the cheap start
+    }
+
+    [Fact]
     public void KeptOutOfFoldAnswers_AreTheBestTrialsOnEveryRowOnce()
     {
         var ml = new MLContext(seed: 1);

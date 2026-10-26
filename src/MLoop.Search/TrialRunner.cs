@@ -138,7 +138,7 @@ public sealed class TrialRunner
 
         var schemas = _request.Candidates.Select(c => (Id: c.Name, Candidate: c)).ToList();
         var proposer = new EciSchemaProposer([.. schemas.Select(s => (s.Id, s.Candidate.InitialCost))], settings.Seed);
-        var tuners = schemas.ToDictionary(s => s.Id, s => new CostFrugalTuner(s.Candidate.Space, settings.Seed), StringComparer.Ordinal);
+        var tuners = schemas.ToDictionary(s => s.Id, s => new CostFrugalTuner(s.Candidate.Space, settings.Seed, startingPoints: [.. s.Candidate.StartingPoints.Select(s.Candidate.Space.PointOf)]), StringComparer.Ordinal);
 
         var trials = new List<TrialResult>();
         var lastSeconds = new Dictionary<string, double>(StringComparer.Ordinal);

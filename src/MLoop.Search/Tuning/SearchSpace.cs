@@ -56,6 +56,35 @@ public sealed class SearchSpace
         return new SearchPoint(this, values);
     }
 
+    /// <summary>
+    /// The point whose hyperparameters are exactly <paramref name="values"/> — a trainer's own defaults, say,
+    /// rather than a coordinate of the cube (which would round a whole number to its neighbour). Every
+    /// dimension needs a value inside its range; a name that is not one is refused, so a table of defaults that
+    /// drifts from the space fails when it is read, not when a search runs.
+    /// </summary>
+    public SearchPoint PointOf(IReadOnlyDictionary<string, double> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var known = Dimensions.Select(d => d.Name).ToHashSet(StringComparer.Ordinal);
+        if (values.Keys.FirstOrDefault(k => !known.Contains(k)) is { } unknown)
+            throw new ArgumentException($"'{unknown}' is not a hyperparameter of this space.", nameof(values));
+        var checkedValues = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var d in Dimensions)
+        {
+            if (d.FeatureDim == 0)
+            {
+                checkedValues[d.Name] = 0;
+                continue;
+            }
+            if (!values.TryGetValue(d.Name, out var v))
+                throw new ArgumentException($"No value for '{d.Name}'.", nameof(values));
+            if (v < d.Min || v > d.Max || (d.Kind is DimensionKind.Integer or DimensionKind.Choice && v != Math.Floor(v)))
+                throw new ArgumentOutOfRangeException(nameof(values), $"{v} is not a value of '{d.Name}' ({d.Min} to {d.Max}).");
+            checkedValues[d.Name] = v;
+        }
+        return new SearchPoint(this, checkedValues);
+    }
+
     /// <summary>The coordinates of <paramref name="point"/>.</summary>
     public double[] UnitOf(SearchPoint point)
     {

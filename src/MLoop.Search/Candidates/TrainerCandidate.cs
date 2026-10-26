@@ -29,6 +29,13 @@ public sealed record TrainerCandidate(
     Func<MLContext, SearchPoint, TrainerColumns, SearchSettings, IEstimator<ITransformer>> Build)
 {
     /// <summary>
+    /// Settings tried first, before the tuner starts walking from the space's cheap default: the trainer's own
+    /// defaults, which a library's authors chose to work on most tables. The search starts from the best of them
+    /// and the cheap default (FLAML's <c>points_to_evaluate</c>). Names are those of <see cref="Space"/>'s dimensions.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyDictionary<string, double>> StartingPoints { get; init; } = [];
+
+    /// <summary>
     /// The size of the model a point of a space builds, read from the point alone: trees × leaves for a tree
     /// ensemble, 1 for a linear model. What a larger model costs is time to fit, save, load and score, and room
     /// on disk — a forest of a thousand trees of a thousand leaves is a model.zip of hundreds of megabytes.

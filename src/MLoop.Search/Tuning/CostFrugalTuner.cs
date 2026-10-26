@@ -3,7 +3,8 @@ namespace MLoop.Search.Tuning;
 /// <summary>
 /// The cost-frugal tuner (CFO, FLAML) for one schema's search space: it starts at the space's default —
 /// cheap on purpose (4 trees, 4 leaves) — and grows from there with a <see cref="Flow2"/> local search,
-/// restarting when the search converges.
+/// restarting when the search converges. Given starting points (a trainer's own defaults), it tries those first
+/// and begins the local search from the best of them and the cheap default.
 /// </summary>
 /// <remarks>
 /// Ported from ML.NET AutoML (<c>Tuner/CostFrugalTuner.cs</c> · <c>SearchThread.cs</c>, dotnet/machinelearning
@@ -20,6 +21,9 @@ public sealed class CostFrugalTuner
     private readonly Dictionary<int, int> _proposedBy = [];
     private readonly double[] _boundMin;
     private readonly double[] _boundMax;
+    private readonly Queue<SearchPoint> _starts;
+    private readonly HashSet<int> _startTrials = [];
+    private (SearchPoint Point, double Loss, double Cost)? _bestStart;
     private int _currentThread;
     private bool _initUsed;
     private double _bestLoss = double.MaxValue;
@@ -27,15 +31,17 @@ public sealed class CostFrugalTuner
     /// <param name="space">The space searched.</param>
     /// <param name="seed">The seed; <see langword="null"/> varies run to run.</param>
     /// <param name="stepDimensions">FLOW2's step scale (see <see cref="Flow2"/>; 1 as AutoML ran it).</param>
-    public CostFrugalTuner(SearchSpace space, int? seed = null, int stepDimensions = 1)
-        : this(space, new TunerRandom(seed), stepDimensions, upperClamp: 1.0)
+    /// <param name="startingPoints">Points tried before the cheap default, in order (none: as AutoML ran it).</param>
+    public CostFrugalTuner(SearchSpace space, int? seed = null, int stepDimensions = 1, IReadOnlyList<SearchPoint>? startingPoints = null)
+        : this(space, new TunerRandom(seed), stepDimensions, upperClamp: 1.0, startingPoints)
     {
     }
 
-    internal CostFrugalTuner(SearchSpace space, TunerRandom rng, int stepDimensions, double upperClamp)
+    internal CostFrugalTuner(SearchSpace space, TunerRandom rng, int stepDimensions, double upperClamp, IReadOnlyList<SearchPoint>? startingPoints = null)
     {
         _space = space ?? throw new ArgumentNullException(nameof(space));
         _rng = rng;
+        _starts = new Queue<SearchPoint>(startingPoints ?? []);
         var initial = space.PointAt(space.Default);
         _boundMin = space.UnitOf(initial);
         _boundMax = space.UnitOf(initial);
@@ -49,6 +55,12 @@ public sealed class CostFrugalTuner
     public SearchPoint Propose(int trialId)
     {
         _proposedBy[trialId] = _currentThread;
+        if (_threads.Count == 0 && !_initUsed && _starts.Count > 0)
+        {
+            _startTrials.Add(trialId);
+            return _starts.Dequeue();
+        }
+
         return _initUsed
             ? _threads[_currentThread].Suggest()
             : _space.PointAt([.. _boundMin.Select((min, i) => _rng.Uniform(min, _boundMax[i]))]);
@@ -68,12 +80,23 @@ public sealed class CostFrugalTuner
             _bestLoss = loss;
         }
 
+        if (_startTrials.Remove(trialId))
+        {
+            if (loss < (_bestStart?.Loss ?? double.MaxValue))
+                _bestStart = (point, loss, cost);
+            return;
+        }
+
         var thread = _proposedBy.TryGetValue(trialId, out var proposer) ? proposer : _currentThread;
         if (_threads.Count == 0)
         {
-            _threads[_currentThread] = _localSearch.CreateSearchThread(point, loss, cost);
+            // The local search begins at the best of the starting points and the cheap default: a starting
+            // point that beat it is where the walk is worth taking.
+            var (from, fromLoss, fromCost) = _bestStart is { } start && start.Loss < loss ? start : (point, loss, cost);
+            _bestStart = null;
+            _threads[_currentThread] = _localSearch.CreateSearchThread(from, fromLoss, fromCost);
             _initUsed = true;
-            Widen(_space.UnitOf(point));
+            Widen(_space.UnitOf(from));
             return;
         }
 
