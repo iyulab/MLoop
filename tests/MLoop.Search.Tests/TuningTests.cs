@@ -72,16 +72,17 @@ public sealed class TuningTests
         => new Dictionary<string, double> { ["NumberOfTrees"] = trees, ["NumberOfLeaves"] = leaves };
 
     [Fact]
-    public void TheTuner_TriesItsStartingPointsFirst_ThenTheCheapDefault()
+    public void TheTuner_TriesTheCheapDefaultFirst_ThenItsStartingPoints()
     {
         var tuner = new CostFrugalTuner(TreeSpace, seed: 1, startingPoints: [TreeSpace.PointOf(Trees(100, 20))]);
 
         var first = tuner.Propose(0);
-        tuner.Update(0, first, 0.4, 10);
+        tuner.Update(0, first, 0.5, 10);
         var second = tuner.Propose(1);
 
-        Assert.Equal((100, 20), (first.Int("NumberOfTrees"), first.Int("NumberOfLeaves")));
-        Assert.Equal((4, 4), (second.Int("NumberOfTrees"), second.Int("NumberOfLeaves")));
+        // The first trial of a search is the one that always finishes, so it is the cheap one.
+        Assert.Equal((4, 4), (first.Int("NumberOfTrees"), first.Int("NumberOfLeaves")));
+        Assert.Equal((100, 20), (second.Int("NumberOfTrees"), second.Int("NumberOfLeaves")));
     }
 
     [Fact]
@@ -89,12 +90,12 @@ public sealed class TuningTests
     {
         var tuner = new CostFrugalTuner(TreeSpace, seed: 1, startingPoints: [TreeSpace.PointOf(Trees(100, 20))]);
 
-        tuner.Update(0, tuner.Propose(0), 0.2, 10);                 // the starting point: a good loss
-        var cheap = tuner.Propose(1);
-        tuner.Update(1, cheap, 0.5, 10);                            // the cheap default: a worse one
+        tuner.Update(0, tuner.Propose(0), 0.5, 10);                 // the cheap default: a worse loss
+        var start = tuner.Propose(1);
+        tuner.Update(1, start, 0.2, 10);                            // the starting point: a better one
         var walked = tuner.Propose(2);
 
-        Assert.Equal((4, 4), (cheap.Int("NumberOfTrees"), cheap.Int("NumberOfLeaves")));
+        Assert.Equal((100, 20), (start.Int("NumberOfTrees"), start.Int("NumberOfLeaves")));
         // The step is a tenth of the log range, so the next point lies near 100 × 20, not near 4 × 4.
         Assert.InRange(walked.Int("NumberOfTrees"), 30, 400);
         Assert.InRange(walked.Int("NumberOfLeaves"), 6, 70);
@@ -105,9 +106,8 @@ public sealed class TuningTests
     {
         var tuner = new CostFrugalTuner(TreeSpace, seed: 1, startingPoints: [TreeSpace.PointOf(Trees(100, 20))]);
 
-        tuner.Update(0, tuner.Propose(0), 0.6, 10);
-        var cheap = tuner.Propose(1);
-        tuner.Update(1, cheap, 0.3, 10);
+        tuner.Update(0, tuner.Propose(0), 0.3, 10);
+        tuner.Update(1, tuner.Propose(1), 0.6, 10);
         var walked = tuner.Propose(2);
 
         Assert.InRange(walked.Int("NumberOfTrees"), 4, 12);
@@ -119,12 +119,32 @@ public sealed class TuningTests
     {
         var tuner = new CostFrugalTuner(TreeSpace, seed: 1, startingPoints: [TreeSpace.PointOf(Trees(100, 20))]);
 
-        tuner.Update(0, tuner.Propose(0), double.MaxValue, 10);
-        var cheap = tuner.Propose(1);
-        tuner.Update(1, cheap, 0.3, 10);
+        tuner.Update(0, tuner.Propose(0), 0.3, 10);
+        tuner.Update(1, tuner.Propose(1), double.MaxValue, 10);
+        var walked = tuner.Propose(2);
 
-        Assert.Equal((4, 4), (cheap.Int("NumberOfTrees"), cheap.Int("NumberOfLeaves")));
-        Assert.NotNull(tuner.Propose(2));
+        Assert.InRange(walked.Int("NumberOfTrees"), 4, 12);
+        Assert.InRange(walked.Int("NumberOfLeaves"), 4, 12);
+    }
+
+    [Fact]
+    public void WithoutStartingPoints_TheTunerWalksFromTheDefaultAsBefore()
+    {
+        static string Run(IReadOnlyList<SearchPoint>? starts)
+        {
+            var tuner = new CostFrugalTuner(TreeSpace, seed: 5, startingPoints: starts);
+            var seen = new List<string>();
+            for (var id = 0; id < 8; id++)
+            {
+                var point = tuner.Propose(id);
+                seen.Add(point.ToString());
+                tuner.Update(id, point, 1.0 / (1 + point.Int("NumberOfTrees")), 10);
+            }
+
+            return string.Join(";", seen);
+        }
+
+        Assert.Equal(Run(null), Run([]));
     }
 
     [Fact]

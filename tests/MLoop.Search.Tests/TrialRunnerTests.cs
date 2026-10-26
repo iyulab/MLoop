@@ -77,7 +77,7 @@ public sealed class TrialRunnerTests
     }
 
     [Fact]
-    public void ATreeTrainer_IsTriedAtItsLibrarysDefaults_BeforeTheCheapStart()
+    public void ATreeTrainer_IsTriedAtItsLibrarysDefaults_RightAfterTheCheapStart()
     {
         var ml = new MLContext(seed: 1);
         var (data, roles) = Data(ml);
@@ -85,9 +85,9 @@ public sealed class TrialRunnerTests
         var result = new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 12), null).Run(data, roles);
 
         var trees = result.Trials.Where(t => t.Trainer == "FastTree").ToList();
-        Assert.Equal("100", trees[0].Parameters!.Single(p => p.Key == "NumberOfTrees").Value);
-        Assert.Equal("20", trees[0].Parameters!.Single(p => p.Key == "NumberOfLeaves").Value);
-        Assert.Equal("4", trees[1].Parameters!.Single(p => p.Key == "NumberOfTrees").Value);   // then the cheap start
+        Assert.Equal("4", trees[0].Parameters!.Single(p => p.Key == "NumberOfTrees").Value);   // the cheap start first
+        Assert.Equal("100", trees[1].Parameters!.Single(p => p.Key == "NumberOfTrees").Value);
+        Assert.Equal("20", trees[1].Parameters!.Single(p => p.Key == "NumberOfLeaves").Value);
     }
 
     [Fact]

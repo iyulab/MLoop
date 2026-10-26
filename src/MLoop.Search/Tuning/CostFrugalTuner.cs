@@ -3,8 +3,8 @@ namespace MLoop.Search.Tuning;
 /// <summary>
 /// The cost-frugal tuner (CFO, FLAML) for one schema's search space: it starts at the space's default —
 /// cheap on purpose (4 trees, 4 leaves) — and grows from there with a <see cref="Flow2"/> local search,
-/// restarting when the search converges. Given starting points (a trainer's own defaults), it tries those first
-/// and begins the local search from the best of them and the cheap default.
+/// restarting when the search converges. Given starting points (a trainer's own defaults), it tries them after
+/// the cheap default and begins the local search from the best of the two.
 /// </summary>
 /// <remarks>
 /// Ported from ML.NET AutoML (<c>Tuner/CostFrugalTuner.cs</c> · <c>SearchThread.cs</c>, dotnet/machinelearning
@@ -24,6 +24,9 @@ public sealed class CostFrugalTuner
     private readonly Queue<SearchPoint> _starts;
     private readonly HashSet<int> _startTrials = [];
     private (SearchPoint Point, double Loss, double Cost)? _bestStart;
+    private (SearchPoint Point, double Loss, double Cost)? _defaultResult;
+    private bool _defaultProposed;
+    private int _defaultTrial = -1;
     private int _currentThread;
     private bool _initUsed;
     private double _bestLoss = double.MaxValue;
@@ -31,7 +34,7 @@ public sealed class CostFrugalTuner
     /// <param name="space">The space searched.</param>
     /// <param name="seed">The seed; <see langword="null"/> varies run to run.</param>
     /// <param name="stepDimensions">FLOW2's step scale (see <see cref="Flow2"/>; 1 as AutoML ran it).</param>
-    /// <param name="startingPoints">Points tried before the cheap default, in order (none: as AutoML ran it).</param>
+    /// <param name="startingPoints">Points tried after the cheap default, in order (none: as AutoML ran it).</param>
     public CostFrugalTuner(SearchSpace space, int? seed = null, int stepDimensions = 1, IReadOnlyList<SearchPoint>? startingPoints = null)
         : this(space, new TunerRandom(seed), stepDimensions, upperClamp: 1.0, startingPoints)
     {
@@ -55,10 +58,20 @@ public sealed class CostFrugalTuner
     public SearchPoint Propose(int trialId)
     {
         _proposedBy[trialId] = _currentThread;
-        if (_threads.Count == 0 && !_initUsed && _starts.Count > 0)
+        if (_threads.Count == 0 && !_initUsed)
         {
-            _startTrials.Add(trialId);
-            return _starts.Dequeue();
+            // The cheap default goes first, so a search's first trial is its cheapest — a starting point can be
+            // a hundred trees on a table where that takes minutes, and the first trial is the one that always finishes.
+            if (!_defaultProposed)
+            {
+                _defaultProposed = true;
+                _defaultTrial = trialId;
+            }
+            else if (_starts.Count > 0)
+            {
+                _startTrials.Add(trialId);
+                return _starts.Dequeue();
+            }
         }
 
         return _initUsed
@@ -84,28 +97,42 @@ public sealed class CostFrugalTuner
         {
             if (loss < (_bestStart?.Loss ?? double.MaxValue))
                 _bestStart = (point, loss, cost);
+        }
+        else if (trialId == _defaultTrial)
+        {
+            _defaultResult = (point, loss, cost);
+        }
+        else if (_threads.Count == 0)
+        {
+            // A restart's first trial: the local search begins where it was drawn.
+            _threads[_currentThread] = _localSearch.CreateSearchThread(point, loss, cost);
+            _initUsed = true;
+            Widen(_space.UnitOf(point));
+            return;
+        }
+        else
+        {
+            var thread = _proposedBy.TryGetValue(trialId, out var proposer) ? proposer : _currentThread;
+            _threads[thread].OnTrialComplete(point, loss, cost);
+            if (_threads[thread].IsConverged)
+            {
+                _threads.Remove(thread);
+                _currentThread += 1;
+                _initUsed = false;
+            }
+
             return;
         }
 
-        var thread = _proposedBy.TryGetValue(trialId, out var proposer) ? proposer : _currentThread;
-        if (_threads.Count == 0)
+        // The cheap default and every starting point have answered: the local search begins at the best of them
+        // — a starting point that beat the default is where the walk is worth taking.
+        if (_defaultResult is { } cheap && _starts.Count == 0 && _startTrials.Count == 0)
         {
-            // The local search begins at the best of the starting points and the cheap default: a starting
-            // point that beat it is where the walk is worth taking.
-            var (from, fromLoss, fromCost) = _bestStart is { } start && start.Loss < loss ? start : (point, loss, cost);
+            var (from, fromLoss, fromCost) = _bestStart is { } start && start.Loss < cheap.Loss ? start : cheap;
             _bestStart = null;
             _threads[_currentThread] = _localSearch.CreateSearchThread(from, fromLoss, fromCost);
             _initUsed = true;
             Widen(_space.UnitOf(from));
-            return;
-        }
-
-        _threads[thread].OnTrialComplete(point, loss, cost);
-        if (_threads[thread].IsConverged)
-        {
-            _threads.Remove(thread);
-            _currentThread += 1;
-            _initUsed = false;
         }
     }
 
