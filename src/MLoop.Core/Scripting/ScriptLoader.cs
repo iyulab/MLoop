@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Security.Cryptography;
@@ -265,6 +266,8 @@ public class ScriptLoader
     /// <summary>
     /// Gets MetadataReferences for assemblies, handling single-file publish scenarios.
     /// </summary>
+    [UnconditionalSuppressMessage("SingleFile", "IL3000",
+        Justification = "An empty Location (single-file publish) is handled: the assembly is looked up in the runtime directory.")]
     private static IEnumerable<MetadataReference> GetMetadataReferences(params Assembly[] assemblies)
     {
         foreach (var assembly in assemblies)
@@ -293,6 +296,8 @@ public class ScriptLoader
     /// <summary>
     /// Gets the .NET runtime directory for loading reference assemblies.
     /// </summary>
+    [UnconditionalSuppressMessage("SingleFile", "IL3000",
+        Justification = "An empty Location (single-file publish) is handled: the runtime directory is asked for instead.")]
     private static string GetRuntimeDirectory()
     {
         // Try Assembly.Location first (works in normal execution)

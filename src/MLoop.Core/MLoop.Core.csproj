@@ -11,6 +11,10 @@
     <Description>MLoop Core - training (a trainer search over ML.NET trainers), prediction and model management on ML.NET</Description>
     <PackageTags>mlops;automl;mlnet;machine-learning;training;prediction</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- The CLI ships as single-file binaries; check what single-file breaks (IL3000 …) on every build, not only
+         at publish, where a warning failed the release of the CLI binaries. -->
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
   </PropertyGroup>
 
   <ItemGroup>
