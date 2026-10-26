@@ -67,8 +67,8 @@
     <PackageVersion Include="Microsoft.OpenApi" Version="2.13.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.3.1" />
     <!-- External Dependencies -->
-    <PackageVersion Include="FilePrepper" Version="0.12.0" />
-    <PackageVersion Include="DataLens" Version="0.19.2" />
+    <PackageVersion Include="FilePrepper" Version="0.13.0" />
+    <PackageVersion Include="DataLens" Version="0.20.0" />
     <!-- Resilience / Polly -->
     <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <!-- Security: Override transitive dependency (CVE-2026-26127, GHSA-73j8-2gch-69rq) -->

@@ -921,6 +921,12 @@ mloop info datasets/train.csv --name fraud-detector
 - Converts to UTF-8 with BOM for ML.NET compatibility
 - Korean text displayed correctly (e.g., 설비명, 공정번호)
 
+**Memory.** Profiling holds the file column by column: on a six-column CSV, `mloop info` and `mloop analyze profile`
+peak at about 1.2 GB per million rows (osx-arm64; 2 million rows ≈ 2.3 GB), and `mloop train` on a million rows at
+about 330 MB (the input checks stream). Wider files grow with the number of columns. For a file much larger than
+memory allows, profile a sample (`mloop sample create --from <file> --rows 100000`, which streams the file — about
+150 MB for a 2-million-row CSV) — training reads the whole file.
+
 ### `mloop detect`
 
 One-shot anomaly detection over a time series. No model, no training: hand it a CSV and it scores
