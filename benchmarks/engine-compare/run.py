@@ -32,7 +32,8 @@ OPTIMIZE = {'binary': 'auc', 'multiclass': 'log_loss', 'regression': 'rmse'}
 
 def load_table(entry, cache):
     from sklearn.datasets import fetch_openml
-    return fetch_openml(data_id=entry['id'], as_frame=True, data_home=cache).frame
+    # The default (pandas) ARFF parser fails on tables whose categories are numbers; liac-arff reads all 16.
+    return fetch_openml(data_id=entry['id'], as_frame=True, parser='liac-arff', data_home=cache).frame
 
 
 def split(entry, df, seed, work):
