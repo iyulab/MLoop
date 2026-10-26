@@ -457,7 +457,7 @@ mloop promote -- --lastest     # '--lastest' is the experiment id
 
 ## Why MLoop?
 
-With Microsoft discontinuing ML.NET CLI and Model Builder updates, MLoop provides:
+With the ML.NET CLI discontinued, MLoop provides:
 
 - ✅ **Active Development** - Modern tooling with latest ML.NET 5.0
 - ✅ **Production Ready** - From prototyping to deployment

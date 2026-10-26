@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `feedback add`: the recorded `predictionId`, `actualValue`, `source`, `weight`; `sample create`: `outputPath`,
   `sampled`, the totals and, from logs, `withFeedback` and the label/weight columns), a failure is `{"error": …}`
   with exit 1, and the narration goes to stderr.
+- `NOTICE`, carrying the MIT notice of the ML.NET AutoML code the trainer search's tuner and schema proposer are
+  ported from and the papers behind them. It ships in the `MLoop.Search` package.
 
 ### Changed
 
