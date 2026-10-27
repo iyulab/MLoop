@@ -131,6 +131,34 @@ public sealed class PromoteQualityGateTests : IDisposable
         Assert.Equal("exp-001", ProductionExperiment());
     }
 
+    /// <summary>
+    /// Promoting the experiment that is already in production changed nothing yet backed the model up onto itself and
+    /// printed "Promotion complete" — run twice it left two backup directories. It is now a stated no-op; --force still
+    /// promotes again.
+    /// </summary>
+    [Fact]
+    public async Task PromotingWhatIsAlreadyInProduction_ChangesNothing_AndSaysSo()
+    {
+        await SaveExperimentAsync("exp-001", LearnedModel);
+        await SaveExperimentAsync("exp-002", LearnedModel);
+        Assert.Equal(0, (await CliRunner.RunAsync(["promote", "exp-001", "--json"])).ExitCode);
+        Assert.Equal(0, (await CliRunner.RunAsync(["promote", "exp-002", "--json"])).ExitCode);   // exp-001 is backed up once
+        var backups = Path.Combine(_root, "models", "default", "backups");
+        var backedUp = Directory.GetDirectories(backups).Length;
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["promote", "exp-002", "--json"]);
+
+        Assert.Equal(0, exitCode);
+        using var doc = JsonDocument.Parse(stdout);
+        Assert.Equal("unchanged", doc.RootElement.GetProperty("status").GetString());
+        Assert.Equal(backedUp, Directory.GetDirectories(backups).Length);
+        Assert.Equal("exp-002", ProductionExperiment());
+
+        var (forced, forcedOut, _) = await CliRunner.RunAsync(["promote", "exp-002", "--force", "--json"]);
+        Assert.Equal(0, forced);
+        Assert.Equal("promoted", JsonDocument.Parse(forcedOut).RootElement.GetProperty("status").GetString());
+    }
+
     [Fact]
     public async Task ExplicitPromote_AModelThatRanksButSitsOnOneClass_PassesWithAThresholdWarning()
     {

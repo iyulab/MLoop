@@ -12,8 +12,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `trigger check`, `drift` and every other command that takes a model name already did; it used to refuse with "Model name
   is required". A project with no experiments answers an empty comparison, not an error.
 
+- **`POST /predict` tells the caller what a row left unsaid.** A feature column a row does not carry, and a value in a numeric
+  column that is not a number, were read as missing and the model answered as confidently as for a complete row. The response's
+  `warnings` now names each such column once, with how many rows are affected (and an example of the unreadable value); the
+  prediction is still made — a missing number stays a missing number.
+- **`mloop promote` of the experiment already in production is a stated no-op** (`status: "unchanged"` under `--json`): no backup
+  of the model onto itself, no new entry in the promotion history, no confirmation to answer. `--force` promotes it again.
+- **`GET /status` no longer reports a time budget the project never set** — an unset `time_limit_seconds` is left out of the
+  model's `config` entry (it was 300), as `mloop status` says "auto".
+
 ### Fixed
 
+- **The Swagger UI is served at `/swagger`**, where the `serve` banner and the guide say it is (it was at `/`, and `/swagger`
+  answered 404).
+- **A valid token without the admin role gets a 403 that says what the endpoint needs** (the admin role, `mloop token --role
+  admin`) instead of an empty body, as a missing token gets a 401 that says how to mint one.
 - **`mloop docker` mounted encoders from `~/.mloop/encoders` whatever the host used.** The generated `docker-compose.yml`
   and the `docker run` line printed for a project whose models read text through an encoder now mount the directory the host
   keeps its encoders in: the compose file takes `${MLOOP_ENCODERS:-~/.mloop/encoders}` (so a host that moved its encoders

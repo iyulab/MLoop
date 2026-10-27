@@ -257,6 +257,18 @@ public static class PromoteCommand
                 return 0;
             }
 
+            // Promoting what is already in production changes nothing: no backup of the model onto itself, no new record in the
+            // history, no confirmation to answer. --force still promotes it again.
+            if (currentProduction != null && !force
+                && currentProduction.ExperimentId.Equals(experimentId, StringComparison.OrdinalIgnoreCase))
+            {
+                if (jsonOutput)
+                    OutputUnchangedAsJson(resolvedModelName, experimentId, autoSelectionReason);
+                else
+                    AnsiConsole.MarkupLineInterpolated($"[green]✓[/] '{experimentId}' is already the production model of '{resolvedModelName}' — nothing to change (--force promotes it again).");
+                return 0;
+            }
+
             if (currentProduction != null && !jsonOutput)
             {
                 AnsiConsole.MarkupLine($"[yellow]Warning:[/] This will replace the current production model: [cyan]{currentProduction.ExperimentId}[/]");
@@ -473,6 +485,27 @@ public static class PromoteCommand
             PreviousProduction = previousProduction,
             BackupPath = backupPath,
             QualityWarning = qualityWarning,
+        }, options));
+    }
+
+    /// <summary>The experiment asked for is the one in production already: <c>status: "unchanged"</c>, nothing moved, nothing backed up.</summary>
+    private static void OutputUnchangedAsJson(string modelName, string experimentId, string? autoSelectionReason)
+    {
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            Model = modelName,
+            ExperimentId = experimentId,
+            Status = "unchanged",
+            SelectedBy = autoSelectionReason ?? "explicit",
+            PreviousProduction = experimentId,
+            BackupPath = (string?)null,
+            QualityWarning = (string?)null,
         }, options));
     }
 

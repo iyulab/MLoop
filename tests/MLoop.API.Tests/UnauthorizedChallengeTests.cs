@@ -35,6 +35,22 @@ public class UnauthorizedChallengeTests : IClassFixture<UnauthorizedChallengeTes
     }
 
     [Fact]
+    public async Task AdminEndpoint_WithAReadToken_Returns403_SayingWhatItNeeds()
+    {
+        var token = MLoop.CLI.Commands.TokenCommand.IssueToken(
+            MLoop.Core.Security.DevJwtDefaults.Key, "reader", role: null, TimeSpan.FromHours(1));
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/promote") { Content = JsonContent.Create(new { }) };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var json = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        json.GetProperty("error").GetString().Should().Be("Forbidden");
+        json.GetProperty("hint").GetString().Should().Contain("admin").And.Contain("mloop token --role admin");
+    }
+
+    [Fact]
     public async Task Health_IsOpen_WithoutToken()
     {
         var response = await _client.GetAsync("/health");

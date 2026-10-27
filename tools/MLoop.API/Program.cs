@@ -162,6 +162,19 @@ try
                                "`mloop token --role admin` for write endpoints (/promote, /train, /evaluate) — " +
                                "then send it as the `Authorization: Bearer <token>` header. See `mloop token --help`."
                     });
+                },
+                // A valid token that lacks the role (a read token on a write endpoint): say what the endpoint needs,
+                // where the default answer is a 403 with nothing in it.
+                OnForbidden = async context =>
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        error = "Forbidden",
+                        hint = "This endpoint needs the admin role (/promote, /rollback, /train, /evaluate, /samples, /cache/*). " +
+                               "Issue a token with `mloop token --role admin` and send it as the `Authorization: Bearer <token>` header."
+                    });
                 }
             };
         });
@@ -298,7 +311,7 @@ try
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "MLoop API v1");
-        options.RoutePrefix = string.Empty; // Serve Swagger UI at root
+        options.RoutePrefix = "swagger"; // The UI lives where the serve banner and the guide say it does
     });
 
     app.UseCors();

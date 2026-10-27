@@ -230,7 +230,8 @@ public static class ExperimentEndpoints
                         name = kvp.Key,
                         task = kvp.Value.Task,
                         label = kvp.Value.Label,
-                        timeLimitSeconds = kvp.Value.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
+                        // An unset budget is auto-estimated from the data when training runs (as `mloop status` says), so it has no number here.
+                        timeLimitSeconds = kvp.Value.Training?.TimeLimitSeconds,
                         metric = kvp.Value.Training?.Metric ?? ConfigDefaults.DefaultMetric
                     }).ToList();
                 }

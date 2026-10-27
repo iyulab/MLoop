@@ -42,6 +42,23 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         => File.WriteAllText(Path.Combine(_factory.TestProjectRoot, "mloop.yaml"),
             $"project: t\nmodels:\n  {model}:\n{body}");
 
+    /// <summary>`mloop status` says an unset training budget is "auto"; `GET /status` used to say 300.</summary>
+    [Fact]
+    public async Task StatusLeavesAnUnsetTimeBudgetOut_AndReportsASetOneAsIs()
+    {
+        WriteYaml("sauto", "    task: binary-classification\n    label: y\n");
+        File.AppendAllText(Path.Combine(_factory.TestProjectRoot, "mloop.yaml"),
+            "  sset:\n    task: binary-classification\n    label: y\n    training:\n      time_limit_seconds: 42\n");
+
+        var response = await _client.GetAsync("/status");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var config = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("config");
+        var byName = config.EnumerateArray().ToDictionary(e => e.GetProperty("name").GetString()!);
+        byName["sauto"].TryGetProperty("timeLimitSeconds", out _).Should().BeFalse("an unset budget is auto, and the API leaves a null field out");
+        byName["sset"].GetProperty("timeLimitSeconds").GetInt32().Should().Be(42);
+    }
+
     [Fact]
     public async Task AWeightOnATaskItWouldNotReach_IsRefusedBeforeAJobExists()
     {

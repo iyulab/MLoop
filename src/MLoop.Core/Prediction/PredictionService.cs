@@ -101,6 +101,10 @@ public class PredictionService
         // leaves out is read as missing, MissingNumbers), but zero overlap is unambiguous caller error.
         RequireSchemaColumnOverlap(rows, schema);
 
+        // A column a row leaves out, or a value that is not a number, is read as missing and the model answers anyway:
+        // say so, so the answer is not mistaken for one made from a complete row.
+        warnings.AddRange(ServedRowAudit.Describe(rows, schema));
+
         MapCategoricalValues(rows, schema, warnings);
 
         bool needsDummyLabel = IsLabelRequiredForTransform(taskType);

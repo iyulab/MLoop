@@ -222,8 +222,8 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task SwaggerUIEndpoint_ReturnsHtml()
     {
-        // Act
-        var response = await _client.GetAsync("/");
+        // Act — where the serve banner and the guide say the UI is
+        var response = await _client.GetAsync("/swagger");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
