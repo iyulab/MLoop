@@ -157,13 +157,26 @@ public class CompareJsonContractTests : IDisposable
     }
 
     [Fact]
-    public async Task Compare_WithJsonAndNoModelName_EmitsErrorPayload()
+    public async Task Compare_WithJsonAndNoModelName_ComparesTheDefaultModel_AnEmptyOneIsAResult()
     {
+        // No name and no ids is the default model's experiments, as for every other command that takes a model;
+        // a project with none has nothing to compare, which is a result and not a failure.
         var (exitCode, stdout, stderr) = await CliRunner.RunAsync("compare", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = ParseStdout(stdout, stderr);
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("best").ValueKind);
+        Assert.Equal(0, doc.RootElement.GetProperty("ranking").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Compare_WithJsonAndAMissingMetricsFile_EmitsErrorPayload()
+    {
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("compare", "--metrics-file", "no-such-file.json");
 
         Assert.Equal(1, exitCode);
         using var doc = ParseStdout(stdout, stderr);
-        Assert.Contains("Model name is required", doc.RootElement.GetProperty("error").GetString());
+        Assert.Contains("Metrics file not found", doc.RootElement.GetProperty("error").GetString());
     }
 
     [Fact]

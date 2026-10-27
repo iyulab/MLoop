@@ -22,6 +22,7 @@ public sealed class TextEncoderTrainingTests : IDisposable
 
     private static readonly string[] Positive = ["배송이 빨라서 좋았어요", "상품이 좋아요 다시 살게요", "포장이 꼼꼼해요", "가격 대비 만족합니다"];
     private static readonly string[] Negative = ["배송이 늦어서 별로였어요", "색상이 사진과 달라요", "the product is bad", "colour differs from the photo"];
+    private static readonly string[] Neutral = ["그냥 보통이에요", "무난한 편입니다", "it is okay", "average product"];
 
     private static readonly EncoderDefinition TinyText = new(
         "tiny-text", "1", 4, null, "input_ids", "last_hidden_state", EncoderPooling.MeanOfTokens,
@@ -42,37 +43,37 @@ public sealed class TextEncoderTrainingTests : IDisposable
         try { Directory.Delete(_workspace, recursive: true); } catch { /* a locked temp dir is not a test failure */ }
     }
 
-    private static string Reviews(int rows, int seed, bool withLabel = true)
+    private static string Reviews(int rows, int seed, bool withLabel = true, bool threeClasses = false)
     {
         var csv = new StringBuilder(withLabel ? "review,x,y\n" : "review,x\n");
         var rng = new Random(seed);
         for (var i = 0; i < rows; i++)
         {
-            var good = rng.NextDouble() < 0.5;
-            var pool = good ? Positive : Negative;
+            var pick = threeClasses ? rng.Next(3) : (rng.NextDouble() < 0.5 ? 0 : 1);
+            var (pool, label) = pick switch { 0 => (Positive, "yes"), 1 => (Negative, "no"), _ => (Neutral, "maybe") };
             var text = pool[rng.Next(pool.Length)];
             csv.Append(CultureInfo.InvariantCulture, $"{text},{rng.NextDouble():F4}");
-            csv.Append(withLabel ? (good ? ",yes\n" : ",no\n") : "\n");
+            csv.Append(withLabel ? "," + label + "\n" : "\n");
         }
         return csv.ToString();
     }
 
-    private async Task<string> TrainAsync()
+    private async Task<string> TrainAsync(string task = "binary-classification", bool threeClasses = false)
     {
-        Assert.Equal(0, (await CliRunner.RunAsync("init", "p", "--task", "binary-classification")).ExitCode);
+        Assert.Equal(0, (await CliRunner.RunAsync("init", "p", "--task", task)).ExitCode);
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
-        await File.WriteAllTextAsync("mloop.yaml", """
+        await File.WriteAllTextAsync("mloop.yaml", $"""
             project: p
             models:
               default:
-                task: binary-classification
+                task: {task}
                 label: y
                 columns:
                   review:
                     type: text
                     encoder: tiny-text
             """);
-        await File.WriteAllTextAsync("datasets/train.csv", Reviews(240, 3));
+        await File.WriteAllTextAsync("datasets/train.csv", Reviews(threeClasses ? 360 : 240, 3, threeClasses: threeClasses));
         await File.WriteAllTextAsync("datasets/predict.csv", Reviews(20, 5, withLabel: false));
         var (exit, output, error) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
         Assert.True(exit == 0, output + Environment.NewLine + error);
@@ -103,6 +104,43 @@ public sealed class TextEncoderTrainingTests : IDisposable
         var (evaluated, metrics, evaluateErr) = await CliRunner.RunAsync("evaluate", "exp-001", "datasets/test.csv", "--json");
         Assert.True(evaluated == 0, metrics + evaluateErr);
         Assert.True(JsonDocument.Parse(metrics).RootElement.GetProperty("testMetrics").GetProperty("accuracy").GetDouble() > 0.9, metrics);
+    }
+
+    /// <summary>
+    /// The threshold and calibration commands load the file for the model through the same reader as predict and
+    /// evaluate — a text column read through an encoder has to come out as the same sentence vectors there, or they
+    /// stop at "Could not find input column" on a model that trained, promoted and evaluated without a word.
+    /// </summary>
+    [Fact]
+    public async Task TheThresholdAndCalibrationRows_ReadAnEncodedTextColumnToo()
+    {
+        await TrainAsync();
+        await File.WriteAllTextAsync("datasets/test.csv", Reviews(120, 11));
+
+        var (thresholded, thresholdJson, thresholdErr) = await CliRunner.RunAsync(
+            "threshold", "exp-001", "--precision", "0.9", "--data", "datasets/test.csv", "--json");
+        Assert.True(thresholded == 0, thresholdJson + thresholdErr);
+        Assert.True(JsonDocument.Parse(thresholdJson).RootElement.TryGetProperty("threshold", out _), thresholdJson);
+
+        // A threshold stands on the model, and calibration is refused while one stands: clear it first.
+        Assert.Equal(0, (await CliRunner.RunAsync("threshold", "exp-001", "--clear")).ExitCode);
+        var (calibrated, calibrationJson, calibrationErr) = await CliRunner.RunAsync(
+            "calibrate", "exp-001", "--data", "datasets/test.csv", "--json");
+        Assert.True(calibrated == 0, calibrationJson + calibrationErr);
+        Assert.True(File.Exists(Path.Combine("models", "default", "staging", "exp-001", ExperimentLayout.CalibrationFileName)));
+    }
+
+    [Fact]
+    public async Task TheCalibrationRow_ReadsAnEncodedTextColumnOfAMulticlassModelToo()
+    {
+        await TrainAsync("multiclass-classification", threeClasses: true);
+        await File.WriteAllTextAsync("datasets/test.csv", Reviews(150, 11, threeClasses: true));
+
+        var (calibrated, calibrationJson, calibrationErr) = await CliRunner.RunAsync(
+            "calibrate", "exp-001", "--data", "datasets/test.csv", "--json");
+
+        Assert.True(calibrated == 0, calibrationJson + calibrationErr);
+        Assert.True(File.Exists(Path.Combine("models", "default", "staging", "exp-001", ExperimentLayout.CalibrationFileName)));
     }
 
     [Fact]

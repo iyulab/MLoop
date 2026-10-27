@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`mloop compare` with no experiment ids and no `--name` compares the default model's experiments** — as `list`, `feedback`,
+  `trigger check`, `drift` and every other command that takes a model name already did; it used to refuse with "Model name
+  is required". A project with no experiments answers an empty comparison, not an error.
+
 ### Fixed
 
 - **`mloop docker` mounted encoders from `~/.mloop/encoders` whatever the host used.** The generated `docker-compose.yml`

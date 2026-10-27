@@ -171,6 +171,27 @@ public class CompareCommandTests : IDisposable
         Assert.Equal(2, completedExperiments.Count);
     }
 
+    /// <summary>
+    /// A model name that is not given is the default model's — for <c>list</c>, <c>feedback</c>, <c>trigger check</c>,
+    /// <c>drift</c> and every other command that takes one; <c>compare</c> alone refused to compare "all experiments"
+    /// without it.
+    /// </summary>
+    [Fact]
+    public async Task Compare_WithNoNameAndNoIds_ComparesTheDefaultModelsExperiments()
+    {
+        await CreateTestExperiment("default", "exp-001", 0.80, new Dictionary<string, double> { ["Accuracy"] = 0.80 });
+        await CreateTestExperiment("default", "exp-002", 0.90, new Dictionary<string, double> { ["Accuracy"] = 0.90 });
+        await CreateTestExperiment("other", "exp-001", 0.50, new Dictionary<string, double> { ["Accuracy"] = 0.50 });
+
+        var result = await CliRunner.RunAsync("compare", "--json");
+
+        Assert.Equal(0, result.ExitCode);
+        var json = System.Text.Json.JsonDocument.Parse(result.Stdout).RootElement.ToString();
+        Assert.Contains("exp-001", json);
+        Assert.Contains("exp-002", json);
+        Assert.DoesNotContain("other", json);
+    }
+
     // ---- Provided-state comparison (compare --metrics-file) ----
 
     private static MLoop.CLI.Commands.CompareCommand.ProvidedCandidate Cand(

@@ -25,7 +25,7 @@ public static class CompareCommand
 
         var nameOption = new Option<string?>("--name", "-n")
         {
-            Description = "Model name (required when comparing all experiments)"
+            Description = "Model name (defaults to 'default'; used when comparing all experiments)"
         };
 
         var bestOption = new Option<int?>("--best")
@@ -133,15 +133,7 @@ public static class CompareCommand
             }
             else
             {
-                // Compare all experiments for the model
-                if (string.IsNullOrWhiteSpace(modelName))
-                {
-                    const string cause = "Model name is required when not specifying experiment IDs.";
-                    const string tip = "Usage: mloop compare exp-001 exp-002, or mloop compare --name <model>";
-                    ErrorConsole.Error(cause, tip);
-                    return 1;
-                }
-
+                // Compare all experiments for the model (the default model when none is named, as everywhere else)
                 var resolvedModelName = CommandContext.ResolveModelName(modelName);
                 var summaries = await ctx.ExperimentStore.ListAsync(resolvedModelName, CancellationToken.None);
                 // rank best-first by metric direction (not unconditionally descending), so
