@@ -64,6 +64,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A type override that names no column of the data — `columns: {typo_col: {type: ignore}}`, a misspelling or a column
+  the file lost — was accepted without a word and had no effect. `mloop train` now warns, naming the columns, so an
+  `ignore` that was meant to keep a column out of the model is not taken as having done so.
 - `mloop train` ended with "Standard data file(s) not used: test.csv" in every project `mloop init` made — the file
   `data.test` declares and `mloop evaluate` reads. The files evaluate and predict read (`datasets/test.csv`,
   `datasets/predict.csv`, or where `data.test` / `data.predict` point) are no longer counted as unused.

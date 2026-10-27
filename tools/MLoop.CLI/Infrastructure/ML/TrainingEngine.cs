@@ -664,6 +664,18 @@ public class TrainingEngine : ITrainingEngine
             // schema to know what was actually trained on. The reasons are already structured
             // here, which is why this is a warning raised from the decision rather than a string
             // scraped out of the chain.
+            // A type override naming a column the file does not have changes nothing and says nothing: the
+            // role is looked up by name, finds no column, and the model trains as if it had not been written.
+            if (readsFeatures && File.Exists(dataFilePath) && config.ColumnOverrides is { Count: > 0 } declaredOverrides)
+            {
+                var missing = CsvDataLoader.UnmatchedColumns(dataFilePath,
+                    declaredOverrides.Keys.Where(k => !k.Equals(config.WeightColumn, StringComparison.OrdinalIgnoreCase)));
+                if (missing.Count > 0)
+                    WarningConsole.Warn(
+                        $"Column override(s) name no column of {Path.GetFileName(dataFilePath)}: {string.Join(", ", missing)} — " +
+                        "check the spelling in the model's `columns:` of mloop.yaml; an override for a column the data lacks has no effect.");
+            }
+
             foreach (var group in readsFeatures ? featureExclusions.GroupBy(c => c.Reason) : [])
             {
                 WarningConsole.Warn(

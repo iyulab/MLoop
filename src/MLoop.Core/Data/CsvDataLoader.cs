@@ -294,6 +294,19 @@ public class CsvDataLoader : DataProviderBase
     }
 
     /// <summary>
+    /// The names among <paramref name="declared"/> that are no column of the CSV file at
+    /// <paramref name="filePath"/> — a column the project's configuration names (a type override) that the data does
+    /// not have, almost always a misspelling. Names compare as the column roles compare them: trimmed, ignoring case.
+    /// </summary>
+    public static IReadOnlyList<string> UnmatchedColumns(string filePath, IEnumerable<string> declared)
+    {
+        var headers = ReadCsvHeaders(filePath).Select(h => h.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return headers.Count == 0
+            ? []
+            : declared.Where(name => !headers.Contains(name.Trim())).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
     /// The single inference schema-reconciliation step that predict and evaluate both run
     /// after <see cref="ColumnLayoutInference"/>. It (1) overrides each non-label column's inferred <c>DataKind</c> to
     /// the type training fitted on — the inferred layout can misdetect types when the inference data is
