@@ -215,7 +215,7 @@ public class DockerCommandTests
     }
 
     [Fact]
-    public void TextEncodersUnder_ReadsEveryModelsEncodings_OncePerId()
+    public void EncodersUnder_ReadsEveryModelsEncodings_OncePerId()
     {
         var root = Path.Combine(Path.GetTempPath(), "mloop-docker-" + Guid.NewGuid().ToString("N"));
         try
@@ -229,10 +229,47 @@ public class DockerCommandTests
             }
             Directory.CreateDirectory(Path.Combine(models, ExperimentLayout.StagingDirectory, "exp-001"));
 
-            var found = DockerCommand.TextEncodersUnder(root);
+            var found = DockerCommand.EncodersUnder(root);
 
             Assert.Equal("multilingual-minilm", Assert.Single(found).Id);
-            Assert.Empty(DockerCommand.TextEncodersUnder(Path.Combine(root, "nowhere")));
+            Assert.Empty(DockerCommand.EncodersUnder(Path.Combine(root, "nowhere")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static readonly MLoop.Core.Embedding.EncoderIdentity ImageEncoder = new(
+        "dinov2-small", "1", "ghi", 384, Normalized: true, "pillow/2", MLoop.Core.Embedding.EncoderKind.Image, "jkl");
+
+    /// <summary>
+    /// An image-anomaly model scores against a bank its encoder made and refuses another (<see cref="MLoop.Core.ImageAnomaly.ImageAnomalyModel.Mismatch"/>),
+    /// so its project needs the encoder and ONNX Runtime in the container as a text-encoder model does — it was generated with
+    /// both lines left commented, and the container then could not score.
+    /// </summary>
+    [Fact]
+    public void AnImageAnomalyModel_NeedsItsEncoder_AlongsideTheTextOnes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mloop-docker-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var production = Path.Combine(root, ExperimentLayout.ModelsDirectory, "default", ExperimentLayout.ProductionDirectory);
+            Directory.CreateDirectory(production);
+            new MLoop.Core.ImageAnomaly.ImageAnomalyModel(ImageEncoder, new MLoop.Core.Embedding.PatchGrid(16, 16, 14, 224),
+                    Images: 20, HeldOutImages: 2, TotalPatches: 4608, BankPatches: 256, Selection: "coreset", Seed: 42, Baseline: null)
+                .WriteBeside(Path.Combine(production, ExperimentLayout.ModelFileName));
+            var staging = Path.Combine(root, ExperimentLayout.ModelsDirectory, "default", ExperimentLayout.StagingDirectory, "exp-001");
+            Directory.CreateDirectory(staging);
+            new MLoop.Core.Models.TextEncodings([new("review", TextEncoder)]).WriteBeside(Path.Combine(staging, ExperimentLayout.ModelFileName));
+
+            var found = DockerCommand.EncodersUnder(root);
+
+            Assert.Equal(["dinov2-small", "multilingual-minilm"], found.Select(e => e.Id));
+
+            var dockerfile = DockerCommand.GenerateDockerfile("default", 5000, found);
+            Assert.Contains("\nRUN mloop runtime install onnxruntime --quiet", dockerfile);
+            Assert.Contains("dinov2-small", dockerfile);
         }
         finally
         {

@@ -31,6 +31,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop docker` for an image-anomaly project left the container unable to score.** The generator switched on ONNX Runtime and the
+  encoder mount only for models that read a text column through an encoder; a project holding an image-anomaly model got both
+  lines commented out, and its container answered every picture with "Encoder … is not installed". It now reads the encoder
+  each model needs from the record beside it, text and image alike, and turns the runtime install and the `/encoders` mount on
+  (the usage text names the `mloop encoder install` lines to run on the host). Checked by building the generated image and
+  scoring pictures through `POST /predict` in the container with the host's encoders mounted; without the mount it answers 409 naming the missing encoder.
 - **An embedding no longer leaves the server's cores busy after the answer is sent.** ONNX Runtime's intra-op threads spin while
   idle by default; every encoder session (`POST /embed`, `mloop embed`, image-anomaly scoring, text encoders) now turns that off
   (`session.intra_op.allow_spinning=0`, made in one place — `OnnxSessionOptions`). Measured on a 30-thread Apple-silicon machine

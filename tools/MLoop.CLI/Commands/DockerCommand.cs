@@ -3,6 +3,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.Update;
 using MLoop.Core.Embedding;
+using MLoop.Core.ImageAnomaly;
 using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using Spectre.Console;
@@ -74,9 +75,10 @@ public static class DockerCommand
             AnsiConsole.Write(new Rule("[blue]Docker Configuration Generator[/]").LeftJustified());
             AnsiConsole.WriteLine();
 
-            // A model that reads a text column through an encoder cannot load without that encoder and ONNX Runtime,
-            // so the image is generated with both switched on rather than left to fail at the first prediction.
-            var textEncoders = TextEncodersUnder(projectRoot);
+            // A model that reads a text column through an encoder, or scores pictures against a bank an encoder made, cannot
+            // run without that encoder and ONNX Runtime, so the image is generated with both switched on rather than left
+            // to fail at the first prediction.
+            var textEncoders = EncodersUnder(projectRoot);
 
             // Generate Dockerfile
             var dockerfilePath = Path.Combine(projectRoot, "Dockerfile");
@@ -106,7 +108,7 @@ public static class DockerCommand
 
             if (textEncoders.Count > 0)
             {
-                AnsiConsole.MarkupLine("[bold]Text encoders:[/] the models read text through encoders the image does not carry —");
+                AnsiConsole.MarkupLine("[bold]Encoders:[/] the models run through encoders the image does not carry —");
                 AnsiConsole.MarkupLine($"  install them on this host (the container mounts {Markup.Escape(EncoderStore.DefaultRoot)}):");
                 foreach (var encoder in textEncoders)
                     ValueLine.Write("  mloop encoder install ", encoder.Id);
@@ -141,18 +143,26 @@ public static class DockerCommand
     }
 
     /// <summary>
-    /// The text encoders the models under <paramref name="projectRoot"/> were trained with (<see cref="TextEncodings"/> beside
-    /// each experiment and production model), one per id — the image copies every model, so any of them can be served.
+    /// The encoders the models under <paramref name="projectRoot"/> need to run — the text encoders a model was trained with
+    /// (<see cref="TextEncodings"/> beside each experiment and production model) and the encoder an image-anomaly model's bank
+    /// was made with (<see cref="ImageAnomalyModel"/>) — one per id. The image copies every model, so any of them can be served.
     /// </summary>
-    internal static IReadOnlyList<EncoderIdentity> TextEncodersUnder(string projectRoot)
+    internal static IReadOnlyList<EncoderIdentity> EncodersUnder(string projectRoot)
     {
         var models = Path.Combine(projectRoot, ExperimentLayout.ModelsDirectory);
         if (!Directory.Exists(models))
             return [];
-        return Directory.EnumerateFiles(models, ExperimentLayout.TextEncodersFileName, SearchOption.AllDirectories)
-            .Select(path => TextEncodings.ReadBeside(Path.Combine(Path.GetDirectoryName(path)!, ExperimentLayout.ModelFileName)))
+        string ModelBeside(string path) => Path.Combine(Path.GetDirectoryName(path)!, ExperimentLayout.ModelFileName);
+
+        var text = Directory.EnumerateFiles(models, ExperimentLayout.TextEncodersFileName, SearchOption.AllDirectories)
+            .Select(path => TextEncodings.ReadBeside(ModelBeside(path)))
             .SelectMany(encodings => encodings?.Columns ?? [])
-            .Select(column => column.Encoder)
+            .Select(column => column.Encoder);
+        var pictures = Directory.EnumerateFiles(models, ExperimentLayout.ImageAnomalyFileName, SearchOption.AllDirectories)
+            .Select(path => ImageAnomalyModel.ReadBeside(ModelBeside(path)))
+            .OfType<ImageAnomalyModel>()
+            .Select(model => model.Encoder);
+        return text.Concat(pictures)
             .DistinctBy(encoder => encoder.Id, StringComparer.OrdinalIgnoreCase)
             .OrderBy(encoder => encoder.Id, StringComparer.Ordinal)
             .ToList();
@@ -213,7 +223,7 @@ COPY mloop.yaml ./
 COPY .mloop/ ./.mloop/
 COPY {ExperimentLayout.ModelsDirectory}/ ./{ExperimentLayout.ModelsDirectory}/
 
-{(encoded ? $@"# The models read text through encoders ({string.Join(", ", textEncoders!.Select(e => e.Id))}), which run on ONNX Runtime
+{(encoded ? $@"# The models run through encoders ({string.Join(", ", textEncoders!.Select(e => e.Id))}), which run on ONNX Runtime
 # (~{MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.ApproximateSizeMB} MB). The encoders themselves are not in the image: they are mounted, as docker-compose.yml shows.
 RUN mloop runtime install {MLoop.Core.Runtime.RuntimeRegistry.OnnxRuntime.Id} --quiet
 ENV {EncoderStore.RootVariable}=/encoders" : $@"# POST /embed (pretrained image and text encoders) runs on ONNX Runtime, whose native library this image carries only when
@@ -301,7 +311,7 @@ services:
       # than defaulted: compose stops with this message when JWT_SIGNING_KEY is unset, instead of
       # starting a container that crash-loops on a fatal it cannot recover from.
       - Jwt__Key=${{JWT_SIGNING_KEY:?set JWT_SIGNING_KEY to a random secret of at least 32 characters}}
-{(encoded ? $@"      # The models read text through encoders ({string.Join(", ", textEncoders!.Select(e => e.Id))}): the ones `mloop encoder install`
+{(encoded ? $@"      # The models run through encoders ({string.Join(", ", textEncoders!.Select(e => e.Id))}): the ones `mloop encoder install`
       # put on the host, mounted (the image carries none). A model refuses to load when its encoder is missing or another.
       - {EncoderStore.RootVariable}=/encoders" : $@"      # POST /embed: the encoders `mloop encoder install` (or `add`) put on the host, mounted (the image carries none), with the
       # Dockerfile's ONNX Runtime line uncommented:
