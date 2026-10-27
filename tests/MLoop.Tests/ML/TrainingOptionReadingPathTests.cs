@@ -1,6 +1,8 @@
 using System.Globalization;
+using System.Text.Json;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Export;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
 using MLoop.Core.Storage;
@@ -23,10 +25,13 @@ public class TrainingOptionReadingPathTests : IDisposable
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "mloop-option-reading-tests", Guid.NewGuid().ToString("N"));
 
+    private readonly string _originalDirectory = Directory.GetCurrentDirectory();
+
     public TrainingOptionReadingPathTests() => Directory.CreateDirectory(Path.Combine(_tempDir, ".mloop"));
 
     public void Dispose()
     {
+        try { Directory.SetCurrentDirectory(_originalDirectory); } catch { Directory.SetCurrentDirectory(Path.GetTempPath()); }
         if (Directory.Exists(_tempDir))
             Directory.Delete(_tempDir, true);
     }
@@ -121,6 +126,45 @@ public class TrainingOptionReadingPathTests : IDisposable
         Assert.True(evaluation.Metrics.Values.Any(), "evaluate answered with metrics");
         Assert.NotNull(calibrationRows);
         Assert.Equal(expected.Count, calibrationRows!.Count);
+    }
+
+    // The graph `mloop export onnx` writes is one more reader of the same columns: it takes the input view the model was
+    // trained on and must answer what the ML.NET model answers, option by option. `--verify` runs it in ONNX Runtime and
+    // compares; without that runtime the command refuses and says how to install it, and the row is skipped, not passed.
+    [Theory]
+    [MemberData(nameof(OptionNames))]
+    public async Task Export_onnx_agrees_with_a_binary_model_for_each_option(string optionName)
+        => await ExportAgreesAsync(optionName, "binary-classification", classes: 2);
+
+    [Theory]
+    [MemberData(nameof(OptionNames))]
+    public async Task Export_onnx_agrees_with_a_multiclass_model_for_each_option(string optionName)
+        => await ExportAgreesAsync(optionName, "multiclass-classification", classes: 3);
+
+    private async Task ExportAgreesAsync(string optionName, string task, int classes)
+    {
+        var option = Options().Single(o => o.Name == optionName);
+        var train = WriteTable("etrain.csv", classes == 2 ? 300 : 450, seed: 17, option.LeakIsTheLabel, leakAsInTraining: true, classes);
+        var (modelPath, _) = await TrainAsync(train, option, task);
+        var experimentId = Path.GetFileName(Path.GetDirectoryName(modelPath))!;
+
+        Directory.SetCurrentDirectory(_tempDir);
+        var (exit, output, error) = await CliRunner.RunAsync(
+            "export", "onnx", experimentId, "--name", "option", "--data", train, "--verify", "--json");
+        if (exit != 0 && (output + error).Contains("mloop runtime install onnxruntime", StringComparison.Ordinal))
+            Assert.Skip("onnxruntime is not installed: the refusal names the install, the graph was not run.");
+
+        Assert.True(exit == 0, $"{optionName} ({task}): export onnx exit {exit}: {output}{error}");
+        using var doc = JsonDocument.Parse(output);
+        var manifest = OnnxManifest.FromJson(await File.ReadAllTextAsync(doc.RootElement.GetProperty("manifestPath").GetString()!));
+        Assert.NotNull(manifest.Verification);
+        Assert.True(manifest.Verification!.Passed, $"{optionName} ({task}): the graph disagrees with the model: {manifest.Verification}");
+        // ...and it reads the columns the option leaves: an ignored column is no input of the graph, a weight is none either.
+        var read = manifest.Inputs.SelectMany(i => i.SourceColumns).ToHashSet();
+        foreach (var ignored in option.Overrides?.Where(o => o.Value == "ignore").Select(o => o.Key) ?? [])
+            Assert.DoesNotContain(ignored, read);
+        if (option.Weight is { } weight)
+            Assert.DoesNotContain(weight, read);
     }
 
     // The matrix is only as complete as its list: a way to train that decides which columns the model reads has to be
