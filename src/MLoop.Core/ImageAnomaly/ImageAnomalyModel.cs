@@ -34,8 +34,8 @@ public sealed record ScoreBaseline(int Images, double Median, double P95, double
 /// <param name="HeldOutImages">How many normal images were kept out of the bank to be scored against it.</param>
 /// <param name="TotalPatches">How many patches those images had.</param>
 /// <param name="BankPatches">How many of them the bank holds.</param>
-/// <param name="Selection"><c>all</c>, or <c>random</c> when the bank is a seeded subsample of the patches.</param>
-/// <param name="Seed">The subsample's seed (null for <c>all</c>).</param>
+/// <param name="Selection"><c>all</c>; <c>coreset</c> when the bank is a greedy k-center coreset of the patches; <c>random</c> when it is a seeded subsample (a model trained before the coreset, or from more patches than a coreset is chosen from).</param>
+/// <param name="Seed">The seed of the choice (null for <c>all</c>).</param>
 /// <param name="Baseline">The held-out normal images' scores; null when none were held out.</param>
 public sealed record ImageAnomalyModel(
     EncoderIdentity Encoder,

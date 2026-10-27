@@ -301,7 +301,7 @@ A picture's score is how far its strangest patch is from the nearest normal patc
 defect shows even when the picture as a whole looks normal; the 16 × 16 distances are a heat map over the part of the
 picture the encoder reads (`crop`, in the picture's own pixels). A tenth of the normal pictures are held out of the bank
 and scored against it, so the model records where *normal* ends (`baseline`). `--bank-size N` caps the bank at N patches
-(a seeded subsample) when a long list of pictures or a small server asks for it. `mloop serve` answers pictures sent to
+(a coreset: the patches that cover what the normal pictures showed, so a rare texture is not dropped) when a long list of pictures or a small server asks for it. `mloop serve` answers pictures sent to
 `POST /predict` by content with the same scores.
 
 **Full documentation**: [docs/GUIDE.md](docs/GUIDE.md)

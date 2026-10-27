@@ -125,7 +125,7 @@ public static partial class TrainCommand
         };
         var bankSizeOption = new Option<int?>("--bank-size")
         {
-            Description = "The most patches an image-anomaly model's bank holds (default: every patch of the images; more are subsampled with a fixed seed)"
+            Description = "The most patches an image-anomaly model's bank holds (default: every patch of the images; with a limit, a greedy k-center coreset keeps the patches that cover what the images showed, chosen with a fixed seed)"
         };
         var portableOption = new Option<bool>("--portable")
         {

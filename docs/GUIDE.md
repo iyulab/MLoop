@@ -951,8 +951,11 @@ mloop evaluate <exp-id> <folder> [--normal-class good] [--json]
 ```
 
 **Training** embeds every picture with the installed image encoder — the code behind `mloop embed --patches` — and
-keeps its patch vectors: all of them, or with `--bank-size N` (or `bank_size:` in `mloop.yaml`) a subsample of N chosen
-with a fixed seed, so the same folder gives the same model. A tenth of the pictures (at least one, and only when there
+keeps its patch vectors: all of them, or with `--bank-size N` (or `bank_size:` in `mloop.yaml`) a coreset of N — greedy
+k-center, the choice PatchCore makes: each patch kept is the one farthest from those already kept, so a rare texture is kept
+where a random subsample would likely lose it — chosen with a fixed seed, so the same folder gives the same model. (From more
+patches than fit in memory at once, about 2 GiB of numbers, the N are a seeded random subsample, and the output says so;
+`selection` in `image-anomaly.json` records which.) A tenth of the pictures (at least one, and only when there
 are ten or more) are kept out of the bank and scored against it; their scores — median, 95th and 99th percentile, maximum —
 are the experiment's metrics and the `baseline` in every answer. There is no label, no time budget and no trial search;
 nothing grades the model, so the first one is promoted and later ones wait for `mloop promote`. The model is its

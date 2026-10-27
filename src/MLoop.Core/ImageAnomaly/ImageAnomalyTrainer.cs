@@ -34,6 +34,12 @@ public static class ImageAnomalyTrainer
     /// </summary>
     public const int MinImagesToHoldOut = 10;
 
+    /// <summary>
+    /// The most numbers (2 GiB of floats) the patches may come to for a coreset to be chosen from them: the choice needs
+    /// every patch at once. A bank limited from more than this is a seeded random subsample, streamed.
+    /// </summary>
+    internal const long MaxCoresetFloats = 1L << 29;
+
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
         { ".jpg", ".jpeg", ".png", ".bmp", ".gif" };
 
@@ -54,7 +60,11 @@ public static class ImageAnomalyTrainer
     /// </summary>
     /// <param name="directory">The folder of normal images.</param>
     /// <param name="encoderId">The image encoder (null: the only one installed).</param>
-    /// <param name="bankSize">The most patches the bank holds; null keeps every patch of the images in it.</param>
+    /// <param name="bankSize">
+    /// The most patches the bank holds; null keeps every patch of the images in it. A limit below the patches the images have
+    /// is met with a coreset (<see cref="CoresetSelector"/>), or with a seeded random subsample when the patches are too many
+    /// to hold at once (<see cref="MaxCoresetFloats"/>).
+    /// </param>
     /// <param name="log">Where progress goes.</param>
     /// <param name="pool">The encoders (null: the process's).</param>
     /// <param name="cancellationToken">Stops the embedding between batches.</param>
@@ -62,6 +72,12 @@ public static class ImageAnomalyTrainer
     public static (ImageAnomalyArtifacts Artifacts, Dictionary<string, double> Metrics) Train(
         string directory, string? encoderId, int? bankSize, Action<string>? log = null,
         EmbedderPool? pool = null, CancellationToken cancellationToken = default)
+        => Train(directory, encoderId, bankSize, MaxCoresetFloats, log, pool, cancellationToken);
+
+    /// <summary><see cref="Train(string, string?, int?, Action{string}?, EmbedderPool?, CancellationToken)"/> with the memory a coreset may take as a parameter.</summary>
+    internal static (ImageAnomalyArtifacts Artifacts, Dictionary<string, double> Metrics) Train(
+        string directory, string? encoderId, int? bankSize, long maxCoresetFloats, Action<string>? log,
+        EmbedderPool? pool, CancellationToken cancellationToken)
     {
         var say = log ?? (_ => { });
         var images = ListImages(directory);
@@ -93,14 +109,19 @@ public static class ImageAnomalyTrainer
         var bankImages = order.Skip(heldOutCount).Order().Select(i => images[i]).ToList();
 
         var total = (long)bankImages.Count * perImage;
-        var keep = bankSize is { } limit && limit < total ? PickPatches(total, limit, new Random(Seed)) : null;
-        var selected = keep?.Length ?? (int)Math.Min(total, int.MaxValue / identity.Dimension);
-        if (keep is null && total > selected)
+        var limited = bankSize is { } cap && cap < total;
+        var coreset = limited && total * identity.Dimension <= maxCoresetFloats;
+        var keep = limited && !coreset ? PickPatches(total, bankSize!.Value, new Random(Seed)) : null;
+        // A coreset is chosen from every patch, so they are all held until the choice; a random subsample is taken as they stream by.
+        var selected = coreset ? (int)total : keep?.Length ?? (int)Math.Min(total, int.MaxValue / identity.Dimension);
+        if (!limited && total > selected)
             throw new InvalidOperationException(
                 $"{total:N0} patches of {identity.Dimension} numbers are more than one bank holds; give --bank-size.");
 
         say($"Embedding {bankImages.Count} images with '{identity.Id}' ({perImage} patches each)" +
-            (keep is null ? "." : $", keeping {selected:N0} of {total:N0} patches (seed {Seed})."));
+            (limited ? $", keeping {bankSize:N0} of {total:N0} patches by {(coreset ? "a coreset" : "a seeded random subsample")} (seed {Seed})." : "."));
+        if (limited && !coreset)
+            say($"  {total:N0} patches are too many to choose a coreset from in memory; the {bankSize:N0} are a random subsample.");
         var data = new float[checked(selected * identity.Dimension)];
         var taken = 0;
         var seen = 0L;
@@ -128,6 +149,16 @@ public static class ImageAnomalyTrainer
                 say($"  {done}/{bankImages.Count} images");
         }
 
+        if (coreset)
+        {
+            say($"Choosing {bankSize:N0} of {total:N0} patches (greedy k-center).");
+            var rows = CoresetSelector.Select(data, identity.Dimension, bankSize!.Value, Seed, cancellationToken);
+            var kept = new float[checked(rows.Length * identity.Dimension)];
+            for (var i = 0; i < rows.Length; i++)
+                Array.Copy(data, (long)rows[i] * identity.Dimension, kept, (long)i * identity.Dimension, identity.Dimension);
+            data = kept;
+        }
+
         var bank = PatchBank.FromRows(data, identity.Dimension);
         var scores = new List<double>();
         if (heldOut.Count > 0)
@@ -147,7 +178,7 @@ public static class ImageAnomalyTrainer
 
         var baseline = ScoreBaseline.Of(scores);
         var record = new ImageAnomalyModel(identity, grid, bankImages.Count, heldOut.Count, total, bank.Count,
-            keep is null ? "all" : "random", keep is null ? null : Seed, baseline);
+            !limited ? "all" : coreset ? "coreset" : "random", !limited ? null : Seed, baseline);
         var metrics = new Dictionary<string, double>
         {
             ["images"] = bankImages.Count + heldOut.Count,

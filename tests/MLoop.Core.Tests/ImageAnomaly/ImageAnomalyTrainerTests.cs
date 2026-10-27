@@ -74,20 +74,35 @@ public class ImageAnomalyTrainerTests : IDisposable
     }
 
     [Fact]
-    public void ABankSize_KeepsASeededSubsample_TheSameEveryTime()
+    public void ABankSize_KeepsASeededCoreset_TheSameEveryTime()
     {
         WriteImages(20);
 
         var first = Train(bankSize: 30).Artifacts;
         var again = Train(bankSize: 30).Artifacts;
 
-        Assert.Equal((30, "random", 42), (first.Bank.Count, first.Model.Selection, first.Model.Seed));
+        Assert.Equal((30, "coreset", 42), (first.Bank.Count, first.Model.Selection, first.Model.Seed));
         Assert.Equal(72L, first.Model.TotalPatches);
         Assert.Equal(first.Bank.Data, again.Bank.Data);
-        // ...and it is a subsample of the full bank, not other vectors
+        // ...and it is chosen from the full bank, not other vectors
         var full = Train().Artifacts.Bank;
         var fullRows = Enumerable.Range(0, full.Count).Select(i => string.Join(",", full[i].ToArray())).ToHashSet();
         Assert.All(Enumerable.Range(0, first.Bank.Count), i => Assert.Contains(string.Join(",", first.Bank[i].ToArray()), fullRows));
+    }
+
+    [Fact]
+    public void ABankSize_FromMorePatchesThanACoresetIsChosenFrom_IsASeededRandomSubsample()
+    {
+        WriteImages(20);
+        var said = new List<string>();
+
+        // a memory allowance of 100 numbers: the 72 patches of 4 numbers are 288
+        var first = ImageAnomalyTrainer.Train(_images, "tiny", 30, maxCoresetFloats: 100, said.Add, _pool, default).Artifacts;
+        var again = ImageAnomalyTrainer.Train(_images, "tiny", 30, maxCoresetFloats: 100, null, _pool, default).Artifacts;
+
+        Assert.Equal((30, "random", 42), (first.Bank.Count, first.Model.Selection, first.Model.Seed));
+        Assert.Equal(first.Bank.Data, again.Bank.Data);
+        Assert.Contains(said, line => line.Contains("too many to choose a coreset from", StringComparison.Ordinal));
     }
 
     [Fact]

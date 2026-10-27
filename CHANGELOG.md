@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`mloop train --task image-anomaly --bank-size N` keeps a coreset, not a random subsample.** The N patches are chosen greedily —
+  each one the farthest from those already kept (PatchCore's k-center choice, measured after a random projection to 128 numbers) —
+  so a texture seen on a few pictures survives a small bank where a random draw mostly loses it; `selection` in
+  `image-anomaly.json` says `coreset` (models trained before keep `random` and are read as before). On synthetic textured pictures
+  with three rare normal textures, a bank of 1,024 of 46,080 patches scored AUROC 0.975 as a coreset against 0.835 as a random
+  subsample (all patches: 0.982); on pictures without rare textures the two were within one missed defect. Training costs more:
+  138,240 patches down to 15,360 took 12 s end to end on 30 threads, 0.8 GB resident. From more patches than fit in memory at
+  once (about 2 GiB of numbers) the bank is still a seeded random subsample, and training says so.
 - **`mloop compare` with no experiment ids and no `--name` compares the default model's experiments** — as `list`, `feedback`,
   `trigger check`, `drift` and every other command that takes a model name already did; it used to refuse with "Model name
   is required". A project with no experiments answers an empty comparison, not an error.
