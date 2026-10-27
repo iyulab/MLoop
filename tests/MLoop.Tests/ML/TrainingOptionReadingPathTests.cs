@@ -89,6 +89,40 @@ public class TrainingOptionReadingPathTests : IDisposable
         Assert.Equal(expected.Count, thresholdRows!.Count);
     }
 
+    // The same options under a multiclass model: the class probabilities the calibration is fit on come through the same loader.
+    [Theory]
+    [MemberData(nameof(OptionNames))]
+    public async Task Every_reader_answers_a_multiclass_model_by_the_columns_the_option_leaves(string optionName)
+    {
+        var option = Options().Single(o => o.Name == optionName);
+        var train = WriteTable("mtrain.csv", 450, seed: 13, option.LeakIsTheLabel, leakAsInTraining: true, classes: 3);
+        var test = WriteTable("mtest.csv", 180, seed: 29, option.LeakIsTheLabel, leakAsInTraining: false, classes: 3);
+        var (modelPath, schema) = await TrainAsync(train, option, "multiclass-classification");
+
+        var expected = File.ReadLines(test).Skip(1).Select(l => l.Split(',')[^1]).ToList();
+
+        var output = Path.Combine(_tempDir, "mout.csv");
+        await new PredictionEngine().PredictAsync(modelPath, test, output, schema,
+            CategoricalMapper.UnknownValueStrategy.Auto, cancellationToken: default,
+            labelColumnOverride: "label", preserveColumns: null, interval: null, taskType: "multiclass-classification");
+        var header = File.ReadLines(output).First().TrimStart('﻿').Split(',');
+        var predictedIndex = Array.IndexOf(header, "PredictedLabel");
+        var filed = File.ReadLines(output).Skip(1).Select(l => l.Split(',')[predictedIndex]).ToList();
+
+        var rows = PredictionEngine.LoadCsvAsRows(test, schema, "label");
+        var served = new PredictionEngine().PredictWithService(rows, schema, modelPath, "multiclass-classification", "label");
+        var servedLabels = served.Rows.Select(r => r.PredictedLabel ?? "").ToList();
+
+        var evaluation = await new EvaluationEngine().EvaluateAsync(modelPath, test, "label", "multiclass-classification", trainedSchema: schema);
+        var calibrationRows = await new EvaluationEngine().MulticlassCalibrationRowsAsync(modelPath, test, "label", schema);
+
+        Assert.True(Agreement(filed, expected) > 0.75 && Agreement(servedLabels, expected) > 0.75,
+            $"{optionName}: agreement with the label — file predict {Agreement(filed, expected):P0}, serve {Agreement(servedLabels, expected):P0}");
+        Assert.True(evaluation.Metrics.Values.Any(), "evaluate answered with metrics");
+        Assert.NotNull(calibrationRows);
+        Assert.Equal(expected.Count, calibrationRows!.Count);
+    }
+
     // The matrix is only as complete as its list: a way to train that decides which columns the model reads has to be
     // a row of it. The options the product declares are named here once, and a new one fails this until it has a row.
     [Fact]
@@ -111,7 +145,7 @@ public class TrainingOptionReadingPathTests : IDisposable
     private static double Agreement(IReadOnlyList<string> a, IReadOnlyList<string> b)
         => a.Zip(b).Count(p => p.First == p.Second) / (double)b.Count;
 
-    private string WriteTable(string name, int rows, int seed, bool leakIsTheLabel, bool leakAsInTraining)
+    private string WriteTable(string name, int rows, int seed, bool leakIsTheLabel, bool leakAsInTraining, int classes = 2)
     {
         var path = Path.Combine(_tempDir, name);
         var rnd = new Random(seed);
@@ -121,7 +155,8 @@ public class TrainingOptionReadingPathTests : IDisposable
         {
             var x = rnd.NextDouble();
             var positive = x > 0.5;
-            var leak = leakIsTheLabel && leakAsInTraining ? (positive ? 1.0 : 0.0) : rnd.NextDouble();
+            var label = classes == 2 ? (positive ? "a" : "b") : x < 1.0 / 3 ? "a" : x < 2.0 / 3 ? "b" : "c";
+            var leak = leakIsTheLabel && leakAsInTraining ? (label == "a" ? 0.0 : label == "b" ? 0.5 : 1.0) : rnd.NextDouble();
             lines.Add(string.Join(',',
                 x.ToString("F3", inv),
                 rnd.NextDouble().ToString("F3", inv),
@@ -131,13 +166,13 @@ public class TrainingOptionReadingPathTests : IDisposable
                 rnd.Next(2) == 0 ? "yes" : "no",
                 new DateTime(2026, 1, 1).AddDays(i).ToString("yyyy-MM-dd", inv),
                 (0.5 + rnd.NextDouble()).ToString("F3", inv),
-                positive ? "a" : "b"));
+                label));
         }
         File.WriteAllLines(path, lines);
         return path;
     }
 
-    private async Task<(string ModelPath, InputSchemaInfo Schema)> TrainAsync(string csv, Option option)
+    private async Task<(string ModelPath, InputSchemaInfo Schema)> TrainAsync(string csv, Option option, string task = "binary-classification")
     {
         var fs = new FileSystemManager();
         var store = new ExperimentStore(fs, new ProjectDiscovery(fs), _tempDir);
@@ -151,7 +186,7 @@ public class TrainingOptionReadingPathTests : IDisposable
                 ModelName = "option",
                 DataFile = csv,
                 LabelColumn = "label",
-                Task = "binary-classification",
+                Task = task,
                 TimeLimitSeconds = 10,
                 ColumnOverrides = option.Overrides,
                 WeightColumn = option.Weight,
