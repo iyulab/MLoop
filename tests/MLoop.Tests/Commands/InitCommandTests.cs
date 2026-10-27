@@ -54,8 +54,6 @@ public class InitCommandTests
     // --- GetYamlTemplate tests ---
 
     [Theory]
-    [InlineData("binary-classification", "accuracy")]
-    [InlineData("multiclass-classification", "macro_accuracy")]
     [InlineData("image-classification", "micro_accuracy")]   // was "auto" → gate skipped
     [InlineData("regression", "r_squared")]
     [InlineData("text-classification", "micro_accuracy")]  // was "auto" → the skipped-gate family
@@ -67,6 +65,17 @@ public class InitCommandTests
         var yaml = InitCommand.GetYamlTemplate("test-project", task, "default", "Label");
 
         Assert.Contains($"metric: {expectedMetric}", yaml);
+    }
+
+    [Theory]
+    [InlineData("binary-classification", "auc", "accuracy")]
+    [InlineData("multiclass-classification", "log_loss", "macro_accuracy")]
+    public void GetYamlTemplate_ClassifierSearchesASmoothScore_AndNamesWhatPromotionJudges(string task, string searched, string judged)
+    {
+        var yaml = InitCommand.GetYamlTemplate("test-project", task, "default", "Label");
+
+        Assert.Contains("metric: auto", yaml);
+        Assert.Contains($"the search optimizes {searched}; promotion is judged on {judged}", yaml);
     }
 
     [Fact]

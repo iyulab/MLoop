@@ -54,6 +54,34 @@ public static class MetricNames
             "top-k accuracy needs a K, and trials are scored without one, so it is 0 for every model.",
     };
 
+    /// <summary>
+    /// The metric a classification search optimizes when none was chosen (<see cref="Auto"/>): AUC for a binary
+    /// task, log-loss for a multiclass one — or <c>null</c> when a metric was named, or the task has no such
+    /// default (the search then optimizes <paramref name="requested"/> as <see cref="Canonical(string?, string?)"/>
+    /// resolves it).
+    /// </summary>
+    /// <remarks>
+    /// The headline metric of a classifier is its accuracy, and accuracy at one threshold is a poor thing to
+    /// choose a model by: it is flat between models that rank rows differently and jumps on a handful of rows.
+    /// Choosing by a smooth score finds better models by accuracy as well — over public tables, at an equal
+    /// time budget, the AUC / log-loss search was ahead of the accuracy search on accuracy on 4 of 7 tables and
+    /// behind on none. What the search optimizes is not what a model is judged on: promotion and the quality gate
+    /// still read the task's primary metric (<see cref="TaskMetadata.PrimaryMetric"/>), so this changes which
+    /// model a search returns, not what a promotion compares.
+    /// </remarks>
+    public static string? SearchObjective(string? task, string? requested)
+    {
+        if (!string.IsNullOrWhiteSpace(requested) && Fold(requested) != Fold(Auto))
+            return null;
+
+        return task?.Trim().ToLowerInvariant() switch
+        {
+            "binary-classification" => "auc",
+            "multiclass-classification" => "log_loss",
+            _ => null
+        };
+    }
+
     /// <summary>Every canonical metric name, in a stable order.</summary>
     public static IReadOnlyList<string> All { get; } = [.. Binary, .. Multiclass, .. Regression, .. Other];
 

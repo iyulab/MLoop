@@ -55,7 +55,7 @@ public static partial class TrainCommand
 
         var metricOption = new Option<string?>("--metric")
         {
-            Description = "Optimization metric (accuracy, auc, f1, r_squared, etc.)"
+            Description = "Optimization metric (accuracy, auc, f1, r_squared, etc.). Default auto: AUC for binary, log-loss for multiclass classification, the task's primary metric otherwise"
         };
 
         var testSplitOption = new Option<double?>("--test-split")

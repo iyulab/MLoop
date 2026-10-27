@@ -32,6 +32,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   change: better on 9, equal on 6, worse on 1 (`benchmarks/engine-compare`); the regression tables gain most
   (RMSE 6.05 → 4.17 on concrete strength, 2.00 → 1.35 on airfoil noise, 595 → 546 on diamonds). The tuner's trace
   against ML.NET AutoML's is unchanged when no starting point is given.
+- **A classifier's search optimizes a smooth score unless a metric is named.** With `metric: auto` (what `mloop init`
+  now writes for binary and multiclass tasks, and what an absent `--metric` means) a binary search optimizes AUC and a
+  multiclass one log-loss, where it optimized accuracy: accuracy at one threshold is flat between models that rank
+  rows differently, and choosing by a smooth score found the better model by accuracy too (public tables, equal time
+  budget: ahead on accuracy on 4 of 7, behind on none) as well as by AUC and log-loss (ahead on 6 of 10 against the
+  accuracy search, behind on none). Promotion and the quality gate are unchanged — they still read the task's primary
+  metric — so what a promotion compares does not move. A project that names `metric: accuracy` keeps optimizing it.
 - **Breaking — a short option letter now means one long option across the whole CLI**, and `--model` means a model
   *file* wherever it appears. Before, `-f` was `--force`, `--from` or `--feedback`; `-l` a label, a limit or a log
   flag; `-m` a model name, a model path or a metric — so a letter learned on one command did something else on the

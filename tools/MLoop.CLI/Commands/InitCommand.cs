@@ -672,7 +672,13 @@ See the Extensibility section of the MLoop guide (docs/GUIDE.md).
         // Task→primary-metric mapping lives in the shared TaskMetadata source of truth so the
         // yaml example, the promotion gate, and AutoML all agree. Tasks without a
         // canonical metric (object detection, unknown) defer to "auto".
-        var metricExample = TaskMetadata.PrimaryMetricOrAuto(task);
+        // A classifier is written as `auto`: its search then optimizes AUC / log-loss (MetricNames.SearchObjective),
+        // which finds better models by accuracy too, while promotion keeps judging on the task's primary metric.
+        var searchObjective = MetricNames.SearchObjective(task, MetricNames.Auto);
+        var metricExample = searchObjective is null ? TaskMetadata.PrimaryMetricOrAuto(task) : MetricNames.Auto;
+        var metricNote = searchObjective is null
+            ? ""
+            : $"\n      # auto: the search optimizes {searchObjective}; promotion is judged on {TaskMetadata.PrimaryMetricOrAuto(task)}. Name a metric to optimize that one.";
 
         var taskSpecificFields = task switch
         {
@@ -698,7 +704,7 @@ models:
     training:
       # time_limit_seconds: 300   # optional — omit to let mloop auto-estimate the training
       #                             time from data size ([30, 1800]s). Set a fixed value to override.
-      metric: {metricExample}
+      metric: {metricExample}{metricNote}
       test_split: 0.2
 
 # Add more models as needed:

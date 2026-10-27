@@ -1993,9 +1993,10 @@ public partial class TrainingRunner
     // accuracy for a long time. Producers (CLI train, API /train) refuse the same names before any work
     // starts; this is the backstop for a caller that skipped them.
     private static string OptimizingMetric(TrainingConfig config) =>
-        MetricNames.OptimizableFor(config.Task) is { } optimizable && optimizable.Contains(config.CanonicalMetric)
+        MetricNames.SearchObjective(config.Task, config.Metric)
+        ?? (MetricNames.OptimizableFor(config.Task) is { } optimizable && optimizable.Contains(config.CanonicalMetric)
             ? config.CanonicalMetric
-            : throw Refuse(config);
+            : throw Refuse(config));
     private static ArgumentException Refuse(TrainingConfig config) =>
         new(MetricNames.Rejection(config.Task, config.Metric)
             ?? $"Metric '{config.Metric}' cannot be optimized for {config.Task}.", nameof(config));

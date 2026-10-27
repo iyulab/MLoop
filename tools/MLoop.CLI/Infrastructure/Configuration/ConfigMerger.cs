@@ -94,7 +94,11 @@ public class ConfigMerger
         // consumer still missing from it.
         // Tasks with no canonical primary (object detection, unknown) keep "auto": that deferred
         // case is intentional and PrimaryMetricOrAuto preserves it.
-        if (string.Equals(training.Metric, ConfigDefaults.DefaultMetric, StringComparison.OrdinalIgnoreCase))
+        // A classifier is the exception: its `auto` is a decision the search takes (MetricNames.SearchObjective — AUC /
+        // log-loss), so it flows on. Every record and the quality gate canonicalize it to the primary metric
+        // (TrainingConfig.CanonicalMetric), so nothing reads the sentinel as a metric.
+        if (string.Equals(training.Metric, ConfigDefaults.DefaultMetric, StringComparison.OrdinalIgnoreCase)
+            && MetricNames.SearchObjective(task, training.Metric) is null)
         {
             training.Metric = TaskMetadata.PrimaryMetricOrAuto(task);
         }

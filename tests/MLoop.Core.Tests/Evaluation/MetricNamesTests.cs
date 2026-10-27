@@ -177,4 +177,29 @@ public class MetricNamesTests
         Assert.Equal("log_loss_reduction", MetricNames.Canonical("multiclass-classification", name));
         Assert.NotNull(MetricNames.Rejection("binary-classification", name));
     }
+
+    /// <summary>
+    /// A classifier that was not told what to optimize searches a smooth score, not accuracy at one threshold; a
+    /// metric that was named is optimized as named, and a task without a classifier's default keeps its own.
+    /// </summary>
+    [Theory]
+    [InlineData("binary-classification", null, "auc")]
+    [InlineData("binary-classification", "", "auc")]
+    [InlineData("binary-classification", "auto", "auc")]
+    [InlineData("Binary-Classification", "AUTO", "auc")]
+    [InlineData("multiclass-classification", "auto", "log_loss")]
+    [InlineData("binary-classification", "accuracy", null)]
+    [InlineData("binary-classification", "f1_score", null)]
+    [InlineData("multiclass-classification", "macro_accuracy", null)]
+    [InlineData("regression", "auto", null)]
+    [InlineData("image-classification", "auto", null)]
+    [InlineData(null, "auto", null)]
+    public void SearchObjective_IsASmoothScoreForAClassifierThatWasNotToldWhatToOptimize(string? task, string? requested, string? expected)
+        => Assert.Equal(expected, MetricNames.SearchObjective(task, requested));
+
+    [Theory]
+    [InlineData("binary-classification")]
+    [InlineData("multiclass-classification")]
+    public void SearchObjective_IsAMetricThatTaskCanOptimize(string task)
+        => Assert.Contains(MetricNames.SearchObjective(task, MetricNames.Auto), MetricNames.OptimizableFor(task)!);
 }

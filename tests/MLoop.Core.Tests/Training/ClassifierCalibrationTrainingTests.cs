@@ -82,6 +82,29 @@ public class ClassifierCalibrationTrainingTests
         Assert.Equal(BinaryCounts.Metrics(result.ScoringModel(ctx).Transform(testSet), "Label")!["accuracy"], result.Metrics["accuracy"], 6);
     }
 
+    [Theory]
+    [InlineData("auto", "auc")]
+    [InlineData("accuracy", "accuracy")]
+    public async Task ABinarySearch_OptimizesASmoothScoreUnlessAMetricWasNamed(string metric, string expected)
+    {
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(Separable());
+        var config = new TrainingConfig
+        {
+            ModelName = "o",
+            DataFile = "synthetic",
+            LabelColumn = "Label",
+            Task = "binary-classification",
+            TimeLimitSeconds = 30,
+            Metric = metric,
+            SearchMaxTrials = 3,
+        };
+
+        var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
+
+        Assert.Equal(expected, result.RankingMetric);
+    }
+
     private sealed class ClassRow
     {
         public float X { get; set; }

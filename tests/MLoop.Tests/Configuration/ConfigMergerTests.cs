@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.Core.Evaluation;
 
 namespace MLoop.Tests.Configuration;
 
@@ -212,9 +213,9 @@ public class ConfigMergerTests
     // metricName "auto", which mislabels the score and defeats metric-direction lookups.
 
     [Theory]
-    [InlineData("binary-classification", "accuracy")]
-    [InlineData("multiclass-classification", "macro_accuracy")]
     [InlineData("regression", "r_squared")]
+    [InlineData("image-classification", "micro_accuracy")]
+    [InlineData("forecasting", "mae")]
     public void GetEffectiveModelDefinition_UnregisteredModel_ResolvesMetricToTaskPrimary(
         string task, string expectedMetric)
     {
@@ -229,6 +230,23 @@ public class ConfigMergerTests
         Assert.Equal(expectedMetric, result.Training?.Metric);
     }
 
+    // A binary or multiclass classifier is the one place `auto` is a decision the search takes (AUC / log-loss, see
+    // MetricNames.SearchObjective), so it flows to the search; records and the quality gate canonicalize it to the
+    // task's primary metric (TrainingConfig.CanonicalMetric), which is why nothing reads the sentinel as a metric.
+    [Theory]
+    [InlineData("binary-classification", "accuracy")]
+    [InlineData("multiclass-classification", "macro_accuracy")]
+    public void GetEffectiveModelDefinition_ClassifierMetricAuto_FlowsToTheSearch_AndCanonicalizesToThePrimaryMetric(
+        string task, string primary)
+    {
+        var config = new MLoopConfig { Models = new Dictionary<string, ModelDefinition>() };
+
+        var result = _merger.GetEffectiveModelDefinition(config, "obj-42", cliLabel: "Label", cliTask: task);
+
+        Assert.Equal("auto", result.Training?.Metric);
+        Assert.Equal(primary, MetricNames.Canonical(task, result.Training?.Metric));
+    }
+
     [Fact]
     public void GetEffectiveModelDefinition_YamlMetricAuto_IsResolved()
     {
@@ -240,7 +258,7 @@ public class ConfigMergerTests
             {
                 ["default"] = new()
                 {
-                    Task = "binary-classification",
+                    Task = "regression",
                     Label = "Label",
                     Training = new TrainingSettings { Metric = "auto" }
                 }
@@ -249,7 +267,7 @@ public class ConfigMergerTests
 
         var result = _merger.GetEffectiveModelDefinition(config, "default");
 
-        Assert.Equal("accuracy", result.Training?.Metric);
+        Assert.Equal("r_squared", result.Training?.Metric);
     }
 
     [Fact]
