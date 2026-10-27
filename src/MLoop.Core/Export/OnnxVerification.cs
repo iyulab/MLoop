@@ -91,7 +91,7 @@ public static class OnnxVerification
 
         // ONNX Runtime warns, on stderr, about shape metadata it merges leniently — which ML.NET's
         // converter writes for every one-hot column. Noise to a user; errors still surface.
-        using var options = new SessionOptions { LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR };
+        using var options = Embedding.OnnxSessionOptions.Create();
         using var session = new InferenceSession(onnxPath, options);
         var feeds = export.Inputs.Concat(export.UnusedInputs).Select(spec => Feed(spec, input, rows)).ToList();
         using var outputs = session.Run(feeds);

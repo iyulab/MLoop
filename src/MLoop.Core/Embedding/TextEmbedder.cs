@@ -52,7 +52,7 @@ public sealed class TextEmbedder : IDisposable
         if (OnnxRuntimeNative.Unavailable() is { } unavailable)
             throw new InvalidOperationException(unavailable);
 
-        using var options = new SessionOptions { LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR };
+        using var options = OnnxSessionOptions.Create();
         var session = new InferenceSession(modelPath, options);
         if (!session.InputMetadata.ContainsKey(encoder.InputName) || !session.InputMetadata.ContainsKey(AttentionMaskName)
             || !session.OutputMetadata.ContainsKey(encoder.OutputName))

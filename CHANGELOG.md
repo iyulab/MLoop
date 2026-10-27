@@ -23,6 +23,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **An embedding no longer leaves the server's cores busy after the answer is sent.** ONNX Runtime's intra-op threads spin while
+  idle by default; every encoder session (`POST /embed`, `mloop embed`, image-anomaly scoring, text encoders) now turns that off
+  (`session.intra_op.allow_spinning=0`, made in one place — `OnnxSessionOptions`). Measured on a 30-thread Apple-silicon machine
+  with a small image encoder: the CPU time the server spent after the response fell from a median 145 ms to 18 ms per
+  `/embed` request, against a median call time of 37 ms → 40 ms (patch mode 38 → 49 ms, post-response CPU already low there).
+  A caller that uses the same machine right after the answer no longer competes with the server for the cores.
 - **`mloop predict --log` logged no confidence.** The prediction log entry took `null` whatever the output file's `Confidence`
   column said (a served prediction's entry already held it); `mloop logs --json` now shows it.
 - **The "no input column in common" refusal listed columns training had left out.** Its expected-column list and its overlap check
