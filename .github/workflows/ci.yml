@@ -73,13 +73,13 @@ jobs:
       run: |
         # Run only lightweight tests in CI (excludes LLM, Slow, E2E, Database tests)
         # Heavy tests should be run locally with: dotnet test --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
-        dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal ${{ matrix.os == 'ubuntu-latest' && '--collect:"XPlat Code Coverage"' || '' }} --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
+        dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal --max-parallel-test-modules 1 ${{ matrix.os == 'ubuntu-latest' && '--coverage --coverage-output-format cobertura' || '' }} --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
 
     - name: Upload coverage reports to Codecov
       if: matrix.os == 'ubuntu-latest'
       uses: codecov/codecov-action@v4
       with:
-        files: tests/**/coverage.cobertura.xml
+        files: '**/TestResults/**/*.cobertura.xml'
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false

@@ -10,6 +10,11 @@
     <NoWarn>$(NoWarn);xUnit1051</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+    <!-- Code coverage under the Microsoft Testing Platform (dotnet test, coverage option): one extension for every test assembly. -->
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Every test assembly pins the same output culture the product pins, so a suite asserts
          what a user actually sees rather than what this machine's locale happens to render.

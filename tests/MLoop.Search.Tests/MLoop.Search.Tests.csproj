@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
     <!-- The search knows nothing of MLoop.Core, and neither do its tests: the shared test helpers
          that read MLoop.Core are not linked here (tests/Directory.Build.props). -->
     <MLoopCoreTestHelpers>false</MLoopCoreTestHelpers>
@@ -17,11 +18,8 @@
   <ItemGroup>
     <!-- For the linked DeterministicTrainers helper every test assembly carries. -->
     <PackageReference Include="Microsoft.ML" />
-    <PackageReference Include="coverlet.collector" />
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="xunit.v3.mtp-off" />
-    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
 
   <ItemGroup>

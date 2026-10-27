@@ -85,7 +85,7 @@ jobs:
 
     - name: Run tests
       if: steps.version.outputs.tag_exists == 'false'
-      run: dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
+      run: dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal --max-parallel-test-modules 1 --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
 
   publish-binaries:
     needs: build

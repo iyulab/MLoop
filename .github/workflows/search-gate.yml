@@ -41,7 +41,7 @@ jobs:
       env:
         MLOOP_SEARCH_GATE: '1'
         MLOOP_SEARCH_GATE_OUT: ${{ github.workspace }}/search-gate
-      run: dotnet test tests/MLoop.Core.Tests --configuration Release --no-build --filter "FullyQualifiedName~SearchGateMeasurement" --logger "console;verbosity=detailed"
+      run: dotnet test tests/MLoop.Core.Tests --configuration Release --no-build --filter "FullyQualifiedName~SearchGateMeasurement" --output Detailed
 
     - name: Keep the report
       if: always()

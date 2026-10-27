@@ -20,7 +20,7 @@ COVERAGE=()
 while [[ $# -gt 0 ]]; do
     case $1 in
         --ci|--exclude-heavy) FILTER="Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"; shift ;;
-        --coverage) COVERAGE=(--collect:"XPlat Code Coverage"); shift ;;
+        --coverage) COVERAGE=(--coverage --coverage-output-format cobertura); shift ;;
         *) echo "Unknown option: $1"; echo "Usage: $0 [--ci] [--coverage]"; exit 1 ;;
     esac
 done
