@@ -127,6 +127,96 @@ public class DecisionThresholdTests : IDisposable
         Assert.Equal([true, false, false], answered.GetColumn<bool>("PredictedLabel").ToArray());
     }
 
+    // Wilson one-sided 95 % (z = 1.645): n right of n certifies n / (n + z²) — 20 → 0.8808, 1 → 0.2699; 950 of 1000 → 0.9374.
+    [Theory]
+    [InlineData(1.0, 20, 0.8808, 0.0005)]
+    [InlineData(0.95, 1000, 0.9374, 0.0005)]
+    [InlineData(1.0, 1, 0.2699, 0.0005)]
+    public void ThePrecisionBound_IsTheOneSided95PercentWilsonBound(double observed, double rows, double expected, double tolerance)
+    {
+        Assert.InRange(DecisionThreshold.PrecisionBound(observed, rows), expected - tolerance, expected + tolerance);
+    }
+
+    [Fact]
+    public void ThePrecisionBound_RisesWithTheRows_AndNeverPassesTheObservedShare()
+    {
+        var previous = 0.0;
+        foreach (var rows in new double[] { 5, 20, 100, 1000, 100000 })
+        {
+            var bound = DecisionThreshold.PrecisionBound(0.9, rows);
+            Assert.True(bound > previous && bound <= 0.9, $"{rows}: {bound}");
+            previous = bound;
+        }
+        Assert.Equal(0, DecisionThreshold.PrecisionBound(0.9, 0));
+    }
+
+    // Measured on a real binary set at target 0.9: 95 answered rows leave the bound 0.056 below it, 287 rows 0.030, 964 rows 0.017.
+    [Theory]
+    [InlineData(0.9, 0.844, true)]
+    [InlineData(0.9, 0.870, false)]
+    [InlineData(0.9, 0.883, false)]
+    [InlineData(0.95, 0.90, false)]   // exactly at the margin is still within it
+    [InlineData(0.95, 0.899, true)]
+    public void AFileIsTooSmall_WhenTheBoundSitsMoreThanTheMarginBelowTheTarget(double target, double bound, bool uncertified)
+    {
+        Assert.Equal(uncertified, DecisionThreshold.IsUncertified(target, bound));
+    }
+
+    [Fact]
+    public void WhatAThresholdRestsOn_IsTheRowsItAnswersAsTheClass()
+    {
+        // 0.9+ 0.8+ 0.7- 0.6+ 0.5- 0.4+  — a threshold of 0.75 answers the top two, both positive
+        var rows = new[] { R(0.9, true), R(0.8, true), R(0.7, false), R(0.6, true), R(0.5, false), R(0.4, true) };
+
+        var (answered, classRows, bound) = DecisionThreshold.EvidenceFor(rows, 0.75, precision: 1.0);
+
+        Assert.Equal((2, 4), (answered, classRows));
+        Assert.InRange(bound, 0.3, 0.5);   // two right answers certify little
+
+        // The negative class is answered below the threshold: 0.7-, 0.5- and the positives under them
+        var (negativeAnswered, negativeRows, _) = DecisionThreshold.EvidenceFor(rows, 0.45, precision: 1.0, ofPositive: false);
+        Assert.Equal((1, 2), (negativeAnswered, negativeRows));
+    }
+
+    [Fact]
+    public void WeightedRows_CountAsTheirEffectiveNumber()
+    {
+        // One heavy row among nineteen light ones is not twenty rows of evidence.
+        var uniform = Enumerable.Range(0, 20).Select(i => R(0.9 - i * 0.001, true)).ToList();
+        var skewed = Enumerable.Range(0, 20).Select(i => R(0.9 - i * 0.001, true, i == 0 ? 100 : 1)).ToList();
+
+        var even = DecisionThreshold.EvidenceFor(uniform, 0.5, precision: 1.0).LowerBound;
+        var heavy = DecisionThreshold.EvidenceFor(skewed, 0.5, precision: 1.0).LowerBound;
+
+        Assert.True(heavy < even, $"{heavy} should be below {even}");
+    }
+
+    [Fact]
+    public void AThresholdWrittenBeforeItRecordedItsEvidence_ReadsAsWithoutIt()
+    {
+        var model = Path.Combine(_dir, ExperimentLayout.ModelFileName);
+        File.WriteAllText(DecisionThreshold.PathBeside(model),
+            """{"threshold":0.42,"targetPrecision":0.9,"precision":0.91,"recall":0.6,"rows":120,"chosenOn":"recheck.csv","weightColumn":null,"chosenAt":"2026-10-01T00:00:00+00:00"}""");
+
+        var read = DecisionThreshold.ReadBeside(model)!;
+
+        Assert.Equal(0.42, read.Threshold);
+        Assert.Null(read.Answered);
+        Assert.Null(read.PrecisionLowerBound);
+    }
+
+    [Fact]
+    public void TheEvidence_RoundTripsThroughTheFileBesideTheModel()
+    {
+        var model = Path.Combine(_dir, ExperimentLayout.ModelFileName);
+        var threshold = new DecisionThreshold(0.42, 0.9, 0.91, 0.6, 120, "recheck.csv", null, DateTimeOffset.UtcNow,
+            Answered: 40, ClassRows: 55, PrecisionLowerBound: 0.8);
+
+        threshold.WriteBeside(model);
+
+        Assert.Equal(threshold, DecisionThreshold.ReadBeside(model));
+    }
+
     [Fact]
     public void ItIsReadFromBesideTheModel_AndAbsentMeansNone()
     {

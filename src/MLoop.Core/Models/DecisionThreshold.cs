@@ -26,6 +26,17 @@ namespace MLoop.Core.Models;
 /// way (positive from <paramref name="Threshold"/> on); which class the precision belongs to decides
 /// only which side of it was asked to be trustworthy.
 /// </param>
+/// <param name="Answered">
+/// How many of the evaluation's rows the threshold answers as the targeted class — the rows
+/// <paramref name="Precision"/> is a share of. <c>null</c> for a threshold chosen before this was recorded.
+/// </param>
+/// <param name="ClassRows">How many rows of the targeted class the evaluation had at all. <c>null</c> when not recorded.</param>
+/// <param name="PrecisionLowerBound">
+/// What the measured <paramref name="Precision"/> certifies at 95 % confidence (one-sided Wilson bound over the
+/// answered rows; weighted rows count as their effective number). The threshold is the lowest one that reached the
+/// target on this very file, so the precision it shows is the luckiest reading of a few rows: below the target,
+/// the target is not what the file proves. <c>null</c> when not recorded.
+/// </param>
 public sealed record DecisionThreshold(
     double Threshold,
     double TargetPrecision,
@@ -35,8 +46,56 @@ public sealed record DecisionThreshold(
     string ChosenOn,
     string? WeightColumn,
     DateTimeOffset ChosenAt,
-    string? PrecisionOf = null)
+    string? PrecisionOf = null,
+    int? Answered = null,
+    int? ClassRows = null,
+    double? PrecisionLowerBound = null)
 {
+    /// <summary>The z of a one-sided 95 % bound.</summary>
+    private const double OneSided95 = 1.6448536269514722;
+
+    /// <summary>
+    /// How far below the target a threshold's certified precision may sit before the file is called too small to
+    /// choose it on. The threshold is the lowest one that reached the target <i>on this file</i>, so its measured
+    /// precision lands just above the target and its bound lands below it by a margin that shrinks with the rows —
+    /// any margin at all is always there. Five points is the shortfall measured on held-out data when a threshold
+    /// was chosen on 15–30 positive rows (0.06–0.07 on average); measured on a real binary set it is crossed
+    /// below about a hundred answered rows and not at three hundred.
+    /// </summary>
+    public const double UncertifiedMargin = 0.05;
+
+    /// <summary>Whether the file a threshold was chosen on is too small to stand behind <paramref name="target"/>: the bound sits more than <see cref="UncertifiedMargin"/> below it.</summary>
+    public static bool IsUncertified(double target, double lowerBound) => target - lowerBound > UncertifiedMargin;
+
+    /// <summary>
+    /// The lowest share of <paramref name="effectiveRows"/> answers that is still consistent, at 95 % confidence, with
+    /// <paramref name="observed"/> being the share that were right (Wilson's one-sided bound).
+    /// </summary>
+    public static double PrecisionBound(double observed, double effectiveRows)
+    {
+        if (effectiveRows <= 0) return 0;
+        var z2 = OneSided95 * OneSided95;
+        var centre = observed + z2 / (2 * effectiveRows);
+        var spread = OneSided95 * Math.Sqrt(observed * (1 - observed) / effectiveRows + z2 / (4 * effectiveRows * effectiveRows));
+        return Math.Clamp((centre - spread) / (1 + z2 / effectiveRows), 0, 1);
+    }
+
+    /// <summary>
+    /// What a chosen threshold rests on: how many rows it answers as the class, how many rows the class has, and the
+    /// bound its precision certifies (<see cref="PrecisionBound"/>). Weighted rows count as their effective number
+    /// (Kish): a few heavy rows are a few rows however many there are.
+    /// </summary>
+    public static (int Answered, int ClassRows, double LowerBound) EvidenceFor(
+        IReadOnlyList<(double Probability, bool Positive, double Weight)> rows, double threshold, double precision, bool ofPositive = true)
+    {
+        var finite = rows.Where(r => double.IsFinite(r.Probability) && r.Weight > 0).ToList();
+        var answered = finite.Where(r => ofPositive ? r.Probability >= threshold : r.Probability < threshold).ToList();
+        var sum = answered.Sum(r => r.Weight);
+        var sumSquares = answered.Sum(r => r.Weight * r.Weight);
+        var effective = sumSquares > 0 ? sum * sum / sumSquares : 0;
+        return (answered.Count, finite.Count(r => r.Positive == ofPositive), PrecisionBound(precision, effective));
+    }
+
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

@@ -22,6 +22,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `mloop threshold --precision` says how much the file proves. The threshold is the lowest one that reached the
+  target on that very file, so its measured precision is the luckiest reading of the rows it answers; the output now
+  adds how many rows it answers as the class and the precision they certify at 95 % confidence (one-sided Wilson
+  bound, weighted rows counted as their effective number), and warns when that is more than five points below the
+  target — about a hundred answered rows at a target of 0.9. `decision-threshold.json` and `--json` carry `answered`,
+  `classRows` and `precisionLowerBound`; a threshold written before this release reads as without them. The
+  threshold chosen is unchanged.
 - **The trainer search tries a tree trainer's own defaults before it starts walking.** The search began every trainer
   at a deliberately cheap point (4 trees of 4 leaves) and walked outwards a tenth of the range at a time, so a trainer's
   library defaults were never tried: on a 1,000-row table the search ended at an RMSE of 6.0 after 240 seconds where

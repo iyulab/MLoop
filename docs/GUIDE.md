@@ -650,6 +650,15 @@ mloop threshold --clear                                               # back to 
 | `--clear` | | Remove the threshold |
 | `--json` | | Output as JSON |
 
+**How much the file proves.** The threshold is the lowest one that reached the target *on that file*, so
+the precision it shows is the luckiest reading of the rows it answers — new rows usually do a little
+worse, and the fewer the rows, the more. `threshold` therefore also reports how many rows the threshold
+answers as the class and the precision those rows *certify* at 95 % confidence (a one-sided Wilson
+bound; weighted rows count as their effective number), and warns when that is more than five points
+below the target. On a real binary set at a target of 0.9, about a hundred answered rows cross that line
+and three hundred do not. The numbers are recorded in `decision-threshold.json` (`answered`,
+`classRows`, `precisionLowerBound`); the threshold itself is chosen exactly as before.
+
 The threshold is written beside the model (`decision-threshold.json`, with the precision and recall
 it reached and the file it was chosen on) — on the experiment, and on production too when the
 experiment is in production. From then on every path that loads the model answers at it: `predict`

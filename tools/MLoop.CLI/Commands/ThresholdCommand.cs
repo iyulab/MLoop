@@ -136,8 +136,18 @@ public static class ThresholdCommand
                 return Fail(string.Create(CultureInfo.InvariantCulture,
                     $"No threshold reaches a precision of {target:0.###} for {className ?? "the positive class"} on {Path.GetFileName(data)} — not even answering it only for the rows the model is most confident about."));
 
+            var evidence = DecisionThreshold.EvidenceFor(rows, chosen.Threshold, chosen.Precision, ofPositive);
             var threshold = new DecisionThreshold(chosen.Threshold, target, chosen.Precision, chosen.Recall, rows.Count,
-                Path.GetFileName(data!), weightColumn, DateTimeOffset.UtcNow, className);
+                Path.GetFileName(data!), weightColumn, DateTimeOffset.UtcNow, className,
+                evidence.Answered, evidence.ClassRows, evidence.LowerBound);
+            if (DecisionThreshold.IsUncertified(target, evidence.LowerBound))
+                WarningConsole.Warn(Markup.Escape(
+                    string.Create(CultureInfo.InvariantCulture,
+                        $"The precision {chosen.Precision:0.000} was measured on {evidence.Answered:N0} rows the threshold answers as {className ?? "the positive class"} ") +
+                    string.Create(CultureInfo.InvariantCulture,
+                        $"({evidence.ClassRows:N0} of that class in the file): at 95 % confidence it is at least {evidence.LowerBound:0.000}, {target - evidence.LowerBound:0.000} below the target {target:0.###}. ") +
+                    "The threshold is the lowest one that reached the target on this very file, so new data usually does worse than this reading — " +
+                    "choose it on a larger file, or read the target as not yet certified."));
             foreach (var path in new[] { modelPath, productionModel }.OfType<string>())
                 threshold.WriteBeside(path);
             return Emit(name, id, threshold, "chosen", productionModel is not null, jsonOutput, vocabulary);
@@ -192,7 +202,8 @@ public static class ThresholdCommand
             $"[green]>[/] {Markup.Escape(experimentId)}{Markup.Escape(where)} answers {Markup.Escape(vocabulary?.Positive ?? "positive")} from a probability of [cyan]{threshold.Threshold:0.####}[/]" +
             $"{(vocabulary is { } v ? $" ({Markup.Escape(v.Negative)} below it)" : "")} — " +
             $"{(threshold.PrecisionOf is { } c ? $"{Markup.Escape(c)} " : "")}precision {threshold.Precision:0.000} (target {threshold.TargetPrecision:0.###}), recall {threshold.Recall:0.000} " +
-            $"over {threshold.Rows:N0} rows of {Markup.Escape(threshold.ChosenOn)}{(threshold.WeightColumn is { } w ? $", weighted by {Markup.Escape(w)}" : "")}."));
+            $"over {threshold.Rows:N0} rows of {Markup.Escape(threshold.ChosenOn)}{(threshold.WeightColumn is { } w ? $", weighted by {Markup.Escape(w)}" : "")}" +
+            $"{(threshold is { Answered: { } answered, PrecisionLowerBound: { } bound } ? $"; it answers {answered:N0} of them, and that precision is certified to {bound:0.000} at 95 %" : "")}."));
         if (status == "chosen" && !inProduction)
             AnsiConsole.MarkupLineInterpolated($"[grey]It goes to production with the model: mloop promote {experimentId}[/]");
         return 0;
