@@ -391,6 +391,38 @@ public class PredictionServiceTests : IDisposable
         Assert.Contains("X", ex.Message);   // actionable: names the expected columns
     }
 
+    // A row that carries only a column training left out (a timestamp) shares nothing the model reads, and the message must
+    // not send the caller to supply the excluded column as if the model expected it.
+    [Fact]
+    public void Predict_RowsCarryOnlyAnExcludedColumn_AreRefused_WithoutListingTheExcludedColumnAsExpected()
+    {
+        var data = _mlContext.Data.LoadFromEnumerable(new[]
+        {
+            new SimpleRegression { X = 1.0f, Y = 2.0f },
+            new SimpleRegression { X = 2.0f, Y = 4.0f },
+            new SimpleRegression { X = 3.0f, Y = 6.0f },
+        });
+        var model = _mlContext.Transforms.Concatenate("Features", "X")
+            .Append(_mlContext.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y")).Fit(data);
+        var schema = new InputSchemaInfo
+        {
+            Columns =
+            [
+                new() { Name = "X", DataType = "Numeric", Purpose = "Feature" },
+                new() { Name = "TimeStamp", DataType = "DateTime", Purpose = "Exclude" },
+                new() { Name = "Y", DataType = "Numeric", Purpose = "Label" },
+            ],
+            CapturedAt = DateTime.UtcNow
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => new PredictionService(_mlContext).Predict(
+            [new Dictionary<string, object> { ["TimeStamp"] = "2026-01-01" }], schema, model, "regression", "Y"));
+
+        Assert.Contains("none of the model's input columns", ex.Message);
+        Assert.Contains("[X]", ex.Message);
+        Assert.DoesNotContain("Expected columns like [X, TimeStamp", ex.Message);
+    }
+
     // Posting rows to a forecasting model used to
     // return 200 with every output field null (the stateful SSA forecaster extracts nothing from a
     // stateless per-row Transform — silent no-op, the same family as the guard above). Must fail fast instead,

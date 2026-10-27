@@ -417,6 +417,7 @@ public static partial class PredictCommand
 
         // Read output data (predictions)
         var predictions = new List<object>();
+        var confidences = new List<double?>();
         using (var outputReader = new StreamReader(outputFile))
         using (var outputCsv = new CsvReader(outputReader, new CsvConfiguration(CultureInfo.InvariantCulture)))
         {
@@ -424,6 +425,7 @@ public static partial class PredictCommand
             {
                 var dict = (IDictionary<string, object>)record;
                 predictions.Add(SelectPredictionValue(dict));
+                confidences.Add(SelectConfidence(dict));
             }
         }
 
@@ -438,7 +440,7 @@ public static partial class PredictCommand
                 experimentId,
                 inputRecords[i],
                 predictions[i],
-                null,
+                confidences[i],
                 timestamp));
         }
 
@@ -453,6 +455,18 @@ public static partial class PredictCommand
     /// prediction.</summary>
     private static readonly HashSet<string> EnrichmentColumns =
         new(StringComparer.OrdinalIgnoreCase) { "Confidence", "ScoreLowerBound", "ScoreUpperBound" };
+
+    /// <summary>
+    /// The row's <c>Confidence</c> column as a number, or <see langword="null"/> when the output has none or it is empty — the
+    /// confidence the prediction logs hold beside the answer (the log of a served prediction already does; this one logged null
+    /// whatever the file said). Read as invariant text: the file is written that way.
+    /// </summary>
+    internal static double? SelectConfidence(IDictionary<string, object> row)
+        => row.TryGetValue("Confidence", out var value)
+           && double.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out var confidence)
+           && double.IsFinite(confidence)
+            ? confidence
+            : null;
 
     /// <summary>
     /// Selects the canonical point prediction from a prediction CSV row by column NAME, not position.
@@ -567,7 +581,7 @@ public static partial class PredictCommand
             if (omitted > 0)
             {
                 AnsiConsole.MarkupLine(
-                    $"[grey]{omitted} input column(s) not shown — every column is in the saved file.[/]");
+                    $"[grey]{omitted} column(s) not shown — they are in the saved file.[/]");
             }
             AnsiConsole.WriteLine();
         }

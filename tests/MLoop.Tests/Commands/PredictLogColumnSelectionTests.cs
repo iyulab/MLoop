@@ -73,4 +73,22 @@ public class PredictLogColumnSelectionTests
 
         Assert.Equal("0.01", PredictCommand.SelectPredictionValue(row));
     }
+
+    [Fact]
+    public void TheConfidenceColumn_IsLoggedBesideThePrediction_NotDropped()
+    {
+        var row = Row(("x1", "1.0"), ("PredictedLabel", "yes"), ("Score", "1.688317"), ("Probability", "0.9118349"), ("Confidence", "0.911835"));
+
+        Assert.Equal(0.911835, PredictCommand.SelectConfidence(row));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("n/a")]
+    [InlineData("NaN")]
+    public void ACellThatIsNotANumber_OrNoConfidenceColumn_LogsNull(string cell)
+    {
+        Assert.Null(PredictCommand.SelectConfidence(Row(("PredictedLabel", "yes"), ("Confidence", cell))));
+        Assert.Null(PredictCommand.SelectConfidence(Row(("PredictedLabel", "yes"))));
+    }
 }

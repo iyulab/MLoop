@@ -283,8 +283,10 @@ public class PredictionService
 
     private static void RequireSchemaColumnOverlap(Dictionary<string, object>[] rows, InputSchemaInfo schema)
     {
+        // The columns the model reads: not the label, and not the ones training left out (a timestamp, an identifier) —
+        // listing those as "expected" sends the caller to supply what the model would drop.
         var inputColumns = schema.Columns
-            .Where(c => !string.Equals(c.Purpose, "Label", StringComparison.OrdinalIgnoreCase))
+            .Where(c => string.Equals(c.Purpose, "Feature", StringComparison.OrdinalIgnoreCase))
             .Select(c => c.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (inputColumns.Count == 0)

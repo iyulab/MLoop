@@ -23,6 +23,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop predict --log` logged no confidence.** The prediction log entry took `null` whatever the output file's `Confidence`
+  column said (a served prediction's entry already held it); `mloop logs --json` now shows it.
+- **The "no input column in common" refusal listed columns training had left out.** Its expected-column list and its overlap check
+  now use the columns the model reads, not a timestamp or identifier it dropped — so a row carrying only such a column is refused,
+  and the message no longer asks the caller to supply it.
+- **The prediction preview's "not shown" note no longer says every column is in the saved file** — the label column of an input
+  that had one is not (the prediction takes its place).
 - **The Swagger UI is served at `/swagger`**, where the `serve` banner and the guide say it is (it was at `/`, and `/swagger`
   answered 404).
 - **A valid token without the admin role gets a 403 that says what the endpoint needs** (the admin role, `mloop token --role
