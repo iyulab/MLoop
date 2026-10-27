@@ -27,8 +27,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   library defaults were never tried: on a 1,000-row table the search ended at an RMSE of 6.0 after 240 seconds where
   ML.NET's own FastTree defaults give 3.8 in a fifth of a second. FastTree, FastForest and LightGBM now start from
   their defaults (100 trees; FastTree 20 leaves at rate 0.2, FastForest 20 leaves on 70% of the features, LightGBM 31
-  leaves at rate 0.1) as the trial right after the cheap start — so a search's first trial is still its cheapest — and
-  the local search begins from the better of the two (FLAML's `points_to_evaluate`). Over 16 public tables × 3 splits at a 60-second budget, against the search before the
+  leaves at rate 0.1) as the trials right after the cheap start — a quarter of the trees first, then all of them, so a search's first
+  trial is still its cheapest and a slow machine, whose budget the whole defaults of a three-class one-versus-all
+  trainer can fill, still gets the quarter — and the local search begins from the best of them (FLAML's
+  `points_to_evaluate`). Over 16 public tables × 3 splits at a 60-second budget, against the search before the
   change: better on 9, equal on 6, worse on 1 (`benchmarks/engine-compare`); the regression tables gain most
   (RMSE 6.05 → 4.17 on concrete strength, 2.00 → 1.35 on airfoil noise, 595 → 546 on diamonds). The tuner's trace
   against ML.NET AutoML's is unchanged when no starting point is given.

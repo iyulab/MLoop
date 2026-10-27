@@ -180,12 +180,15 @@ public sealed class ValidationAndCatalogTests
     {
         // The documented defaults, written out: ML.NET's FastTree is 100 trees of 20 leaves at rate 0.2, its
         // FastForest the same with 70% of the features, and a change of them is a decision, not a surprise.
-        var tree = CandidateCatalog.Binary().Single(c => c.Name == "FastTree").StartingPoints.Single();
-        var forest = CandidateCatalog.Regression().Single(c => c.Name == "FastForest").StartingPoints.Single();
+        var tree = CandidateCatalog.Binary().Single(c => c.Name == "FastTree").StartingPoints.Last();
+        var forest = CandidateCatalog.Regression().Single(c => c.Name == "FastForest").StartingPoints.Last();
+        // A quarter of the trees comes first: the whole may be more than a slow machine's budget can fit.
+        var quarter = CandidateCatalog.Binary().Single(c => c.Name == "FastTree").StartingPoints.First();
+        Assert.Equal((25d, 20d), (quarter["NumberOfTrees"], quarter["NumberOfLeaves"]));
 
         Assert.Equal((100d, 20d, 0.2), (tree["NumberOfTrees"], tree["NumberOfLeaves"], Math.Round(tree["LearningRate"], 6)));
         Assert.Equal((100d, 20d, 0.7), (forest["NumberOfTrees"], forest["NumberOfLeaves"], Math.Round(forest["FeatureFraction"], 6)));
-        Assert.Equal(CandidateCatalog.Multiclass().Single(c => c.Name == "FastTreeOva").StartingPoints.Single(), tree);
+        Assert.Equal(CandidateCatalog.Multiclass().Single(c => c.Name == "FastTreeOva").StartingPoints.Last(), tree);
         Assert.All(CandidateCatalog.Binary().Where(c => CandidateCatalog.LinearTrainers.Contains(c.Name)), c => Assert.Empty(c.StartingPoints));
     }
 

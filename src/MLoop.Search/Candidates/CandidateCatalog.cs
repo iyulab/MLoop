@@ -292,11 +292,23 @@ public static class CandidateCatalog
 
     private static IReadOnlyList<IReadOnlyDictionary<string, double>> StartingPointsOf(string name) => name switch
     {
-        "FastTree" or "FastTreeOva" => [FastTreeDefaults],
-        "FastForest" or "FastForestOva" => [FastForestDefaults],
-        "LightGbm" => [LightGbmDefaults],
+        "FastTree" or "FastTreeOva" => Staged(FastTreeDefaults),
+        "FastForest" or "FastForestOva" => Staged(FastForestDefaults),
+        "LightGbm" => Staged(LightGbmDefaults),
         _ => [],
     };
+
+    /// <summary>
+    /// The defaults in two steps: a quarter of the trees first, then all of them. A trial is a cross-validation, so a
+    /// hundred trees of a three-class one-versus-all trainer can take most of a minute on a slow machine — and a trial
+    /// the budget cuts leaves nothing. The quarter is a model the budget can afford where the whole is not, and where
+    /// both fit it costs a few more trial-seconds on a table small enough that they do.
+    /// </summary>
+    private static IReadOnlyList<IReadOnlyDictionary<string, double>> Staged(IReadOnlyDictionary<string, double> defaults)
+    {
+        var quarter = new Dictionary<string, double>(defaults) { ["NumberOfTrees"] = Math.Max(defaults["NumberOfTrees"] / 4, 4) };
+        return [quarter, defaults];
+    }
 
     // Read from the options classes, so the starting point is the library's own and moves with it.
     private static IReadOnlyDictionary<string, double> FastTreeDefaults { get; } = FastTreeDefaultsOf(new FastTreeBinaryTrainer.Options());
