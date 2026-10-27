@@ -34,7 +34,10 @@ public sealed class EncoderStore
     /// <summary>The environment variable that moves <see cref="DefaultRoot"/> — a container's volume, a test's directory.</summary>
     public const string RootVariable = "MLOOP_ENCODERS";
 
-    /// <summary>Where encoders are kept unless told otherwise: <see cref="RootVariable"/>, else <c>~/.mloop/encoders</c>.</summary>
+    /// <summary>The home-relative directory <see cref="DefaultRoot"/> falls back to, as a shell or a compose file spells it.</summary>
+    public const string HomeRelativeRoot = "~/.mloop/encoders";
+
+    /// <summary>Where encoders are kept unless told otherwise: <see cref="RootVariable"/>, else <see cref="HomeRelativeRoot"/>.</summary>
     public static string DefaultRoot =>
         Environment.GetEnvironmentVariable(RootVariable) is { Length: > 0 } root
             ? root

@@ -14,6 +14,13 @@ namespace MLoop.CLI.Commands;
 /// </summary>
 public static class DockerCommand
 {
+    /// <summary>
+    /// The host directory the compose file mounts for encoders: wherever <see cref="EncoderStore.RootVariable"/> points when
+    /// compose runs, else the home-relative default — the same rule <see cref="EncoderStore.DefaultRoot"/> applies on the
+    /// host that installed them. The file is committed and run on other machines, so it names the variable, not a path.
+    /// </summary>
+    private static readonly string ComposeEncodersHost = "${" + EncoderStore.RootVariable + ":-" + EncoderStore.HomeRelativeRoot + "}";
+
     public static Command Create()
     {
         var command = new Command("docker", "Generate Docker configuration for model deployment");
@@ -100,7 +107,7 @@ public static class DockerCommand
             if (textEncoders.Count > 0)
             {
                 AnsiConsole.MarkupLine("[bold]Text encoders:[/] the models read text through encoders the image does not carry —");
-                AnsiConsole.MarkupLine("  install them on this host (the container mounts ~/.mloop/encoders):");
+                AnsiConsole.MarkupLine($"  install them on this host (the container mounts {Markup.Escape(EncoderStore.DefaultRoot)}):");
                 foreach (var encoder in textEncoders)
                     ValueLine.Write("  mloop encoder install ", encoder.Id);
                 AnsiConsole.WriteLine();
@@ -112,7 +119,7 @@ public static class DockerCommand
 
             AnsiConsole.MarkupLine("[bold]Run container:[/]");
             AnsiConsole.MarkupLine(textEncoders.Count > 0
-                ? $"  docker run -p {port}:{port} -v ~/.mloop/encoders:/encoders:ro mloop-{modelName}:latest"
+                ? $"  docker run -p {port}:{port} -v \"{Markup.Escape(EncoderStore.DefaultRoot)}:/encoders:ro\" mloop-{modelName}:latest"
                 : $"  docker run -p {port}:{port} mloop-{modelName}:latest");
             AnsiConsole.WriteLine();
 
@@ -301,7 +308,7 @@ services:
       # - {EncoderStore.RootVariable}=/encoders")}
     volumes:
       - ./{ExperimentLayout.ModelsDirectory}:/app/{ExperimentLayout.ModelsDirectory}:ro  # Read-only model access
-      {(encoded ? "" : "# ")}- ~/.mloop/encoders:/encoders:ro
+      {(encoded ? "" : "# ")}- {ComposeEncodersHost}:/encoders:ro
     restart: unless-stopped
     healthcheck:
       test: [""CMD"", ""wget"", ""--quiet"", ""--tries=1"", ""-O"", ""/dev/null"", ""http://127.0.0.1:{port}/health""]

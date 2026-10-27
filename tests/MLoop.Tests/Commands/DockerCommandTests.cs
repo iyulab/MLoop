@@ -182,8 +182,13 @@ public class DockerCommandTests
         var service = (Dictionary<object, object>)((Dictionary<object, object>)
             new YamlDotNet.Serialization.Deserializer().Deserialize<Dictionary<object, object>>(enabled)["services"])["mloop-api"];
         Assert.Contains($"{MLoop.Core.Embedding.EncoderStore.RootVariable}=/encoders", ((List<object>)service["environment"]).Cast<string>());
-        Assert.Contains("~/.mloop/encoders:/encoders:ro", ((List<object>)service["volumes"]).Cast<string>());
+        Assert.Contains(EncodersMount, ((List<object>)service["volumes"]).Cast<string>());
     }
+
+    // Where compose mounts encoders from: the variable the product honours on the host, else the home-relative default.
+    // Built from the authority's names (EncoderStore), not from a path nobody compared to it.
+    private static readonly string EncodersMount =
+        $"${{{MLoop.Core.Embedding.EncoderStore.RootVariable}:-{MLoop.Core.Embedding.EncoderStore.HomeRelativeRoot}}}:/encoders:ro";
 
     private static readonly MLoop.Core.Embedding.EncoderIdentity TextEncoder = new(
         "multilingual-minilm", "1", "abc", 384, Normalized: true, "xlm-roberta/1", MLoop.Core.Embedding.EncoderKind.Text, "def");
@@ -206,7 +211,7 @@ public class DockerCommandTests
             new YamlDotNet.Serialization.Deserializer().Deserialize<Dictionary<object, object>>(
                 DockerCommand.GenerateDockerCompose("default", 5000, [TextEncoder]))["services"])["mloop-api"];
         Assert.Contains($"{MLoop.Core.Embedding.EncoderStore.RootVariable}=/encoders", ((List<object>)service["environment"]).Cast<string>());
-        Assert.Contains("~/.mloop/encoders:/encoders:ro", ((List<object>)service["volumes"]).Cast<string>());
+        Assert.Contains(EncodersMount, ((List<object>)service["volumes"]).Cast<string>());
     }
 
     [Fact]

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mloop docker` mounted encoders from `~/.mloop/encoders` whatever the host used.** The generated `docker-compose.yml`
+  and the `docker run` line printed for a project whose models read text through an encoder now mount the directory the host
+  keeps its encoders in: the compose file takes `${MLOOP_ENCODERS:-~/.mloop/encoders}` (so a host that moved its encoders
+  with `MLOOP_ENCODERS` mounts them, and one that did not gets the same default as before), and the printed `docker run`
+  line and install hint name the host's actual encoder directory. Before, such a host mounted an empty directory and the
+  container refused to load the model.
+
 ## [0.47.0] - 2026-10-27
 
 ### Added
