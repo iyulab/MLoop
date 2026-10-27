@@ -221,6 +221,14 @@ public partial class TrainingRunner
             preserveColumns.AddRange(config.PreFeaturizerColumns);
         // The weight is read by name to resample the rows; merged into the feature vector it is gone.
         if (!string.IsNullOrEmpty(config.WeightColumn)) preserveColumns.Add(config.WeightColumn);
+        // A column declared `ignore` is kept out of the features by its role, and a role names a column of the
+        // loaded view. A numeric one is inside the merged Features vector — no column of its name — so the
+        // model read it, while the saved schema (which marks it Exclude) had evaluate and predict drop it
+        // from every file: a vector one slot narrower than the model's.
+        if (config.ColumnOverrides is { Count: > 0 } overrides)
+            preserveColumns.AddRange(overrides
+                .Where(kv => string.Equals(kv.Value?.Trim(), "ignore", StringComparison.OrdinalIgnoreCase))
+                .Select(kv => kv.Key));
         var preserve = preserveColumns.Count > 0 ? preserveColumns : null;
 
         // Directory-based tasks (image classification) need a different loader than the

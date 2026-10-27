@@ -57,6 +57,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A numeric column declared `type: ignore` (or dropped with `mloop features select --drop`) was not ignored: the
+  loader had folded it into the merged `Features` vector, so no column of its name existed for the ignore to apply
+  to — the model read it, nothing said so, and the saved schema (which marks it excluded) made `mloop evaluate`,
+  `predict`, `threshold`, `calibrate` and `export onnx` drop it from every file, so a model that trained and
+  promoted could not be read afterwards (`Column 'Features' item type 'Vector<Single, N>' must be … the same size as
+  … 'Vector<Single, N-1>'`). Since 0.40.0. An ignored column is now loaded as a column of its own, training logs it
+  (`Ignored column(s) (override)`), and the model does not read it. A model trained with such a declaration before
+  this release read the column and cannot be read by those commands: retrain it. A column that really carried the
+  signal will no longer — the new model's scores can differ.
 - A column a prep step declares — `normalize`, `scale` or `fill-missing` with `method: mean` — could not be read after
   training: `mloop evaluate`, `predict`, `threshold`, `calibrate` and `export onnx` failed with `Could not find input
   column 'a'`, and training warned that it could not profile the model's answers. The model's featurizer reads that
