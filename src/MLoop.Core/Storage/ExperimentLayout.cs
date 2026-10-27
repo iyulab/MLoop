@@ -63,6 +63,20 @@ public static class ExperimentLayout
     /// </summary>
     public const string TextEncodersFileName = "text-encoders.json";
 
+    /// <summary>
+    /// An image-anomaly model's record (<c>MLoop.Core.ImageAnomaly.ImageAnomalyModel</c>): the encoder whose vectors the bank
+    /// holds, the patch grid, how the bank was chosen and how far held-out normal images scored. Beside
+    /// <see cref="ModelFileName"/> (which is only that experiment's header), copied on promote with
+    /// <see cref="PatchBankFileName"/>. Absent: the model is not an image-anomaly one.
+    /// </summary>
+    public const string ImageAnomalyFileName = "image-anomaly.json";
+
+    /// <summary>
+    /// The normal images' patch vectors an image-anomaly model remembers (<c>MLoop.Core.ImageAnomaly.PatchBank</c>) — the model
+    /// itself. Beside <see cref="ModelFileName"/>, copied on promote with <see cref="ImageAnomalyFileName"/>.
+    /// </summary>
+    public const string PatchBankFileName = "patch-bank.bin";
+
     /// <summary>② regression wave (heteroscedastic): the optional auxiliary σ(x) model that gives the
     /// conformal band its per-row width. Sits beside <see cref="ModelFileName"/> in <c>staging/{expId}/</c>
     /// and the promoted <c>production/</c> slot, and is copied on promote when present. Absent for

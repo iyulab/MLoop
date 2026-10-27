@@ -45,6 +45,7 @@ public static class TaskTypes
         // Deep learning (Microsoft.ML.Vision / TorchSharp)
         "image-classification",
         "object-detection",
+        "image-anomaly",
         "text-classification",
         "sentence-similarity",
         "ner",
@@ -77,6 +78,7 @@ public static class TaskTypes
             ["timeseriesanomaly"] = "time-series-anomaly",
             ["imageclassification"] = "image-classification",
             ["objectdetection"] = "object-detection",
+            ["imageanomaly"] = "image-anomaly",
             ["textclassification"] = "text-classification",
             ["sentencesimilarity"] = "sentence-similarity",
             ["questionanswering"] = "question-answering",

@@ -88,6 +88,17 @@ public class PerformanceDiagnostics
             case "ner":
                 AnalyzeMulticlassClassification(result);
                 break;
+            case "image-anomaly":
+                // The bank is built from normal images alone, so nothing here is graded; what it states is where
+                // normal ends — the scores the held-out normal images got, which a new image is read against.
+                result.OverallAssessment = PerformanceLevel.Unknown;
+                result.Summary = result.Metrics.TryGetValue("normal_score_p95", out var normalP95)
+                    ? $"Held-out normal images scored up to {result.Metrics.GetValueOrDefault("normal_score_max"):F4} " +
+                      $"(median {result.Metrics.GetValueOrDefault("normal_score_median"):F4}, p95 {normalP95:F4}) against a bank of " +
+                      $"{result.Metrics.GetValueOrDefault("bank_patches"):N0} patches — an image scoring well above that is unlike the normal ones"
+                    : "No normal image was held out to score, so there is no baseline: " +
+                      $"a bank of {result.Metrics.GetValueOrDefault("bank_patches"):N0} patches, ungraded";
+                break;
             case "question-answering":
                 // No band is established for answer overlap the way R² or AUC have one, so this states
                 // the numbers rather than grading them. It used to read `macro_accuracy`, a key QA never has.

@@ -49,7 +49,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 
 ### Key Features
 
-- **15 ML Task Types**: Full ML.NET coverage — classification, regression, clustering, ranking, forecasting, recommendation, anomaly detection, NLP, image, and more
+- **16 ML Task Types**: Full ML.NET coverage — classification, regression, clustering, ranking, forecasting, recommendation, anomaly detection, NLP, image (classification, detection, and anomaly scoring from normal images alone), and more
 - **AutoML Training**: Automatic model selection — a trainer search over ML.NET's trainers, scored over folds
 - **Multi-Model Projects**: Manage multiple models (churn, revenue, etc.) in one project
 - **On-Demand DL Runtimes**: `mloop runtime install torch` downloads native runtimes only when needed
@@ -281,6 +281,28 @@ mloop evaluate exp-001 datasets/yolo   # → mAP (map_50 / map_50_95)
 
 `mloop serve` answers images sent to `POST /predict` by content with the same boxes
 ([contract](docs/PREDICT-RESPONSE.md#object-detection--boxes-per-image)).
+
+### Image Anomaly
+
+When there are plenty of normal pictures and few or no defective ones, `image-anomaly` learns what *normal* looks like
+and scores how far a new picture is from it — and shows where. It needs no label, no runtime install and no new
+dependency beyond an installed image encoder (`mloop encoder install dinov2-small`; see [`mloop embed`](docs/GUIDE.md)):
+
+```bash
+mloop init line --task image-anomaly
+cd line
+# datasets/normal/   ← pictures of normal items (subfolders are fine)
+mloop train datasets/normal --task image-anomaly                 # keeps the normal pictures' patch vectors as a bank
+mloop predict photos/ --json                                      # per picture: score, 16 × 16 patch distances, crop
+mloop evaluate exp-001 datasets/check                             # check/good/*.png vs check/<defect>/*.png → AUROC, defects missed
+```
+
+A picture's score is how far its strangest patch is from the nearest normal patch (cosine distance), so a small local
+defect shows even when the picture as a whole looks normal; the 16 × 16 distances are a heat map over the part of the
+picture the encoder reads (`crop`, in the picture's own pixels). A tenth of the normal pictures are held out of the bank
+and scored against it, so the model records where *normal* ends (`baseline`). `--bank-size N` caps the bank at N patches
+(a seeded subsample) when a long list of pictures or a small server asks for it. `mloop serve` answers pictures sent to
+`POST /predict` by content with the same scores.
 
 **Full documentation**: [docs/GUIDE.md](docs/GUIDE.md)
 

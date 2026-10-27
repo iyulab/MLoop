@@ -39,6 +39,7 @@ public static class PredictEndpoint
             IExperimentStore experimentStore,
             MLContext mlContext,
             IModelCache modelCache,
+            MLoop.Core.Embedding.EmbedderPool embedderPool,
             IPredictionLogger predictionLogger,
             IConfiguration configuration,
             ILogger<Program> logger,
@@ -193,6 +194,16 @@ public static class PredictEndpoint
                     return await ObjectDetectionPredictions.RespondAsync(
                         images, imageFiles, modelName, answeringId, modelPath, mlContext, modelCache, experimentStore,
                         predictionLogger, configuration, logger, stopwatch, ct);
+                }
+
+                // Image anomaly answers each image with a score and a grid of patch distances against the bank beside the model:
+                // no input schema or rows either.
+                if (MLoop.Core.Models.TaskTypes.Canonical(taskType) == "image-anomaly")
+                {
+                    if (images is null)
+                        return Results.BadRequest(new { error = $"'{modelName}' is an image-anomaly model: send images by content — {{\"images\": [base64…]}} or a multipart form." });
+                    return await ImageAnomalyPredictions.RespondAsync(
+                        images, modelName, answeringId, modelPath, embedderPool, logger, stopwatch, ct);
                 }
 
                 // Load experiment data to get InputSchema

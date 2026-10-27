@@ -139,7 +139,7 @@ public partial class TrainingRunner
     {
         // An unrecognized task canonicalizes to null, which is not in the unsupervised set, so it
         // still requires a label — the conservative default this has always had.
-        return Models.TaskTypes.Canonical(task) is not ("anomaly-detection" or "clustering" or "time-series-anomaly");
+        return Models.TaskTypes.Canonical(task) is not ("anomaly-detection" or "clustering" or "time-series-anomaly" or "image-anomaly");
     }
 
     /// <summary>
@@ -175,7 +175,7 @@ public partial class TrainingRunner
     public static bool ReadsFeatureColumns(string? task) =>
         !DeepLearningRegistry.Handles(task)
         && !IsTimeSeriesTask(task)
-        && Models.TaskTypes.Canonical(task) != "recommendation";
+        && Models.TaskTypes.Canonical(task) is not ("recommendation" or "image-anomaly");
 
     /// <summary>
     /// Why <paramref name="task"/>'s fit takes no time budget, or <c>null</c> when it does. Only the trainer search
@@ -193,6 +193,7 @@ public partial class TrainingRunner
         : Models.TaskTypes.Canonical(task) switch
         {
             "recommendation" => "trains a fixed number of iterations",
+            "image-anomaly" => "keeps the patches of its images, without a search",
             "anomaly-detection" or "clustering" or "ranking" => "fits one pipeline, without a search",
             _ => null,
         };
@@ -204,6 +205,10 @@ public partial class TrainingRunner
     {
         lock (_saidThisRun)
             _saidThisRun.Clear();
+
+        // A folder of normal images, remembered as patch vectors: no table to load, split or search.
+        if (Models.TaskTypes.Canonical(config.Task) == "image-anomaly")
+            return await RunImageAnomalyAsync(config, cancellationToken).ConfigureAwait(false);
 
         // Load and split data
         IDataView trainSet, testSet;
@@ -364,6 +369,28 @@ public partial class TrainingRunner
 
         return result with { EvaluationData = result.EvaluationData ?? testSet, TextEncodings = textEncodings };
     }
+
+    /// <summary>
+    /// The image-anomaly task: the patch vectors of the normal images in <c>config.DataFile</c> as a bank, and how far held-out
+    /// normal images score against it. The saved <c>model.zip</c> is an empty transformer chain — the experiment's header;
+    /// the model is the bank beside it (<see cref="ImageAnomaly.ImageAnomalyArtifacts.WriteBeside"/>).
+    /// </summary>
+    private Task<TrainedModel> RunImageAnomalyAsync(TrainingConfig config, CancellationToken cancellationToken) =>
+        Task.Run(() =>
+        {
+            var (artifacts, metrics) = ImageAnomaly.ImageAnomalyTrainer.Train(
+                config.DataFile, config.ImageEncoder, config.BankSize, _logger.Info, cancellationToken: cancellationToken);
+            return new TrainedModel
+            {
+                Trainer = TrainerDescriptor.Of("PatchBank",
+                    ("encoder", artifacts.Model.Encoder.Id), ("patches", artifacts.Bank.Count.ToString(System.Globalization.CultureInfo.InvariantCulture))),
+                Model = new TransformerChain<ITransformer>(),
+                Metrics = metrics,
+                RowCount = metrics["images"] is var images ? (long)images : 0,
+                Schema = new InputSchemaInfo { Columns = [], CapturedAt = DateTime.UtcNow },
+                ImageAnomaly = artifacts,
+            };
+        }, cancellationToken);
 
     /// <summary>
     /// Dispatches deep-learning tasks (image-classification, text-classification,
@@ -2362,6 +2389,12 @@ public record TrainedModel
     /// (<see cref="TextEncodings.VectorColumnOf"/>), and <see cref="EvaluationData"/> carries them.
     /// </summary>
     public TextEncodings? TextEncodings { get; init; }
+
+    /// <summary>
+    /// An image-anomaly model's bank and its record — the model itself, saved beside <see cref="Model"/> (which is only that
+    /// experiment's header). Null for every other task.
+    /// </summary>
+    public ImageAnomaly.ImageAnomalyArtifacts? ImageAnomaly { get; init; }
 
     /// <summary><see cref="Model"/> as it answers once saved — with <see cref="Calibration"/> applied when there is one.</summary>
     public ITransformer ScoringModel(MLContext mlContext) => Calibration?.Apply(mlContext, Model) ?? Model;

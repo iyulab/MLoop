@@ -91,6 +91,17 @@ public class ModelDefinition
     public string? Weight { get; set; }
 
     /// <summary>
+    /// The image encoder an <c>image-anomaly</c> model embeds its images with (an installed encoder's id).
+    /// Unset: the only image encoder installed.
+    /// </summary>
+    public string? Encoder { get; set; }
+
+    /// <summary>
+    /// The most patches an <c>image-anomaly</c> model's bank holds. Unset: every patch of the images.
+    /// </summary>
+    public int? BankSize { get; set; }
+
+    /// <summary>
     /// Train only with steps an ONNX runtime computes exactly, so the model can be exported with
     /// <c>mloop export onnx</c>: text columns are featurized by character n-grams instead of
     /// ML.NET's text featurizer. Binary classification, multiclass classification and regression.

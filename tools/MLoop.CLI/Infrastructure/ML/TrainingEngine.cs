@@ -210,6 +210,8 @@ public class TrainingEngine : ITrainingEngine
             trained.Calibration?.WriteBeside(modelPath);
             // The encoders of the text columns it reads as vectors — every loading path puts them in front of it.
             trained.TextEncodings?.WriteBeside(modelPath);
+            // An image-anomaly model is its bank: the header above is only the experiment's.
+            trained.ImageAnomaly?.WriteBeside(modelPath);
 
             await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config, modelPath, cancellationToken);
 

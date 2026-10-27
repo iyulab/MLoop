@@ -44,7 +44,7 @@ public static partial class TrainCommand
     /// <summary>Project, model name, configuration and the validated effective definition — null after an error was shown.</summary>
     private static async Task<TrainSetup?> ResolveSetupAsync(
         string? modelName, string? label, string? task, int? time, string? metric, double? testSplit,
-        string? groupColumn, string? weight, string? balance, bool portable,
+        string? groupColumn, string? weight, string? balance, bool portable, string? encoder, int? bankSize,
         FileSystemManager fileSystem, ProjectDiscovery projectDiscovery, Action<string?> noteTask)
     {
         // Find project root
@@ -116,6 +116,11 @@ public static partial class TrainCommand
             ErrorConsole.Error(weightError);
             return null;
         }
+
+        if (!string.IsNullOrWhiteSpace(encoder))
+            effectiveDefinition.Encoder = encoder;
+        if (bankSize is not null)
+            effectiveDefinition.BankSize = bankSize;
 
         if (portable)
             effectiveDefinition.Portable = true;

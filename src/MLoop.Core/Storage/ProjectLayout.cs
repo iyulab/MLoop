@@ -56,6 +56,9 @@ public static class ProjectLayout
 
         /// <summary>A horizon of future values.</summary>
         Forecast,
+
+        /// <summary>Per-image anomaly scores and patch distance grids for image anomaly.</summary>
+        Scores,
     }
 
     /// <summary>Every kind, with the two things that make its file name.</summary>
@@ -65,6 +68,7 @@ public static class ProjectLayout
             [PredictionKind.Rows] = ("predictions", ".csv"),
             [PredictionKind.Detections] = ("detections", ".json"),
             [PredictionKind.Forecast] = ("forecast", ".csv"),
+            [PredictionKind.Scores] = ("scores", ".json"),
         };
 
     /// <summary>The kinds, for a caller that needs to cover all of them.</summary>

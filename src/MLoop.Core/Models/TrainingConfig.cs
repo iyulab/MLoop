@@ -163,6 +163,12 @@ public record TrainingConfig
     /// </summary>
     public IReadOnlyDictionary<string, string>? TextEncoders { get; init; }
 
+    /// <summary>The image encoder an <c>image-anomaly</c> model embeds with (an installed id); null: the only one installed.</summary>
+    public string? ImageEncoder { get; init; }
+
+    /// <summary>The most patches an <c>image-anomaly</c> bank holds; null: every patch of the images.</summary>
+    public int? BankSize { get; init; }
+
     /// <summary>
     /// The type every load of this run reads the label as — decided once from the saved schema
     /// (<see cref="LabelKinds"/>), like <see cref="FeatureExclusions"/>. Null leaves each load to infer

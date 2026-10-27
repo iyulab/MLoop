@@ -119,6 +119,14 @@ public static partial class TrainCommand
         {
             Description = "Column that weights the rows (relative frequency, e.g. 1/π for sampled labels); never a feature. Binary, multiclass and regression"
         };
+        var encoderOption = new Option<string?>("--encoder")
+        {
+            Description = "Image encoder an image-anomaly model embeds its images with (an installed encoder's id; default: the only one installed)"
+        };
+        var bankSizeOption = new Option<int?>("--bank-size")
+        {
+            Description = "The most patches an image-anomaly model's bank holds (default: every patch of the images; more are subsampled with a fixed seed)"
+        };
         var portableOption = new Option<bool>("--portable")
         {
             Description = "Train only with steps ONNX can express, so 'mloop export onnx' can export the model (text columns use character n-grams). Binary, multiclass and regression"
@@ -174,6 +182,8 @@ public static partial class TrainCommand
         command.Options.Add(balanceOption);
         command.Options.Add(groupColumnOption);
         command.Options.Add(weightOption);
+        command.Options.Add(encoderOption);
+        command.Options.Add(bankSizeOption);
         command.Options.Add(portableOption);
         command.Options.Add(maxRowsOption);
         command.Options.Add(samplingStrategyOption);
@@ -211,7 +221,7 @@ public static partial class TrainCommand
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption), parseResult.GetValue(portableOption));
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption), parseResult.GetValue(portableOption), parseResult.GetValue(encoderOption), parseResult.GetValue(bankSizeOption));
         });
 
         return command;
@@ -241,7 +251,9 @@ public static partial class TrainCommand
         bool json = false,
         string? records = null,
         string? weight = null,
-        bool portable = false)
+        bool portable = false,
+        string? encoder = null,
+        int? bankSize = null)
     {
         // --json reserves stdout for the event stream: every renderer and narrator in the training
         // path is silenced for the duration, and the real stdout is handed to the emitter. Disposed
@@ -267,7 +279,7 @@ public static partial class TrainCommand
             var projectDiscovery = new ProjectDiscovery(fileSystem);
 
             var setup = await ResolveSetupAsync(
-                modelName, label, task, time, metric, testSplit, groupColumn, weight, balance, portable,
+                modelName, label, task, time, metric, testSplit, groupColumn, weight, balance, portable, encoder, bankSize,
                 fileSystem, projectDiscovery, resolved => failedTask = resolved);
             if (setup is null)
                 return 1;

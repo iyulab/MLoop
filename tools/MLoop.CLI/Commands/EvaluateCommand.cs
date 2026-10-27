@@ -49,6 +49,10 @@ public static partial class EvaluateCommand
         {
             Description = "Also evaluate this experiment (or 'production') on the same rows and weights, and compare the two row by row"
         };
+        var normalClassOption = new Option<string?>("--normal-class")
+        {
+            Description = "For an image-anomaly model: the subfolder of the test folder that holds the normal images (default: normal, good or ok); every other subfolder is anomalous"
+        };
         var sliceByOption = new Option<string?>("--slice-by")
         {
             Description = "Also report the metrics separately for each value of this column of the test data"
@@ -62,6 +66,7 @@ public static partial class EvaluateCommand
         command.Options.Add(sliceByOption);
         command.Options.Add(weightOption);
         command.Options.Add(againstOption);
+        command.Options.Add(normalClassOption);
         var recordsOption = DataFileOptions.Records();
         command.Options.Add(recordsOption);
 
@@ -72,7 +77,7 @@ public static partial class EvaluateCommand
             var name = parseResult.GetValue(nameOption);
             var json = parseResult.GetValue(jsonOption);
             return ExecuteAsync(experimentId, testDataFile, name, json, parseResult.GetValue(recordsOption),
-                parseResult.GetValue(sliceByOption), parseResult.GetValue(weightOption), parseResult.GetValue(againstOption));
+                parseResult.GetValue(sliceByOption), parseResult.GetValue(weightOption), parseResult.GetValue(againstOption), parseResult.GetValue(normalClassOption));
         });
 
         return command;
@@ -138,7 +143,8 @@ public static partial class EvaluateCommand
         string? records = null,
         string? sliceBy = null,
         string? weight = null,
-        string? against = null)
+        string? against = null,
+        string? normalClass = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -178,6 +184,11 @@ public static partial class EvaluateCommand
             if (model.ExitCode is { } exitCode)
                 return exitCode;
             var (resolvedModelPath, resolvedExperimentId, experimentData, _) = model;
+
+            // Image anomaly: normal and anomalous images in class subfolders, scored against the bank.
+            if (MLoop.Core.Models.TaskTypes.Canonical(experimentData?.Task) == "image-anomaly")
+                return await ImageAnomalyCli.EvaluateAsync(
+                    projectRoot, resolvedModelPath, resolvedModelName, resolvedExperimentId, testDataFile, normalClass, jsonOutput);
 
             // Directory-based tasks (image classification, object detection) evaluate over an image
             // directory — object detection scored by mAP, image classification by multiclass accuracy

@@ -209,6 +209,11 @@ public static partial class PredictCommand
                     projectRoot, resolvedModelPath, dataFile, output, resolvedModelName, configLabelColumn, fileSystem);
             }
 
+            // Image anomaly scores pictures against the bank beside the model: no table, schema or categories.
+            if (taskType != null && TaskTypes.Canonical(taskType) == "image-anomaly")
+                return await ImageAnomalyCli.PredictAsync(
+                    projectRoot, resolvedModelPath, experimentId, dataFile, output, resolvedModelName, json, fileSystem);
+
             // Resolve data file path (Convention: datasets/predict.csv)
             var resolvedDataFile = ResolveDataFile(dataFile, projectRoot, taskType, fileSystem);
             if (resolvedDataFile is null)

@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`image-anomaly`, a task for pictures of normal items alone.** `mloop train datasets/normal --task image-anomaly` keeps
+  the patch vectors of the normal pictures (the vectors `mloop embed --patches` gives) as a bank — all of them, or
+  `--bank-size N` of them as a seeded subsample — with the encoder's identity beside it, and scores held-out normal pictures
+  against it for a baseline. `mloop predict <pictures>` gives each a score (its strangest patch's cosine distance to the
+  nearest normal patch) and the 16 × 16 patch distances over the part of the picture the encoder reads, as JSON;
+  `mloop evaluate <exp> <folder>` takes normal and anomalous subfolders and reports the AUROC and the anomalies missed at a
+  5 % and a 10 % false-alarm rate; `POST /predict` answers pictures sent by content the same way. It needs no label, no
+  time budget and no new runtime or package; a model refuses to score with another encoder than it was built with. The
+  task count is 16.
 - `benchmarks/engine-compare` and the `Engine compare` workflow (`workflow_dispatch`): MLoop's trainer search against
   FLAML and stand-alone LightGBM / XGBoost on 16 public OpenML tables, from the same train and test files, with the
   protocol and how to read it in the folder's README. Nothing is stored in the repository — the tables are fetched by

@@ -47,5 +47,6 @@ public static class DataLoaderFactory
     /// </summary>
     public static bool IsDirectoryBased(string? taskType) =>
         string.Equals(taskType, "image-classification", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(taskType, "object-detection", StringComparison.OrdinalIgnoreCase);
+        string.Equals(taskType, "object-detection", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(taskType, "image-anomaly", StringComparison.OrdinalIgnoreCase);
 }

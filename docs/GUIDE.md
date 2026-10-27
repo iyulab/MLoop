@@ -938,6 +938,44 @@ about 330 MB (the input checks stream). Wider files grow with the number of colu
 memory allows, profile a sample (`mloop sample create --from <file> --rows 100000`, which streams the file — about
 150 MB for a 2-million-row CSV) — training reads the whole file.
 
+### Image anomaly
+
+`image-anomaly` is for the case where only normal pictures are plentiful: a surface, a part, a screen that is normal
+almost always and defective rarely, in ways nobody listed beforehand. It learns what normal looks like and scores a new
+picture by how unlike it is — and where.
+
+```bash
+mloop train datasets/normal --task image-anomaly [--encoder <id>] [--bank-size N]
+mloop predict <image-or-folder> [--json] [--output scores.json]
+mloop evaluate <exp-id> <folder> [--normal-class good] [--json]
+```
+
+**Training** embeds every picture with the installed image encoder — the code behind `mloop embed --patches` — and
+keeps its patch vectors: all of them, or with `--bank-size N` (or `bank_size:` in `mloop.yaml`) a subsample of N chosen
+with a fixed seed, so the same folder gives the same model. A tenth of the pictures (at least one, and only when there
+are ten or more) are kept out of the bank and scored against it; their scores — median, 95th and 99th percentile, maximum —
+are the experiment's metrics and the `baseline` in every answer. There is no label, no time budget and no trial search;
+nothing grades the model, so the first one is promoted and later ones wait for `mloop promote`. The model is its
+bank: `model.zip` is only the experiment's header, and `patch-bank.bin` and `image-anomaly.json` (the encoder's id, weights
+checksum and preprocessing revision, the grid, the held-out scores) sit beside it and move together on promotion.
+
+**Scoring.** A picture's `score` is the largest, over its patches, of the cosine distance to the nearest patch in the
+bank. `distances` are those per-patch distances, row by row over `grid` (`dinov2-small`: 16 × 16), and `crop` is the part of
+the picture the grid covers in its own pixels, so a heat map can be drawn over the original. A score has no unit: read it
+against the `baseline`, and choose the threshold that suits the line (`evaluate` shows what each false-alarm rate costs).
+Against a bank of 600 pictures (153,600 patches) one picture takes about 0.6 s on 30 cores; the cost grows with the bank
+and with fewer cores, and `--bank-size` is the lever.
+
+**Evaluating** takes a folder whose subfolders are the classes: the one named `normal`, `good` or `ok` (or `--normal-class`)
+holds normal pictures, every other subfolder anomalous ones. It reports the AUROC and how many anomalous pictures are missed
+when 5 % and 10 % of the normal pictures are allowed to raise a false alarm.
+
+A model scores only with the encoder it was built with: another id, other weights or a changed preprocessing revision is
+refused with what differs (train again, or install that encoder). `export onnx`, `threshold`, `calibrate` and the
+drift and feedback commands do not apply. In `mloop serve`, `POST /predict` takes `{"images": ["<base64>", …]}` or image
+files as multipart form data (at most 64) and answers each with `score`, `crop` and `distances`; an encoder that is not
+installed or not the bank's is a 409.
+
 ### `mloop detect`
 
 One-shot anomaly detection over a time series. No model, no training: hand it a CSV and it scores

@@ -103,7 +103,12 @@ public class ModelRegistry : IModelRegistry
         // So does the decision threshold: production answers at the threshold chosen for this model, or at
         // the trainer's own — never at the previous model's.
         // The calibration too, for the same reason.
-        foreach (var layer in new[] { ExperimentLayout.DecisionThresholdFileName, ExperimentLayout.CalibrationFileName, ExperimentLayout.TextEncodersFileName })
+        // An image-anomaly model is its bank and the record that names its vector space: they move together.
+        foreach (var layer in new[]
+        {
+            ExperimentLayout.DecisionThresholdFileName, ExperimentLayout.CalibrationFileName, ExperimentLayout.TextEncodersFileName,
+            ExperimentLayout.ImageAnomalyFileName, ExperimentLayout.PatchBankFileName,
+        })
         {
             var sourceLayerPath = _fileSystem.CombinePath(experimentPath, layer);
             var targetLayerPath = _fileSystem.CombinePath(targetPath, layer);

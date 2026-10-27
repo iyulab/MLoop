@@ -38,6 +38,8 @@ public static class ModelTrainingConfig
             UseAutoTime = useAutoTime,
             ColumnOverrides = definition.Columns?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Type),
             TextEncoders = TextEncodersOf(definition),
+            ImageEncoder = string.IsNullOrWhiteSpace(definition.Encoder) ? null : definition.Encoder.Trim(),
+            BankSize = definition.BankSize,
             NumClusters = definition.NumClusters ?? 0,
             GroupColumn = definition.GroupColumn,
             Horizon = definition.Horizon ?? 0,
