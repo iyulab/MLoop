@@ -43,6 +43,36 @@ public class UnusedDataScannerTests : IDisposable
         Assert.Equal(2, result.TotalCsvFiles);
     }
 
+    // `mloop init` declares data.test; `mloop evaluate` reads it. Training not reading it is its purpose, not a loose end.
+    [Fact]
+    public void Scan_AFileDeclaredForAnotherCommand_IsNotUnused()
+    {
+        var train = Path.Combine(_tempDirectory, "train.csv");
+        var test = Path.Combine(_tempDirectory, "test.csv");
+        File.WriteAllText(train, "A,B\n1,2");
+        File.WriteAllText(test, "A,B\n3,4");
+
+        var result = _scanner.Scan(_tempDirectory, new[] { train }, declaredFiles: new[] { test, Path.Combine(_tempDirectory, "predict.csv") });
+
+        Assert.False(result.HasUnusedFiles);
+        Assert.Empty(result.Warnings);
+        Assert.Equal(2, result.TotalCsvFiles);
+    }
+
+    // The same name that nothing declares is still a standard file the user may have meant to train on.
+    [Fact]
+    public void Scan_AStandardFileNothingDeclares_StillWarns()
+    {
+        var train = Path.Combine(_tempDirectory, "train.csv");
+        var validation = Path.Combine(_tempDirectory, "validation.csv");
+        File.WriteAllText(train, "A,B\n1,2");
+        File.WriteAllText(validation, "A,B\n3,4");
+
+        var result = _scanner.Scan(_tempDirectory, new[] { train }, declaredFiles: new[] { Path.Combine(_tempDirectory, "test.csv") });
+
+        Assert.Contains(result.Warnings, w => w.Contains("validation.csv"));
+    }
+
     [Fact]
     public void Scan_SomeFilesUnused_ReturnsUnusedFiles()
     {

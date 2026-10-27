@@ -437,8 +437,20 @@ public static partial class TrainCommand
             var datasetsDir = datasetDiscovery.GetDatasetsPath(projectRoot);
             if (!isDirectoryBased && Directory.Exists(datasetsDir))
             {
+                // The files evaluate and predict read — by convention, or where mloop.yaml points them — are not
+                // unused: training is not what they are for.
+                var declaredElsewhere = new List<string>
+                {
+                    Path.Combine(datasetsDir, ProjectLayout.TestFileName),
+                    Path.Combine(datasetsDir, ProjectLayout.PredictFileName),
+                };
+                if (!string.IsNullOrWhiteSpace(userConfig.Data?.Test))
+                    declaredElsewhere.Add(ProjectPaths.Resolve(userConfig.Data.Test, projectRoot));
+                if (!string.IsNullOrWhiteSpace(userConfig.Data?.Predict))
+                    declaredElsewhere.Add(ProjectPaths.Resolve(userConfig.Data.Predict, projectRoot));
+
                 var unusedDataScanner = new UnusedDataScanner();
-                var scanResult = unusedDataScanner.Scan(datasetsDir, allDataFilesUsed);
+                var scanResult = unusedDataScanner.Scan(datasetsDir, allDataFilesUsed, declaredElsewhere);
                 TrainPresenter.DisplayUnusedDataWarning(scanResult);
             }
 

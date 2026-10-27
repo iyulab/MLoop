@@ -21,8 +21,13 @@ public class UnusedDataScanner
     /// </summary>
     /// <param name="directory">Directory to scan</param>
     /// <param name="usedFiles">Collection of files that were actually used</param>
+    /// <param name="declaredFiles">
+    /// Files the project declares for another command — <c>data.test</c> is what <c>mloop evaluate</c> reads,
+    /// <c>data.predict</c> what <c>mloop predict</c> reads. Training does not read them, and that is their
+    /// purpose, so they are not unused.
+    /// </param>
     /// <returns>Scan result with unused files</returns>
-    public UnusedDataScanResult Scan(string directory, IEnumerable<string> usedFiles)
+    public UnusedDataScanResult Scan(string directory, IEnumerable<string> usedFiles, IEnumerable<string>? declaredFiles = null)
     {
         var result = new UnusedDataScanResult
         {
@@ -49,8 +54,13 @@ public class UnusedDataScanner
 
         result.UsedFiles = usedFilesSet.ToList();
 
+        var declaredSet = (declaredFiles ?? [])
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(f => Path.GetFullPath(f))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         // Find unused files
-        var unusedFiles = allCsvFiles.Except(usedFilesSet).ToList();
+        var unusedFiles = allCsvFiles.Except(usedFilesSet).Except(declaredSet).ToList();
 
         // Categorize unused files
         foreach (var file in unusedFiles)

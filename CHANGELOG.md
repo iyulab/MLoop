@@ -57,6 +57,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `mloop train` ended with "Standard data file(s) not used: test.csv" in every project `mloop init` made — the file
+  `data.test` declares and `mloop evaluate` reads. The files evaluate and predict read (`datasets/test.csv`,
+  `datasets/predict.csv`, or where `data.test` / `data.predict` point) are no longer counted as unused.
 - A numeric column declared `type: ignore` (or dropped with `mloop features select --drop`) was not ignored: the
   loader had folded it into the merged `Features` vector, so no column of its name existed for the ignore to apply
   to — the model read it, nothing said so, and the saved schema (which marks it excluded) made `mloop evaluate`,
