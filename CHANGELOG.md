@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Dependency patch updates: `Microsoft.Extensions.*` and ASP.NET Core packages 10.0.13 → 10.0.14, `System.CommandLine` 2.0.13 → 2.0.14.
 - **`mloop train --task image-anomaly --bank-size N` keeps a coreset, not a random subsample.** The N patches are chosen greedily —
   each one the farthest from those already kept (PatchCore's k-center choice, measured after a random projection to 128 numbers) —
   so a texture seen on a few pictures survives a small bank where a random draw mostly loses it; `selection` in
