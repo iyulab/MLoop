@@ -109,9 +109,9 @@ public static class DockerCommand
             if (textEncoders.Count > 0)
             {
                 AnsiConsole.MarkupLine("[bold]Encoders:[/] the models run through encoders the image does not carry —");
-                AnsiConsole.MarkupLine($"  install them on this host (the container mounts {Markup.Escape(EncoderStore.DefaultRoot)}):");
+                AnsiConsole.MarkupLine($"  have them on this host (the container mounts {Markup.Escape(EncoderStore.DefaultRoot)}):");
                 foreach (var encoder in textEncoders)
-                    ValueLine.Write("  mloop encoder install ", encoder.Id);
+                    ValueLine.Write(Markup.Escape($"  {encoder.Id}: "), EncoderStore.HowToInstall(encoder.Id, encoder.Kind));
                 AnsiConsole.WriteLine();
             }
 

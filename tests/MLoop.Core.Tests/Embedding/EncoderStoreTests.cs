@@ -98,6 +98,15 @@ public sealed class EncoderStoreTests : IDisposable
     }
 
     // An install downloads a catalog entry's pinned file and refuses any other.
+    [Fact]
+    public void HowToInstall_NamesTheCatalogCommandForACatalogEncoder_AndAddingFilesForAnyOther()
+    {
+        Assert.Equal("Install it with: mloop encoder install dinov2-small", EncoderStore.HowToInstall("dinov2-small", EncoderKind.Image));
+        Assert.Equal("Add it with: mloop encoder add <encoder.json> --model <model.onnx>", EncoderStore.HowToInstall("my-encoder", EncoderKind.Image));
+        Assert.Equal("Add it with: mloop encoder add <encoder.json> --model <model.onnx> --tokenizer <tokenizer.model>",
+            EncoderStore.HowToInstall("my-text-encoder", EncoderKind.Text));
+    }
+
     private sealed class Serve(byte[] body) : HttpMessageHandler
     {
         public string? Asked { get; private set; }

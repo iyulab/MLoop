@@ -255,8 +255,11 @@ public sealed class EncoderStore
             ? definition with { PatchSize = patch }
             : definition;
 
-    // The catalog's command when the catalog names this encoder (or, with no name, any of the kind); adding files otherwise.
-    private static string HowToInstall(string? id, EncoderKind kind)
+    /// <summary>
+    /// The sentence that says how to get encoder <paramref name="id"/> onto a host: the catalog's command when the catalog
+    /// names it (or, with no name, any of the <paramref name="kind"/>), adding files otherwise.
+    /// </summary>
+    public static string HowToInstall(string? id, EncoderKind kind)
     {
         var add = kind == EncoderKind.Text
             ? "mloop encoder add <encoder.json> --model <model.onnx> --tokenizer <tokenizer.model>"

@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   each model needs from the record beside it, text and image alike, and turns the runtime install and the `/encoders` mount on
   (the usage text names the `mloop encoder install` lines to run on the host). Checked by building the generated image and
   scoring pictures through `POST /predict` in the container with the host's encoders mounted; without the mount it answers 409 naming the missing encoder.
+  For an encoder the catalog does not list (one added with `mloop encoder add`), the usage text now says to add it, not to `install` it.
 - **An embedding no longer leaves the server's cores busy after the answer is sent.** ONNX Runtime's intra-op threads spin while
   idle by default; every encoder session (`POST /embed`, `mloop embed`, image-anomaly scoring, text encoders) now turns that off
   (`session.intra_op.allow_spinning=0`, made in one place — `OnnxSessionOptions`). Measured on a 30-thread Apple-silicon machine
