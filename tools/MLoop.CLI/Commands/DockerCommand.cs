@@ -317,6 +317,9 @@ services:
       # Dockerfile's ONNX Runtime line uncommented:
       # - {EncoderStore.RootVariable}=/encoders")}
     volumes:
+      # The image carries the models it was built with; this mount lets a model promoted on the host reach the container without a
+      # rebuild. The host folder must be one the Docker VM shares (Colima, for one, shares only the home folder) — an unshared
+      # folder mounts empty and hides the image's copy, and /predict answers ""No production model found"".
       - ./{ExperimentLayout.ModelsDirectory}:/app/{ExperimentLayout.ModelsDirectory}:ro  # Read-only model access
       {(encoded ? "" : "# ")}- {ComposeEncodersHost}:/encoders:ro
     restart: unless-stopped

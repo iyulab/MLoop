@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Probability`. Migration: a script that reads `Score` from a binary classifier's CSV and wanted the probability should read
   `Probability` (or `score` from `--json`); one that wanted the margin should read `RawScore`. Other tasks are unchanged — a
   regression's `Score` is its prediction on every path, and multiclass `Score.<class>` columns are as before.
+- The `docker-compose.yml` that `mloop docker` writes says why the `./models` mount exists and that its host folder must be one
+  the Docker VM shares: an unshared folder mounts empty, hides the models the image was built with, and `/predict` answers
+  "No production model found".
 - Dependency patch updates: `Microsoft.Extensions.*` and ASP.NET Core packages 10.0.13 → 10.0.14, `System.CommandLine` 2.0.13 → 2.0.14.
 - **`mloop train --task image-anomaly --bank-size N` keeps a coreset, not a random subsample.** The N patches are chosen greedily —
   each one the farthest from those already kept (PatchCore's k-center choice, measured after a random projection to 128 numbers) —
