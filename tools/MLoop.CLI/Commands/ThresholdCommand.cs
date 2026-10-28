@@ -38,6 +38,11 @@ public static class ThresholdCommand
         {
             Description = "The class whose precision --precision targets, by its label value (default: the positive class) — e.g. the class a wrong answer is costly for"
         };
+        var guaranteeOption = new Option<double?>("--guarantee")
+        {
+            Description = "Risk δ, above 0 and below 1 (e.g. 0.05): choose the lowest threshold whose precision is certified to reach --precision, " +
+                          "wrong in at most δ of the files it could be run on — or refuse when no threshold on --data can be certified"
+        };
         var dataOption = new Option<string?>("--data") { Description = "Labeled evaluation file the threshold is chosen on (required with --precision)" };
         var weightOption = new Option<string?>("--weight") { Description = "Column that weights the rows (defaults as `mloop evaluate --weight` does)" };
         var clearOption = new Option<bool>("--clear") { Description = "Remove the threshold: the model answers at the trainer's own 0.5 again" };
@@ -48,6 +53,7 @@ public static class ThresholdCommand
         command.Options.Add(nameOption);
         command.Options.Add(precisionOption);
         command.Options.Add(precisionOfOption);
+        command.Options.Add(guaranteeOption);
         command.Options.Add(dataOption);
         command.Options.Add(weightOption);
         command.Options.Add(clearOption);
@@ -58,16 +64,24 @@ public static class ThresholdCommand
         command.SetAction(parseResult => ExecuteAsync(
             parseResult.GetValue(experimentArg), parseResult.GetValue(nameOption), parseResult.GetValue(precisionOption),
             parseResult.GetValue(dataOption), parseResult.GetValue(weightOption), parseResult.GetValue(clearOption),
-            parseResult.GetValue(jsonOption), parseResult.GetValue(recordsOption), parseResult.GetValue(precisionOfOption)));
+            parseResult.GetValue(jsonOption), parseResult.GetValue(recordsOption), parseResult.GetValue(precisionOfOption),
+            parseResult.GetValue(guaranteeOption)));
         return command;
     }
 
     private static async Task<int> ExecuteAsync(
-        string? experimentId, string? modelName, double? precision, string? data, string? weight, bool clear, bool jsonOutput, string? records, string? precisionOf = null)
+        string? experimentId, string? modelName, double? precision, string? data, string? weight, bool clear, bool jsonOutput, string? records,
+        string? precisionOf = null, double? guarantee = null)
     {
         using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
         try
         {
+            if (guarantee is { } risk && (!(risk > 0 && risk < 1) || double.IsNaN(risk)))
+                return Fail($"--guarantee is a risk above 0 and below 1 (0.05 = wrong in at most one file of twenty), not {risk.ToString(CultureInfo.InvariantCulture)}.");
+            if (guarantee is not null && precision is null)
+                return Fail("--guarantee certifies the precision --precision asks for: give --precision too.");
+            if (guarantee is not null && precision is 1)
+                return Fail("A precision of 1 cannot be certified from rows: no finite file proves it. Ask for less, e.g. 0.99.");
             if (clear && precision is not null)
                 return Fail("--clear removes the threshold and --precision chooses one: give one of them.");
             if (precision is { } p && (p <= 0 || p > 1 || double.IsNaN(p)))
@@ -132,15 +146,33 @@ public static class ThresholdCommand
                 experiment.Config.InputSchema, weightColumn);
             if (rows is null)
                 return Fail($"{id} gives no probability (its trainer is not calibrated), and a decision threshold is a probability.");
-            if (DecisionThreshold.Choose(rows, target, ofPositive) is not { } chosen)
+            (double Threshold, double Precision, double Recall) chosen;
+            DecisionGuarantee? certificate = null;
+            if (guarantee is { } delta)
+            {
+                if (PrecisionGuarantee.Choose(rows, target, delta, ofPositive) is not { } certified)
+                {
+                    var needed = PrecisionGuarantee.MinimumRows(target, delta);
+                    return Fail(string.Create(CultureInfo.InvariantCulture,
+                        $"No threshold on {Path.GetFileName(data)} is certified to reach a precision of {target:0.###} for {className ?? "the positive class"} at risk {delta:0.###}: " +
+                        $"the strictest threshold that can be tested answers at least {needed:N0} rows, every one right, and the walk down from there stops at the first threshold whose precision it cannot reject. " +
+                        $"The file has {rows.Count(r => r.Positive == ofPositive):N0} rows of that class. Nothing was written — a larger file, a lower target or a larger risk is what it takes."));
+                }
+                chosen = (certified.Threshold, certified.Precision, certified.Recall);
+                certificate = certified.Guarantee;
+            }
+            else if (DecisionThreshold.Choose(rows, target, ofPositive) is { } usual)
+                chosen = usual;
+            else
                 return Fail(string.Create(CultureInfo.InvariantCulture,
                     $"No threshold reaches a precision of {target:0.###} for {className ?? "the positive class"} on {Path.GetFileName(data)} — not even answering it only for the rows the model is most confident about."));
 
             var evidence = DecisionThreshold.EvidenceFor(rows, chosen.Threshold, chosen.Precision, ofPositive);
             var threshold = new DecisionThreshold(chosen.Threshold, target, chosen.Precision, chosen.Recall, rows.Count,
                 Path.GetFileName(data!), weightColumn, DateTimeOffset.UtcNow, className,
-                evidence.Answered, evidence.ClassRows, evidence.LowerBound);
-            if (DecisionThreshold.IsUncertified(target, evidence.LowerBound))
+                evidence.Answered, evidence.ClassRows, evidence.LowerBound, certificate);
+            // A certified threshold has said what its file proves; the warning is for the one that has not.
+            if (certificate is null && DecisionThreshold.IsUncertified(target, evidence.LowerBound))
                 WarningConsole.Warn(Markup.Escape(
                     string.Create(CultureInfo.InvariantCulture,
                         $"The precision {chosen.Precision:0.000} was measured on {evidence.Answered:N0} rows the threshold answers as {className ?? "the positive class"} ") +
@@ -203,7 +235,8 @@ public static class ThresholdCommand
             $"{(vocabulary is { } v ? $" ({Markup.Escape(v.Negative)} below it)" : "")} — " +
             $"{(threshold.PrecisionOf is { } c ? $"{Markup.Escape(c)} " : "")}precision {threshold.Precision:0.000} (target {threshold.TargetPrecision:0.###}), recall {threshold.Recall:0.000} " +
             $"over {threshold.Rows:N0} rows of {Markup.Escape(threshold.ChosenOn)}{(threshold.WeightColumn is { } w ? $", weighted by {Markup.Escape(w)}" : "")}" +
-            $"{(threshold is { Answered: { } answered, PrecisionLowerBound: { } bound } ? $"; it answers {answered:N0} of them, and that precision is certified to {bound:0.000} at 95 %" : "")}."));
+            $"{(threshold is { Answered: { } answered, PrecisionLowerBound: { } bound } ? $"; it answers {answered:N0} of them, and that precision is certified to {bound:0.000} at 95 %" : "")}." +
+            $"{(threshold.Guarantee is { } g ? $" Guaranteed: the true precision is at least {g.LowerBound:0.000}, wrong in at most {g.Delta:0.###} of the files this could be run on." : "")}"));
         if (status == "chosen" && !inProduction)
             AnsiConsole.MarkupLineInterpolated($"[grey]It goes to production with the model: mloop promote {experimentId}[/]");
         return 0;

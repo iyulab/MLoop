@@ -636,6 +636,7 @@ decision; `--precision-of` takes the label value either way.
 mloop threshold --precision 0.95 --data datasets/recheck.csv           # the production model
 mloop threshold exp-004 --precision 0.95 --data datasets/recheck.csv --weight inv_pi
 mloop threshold --precision 0.99 --precision-of safe --data datasets/recheck.csv   # «safe» must be right 99%
+mloop threshold --precision 0.9 --guarantee 0.05 --data datasets/recheck.csv       # certified, not just observed
 mloop threshold                                                       # show the current one
 mloop threshold --clear                                               # back to 0.5
 ```
@@ -645,6 +646,7 @@ mloop threshold --clear                                               # back to 
 | `--name` | `-n` | Model name (default: `default`) |
 | `--precision` | | Target precision of the positive class (or of `--precision-of`), above 0 and at most 1 |
 | `--precision-of` | | The class whose precision `--precision` targets, by its label value (default: the positive class) |
+| `--guarantee` | | Risk δ, above 0 and below 1 (e.g. `0.05`), with `--precision`: choose a threshold whose precision is *certified* to reach the target |
 | `--data` | | Labeled evaluation file to choose on (required with `--precision`) |
 | `--weight` | | Column that weights the rows (defaults as `evaluate --weight` does) |
 | `--clear` | | Remove the threshold |
@@ -658,6 +660,19 @@ bound; weighted rows count as their effective number), and warns when that is mo
 below the target. On a real binary set at a target of 0.9, about a hundred answered rows cross that line
 and three hundred do not. The numbers are recorded in `decision-threshold.json` (`answered`,
 `classRows`, `precisionLowerBound`); the threshold itself is chosen exactly as before.
+
+**Certified instead of observed (`--guarantee δ`).** The warning above says how little a file may prove; `--guarantee`
+makes the choice itself honest. Thresholds are tried from the strictest down, in the order of their score values, and each
+is tested — an exact one-sided binomial test at risk δ — against «the true precision is below the target». The walk stops
+at the first threshold it cannot reject and answers the one before it, so with probability at least 1 − δ the true precision
+of the threshold it answers is at least the target (a fixed sequence of tests needs no correction for the number of
+thresholds looked at). On scores that are calibrated by construction, the usual choice landed below its target in about
+half of the files; the certified one in at most about δ of them. The price is recall — the certified threshold is never
+lower than the usual one — and rows: at least `⌈ln δ / ln target⌉` answered rows, every one right (29 for 0.90 at δ = 0.05,
+22 at δ = 0.10, 459 for 0.99 at δ = 0.01), and each wrong answer asks for more. When the file cannot carry it, the command
+says so and writes nothing; a precision of 1 is never certified. `decision-threshold.json` then carries a `guarantee` block
+(`delta`, `hits`, `rows`, and `lowerBound`, the one-sided Clopper–Pearson limit of the true precision, never below the
+target); weighted rows count as their effective number. Without `--guarantee` nothing changes.
 
 The threshold is written beside the model (`decision-threshold.json`, with the precision and recall
 it reached and the file it was chosen on) — on the experiment, and on production too when the

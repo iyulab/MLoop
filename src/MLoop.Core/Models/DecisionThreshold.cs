@@ -37,6 +37,10 @@ namespace MLoop.Core.Models;
 /// target on this very file, so the precision it shows is the luckiest reading of a few rows: below the target,
 /// the target is not what the file proves. <c>null</c> when not recorded.
 /// </param>
+/// <param name="Guarantee">
+/// Set when the threshold was chosen with <c>--guarantee</c> (<see cref="PrecisionGuarantee"/>): the risk it was certified at and the
+/// evidence. <c>null</c> for a threshold chosen the usual way — the lowest one that reached the target on the file.
+/// </param>
 public sealed record DecisionThreshold(
     double Threshold,
     double TargetPrecision,
@@ -49,7 +53,8 @@ public sealed record DecisionThreshold(
     string? PrecisionOf = null,
     int? Answered = null,
     int? ClassRows = null,
-    double? PrecisionLowerBound = null)
+    double? PrecisionLowerBound = null,
+    DecisionGuarantee? Guarantee = null)
 {
     /// <summary>The z of a one-sided 95 % bound.</summary>
     private const double OneSided95 = 1.6448536269514722;

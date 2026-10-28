@@ -130,6 +130,10 @@ public sealed class ThresholdCommandTests : IDisposable
     [InlineData("--clear", "--precision", "0.9")]          // both
     [InlineData("--precision-of", "no")]                    // a class without a precision
     [InlineData("--precision", "0.9", "--precision-of", "maybe", "--data", "datasets/recheck.csv")]  // not a class
+    [InlineData("--guarantee", "0.05")]                                                              // a guarantee of no precision
+    [InlineData("--guarantee", "1.5", "--precision", "0.9", "--data", "datasets/recheck.csv")]       // not a risk
+    [InlineData("--guarantee", "0", "--precision", "0.9", "--data", "datasets/recheck.csv")]         // not a risk
+    [InlineData("--guarantee", "0.05", "--precision", "1", "--data", "datasets/recheck.csv")]        // no file proves a precision of 1
     public async Task AnAskThatCannotBeAnswered_IsRefused(params string[] args)
     {
         await TrainAsync();
@@ -138,5 +142,41 @@ public sealed class ThresholdCommandTests : IDisposable
 
         Assert.Equal(1, exit);
         Assert.False(string.IsNullOrWhiteSpace(JsonDocument.Parse(stdout).RootElement.GetProperty("error").GetString()));
+    }
+
+    /// <summary>
+    /// <c>--guarantee</c> is an added mode: the usual choice carries no guarantee block, the certified one carries it, its
+    /// lower bound is never below the target, and it never answers more rows than the usual choice would.
+    /// </summary>
+    [Fact]
+    public async Task AGuaranteedThreshold_CarriesItsCertificate_AndIsNoLooserThanTheUsualOne()
+    {
+        await TrainAsync();
+
+        var usual = (await JsonAsync("threshold", "--precision", "0.6", "--data", "datasets/recheck.csv")).GetProperty("threshold");
+        Assert.Equal(JsonValueKind.Null, usual.GetProperty("guarantee").ValueKind);   // the default is unchanged
+
+        var certified = (await JsonAsync("threshold", "--precision", "0.6", "--guarantee", "0.2", "--data", "datasets/recheck.csv")).GetProperty("threshold");
+
+        var guarantee = certified.GetProperty("guarantee");
+        Assert.Equal(0.2, guarantee.GetProperty("delta").GetDouble(), 9);
+        Assert.True(guarantee.GetProperty("lowerBound").GetDouble() >= 0.6);
+        Assert.True(certified.GetProperty("threshold").GetDouble() >= usual.GetProperty("threshold").GetDouble());
+        Assert.True(certified.GetProperty("recall").GetDouble() <= usual.GetProperty("recall").GetDouble());
+        Assert.Contains("guarantee", await File.ReadAllTextAsync("models/default/production/decision-threshold.json"));
+    }
+
+    /// <summary>When no threshold on the file can be certified the command says so and writes nothing — the model keeps what it had.</summary>
+    [Fact]
+    public async Task AGuaranteeTheFileCannotCarry_IsRefused_AndWritesNothing()
+    {
+        await TrainAsync();
+
+        // A precision of 0.99 at risk 0.01 takes 459 rows all right; the file has 300.
+        var (exit, stdout, _) = await CliRunner.RunAsync("threshold", "--precision", "0.99", "--guarantee", "0.01", "--data", "datasets/recheck.csv", "--json");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("certified", JsonDocument.Parse(stdout).RootElement.GetProperty("error").GetString());
+        Assert.False(File.Exists("models/default/production/decision-threshold.json"));
     }
 }

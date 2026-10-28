@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   caller's choice, so no step is proposed. `--around-trend` tests around a linear trend instead of a constant level. `--json`
   answers the usual analyze envelope; a series with fewer than 10 observations, a gap or a constant value is refused with the
   reason.
+- **`mloop threshold --precision <p> --guarantee <δ>`** chooses a decision threshold whose precision is certified, not merely
+  observed. The usual choice is the lowest threshold that reached the target on the file — the luckiest reading of its rows,
+  whose true precision lands below the target in about half the files (measured on synthetic calibrated scores). With
+  `--guarantee`, thresholds are tested from the strictest down with an exact one-sided binomial test at risk δ, the walk
+  stops at the first it cannot reject, and the last rejected one is chosen: with probability at least 1 − δ its true precision
+  reaches the target. It needs enough rows (29 right answers for 0.90 at δ = 0.05) and is refused, writing nothing, when the
+  file cannot carry it; a precision of 1 is never certified. `decision-threshold.json` gains a `guarantee` block (`delta`,
+  `hits`, `rows`, `lowerBound`). Without the option nothing changes.
 - Dependency updates: FilePrepper 0.13.0 → 0.13.1 and DataLens 0.20.0 → 0.21.0 (UInsight 0.38.0), which carry the series statistics above.
 
 ### Changed
