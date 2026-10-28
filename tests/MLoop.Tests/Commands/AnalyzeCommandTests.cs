@@ -150,7 +150,7 @@ public class AnalyzeCommandTests
     {
         // a target-aware command (--label) must surface predictive importance
         // (permutation), not target-agnostic structural variance, and must never rank
-        // the label against itself. SEQ026 ground truth: KWh ranks high structurally
+        // the label against itself. Real-data ground truth: KWh ranks high structurally
         // but is predictively weak; only permutation reflects that.
         var report = new FeatureReport
         {

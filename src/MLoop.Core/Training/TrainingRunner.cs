@@ -979,7 +979,7 @@ public partial class TrainingRunner
     /// </para>
     /// The aux trainer is SDCA linear regression: it adds no package dependency beyond core Microsoft.ML
     /// and captures the (linear) feature-driven heteroscedasticity that the offline ceiling analysis on
-    /// SEQ026 confirmed (recall 0.10→0.24). A tree aux is a demand-driven future option if a live set
+    /// a real manufacturing set confirmed (recall 0.10→0.24). A tree aux is a demand-driven future option if a live set
     /// shows nonlinear σ. Returns <c>null</c> (graceful) when score/label are absent, no numeric feature
     /// exists, or the holdout is too small to split — callers fall back to the constant-width band.
     /// </summary>

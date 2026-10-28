@@ -145,7 +145,7 @@ public static class AnalyzeJson
     /// <em>target-aware</em> predictive importance (permutation for numeric targets,
     /// mutual-info/ANOVA for categorical) rather than the target-agnostic structural
     /// (variance/condition-number) ranking — structural importance over-ranks features that
-    /// the model never uses (SEQ026: KWh ranked high structurally yet predictively inert).
+    /// the model never uses (seen on a real manufacturing set: KWh ranked high structurally yet predictively inert).
     /// </para>
     /// <para>
     /// In every case the label column itself is excluded: DataLens computes importance over

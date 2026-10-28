@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <!-- Published with the CLI at the same version (in-process library — umbrella policy 7′). -->
+    <!-- Published with the CLI at the same version (it is an in-process library, so it ships beside the CLI). -->
     <IsPackable>true</IsPackable>
     <PackageId>MLoop.Core</PackageId>
     <Description>MLoop Core - training (a trainer search over ML.NET trainers), prediction and model management on ML.NET</Description>

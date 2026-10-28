@@ -81,7 +81,7 @@ jobs:
       with:
         files: '**/TestResults/**/*.cobertura.xml'
         flags: unittests
-        name: codecov-umbrella
+        name: codecov-mloop
         fail_ci_if_error: false
         token: ${{ secrets.CODECOV_TOKEN }}
 
