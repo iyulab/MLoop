@@ -318,14 +318,21 @@ public static class InfoCommand
         var excluded = CsvDataLoader.DetermineExcludedColumns(dataFile, labelColumn, _ => { })
             .ToDictionary(c => c.Name, c => c.Reason, StringComparer.Ordinal);
 
+        // Which untyped string columns training one-hot encodes rather than featurizes as text — the one authority,
+        // asked of the whole file like the exclusions above. A column the user named, typed or training drops is not
+        // judged there, so the table keeps reading those from the sample.
+        var categories = CategoryReading.Of(
+            CategoryColumns.Decide(dataFile, skip: SkippedByTraining(labelColumn, excluded, columnOverrides)),
+            SkippedByTraining(labelColumn, excluded, columnOverrides));
+
         // Sample data lines for text-likeness analysis (reuses TrainingEngine logic)
         var sampleLines = ReadSampleLines(dataFile, 200);
 
         // 2. Column Information
         InfoPresenter.DisplayColumnInfo(
             columns,
-            (colName, colIdx) => InferDisplayType(colName, layout, colIdx, sampleLines),
-            (colName, dataType) => GetColumnPurpose(colName, reportedLabel, layout.Columns, dataType, excluded),
+            (colName, colIdx) => InferDisplayType(colName, layout, colIdx, sampleLines, categories),
+            (colName, dataType) => GetColumnPurpose(colName, reportedLabel, layout.Columns, dataType, excluded, categories),
             columnOverrides);
 
         // 3. DataLens Profile (always-on, nullable)
@@ -363,8 +370,8 @@ public static class InfoCommand
         var columnRows = new List<ColumnInfoRow>();
         for (int ci = 0; ci < columns.Length; ci++)
         {
-            var dataType = InferDisplayType(columns[ci], layout, ci, sampleLines);
-            var purpose = GetColumnPurpose(columns[ci], reportedLabel, layout.Columns, dataType, excluded);
+            var dataType = InferDisplayType(columns[ci], layout, ci, sampleLines, categories);
+            var purpose = GetColumnPurpose(columns[ci], reportedLabel, layout.Columns, dataType, excluded, categories);
             string? overrideType = columnOverrides != null && columnOverrides.TryGetValue(columns[ci], out var ot)
                 ? ot
                 : null;
@@ -484,9 +491,12 @@ public static class InfoCommand
     /// <param name="excluded">Columns training drops before featurizing, with the reason — the
     /// decision of <see cref="CsvDataLoader.DetermineExcludedColumns"/>, so the report names what
     /// training will do instead of calling a dropped column a feature.</param>
+    /// <param name="categories">Which string columns training one-hot encodes
+    /// (<see cref="CategoryColumns.Decide"/>) — the decision that says "Categorical Feature" or "Text Feature"
+    /// for a string column, instead of ML.NET's own inference, which reads some two-value columns as text.</param>
     internal static string GetColumnPurpose(
         string columnName, string? label, IReadOnlyList<ColumnLayoutColumn> layout, string dataType,
-        IReadOnlyDictionary<string, string>? excluded = null)
+        IReadOnlyDictionary<string, string>? excluded = null, CategoryReading? categories = null)
     {
         var inferred = PurposeOf(layout, columnName);
         if (label == columnName)
@@ -495,6 +505,10 @@ public static class InfoCommand
             return $"Excluded ({reason})";
         if (inferred == ColumnLayoutPurpose.Ignore)
             return "Ignored";
+
+        // A string column training judged: what it will do with it is the answer.
+        if (categories?.IsCategory(columnName) is { } category && dataType is "Text" or "Text/Categorical")
+            return category ? "Categorical Feature" : "Text Feature";
 
         // Use dataType (which incorporates text-likeness reclassification) over raw ML.NET inference
         if (dataType == "Text")
@@ -522,9 +536,15 @@ public static class InfoCommand
     private static ColumnLayoutPurpose? PurposeOf(IReadOnlyList<ColumnLayoutColumn> layout, string columnName) =>
         layout.FirstOrDefault(c => c.Name == columnName)?.Purpose;
 
-    private static string InferDisplayType(string columnName, ColumnLayout layout, int csvColumnIndex, string[] sampleLines)
+    private static string InferDisplayType(
+        string columnName, ColumnLayout layout, int csvColumnIndex, string[] sampleLines, CategoryReading? categories = null)
     {
         var inferred = PurposeOf(layout.Columns, columnName);
+        // A string column training judged is a category or it is text, whatever ML.NET's inference — which
+        // leaves out the column it guessed to be the label — made of it.
+        if (categories?.IsCategory(columnName) is { } category && IsStringColumn(layout, csvColumnIndex, columnName))
+            return category ? "Text/Categorical" : "Text";
+
         // A column folded into a vector, by its own name: what the layout read it as.
         if (inferred is null && layout.FileColumn(columnName) is { } folded && folded.Purpose != ColumnLayoutPurpose.Label)
             return folded.Kind == DataKind.Boolean ? "Boolean" : folded.Purpose == ColumnLayoutPurpose.Numeric ? "Numeric" : folded.Kind.ToString();
@@ -587,6 +607,52 @@ public static class InfoCommand
         }
 
         return "Unknown";
+    }
+
+    /// <summary>The columns <see cref="CategoryColumns.Decide"/> does not judge: the label the user named, what training
+    /// drops, and what the user typed — the same set training passes.</summary>
+    private static IReadOnlyList<string> SkippedByTraining(
+        string? label, IReadOnlyDictionary<string, string> excluded, IReadOnlyDictionary<string, string>? overrides) =>
+        new[] { label }.Where(l => !string.IsNullOrEmpty(l)).Select(l => l!)
+            .Concat(excluded.Keys)
+            .Concat(overrides?.Keys ?? Enumerable.Empty<string>())
+            .ToList();
+
+    /// <summary>Whether the loader reads this file column as a string — the only kind a category decision is about.</summary>
+    private static bool IsStringColumn(ColumnLayout layout, int csvColumnIndex, string columnName)
+    {
+        foreach (var col in layout.Options.Columns)
+        {
+            var covers = col.Name == columnName
+                || col.Source?.Any(r => csvColumnIndex >= r.Min && csvColumnIndex <= (r.Max ?? r.Min)) == true;
+            if (covers)
+                return col.DataKind == DataKind.String;
+        }
+
+        return PurposeOf(layout.Columns, columnName) is ColumnLayoutPurpose.Categorical or ColumnLayoutPurpose.Text;
+    }
+
+    /// <summary>
+    /// What <see cref="CategoryColumns.Decide"/> said of a file's string columns: the ones it called categories, and
+    /// the ones it was told not to judge (they are read the old way, from the sample).
+    /// </summary>
+    internal sealed class CategoryReading
+    {
+        private readonly HashSet<string> _categories;
+        private readonly HashSet<string> _notJudged;
+
+        private CategoryReading(HashSet<string> categories, HashSet<string> notJudged)
+        {
+            _categories = categories;
+            _notJudged = notJudged;
+        }
+
+        internal static CategoryReading Of(IEnumerable<string> categories, IEnumerable<string> notJudged) =>
+            new(new HashSet<string>(categories, StringComparer.Ordinal), new HashSet<string>(notJudged, StringComparer.Ordinal));
+
+        /// <summary><see langword="true"/> a category, <see langword="false"/> text, <see langword="null"/> not judged.</summary>
+        internal bool? IsCategory(string column) =>
+            _categories.Contains(column) ? true : _notJudged.Contains(column) ? null : false;
     }
 
     private static string[] ReadSampleLines(string dataFile, int maxLines)

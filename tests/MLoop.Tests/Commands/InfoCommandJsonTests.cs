@@ -91,6 +91,50 @@ public class InfoCommandJsonTests : IDisposable
     }
 
     [Fact]
+    public async Task Info_Json_TwoValueStringColumnGuessedAsLabel_IsReadAsTrainingReadsIt()
+    {
+        // Without --label the last column goes to ML.NET's inference as the label, which leaves it out of the type
+        // inference, so the report called a two-value string column "Text | Text Feature". Training one-hot encodes such
+        // a column (CategoryColumns), and the report says what training will do. The two-value column is last on purpose.
+        var rows = new System.Text.StringBuilder("region,plan,fee,churned\n");
+        var regions = new[] { "seoul", "busan", "daegu", "incheon" };
+        var plans = new[] { "basic", "premium", "family" };
+        for (var i = 0; i < 120; i++)
+            rows.Append($"{regions[i % 4]},{plans[i % 3]},{10000 + i * 7},{(i % 2 == 0 ? "left" : "stayed")}\n");
+        var path = WriteCsv("churn.csv", rows.ToString());
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var columns = doc.RootElement.GetProperty("columns").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("name").GetString()!);
+        Assert.Equal("Categorical Feature", columns["churned"].GetProperty("purpose").GetString());
+        Assert.Equal("Text/Categorical", columns["churned"].GetProperty("dataType").GetString());
+        Assert.Equal("Categorical Feature", columns["region"].GetProperty("purpose").GetString());
+    }
+
+    [Fact]
+    public async Task Info_Json_FreeTextColumn_StaysTextBesideACategory()
+    {
+        // The control: the same decision keeps language as text.
+        var rows = new System.Text.StringBuilder("memo,region\n");
+        var words = new[] { "fast", "slow", "cheap", "good", "bad", "network", "billing", "support", "price", "renew" };
+        for (var i = 0; i < 120; i++)
+            rows.Append($"{words[i % 10]} {words[(i + 3) % 10]} {words[(i + 7) % 10]} {words[(i + 1) % 10]} case {i},{(i % 2 == 0 ? "seoul" : "busan")}\n");
+        var path = WriteCsv("memo.csv", rows.ToString());
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "region", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var purposes = doc.RootElement.GetProperty("columns").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("name").GetString()!, c => c.GetProperty("purpose").GetString());
+        Assert.Equal("Text Feature", purposes["memo"]);
+        Assert.Equal("Label", purposes["region"]);
+    }
+
+    [Fact]
     public async Task Info_Json_Profile_ReportsColumnsAndLabelDistribution()
     {
         var path = WriteDataCsv();

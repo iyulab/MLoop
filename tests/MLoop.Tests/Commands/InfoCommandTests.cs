@@ -70,6 +70,34 @@ public class InfoCommandTests : IDisposable
     }
 
     [Fact]
+    public void GetColumnPurpose_StringColumnTrainingCallsACategory_IsCategoricalWhateverTheTypeSays()
+    {
+        // The type column read the column as text; the category decision (what training does) wins.
+        var categories = InfoCommand.CategoryReading.Of(["churned"], ["target"]);
+
+        Assert.Equal("Categorical Feature", InfoCommand.GetColumnPurpose("churned", null, [], "Text", categories: categories));
+    }
+
+    [Fact]
+    public void GetColumnPurpose_StringColumnTrainingCallsText_IsTextEvenWhenTheTypeSaysCategorical()
+    {
+        var categories = InfoCommand.CategoryReading.Of(["region"], ["target"]);
+
+        Assert.Equal("Text Feature", InfoCommand.GetColumnPurpose("memo", null, [], "Text/Categorical", categories: categories));
+    }
+
+    [Fact]
+    public void GetColumnPurpose_ColumnTrainingDoesNotJudge_KeepsTheSampleReading()
+    {
+        // A column the user named or typed is not the decision's to make.
+        var categories = InfoCommand.CategoryReading.Of(["region"], ["typed"]);
+
+        Assert.Equal("Text Feature", InfoCommand.GetColumnPurpose("typed", null, [], "Text", categories: categories));
+        Assert.Equal("Categorical Feature",
+            InfoCommand.GetColumnPurpose("typed", null, [new("typed", ColumnLayoutPurpose.Categorical)], "Text/Categorical", categories: categories));
+    }
+
+    [Fact]
     public void GetColumnPurpose_UnknownType_ReturnsFeature()
     {
         var result = InfoCommand.GetColumnPurpose("unknown", null, [], "SomeOtherType");

@@ -42,6 +42,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop info` called a two-value string column "Text | Text Feature" while training one-hot encodes it.** Without `--label` the
+  last column is handed to ML.NET's type inference as the label and left out of it, so that column was read from a 200-row
+  sample instead. The type and purpose now come from the decision training makes (`Categorical Feature` for a category,
+  `Text Feature` for language), asked of the whole file; a column the user named as the label, typed, or training drops is read
+  as before.
 - **`mloop docker` for an image-anomaly project left the container unable to score.** The generator switched on ONNX Runtime and the
   encoder mount only for models that read a text column through an encoder; a project holding an image-anomaly model got both
   lines commented out, and its container answered every picture with "Encoder … is not installed". It now reads the encoder
