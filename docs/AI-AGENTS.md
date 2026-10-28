@@ -9,6 +9,22 @@ process boundaries — each runs the same commands a person runs.
 | **CLI** | The agent can run shell commands | The `mloop` commands, with `--json` for a machine-readable answer |
 | **HTTP** — `mloop serve` | The agent or application is a long-running service | The REST endpoints listed in [GUIDE.md](GUIDE.md) |
 
+## Operated by an agent, not written by one
+
+An agent can reach machine learning two ways: write a training script and run it, or operate a fixed set of
+commands. MLoop is the second.
+
+- **The agent decides what, the tool decides how.** Which data, label and task, when to evaluate, whether to promote — the
+  agent's calls. How a model is searched, validated, calibrated and gated is MLoop's, and is the same for an agent and a person.
+- **No generated code runs.** Nothing the agent writes is compiled or executed to train or serve a model. (Scripts under
+  `.mloop/scripts/` are an optional extension you write and place yourself; an agent runs them only if you put them there.)
+- **Every run leaves files.** `metadata.json`, `metrics.json`, `config.json`, `trials.ndjson` and the leaderboard sit beside the
+  model, so a result is inspected and compared (`mloop compare`) rather than reconstructed from a transcript.
+- **The safeguards stay in the tool.** The quality gate, promotion rules and refusals answer the same way whoever asks, and
+  `--json` returns them as data.
+- **No LLM key, and for tabular tasks no network or GPU, is needed to run it.** The search is time-budgeted, so two runs of one command can end on
+  different trials; the record says which trials ran.
+
 ## MCP
 
 mloop-mcp calls the `mloop` CLI, so install the CLI first, then add the server to the client:

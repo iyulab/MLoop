@@ -56,6 +56,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 - **Smart Predictions**: Production model auto-discovery and batch processing
 - **Filesystem MLOps**: Git-friendly experiment tracking (no database required)
 - **Fast Preprocessing**: Integrated FilePrepper (20x faster than pandas)
+- **Operated by agents, not written by them**: MCP, `--json` and HTTP drive the same commands a person runs — no generated code is executed, no LLM key is needed ([details](docs/AI-AGENTS.md))
 - **Extensibility**: Code-based hooks and custom metrics
 - **Zero Config**: Works immediately with intelligent defaults
 - **Encoding Detection**: Automatic CP949/EUC-KR to UTF-8 conversion for Korean text
