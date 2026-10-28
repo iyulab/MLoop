@@ -33,6 +33,13 @@ dotnet list <your-project>.csproj package --include-transitive | \
 
 An empty result is the expected one. If a line appears, another package of yours brings it in.
 
+What a publish of `MLoop.Core` weighs, measured on a plain `dotnet publish` of the library (macOS arm64): about 417 MB, of
+which the `runtimes/` folder (the native libraries ML.NET brings) is 382 MB. The C# scripting that runs `.mloop/scripts`
+(Roslyn) is four assemblies, 9.9 MB, plus 52 satellite resource files of its translated messages, 6.9 MB. A consumer that
+reads no other language than English drops the satellite files with `<SatelliteResourceLanguages>en</SatelliteResourceLanguages>`
+in its own project (126 files instead of 178, 410 MB instead of 417 MB); the assemblies stay, because scripting is part of what
+`MLoop.Core` is.
+
 ---
 
 ## 2. Security floor for `ProjectReference` / submodule consumers
