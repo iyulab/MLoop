@@ -29,9 +29,12 @@ namespace MLoop.Tests.Documentation;
 /// <para>
 /// Lines that are usage-grammar summaries rather than literal examples — the CLI Commands
 /// Reference table, which intentionally uses <c>&lt;placeholder&gt;</c> and <c>[optional]</c>
-/// notation — are excluded by the same marker: any line containing <c>&lt;</c> or <c>[</c> isn't a
-/// command a user could paste and run, so parsing it as one would fail for a reason unrelated to
-/// the CLI's actual grammar.
+/// notation — are not parsed as written: any line containing <c>&lt;</c> or <c>[</c> isn't a
+/// command a user could paste and run. They are held to the grammar a second way
+/// (<see cref="Grammar_summary_parses_with_every_optional_present"/>): written out in full, with
+/// every optional present and a value of the right kind in each placeholder. That is how a summary
+/// listing a positional the command does not have (<c>predict [model] [data]</c>,
+/// <c>train &lt;data-file&gt; &lt;label-column&gt;</c>) stopped passing as correct.
 /// </para>
 /// </remarks>
 public class ReadmeCommandContractTests
@@ -124,6 +127,105 @@ public class ReadmeCommandContractTests
             commands.Add(withoutComment);
         }
         return commands;
+    }
+
+    /// <summary>
+    /// The grammar-summary lines the literal-example scan leaves out: a command with <c>&lt;placeholder&gt;</c> or
+    /// <c>[optional]</c> notation. They state the grammar a reader will copy from, so they are held to it too.
+    /// </summary>
+    internal static List<string> ExtractGrammarSummaries(IEnumerable<string> lines)
+    {
+        var summaries = new List<string>();
+        foreach (var raw in lines)
+        {
+            var line = raw.Trim();
+            if (!line.StartsWith("mloop ") || DocumentsAFailure(line))
+                continue;
+
+            // Only the comment is cut: in a summary ">" closes a placeholder, it is not a redirection.
+            var withoutComment = StripTrailingComment(line);
+            if (withoutComment.Contains('<') || withoutComment.Contains('['))
+                summaries.Add(withoutComment);
+        }
+        return summaries;
+    }
+
+    public static IEnumerable<object[]> GrammarSummaryCommands() =>
+        DocFiles
+            .SelectMany(relativePath => ExtractGrammarSummaries(File.ReadAllLines(Path.Combine(RepoRoot, relativePath)))
+                .Select(cmd => (relativePath, cmd)))
+            .DistinctBy(x => x.cmd)
+            .Select(x => new object[] { x.relativePath, x.cmd });
+
+    /// <summary>
+    /// Writes a grammar summary as one command that uses everything it offers: the first of a set of alternatives,
+    /// every optional group present, and each placeholder given a value of the kind its option takes. A summary that
+    /// lists a positional the command does not have, or an option it does not know, fails to parse in that form —
+    /// which the literal-example scan above, skipping these lines, never saw.
+    /// </summary>
+    internal static string Instantiate(string summary)
+    {
+        // A set of alternatives — "[--latest|--best]", "<a|b>" — is its first member.
+        var text = System.Text.RegularExpressions.Regex.Replace(summary, @"([\[<])([^\[\]<>|]+)\|[^\[\]<>]*([\]>])", "$1$2$3");
+        // "--drop/--keep" offers two options; "[options]" stands for the options the line does not list.
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"(--[a-z-]+)(?:/--[a-z-]+)+", "$1");
+        text = text.Replace("[options]", "");
+        text = text.Replace("[", "").Replace("]", "");
+
+        var tokens = Tokenize(text).ToList();
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            var after = i > 0 && tokens[i - 1].StartsWith('-');
+            // "--bank-size N": a bare capital letter after an option stands for a number.
+            if (after && tokens[i].Length == 1 && char.IsUpper(tokens[i][0]))
+            {
+                tokens[i] = "1";
+                continue;
+            }
+
+            if (!tokens[i].StartsWith('<') || !tokens[i].EndsWith('>'))
+                continue;
+
+            tokens[i] = tokens[i] switch
+            {
+                "<type>" or "<task>" => "regression",
+                "<port>" or "<n>" or "<N>" or "<days>" or "<rows>" => "1",
+                _ => after ? "1" : "x",
+            };
+        }
+
+        return string.Join(' ', tokens);
+    }
+
+    [Theory]
+    [MemberData(nameof(GrammarSummaryCommands))]
+    public void Grammar_summary_parses_with_every_optional_present(string sourceFile, string summary)
+    {
+        var instance = Instantiate(summary);
+        var args = Tokenize(instance).Skip(1).ToArray();
+        var result = Program.BuildRootCommand().Parse(args);
+
+        Assert.True(result.Errors.Count == 0,
+            $"{sourceFile} grammar summary \"{summary}\" (as \"{instance}\") failed to parse: " +
+            string.Join("; ", result.Errors.Select(e => e.Message)));
+    }
+
+    [Fact]
+    public void The_grammar_check_catches_a_positional_the_command_does_not_take()
+    {
+        // The summary that stood in README for months: `predict [model] [data]` — predict takes the data file, and the
+        // model is the --name option. Written in full, it has a second positional, which the parser refuses.
+        var args = Tokenize(Instantiate("mloop predict [model] [data]")).Skip(1).ToArray();
+
+        Assert.NotEmpty(Program.BuildRootCommand().Parse(args).Errors);
+    }
+
+    [Fact]
+    public void At_least_one_grammar_summary_was_found_in_each_doc()
+    {
+        foreach (var relativePath in DocFiles)
+            Assert.True(ExtractGrammarSummaries(File.ReadAllLines(Path.Combine(RepoRoot, relativePath))).Count > 0,
+                $"{relativePath}: no grammar-summary lines found.");
     }
 
     private static bool DocumentsAFailure(string line)

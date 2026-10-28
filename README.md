@@ -182,13 +182,13 @@ That's it! Your model is trained and ready to use.
 ```bash
 mloop init <project> --task <type>    # Initialize ML project
 mloop train <data> --label <label> [options]  # Train with AutoML
-mloop predict [model] [data]          # Run predictions
+mloop predict [data] [--name <model>] # Run predictions (data defaults to datasets/predict.csv)
 mloop list [--json]                    # View experiments
 mloop promote [exp-id] [--latest|--best] [--json] [--decide-only]  # Promote to production (auto-select newest/best; --decide-only reports the pick without moving the pointer)
 mloop rollback [--to <exp-id>] [--json]                              # Production back to the experiment it held before
 mloop export onnx [exp-id] [--data <file>] [-o <dir>] [--verify]     # Model as ONNX + manifest, for runtimes without ML.NET
 mloop detect <data> [--column <col>]   # One-shot TS-anomaly detection with control limits (no training)
-mloop evaluate <model> <test> <label> # Evaluate performance
+mloop evaluate [exp-id] [test] [--name <model>]  # Evaluate on test data (the label comes from mloop.yaml)
 mloop info <data>                      # Dataset profiling with encoding detection
 mloop analyze profile <data>           # Column types, null %, cardinality, constant columns
 mloop analyze correlation <data>       # High-correlation pairs and multicollinearity
@@ -372,8 +372,8 @@ mloop serve
 # (add --role admin for write endpoints) and send it as `Authorization: Bearer <token>`.
 # A programmatic caller must issue/refresh the token itself — the server has no token endpoint.
 export MLOOP_TOKEN=$(mloop token --quiet)
-# GET /predict?name=churn   -H "Authorization: Bearer $MLOOP_TOKEN"
-# GET /predict?name=revenue -H "Authorization: Bearer $MLOOP_TOKEN"
+# POST /predict?name=churn   -H "Authorization: Bearer $MLOOP_TOKEN"
+# POST /predict?name=revenue -H "Authorization: Bearer $MLOOP_TOKEN"
 ```
 
 **Directory Structure with Multiple Models:**

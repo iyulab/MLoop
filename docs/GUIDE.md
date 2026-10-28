@@ -101,7 +101,7 @@ Train models with MLoop's trainer search (over ML.NET's trainers) and automatic 
 
 ```bash
 # Basic training
-mloop train <data-file> <label-column> [options]
+mloop train [data-file] [options]    # the label is --label, or the one in mloop.yaml
 
 # What to train:
 #   --name, -n <model>          Model name (default: 'default')

@@ -1071,7 +1071,7 @@ $ git push
 **Developer B (Review Experiment):**
 ```bash
 $ git pull
-$ mloop experiment show exp-005  # Read metadata.json, metrics.json
+$ mloop list --name default      # The experiments and their metrics (metadata.json, metrics.json)
 # Model binary can be retrained locally or shared separately
 ```
 
@@ -1245,14 +1245,11 @@ $ mloop train data.csv --label target
 
 **Post-execution monitoring:**
 ```bash
-# Check experiment metadata
-$ mloop experiment show exp-001
+# Check the experiments and their metrics
+$ mloop list --name default
 
-# View training log
-$ tail -f experiments/exp-001/training.log
-
-# Check metrics
-$ cat experiments/exp-001/metrics.json | jq
+# Read one experiment's files
+$ cat models/default/staging/exp-001/metrics.json | jq
 ```
 
 ### 13.4 Future: Optional --detach Flag (Phase 2)
@@ -1814,9 +1811,6 @@ $ mloop train data.csv --label target
 
 # ✅ Extensions auto-discovered if .mloop/scripts/ exists
 $ mloop train data.csv --label target
-
-# ✅ Force disable extensions
-$ mloop train data.csv --label target --no-extensions
 ```
 
 **Version Policy:**
