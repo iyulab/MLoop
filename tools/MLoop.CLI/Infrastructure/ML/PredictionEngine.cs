@@ -256,6 +256,15 @@ public class PredictionEngine
                 outputData = RenderBooleanLabel(outputData, BinaryLabelVocabulary.Of(trainedSchema));
             }
 
+            // A binary classifier's trainer score is a raw margin; the structured paths' `score` is the
+            // positive-class probability. One name for two values sent callers to the wrong one, so the
+            // raw column is named for what it is and `Probability` stays the answer.
+            if (TaskTypes.Canonical(taskType) == "binary-classification"
+                && outputData.Schema.GetColumnOrNull("Probability") is not null)
+            {
+                outputData = RenameRawScore(outputData);
+            }
+
             // NER answers one tag per word; written as a vector it spreads over nameless columns.
             if (outputData.Schema.GetColumnOrNull("PredictedLabel") is { Type: VectorDataViewType { ItemType: TextDataViewType } })
             {
@@ -494,6 +503,20 @@ public class PredictionEngine
             contractName: null)
             .Fit(predictions)
             .Transform(predictions);
+    }
+
+    internal const string RawScoreColumn = "RawScore";
+
+    private IDataView RenameRawScore(IDataView predictions)
+    {
+        if (predictions.Schema.GetColumnOrNull("Score") is not { Type: NumberDataViewType })
+            return predictions;
+
+        var copied = _mlContext.Transforms.CopyColumns(RawScoreColumn, "Score").Fit(predictions).Transform(predictions);
+        var order = predictions.Schema.Where(c => !c.IsHidden)
+            .Select(c => c.Name == "Score" ? RawScoreColumn : c.Name)
+            .ToArray();
+        return _mlContext.Transforms.SelectColumns(order).Fit(copied).Transform(copied);
     }
 
     private IDataView RenderTagSequence(IDataView predictions) =>

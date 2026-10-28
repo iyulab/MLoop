@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **⚠ Breaking: a binary classifier's prediction CSV calls the raw trainer score `RawScore`, not `Score`.** `Score` meant two
+  values — `--json` and `POST /predict` answer the positive-class probability under `score`, while the CSV wrote the trainer's
+  raw margin under `Score` (for example −3.43 beside a probability of 0.335) and the probability under `Probability`. The
+  probability is still `Probability`; only the margin column is renamed, and it keeps its place between `PredictedLabel` and
+  `Probability`. Migration: a script that reads `Score` from a binary classifier's CSV and wanted the probability should read
+  `Probability` (or `score` from `--json`); one that wanted the margin should read `RawScore`. Other tasks are unchanged — a
+  regression's `Score` is its prediction on every path, and multiclass `Score.<class>` columns are as before.
 - Dependency patch updates: `Microsoft.Extensions.*` and ASP.NET Core packages 10.0.13 → 10.0.14, `System.CommandLine` 2.0.13 → 2.0.14.
 - **`mloop train --task image-anomaly --bank-size N` keeps a coreset, not a random subsample.** The N patches are chosen greedily —
   each one the farthest from those already kept (PatchCore's k-center choice, measured after a random projection to 128 numbers) —
