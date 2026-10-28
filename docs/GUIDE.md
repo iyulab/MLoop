@@ -1723,6 +1723,13 @@ Pillow computes it — the resampling most published image processors use), crop
 centre, scaled to [0, 1] and normalised per channel. Adding a `sha256` to the definition makes `add` refuse a graph
 with other contents. Encoders run on ONNX Runtime (`mloop runtime install onnxruntime`).
 
+A vision transformer's definition that should give patch vectors — `POST /embed?patches=true`, and every `image-anomaly`
+model — also says `patchSize`, the side of one patch in crop pixels (14 for DINOv2); without it a patch request, or training
+an `image-anomaly` model with that encoder, is refused and names the field. `outputName` may be any output of the graph, an
+intermediate layer's among them: add that layer's tensor to the graph's outputs, give the new name as `outputName`, and
+leave `url` and `sha256` out of a definition for a graph you made (`add` records the graph's own SHA-256). The vectors are
+then that layer's, and the encoder's identity in answers is the id and SHA-256 of your graph.
+
 A text encoder's definition says `"kind": "text"` and how text becomes its input instead of the image preprocessing
 (a definition without `kind` is of images):
 
