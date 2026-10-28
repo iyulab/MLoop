@@ -27,7 +27,7 @@ public sealed class NoSuccessfulTrialException : InvalidOperationException
     }
 
     private static string BuildMessage(int timeLimitSeconds) =>
-        $"AutoML finished without completing a single successful trial (time budget: {timeLimitSeconds}s). " +
+        $"The trainer search finished without completing a single successful trial (time budget: {timeLimitSeconds}s). " +
         "Either the budget was too small for this dataset, or every trial failed before finishing " +
         "(most often memory exhaustion on wide or large data).";
 }

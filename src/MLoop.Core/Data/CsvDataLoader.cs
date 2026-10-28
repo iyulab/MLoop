@@ -247,7 +247,7 @@ public class CsvDataLoader : DataProviderBase
         }
 
         // For binary classification with String label, convert to Boolean.
-        // ML.NET binary classification AutoML requires Boolean labels.
+        // ML.NET binary classification requires Boolean labels.
         // String labels like "OK"/"NG", "Pass"/"Fail" are common in manufacturing data.
         if (isBinaryTask && !string.IsNullOrEmpty(labelColumn))
         {

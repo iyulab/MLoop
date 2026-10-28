@@ -14,13 +14,11 @@ using MLoop.Extensibility.Preprocessing;
 using MLoop.Search;
 using MLoop.Search.Candidates;
 using MLoop.Search.Validation;
-// Microsoft.ML.AutoML has a TrialResult of its own; this is the search's.
-using TrialResult = MLoop.Search.TrialResult;
 
 namespace MLoop.Core.Training;
 
 /// <summary>
-/// AutoML runner implementation using ML.NET AutoML with extensibility support
+/// Training runner: the task pipelines — MLoop's trainer search, the deep-learning and time-series paths — with extensibility support
 /// </summary>
 public partial class TrainingRunner
 {
@@ -314,7 +312,7 @@ public partial class TrainingRunner
         // Ensure the task's on-demand native runtime is installed and loaded (no-op for tabular tasks).
         Runtime.RuntimeManager.EnsureRuntimeForTask(config.Task);
 
-        // Run AutoML based on task type
+        // Run the task's training path
         var result = config.Task.ToLowerInvariant() switch
         {
             "binary-classification" => await RunBinaryClassificationAsync(
@@ -591,7 +589,7 @@ public partial class TrainingRunner
         => RunWithMLoopSearchAsync(trainSet, testSet, config,
             CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
             OptimizingMetric(config), ScoreBinaryWithCalibrationError, progress, cancellationToken,
-            (model, predictions, outOfFold) => FinishBinary(model, testSet, predictions, outOfFold, config));
+            (model, predictions, outOfFold) => FinishBinary(model, trainSet, testSet, predictions, outOfFold, config));
 
     /// <summary>What a calibration fitted on the search's out-of-fold answers records as the rows it was fitted on.</summary>
     public const string OutOfFoldSource = "out-of-fold (training partition)";
@@ -605,20 +603,22 @@ public partial class TrainingRunner
     /// model) maps one to the other, keeps the order of the rows (AUC unchanged), and answers at its own 0.5 — so
     /// the answer-based metrics are counted from the answers it gives, as <c>evaluate</c> counts them. A trainer
     /// with no probability gets a Platt calibrator on its score, fitted on the same out-of-fold rows. The test
-    /// partition is the run's report: nothing is fitted on it.
+    /// partition is the run's report: nothing is fitted on it — when the kept trial left no out-of-fold answers
+    /// (a part that could not be read), a trainer with no probability is calibrated on the training rows instead,
+    /// with a warning, rather than on the rows the run reports on.
     /// </summary>
     private (ITransformer Model, Dictionary<string, double> Metrics, ITransformer? ResidualModel, ProbabilityCalibration? Calibration) FinishBinary(
-        ITransformer model, IDataView testSet, IDataView predictions, OutOfFoldScores? outOfFold, TrainingConfig config)
+        ITransformer model, IDataView trainSet, IDataView testSet, IDataView predictions, OutOfFoldScores? outOfFold, TrainingConfig config)
     {
         if (predictions.Schema.GetColumnOrNull("Probability") is null)
         {
             model = outOfFold is null
-                ? EnsureCalibratedModel(_mlContext, model, predictions, config.LabelColumn, hasProbability: false)
+                ? EnsureCalibratedModel(_mlContext, model, model.Transform(trainSet), config.LabelColumn, hasProbability: false)
                 : model.Append(_mlContext.BinaryClassification.Calibrators.Platt(labelColumnName: "Label", scoreColumnName: "Score")
                     .Fit(_mlContext.Data.LoadFromEnumerable(Enumerable.Range(0, outOfFold.Count)
                         .Select(i => new OutOfFoldScore { Label = outOfFold.Label[i], Score = outOfFold.Score[i] }))));
             if (outOfFold is null)
-                _logger.Warning("No out-of-fold answers were kept for the chosen trial; its probability calibrator was fitted on the test rows.");
+                _logger.Warning("No out-of-fold answers were kept for the chosen trial; its probability calibrator was fitted on the training rows, which the model has seen — its probabilities are likelier to be over-confident than a calibrator fitted out of fold.");
             return (model, ScoreBinaryWithCalibrationError(model.Transform(testSet), config.LabelColumn), null, null);
         }
 
@@ -834,14 +834,14 @@ public partial class TrainingRunner
             "lib_lightgbm", typeof(Microsoft.ML.Trainers.LightGbm.LightGbmBinaryTrainer).Assembly, null, out _));
 
     /// <summary>
-    /// AutoML can select a binary trainer (e.g. FastForest/FastTree)
+    /// The search can select a binary trainer (e.g. FastForest/FastTree)
     /// whose output has no "Probability" column. Training already falls back to
     /// <see cref="BinaryClassificationCatalog.EvaluateNonCalibrated"/> so metrics still compute, but
     /// the *saved* model stayed uncalibrated — every downstream consumer (mloop predict, mloop serve
     /// /predict, any confidence-gated caller) then reads a permanently-null Probability, and
     /// confidence collapses to 0 for every prediction: measured live, a forest binary trainer sent
     /// 100% of rows to escalation. Appending a Platt calibrator — fit on the
-    /// already-computed test predictions, which carry the raw Score the calibrator needs — restores a
+    /// scored rows <paramref name="predictions"/>, which carry the raw Score the calibrator needs — restores a
     /// real Probability column on the exact model that gets persisted and served.
     /// </summary>
     public static ITransformer EnsureCalibratedModel(
@@ -860,7 +860,7 @@ public partial class TrainingRunner
     /// <c>q</c> is the finite-sample-corrected empirical quantile of the absolute residuals
     /// <c>|Label - Score|</c> over the holdout, so the interval <c>[Score - q, Score + q]</c> carries
     /// a distribution-free marginal-coverage guarantee (P(|y - ŷ| ≤ q) ≥ level) that is
-    /// <b>model-agnostic</b> — it works with whatever trainer AutoML selects, unlike ML.NET's
+    /// <b>model-agnostic</b> — it works with whatever trainer the search selects, unlike ML.NET's
     /// trainer-locked quantile-regression forests which would break the free trainer sweep
     /// depend on. Returns one scalar per level (<c>interval_half_width_{pct}</c>) plus
     /// <c>residual_std</c> (RMS of residuals, diagnostic), ready to merge into the regression metrics
@@ -1100,7 +1100,7 @@ public partial class TrainingRunner
     /// pre-featurizes into a single <c>Features</c> vector (the individual raw columns are gone by the
     /// time the model transforms the test set), so the aux model consumes that same featurized vector —
     /// which also lets it see categorical/text-derived features, not just raw numerics. Prefers a
-    /// non-internal (<c>__…__</c> are AutoML scratch columns) vector-of-Single column named such as
+    /// non-internal (<c>__…__</c> are internal scratch columns) vector-of-Single column named such as
     /// <c>Features</c>; falls back to scalar Single columns for callers whose view was never
     /// pre-featurized. Excludes the label and the point-prediction <c>Score</c>.
     /// </summary>
@@ -1349,7 +1349,7 @@ public partial class TrainingRunner
             }
 
             // No detection rate means the prediction produced nothing to report — stay silent
-            // rather than send a zero, as the AutoML reporter does for a trial without metrics.
+            // rather than send a zero.
             if (metricsDict.TryGetValue("detection_rate", out var detectionRate))
                 trialChannel.ReportCompleted(trainer, "detection_rate", detectionRate, metricsDict);
 
@@ -2037,7 +2037,7 @@ public partial class TrainingRunner
             ?? $"Metric '{config.Metric}' cannot be optimized for {config.Task}.", nameof(config));
 
     /// <summary>
-    /// Trial channel for the task paths that do not run AutoML: they fit one explicit pipeline (or
+    /// Trial channel for the task paths that do not run the trainer search: they fit one explicit pipeline (or
     /// loop over a few candidates) and report each one as it completes.
     /// </summary>
     /// <remarks>
@@ -2048,24 +2048,6 @@ public partial class TrainingRunner
     /// </remarks>
     private static TrialProgressChannel CreateTrialChannel(IProgress<TrainingProgress>? progress)
         => new(progress);
-
-    // Per-trial metric reporting: name + reader for the metric AutoML is actually optimizing.
-    //
-    // Keyed on the ML.NET enum rather than on config.Metric, because the two can diverge: binary
-    // classification switches the optimizing metric to F1Score mid-run when AUC turns out to be
-    // undefined (see RunBinaryClassificationAsync). The enum is what the experiment ranks
-    // by, so it is the honest source for what to display.
-    //
-    // Names use MLoop's own metric vocabulary (the keys of TrainedModel.Metrics) so a trial line and
-    // the final results table talk about the same thing.
-
-    // Trial history: the full leaderboard ML.NET keeps on the experiment result. Taken from
-    // RunDetails after the run rather than from the live progress channel, because RunDetails carries
-    // each trial's complete metric set and its own runtime, and is present whether or not anyone was
-    // listening to progress.
-
-    // The full metric set per trial, in MLoop's own vocabulary — the same keys the final
-    // TrainedModel.Metrics uses, so a trial row and the results table name the same things.
 
     // A test partition of one class leaves AUC and AUPRC undefined (NaN); the result records them as
     // absent rather than as a number, as it always has for AUC.
@@ -2079,7 +2061,7 @@ public partial class TrainingRunner
 
     /// <summary>
     /// Check if exception is an AUC undefined error, handling both direct
-    /// InvalidOperationException and AggregateException wrappers from AutoML's internal threading.
+    /// InvalidOperationException and AggregateException wrappers a thread-pool task adds.
     /// Matches errors like "AUC is not defined when there is no positive class" and
     /// "AUC is not defined when there is no negative class".
     /// </summary>
@@ -2089,7 +2071,7 @@ public partial class TrainingRunner
         if (IsAucMessage(ex.Message))
             return true;
 
-        // AggregateException from Task.Run or AutoML internal threading
+        // AggregateException from Task.Run
         if (ex is AggregateException aggEx)
         {
             return aggEx.InnerExceptions.Any(inner => IsAucMessage(inner.Message));
@@ -2328,7 +2310,7 @@ public class ForecastOutput
 }
 
 /// <summary>
-/// Result from AutoML execution
+/// Result of a training run
 /// </summary>
 /// <remarks>
 /// A record, not a plain class, so <c>RunAsync</c>'s schema-capture step can rewrap it with
@@ -2418,7 +2400,7 @@ public record TrainedModel
 
     /// <summary>
     /// The seed and thread count MLoop's own search ran with — what repeats it: one seed on the same
-    /// data proposes the same trials in the same order. Null when AutoML searched.
+    /// data proposes the same trials in the same order. Null when the run did not use the trainer search.
     /// </summary>
     public SearchSettings? Search { get; init; }
 

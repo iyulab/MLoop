@@ -9,8 +9,10 @@ namespace MLoop.Search.Tuning;
 /// <remarks>
 /// Ported from ML.NET AutoML (<c>Tuner/CostFrugalTuner.cs</c> · <c>SearchThread.cs</c>, dotnet/machinelearning
 /// <c>cf9093abb6</c>), random draws in the same order. A restart draws its start uniformly from the box of
-/// configurations seen — which upstream widens only with the first trial's point, so in practice every
-/// restart begins at the first configuration again. Kept as upstream does it until a change is measured.
+/// configurations seen. The box begins at the cheap default and is widened by every point a thread starts
+/// from — a restart's first trial, and where the local search begins after the starting points have answered —
+/// so a tree trainer's restart is a random point between the cheap default and the farthest start, where
+/// upstream, widening only with the first trial's point, begins at the first configuration again.
 /// </remarks>
 public sealed class CostFrugalTuner
 {

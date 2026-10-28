@@ -42,6 +42,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A binary trainer without a probability whose search kept no out-of-fold answers had its probability calibrator fitted on the test
+  rows.** The reported metrics then came from rows the calibrator had been fitted on. The calibrator is now fitted on the training rows
+  and a warning says so. The usual path — the calibrator fitted on the kept trial's out-of-fold answers — is unchanged.
+- **The "no successful trial" error no longer names AutoML.** Its message now says the trainer search finished without completing a
+  trial; the cause it names (budget too small, or every trial failed) is the same.
 - **`mloop info` called a two-value string column "Text | Text Feature" while training one-hot encodes it.** Without `--label` the
   last column is handed to ML.NET's type inference as the label and left out of it, so that column was read from a 200-row
   sample instead. The type and purpose now come from the decision training makes (`Categorical Feature` for a category,
