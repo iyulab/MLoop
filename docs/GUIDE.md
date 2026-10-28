@@ -669,7 +669,12 @@ of the threshold it answers is at least the target (a fixed sequence of tests ne
 thresholds looked at). On scores that are calibrated by construction, the usual choice landed below its target in about
 half of the files; the certified one in at most about δ of them. The price is recall — the certified threshold is never
 lower than the usual one — and rows: at least `⌈ln δ / ln target⌉` answered rows, every one right (29 for 0.90 at δ = 0.05,
-22 at δ = 0.10, 459 for 0.99 at δ = 0.01), and each wrong answer asks for more. When the file cannot carry it, the command
+22 at δ = 0.10, 459 for 0.99 at δ = 0.01), and each wrong answer asks for more. On a real imbalanced binary set (AUC 0.98,
+17 % positives), a target of 0.90 at δ = 0.10 was certified on 30 of 40 files of 300 rows and 39 of 40 files of 1,000, and a
+target of 0.95 on none of the 300-row files and 38 of 40 of the 1,000-row ones; the usual choice fell below its target on
+45–82 % of the same files, the certified one on few enough to be inside the risk once the measurement's own noise is allowed for. The guarantee
+assumes the rows are independent draws from the data the model will see: rows from one batch or lot, or a file unlike
+what is to come, can make it overconfident. When the file cannot carry it, the command
 says so and writes nothing; a precision of 1 is never certified. `decision-threshold.json` then carries a `guarantee` block
 (`delta`, `hits`, `rows`, and `lowerBound`, the one-sided Clopper–Pearson limit of the true precision, never below the
 target); weighted rows count as their effective number. Without `--guarantee` nothing changes.
