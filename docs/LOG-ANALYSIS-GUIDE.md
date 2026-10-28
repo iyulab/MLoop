@@ -115,8 +115,9 @@ Output in `predictions/` includes:
 |--------|-------------|
 | Content | Original log message (when --include-features is true) |
 | PredictedLabel | Model's prediction |
-| Score | Confidence score |
-| Probability | Probability estimate (classification only) |
+| RawScore | The trainer's raw score before it becomes a probability (binary classification) |
+| `Score.<class>` | One column per class (multiclass classification) |
+| Probability | Probability estimate (classification only); for a binary model read this, not `RawScore`, as the confidence |
 
 ## Handling Categorical vs Text Data
 
