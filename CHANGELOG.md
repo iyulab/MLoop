@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reaches the target. It needs enough rows (29 right answers for 0.90 at δ = 0.05) and is refused, writing nothing, when the
   file cannot carry it; a precision of 1 is never certified. `decision-threshold.json` gains a `guarantee` block (`delta`,
   `hits`, `rows`, `lowerBound`). Without the option nothing changes.
+- The guide's scripting section says plainly that the C# files under `.mloop/scripts/` run, with the user's permissions, whenever the
+  command that uses them runs — training a project you cloned runs its scripts, and nothing asks first.
 - Dependency updates: FilePrepper 0.13.0 → 0.13.1 and DataLens 0.20.0 → 0.21.0 (UInsight 0.38.0), which carry the series statistics above.
 
 ### Changed

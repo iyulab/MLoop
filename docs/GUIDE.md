@@ -2025,6 +2025,12 @@ compiler's errors.
 
 MLoop supports code-based extensibility through hooks and custom metrics.
 
+> **Project scripts are code, and nothing asks before they run.** Every C# file under `.mloop/scripts/` — hooks, metrics,
+> preprocessing — is compiled and run, with your user's permissions, by the command that uses it: `mloop train` (and
+> `POST /train` on a server), `mloop prep run`, `mloop evaluate`. Training a cloned project is therefore running its
+> scripts; the only sign is the line that names the hooks it executes. Read `.mloop/scripts/` of a project you did not
+> write before you train it, the way you would read its Makefile.
+
 ### Hooks
 
 Custom logic before and after training. A hook is a C# file in a folder named for its stage —
