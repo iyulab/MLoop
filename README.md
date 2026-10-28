@@ -195,6 +195,7 @@ mloop analyze correlation <data>       # High-correlation pairs and multicolline
 mloop analyze importance <data> -l <col>  # Feature importance ranking (requires label)
 mloop analyze outliers <data>          # Outlier count, rate, isolation-forest threshold
 mloop analyze distribution <data>      # Skewness, kurtosis, normality tests
+mloop analyze series <data> [-c <col>] # ACF/PACF with bands, ADF + KPSS stationarity tests, dominant period
                                        # add --json to any for structured, LLM-consumable output
 mloop validate                         # Validate mloop.yaml configuration
 mloop prep plan --set <type[:method]> [--columns ...] [--json]  # Declare prep step (policy only, no data change)
@@ -409,7 +410,7 @@ The section above shows the ones a first project uses. This is the whole surface
 | `compare` | Compare experiments side by side |
 | `status` | Show project status at a glance |
 | `info` | Display dataset profiling information |
-| `analyze` | Read-only EDA aspects: profile, correlation, importance, outliers, distribution |
+| `analyze` | Read-only EDA aspects: profile, correlation, importance, outliers, distribution, series |
 | `detect` | One-shot time-series anomaly detection, no training required |
 | `preprocess` | Run the preprocessing scripts in `.mloop/scripts/preprocess/`, or the rule-discovery workflow |
 | `prep` | Data preprocessing tools |

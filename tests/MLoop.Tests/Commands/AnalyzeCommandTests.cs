@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DataLens.Analyzers;
 using DataLens.Models;
 using MLoop.CLI.Commands;
 using Xunit;
@@ -306,6 +307,102 @@ public class AnalyzeCommandTests
         var env = AnalyzeJson.MapDistribution(desc, null, stats: null);
 
         Assert.Contains(env.Flags, f => f.StartsWith("highly-skewed: rectifier"));
+    }
+
+    // ── analyze series ──────────────────────────────────────────────────────────────────
+    // The tests run the real statistics engine on seeded series, so what is asserted is what the
+    // tests say about a series whose answer is known, not a mock of them.
+
+    private static List<double> Noise(int count, int seed)
+    {
+        var random = new Random(seed);
+        var values = new List<double>(count);
+        for (var i = 0; i < count; i++)
+        {
+            // Box-Muller: a standard normal draw.
+            var u = 1.0 - random.NextDouble();
+            var v = random.NextDouble();
+            values.Add(Math.Sqrt(-2.0 * Math.Log(u)) * Math.Cos(2.0 * Math.PI * v));
+        }
+        return values;
+    }
+
+    private static AnalyzeEnvelope SeriesEnvelope(IReadOnlyList<double> series, bool aroundTrend = false) =>
+        AnalyzeJson.MapSeries(
+            "value",
+            TimeSeriesAnalyzer.Autocorrelation(series),
+            TimeSeriesAnalyzer.Stationarity(series, aroundTrend),
+            TimeSeriesAnalyzer.EstimatePeriod(series));
+
+    [Fact]
+    public void MapSeries_RandomWalk_IsFlaggedNonStationary_WithoutAnAdvisedStep()
+    {
+        var steps = Noise(300, seed: 7);
+        var walk = new List<double>();
+        var level = 0.0;
+        foreach (var step in steps) walk.Add(level += step);
+
+        var env = SeriesEnvelope(walk);
+
+        Assert.Equal("series", env.Aspect);
+        Assert.True(env.Available);
+        var flag = Assert.Single(env.Flags, f => f.StartsWith("non-stationary: value"));
+        // The engine gives the evidence; which differencing to take is the caller's policy.
+        Assert.Contains("policy for the caller", flag);
+        using var doc = JsonDocument.Parse(AnalyzeJson.Serialize(env));
+        Assert.Equal("non-stationary", doc.RootElement.GetProperty("data").GetProperty("stationarity")
+            .GetProperty("verdict").GetString());
+    }
+
+    [Fact]
+    public void MapSeries_WhiteNoise_IsStationary_AndRaisesNoStationarityFlag()
+    {
+        var env = SeriesEnvelope(Noise(300, seed: 7));
+
+        Assert.DoesNotContain(env.Flags, f => f.StartsWith("non-stationary") || f.StartsWith("stationarity-unsettled"));
+        using var doc = JsonDocument.Parse(AnalyzeJson.Serialize(env));
+        Assert.Equal("stationary", doc.RootElement.GetProperty("data").GetProperty("stationarity")
+            .GetProperty("verdict").GetString());
+    }
+
+    [Fact]
+    public void MapSeries_SeasonalSeries_ReportsItsPeriod()
+    {
+        var noise = Noise(300, seed: 11);
+        var seasonal = noise.Select((e, i) => 10.0 * Math.Sin(2.0 * Math.PI * i / 12.0) + e).ToList();
+
+        var env = SeriesEnvelope(seasonal);
+
+        Assert.Contains(env.Flags, f => f.StartsWith("seasonal-period: value repeats about every 12 "));
+        using var doc = JsonDocument.Parse(AnalyzeJson.Serialize(env));
+        Assert.Equal(12, doc.RootElement.GetProperty("data").GetProperty("period").GetProperty("period").GetInt32());
+    }
+
+    [Fact]
+    public void MapSeries_DocumentCarriesTheCorrelogramAndBothTests()
+    {
+        var env = SeriesEnvelope(Noise(120, seed: 3));
+
+        using var doc = JsonDocument.Parse(AnalyzeJson.Serialize(env));
+        var data = doc.RootElement.GetProperty("data");
+        Assert.Equal(120, data.GetProperty("sampleSize").GetInt32());
+        var acf = data.GetProperty("autocorrelation");
+        Assert.Equal(1.0, acf.GetProperty("acf")[0].GetDouble(), 12);          // lag 0
+        Assert.Equal(acf.GetProperty("acf").GetArrayLength() - 1,
+            acf.GetProperty("acfBartlettLimits").GetArrayLength());            // lags 1..max
+        Assert.True(acf.GetProperty("acfThreshold").GetDouble() > 0);
+        var stationarity = data.GetProperty("stationarity");
+        Assert.Equal(3, stationarity.GetProperty("adf").GetProperty("levels").GetArrayLength());
+        Assert.Equal(4, stationarity.GetProperty("kpss").GetProperty("levels").GetArrayLength());
+    }
+
+    [Fact]
+    public void SignificantLags_NeverListsLagZero_AndNumbersPacfFromLagOne()
+    {
+        // ACF: index 0 is lag 0 (always 1); PACF: index 0 is lag 1.
+        Assert.Equal(new[] { 2 }, AnalyzeJson.SignificantLags([1.0, 0.1, 0.5, 0.05], 0.2, firstLag: 0));
+        Assert.Equal(new[] { 1, 3 }, AnalyzeJson.SignificantLags([0.5, 0.05, -0.4], 0.2, firstLag: 1));
+        Assert.Empty(AnalyzeJson.SignificantLags([1.0], 0.2, firstLag: 0));
     }
 
     [Fact]

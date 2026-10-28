@@ -1,5 +1,6 @@
 using System.CommandLine;
 using DataLens;
+using DataLens.Analyzers;
 using DataLens.Models;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
@@ -20,12 +21,13 @@ public static class AnalyzeCommand
     public static Command Create()
     {
         var command = new Command("analyze",
-            "Granular, read-only EDA aspects (profile, correlation, importance, outliers, distribution)");
+            "Granular, read-only EDA aspects (profile, correlation, importance, outliers, distribution, series)");
         command.Subcommands.Add(CreateProfileCommand());
         command.Subcommands.Add(CreateCorrelationCommand());
         command.Subcommands.Add(CreateImportanceCommand());
         command.Subcommands.Add(CreateOutliersCommand());
         command.Subcommands.Add(CreateDistributionCommand());
+        command.Subcommands.Add(CreateSeriesCommand());
         return command;
     }
 
@@ -539,5 +541,101 @@ public static class AnalyzeCommand
             ErrorSuggestions.DisplayError(ex, "analyze distribution");
             return 1;
         }
+    }
+
+    private static Command CreateSeriesCommand()
+    {
+        var dataFileArg = DataFileArg();
+        var columnOption = new Option<string?>("--column", "-c")
+        {
+            Description = "Series column to analyze (auto-selected when the CSV has a single column)"
+        };
+        var maxLagOption = new Option<int?>("--max-lag")
+        {
+            Description = "Largest lag of the autocorrelation functions (default: min(10*log10 n, n - 1))"
+        };
+        var aroundTrendOption = new Option<bool>("--around-trend")
+        {
+            Description = "Test stationarity around a linear trend instead of a constant level"
+        };
+        var jsonOption = JsonOption();
+        var recordsOption = DataFileOptions.Records();
+
+        var cmd = new Command("series",
+            "Time-series structure: ACF/PACF with bands, ADF and KPSS stationarity tests, dominant period");
+        cmd.Arguments.Add(dataFileArg);
+        cmd.Options.Add(columnOption);
+        cmd.Options.Add(maxLagOption);
+        cmd.Options.Add(aroundTrendOption);
+        cmd.Options.Add(jsonOption);
+        cmd.Options.Add(recordsOption);
+
+        cmd.SetAction((parseResult) =>
+        {
+            var dataFile = parseResult.GetValue(dataFileArg);
+            var column = parseResult.GetValue(columnOption);
+            var maxLag = parseResult.GetValue(maxLagOption);
+            var aroundTrend = parseResult.GetValue(aroundTrendOption);
+            var json = parseResult.GetValue(jsonOption);
+            var records = parseResult.GetValue(recordsOption);
+            return WithJsonContract(json, () => ExecuteSeriesAsync(dataFile, column, maxLag, aroundTrend, json, records));
+        });
+        return cmd;
+    }
+
+    private static async Task<int> ExecuteSeriesAsync(
+        string? dataFile, string? column, int? maxLag, bool aroundTrend, bool json, string? records)
+    {
+        try
+        {
+            var ctx = await ResolveAsync(dataFile, labelOption: null, modelName: "default", records);
+            if (ctx == null) return 1;
+
+            var series = await DetectCommand.LoadSeriesAsync(ctx.Value.DataFile, column, json);
+            if (series == null) return 1;
+            var (values, resolvedColumn) = series.Value;
+
+            var autocorrelation = TimeSeriesAnalyzer.Autocorrelation(values, maxLag);
+            var stationarity = TimeSeriesAnalyzer.Stationarity(values, aroundTrend);
+            var period = TimeSeriesAnalyzer.EstimatePeriod(values);
+
+            var env = AnalyzeJson.MapSeries(resolvedColumn, autocorrelation, stationarity, period);
+            Emit(env, json, e => RenderSeriesConsole(e, autocorrelation, stationarity));
+            return 0;
+        }
+        catch (ArgumentException ex)
+        {
+            // The parameter-name suffix .NET appends ("(Parameter 'series')") names a variable in
+            // library code, not anything the user typed.
+            var message = ex.ParamName is { } name ? ex.Message.Replace($" (Parameter '{name}')", "") : ex.Message;
+            ErrorConsole.Error(Markup.Escape(message));
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            ErrorSuggestions.DisplayError(ex, "analyze series");
+            return 1;
+        }
+    }
+
+    private static void RenderSeriesConsole(
+        AnalyzeEnvelope env, SeriesAutocorrelation autocorrelation, SeriesStationarity stationarity)
+    {
+        AnsiConsole.MarkupLine($"[bold]{Markup.Escape(env.Summary)}[/]");
+
+        var table = new Table().AddColumn("Test").AddColumn("Statistic").AddColumn("Reading");
+        table.AddRow("ADF (H0: unit root)", AnalyzeJson.Invariant($"{stationarity.Adf.Statistic:F3}"),
+            AnalyzeJson.AdfReading(stationarity.Adf));
+        table.AddRow("KPSS (H0: stationary)", AnalyzeJson.Invariant($"{stationarity.Kpss.Statistic:F3}"),
+            AnalyzeJson.KpssReading(stationarity.Kpss));
+        AnsiConsole.Write(table);
+
+        var acf = AnalyzeJson.SignificantLags(autocorrelation.Acf, autocorrelation.AcfThreshold, firstLag: 0);
+        var pacf = AnalyzeJson.SignificantLags(autocorrelation.Pacf, autocorrelation.PacfThreshold, firstLag: 1);
+        AnsiConsole.MarkupLine($"ACF beyond the white-noise band (lags): {Markup.Escape(acf.Count == 0 ? "none" : string.Join(", ", acf))}");
+        AnsiConsole.MarkupLine($"PACF beyond the white-noise band (lags): {Markup.Escape(pacf.Count == 0 ? "none" : string.Join(", ", pacf))}");
+
+        foreach (var flag in env.Flags)
+            AnsiConsole.MarkupLine($"[yellow]•[/] {Markup.Escape(flag)}");
     }
 }

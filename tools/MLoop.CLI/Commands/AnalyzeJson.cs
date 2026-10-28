@@ -340,4 +340,121 @@ public static class AnalyzeJson
                 ? Math.Round(report.IsolationForest.Threshold, 4) : (double?)null
         }, flags);
     }
+
+    /// <summary>The significance level the series verdict reads both stationarity tests at.</summary>
+    private const double SeriesLevel = 0.05;
+
+    internal static string Invariant(FormattableString text) => text.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Lags (numbered from <paramref name="firstLag"/>) whose value lies outside ±<paramref name="threshold"/>;
+    /// lag 0 of an ACF is 1 by definition and is never listed.</summary>
+    internal static IReadOnlyList<int> SignificantLags(IReadOnlyList<double> values, double threshold, int firstLag)
+    {
+        var lags = new List<int>();
+        for (var i = 0; i < values.Count; i++)
+        {
+            var lag = firstLag + i;
+            if (lag > 0 && Math.Abs(values[i]) > threshold) lags.Add(lag);
+        }
+        return lags;
+    }
+
+    private static bool Rejects(IReadOnlyList<TestLevel> levels) =>
+        levels.FirstOrDefault(l => Math.Abs(l.Level - SeriesLevel) < 1e-9)?.Rejected ?? false;
+
+    internal static string AdfReading(UnitRootTest adf) => Rejects(adf.Levels)
+        ? "unit root rejected at 5% (looks stationary)"
+        : "unit root not rejected at 5%";
+
+    internal static string KpssReading(StationarityTest kpss) => Rejects(kpss.Levels)
+        ? "stationarity rejected at 5% (looks non-stationary)"
+        : "stationarity not rejected at 5%";
+
+    /// <summary>
+    /// What the two tests say together, read at 5%: the pair is opposite-null by design, so
+    /// agreement is the finding and disagreement is a result in itself. How many differences (or
+    /// what trend removal) to apply is the caller's policy — this reports the evidence, not a step.
+    /// </summary>
+    internal static string StationarityVerdict(SeriesStationarity stationarity)
+    {
+        var adfRejects = Rejects(stationarity.Adf.Levels);
+        var kpssRejects = Rejects(stationarity.Kpss.Levels);
+        return (adfRejects, kpssRejects) switch
+        {
+            (true, false) => "stationary",
+            (false, true) => "non-stationary",
+            _ => "unsettled"
+        };
+    }
+
+    public static AnalyzeEnvelope MapSeries(
+        string column,
+        SeriesAutocorrelation autocorrelation,
+        SeriesStationarity stationarity,
+        SeriesPeriod period)
+    {
+        var verdict = StationarityVerdict(stationarity);
+        var acfLags = SignificantLags(autocorrelation.Acf, autocorrelation.AcfThreshold, firstLag: 0);
+        var pacfLags = SignificantLags(autocorrelation.Pacf, autocorrelation.PacfThreshold, firstLag: 1);
+        var around = stationarity.AroundTrend ? "a linear trend" : "a constant level";
+
+        var flags = new List<string>();
+        switch (verdict)
+        {
+            case "non-stationary":
+                flags.Add($"non-stationary: {column} (ADF keeps a unit root, KPSS rejects stationarity around {around}; "
+                    + "differencing or detrending is a policy for the caller to choose)");
+                break;
+            case "unsettled":
+                flags.Add($"stationarity-unsettled: {column} (ADF and KPSS do not point the same way at 5% around {around}; "
+                    + "neither test settles it alone)");
+                break;
+        }
+        if (period.Period is { } p)
+            flags.Add($"seasonal-period: {column} repeats about every {p} observations");
+
+        var summary = Invariant($"{column}: {autocorrelation.SampleSize} observations; {verdict} around {around}; ")
+            + (period.Period is { } found ? Invariant($"dominant period {found}.") : "no dominant period.");
+
+        return new AnalyzeEnvelope("series", true, summary, new
+        {
+            column,
+            sampleSize = autocorrelation.SampleSize,
+            stationarity = new
+            {
+                verdict,
+                aroundTrend = stationarity.AroundTrend,
+                adf = new
+                {
+                    statistic = stationarity.Adf.Statistic,
+                    lags = stationarity.Adf.Lags,
+                    observations = stationarity.Adf.Observations,
+                    levels = stationarity.Adf.Levels.Select(l => new { level = l.Level, criticalValue = l.CriticalValue, rejected = l.Rejected })
+                },
+                kpss = new
+                {
+                    statistic = stationarity.Kpss.Statistic,
+                    lags = stationarity.Kpss.Lags,
+                    pValue = stationarity.Kpss.PValue,
+                    pValueBound = stationarity.Kpss.PValueBound,
+                    levels = stationarity.Kpss.Levels.Select(l => new { level = l.Level, criticalValue = l.CriticalValue, rejected = l.Rejected })
+                }
+            },
+            autocorrelation = new
+            {
+                acf = autocorrelation.Acf,
+                acfThreshold = autocorrelation.AcfThreshold,
+                acfBartlettLimits = autocorrelation.AcfBartlettLimits,
+                pacf = autocorrelation.Pacf,
+                pacfThreshold = autocorrelation.PacfThreshold,
+                significantAcfLags = acfLags,
+                significantPacfLags = pacfLags
+            },
+            period = new
+            {
+                period = period.Period,
+                candidates = period.Candidates.Select(c => new { period = c.Period, acf = c.Acf, powerShare = c.PowerShare })
+            }
+        }, flags);
+    }
 }

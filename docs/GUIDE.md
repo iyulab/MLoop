@@ -849,6 +849,7 @@ mloop analyze correlation datasets/train.csv    # pairwise correlation
 mloop analyze importance datasets/train.csv     # feature importance against the label
 mloop analyze outliers datasets/train.csv       # outlier detection
 mloop analyze distribution datasets/train.csv   # distribution shape per column
+mloop analyze series sensor.csv --column temp   # a column read as an ordered series
 ```
 
 | Subcommand | What it reports |
@@ -858,8 +859,9 @@ mloop analyze distribution datasets/train.csv   # distribution shape per column
 | `importance` | Permutation importance of each feature against the label |
 | `outliers` | Isolation Forest: how many rows are outliers, and the score threshold used |
 | `distribution` | Median, quartiles, IQR, skewness and kurtosis per column |
+| `series` | One column as an ordered series: autocorrelation and partial autocorrelation with their bands, the ADF and KPSS stationarity tests read together at 5% (`stationary`, `non-stationary`, `unsettled`), and the dominant period. Evidence only — whether to difference or detrend is your call |
 
-Every subcommand takes the same arguments:
+Every subcommand takes the same arguments, except that `series` has no label and no model: it takes `--column` / `-c` (the series; optional when the CSV has one column), `--max-lag` and `--around-trend` (test around a linear trend instead of a constant level) in their place.
 
 | Argument / Option | Short | Description |
 |-------------------|-------|-------------|

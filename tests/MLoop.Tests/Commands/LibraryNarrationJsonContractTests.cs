@@ -65,6 +65,7 @@ public class LibraryNarrationJsonContractTests : IDisposable
     [InlineData("analyze", "correlation", "datasets/train.csv", "--json")]
     [InlineData("analyze", "outliers", "datasets/train.csv", "--json")]
     [InlineData("analyze", "distribution", "datasets/train.csv", "--json")]
+    [InlineData("analyze", "series", "datasets/train.csv", "--column", "feature", "--json")]
     // detect used to need a separate two-branch test: it ran on ML.NET's FFT native, which is not
     // present on every platform. It now runs on the same statistics engine as analyze, so it is
     // held to the same assertion.

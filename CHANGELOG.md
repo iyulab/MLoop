@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`mloop analyze series <data> [--column <col>] [--max-lag N] [--around-trend]`** reads a numeric column as an ordered series
+  and reports its structure for choosing a model order or a transform: the autocorrelation and partial autocorrelation functions
+  with the white-noise band and Bartlett's limits, the augmented Dickey-Fuller test (H0: a unit root) and the KPSS test
+  (H0: stationary) read together at 5% (`stationary`, `non-stationary`, or `unsettled` when the two disagree or neither rejects),
+  and the dominant period. The tests are evidence, not advice: whether to difference, detrend or leave the series alone stays the
+  caller's choice, so no step is proposed. `--around-trend` tests around a linear trend instead of a constant level. `--json`
+  answers the usual analyze envelope; a series with fewer than 10 observations, a gap or a constant value is refused with the
+  reason.
+- Dependency updates: FilePrepper 0.13.0 → 0.13.1 and DataLens 0.20.0 → 0.21.0 (UInsight 0.38.0), which carry the series statistics above.
+
 ### Changed
 
 - **⚠ Breaking: a binary classifier's prediction CSV calls the raw trainer score `RawScore`, not `Score`.** `Score` meant two
