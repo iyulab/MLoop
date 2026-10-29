@@ -87,7 +87,7 @@ def cut(row, source, out):
     in_b = df[col] > at
     a = df[~in_b].sample(frac=1.0, random_state=SEED).head(REGIME_CAP)
     b = df[in_b].sample(frac=1.0, random_state=SEED).head(REGIME_CAP)
-    if len(b) < 400 or len(a) < 700:
+    if len(b) < 400 or len(a) < 1500:
         return f'{name}: skipped (regimes of {len(a)} and {len(b)} rows)'
 
     if task == 'regression':
@@ -99,8 +99,8 @@ def cut(row, source, out):
         b = b.assign(**{label: b[label].astype(str).map(nxt)})
         a = a.assign(**{label: a[label].astype(str)})
 
-    # the drift check needs 100 logged predictions, so the in-regime rows to predict are at least that many
-    n_new_a, n_new_b = min(300, len(a) // 5), min(300, len(b) // 5)
+    # the drift check needs 300 logged predictions (fewer read chance as drift), so the in-regime rows to predict are that many
+    n_new_a, n_new_b = 300, min(300, len(b) // 5)
     n_test_b = max(60, len(b) // 5)
     parts = {'new_a': a.iloc[:n_new_a], 'train_a': a.iloc[n_new_a:],
              'new_b': b.iloc[:n_new_b], 'test_b': b.iloc[n_new_b:n_new_b + n_test_b], 'train_b': b.iloc[n_new_b + n_test_b:]}

@@ -77,11 +77,12 @@ class Run:
     def __init__(self, mloop, task, work, budget, expected, trials=0):
         self.mloop, self.task, self.work, self.budget, self.expected = shlex.split(mloop), task, work, budget, expected
         self.trials = trials
+        self.metric = []   # extra `train` arguments that name what the table is judged on
         self.steps = []
 
     def budget_args(self):
         """The training budget: a trial count when there is one (the same search on any machine), the time then only its ceiling."""
-        return ['--time', str(self.budget)] + (['--max-trials', str(self.trials)] if self.trials else [])
+        return ['--time', str(self.budget)] + (['--max-trials', str(self.trials)] if self.trials else []) + self.metric
 
     def cli(self, *args, cwd=None):
         p = subprocess.run(self.mloop + list(args), cwd=cwd or self.work, capture_output=True, text=True)
@@ -397,6 +398,10 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
     table = public_tables(src, base) if src else generated_tables(task, base)
     label, shift_col, n_new_a = table['label'], table['shift_column'], table['n_new_a']
     run.task = table['name']  # a step is reported under the table it ran on
+    if table['public'] and task == 'binary':
+        # a public table is rarely balanced; judged on accuracy (the default) a model that learned something can sit at the majority share
+        # and be refused by the promotion gate, which says nothing about the lifecycle
+        run.metric = ['--metric', 'auc']
     print(f'== {table["name"]}  ({base})', flush=True)
     try:
         new_b = list(csv.DictReader(open(os.path.join(base, 'new_b.csv'))))
