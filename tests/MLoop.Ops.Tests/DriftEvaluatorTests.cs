@@ -89,12 +89,12 @@ public class DriftEvaluatorTests : IDisposable
     {
         Promote("exp-002");
         await Log("exp-001", 300, _ => 1000);      // an earlier model's traffic, far off
-        await Log("exp-002", 200, i => i % 100);
+        await Log("exp-002", 300, i => i % 100);
 
         var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
 
         check.Status.Should().Be(DriftCheckStatus.Measured);
-        check.Rows.Should().Be(200);
+        check.Rows.Should().Be(300);
         check.Report!.Level.Should().Be(DriftLevel.None);
     }
 
@@ -102,7 +102,7 @@ public class DriftEvaluatorTests : IDisposable
     public async Task ASlice_ShowsWhereTheInputsMoved()
     {
         Promote("exp-001");
-        await Log("exp-001", 400, i => i % 2 == 0 ? i % 100 : 95 + i % 5, i => i % 2 == 0 ? "steady" : "moved");
+        await Log("exp-001", 800, i => i % 2 == 0 ? i % 100 : 95 + i % 5, i => i % 2 == 0 ? "steady" : "moved");
 
         var check = await DriftEvaluator.CheckAsync(_root, _logs, "m", sliceColumn: "site");
 
@@ -132,7 +132,7 @@ public class DriftEvaluatorTests : IDisposable
     public async Task WithoutAnAnswerProfile_TheSignalSaysSo()
     {
         Promote("exp-001");
-        await Log("exp-001", 200, i => i % 100);
+        await Log("exp-001", 300, i => i % 100);
 
         var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
 
@@ -145,7 +145,7 @@ public class DriftEvaluatorTests : IDisposable
     public async Task TheTrigger_MeetsTheDriftCondition_OnSignificantDrift()
     {
         Promote("exp-001");
-        await Log("exp-001", 200, _ => 99);
+        await Log("exp-001", 300, _ => 99);
         var trigger = new CompositeRetrainingTrigger(_root, new FileFeedbackCollector(_root), _logs);
 
         var result = (await trigger.EvaluateAsync("m", [RetrainingDefaults.Drift()])).ConditionResults.Single();

@@ -41,6 +41,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`drift` and the retraining trigger compare from 300 logged predictions, not 100.** A column is cut in ten bins, and with no change at all the PSI of
+  a window of n rows is about 9 ÷ n. At 100 rows ten columns read "moderate" in nearly every window and "significant" — the level the trigger acts on —
+  in one window in twelve, thirty columns in one in four, a hundred columns in more than half (simulated, no drift); at 300 rows a hundred
+  columns reach "moderate" in one window in fifteen and never "significant". A window or a slice under 300 rows now answers "not enough
+  predictions" instead of a level.
 - **A class limit in a `gate:` policy must name its `max`.** A limit written without one (or with the key misspelled) used to read as 0% and
   refuse every model without saying why. `validate` now reports it as an error, and a promotion judged against such a limit is refused with
   the reason stated.

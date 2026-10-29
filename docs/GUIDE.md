@@ -1525,7 +1525,7 @@ mloop drift --json
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--name` | `-n` | Model name |
-| `--rows` | | How many of the most recent logged predictions to compare (at least 100) |
+| `--rows` | | How many of the most recent logged predictions to compare (at least 300) |
 | `--slice-by` | | Report drift per value of this input column (values with 100+ predictions) |
 | `--json` | | Output in JSON format |
 
@@ -1595,7 +1595,7 @@ production experiment's own: feedback names the experiment that answered (`exper
 the replaced model's errors — or a shadow candidate's (`predict --experiment`) — are not counted against it.
 
 Any condition met recommends retraining. A condition that could not be measured — no feedback yet, fewer
-than 100 logged predictions — is not met and shows `-` (`currentValue: null` in `--json`): an accuracy
+than 300 logged predictions — is not met and shows `-` (`currentValue: null` in `--json`): an accuracy
 nobody measured is not 0%. `GET /trigger?name=` answers the same evaluation over HTTP; both read one set of
 conditions (`RetrainingDefaults`).
 

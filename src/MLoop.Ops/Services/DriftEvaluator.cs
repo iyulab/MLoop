@@ -43,8 +43,13 @@ public static class DriftEvaluator
     /// <summary>Logged predictions compared by default: the most recent this many.</summary>
     public const int DefaultWindowRows = 5_000;
 
-    /// <summary>Fewer logged predictions than this, and a PSI says more about chance than about drift.</summary>
-    public const int MinimumRows = 100;
+    /// <summary>
+    /// Fewer logged predictions than this, and a PSI says more about chance than about drift. A column is cut in ten bins, and with no change at
+    /// all the PSI of a window of n rows is about 9 ÷ n — 0.09 at a hundred rows, so ten columns read "moderate" in nearly every window and
+    /// "significant" (the level a retraining trigger acts on) in one window of twelve, thirty columns in one of four; at three hundred rows a hundred
+    /// columns reach "moderate" once in fifteen windows and never "significant" (simulated, 1,500 windows each).
+    /// </summary>
+    public const int MinimumRows = 300;
 
     private static readonly JsonSerializerOptions Options = new()
     {
