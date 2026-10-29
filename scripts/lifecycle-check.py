@@ -22,7 +22,8 @@ One scenario per task, on generated tables (standard library only; nothing is do
                               that finishes and reports whether it was promoted;
                            then under load: 16 clients at once answer exactly what a lone client gets and are logged once each with
                            distinct ids, a promotion and a rollback made while clients keep predicting never produce an error, and
-                           --soak SECONDS holds a steady load and compares the server's memory at the start and the end
+                           --soak SECONDS holds a steady load and compares the server's memory at the start and the end, and
+                           --bench SECONDS prints a throughput / latency table by clients and rows per request
 
   python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression]
          [--time 60] [--trials 10] [--out lifecycle-results.json] [--keep]
@@ -133,7 +134,51 @@ def http(method, url, token=None, body=None, timeout=60):
         return 0, str(e)
 
 
-def serve_load_steps(run, url, admin, feats, before, cand, server_pid, soak, proj=None):
+def server_rss_mb(server_pid):
+    """Resident memory of the server: `mloop serve` starts the API as a child, so the launcher alone says nothing — the whole process group."""
+    pids = subprocess.run(['pgrep', '-g', str(server_pid)], capture_output=True, text=True).stdout.split()
+    if not pids:
+        return -1
+    out = subprocess.run(['ps', '-o', 'rss=', '-p', ','.join(pids)], capture_output=True, text=True).stdout.split()
+    return sum(int(x) for x in out) / 1024
+
+
+def serve_bench(run, url, admin, feats, server_pid, seconds):
+    """Throughput and latency of POST /predict by number of clients and rows per request: numbers to read, not a bound to meet.
+
+    The clients are Python threads in one process, so the high-concurrency rows are a lower bound of what the server does.
+    """
+    rss_mb = lambda: server_rss_mb(server_pid)
+    lines, errors_total = [], 0
+    for rows_per_request in (1, 100):
+        body = (feats * (rows_per_request // len(feats) + 1))[:rows_per_request]
+        for clients in (1, 4, 16, 64):
+            stop, latencies, errors = threading.Event(), [], []
+            def work():
+                while not stop.is_set():
+                    t0 = time.time()
+                    c, _ = http('POST', url + '/predict?name=default', admin, body)
+                    latencies.append(time.time() - t0)
+                    if c != 200:
+                        errors.append(c)
+            threads = [threading.Thread(target=work) for _ in range(clients)]
+            start = time.time()
+            for th in threads:
+                th.start()
+            time.sleep(seconds)
+            stop.set()
+            for th in threads:
+                th.join()
+            elapsed = time.time() - start
+            latencies.sort()
+            n = len(latencies)
+            p = lambda q: latencies[min(n - 1, int(n * q))] * 1000 if n else 0
+            errors_total += len(errors)
+            lines.append(f'rows={rows_per_request:>3} clients={clients:>2}: {n / elapsed:6.0f} req/s {n * rows_per_request / elapsed:7.0f} rows/s p50={p(.5):5.0f}ms p99={p(.99):5.0f}ms errors={len(errors)}')
+    run.check('serve_bench', errors_total == 0, f'rss={rss_mb():.0f}MB | ' + ' | '.join(lines))
+
+
+def serve_load_steps(run, url, admin, feats, before, cand, server_pid, soak, proj=None, bench=0):
     """The service under load: many clients at once, a promotion made while they predict, and (with --soak) a steady load held."""
     def predict():
         return http('POST', url + '/predict?name=default', admin, feats)
@@ -197,9 +242,7 @@ def serve_load_steps(run, url, admin, feats, before, cand, server_pid, soak, pro
               + (f' model_file_absent={len(absences)}x first={absences[0]}' if absences else ''))
 
     if soak > 0:
-        def rss_mb():
-            out = subprocess.run(['ps', '-o', 'rss=', '-p', str(server_pid)], capture_output=True, text=True).stdout.strip()
-            return int(out) / 1024 if out else -1
+        rss_mb = lambda: server_rss_mb(server_pid)
         stop, errors, latencies = threading.Event(), [], []
         def steady():
             while not stop.is_set():
@@ -226,11 +269,14 @@ def serve_load_steps(run, url, admin, feats, before, cand, server_pid, soak, pro
         run.check('serve_soak', not errors and 0 < series[-1] and grew <= 0.25,
                   f'{soak}s requests={len(latencies)} errors={len(errors)} rss_mb={series} growth_after_warmup={grew:+.0%} p99={p99 * 1000:.0f}ms')
 
+    if bench > 0:
+        serve_bench(run, url, admin, feats, server_pid, bench)
+
 
 SERVER_LOG = None   # --server-log: where the server's output goes (otherwise discarded)
 
 
-def serve_steps(run, proj, base, task, budget, soak=0):
+def serve_steps(run, proj, base, task, budget, soak=0, bench=0):
     """The service half of the life: the same project, driven over HTTP by a server started on a free port."""
     rc, out, err = run.cli('token', '--role', 'admin', '-q', cwd=proj)
     admin = out.strip()
@@ -276,7 +322,7 @@ def serve_steps(run, proj, base, task, budget, soak=0):
         run.check('serve_trigger', code == 200 and isinstance(tr, dict) and 'shouldRetrain' in tr, f'code={code}')
 
         cand = 'exp-002'
-        serve_load_steps(run, url, admin, feats, before, cand, server.pid, soak, proj)
+        serve_load_steps(run, url, admin, feats, before, cand, server.pid, soak, proj, bench)
 
         # A promotion made while the server holds the model in its cache must reach the next answer.
         code, _ = http('POST', url + '/promote', admin, {'name': 'default', 'experimentId': cand})
@@ -318,7 +364,7 @@ def serve_steps(run, proj, base, task, budget, soak=0):
             server.kill()
 
 
-def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0):
+def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench=0):
     base = tempfile.mkdtemp(prefix=f'lifecycle-{task}-')
     run = Run(mloop, task, base, budget, expected, trials)
     rng = random.Random(20261029)
@@ -413,7 +459,7 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0):
                   and last.get('gate') == 'passed', f'{result.get("experimentId")} promoted={promo.get("promoted")} reason={promo.get("keptInStagingReason")} history last={last.get("experimentId")}/{last.get("gate")}')
 
         if serve:
-            serve_steps(run, proj, base, task, budget, soak)
+            serve_steps(run, proj, base, task, budget, soak, bench)
     except Exception as ex:  # a step that cannot run is a failed scenario, not a crashed harness
         run.check('scenario', False, f'{type(ex).__name__}: {ex}')
     finally:
@@ -433,6 +479,7 @@ def main():
     ap.add_argument('--out', default='lifecycle-results.json')
     ap.add_argument('--keep', action='store_true')
     ap.add_argument('--soak', type=int, default=0, help='seconds of steady load against the server, comparing its memory at the start and the end (0 = skip)')
+    ap.add_argument('--bench', type=int, default=0, help='seconds per cell of a throughput / latency table for POST /predict by clients (1, 4, 16, 64) and rows per request (1, 100); 0 = skip')
     ap.add_argument('--server-log', default='', help='append the server\'s output to this file (default: discarded)')
     ap.add_argument('--no-serve', action='store_true', help='skip the HTTP steps (they start a server on a free local port)')
     ap.add_argument('--expected-failures', default='', help='comma-separated step names that are known to fail')
@@ -442,7 +489,7 @@ def main():
     expected = {s for s in args.expected_failures.split(',') if s}
     steps = []
     for task in args.tasks.split(','):
-        steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak, args.trials)
+        steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak, args.trials, args.bench)
     with open(args.out, 'w') as f:
         json.dump(steps, f, indent=2)
     tally = {}
