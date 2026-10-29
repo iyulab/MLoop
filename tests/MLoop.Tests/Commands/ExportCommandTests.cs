@@ -49,7 +49,7 @@ public sealed class ExportCommandTests : IDisposable
         }
         await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
         var (trainExit, trainOutput, _) = await CliRunner.RunAsync(
-            "train", "datasets/train.csv", "--label", "y", "--weight", "w", "--time", "5");
+            "train", "datasets/train.csv", "--label", "y", "--weight", "w", "--time", "60", "--max-trials", "10");
         Assert.True(trainExit == 0, trainOutput);
 
         // No experiment named: the production model.
@@ -103,7 +103,7 @@ public sealed class ExportCommandTests : IDisposable
             csv.Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{(x + rng.NextDouble() * 0.6 > 0.8 ? "yes" : "no")}\n");
         }
         await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
-        var (trainExit, trainOutput, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        var (trainExit, trainOutput, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10");
         Assert.True(trainExit == 0, trainOutput);
         var (calExit, calOutput, _) = await CliRunner.RunAsync("calibrate", "--data", "datasets/train.csv", "--method", "isotonic");
         Assert.True(calExit == 0, calOutput);
@@ -147,7 +147,7 @@ public sealed class ExportCommandTests : IDisposable
         }
         await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
         var (trainExit, trainOutput, _) = await CliRunner.RunAsync(
-            "train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote");
+            "train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10", "--no-promote");
         Assert.True(trainExit == 0, trainOutput);
         Assert.Contains("Categorical column(s): level", trainOutput);
 
@@ -179,7 +179,7 @@ public sealed class ExportCommandTests : IDisposable
         }
         await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
         var (trainExit, trainOutput, _) = await CliRunner.RunAsync(
-            "train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote");
+            "train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10", "--no-promote");
         Assert.True(trainExit == 0, trainOutput);
 
         var (exit, output, error) = await CliRunner.RunAsync("export", "onnx", "exp-001");
@@ -207,7 +207,7 @@ public sealed class ExportCommandTests : IDisposable
         }
         await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
         var (trainExit, trainOutput, _) = await CliRunner.RunAsync(
-            "train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote", "--portable");
+            "train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10", "--no-promote", "--portable");
         Assert.True(trainExit == 0, trainOutput);
 
         var (exit, output, error) = await CliRunner.RunAsync("export", "onnx", "exp-001", "--json");
@@ -228,7 +228,7 @@ public sealed class ExportCommandTests : IDisposable
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "c"));
         await File.WriteAllTextAsync("datasets/train.csv", "a,b\n1,2\n3,4\n5,6\n");
 
-        var (exit, output, error) = await CliRunner.RunAsync("train", "datasets/train.csv", "--portable", "--time", "5");
+        var (exit, output, error) = await CliRunner.RunAsync("train", "datasets/train.csv", "--portable", "--time", "5");   // no search: clustering
 
         Assert.Equal(1, exit);
         Assert.Contains("portable", output + error);

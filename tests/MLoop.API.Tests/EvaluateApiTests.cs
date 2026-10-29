@@ -61,7 +61,8 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
                 LabelColumn = "y",
                 Task = "binary-classification",
                 WeightColumn = "w",
-                TimeLimitSeconds = 5,
+                TimeLimitSeconds = 60,
+                MaxTrials = 10,
             }, progress: null, CancellationToken.None);
     }
 

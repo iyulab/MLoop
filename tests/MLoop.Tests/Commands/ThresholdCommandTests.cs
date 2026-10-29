@@ -45,7 +45,7 @@ public sealed class ThresholdCommandTests : IDisposable
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
         await File.WriteAllTextAsync("datasets/train.csv", Noisy(300, 3));
         await File.WriteAllTextAsync("datasets/recheck.csv", Noisy(300, 9));
-        var (exit, output, error) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        var (exit, output, error) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10");
         // stderr carries the reason a run fails; without it a failure here showed only the progress lines.
         Assert.True(exit == 0, output + Environment.NewLine + error);
     }
@@ -116,7 +116,7 @@ public sealed class ThresholdCommandTests : IDisposable
     {
         await TrainAsync();
         await JsonAsync("threshold", "--precision", "0.7", "--data", "datasets/recheck.csv");
-        Assert.Equal(0, (await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote")).ExitCode);
+        Assert.Equal(0, (await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10", "--no-promote")).ExitCode);
 
         Assert.Equal(0, (await CliRunner.RunAsync("promote", "exp-002", "--json", "--force")).ExitCode);
 

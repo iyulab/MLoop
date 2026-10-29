@@ -54,7 +54,7 @@ public class LabellessVectorTaskSeamTests : IDisposable
         File.Copy(WriteTable("train.csv", 300, withYesNoColumn), Path.Combine(project, "datasets", "train.csv"), true);
         File.Copy(WriteTable("predict.csv", 8, withYesNoColumn), Path.Combine(project, "datasets", "p.csv"), true);
 
-        var train = await CliRunner.RunAsync("train", "datasets/train.csv", "--time", "10");
+        var train = await CliRunner.RunAsync("train", "datasets/train.csv", "--time", "10");   // no search: clustering and anomaly detection fit one pipeline
         Assert.True(train.ExitCode == 0, train.Stdout + train.Stderr);
 
         var predict = await CliRunner.RunAsync("predict", "datasets/p.csv", "--json");
@@ -126,7 +126,7 @@ public class LabellessVectorTaskSeamTests : IDisposable
                 ModelName = "seam",
                 DataFile = csv,
                 LabelColumn = "",
-                Task = task,
+                Task = task,   // no search: clustering and anomaly detection fit one pipeline
                 TimeLimitSeconds = 10,
                 NumClusters = 0,
             }, progress: null, CancellationToken.None);

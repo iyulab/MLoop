@@ -75,7 +75,7 @@ public sealed class TextEncoderTrainingTests : IDisposable
             """);
         await File.WriteAllTextAsync("datasets/train.csv", Reviews(threeClasses ? 360 : 240, 3, threeClasses: threeClasses));
         await File.WriteAllTextAsync("datasets/predict.csv", Reviews(20, 5, withLabel: false));
-        var (exit, output, error) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        var (exit, output, error) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10");
         Assert.True(exit == 0, output + Environment.NewLine + error);
         return Path.Combine("models", "default", "staging", "exp-001", ExperimentLayout.ModelFileName);
     }

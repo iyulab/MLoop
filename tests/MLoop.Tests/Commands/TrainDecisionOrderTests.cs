@@ -41,7 +41,7 @@ public sealed class TrainDecisionOrderTests : IDisposable
         var rows = Enumerable.Range(0, 40).Select(i => $"{i % 7},{i % 3},{(i % 2 == 0 ? "a" : "b")}");
         File.WriteAllLines(Path.Combine(_root, "datasets", "train.csv"), ["x,y,label", .. rows]);
 
-        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--time", "5");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--time", "60", "--max-trials", "10");
 
         Assert.Equal(1, exitCode);
         var output = stdout + stderr;
@@ -78,7 +78,7 @@ public sealed class TrainDecisionOrderTests : IDisposable
             }
             """);
 
-        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--time", "5");
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--time", "60", "--max-trials", "10");
 
         var output = stdout + stderr;
         Assert.Equal(0, exitCode);

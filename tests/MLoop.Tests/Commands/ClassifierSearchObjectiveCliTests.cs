@@ -49,7 +49,7 @@ public class ClassifierSearchObjectiveCliTests : IDisposable
         File.WriteAllText("train.csv", Rows(classes));
 
         var (exit, stdout, _) = await CliRunner.RunAsync(
-            "train", "train.csv", "--label", "y", "--time", "10", "--no-promote", "--json");
+            "train", "train.csv", "--label", "y", "--time", "60", "--max-trials", "10", "--no-promote", "--json");
 
         Assert.True(exit == 0, stdout);
         var events = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)

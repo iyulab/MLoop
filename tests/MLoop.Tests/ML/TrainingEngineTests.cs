@@ -385,7 +385,8 @@ public class TrainingEngineTests : IDisposable
             DataFile = path,
             LabelColumn = "Label",
             Task = "binary-classification",
-            TimeLimitSeconds = 5
+            TimeLimitSeconds = 60,
+            MaxTrials = 10
         }));
 
         Assert.Contains("Label", ex.Message);
@@ -644,7 +645,7 @@ public class TrainingEngineTests : IDisposable
             lines.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{w:F3},{h:F3},{w * 2 + h:F3}"));
         }
         await File.WriteAllLinesAsync(csv, lines);
-        var config = new TrainingConfig { ModelName = "culture", DataFile = csv, LabelColumn = "price", Task = "regression", TimeLimitSeconds = 5 };
+        var config = new TrainingConfig { ModelName = "culture", DataFile = csv, LabelColumn = "price", Task = "regression", TimeLimitSeconds = 60, MaxTrials = 10 };
 
         var before = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("fr-FR");
@@ -684,7 +685,8 @@ public class TrainingEngineTests : IDisposable
             DataFile = csv,
             LabelColumn = "label",
             Task = "binary-classification",
-            TimeLimitSeconds = 20
+            TimeLimitSeconds = 60,
+            MaxTrials = 10
         };
 
         var result = await NewEngine().TrainAsync(config, progress: null, CancellationToken.None);
@@ -725,7 +727,8 @@ public class TrainingEngineTests : IDisposable
             DataFile = csv,
             LabelColumn = "label",
             Task = "binary-classification",
-            TimeLimitSeconds = 20,
+            TimeLimitSeconds = 60,
+            MaxTrials = 10,
             Metric = "F1Score"
         };
 
@@ -780,7 +783,8 @@ public class TrainingEngineTests : IDisposable
             DataFile = csv,
             LabelColumn = "label",
             Task = "binary-classification",
-            TimeLimitSeconds = 20
+            TimeLimitSeconds = 60,
+            MaxTrials = 10
         };
 
         var events = new List<TrainingProgress>();
@@ -833,7 +837,8 @@ public class TrainingEngineTests : IDisposable
             DataFile = csv,
             LabelColumn = "label",
             Task = "binary-classification",
-            TimeLimitSeconds = 20
+            TimeLimitSeconds = 60,
+            MaxTrials = 10
         };
 
         var events = new List<TrainingProgress>();

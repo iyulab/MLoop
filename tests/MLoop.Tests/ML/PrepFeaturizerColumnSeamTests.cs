@@ -136,7 +136,8 @@ public class PrepFeaturizerColumnSeamTests : IDisposable
                 DataFile = csv,
                 LabelColumn = "label",
                 Task = "binary-classification",
-                TimeLimitSeconds = 10,
+                TimeLimitSeconds = 60,
+                MaxTrials = 10,
                 PreFeaturizer = new PrepFeaturizerBuilder().Build(new MLContext(seed: 1), steps),
                 PreFeaturizerColumns = PrepFeaturizerBuilder.ResolvePreFeaturizerColumns(steps).ToList(),
             }, progress: null, CancellationToken.None);

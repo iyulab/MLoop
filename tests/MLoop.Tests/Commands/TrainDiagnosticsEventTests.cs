@@ -54,7 +54,7 @@ public class TrainDiagnosticsEventTests : IDisposable
         File.WriteAllText(Path.Combine("datasets", "train.csv"), csv.ToString());
 
         var (exit, stdout, _) = await CliRunner.RunAsync(
-            "train", "datasets/train.csv", "--label", "label", "--time", "5", "--no-promote", "--json");
+            "train", "datasets/train.csv", "--label", "label", "--time", "60", "--max-trials", "10", "--no-promote", "--json");
         Assert.True(exit == 0, stdout);
 
         var warnings = stdout.Split('\n')

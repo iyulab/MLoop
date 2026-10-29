@@ -79,7 +79,7 @@ public sealed class GatePolicyTests : IDisposable
         Assert.True(validateExit == 0, validateErr + "\n---\n" + validateOut);
 
         // A first model would be promoted on its metrics alone; the policy holds it in staging and says by what.
-        var (trainExit, trainOut, trainErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        var (trainExit, trainOut, trainErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10");
         Assert.True(trainExit == 0, trainErr + "\n---\n" + trainOut);
         Assert.Contains("gate policy refuses it", trainOut + trainErr);
         Assert.Equal(0, (await HistoryAsync()).GetArrayLength());
@@ -104,7 +104,7 @@ public sealed class GatePolicyTests : IDisposable
         Assert.Equal(0, (await CliRunner.RunAsync("init", "p", "--task", "binary-classification")).ExitCode);
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
         await File.WriteAllTextAsync("datasets/train.csv", NoisyBinary(240, 3));
-        Assert.Equal(0, (await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote")).ExitCode);
+        Assert.Equal(0, (await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10", "--no-promote")).ExitCode);
         var yaml = (await File.ReadAllTextAsync("mloop.yaml")).Replace("\r\n", "\n").Replace("    task: binary-classification\n", """
                 task: binary-classification
                 gate:

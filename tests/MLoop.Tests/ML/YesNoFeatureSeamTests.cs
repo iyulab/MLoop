@@ -195,7 +195,8 @@ public class YesNoFeatureSeamTests : IDisposable
                 DataFile = csv,
                 LabelColumn = "label",
                 Task = "binary-classification",
-                TimeLimitSeconds = 10,
+                TimeLimitSeconds = 60,
+                MaxTrials = 10,
             }, progress: null, CancellationToken.None);
         }
         finally

@@ -107,7 +107,8 @@ public class PredictionScoreNamingTests : IDisposable
                 DataFile = csv,
                 LabelColumn = label,
                 Task = task,
-                TimeLimitSeconds = 10,
+                TimeLimitSeconds = 60,
+                MaxTrials = 10,
             }, progress: null, CancellationToken.None);
         }
         finally

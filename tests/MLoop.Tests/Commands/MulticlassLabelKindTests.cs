@@ -68,7 +68,7 @@ public class MulticlassLabelKindTests : IDisposable
         WriteSorted(Path.Combine("datasets", "test.csv"), (2, 50), (1, 50), (0, 50));
 
         var (trainExit, trainOutput, _) = await CliRunner.RunAsync(
-            "train", "datasets/train.csv", "--label", "class", "--time", "5");
+            "train", "datasets/train.csv", "--label", "class", "--time", "60", "--max-trials", "10");
         Assert.True(trainExit == 0, $"train exited {trainExit}:\n{trainOutput}");
 
         var (evaluateExit, evaluateOutput, _) = await CliRunner.RunAsync("evaluate", "exp-001", "datasets/test.csv");

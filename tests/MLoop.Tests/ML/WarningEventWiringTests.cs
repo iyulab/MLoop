@@ -46,7 +46,8 @@ public class WarningEventWiringTests : IDisposable
             DataFile = csv,
             LabelColumn = "label",
             Task = "binary-classification",
-            TimeLimitSeconds = 5
+            TimeLimitSeconds = 60,
+            MaxTrials = 10
         };
 
         var stream = new StringWriter();
@@ -114,7 +115,8 @@ public class WarningEventWiringTests : IDisposable
             DataFile = csv,
             LabelColumn = "label",
             Task = "binary-classification",
-            TimeLimitSeconds = 5
+            TimeLimitSeconds = 60,
+            MaxTrials = 10
         });
 
         var excluded = Assert.Single(warnings, w =>
@@ -151,7 +153,8 @@ public class WarningEventWiringTests : IDisposable
             DataFile = csv,
             LabelColumn = "label",
             Task = "binary-classification",
-            TimeLimitSeconds = 5
+            TimeLimitSeconds = 60,
+            MaxTrials = 10
         });
 
         var advice = Assert.Single(warnings, w => w.GetProperty("message").GetString()!.Contains("Possible ID/index"));
@@ -184,7 +187,8 @@ public class WarningEventWiringTests : IDisposable
             LabelColumn = "label",
             Task = "binary-classification",
             Metric = "f1_score",   // not accuracy — so the gate's accuracy floor does not apply
-            TimeLimitSeconds = 10
+            TimeLimitSeconds = 60,
+            MaxTrials = 10
         });
 
         var warned = Assert.Single(warnings, w =>
@@ -223,7 +227,8 @@ public class WarningEventWiringTests : IDisposable
             LabelColumn = "label",
             Task = "binary-classification",
             Metric = "f1_score",
-            TimeLimitSeconds = 10
+            TimeLimitSeconds = 60,
+            MaxTrials = 10
         });
 
         Assert.NotEmpty(warnings);

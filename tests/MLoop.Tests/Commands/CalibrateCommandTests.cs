@@ -46,7 +46,7 @@ public sealed class CalibrateCommandTests : IDisposable
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
         await File.WriteAllTextAsync("datasets/train.csv", Noisy(300, 3));
         await File.WriteAllTextAsync("datasets/recheck.csv", Noisy(300, 9));
-        var (exit, output, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        var (exit, output, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10");
         Assert.True(exit == 0, output);
     }
 
@@ -134,7 +134,7 @@ public sealed class CalibrateCommandTests : IDisposable
     {
         await TrainAsync();
         await JsonAsync("calibrate", "--data", "datasets/recheck.csv");
-        Assert.Equal(0, (await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5", "--no-promote")).ExitCode);
+        Assert.Equal(0, (await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10", "--no-promote")).ExitCode);
         await JsonAsync("calibrate", "exp-002", "--clear");   // training calibrated it; this one is to have none
 
         Assert.Equal(0, (await CliRunner.RunAsync("promote", "exp-002", "--json", "--force")).ExitCode);
@@ -167,7 +167,7 @@ public sealed class CalibrateCommandTests : IDisposable
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "m"));
         await File.WriteAllTextAsync("datasets/train.csv", NoisyMulticlass(300, 3));
         await File.WriteAllTextAsync("datasets/recheck.csv", NoisyMulticlass(300, 9));
-        var (exit, output, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        var (exit, output, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10");
         Assert.True(exit == 0, output);
         var before = (await JsonAsync("predict", "datasets/recheck.csv")).GetProperty("predictions").EnumerateArray()
             .Select(r => r.GetProperty("predictedLabel").GetString()).ToList();

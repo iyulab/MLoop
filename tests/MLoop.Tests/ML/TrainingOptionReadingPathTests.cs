@@ -231,7 +231,8 @@ public class TrainingOptionReadingPathTests : IDisposable
                 DataFile = csv,
                 LabelColumn = "label",
                 Task = task,
-                TimeLimitSeconds = 10,
+                TimeLimitSeconds = 60,
+                MaxTrials = 10,
                 ColumnOverrides = option.Overrides,
                 WeightColumn = option.Weight,
             }, progress: null, CancellationToken.None);

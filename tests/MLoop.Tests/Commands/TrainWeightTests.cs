@@ -68,7 +68,7 @@ public sealed class TrainWeightTests : IDisposable
         await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
 
         var (exit, output, _) = await CliRunner.RunAsync(
-            "train", "datasets/train.csv", "--label", "y", "--weight", "w", "--time", "5", "--no-promote");
+            "train", "datasets/train.csv", "--label", "y", "--weight", "w", "--time", "60", "--max-trials", "10", "--no-promote");
 
         Assert.True(exit == 0, output);
         var fileSystem = new FileSystemManager();
@@ -106,7 +106,7 @@ public sealed class TrainWeightTests : IDisposable
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
         await File.WriteAllTextAsync("datasets/train.csv", "a,b,w\n1,2,1\n2,3,1\n3,4,2\n");
 
-        var (exit, _, stderr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--weight", "w", "--time", "5");
+        var (exit, _, stderr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--weight", "w", "--time", "5");   // no search: clustering
 
         Assert.Equal(1, exit);
         Assert.Contains("weighted training applies to", stderr);
@@ -130,9 +130,9 @@ public sealed class TrainWeightTests : IDisposable
             "project: p\nmodels:\n  default:\n    task: binary-classification\n    label: y\n    columns:\n      w:\n        type: ignore\n");
 
         // On failure the cause is on stderr (errors go there); stdout alone ends mid-narration.
-        var (first, firstOut, firstErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "5");
+        var (first, firstOut, firstErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10");
         Assert.True(first == 0, firstErr + "\n---\n" + firstOut);
-        var (second, secondOut, secondErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--weight", "w", "--time", "5");
+        var (second, secondOut, secondErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--weight", "w", "--time", "60", "--max-trials", "10");
         Assert.True(second == 0, secondErr + "\n---\n" + secondOut);
 
         Assert.Contains("Not compared with production", secondOut + secondErr);
