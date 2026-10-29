@@ -32,6 +32,7 @@ public static class ModelTrainingConfig
             LabelColumn = definition.Label,
             Task = definition.Task,
             TimeLimitSeconds = timeLimitSeconds,
+            MaxTrials = definition.Training?.MaxTrials,
             Metric = definition.Training?.Metric ?? ConfigDefaults.DefaultMetric,
             TestSplit = testSplit,
             TestDataFile = testDataFile,
@@ -75,6 +76,21 @@ public static class ModelTrainingConfig
             .Where(c => !string.IsNullOrWhiteSpace(c.Value.Encoder))
             .ToDictionary(c => c.Key, c => c.Value.Encoder!.Trim());
         return encoders is { Count: > 0 } ? encoders : null;
+    }
+
+    /// <summary>
+    /// Why the trial limit in <paramref name="definition"/> cannot be honoured, or <c>null</c>. A limit on trials a task
+    /// does not run, or one below a single trial, would be set and silently meant nothing.
+    /// </summary>
+    public static string? MaxTrialsConflict(ModelDefinition definition)
+    {
+        if (definition.Training?.MaxTrials is not { } maxTrials)
+            return null;
+        if (maxTrials < 1)
+            return $"max trials: {maxTrials} is not a number of trials; use 1 or more, or leave it unset for the time limit alone.";
+        return MLoop.Core.Training.TrainingRunner.TimeBudgetUnused(definition.Task) is { } why
+            ? $"max trials: '{definition.Task}' {why}, so it has no trials to count; leave --max-trials / training.max_trials unset."
+            : null;
     }
 
     /// <summary>

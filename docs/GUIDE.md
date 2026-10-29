@@ -119,6 +119,11 @@ mloop train [data-file] [options]    # the label is --label, or the one in mloop
 #   --time <seconds>            Fixed training time limit. Without it, the budget is estimated from
 #                               the data (auto-time) unless mloop.yaml sets time_limit_seconds
 #   --auto-time                 Force the estimate even when mloop.yaml sets time_limit_seconds
+#   --max-trials <n>            Stop the trainer search after n trials (within the time budget; also
+#                               training.max_trials in mloop.yaml). The search's seed is fixed, so the
+#                               same n gives the same search on a fast machine and a slow one. Tasks
+#                               that run no search (clustering, anomaly detection, recommendation,
+#                               forecasting, deep learning) refuse it
 #   --no-auto-time              Disable the estimate (falls back to 300s)
 #                               Deep-learning tasks (text classification, NER, sentence similarity,
 #                               question answering, object detection) run 10 epochs whatever the

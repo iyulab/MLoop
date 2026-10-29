@@ -231,6 +231,9 @@ public class ConfigMerger
         if (source.TimeLimitSeconds.HasValue)
             target.TimeLimitSeconds = source.TimeLimitSeconds;
 
+        if (source.MaxTrials.HasValue)
+            target.MaxTrials = source.MaxTrials;
+
         if (!string.IsNullOrEmpty(source.Metric))
             target.Metric = source.Metric;
 

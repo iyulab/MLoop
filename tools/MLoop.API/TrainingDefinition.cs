@@ -11,7 +11,7 @@ public static class TrainingDefinition
     /// <summary>The definition, or why the request cannot be trained as asked.</summary>
     public static async Task<(ModelDefinition? Definition, string? Error)> ResolveAsync(
         ConfigLoader configLoader, string modelName, string task, string label, int? timeLimitSeconds,
-        string metric, double? testSplit, string? weight = null, CancellationToken cancellationToken = default)
+        string metric, double? testSplit, string? weight = null, int? maxTrials = null, CancellationToken cancellationToken = default)
     {
         var config = await configLoader.LoadUserConfigAsync(cancellationToken);
         ModelDefinition definition;
@@ -22,6 +22,7 @@ public static class TrainingDefinition
                 cliTraining: new TrainingSettings
                 {
                     TimeLimitSeconds = timeLimitSeconds,
+                    MaxTrials = maxTrials,
                     // "auto" is the request's default — it leaves the choice to mloop.yaml, then the task.
                     Metric = string.Equals(metric, "auto", StringComparison.OrdinalIgnoreCase) ? null : metric,
                     TestSplit = testSplit,
@@ -38,6 +39,8 @@ public static class TrainingDefinition
         // The request's weight in --weight's place; refused, like the definition's, where the run could not honour it.
         if (!string.IsNullOrWhiteSpace(weight))
             definition.Weight = weight.Trim();
+        if (ModelTrainingConfig.MaxTrialsConflict(definition) is { } maxTrialsError)
+            return (null, maxTrialsError);
         if (ModelTrainingConfig.WeightConflict(definition) is { } weightError)
             return (null, weightError);
         if (ModelTrainingConfig.PortableConflict(definition) is { } portableError)

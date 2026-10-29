@@ -43,7 +43,7 @@ public static partial class TrainCommand
 
     /// <summary>Project, model name, configuration and the validated effective definition — null after an error was shown.</summary>
     private static async Task<TrainSetup?> ResolveSetupAsync(
-        string? modelName, string? label, string? task, int? time, string? metric, double? testSplit,
+        string? modelName, string? label, string? task, int? time, int? maxTrials, string? metric, double? testSplit,
         string? groupColumn, string? weight, string? balance, bool portable, string? encoder, int? bankSize,
         FileSystemManager fileSystem, ProjectDiscovery projectDiscovery, Action<string?> noteTask)
     {
@@ -74,11 +74,12 @@ public static partial class TrainCommand
 
         // Build CLI-provided training settings
         TrainingSettings? cliTraining = null;
-        if (time.HasValue || !string.IsNullOrEmpty(metric) || testSplit.HasValue)
+        if (time.HasValue || maxTrials.HasValue || !string.IsNullOrEmpty(metric) || testSplit.HasValue)
         {
             cliTraining = new TrainingSettings
             {
                 TimeLimitSeconds = time,
+                MaxTrials = maxTrials,
                 Metric = metric,
                 TestSplit = testSplit
             };
@@ -110,7 +111,8 @@ public static partial class TrainCommand
         // that silently did nothing would train an unweighted model the user believes weighted.
         if (!string.IsNullOrEmpty(weight))
             effectiveDefinition.Weight = weight;
-        if ((TrainingInput.BalanceConflict(effectiveDefinition, balance)
+        if ((ModelTrainingConfig.MaxTrialsConflict(effectiveDefinition)
+             ?? TrainingInput.BalanceConflict(effectiveDefinition, balance)
              ?? ModelTrainingConfig.WeightConflict(effectiveDefinition, balance)) is { } weightError)
         {
             ErrorConsole.Error(weightError);

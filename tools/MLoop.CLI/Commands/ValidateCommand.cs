@@ -332,6 +332,21 @@ public static class ValidateCommand
         List<ValidationError> errors,
         List<ValidationWarning> warnings)
     {
+        // Validate the trial limit: one trial at least, and only for a task that searches
+        if (training.MaxTrials.HasValue)
+        {
+            if (training.MaxTrials.Value < 1)
+            {
+                errors.Add(new ValidationError($"{prefix}.max_trials",
+                    "Max trials must be 1 or more; leave it unset for the time limit alone"));
+            }
+            else if (MLoop.Core.Training.TrainingRunner.TimeBudgetUnused(task) is { } why)
+            {
+                errors.Add(new ValidationError($"{prefix}.max_trials",
+                    $"Task '{task}' {why}, so it has no trials to count; remove max_trials"));
+            }
+        }
+
         // Validate time limit
         if (training.TimeLimitSeconds.HasValue)
         {

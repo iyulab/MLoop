@@ -72,6 +72,29 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AMaxTrialsOnATaskThatRunsNoSearch_IsRefusedBeforeAJobExists()
+    {
+        var data = WriteData();
+        WriteYaml("tclust", "    task: clustering\n    label: ''\n");
+
+        var response = await _client.PostAsJsonAsync("/train", new { dataFile = data, labelColumn = "", task = "clustering", name = "tclust", maxTrials = 3 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("no trials to count");
+    }
+
+    [Fact]
+    public async Task AMaxTrialsBelowOne_IsRefusedBeforeAJobExists()
+    {
+        var data = WriteData();
+
+        var response = await _client.PostAsJsonAsync("/train", new { dataFile = data, labelColumn = "y", task = "binary-classification", name = "tzero", maxTrials = 0 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("not a number of trials");
+    }
+
+    [Fact]
     public async Task PrepTheApiDoesNotRun_IsRefused_NotSkipped()
     {
         var data = WriteData();

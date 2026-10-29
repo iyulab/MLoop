@@ -679,7 +679,7 @@ public partial class TrainingRunner
             config.SearchSettings ?? Settings,
             Weight: string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn,
             Stratify: !IsRegression(config),
-            MaxTrials: config.SearchMaxTrials,
+            MaxTrials: config.MaxTrials,
             Preprocess: config.PreFeaturizer,
             KeepOutOfFold: IsBinary(config) || config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase));
 

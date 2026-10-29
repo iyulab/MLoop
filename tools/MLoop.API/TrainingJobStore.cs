@@ -54,6 +54,7 @@ public class TrainingJobStore
             LabelColumn = request.LabelColumn,
             Task = request.Task,
             TimeLimitSeconds = request.TimeLimitSeconds,
+            MaxTrials = request.MaxTrials,
             Metric = request.Metric,
             TestSplit = request.TestSplit,
             MaxRows = request.MaxRows,
@@ -194,6 +195,7 @@ public class TrainingJob
     public required string LabelColumn { get; init; }
     public required string Task { get; init; }
     public int? TimeLimitSeconds { get; set; }
+    public int? MaxTrials { get; set; }
     public string Metric { get; set; } = "auto";
     public double? TestSplit { get; set; }
     public int? MaxRows { get; set; }
@@ -232,6 +234,7 @@ public class TrainingJob
 /// <param name="Metric">The metric to optimize; <c>auto</c> leaves it to mloop.yaml, then the task.</param>
 /// <param name="MaxRows">Rows to sample the data down to, as <c>--max-rows</c>.</param>
 /// <param name="TimeLimitSeconds">The training budget; null leaves it to mloop.yaml, then the default — as an absent <c>--time</c> does.</param>
+/// <param name="MaxTrials">At most this many trials of the trainer search, as <c>--max-trials</c>; null leaves it to mloop.yaml, then the time budget alone.</param>
 /// <param name="TestSplit">The held-out share; null leaves it to mloop.yaml, then the default.</param>
 /// <param name="Weight">The column that weights the rows, as <c>--weight</c> — the <c>weightColumn</c> <c>POST /samples</c> answers with.</param>
 /// <param name="AdditionalDataFiles">
@@ -259,7 +262,8 @@ public record TrainingJobRequest(
     IReadOnlyList<string>? AdditionalDataFiles = null,
     string? Weight = null,
     string? Balance = null,
-    bool Promote = true)
+    bool Promote = true,
+    int? MaxTrials = null)
 {
     public string ModelName => string.IsNullOrWhiteSpace(Name) ? "default" : Name.Trim().ToLowerInvariant();
 }

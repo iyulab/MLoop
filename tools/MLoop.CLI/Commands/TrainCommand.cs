@@ -53,6 +53,11 @@ public static partial class TrainCommand
             Description = "Training time limit in seconds"
         };
 
+        var maxTrialsOption = new Option<int?>("--max-trials")
+        {
+            Description = "Stop the trainer search after this many trials (within --time) — the same search on a fast machine and a slow one"
+        };
+
         var metricOption = new Option<string?>("--metric")
         {
             Description = "Optimization metric (accuracy, auc, f1, r_squared, etc.). Default auto: AUC for binary, log-loss for multiclass classification, the task's primary metric otherwise"
@@ -169,6 +174,7 @@ public static partial class TrainCommand
         command.Options.Add(labelOption);
         command.Options.Add(taskOption);
         command.Options.Add(timeOption);
+        command.Options.Add(maxTrialsOption);
         command.Options.Add(metricOption);
         command.Options.Add(testSplitOption);
         command.Options.Add(noPromoteOption);
@@ -221,7 +227,7 @@ public static partial class TrainCommand
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption), parseResult.GetValue(portableOption), parseResult.GetValue(encoderOption), parseResult.GetValue(bankSizeOption));
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption), parseResult.GetValue(portableOption), parseResult.GetValue(encoderOption), parseResult.GetValue(bankSizeOption), parseResult.GetValue(maxTrialsOption));
         });
 
         return command;
@@ -253,7 +259,8 @@ public static partial class TrainCommand
         string? weight = null,
         bool portable = false,
         string? encoder = null,
-        int? bankSize = null)
+        int? bankSize = null,
+        int? maxTrials = null)
     {
         // --json reserves stdout for the event stream: every renderer and narrator in the training
         // path is silenced for the duration, and the real stdout is handed to the emitter. Disposed
@@ -279,7 +286,7 @@ public static partial class TrainCommand
             var projectDiscovery = new ProjectDiscovery(fileSystem);
 
             var setup = await ResolveSetupAsync(
-                modelName, label, task, time, metric, testSplit, groupColumn, weight, balance, portable, encoder, bankSize,
+                modelName, label, task, time, maxTrials, metric, testSplit, groupColumn, weight, balance, portable, encoder, bankSize,
                 fileSystem, projectDiscovery, resolved => failedTask = resolved);
             if (setup is null)
                 return 1;

@@ -234,6 +234,11 @@ public class TrainingSettings
     public int? TimeLimitSeconds { get; set; }
 
     /// <summary>
+    /// At most this many trials of the trainer search, within the time limit (default: the time limit alone).
+    /// </summary>
+    public int? MaxTrials { get; set; }
+
+    /// <summary>
     /// Optimization metric (e.g., accuracy, auc, r2, rmse)
     /// </summary>
     public string? Metric { get; set; }

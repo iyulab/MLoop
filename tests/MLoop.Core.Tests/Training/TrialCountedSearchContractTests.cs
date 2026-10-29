@@ -12,7 +12,7 @@ namespace MLoop.Core.Tests.Training;
 /// runs. The suites that measure the budget itself are in <c>MLoop.Search.Tests</c>.
 /// <para>
 /// This reads the test sources: a <c>TrainingConfig</c> that sets <c>TimeLimitSeconds</c> and not
-/// <c>SearchMaxTrials</c> is flagged unless its task is not a trainer search (a literal task that the search
+/// <c>MaxTrials</c> is flagged unless its task is not a trainer search (a literal task that the search
 /// does not serve).
 /// </para>
 /// </remarks>
@@ -42,7 +42,7 @@ public class TrialCountedSearchContractTests
     internal static IEnumerable<string> Offenders(string source, string name) =>
         Initializer.Matches(source)
             .Select(m => m.Groups["body"].Value)
-            .Where(body => body.Contains("TimeLimitSeconds", StringComparison.Ordinal) && !body.Contains("SearchMaxTrials", StringComparison.Ordinal))
+            .Where(body => body.Contains("TimeLimitSeconds", StringComparison.Ordinal) && !body.Contains("MaxTrials", StringComparison.Ordinal))
             .Where(body => !NotATrainerSearch.Any(task => body.Contains($"Task = \"{task}\"", StringComparison.Ordinal)))
             .Select(body => $"{name}: {Regex.Replace(body.Trim(), @"\s+", " ")}");
 
@@ -65,7 +65,7 @@ public class TrialCountedSearchContractTests
     public void TheScan_FlagsABudgetOnlySearch_AndLeavesTheCountedOneAndANonSearchTask()
     {
         const string Budgeted = "var c = new TrainingConfig { Task = \"regression\", TimeLimitSeconds = 10 };";
-        const string Counted = "var c = new TrainingConfig { Task = \"regression\", TimeLimitSeconds = 60, SearchMaxTrials = 10 };";
+        const string Counted = "var c = new TrainingConfig { Task = \"regression\", TimeLimitSeconds = 60, MaxTrials = 10 };";
         const string Clustering = "var c = new TrainingConfig { Task = \"clustering\", TimeLimitSeconds = 5 };";
 
         Assert.Single(Offenders(Budgeted, "x.cs"));

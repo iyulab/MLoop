@@ -204,7 +204,7 @@ public sealed class SearchGateMeasurement : IDisposable
         TimeLimitSeconds = budget,
         Metric = set.Metric,
         SearchSettings = new SearchSettings(Seed: seed, Threads: 1),
-        SearchMaxTrials = maxTrials,
+        MaxTrials = maxTrials,
     };
 
     private static async Task<Run> TrainAsync(DataSet set, int seed, int? maxTrials, int budget)

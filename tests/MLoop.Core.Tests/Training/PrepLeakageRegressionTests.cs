@@ -135,7 +135,7 @@ public class PrepLeakageRegressionTests : IDisposable
             LabelColumn = "label",
             Task = "binary-classification",
             TimeLimitSeconds = 60,
-            SearchMaxTrials = 10,
+            MaxTrials = 10,
             PreFeaturizer = preFeaturizer
         };
 
@@ -211,7 +211,7 @@ public class PrepLeakageRegressionTests : IDisposable
             LabelColumn = "label",
             Task = "binary-classification",
             TimeLimitSeconds = 60,
-            SearchMaxTrials = 10,
+            MaxTrials = 10,
             PreFeaturizer = route.PreFeaturizer,
             PreFeaturizerColumns = route.PreFeaturizerColumns,
         };

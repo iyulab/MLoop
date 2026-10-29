@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`mloop train --max-trials <n>`** (also `training.max_trials` in `mloop.yaml`, and `maxTrials` in a `POST /train` request) stops the trainer
+  search after `n` trials, within the time budget. The time budget caps the clock and this caps the work; the search's seed is fixed, so with it
+  set the search is the same on a fast machine and a slow one — a pipeline that trains in CI and on a laptop, or a test that must not depend on the
+  runner's speed. A value below 1, or a task that runs no search (clustering, anomaly detection, recommendation, forecasting, deep learning,
+  image anomaly), is refused with the reason; `validate` reports it. `TrainingConfig.SearchMaxTrials` was an internal property and is now the
+  public `TrainingConfig.MaxTrials`.
 - **Settings in `mloop.yaml` that nothing reads are reported.** The file has always been read leniently, so a misspelled key was dropped
   without a word — a `no_worse_than_prod` meant a promotion rule that was never judged, a `time_limit_secs` an automatic time budget. `validate`
   now lists each unknown key as a warning with its path and the nearest setting it does read, and every command that loads the file says so

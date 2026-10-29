@@ -226,10 +226,12 @@ public record TrainingConfig
     internal MLoop.Search.Candidates.SearchSettings? SearchSettings { get; init; }
 
     /// <summary>
-    /// At most this many trials; <see langword="null"/> for the time budget alone. Internal: the search's
-    /// measurements hold the trial count fixed.
+    /// At most this many trials of the trainer search, within the time budget; <see langword="null"/> for the
+    /// time budget alone. The search's seed is fixed, so with this set the search is the same on a fast machine
+    /// and a slow one — the time budget is a cap on the clock, this one on the work. A task that does not search
+    /// (<c>TrainingRunner.TimeBudgetUnused</c>) has no trials to count.
     /// </summary>
-    internal int? SearchMaxTrials { get; init; }
+    public int? MaxTrials { get; init; }
 
     /// <summary>
     /// Columns this run has claimed for a purpose of its own — the ranking group, the recommendation

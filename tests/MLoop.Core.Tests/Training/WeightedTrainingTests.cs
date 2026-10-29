@@ -82,7 +82,7 @@ public class WeightedTrainingTests : IDisposable
             LabelColumn = "Label",
             Task = "binary-classification",
             TimeLimitSeconds = 60,
-            SearchMaxTrials = 10,
+            MaxTrials = 10,
             Metric = "auc",
             WeightColumn = weightColumn,
             // The control keeps W out of the features too, so the only difference is the weighting.

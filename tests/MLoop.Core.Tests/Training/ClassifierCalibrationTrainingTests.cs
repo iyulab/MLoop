@@ -63,7 +63,7 @@ public class ClassifierCalibrationTrainingTests
             Task = "binary-classification",
             TimeLimitSeconds = 30,
             Metric = "accuracy",
-            SearchMaxTrials = 3,
+            MaxTrials = 3,
         };
 
         var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
@@ -97,7 +97,7 @@ public class ClassifierCalibrationTrainingTests
             Task = "binary-classification",
             TimeLimitSeconds = 30,
             Metric = metric,
-            SearchMaxTrials = 3,
+            MaxTrials = 3,
         };
 
         var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
@@ -132,7 +132,7 @@ public class ClassifierCalibrationTrainingTests
             Task = "multiclass-classification",
             TimeLimitSeconds = 30,
             Metric = "macro_accuracy",
-            SearchMaxTrials = 3,
+            MaxTrials = 3,
         };
 
         var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);

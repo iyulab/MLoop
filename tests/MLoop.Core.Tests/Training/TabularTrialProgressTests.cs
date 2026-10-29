@@ -65,7 +65,7 @@ public class TabularTrialProgressTests : IDisposable
             LabelColumn = label,
             Task = task,
             TimeLimitSeconds = timeLimitSeconds,
-            SearchMaxTrials = 10,
+            MaxTrials = 10,
             Metric = metric ?? string.Empty,
         };
 
@@ -225,7 +225,7 @@ public class TabularTrialProgressTests : IDisposable
             LabelColumn = "response",
             Task = "regression",
             TimeLimitSeconds = 60,
-            SearchMaxTrials = 10
+            MaxTrials = 10
         };
 
         var result = await runner.RunAsync(config, progress: null, CancellationToken.None);
