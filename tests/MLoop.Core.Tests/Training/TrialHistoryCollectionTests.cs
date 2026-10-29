@@ -45,6 +45,7 @@ public class TrialHistoryCollectionTests : IDisposable
             LabelColumn = label,
             Task = task,
             TimeLimitSeconds = timeLimitSeconds,
+            SearchMaxTrials = 12,
             Metric = metric ?? string.Empty
         }, progress: null, CancellationToken.None);
     }

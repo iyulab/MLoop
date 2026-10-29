@@ -84,7 +84,8 @@ public class SchemaRoundTripTests : IDisposable
             DataFile = csvPath,
             LabelColumn = label,
             Task = task,
-            TimeLimitSeconds = 10
+            TimeLimitSeconds = 60,
+            SearchMaxTrials = 10
         };
         return await runner.RunAsync(config, cancellationToken: CancellationToken.None);
     }

@@ -134,7 +134,8 @@ public class PrepLeakageRegressionTests : IDisposable
             DataFile = "synthetic",     // ignored by InMemoryDataProvider
             LabelColumn = "label",
             Task = "binary-classification",
-            TimeLimitSeconds = 10,
+            TimeLimitSeconds = 60,
+            SearchMaxTrials = 10,
             PreFeaturizer = preFeaturizer
         };
 
@@ -209,7 +210,8 @@ public class PrepLeakageRegressionTests : IDisposable
             DataFile = csvPath,
             LabelColumn = "label",
             Task = "binary-classification",
-            TimeLimitSeconds = 10,
+            TimeLimitSeconds = 60,
+            SearchMaxTrials = 10,
             PreFeaturizer = route.PreFeaturizer,
             PreFeaturizerColumns = route.PreFeaturizerColumns,
         };
