@@ -244,6 +244,11 @@ public sealed class TrialRunner
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                // A fit the budget's cut stopped can surface as an exception other than OperationCanceledException
+                // (a trainer that wraps or loses the cancellation); that is the cut, not a trainer that cannot fit.
+                if (best is not null && budgetCut.IsCancellationRequested)
+                    break;
+
                 var seconds = (clock.Elapsed - started).TotalSeconds;
                 Took(seconds);
                 var failed = new TrialResult { Trainer = schema.Candidate.Name, Parameters = parameters, RuntimeSeconds = seconds, Error = ex.GetBaseException().Message };

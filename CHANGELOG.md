@@ -68,6 +68,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A trial the time budget cut off could be recorded as a failed trial.** When a trainer's fit was stopped by the budget and the stop
+  surfaced as an exception other than a cancellation, the search listed that trial with its error and no metrics (in `trials.ndjson`, the
+  leaderboard and the trial events) as if the trainer could not fit. A failure after the budget has been cut is now the cut: the trial is
+  dropped and the search ends with the best it has. A trainer that fails before the cut is still recorded as failed.
 - **A binary trainer without a probability whose search kept no out-of-fold answers had its probability calibrator fitted on the test
   rows.** The reported metrics then came from rows the calibrator had been fitted on. The calibrator is now fitted on the training rows
   and a warning says so. The usual path — the calibrator fitted on the kept trial's out-of-fold answers — is unchanged.

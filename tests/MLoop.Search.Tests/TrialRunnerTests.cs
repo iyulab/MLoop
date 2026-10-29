@@ -327,6 +327,30 @@ public sealed class TrialRunnerTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]   // the cut is a wall-clock event, so the margins here measure the runner too
+    public void AFailureAfterTheBudgetsCut_IsTheCut_NotAFailedTrial()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+        var lbfgs = CandidateCatalog.Binary(name => name == "LbfgsLogisticRegression").Single();
+        // Runs past the budget and then fails with something other than OperationCanceledException,
+        // as a trainer that loses or wraps the cancellation does.
+        var late = new TrainerCandidate("Late", new SearchSpace([SearchDimension.Integer("N", 1, 10, defaultValue: 1)]), 100,
+            (_, _, _, _) =>
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(3));
+                throw new InvalidOperationException("stopped mid-fit");
+            });
+        var sink = new Sink();
+
+        var result = new TrialRunner(Request(ml, TimeSpan.FromSeconds(2), candidates: [lbfgs, late]), sink).Run(data, roles);
+
+        Assert.DoesNotContain(result.Trials, t => t.Error == "stopped mid-fit");
+        Assert.DoesNotContain(sink.Seen, t => t.Error == "stopped mid-fit");
+        Assert.All(result.Trials, t => Assert.True(t.Succeeded));
+    }
+
+    [Fact]
     public void WhenEveryTrialFails_TheSearchSaysWhy()
     {
         var ml = new MLContext(seed: 1);
