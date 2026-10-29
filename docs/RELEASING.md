@@ -74,6 +74,19 @@ budget, and under CPU load no trial completes — a failure that describes the m
 code. The loop also keeps partial results when the whole-solution form dies under memory
 pressure.
 
+Then walk a model's operating life with the real CLI and server, on generated tables:
+
+```bash
+python3 scripts/lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll"
+```
+
+It trains, promotes, logs predictions, sees drift appear on the column that moved, records feedback,
+fires the retraining trigger, retrains, compares with production on the same rows, promotes, rolls
+back, and then does the service half over HTTP (cache reload after a promotion, an async training job)
+on a free local port. Each step reports `pass` or `FAIL`; the script exits 1 on any `FAIL`. A step that
+is known to fail is named in `--expected-failures` and reports `xfail`, so it cannot hide a new one.
+It trains for about 15 seconds a task and, like the suites, runs alone — never beside a test run.
+
 A suite that runs but takes several times its usual wall time, or dies partway with
 `Test host process crashed`, usually has an orphaned `testhost` competing with it. Interrupting a
 `dotnet test` kills the shell that started it and not the child, and the survivor holds CPU and file

@@ -10,10 +10,16 @@ One scenario per task, on generated tables (standard library only; nothing is do
   5  drift (control)          in-regime rows show no meaningful drift
   6  drift (shifted inputs)   rows whose inputs have moved are flagged, on the column that moved
   7  feedback + trigger       ground truth for the shifted rows is recorded; the retraining trigger fires
-  8  retrain on the new regime  a model trained on the new regime is promoted when it is the better model
+  8  retrain, no gate          a model trained on the new regime is the better one there, yet the recorded scores (each its own model's
+                              held-out score, on different data) keep it in staging - and the reason says how to compare on the same rows
   9  paired evaluation        `evaluate --against production` prefers it on the new regime's held-out rows
  10  explicit promote         the production slot moves to it and the history records the change and the gate
  11  rollback                 the slot returns to the model it replaced and the history records that
+ 12  retrain, paired gate     with gate.data (current-regime rows) and gate.no_worse_than_production, the same retraining is promoted by
+                              the row-by-row comparison and the history records the gate as passed
+ 13+ serve                   `mloop serve` over HTTP: /health, /predict (logged, with ids), /logs, /feedback, /drift, /trigger, an admin /promote
+                              that the next /predict sees (the model cache reloads), /rollback, /promotions, and an async /train job
+                              that finishes and reports whether it was promoted
 
   python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression]
          [--time 15] [--out lifecycle-results.json] [--keep]
@@ -22,7 +28,7 @@ Exit status is 1 when a step fails that is not named in --expected-failures. A s
 reported ("xfail"); it turning green is reported as "xpass" so the list can be shortened. Each run is a fresh
 temporary project, removed unless --keep is given.
 """
-import argparse, csv, json, math, os, random, shlex, shutil, subprocess, sys, tempfile, time
+import argparse, csv, json, math, os, random, shlex, shutil, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression'}
 # the metric a first model must reach to count as having learned the table (loose: this checks the wiring, not accuracy)
@@ -91,7 +97,117 @@ class Run:
         return ok
 
 
-def scenario(mloop, task, budget, keep, expected):
+def free_port():
+    with socket.socket() as sk:
+        sk.bind(('127.0.0.1', 0))
+        return sk.getsockname()[1]
+
+
+def http(method, url, token=None, body=None, timeout=60):
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(url, data=data, method=method)
+    if token:
+        req.add_header('Authorization', f'Bearer {token}')
+    if data is not None:
+        req.add_header('Content-Type', 'application/json')
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode()
+            return r.status, (json.loads(raw) if raw.strip() else None)
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode()
+        try:
+            return e.code, json.loads(raw)
+        except ValueError:
+            return e.code, raw
+    except (urllib.error.URLError, OSError) as e:
+        return 0, str(e)
+
+
+def serve_steps(run, proj, base, task, budget):
+    """The service half of the life: the same project, driven over HTTP by a server started on a free port."""
+    rc, out, err = run.cli('token', '--role', 'admin', '-q', cwd=proj)
+    admin = out.strip()
+    port = free_port()
+    url = f'http://127.0.0.1:{port}'
+    server = subprocess.Popen(run.mloop + ['serve', '--port', str(port), '--host', '127.0.0.1'], cwd=proj,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        up = False
+        for _ in range(60):
+            code, _ = http('GET', url + '/health', timeout=2)
+            if code == 200:
+                up = True
+                break
+            time.sleep(1)
+        run.check('serve_health', up and bool(admin), f'port={port} up={up}')
+        if not up:
+            return
+        code, info = http('GET', url + '/info?name=default', admin)
+        info = info if isinstance(info, dict) else {}
+        before = info.get('experimentId') or info.get('productionExperimentId')
+        rows = list(csv.DictReader(open(os.path.join(base, 'new_a.csv'))))[:5]
+        feats = [{k: (float(v) if k in ('x1', 'x2', 'x3') else v) for k, v in r.items() if k != 'y'} for r in rows]
+        code, pr = http('POST', url + '/predict?name=default', admin, feats)
+        preds = pr.get('predictions') if isinstance(pr, dict) else None
+        run.check('serve_predict', code == 200 and preds is not None and len(preds) == 5 and all(p.get('predictionId') for p in preds)
+                  and pr.get('experimentId') == before, f'code={code} n={len(preds or [])} answered_by={pr.get("experimentId") if isinstance(pr, dict) else pr} production={before}')
+        code, logs = http('GET', url + '/logs?name=default&limit=1000', admin)
+        entries = (logs or {}).get('logs', []) if isinstance(logs, dict) else []
+        run.check('serve_logs', code == 200 and len(entries) >= 5, f'code={code} entries={len(entries)}')
+        if preds:
+            code, _ = http('POST', url + '/feedback', admin, {'predictionId': preds[0]['predictionId'], 'modelName': 'default',
+                                                             'actualValue': str(rows[0]['y']), 'source': 'lifecycle-check'})
+        else:
+            code = 0
+        run.check('serve_feedback', code in (200, 201), f'code={code}')
+        code, dr = http('GET', url + '/drift?name=default', admin)
+        run.check('serve_drift', code == 200 and isinstance(dr, dict), f'code={code}')
+        code, tr = http('GET', url + '/trigger?name=default', admin)
+        run.check('serve_trigger', code == 200 and isinstance(tr, dict) and 'shouldRetrain' in tr, f'code={code}')
+
+        # A promotion made while the server holds the model in its cache must reach the next answer.
+        cand = 'exp-002'
+        code, _ = http('POST', url + '/promote', admin, {'name': 'default', 'experimentId': cand})
+        code2, pr2 = http('POST', url + '/predict?name=default', admin, feats)
+        run.check('serve_promote_reloads_cache', code == 200 and isinstance(pr2, dict) and pr2.get('experimentId') == cand,
+                  f'promote={code} answered_by={pr2.get("experimentId") if isinstance(pr2, dict) else pr2}')
+        code, _ = http('POST', url + '/rollback', admin, {'name': 'default'})
+        code2, pr3 = http('POST', url + '/predict?name=default', admin, feats)
+        run.check('serve_rollback_reloads_cache', code == 200 and isinstance(pr3, dict) and pr3.get('experimentId') == before,
+                  f'rollback={code} answered_by={pr3.get("experimentId") if isinstance(pr3, dict) else pr3}')
+        code, hist = http('GET', url + '/promotions?name=default', admin)
+        acts = [h.get('action') for h in ((hist or {}).get('promotions') or [])] if isinstance(hist, dict) else []
+        run.check('serve_promotions', code == 200 and 'rollback' in acts, f'code={code} actions={acts}')
+
+        # The server reads data from inside the project only, relative paths being the project's.
+        os.makedirs(os.path.join(proj, 'datasets'), exist_ok=True)
+        shutil.copy(os.path.join(base, 'train_b.csv'), os.path.join(proj, 'datasets', 'train_b.csv'))
+        code, job = http('POST', url + '/train', admin, {'dataFile': 'datasets/train_b.csv', 'name': 'default', 'labelColumn': 'y',
+                                                        'task': TASK_FLAG[task], 'timeLimitSeconds': budget, 'promote': False})
+        job_id = (job.get('jobId') or job.get('id')) if isinstance(job, dict) else None
+        final = {}
+        deadline = time.time() + budget * 6 + 60
+        while job_id and time.time() < deadline:
+            _, final = http('GET', f'{url}/jobs/{job_id}', admin)
+            if isinstance(final, dict) and str(final.get('status', '')).lower() in ('completed', 'failed'):
+                break
+            time.sleep(2)
+        status = str(final.get('status', '')).lower() if isinstance(final, dict) else ''
+        run.check('serve_train_job', code == 202 and status == 'completed' and final.get('promoted') is False,
+                  f'accepted={code} status={status} promoted={final.get("promoted") if isinstance(final, dict) else None}')
+    finally:
+        try:
+            os.killpg(server.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+
+
+def scenario(mloop, task, budget, keep, expected, serve):
     base = tempfile.mkdtemp(prefix=f'lifecycle-{task}-')
     run = Run(mloop, task, base, budget, expected)
     rng = random.Random(20261029)
@@ -146,9 +262,10 @@ def scenario(mloop, task, budget, keep, expected):
         result = next((e for e in evs if e.get('event') == 'result'), {})
         promo = next((e for e in evs if e.get('event') == 'promotion'), {})
         candidate = result.get('experimentId')
-        # The new model is the better one on the data the service now sees (step 9 measures that); the loop is meant to put it in production.
-        run.check('retrain_promotes', rc == 0 and promo.get('promoted') is True,
-                  f'{candidate} promoted={promo.get("promoted")} reason={promo.get("keptInStagingReason")}')
+        reason = promo.get('keptInStagingReason') or ''
+        # Without a gate the recorded scores decide, as they always have; what matters is that the reason is honest about them.
+        run.check('retrain_without_gate', rc == 0 and promo.get('promoted') is False and '--against production' in reason,
+                  f'{candidate} promoted={promo.get("promoted")} reason={reason[:90]}')
 
         rc, ev = run.json_of('evaluate', candidate or 'exp-002', os.path.join(base, 'test_b.csv'), '--against', 'production', '--json', cwd=proj)
         verdict = (((ev or {}).get('comparison') or {}).get('paired') or {}).get('verdict')
@@ -166,6 +283,26 @@ def scenario(mloop, task, budget, keep, expected):
         changes = (hist or {}).get('promotions') or []
         run.check('rollback', (rb or {}).get('status') == 'rolled-back' and (rb or {}).get('experimentId') == 'exp-001'
                   and changes and changes[-1].get('experimentId') == 'exp-001', f'status={(rb or {}).get("status")} to={(rb or {}).get("experimentId")}')
+
+        # The project says how a challenger is judged: against production, row by row, on rows of the regime it serves now.
+        config_path = os.path.join(proj, 'mloop.yaml')
+        text = open(config_path).read()
+        marker = '    description: '
+        at = text.index(marker)
+        eol = text.index('\n', at) + 1
+        gate = f'    gate:\n      data: {os.path.join(base, "test_b.csv")}\n      no_worse_than_production: true\n'
+        open(config_path, 'w').write(text[:eol] + gate + text[eol:])
+        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'y', '--time', str(budget), '--json', cwd=proj)
+        result = next((e for e in evs if e.get('event') == 'result'), {})
+        promo = next((e for e in evs if e.get('event') == 'promotion'), {})
+        rc2, hist = run.json_of('promote', '--history', '--json', cwd=proj)
+        changes = (hist or {}).get('promotions') or []
+        last = changes[-1] if changes else {}
+        run.check('retrain_with_paired_gate', rc == 0 and promo.get('promoted') is True and last.get('experimentId') == result.get('experimentId')
+                  and last.get('gate') == 'passed', f'{result.get("experimentId")} promoted={promo.get("promoted")} reason={promo.get("keptInStagingReason")} history last={last.get("experimentId")}/{last.get("gate")}')
+
+        if serve:
+            serve_steps(run, proj, base, task, budget)
     except Exception as ex:  # a step that cannot run is a failed scenario, not a crashed harness
         run.check('scenario', False, f'{type(ex).__name__}: {ex}')
     finally:
@@ -183,12 +320,13 @@ def main():
     ap.add_argument('--time', type=int, default=15, help='training budget in seconds')
     ap.add_argument('--out', default='lifecycle-results.json')
     ap.add_argument('--keep', action='store_true')
-    ap.add_argument('--expected-failures', default='', help='comma-separated step names (e.g. retrain_promotes) that are known to fail')
+    ap.add_argument('--no-serve', action='store_true', help='skip the HTTP steps (they start a server on a free local port)')
+    ap.add_argument('--expected-failures', default='', help='comma-separated step names that are known to fail')
     args = ap.parse_args()
     expected = {s for s in args.expected_failures.split(',') if s}
     steps = []
     for task in args.tasks.split(','):
-        steps += scenario(args.mloop, task, args.time, args.keep, expected)
+        steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve)
     with open(args.out, 'w') as f:
         json.dump(steps, f, indent=2)
     tally = {}
