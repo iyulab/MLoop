@@ -222,6 +222,42 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
         unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    /// <summary>
+    /// The server answers every request through one shared <see cref="MLContext"/> (Microsoft's own ASP.NET
+    /// guidance registers it as a singleton). That sharing is only sound while concurrent requests answer
+    /// exactly as they do one at a time, so this is the sentence that would break first if a request path
+    /// ever started mutating the context: sequential answers are the reference, then many threads ask the
+    /// same rows in a scrambled order and every answer must match.
+    /// </summary>
+    [Fact]
+    public async Task Concurrent_predictions_answer_exactly_as_one_at_a_time()
+    {
+        var modelName = SeedMulticlassProductionModel();
+        var points = new[] { (1.0, 1.0), (5.0, 5.0), (9.0, 9.0), (2.0, 8.0), (8.0, 2.0) };
+
+        async Task<string> Ask((double X1, double X2) point)
+        {
+            var response = await _client.PostAsJsonAsync($"/predict?name={modelName}", new[] { new { X1 = point.X1, X2 = point.X2 } });
+            var raw = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, raw);
+            var row = JsonSerializer.Deserialize<JsonElement>(raw).GetProperty("predictions")[0];
+            // The id is the one field that differs between asks of the same row.
+            return string.Join("|", row.EnumerateObject().Where(p => p.Name != "predictionId").Select(p => $"{p.Name}={p.Value}"));
+        }
+
+        var reference = new Dictionary<(double, double), string>();
+        foreach (var point in points)
+            reference[point] = await Ask(point);
+
+        var asks = Enumerable.Range(0, 400).Select(i => points[(i * 7) % points.Length]).ToArray();
+        var answers = new System.Collections.Concurrent.ConcurrentBag<(string Got, string Expected)>();
+        await Parallel.ForEachAsync(asks, new ParallelOptions { MaxDegreeOfParallelism = 16 }, async (point, _) =>
+            answers.Add((await Ask(point), reference[point])));
+
+        answers.Should().HaveCount(asks.Length);
+        answers.Where(a => a.Got != a.Expected).Should().BeEmpty("concurrent requests share one MLContext and must answer as they do alone");
+    }
+
     [Fact]
     public async Task Predict_Multiclass_MatchesTheDocumentedResponseContract()
     {

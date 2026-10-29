@@ -61,8 +61,11 @@ public class PredictionService
     /// model instances across requests (e.g. mloop serve model cache).
     /// </summary>
     /// <remarks>
-    /// <see cref="ITransformer.Transform"/> is thread-safe, but <see cref="MLContext"/> is not —
-    /// callers sharing an ITransformer across threads must still use a per-request MLContext.
+    /// <see cref="ITransformer.Transform"/> is thread-safe, and so is sharing one <see cref="MLContext"/>
+    /// across concurrent calls here — <c>mloop serve</c> answers every request through a single registered
+    /// context (as Microsoft's ASP.NET guidance does), checked by
+    /// <c>Concurrent_predictions_answer_exactly_as_one_at_a_time</c>. A <c>PredictionEngine</c> is the
+    /// thing that is not thread-safe, and this service does not use one.
     /// </remarks>
     public PredictionResult Predict(
         Dictionary<string, object>[] rows,

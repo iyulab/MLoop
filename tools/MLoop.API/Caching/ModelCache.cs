@@ -11,8 +11,9 @@ namespace MLoop.API.Caching;
 /// <remarks>
 /// <para>
 /// ML.NET's <see cref="ITransformer.Transform"/> is thread-safe, so a single cached instance may be
-/// used concurrently by multiple request threads. Each caller still needs its own <see cref="MLContext"/>
-/// for ancillary operations (TextLoader etc.).
+/// used concurrently by multiple request threads. Requests share the server's one <see cref="MLContext"/>
+/// for ancillary operations (TextLoader etc.); concurrent answers equal sequential ones
+/// (<c>Concurrent_predictions_answer_exactly_as_one_at_a_time</c>).
 /// </para>
 /// <para>
 /// The cache protects against the thundering-herd problem (N concurrent requests for the same uncached
