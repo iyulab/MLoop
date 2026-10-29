@@ -41,6 +41,8 @@ public sealed class AtomicReplacementTests : IDisposable
                 }
                 catch (FileNotFoundException) { missing++; }
                 catch (DirectoryNotFoundException) { missing++; }
+                catch (IOException) { /* Windows: the instant of a replacement refuses a new reader — not an absence, and not a torn read */ }
+                Thread.Yield();
             }
         });
         for (var i = 0; i < 60; i++)

@@ -24,7 +24,7 @@ public static class AtomicFile
         try
         {
             fill(temporary);
-            File.Move(temporary, path, overwrite: true);
+            MoveOver(temporary, path);
         }
         catch
         {
@@ -42,7 +42,7 @@ public static class AtomicFile
         {
             await fill(temporary).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporary, path, overwrite: true);
+            MoveOver(temporary, path);
         }
         catch
         {
@@ -50,6 +50,27 @@ public static class AtomicFile
             throw;
         }
     }
+
+    // On Windows a rename over a file that a reader has open is refused (the reader did not share it for deletion) until the
+    // reader closes it — a request reading the model, a moment. Waiting it out keeps the replacement from failing under the very
+    // load it exists for. Elsewhere a rename over an open file just works, and a refusal is a real error.
+    private static void MoveOver(string temporary, string path)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                File.Move(temporary, path, overwrite: true);
+                return;
+            }
+            catch (Exception e) when (OperatingSystem.IsWindows() && attempt < WindowsRetries && e is IOException or UnauthorizedAccessException)
+            {
+                Thread.Sleep(10 + attempt % 5);
+            }
+        }
+    }
+
+    private const int WindowsRetries = 200;
 
     // A hidden name in the same directory: a rename inside one volume is atomic, and no listing by extension picks it up.
     private static string TemporaryBeside(string path) =>
