@@ -25,7 +25,7 @@ One scenario per task, on generated tables (standard library only; nothing is do
                            --soak SECONDS holds a steady load and compares the server's memory at the start and the end
 
   python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression]
-         [--time 15] [--out lifecycle-results.json] [--keep]
+         [--time 60] [--trials 10] [--out lifecycle-results.json] [--keep]
 
 Exit status is 1 when a step fails that is not named in --expected-failures. A step named there is still run and
 reported ("xfail"); it turning green is reported as "xpass" so the list can be shortened. Each run is a fresh
@@ -65,9 +65,14 @@ def write_table(path, rows):
 
 
 class Run:
-    def __init__(self, mloop, task, work, budget, expected):
+    def __init__(self, mloop, task, work, budget, expected, trials=0):
         self.mloop, self.task, self.work, self.budget, self.expected = shlex.split(mloop), task, work, budget, expected
+        self.trials = trials
         self.steps = []
+
+    def budget_args(self):
+        """The training budget: a trial count when there is one (the same search on any machine), the time then only its ceiling."""
+        return ['--time', str(self.budget)] + (['--max-trials', str(self.trials)] if self.trials else [])
 
     def cli(self, *args, cwd=None):
         p = subprocess.run(self.mloop + list(args), cwd=cwd or self.work, capture_output=True, text=True)
@@ -290,7 +295,7 @@ def serve_steps(run, proj, base, task, budget, soak=0):
         os.makedirs(os.path.join(proj, 'datasets'), exist_ok=True)
         shutil.copy(os.path.join(base, 'train_b.csv'), os.path.join(proj, 'datasets', 'train_b.csv'))
         code, job = http('POST', url + '/train', admin, {'dataFile': 'datasets/train_b.csv', 'name': 'default', 'labelColumn': 'y',
-                                                        'task': TASK_FLAG[task], 'timeLimitSeconds': budget, 'promote': False})
+                                                        'task': TASK_FLAG[task], 'timeLimitSeconds': budget, 'promote': False, **({'maxTrials': run.trials} if run.trials else {})})
         job_id = (job.get('jobId') or job.get('id')) if isinstance(job, dict) else None
         final = {}
         deadline = time.time() + budget * 6 + 60
@@ -313,9 +318,9 @@ def serve_steps(run, proj, base, task, budget, soak=0):
             server.kill()
 
 
-def scenario(mloop, task, budget, keep, expected, serve, soak=0):
+def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0):
     base = tempfile.mkdtemp(prefix=f'lifecycle-{task}-')
-    run = Run(mloop, task, base, budget, expected)
+    run = Run(mloop, task, base, budget, expected, trials)
     rng = random.Random(20261029)
     print(f'== {task}  ({base})', flush=True)
     try:
@@ -329,7 +334,7 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0):
         rc, init = run.json_of('init', 'proj', '--task', TASK_FLAG[task], '--label', 'y', '--json')
         run.check('init', rc == 0 and init and init.get('task') == TASK_FLAG[task], f'rc={rc}')
 
-        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', 'y', '--time', str(budget), '--json', cwd=proj)
+        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', 'y', *run.budget_args(), '--json', cwd=proj)
         result = next((e for e in evs if e.get('event') == 'result'), {})
         promo = next((e for e in evs if e.get('event') == 'promotion'), {})
         key, floor = LEARNED[task]
@@ -364,7 +369,7 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0):
         run.check('trigger', rc == 0 and given == 50 and (trig or {}).get('shouldRetrain') is True,
                   f'feedback={given} shouldRetrain={(trig or {}).get("shouldRetrain")}')
 
-        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'y', '--time', str(budget), '--json', cwd=proj)
+        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'y', *run.budget_args(), '--json', cwd=proj)
         result = next((e for e in evs if e.get('event') == 'result'), {})
         promo = next((e for e in evs if e.get('event') == 'promotion'), {})
         candidate = result.get('experimentId')
@@ -398,7 +403,7 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0):
         eol = text.index('\n', at) + 1
         gate = f'    gate:\n      data: {os.path.join(base, "test_b.csv")}\n      no_worse_than_production: true\n'
         open(config_path, 'w').write(text[:eol] + gate + text[eol:])
-        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'y', '--time', str(budget), '--json', cwd=proj)
+        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'y', *run.budget_args(), '--json', cwd=proj)
         result = next((e for e in evs if e.get('event') == 'result'), {})
         promo = next((e for e in evs if e.get('event') == 'promotion'), {})
         rc2, hist = run.json_of('promote', '--history', '--json', cwd=proj)
@@ -423,7 +428,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--mloop', required=True, help='command that starts the mloop CLI, e.g. "dotnet path/to/mloop.dll"')
     ap.add_argument('--tasks', default='binary,multiclass,regression')
-    ap.add_argument('--time', type=int, default=15, help='training budget in seconds')
+    ap.add_argument('--time', type=int, default=60, help='training time ceiling in seconds')
+    ap.add_argument('--trials', type=int, default=10, help='trials of the trainer search (the same search on any machine, so a step does not turn on a lucky draw); 0 = the time budget alone')
     ap.add_argument('--out', default='lifecycle-results.json')
     ap.add_argument('--keep', action='store_true')
     ap.add_argument('--soak', type=int, default=0, help='seconds of steady load against the server, comparing its memory at the start and the end (0 = skip)')
@@ -436,7 +442,7 @@ def main():
     expected = {s for s in args.expected_failures.split(',') if s}
     steps = []
     for task in args.tasks.split(','):
-        steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak)
+        steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak, args.trials)
     with open(args.out, 'w') as f:
         json.dump(steps, f, indent=2)
     tally = {}
