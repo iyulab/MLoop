@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.ML;
 using Microsoft.ML.AutoML;
+using Microsoft.ML.Data;
 
 // Runs ML.NET's own AutoML (Microsoft.ML.AutoML) on one train file for a time budget and scores the best model on the test file.
 // args: train.csv test.csv label task(binary|multiclass|regression) budgetSeconds
@@ -14,6 +15,20 @@ var inferred = ml.Auto().InferColumns(trainPath, label);
 var loader = ml.Data.CreateTextLoader(inferred.TextLoaderOptions);
 var train = loader.Load(trainPath);
 var test = loader.Load(testPath);
+
+// A binary experiment wants a Boolean label; a table whose classes are words (good / bad) is read as text, so the classes become false / true
+// in sorted order — the same positive class the other systems score (ROC AUC does not depend on which class is called positive for a good model).
+if (task == "binary" && train.Schema[label].Type is Microsoft.ML.Data.TextDataViewType)
+{
+    var classes = train.GetColumn<string>(label).Concat(test.GetColumn<string>(label)).Distinct().Order(StringComparer.Ordinal).ToList();
+    if (classes.Count == 2)
+    {
+        var map = new[] { new KeyValuePair<string, bool>(classes[0], false), new KeyValuePair<string, bool>(classes[1], true) };
+        var mapper = ml.Transforms.Conversion.MapValue(label, map, label).Fit(train);
+        train = mapper.Transform(train);
+        test = mapper.Transform(test);
+    }
+}
 
 var clock = Stopwatch.StartNew();
 string trainer;
