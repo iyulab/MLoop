@@ -49,17 +49,29 @@ def pick(rows, per_task):
     return chosen
 
 
-def shift_column(df, label, task):
+def shift_columns(df, label, task):
+    """The numeric columns that could move, the one tracking the label best first."""
     y = df[label]
     codes = pd.Series(pd.factorize(y)[0], index=df.index) if task != 'regression' else pd.to_numeric(y, errors='coerce')
-    best, best_score = None, -1.0
+    scored = []
     for c in df.columns:
         if c == label or not pd.api.types.is_numeric_dtype(df[c]) or df[c].nunique() < 10:
             continue
+        # a counter or an identifier (whole numbers, nearly all different) says nothing about when a row was recorded
+        if (df[c].dropna() % 1 == 0).all() and df[c].nunique() > 0.3 * len(df):
+            continue
         score = abs(df[c].rank().corr(codes.rank()))  # rank correlation, without scipy
-        if score == score and score > best_score:
-            best, best_score = c, score
-    return best
+        if score == score:
+            scored.append((score, c))
+    return [c for _, c in sorted(scored, reverse=True)]
+
+
+def cut_at(df, c):
+    """The 60th percentile of column c, or None when regime A would pile up on its own maximum (a capped column: a shift past
+    the cap lands in the same top bin as the rows sitting on it, so the rows that moved cannot be told from the ones that did not)."""
+    at = df[c].quantile(SHIFT_QUANTILE)
+    a = df[c][df[c] <= at]
+    return None if len(a) == 0 or (a == a.max()).mean() > 0.2 else at
 
 
 def cut(row, source, out):
@@ -69,14 +81,13 @@ def cut(row, source, out):
     numeric = [c for c in df.columns if c != label and pd.api.types.is_numeric_dtype(df[c])]
     if len(numeric) < 3:
         return f'{name}: skipped (fewer than 3 numeric features)'
-    col = shift_column(df, label, task)
+    col, at = next(((c, at) for c in shift_columns(df, label, task) if (at := cut_at(df, c)) is not None), (None, None))
     if col is None:
         return f'{name}: skipped (no numeric column to move)'
-    cut_at = df[col].quantile(SHIFT_QUANTILE)
-    in_b = df[col] > cut_at
+    in_b = df[col] > at
     a = df[~in_b].sample(frac=1.0, random_state=SEED).head(REGIME_CAP)
     b = df[in_b].sample(frac=1.0, random_state=SEED).head(REGIME_CAP)
-    if len(b) < 400 or len(a) < 600:
+    if len(b) < 400 or len(a) < 700:
         return f'{name}: skipped (regimes of {len(a)} and {len(b)} rows)'
 
     if task == 'regression':
@@ -88,7 +99,8 @@ def cut(row, source, out):
         b = b.assign(**{label: b[label].astype(str).map(nxt)})
         a = a.assign(**{label: a[label].astype(str)})
 
-    n_new_a, n_new_b = min(300, len(a) // 10), min(300, len(b) // 7)
+    # the drift check needs 100 logged predictions, so the in-regime rows to predict are at least that many
+    n_new_a, n_new_b = min(300, len(a) // 5), min(300, len(b) // 5)
     n_test_b = max(60, len(b) // 5)
     parts = {'new_a': a.iloc[:n_new_a], 'train_a': a.iloc[n_new_a:],
              'new_b': b.iloc[:n_new_b], 'test_b': b.iloc[n_new_b:n_new_b + n_test_b], 'train_b': b.iloc[n_new_b + n_test_b:]}
@@ -99,7 +111,7 @@ def cut(row, source, out):
     k = df[label].nunique()
     learned = {'binary': ['auc', 0.6], 'multiclass': ['macro_accuracy', round(1 / k + 0.05, 3)], 'regression': ['r_squared', 0.1]}[task]
     manifest = {'name': name, 'task': task, 'label': label, 'shift_column': col, 'numeric_columns': numeric,
-                'n_new_a': n_new_a, 'n_new_b': n_new_b, 'learned': learned, 'regime_cut': float(cut_at),
+                'n_new_a': n_new_a, 'n_new_b': n_new_b, 'learned': learned, 'regime_cut': float(at),
                 'rows': {key: len(part) for key, part in parts.items()}}
     with open(os.path.join(d, 'manifest.json'), 'w') as f:
         json.dump(manifest, f, indent=2)
