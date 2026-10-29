@@ -173,6 +173,16 @@ public static class PromoteCommand
                 }
 
                 var (selected, reason, error) = SelectExperiment(candidates, resolvedModelName, best, refusals);
+
+                // The project's own gate policy scores an experiment on its evaluation set, so it is asked only of the
+                // one --best would pick: a refused pick is set aside and the next best is chosen, as the fixed gate does.
+                while (best && !force && refusals is not null && selected != null
+                       && await modelRegistry.GatePolicyRefusalAsync(resolvedModelName, selected, CancellationToken.None) is { } pickRefusal)
+                {
+                    refusals[selected] = pickRefusal;
+                    (selected, reason, error) = SelectExperiment(candidates, resolvedModelName, best, refusals);
+                }
+
                 if (selected == null)
                 {
                     ErrorConsole.Error(Markup.Escape(error!));

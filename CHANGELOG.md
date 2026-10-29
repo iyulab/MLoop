@@ -75,6 +75,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`compare` recommended experiments that `promote` would refuse.** It ranks by metric, and a model that answers one class for every row can
+  lead on accuracy; the recommendation named it anyway, and the `promote` it suggested was refused. The recommendation is now the best
+  experiment the promotion gates accept (the fixed quality gate and the project's `gate:` policy), a line names each one ranked ahead that
+  they refuse and why, and `--json` carries `recommended` and `held` beside `best` (the metric's first, unchanged). `promote --best` likewise
+  sets aside a pick the project's `gate:` policy refuses and takes the next best, as it already did for the fixed gate.
 - **A trial the time budget cut off could be recorded as a failed trial.** When a trainer's fit was stopped by the budget and the stop
   surfaced as an exception other than a cancellation, the search listed that trial with its error and no metrics (in `trials.ndjson`, the
   leaderboard and the trial events) as if the trainer could not fit. A failure after the budget has been cut is now the cut: the trial is

@@ -158,11 +158,12 @@ public static class CompareCommand
             if (jsonOutput)
             {
                 var production = await ctx.ModelRegistry.ListAsync(null, CancellationToken.None);
-                return EmitLocalComparisonJson(
+                return await EmitLocalComparisonJsonAsync(
                     experimentsToCompare,
                     notFound,
                     production.ToDictionary(m => m.ModelName, m => m.ExperimentId),
-                    sortMetric);
+                    sortMetric,
+                    ctx.ModelRegistry);
             }
 
             if (experimentsToCompare.Count == 0)
@@ -341,18 +342,28 @@ public static class CompareCommand
 
                 if (rankedExperiments.Count > 0)
                 {
+                    // The ranking is by metric; what may go to production is what the gates accept.
+                    var (recommended, held) = await PromotionAdvice.ChooseAsync(rankedExperiments, productionDict, ctx.ModelRegistry);
+                    foreach (var h in held)
+                        WarningConsole.Warn($"{h.ExperimentId} ranks higher on {primaryMetric} but would not be promoted: {h.Reason}");
+
+                    var recommendedExp = recommended is null ? null : rankedExperiments.First(e => e.ExperimentId == recommended);
                     var bestExp = rankedExperiments.First();
                     var isProduction = productionDict.TryGetValue(bestExp.ModelName, out var prodExpId)
                         && bestExp.ExperimentId == prodExpId;
 
-                    if (!isProduction)
+                    if (recommendedExp is not null)
                     {
-                        AnsiConsole.MarkupLine($"[grey]Recommendation: Consider promoting [cyan]{bestExp.ExperimentId}[/] to production (best {primaryMetric}: {bestExp.Metrics![primaryMetric]:F4})[/]");
-                        AnsiConsole.MarkupLine($"[grey]  Run: [blue]mloop promote {bestExp.ExperimentId} --name {bestExp.ModelName}[/][/]");
+                        AnsiConsole.MarkupLine($"[grey]Recommendation: Consider promoting [cyan]{recommendedExp.ExperimentId}[/] to production (best {primaryMetric}: {recommendedExp.Metrics![primaryMetric]:F4})[/]");
+                        AnsiConsole.MarkupLine($"[grey]  Run: [blue]mloop promote {recommendedExp.ExperimentId} --name {recommendedExp.ModelName}[/][/]");
                     }
-                    else
+                    else if (isProduction)
                     {
                         AnsiConsole.MarkupLine($"[grey]Best experiment [cyan]{bestExp.ExperimentId}[/] is already in production ({primaryMetric}: {bestExp.Metrics![primaryMetric]:F4})[/]");
+                    }
+                    else if (held.Count > 0)
+                    {
+                        AnsiConsole.MarkupLine("[grey]No compared experiment ahead of production passes the promotion gates — nothing to recommend.[/]");
                     }
                 }
             }
@@ -388,11 +399,12 @@ public static class CompareCommand
     private static bool WeightsDiffer(IReadOnlyCollection<ExperimentData> experiments)
         => Weighting.Differ(experiments.Select(e => Weighting.Of(e.Config.WeightColumn)));
 
-    private static int EmitLocalComparisonJson(
+    private static async Task<int> EmitLocalComparisonJsonAsync(
         List<ExperimentData> experiments,
         IReadOnlyList<string> notFound,
         Dictionary<string, string> productionByModel,
-        string? sortMetric)
+        string? sortMetric,
+        IModelRegistry registry)
     {
         var excluded = notFound
             .Select(id => new ProvidedExcludedEntry(id, "not-found"))
@@ -447,6 +459,12 @@ public static class CompareCommand
             excluded.AddRange(decision.Excluded);
         }
 
+        // `best` is the metric's first; `recommended` is the first the promotion gates accept (null when
+        // production already is, or none is), and `held` names each ranked ahead of it that they refuse.
+        var byId = experiments.ToDictionary(e => e.ExperimentId);
+        var advice = await PromotionAdvice.ChooseAsync(
+            ranking.Where(r => byId.ContainsKey(r.Id)).Select(r => byId[r.Id]), productionByModel, registry);
+
         var payload = new
         {
             // The ranking below compares metrics measured over different distributions when true.
@@ -456,6 +474,8 @@ public static class CompareCommand
             direction,
             directionSource,
             best,
+            recommended = advice.Recommended,
+            held = advice.Held.Select(h => new { id = h.ExperimentId, reason = h.Reason }).ToList(),
             tie,
             ranking,
             excluded,
