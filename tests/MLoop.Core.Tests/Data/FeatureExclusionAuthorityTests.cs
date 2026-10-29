@@ -42,6 +42,25 @@ public class FeatureExclusionAuthorityTests : IDisposable
     }
 
     [Fact]
+    public void AColumnTheCallerAlreadyExcluded_IsNotNarratedAgainByTheLoad()
+    {
+        var lines = new List<string> { "keep,event_date,label" };
+        for (int i = 0; i < 40; i++)
+            lines.Add($"{i},2024-01-{(i % 28) + 1:D2},{i % 2}");
+        var csvPath = CreateCsv("narration.csv", lines);
+
+        var said = new List<string>();
+        var loader = new CsvDataLoader(_mlContext, said.Add);
+        loader.LoadData(csvPath, "label", "binary-classification", featureExclusions: ["event_date"]);
+        Assert.DoesNotContain(said, m => m.Contains("Removed excluded column", StringComparison.Ordinal));   // announced where it was decided
+
+        // The partner: a load that decides for itself still says what it removed, so the line is not simply gone.
+        said.Clear();
+        loader.LoadData(csvPath, "label", "binary-classification");
+        Assert.Contains(said, m => m.Contains("event_date", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void DetermineExcludedColumns_ReportsEachReason()
     {
         var lines = new List<string> { "keep,constant_col,sparse_col,event_date,customer_id,label" };

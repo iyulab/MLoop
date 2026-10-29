@@ -75,6 +75,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`train` printed its "Removed excluded column(s)" line twice.** The training and test slices each load the file with the exclusions
+  already decided, and each announced them again. The decision is announced once, where it is made.
 - **`compare` recommended experiments that `promote` would refuse.** It ranks by metric, and a model that answers one class for every row can
   lead on accuracy; the recommendation named it anyway, and the `promote` it suggested was refused. The recommendation is now the best
   experiment the promotion gates accept (the fixed quality gate and the project's `gate:` policy), a line names each one ranked ahead that

@@ -77,7 +77,9 @@ public class CsvDataLoader : DataProviderBase
             // The caller already decided — apply that decision verbatim. Re-deriving it from this
             // file would let a train/test partition disagree with the rest of the run about the
             // feature width (see DetermineExcludedColumns).
-            mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveExcludedColumns(mlnetCompatiblePath, featureExclusions, narrateExclusions), filePath);
+            // The decision was announced where it was made; narrating it again for each slice (train and test
+            // load separately) printed the same line twice.
+            mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveExcludedColumns(mlnetCompatiblePath, featureExclusions), filePath);
         }
         else
         {
