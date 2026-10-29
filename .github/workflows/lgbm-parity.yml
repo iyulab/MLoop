@@ -1,0 +1,60 @@
+name: LightGBM parity
+
+# Does ML.NET's LightGBM give what the LightGBM library gives for the same settings? One fixed set of hyperparameters per
+# configuration is trained with both on numeric regression tables and scored on the same held-out rows
+# (benchmarks/engine-compare/parity). Manual only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: 'Comma-separated split seeds'
+        default: '0,1,2,3,4'
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install Python packages
+      run: pip install lightgbm scikit-learn pandas numpy liac-arff scipy
+
+    - name: Build the ML.NET side
+      run: dotnet build benchmarks/engine-compare/parity/MlnetLgbm.csproj --configuration Release
+
+    - name: Compare
+      run: >
+        python benchmarks/engine-compare/parity/parity.py
+        --mlnet "dotnet $PWD/benchmarks/engine-compare/parity/bin/Release/net10.0/MlnetLgbm.dll"
+        --seeds "${{ inputs.seeds || '0,1,2,3,4' }}" --out parity.jsonl | tee parity.txt
+
+    - name: Cost of a large model
+      run: >
+        python benchmarks/engine-compare/parity/sizeprobe.py
+        --mlnet "dotnet $PWD/benchmarks/engine-compare/parity/bin/Release/net10.0/MlnetLgbm.dll" | tee sizeprobe.txt
+
+    - name: Keep the results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: lgbm-parity
+        path: |
+          parity.jsonl
+          parity.txt
+          sizeprobe.txt
+        retention-days: 30

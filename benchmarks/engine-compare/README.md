@@ -32,3 +32,10 @@ python benchmarks/engine-compare/run.py summarize results.jsonl
 ```
 
 The `Engine compare` workflow (`workflow_dispatch`) runs one job per split seed and writes the summary table to the run.
+
+## Learner parity and the cost of a large model
+
+`parity/` answers two questions that a gap between systems raises. `parity.py` trains one fixed set of hyperparameters with the LightGBM
+library and with ML.NET's LightGBM regressor (`MlnetLgbm`) on numeric regression tables and reports the held-out RMSE side by side — if they
+agree, a gap is a matter of search, not of the learner. `sizeprobe.py` trains ML.NET LightGBM at growing sizes (trees × leaves) and reports the
+model file, the time to save and load it and to score the held-out rows. Both run in the `LightGBM parity` workflow (`workflow_dispatch`).
