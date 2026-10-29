@@ -122,6 +122,47 @@ public sealed class TrainMaxTrialsTests : IDisposable
     }
 
     [Fact]
+    public async Task Train_WithAMaxTrialsAndNoTime_SkipsTheTimeEstimate_ThatWouldRunTheSameSearchTwice()
+    {
+        var (initExit, initOutput, _) = await CliRunner.RunAsync("init", "p", "--task", "binary-classification");
+        Assert.True(initExit == 0, initOutput);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
+        await File.WriteAllTextAsync("datasets/train.csv", Table());
+
+        var (exit, output, _) = await CliRunner.RunAsync(
+            "train", "datasets/train.csv", "--label", "y", "--max-trials", "3", "--no-promote", "--json");
+
+        Assert.True(exit == 0, output);
+        Assert.DoesNotContain("probe", output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Train_WithAutoTimeAndAMaxTrials_IsRefused()
+    {
+        var (initExit, initOutput, _) = await CliRunner.RunAsync("init", "p", "--task", "binary-classification");
+        Assert.True(initExit == 0, initOutput);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
+        await File.WriteAllTextAsync("datasets/train.csv", Table());
+
+        var (exit, _, stderr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--auto-time", "--max-trials", "3");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("--auto-time cannot be combined with a trial limit", stderr);
+    }
+
+    private static string Table()
+    {
+        var csv = new StringBuilder("x,z,y\n");
+        var rng = new Random(3);
+        for (var i = 0; i < 200; i++)
+        {
+            var x = rng.NextDouble();
+            csv.Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{(x + rng.NextDouble() * 0.4 > 0.7 ? "true" : "false")}\n");
+        }
+        return csv.ToString();
+    }
+
+    [Fact]
     public async Task Train_WithAMaxTrialsOnATaskThatRunsNoSearch_FailsBeforeTraining()
     {
         var (initExit, initOutput, _) = await CliRunner.RunAsync("init", "p", "--task", "clustering");

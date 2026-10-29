@@ -336,11 +336,15 @@ public static partial class TrainCommand
             //   sets time_limit_seconds (the project-workflow opt-in; contradictions already rejected above).
             // - If --time was explicitly specified, use that value (no auto-time)
             // - If --no-auto-time was specified, use default 300s (no auto-time)
+            // - If a trial limit is set (--max-trials / training.max_trials), no auto-time: the time is its ceiling
             // - If neither --time nor yaml time_limit_seconds is set, enable auto-time
             var yamlHasTimeLimit = effectiveDefinition.Training?.TimeLimitSeconds != null;
+            // A trial limit bounds the work itself — the time is then only its ceiling (the default, or --time):
+            // an estimated budget would run the same fixed-seed search twice.
+            var hasTrialLimit = effectiveDefinition.Training?.MaxTrials != null;
             // Auto-time probing samples CSV rows, which does not apply to image directories.
             var useAutoTime = autoTime
-                || (!time.HasValue && !yamlHasTimeLimit && !noAutoTime && !isDirectoryBased);
+                || (!time.HasValue && !yamlHasTimeLimit && !hasTrialLimit && !noAutoTime && !isDirectoryBased);
 
             // Display training configuration (auto-time shows an "auto" limit, not the yaml/default seconds,
             // so the summary matches what the engine actually does — honest record vs. actual)

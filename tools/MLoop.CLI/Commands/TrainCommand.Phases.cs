@@ -226,6 +226,11 @@ public static partial class TrainCommand
                 ErrorConsole.Error("--auto-time is not supported for image/directory training (time estimation probes CSV rows).");
                 return null;
             }
+            if (effectiveDefinition.Training?.MaxTrials.HasValue == true)
+            {
+                ErrorConsole.Error("--auto-time cannot be combined with a trial limit (--max-trials / training.max_trials): the limit already bounds the work, and the time estimate would run the same search twice.");
+                return null;
+            }
         }
 
         if (isDirectoryBased)

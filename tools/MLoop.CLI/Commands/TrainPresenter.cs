@@ -95,6 +95,8 @@ internal static class TrainPresenter
             : useAutoTime
             ? "[cyan]auto[/] (estimated from data size)"
             : $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
+        if (definition.Training?.MaxTrials is { } maxTrials)
+            table.AddRow("Max Trials", maxTrials.ToString(System.Globalization.CultureInfo.InvariantCulture));
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
 
         if (TrainingRunner.IsTimeSeriesTask(definition.Task))

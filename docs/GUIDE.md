@@ -123,7 +123,9 @@ mloop train [data-file] [options]    # the label is --label, or the one in mloop
 #                               training.max_trials in mloop.yaml). The search's seed is fixed, so the
 #                               same n gives the same search on a fast machine and a slow one. Tasks
 #                               that run no search (clustering, anomaly detection, recommendation,
-#                               forecasting, deep learning) refuse it
+#                               forecasting, deep learning) refuse it. With a trial limit there is no
+#                               auto-time estimate (it would run the same search twice): --time, or 300s,
+#                               is only the ceiling, and --auto-time with --max-trials is refused
 #   --no-auto-time              Disable the estimate (falls back to 300s)
 #                               Deep-learning tasks (text classification, NER, sentence similarity,
 #                               question answering, object detection) run 10 epochs whatever the
