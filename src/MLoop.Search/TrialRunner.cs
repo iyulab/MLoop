@@ -107,12 +107,15 @@ public sealed class TrialRunner
 {
     /// <summary>
     /// The model size (<see cref="TrainerCandidate.ModelSize"/>, trees × leaves) from which the search keeps a smaller
-    /// model within one standard error of the top score. Below it a model is a few megabytes at most and costs
-    /// nothing worth a point of score; above it — a hundred thousand leaves — it is tens to hundreds of megabytes,
-    /// seconds to save and load, and its save spills past the time budget. Measured on twelve sets: where the top
-    /// model was smaller, keeping a smaller one still lost up to 0.03 of score for no saving.
+    /// model within one standard error of the top score. A gradient-boosted model of ten million leaves is about
+    /// 200 MB on disk and takes seconds to save, load and score, so above it a point of score inside the margin is not
+    /// worth the model. Below it the rule cost score: on sixteen public tables, keeping the top-scoring trial instead
+    /// of the smallest model within one standard error was better by up to 0.0066 RMSE and 0.0063 AUC (twice its standard
+    /// error on two tables) and worse on none the rule touched, at 60 and 240 seconds; the largest top model in those
+    /// runs was 6.7 million leaves (150 MB, 6.7 s to score 4,100 rows). The rule used to start at a hundred thousand
+    /// leaves, which an ordinary model of a few hundred trees reaches.
     /// </summary>
-    public const double LargeModelSize = 100_000;
+    public const double LargeModelSize = 10_000_000;
 
     /// <summary>Cells up to which the search keeps the training rows in memory (50 million: a few hundred megabytes).</summary>
     internal const long CacheCellLimit = 50_000_000;

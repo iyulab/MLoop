@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The search keeps the top-scoring trial unless its model is very large.** It used to replace a top model of 100,000 leaves (trees × leaves) or more
+  with the smallest model within one standard error of its score; an ordinary model of a few hundred trees reaches that, and on sixteen public
+  tables the swap cost score (up to 0.0066 RMSE and 0.0063 AUC, twice the standard error on two tables, at 60 and 240 seconds) with no cost
+  in time to give back. The rule now starts at 10 million leaves (about 200 MB on disk), where keeping the model is what costs. A model you
+  trained before is unchanged; a new search can pick a larger model than it did, and `trials.ndjson` marks the trial the model was refit from.
+
 ## [0.48.0] - 2026-10-30
 
 ### Added
