@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MLoop.Core.Storage;
 
 namespace MLoop.CLI.Infrastructure.FileSystem;
 
@@ -42,7 +43,7 @@ public class FileSystemManager : IFileSystemManager
         }
 
         var json = JsonSerializer.Serialize(content, JsonOptions);
-        await File.WriteAllTextAsync(path, json, cancellationToken);
+        await AtomicFile.ReplaceAsync(path, temporary => File.WriteAllTextAsync(temporary, json, cancellationToken), cancellationToken);
     }
 
     public async Task<T> ReadJsonAsync<T>(string path, CancellationToken cancellationToken = default)
@@ -65,7 +66,7 @@ public class FileSystemManager : IFileSystemManager
             await CreateDirectoryAsync(directory, cancellationToken);
         }
 
-        await File.WriteAllTextAsync(path, content, cancellationToken);
+        await AtomicFile.ReplaceAsync(path, temporary => File.WriteAllTextAsync(temporary, content, cancellationToken), cancellationToken);
     }
 
     public async Task<string> ReadTextAsync(string path, CancellationToken cancellationToken = default)
@@ -91,7 +92,13 @@ public class FileSystemManager : IFileSystemManager
             await CreateDirectoryAsync(directory, cancellationToken);
         }
 
-        await Task.Run(() => File.Copy(sourcePath, destinationPath, overwrite), cancellationToken);
+        if (!overwrite)
+        {
+            await Task.Run(() => File.Copy(sourcePath, destinationPath, overwrite: false), cancellationToken);
+            return;
+        }
+
+        await AtomicFile.ReplaceAsync(destinationPath, temporary => Task.Run(() => File.Copy(sourcePath, temporary, overwrite: true), cancellationToken), cancellationToken);
     }
 
     public Task DeleteDirectoryAsync(string path, CancellationToken cancellationToken = default)

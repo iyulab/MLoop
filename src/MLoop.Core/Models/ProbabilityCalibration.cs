@@ -72,7 +72,7 @@ public sealed record ProbabilityCalibration(
     }
 
     /// <summary>Writes this calibration beside <paramref name="modelPath"/>.</summary>
-    public void WriteBeside(string modelPath) => File.WriteAllText(PathBeside(modelPath), JsonSerializer.Serialize(this, Options));
+    public void WriteBeside(string modelPath) => MLoop.Core.Storage.AtomicFile.WriteAllText(PathBeside(modelPath), JsonSerializer.Serialize(this, Options));
 
     /// <summary>Where the calibration beside <paramref name="modelPath"/> lives.</summary>
     public static string PathBeside(string modelPath)

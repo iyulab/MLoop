@@ -82,6 +82,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A model promoted while `mloop serve` answered could fail the requests in flight.** `promote`, `rollback` and `auto-promote` wrote the
+  production files in place — `model.zip` was removed and rewritten, `metadata.json` truncated — so for the length of the copy a prediction found
+  no model (HTTP 404 `No production model found`) or a missing file (500). Files other processes read (the production slot, the decision
+  threshold, the calibration) are now replaced through a temporary file beside them and renamed over the old one, so a reader sees the old
+  content or the new, never neither. Found by a new lifecycle check under load: sixteen clients at once, a promotion and a rollback while eight
+  clients keep predicting.
 - **`train` printed its "Removed excluded column(s)" line twice.** The training and test slices each load the file with the exclusions
   already decided, and each announced them again. The decision is announced once, where it is made.
 - **`compare` recommended experiments that `promote` would refuse.** It ranks by metric, and a model that answers one class for every row can
