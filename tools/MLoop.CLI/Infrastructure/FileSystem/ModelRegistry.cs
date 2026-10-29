@@ -305,20 +305,22 @@ public class ModelRegistry : IModelRegistry
             return $"the quality gate refuses it: {gateRefusal}";
 
         var production = await GetProductionAsync(resolvedName, cancellationToken);
-        if (await IncomparableWithProductionAsync(resolvedName, experiment, production, cancellationToken) is { } incomparable)
-            return $"its metrics cannot be compared with production's: {incomparable}";
-
         if (await ShouldPromoteOnMetricsAsync(resolvedName, experimentId, primaryMetric, cancellationToken))
             return await GatePolicyRefusalAsync(resolvedName, experimentId, cancellationToken) is { } policyRefusal
                 ? $"the gate policy refuses it: {policyRefusal}"
                 : null;
+
+        if (await IncomparableWithProductionAsync(resolvedName, experiment, production, cancellationToken) is { } incomparable)
+            return $"its metrics cannot be compared with production's: {incomparable}";
 
         var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics!.Keys);
         if (metricKey == null || production?.Metrics is null)
             return "there is no metric to judge it against production by — promote it explicitly";
         return experiment.Metrics.TryGetValue(metricKey, out var candidate) && production.Metrics.TryGetValue(metricKey, out var current)
             ? string.Create(CultureInfo.InvariantCulture,
-                $"it does not beat production ({production.ExperimentId}) on {metricKey}: {candidate:0.####} vs {current:0.####}")
+                $"it does not beat production ({production.ExperimentId}) on {metricKey}: {candidate:0.####} vs {current:0.####}") +
+              $" — each is its own model's held-out score; `mloop evaluate {experimentId} <data> --against production` compares the two on the same rows," +
+              " and a gate (gate.data with gate.no_worse_than_production) makes that comparison decide"
             : $"it does not beat production ({production.ExperimentId}) on {metricKey}";
     }
 
@@ -357,6 +359,16 @@ public class ModelRegistry : IModelRegistry
             return true; // No production model yet (or it has no metrics), promote first model
         }
 
+        // The project asked for the candidate to be set against production on its own evaluation set,
+        // row by row (gate.no_worse_than_production). That comparison — made by the caller through
+        // GatePolicyRefusalAsync — replaces the one of recorded scores, which are each model's score on the
+        // held-out part of the data it was trained on: once the data has moved they describe different
+        // distributions, and the model that has stopped fitting keeps the better-looking number.
+        if (await PairedGateJudgesProductionAsync(resolvedName, cancellationToken))
+        {
+            return true;
+        }
+
         // Metrics weighted by different columns (or one weighted, one not) describe different
         // distributions; "better" between them is not a judgement either. An explicit promote decides.
         if (await IncomparableWithProductionAsync(resolvedName, experiment, currentProduction, cancellationToken) is not null)
@@ -389,6 +401,18 @@ public class ModelRegistry : IModelRegistry
         return MetricPolicy.IsErrorMetric(metricKey)
             ? newMetricValue < currentMetricValue  // Lower error is better
             : newMetricValue > currentMetricValue; // Higher score is better
+    }
+
+    /// <summary>
+    /// Whether the project's gate sets a candidate against production on an evaluation set
+    /// (<c>gate.data</c> with <c>gate.no_worse_than_production</c>) — the comparison that, when it is there, decides.
+    /// </summary>
+    private async Task<bool> PairedGateJudgesProductionAsync(string resolvedName, CancellationToken cancellationToken)
+    {
+        var config = await new Configuration.ConfigLoader(_fileSystem, _projectDiscovery).LoadUserConfigAsync(cancellationToken);
+        return config.Models.TryGetValue(resolvedName, out var definition)
+               && definition.Gate is { NoWorseThanProduction: true, Data: { } data }
+               && !string.IsNullOrWhiteSpace(data);
     }
 
     /// <summary>

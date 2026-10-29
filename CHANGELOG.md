@@ -30,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **A gate that sets the candidate against production on its own evaluation set (`gate.data` with `gate.no_worse_than_production`) now decides the promotion, in place of the comparison of recorded scores.** The recorded scores are each model's score on the held-out part of the data *it* was trained on; once the data has moved they describe different distributions, and the model that has stopped fitting keeps the better-looking number — a model retrained on the new data was kept in staging with `it does not beat production on accuracy: 0.855 vs 0.89` while the row-by-row comparison on the new data said the candidate was better (error rate 0.12 against 0.47). A project with such a gate is unaffected for a candidate production beats on the gate data (still refused, whatever it recorded) and gains the promotion of one it does not. A project without one keeps the recorded-score rule; the reason it prints (`keptInStagingReason`, `mloop train`) now says the two numbers are each model's own held-out score and names `mloop evaluate <exp> <data> --against production` and the gate as the way to compare them on the same rows.
+
 - **⚠ Breaking: a binary classifier's prediction CSV calls the raw trainer score `RawScore`, not `Score`.** `Score` meant two
   values — `--json` and `POST /predict` answer the positive-class probability under `score`, while the CSV wrote the trainer's
   raw margin under `Score` (for example −3.43 beside a probability of 0.335) and the probability under `Probability`. The

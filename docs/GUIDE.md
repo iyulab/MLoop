@@ -605,6 +605,13 @@ models:
 
 `no_worse_than_production` is the row-by-row comparison of `evaluate --against production`: refused
 when the paired interval says production is better (a first model has nothing to be worse than).
+With it on, that comparison — not the recorded scores — decides whether a training run promotes: a
+recorded score is a model's score on the held-out part of the data *it* was trained on, so after the data
+has moved a model retrained on the new data can record a lower number than the one it should replace.
+Point `data` at labeled rows of what the service sees now (for instance rows you reviewed from the
+prediction log) and the retrained model is promoted when it is not worse there. Without it the recorded
+scores decide, and a model kept in staging says so and names `mloop evaluate <exp> <data> --against
+production` to compare the two on the same rows.
 A limit reads the confusion matrix — of the rows labeled with one of `actual`, the share answered
 with one of `predicted`. A refused model stays in staging with the rule that held it, `--force`
 promotes it anyway, and the history records the promotion as `forced` with that rule. A rule that

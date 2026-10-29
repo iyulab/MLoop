@@ -138,7 +138,7 @@ public sealed class GatePolicyTests : IDisposable
         File.WriteAllLines(path, lines);
     }
 
-    private static async Task SeedRegressionAsync(string experimentId, bool scrambled)
+    private static async Task SeedRegressionAsync(string experimentId, bool scrambled, double recordedRSquared = 0.95)
     {
         var train = Path.GetFullPath($"train-{experimentId}.csv");
         WriteLinear(train, 60, 42);
@@ -186,7 +186,7 @@ public sealed class GatePolicyTests : IDisposable
                 },
             },
             // The recorded metric says the scrambled model is fine — only the gate data can tell.
-            Metrics = new Dictionary<string, double> { ["r_squared"] = 0.95 },
+            Metrics = new Dictionary<string, double> { ["r_squared"] = recordedRSquared },
         }, CancellationToken.None);
     }
 
@@ -215,5 +215,81 @@ public sealed class GatePolicyTests : IDisposable
         var error = JsonDocument.Parse(stdout).RootElement.GetProperty("error").GetString();
         Assert.Contains("production (exp-001) is better on the gate data", error);
         Assert.Contains("squared_error", error);
+    }
+    // ---- the recorded scores of two models trained on different data are not the comparison ----
+
+    private static ModelRegistry NewRegistry()
+    {
+        var fileSystem = new FileSystemManager();
+        var discovery = new ProjectDiscovery(fileSystem);
+        return new ModelRegistry(fileSystem, discovery, new ExperimentStore(fileSystem, discovery));
+    }
+
+    [Fact]
+    public async Task WithAPairedGate_ACandidateThatFitsTheGateDataBetter_IsNotHeldBackByALowerRecordedScore()
+    {
+        // Production's recorded score (0.95) is from the data it was trained on; the candidate's (0.80) from the data it
+        // was trained on. On the gate data — the rows the service sees now — the candidate is the one that fits.
+        Directory.CreateDirectory(".mloop");
+        await File.WriteAllTextAsync("mloop.yaml", """
+            project: p
+            models:
+              default:
+                task: regression
+                label: Y
+                gate:
+                  data: recheck.csv
+                  no_worse_than_production: true
+            """.Replace("\r", ""));
+        WriteLinear("recheck.csv", 40, 7);
+        await SeedRegressionAsync("exp-001", scrambled: true, recordedRSquared: 0.95);
+        await SeedRegressionAsync("exp-002", scrambled: false, recordedRSquared: 0.80);
+        Assert.Equal(0, (await CliRunner.RunAsync("promote", "exp-001", "--json")).ExitCode);
+        var registry = NewRegistry();
+
+        Assert.True(await registry.ShouldPromoteOnMetricsAsync("default", "exp-002", "r_squared"));
+        Assert.True(await registry.ShouldPromoteAsync("default", "exp-002", "r_squared"));
+        Assert.Null(await registry.KeptInStagingReasonAsync("default", "exp-002", "r_squared"));
+    }
+
+    [Fact]
+    public async Task WithAPairedGate_ACandidateProductionBeatsOnTheGateData_IsStillRefused_WhateverItsRecordedScore()
+    {
+        Directory.CreateDirectory(".mloop");
+        await File.WriteAllTextAsync("mloop.yaml", """
+            project: p
+            models:
+              default:
+                task: regression
+                label: Y
+                gate:
+                  data: recheck.csv
+                  no_worse_than_production: true
+            """.Replace("\r", ""));
+        WriteLinear("recheck.csv", 40, 7);
+        await SeedRegressionAsync("exp-001", scrambled: false, recordedRSquared: 0.80);
+        await SeedRegressionAsync("exp-002", scrambled: true, recordedRSquared: 0.99);
+        Assert.Equal(0, (await CliRunner.RunAsync("promote", "exp-001", "--json")).ExitCode);
+        var registry = NewRegistry();
+
+        Assert.False(await registry.ShouldPromoteAsync("default", "exp-002", "r_squared"));
+        Assert.Contains("production (exp-001) is better on the gate data", await registry.KeptInStagingReasonAsync("default", "exp-002", "r_squared"));
+    }
+
+    [Fact]
+    public async Task WithoutAGate_TheRecordedScoresStillDecide_AndTheReasonSaysHowToCompareOnTheSameRows()
+    {
+        Directory.CreateDirectory(".mloop");
+        await File.WriteAllTextAsync("mloop.yaml", "project: p\nmodels:\n  default:\n    task: regression\n    label: Y\n");
+        await SeedRegressionAsync("exp-001", scrambled: true, recordedRSquared: 0.95);
+        await SeedRegressionAsync("exp-002", scrambled: false, recordedRSquared: 0.80);
+        Assert.Equal(0, (await CliRunner.RunAsync("promote", "exp-001", "--json")).ExitCode);
+        var registry = NewRegistry();
+
+        Assert.False(await registry.ShouldPromoteAsync("default", "exp-002", "r_squared"));
+        var reason = await registry.KeptInStagingReasonAsync("default", "exp-002", "r_squared");
+        Assert.StartsWith("it does not beat production (exp-001) on r_squared: 0.8 vs 0.95", reason);
+        Assert.Contains("mloop evaluate exp-002 <data> --against production", reason);
+        Assert.Contains("gate.no_worse_than_production", reason);
     }
 }
