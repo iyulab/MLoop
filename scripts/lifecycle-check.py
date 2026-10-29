@@ -431,9 +431,12 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
         d = (drift or {}).get('drift') or {}
         ranked = sorted(d.get('features') or [], key=lambda f: -f.get('psi', 0))
         moved = (ranked[0] if ranked else {}).get('column')
-        # On generated tables one column moves; on a real table the columns that go with it move too, so the one cut on is among the first few.
-        top = [f.get('column') for f in ranked[:1 if not table['public'] else 3]]
-        run.check('drift_shifted', d.get('level') == 'Significant' and shift_col in top, f'level={d.get("level")} most moved={moved} (cut on {shift_col})')
+        # On generated tables one column moves and it is the most moved. On a real table the columns that go with it move too, so the
+        # column cut on only has to be flagged as significantly moved itself (the product's own threshold, PSI 0.25).
+        by_column = {f.get('column'): f.get('psi', 0) for f in ranked}
+        flagged = shift_col in by_column and by_column[shift_col] >= 0.25 if table['public'] else moved == shift_col
+        run.check('drift_shifted', d.get('level') == 'Significant' and flagged,
+                  f'level={d.get("level")} most moved={moved} (cut on {shift_col}, psi {by_column.get(shift_col, 0):.2f})')
 
         want = min(50, table['n_new_b'], len(preds_b))
         given = 0
