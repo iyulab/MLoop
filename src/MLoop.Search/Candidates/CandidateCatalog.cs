@@ -384,7 +384,7 @@ public static class CandidateCatalog
     /// <summary>LightGBM (<c>lgbm_search_space.json</c>).</summary>
     public static SearchSpace LightGbmSpace { get; } = new([
         SearchDimension.Integer("NumberOfLeaves", 4, 32768, logBase: false, defaultValue: 4),
-        SearchDimension.Integer("MinimumExampleCountPerLeaf", 20, 1024, logBase: true, defaultValue: 20),
+        SearchDimension.Integer("MinimumExampleCountPerLeaf", 2, 1024, logBase: true, defaultValue: 20),
         SearchDimension.Double("LearningRate", 2e-10, 1, logBase: true, defaultValue: 1),
         SearchDimension.Integer("NumberOfTrees", 4, 32768, logBase: false, defaultValue: 4),
         SearchDimension.Double("SubsampleFraction", 2e-10, 1, logBase: true, defaultValue: 1),
