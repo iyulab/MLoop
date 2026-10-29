@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 
 namespace MLoop.Core.Tests.Training;
@@ -28,8 +27,17 @@ public class TrialCountedSearchContractTests
         "text-generation",   // a task no module serves: the test is of the refusal
     ];
 
-    private static string TestsRoot([CallerFilePath] string here = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(here)!, ".."));
+    // Found from the build output, as the other source-reading guards do: [CallerFilePath] is rewritten to a
+    // placeholder by a deterministic (CI) build, so it names no directory there.
+    private static string TestsRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MLoop.slnx")))
+            dir = dir.Parent;
+        return dir is null
+            ? throw new InvalidOperationException($"Could not locate MLoop.slnx by walking up from {AppContext.BaseDirectory}.")
+            : Path.Combine(dir.FullName, "tests", "MLoop.Core.Tests");
+    }
 
     internal static IEnumerable<string> Offenders(string source, string name) =>
         Initializer.Matches(source)
