@@ -12,6 +12,9 @@ on:
       datasets:
         description: 'Comma-separated dataset names from benchmarks/engine-compare/datasets.json (empty = all)'
         default: ''
+      systems:
+        description: 'Comma-separated systems to run (mloop, mloop-defaults, flaml, flaml-nogbm, lightgbm, xgboost)'
+        default: 'mloop,mloop-defaults,flaml,flaml-nogbm,lightgbm,xgboost'
 
 concurrency:
   group: engine-compare-${{ github.ref }}
@@ -55,7 +58,7 @@ jobs:
         python benchmarks/engine-compare/run.py run
         --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll"
         --seeds ${{ matrix.seed }} --budget ${{ inputs.budget }}
-        --datasets "${{ inputs.datasets }}" --out results-${{ matrix.seed }}.jsonl
+        --datasets "${{ inputs.datasets }}" --systems "${{ inputs.systems }}" --out results-${{ matrix.seed }}.jsonl
 
     - name: Keep the results
       if: always()
