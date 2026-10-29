@@ -81,7 +81,9 @@ public class TrialHistoryCollectionTests : IDisposable
         {
             Assert.False(string.IsNullOrWhiteSpace(t.TrainerName));
             Assert.True(t.RuntimeSeconds >= 0);
-            Assert.Contains("r_squared", t.Metrics.Keys);
+            // Name the trial: a failure here once said only "1 out of 458 items", which cannot be told from a cut-off fit.
+            Assert.True(t.Metrics.ContainsKey("r_squared"),
+                $"trial {t.TrialNumber} ({t.TrainerName}, {t.RuntimeSeconds:0.##}s) recorded {{{string.Join(", ", t.Metrics.Select(m => $"{m.Key}={m.Value}"))}}} without r_squared");
             Assert.All(t.Metrics.Values, v => Assert.True(double.IsFinite(v), "a non-finite metric was recorded"));
         });
     }
