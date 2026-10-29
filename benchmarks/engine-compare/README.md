@@ -17,6 +17,9 @@ the search (or a claim about it) has numbers behind it.
 - **Reading it**: a pair is "equal" when the mean paired difference over split seeds lies within its standard error.
   With three seeds that is coarse — trust large gaps only. Compare `mloop` with `flaml-nogbm` to see the search policy
   with the same learner families, and with `flaml` to see the effect of having gradient-boosting learners at all.
+- **Trial log**: each `mloop` row carries `trial_log` — the trials the search kept (trainer, the settings it chose, metrics,
+  runtime, which one was selected), read from the experiment's `trials.ndjson`. `summarize` ignores it; it is there to see
+  where a search went (does the winner sit on a boundary, how often did it beat the trainer's own defaults).
 - **Platform**: the LightGBM native library that ML.NET bundles exists for Linux x64 and Windows x64, not for macOS on
   ARM, where `mloop` searches without LightGBM. Run the sweep on Linux x64 for the full learner set (the `Engine compare`
   workflow does).

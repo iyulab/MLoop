@@ -74,6 +74,23 @@ def encode_classes(train, test, target):
     return train[target].astype(str).map(index), test[target].astype(str).map(index)
 
 
+def read_trials(project, experiment_id):
+    """The trials the search kept, as the experiment recorded them (trainer, settings, metrics, runtime, selected)."""
+    path = os.path.join(project, 'models', 'default', 'staging', experiment_id, 'trials.ndjson')
+    rows = []
+    try:
+        with open(path, encoding='utf-8') as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                rows.append({key: row[key] for key in ('trialNumber', 'trainer', 'metrics', 'runtimeSeconds', 'selected', 'error') if key in row})
+    except OSError:
+        pass
+    return rows
+
+
 def run_mloop(mloop, entry, work, budget, aligned):
     project = os.path.join(work, 'mloop-project')
     shutil.rmtree(project, ignore_errors=True)
@@ -105,7 +122,8 @@ def run_mloop(mloop, entry, work, budget, aligned):
         test_metrics = json.loads(evaluated.stdout)['testMetrics']
     except (ValueError, KeyError):
         return {'error': 'evaluate failed: ' + (evaluated.stdout + evaluated.stderr)[-300:]}
-    return {'learner': result.get('bestTrainer'), 'trials': trials, 'wall_s': round(wall, 1), 'test': test_metrics}
+    return {'learner': result.get('bestTrainer'), 'trials': trials, 'wall_s': round(wall, 1), 'test': test_metrics,
+            'trial_log': read_trials(project, result['experimentId'])}
 
 
 def run_flaml(entry, train, test, budget, seed, estimators=None):
