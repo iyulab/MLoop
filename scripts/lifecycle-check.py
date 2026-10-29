@@ -19,7 +19,10 @@ One scenario per task, on generated tables (standard library only; nothing is do
                               the row-by-row comparison and the history records the gate as passed
  13+ serve                   `mloop serve` over HTTP: /health, /predict (logged, with ids), /logs, /feedback, /drift, /trigger, an admin /promote
                               that the next /predict sees (the model cache reloads), /rollback, /promotions, and an async /train job
-                              that finishes and reports whether it was promoted
+                              that finishes and reports whether it was promoted;
+                           then under load: 16 clients at once answer exactly what a lone client gets and are logged once each with
+                           distinct ids, a promotion and a rollback made while clients keep predicting never produce an error, and
+                           --soak SECONDS holds a steady load and compares the server's memory at the start and the end
 
   python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression]
          [--time 15] [--out lifecycle-results.json] [--keep]
@@ -28,7 +31,8 @@ Exit status is 1 when a step fails that is not named in --expected-failures. A s
 reported ("xfail"); it turning green is reported as "xpass" so the list can be shortened. Each run is a fresh
 temporary project, removed unless --keep is given.
 """
-import argparse, csv, json, math, os, random, shlex, shutil, signal, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import argparse, csv, json, math, os, random, shlex, shutil, signal, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression'}
 # the metric a first model must reach to count as having learned the table (loose: this checks the wiring, not accuracy)
@@ -124,14 +128,114 @@ def http(method, url, token=None, body=None, timeout=60):
         return 0, str(e)
 
 
-def serve_steps(run, proj, base, task, budget):
+def serve_load_steps(run, url, admin, feats, before, cand, server_pid, soak, proj=None):
+    """The service under load: many clients at once, a promotion made while they predict, and (with --soak) a steady load held."""
+    def predict():
+        return http('POST', url + '/predict?name=default', admin, feats)
+
+    def strip(p):
+        return {k: v for k, v in p.items() if k != 'predictionId'}
+
+    code, base = predict()
+    want = [strip(p) for p in (base or {}).get('predictions', [])] if isinstance(base, dict) else []
+    _, logs0 = http('GET', url + '/logs?name=default&limit=1000000', admin)
+    n0 = len((logs0 or {}).get('logs', [])) if isinstance(logs0, dict) else -1
+
+    workers, per_worker = 16, 10
+    def burst(_):
+        return [predict() for _ in range(per_worker)]
+    with ThreadPoolExecutor(workers) as ex:
+        results = [r for chunk in ex.map(burst, range(workers)) for r in chunk]
+    bad = [c for c, _ in results if c != 200]
+    answered = [r for c, r in results if c == 200 and isinstance(r, dict)]
+    differ = sum(1 for r in answered if [strip(p) for p in r.get('predictions', [])] != want)
+    ids = [p.get('predictionId') for r in answered for p in r.get('predictions', [])]
+    expected_rows = workers * per_worker * len(feats)
+    run.check('serve_concurrent_predict', not bad and differ == 0 and len(ids) == expected_rows and len(set(ids)) == len(ids),
+              f'requests={len(results)} non200={len(bad)} differing_answers={differ} ids={len(ids)}/{expected_rows} distinct={len(set(ids))}')
+    _, logs1 = http('GET', url + '/logs?name=default&limit=1000000', admin)
+    n1 = len((logs1 or {}).get('logs', [])) if isinstance(logs1, dict) else -1
+    run.check('serve_concurrent_logged', n0 >= 0 and n1 - n0 == expected_rows, f'logged {n1 - n0} of {expected_rows} predicted rows')
+
+    # A promotion and a rollback while clients keep predicting: no request fails, every answer is by the old or the new model.
+    stop, errors, answers = threading.Event(), [], []
+    def hammer():
+        while not stop.is_set():
+            c, r = predict()
+            if c != 200:
+                errors.append(c)
+            elif isinstance(r, dict):
+                answers.append(r.get('experimentId'))
+    # What the production directory looked like whenever the model file was not there: a failed request's cause, seen from outside.
+    production = os.path.join(proj, 'models', 'default', 'production') if proj else None
+    absences = []
+    def watch():
+        while not stop.is_set():
+            if production and not os.path.exists(os.path.join(production, 'model.zip')):
+                absences.append((round(time.time() % 1000, 3), sorted(os.listdir(production)) if os.path.isdir(production) else 'no production dir'))
+            time.sleep(0.0005)
+    threads = [threading.Thread(target=hammer) for _ in range(8)] + [threading.Thread(target=watch)]
+    for th in threads:
+        th.start()
+    time.sleep(2)
+    pc, _ = http('POST', url + '/promote', admin, {'name': 'default', 'experimentId': cand})
+    time.sleep(2)
+    rc, _ = http('POST', url + '/rollback', admin, {'name': 'default'})
+    time.sleep(2)
+    stop.set()
+    for th in threads:
+        th.join()
+    _, last = predict()
+    last_by = last.get('experimentId') if isinstance(last, dict) else None
+    run.check('serve_promote_under_load', pc == 200 and rc == 200 and not errors and set(answers) <= {before, cand} and cand in set(answers) and last_by == before,
+              f'promote={pc} rollback={rc} requests={len(answers) + len(errors)} errors={errors[:3]} answered_by={sorted(set(map(str, answers)))} after_rollback={last_by}'
+              + (f' model_file_absent={len(absences)}x first={absences[0]}' if absences else ''))
+
+    if soak > 0:
+        def rss_mb():
+            out = subprocess.run(['ps', '-o', 'rss=', '-p', str(server_pid)], capture_output=True, text=True).stdout.strip()
+            return int(out) / 1024 if out else -1
+        stop, errors, latencies = threading.Event(), [], []
+        def steady():
+            while not stop.is_set():
+                t0 = time.time()
+                c, _ = predict()
+                latencies.append(time.time() - t0)
+                if c != 200:
+                    errors.append(c)
+                time.sleep(0.05)
+        threads = [threading.Thread(target=steady) for _ in range(4)]
+        for th in threads:
+            th.start()
+        series, start = [], time.time()
+        while time.time() - start < soak:
+            time.sleep(max(1, soak / 6))
+            series.append(round(rss_mb()))
+        stop.set()
+        for th in threads:
+            th.join()
+        warm = series[1] if len(series) > 1 else series[0]
+        grew = (series[-1] - warm) / warm if warm > 0 else 0
+        latencies.sort()
+        p99 = latencies[int(len(latencies) * 0.99)] if latencies else 0
+        run.check('serve_soak', not errors and 0 < series[-1] and grew <= 0.25,
+                  f'{soak}s requests={len(latencies)} errors={len(errors)} rss_mb={series} growth_after_warmup={grew:+.0%} p99={p99 * 1000:.0f}ms')
+
+
+SERVER_LOG = None   # --server-log: where the server's output goes (otherwise discarded)
+
+
+def serve_steps(run, proj, base, task, budget, soak=0):
     """The service half of the life: the same project, driven over HTTP by a server started on a free port."""
     rc, out, err = run.cli('token', '--role', 'admin', '-q', cwd=proj)
     admin = out.strip()
     port = free_port()
     url = f'http://127.0.0.1:{port}'
+    # The request limiter is off here: these steps measure the server under load, not the limiter (one caller, hundreds of requests a minute).
     server = subprocess.Popen(run.mloop + ['serve', '--port', str(port), '--host', '127.0.0.1'], cwd=proj,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                              env={**os.environ, 'Serve__RateLimit__PermitsPerMinute': '0'},
+                              stdout=(open(SERVER_LOG, 'ab') if SERVER_LOG else subprocess.DEVNULL),
+                              stderr=subprocess.STDOUT if SERVER_LOG else subprocess.DEVNULL, start_new_session=True)
     try:
         up = False
         for _ in range(60):
@@ -166,8 +270,10 @@ def serve_steps(run, proj, base, task, budget):
         code, tr = http('GET', url + '/trigger?name=default', admin)
         run.check('serve_trigger', code == 200 and isinstance(tr, dict) and 'shouldRetrain' in tr, f'code={code}')
 
-        # A promotion made while the server holds the model in its cache must reach the next answer.
         cand = 'exp-002'
+        serve_load_steps(run, url, admin, feats, before, cand, server.pid, soak, proj)
+
+        # A promotion made while the server holds the model in its cache must reach the next answer.
         code, _ = http('POST', url + '/promote', admin, {'name': 'default', 'experimentId': cand})
         code2, pr2 = http('POST', url + '/predict?name=default', admin, feats)
         run.check('serve_promote_reloads_cache', code == 200 and isinstance(pr2, dict) and pr2.get('experimentId') == cand,
@@ -207,7 +313,7 @@ def serve_steps(run, proj, base, task, budget):
             server.kill()
 
 
-def scenario(mloop, task, budget, keep, expected, serve):
+def scenario(mloop, task, budget, keep, expected, serve, soak=0):
     base = tempfile.mkdtemp(prefix=f'lifecycle-{task}-')
     run = Run(mloop, task, base, budget, expected)
     rng = random.Random(20261029)
@@ -302,7 +408,7 @@ def scenario(mloop, task, budget, keep, expected, serve):
                   and last.get('gate') == 'passed', f'{result.get("experimentId")} promoted={promo.get("promoted")} reason={promo.get("keptInStagingReason")} history last={last.get("experimentId")}/{last.get("gate")}')
 
         if serve:
-            serve_steps(run, proj, base, task, budget)
+            serve_steps(run, proj, base, task, budget, soak)
     except Exception as ex:  # a step that cannot run is a failed scenario, not a crashed harness
         run.check('scenario', False, f'{type(ex).__name__}: {ex}')
     finally:
@@ -320,13 +426,17 @@ def main():
     ap.add_argument('--time', type=int, default=15, help='training budget in seconds')
     ap.add_argument('--out', default='lifecycle-results.json')
     ap.add_argument('--keep', action='store_true')
+    ap.add_argument('--soak', type=int, default=0, help='seconds of steady load against the server, comparing its memory at the start and the end (0 = skip)')
+    ap.add_argument('--server-log', default='', help='append the server\'s output to this file (default: discarded)')
     ap.add_argument('--no-serve', action='store_true', help='skip the HTTP steps (they start a server on a free local port)')
     ap.add_argument('--expected-failures', default='', help='comma-separated step names that are known to fail')
     args = ap.parse_args()
+    global SERVER_LOG
+    SERVER_LOG = args.server_log or None
     expected = {s for s in args.expected_failures.split(',') if s}
     steps = []
     for task in args.tasks.split(','):
-        steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve)
+        steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak)
     with open(args.out, 'w') as f:
         json.dump(steps, f, indent=2)
     tally = {}
