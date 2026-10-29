@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Walk a model through its operating life with the real CLI and say, step by step, whether each stage behaved.
 
-One scenario per task, on generated tables (standard library only; nothing is downloaded):
+One scenario per task, on generated tables (standard library only; nothing is downloaded) - or, with --tables, one per public
+table cut into two regimes by lifecycle-tables.py (the label depends on the same walk, the shifted rows are a real part of the
+population and their label is rewritten):
 
   1  init                     a project is created for the task
   2  train                    a first model is trained and, being the first, promoted
@@ -27,6 +29,7 @@ One scenario per task, on generated tables (standard library only; nothing is do
 
   python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression]
          [--time 60] [--trials 10] [--out lifecycle-results.json] [--keep]
+  python lifecycle-check.py --mloop "..." --tables DIR [--datasets credit-g,houses]    # DIR as written by lifecycle-tables.py
 
 Exit status is 1 when a step fails that is not named in --expected-failures. A step named there is still run and
 reported ("xfail"); it turning green is reported as "xpass" so the list can be shortened. Each run is a fresh
@@ -56,6 +59,11 @@ def make_table(task, n, rng, shift=0.0):
             y = round(3.0 * z + 10.0, 4)
         rows.append([round(x1, 4), round(x2, 4), round(x3, 4), cat, y])
     return rows
+
+
+def to_number(text):
+    """A cell as a JSON number; an empty cell is a missing value (null), as the loaders read it."""
+    return float(text) if text.strip() else None
 
 
 def write_table(path, rows):
@@ -276,7 +284,7 @@ def serve_load_steps(run, url, admin, feats, before, cand, server_pid, soak, pro
 SERVER_LOG = None   # --server-log: where the server's output goes (otherwise discarded)
 
 
-def serve_steps(run, proj, base, task, budget, soak=0, bench=0):
+def serve_steps(run, proj, base, task, budget, table, soak=0, bench=0):
     """The service half of the life: the same project, driven over HTTP by a server started on a free port."""
     rc, out, err = run.cli('token', '--role', 'admin', '-q', cwd=proj)
     admin = out.strip()
@@ -302,7 +310,7 @@ def serve_steps(run, proj, base, task, budget, soak=0, bench=0):
         info = info if isinstance(info, dict) else {}
         before = info.get('experimentId') or info.get('productionExperimentId')
         rows = list(csv.DictReader(open(os.path.join(base, 'new_a.csv'))))[:5]
-        feats = [{k: (float(v) if k in ('x1', 'x2', 'x3') else v) for k, v in r.items() if k != 'y'} for r in rows]
+        feats = [{k: (to_number(v) if k in table['numeric_columns'] else v) for k, v in r.items() if k != table['label']} for r in rows]
         code, pr = http('POST', url + '/predict?name=default', admin, feats)
         preds = pr.get('predictions') if isinstance(pr, dict) else None
         run.check('serve_predict', code == 200 and preds is not None and len(preds) == 5 and all(p.get('predictionId') for p in preds)
@@ -312,7 +320,7 @@ def serve_steps(run, proj, base, task, budget, soak=0, bench=0):
         run.check('serve_logs', code == 200 and len(entries) >= 5, f'code={code} entries={len(entries)}')
         if preds:
             code, _ = http('POST', url + '/feedback', admin, {'predictionId': preds[0]['predictionId'], 'modelName': 'default',
-                                                             'actualValue': str(rows[0]['y']), 'source': 'lifecycle-check'})
+                                                             'actualValue': str(rows[0][table['label']]), 'source': 'lifecycle-check'})
         else:
             code = 0
         run.check('serve_feedback', code in (200, 201), f'code={code}')
@@ -340,7 +348,7 @@ def serve_steps(run, proj, base, task, budget, soak=0, bench=0):
         # The server reads data from inside the project only, relative paths being the project's.
         os.makedirs(os.path.join(proj, 'datasets'), exist_ok=True)
         shutil.copy(os.path.join(base, 'train_b.csv'), os.path.join(proj, 'datasets', 'train_b.csv'))
-        code, job = http('POST', url + '/train', admin, {'dataFile': 'datasets/train_b.csv', 'name': 'default', 'labelColumn': 'y',
+        code, job = http('POST', url + '/train', admin, {'dataFile': 'datasets/train_b.csv', 'name': 'default', 'labelColumn': table['label'],
                                                         'task': TASK_FLAG[task], 'timeLimitSeconds': budget, 'promote': False, **({'maxTrials': run.trials} if run.trials else {})})
         job_id = (job.get('jobId') or job.get('id')) if isinstance(job, dict) else None
         final = {}
@@ -364,26 +372,43 @@ def serve_steps(run, proj, base, task, budget, soak=0, bench=0):
             server.kill()
 
 
-def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench=0):
+def generated_tables(task, base):
+    """The standard-library tables: a label that depends on x1 as it sits in the training regime. Returns the table's description."""
+    rng = random.Random(20261029)
+    for name, rows in [('train_a', make_table(task, 2000, rng)), ('new_a', make_table(task, 300, rng)),
+                       ('train_b', make_table(task, 2000, rng, SHIFT)), ('test_b', make_table(task, 600, rng, SHIFT)),
+                       ('new_b', make_table(task, 300, rng, SHIFT))]:
+        write_table(os.path.join(base, name + '.csv'), rows)
+    return {'name': task, 'task': task, 'label': 'y', 'shift_column': 'x1', 'numeric_columns': ['x1', 'x2', 'x3'],
+            'n_new_a': 300, 'n_new_b': 300, 'learned': list(LEARNED[task]), 'public': False}
+
+
+def public_tables(src, base):
+    """One table cut by lifecycle-tables.py: copy its five files and read its description."""
+    for name in ('train_a', 'new_a', 'train_b', 'test_b', 'new_b'):
+        shutil.copy(os.path.join(src, name + '.csv'), os.path.join(base, name + '.csv'))
+    desc = json.load(open(os.path.join(src, 'manifest.json')))
+    return {**desc, 'public': True}
+
+
+def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench=0, src=None):
     base = tempfile.mkdtemp(prefix=f'lifecycle-{task}-')
     run = Run(mloop, task, base, budget, expected, trials)
-    rng = random.Random(20261029)
-    print(f'== {task}  ({base})', flush=True)
+    table = public_tables(src, base) if src else generated_tables(task, base)
+    label, shift_col, n_new_a = table['label'], table['shift_column'], table['n_new_a']
+    run.task = table['name']  # a step is reported under the table it ran on
+    print(f'== {table["name"]}  ({base})', flush=True)
     try:
-        for name, rows in [('train_a', make_table(task, 2000, rng)), ('new_a', make_table(task, 300, rng)),
-                           ('train_b', make_table(task, 2000, rng, SHIFT)), ('test_b', make_table(task, 600, rng, SHIFT)),
-                           ('new_b', make_table(task, 300, rng, SHIFT))]:
-            write_table(os.path.join(base, name + '.csv'), rows)
         new_b = list(csv.DictReader(open(os.path.join(base, 'new_b.csv'))))
         proj = os.path.join(base, 'proj')
 
-        rc, init = run.json_of('init', 'proj', '--task', TASK_FLAG[task], '--label', 'y', '--json')
+        rc, init = run.json_of('init', 'proj', '--task', TASK_FLAG[task], '--label', label, '--json')
         run.check('init', rc == 0 and init and init.get('task') == TASK_FLAG[task], f'rc={rc}')
 
-        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', 'y', *run.budget_args(), '--json', cwd=proj)
+        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', label, *run.budget_args(), '--json', cwd=proj)
         result = next((e for e in evs if e.get('event') == 'result'), {})
         promo = next((e for e in evs if e.get('event') == 'promotion'), {})
-        key, floor = LEARNED[task]
+        key, floor = table['learned']
         score = (result.get('metrics') or {}).get(key)
         run.check('train', rc == 0 and result.get('experimentId') == 'exp-001' and promo.get('promoted') is True
                   and score is not None and score >= floor, f'{key}={score} promoted={promo.get("promoted")}')
@@ -394,7 +419,7 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
 
         rc, pa = run.json_of('predict', os.path.join(base, 'new_a.csv'), '--log', '--json', cwd=proj)
         preds = (pa or {}).get('predictions') or []
-        run.check('predict_log', rc == 0 and len(preds) == 300 and all(p.get('predictionId') for p in preds), f'{len(preds)} predictions')
+        run.check('predict_log', rc == 0 and len(preds) == n_new_a and all(p.get('predictionId') for p in preds), f'{len(preds)} predictions')
 
         rc, drift = run.json_of('drift', '--json', cwd=proj)
         level = ((drift or {}).get('drift') or {}).get('level')
@@ -404,18 +429,22 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
         preds_b = (pb or {}).get('predictions') or []
         rc, drift = run.json_of('drift', '--json', cwd=proj)
         d = (drift or {}).get('drift') or {}
-        moved = max(d.get('features') or [{}], key=lambda f: f.get('psi', 0), default={}).get('column')
-        run.check('drift_shifted', d.get('level') == 'Significant' and moved == 'x1', f'level={d.get("level")} most moved={moved}')
+        ranked = sorted(d.get('features') or [], key=lambda f: -f.get('psi', 0))
+        moved = (ranked[0] if ranked else {}).get('column')
+        # On generated tables one column moves; on a real table the columns that go with it move too, so the one cut on is among the first few.
+        top = [f.get('column') for f in ranked[:1 if not table['public'] else 3]]
+        run.check('drift_shifted', d.get('level') == 'Significant' and shift_col in top, f'level={d.get("level")} most moved={moved} (cut on {shift_col})')
 
+        want = min(50, table['n_new_b'], len(preds_b))
         given = 0
-        for i, p in enumerate(preds_b[:50]):
-            rc, _, _ = run.cli('feedback', 'add', '--prediction-id', p['predictionId'], '--actual-value', str(new_b[i]['y']), '--source', 'lifecycle-check', cwd=proj)
+        for i, p in enumerate(preds_b[:want]):
+            rc, _, _ = run.cli('feedback', 'add', '--prediction-id', p['predictionId'], '--actual-value', str(new_b[i][label]), '--source', 'lifecycle-check', cwd=proj)
             given += rc == 0
-        rc, trig = run.json_of('trigger', 'check', '--feedback', '30', '--json', cwd=proj)
-        run.check('trigger', rc == 0 and given == 50 and (trig or {}).get('shouldRetrain') is True,
+        rc, trig = run.json_of('trigger', 'check', '--feedback', str(min(30, want)), '--json', cwd=proj)
+        run.check('trigger', rc == 0 and given == want and (trig or {}).get('shouldRetrain') is True,
                   f'feedback={given} shouldRetrain={(trig or {}).get("shouldRetrain")}')
 
-        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'y', *run.budget_args(), '--json', cwd=proj)
+        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', label, *run.budget_args(), '--json', cwd=proj)
         result = next((e for e in evs if e.get('event') == 'result'), {})
         promo = next((e for e in evs if e.get('event') == 'promotion'), {})
         candidate = result.get('experimentId')
@@ -449,7 +478,7 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
         eol = text.index('\n', at) + 1
         gate = f'    gate:\n      data: {os.path.join(base, "test_b.csv")}\n      no_worse_than_production: true\n'
         open(config_path, 'w').write(text[:eol] + gate + text[eol:])
-        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'y', *run.budget_args(), '--json', cwd=proj)
+        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', label, *run.budget_args(), '--json', cwd=proj)
         result = next((e for e in evs if e.get('event') == 'result'), {})
         promo = next((e for e in evs if e.get('event') == 'promotion'), {})
         rc2, hist = run.json_of('promote', '--history', '--json', cwd=proj)
@@ -459,7 +488,7 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
                   and last.get('gate') == 'passed', f'{result.get("experimentId")} promoted={promo.get("promoted")} reason={promo.get("keptInStagingReason")} history last={last.get("experimentId")}/{last.get("gate")}')
 
         if serve:
-            serve_steps(run, proj, base, task, budget, soak, bench)
+            serve_steps(run, proj, base, task, budget, table, soak, bench)
     except Exception as ex:  # a step that cannot run is a failed scenario, not a crashed harness
         run.check('scenario', False, f'{type(ex).__name__}: {ex}')
     finally:
@@ -474,6 +503,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--mloop', required=True, help='command that starts the mloop CLI, e.g. "dotnet path/to/mloop.dll"')
     ap.add_argument('--tasks', default='binary,multiclass,regression')
+    ap.add_argument('--tables', default='', help='a folder written by lifecycle-tables.py: one scenario per public table in it, instead of the generated tables')
+    ap.add_argument('--datasets', default='', help='with --tables: comma-separated table names (default: every table in the folder)')
     ap.add_argument('--time', type=int, default=60, help='training time ceiling in seconds')
     ap.add_argument('--trials', type=int, default=10, help='trials of the trainer search (the same search on any machine, so a step does not turn on a lucky draw); 0 = the time budget alone')
     ap.add_argument('--out', default='lifecycle-results.json')
@@ -488,8 +519,18 @@ def main():
     SERVER_LOG = args.server_log or None
     expected = {s for s in args.expected_failures.split(',') if s}
     steps = []
-    for task in args.tasks.split(','):
-        steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak, args.trials, args.bench)
+    if args.tables:
+        wanted = set(args.datasets.split(',')) - {''}
+        for name in sorted(os.listdir(args.tables)):
+            src = os.path.join(args.tables, name)
+            if not os.path.exists(os.path.join(src, 'manifest.json')) or (wanted and name not in wanted):
+                continue
+            task = json.load(open(os.path.join(src, 'manifest.json')))['task']
+            found = scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak, args.trials, args.bench, src)
+            steps += [{**st, 'table': name, 'task': task} for st in found]
+    else:
+        for task in args.tasks.split(','):
+            steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak, args.trials, args.bench)
     with open(args.out, 'w') as f:
         json.dump(steps, f, indent=2)
     tally = {}
