@@ -82,6 +82,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`drift` no longer reports a shift in inputs that did not move when a column's values differ only below single precision.** The model reads every
+  number as a single-precision float, and the prediction log records that value — a training file's `0.999999993939` is the `1` in the log, and
+  `15.0013` written as `15.001299999999999` is `15.0013`. The profile's cut points were compared in double precision, so rows drawn from the
+  training data fell in other bins than the ones the profile counted them in: a wind speed in steps of two and a ratio column rounded to nine
+  digits each read as significantly drifted (PSI 0.6 and 12), and the retraining trigger reads the same level. Values and cut points are now
+  compared as the model reads them; profiles already on disk read the same way.
 - **A model promoted while `mloop serve` answered could fail the requests in flight.** `promote`, `rollback` and `auto-promote` wrote the
   production files in place — `model.zip` was removed and rewritten, `metadata.json` truncated — so for the length of the copy a prediction found
   no model (HTTP 404 `No production model found`) or a missing file (500). Files other processes read (the production slot, the decision

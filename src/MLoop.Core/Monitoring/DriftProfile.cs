@@ -356,8 +356,9 @@ public sealed record FeatureProfile
             if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var x) || double.IsNaN(x))
                 return missing;
             var edges = Edges ?? [];
+            x = AsSingle(x);
             for (var i = 0; i < edges.Count; i++)
-                if (x <= edges[i])
+                if (x <= AsSingle(edges[i]))
                     return i;
             return edges.Count;
         }
@@ -376,12 +377,20 @@ public sealed record FeatureProfile
         return categories.Count; // other
     }
 
+    /// <summary>
+    /// A number as the model reads it. The loaders read every numeric input as a single-precision float, so a training file's
+    /// <c>0.999999993939</c> is the <c>1</c> that the prediction log records, and <c>15.0013</c> written as <c>15.001299999999999</c> is the
+    /// same value as <c>15.0013</c>. Cut points and values are compared after this rounding: compared in double precision, a column
+    /// whose values differ below single precision read as drifted on rows drawn from the training data.
+    /// </summary>
+    internal static double AsSingle(double value) => (float)value;
+
     internal static FeatureProfile Numeric(string column, IReadOnlyList<string?> values)
     {
         var parsed = new List<double>();
         foreach (var v in values)
             if (!string.IsNullOrWhiteSpace(v) && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var x) && !double.IsNaN(x))
-                parsed.Add(x);
+                parsed.Add(AsSingle(x));
         parsed.Sort();
 
         // Inner quantile cut points, without repeats: a value repeated across a cut stays in one bin.

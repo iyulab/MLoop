@@ -36,6 +36,24 @@ public class DriftProfileTests
         Assert.Equal(0.9, x.Shares[x.BinOf("0")], 3);
     }
 
+    // The model reads every number as a single-precision float: the same measurement written 5 and 4.999999999999999 is one value, and a
+    // training file's 0.999999993939 is the 1 that the prediction log records. Compared in double precision, rows drawn from the training
+    // data would sit in another bin than the one the profile counted them in, and read as drift.
+    [Fact]
+    public void ValuesThatDifferBelowSinglePrecision_FallInOneBin()
+    {
+        var profile = DriftProfile.Build(Rows(1000, i => i % 10 == 4 ? (i % 20 == 4 ? "4.999999999999999" : "5") : (i % 10).ToString(CultureInfo.InvariantCulture), _ => "a"), Columns);
+        var x = profile.Features[0];
+        Assert.Equal(x.BinOf("5"), x.BinOf("4.999999999999999"));
+
+        // The prediction log writes the single-precision value the model saw; the training rows, logged, must fill the bins the profile counted them in.
+        var written = Enumerable.Range(0, 1000).Select(i => (1 - 1e-9 * (1 + i % 50)).ToString("R", CultureInfo.InvariantCulture)).ToList();
+        var ratio = DriftProfile.Build(written.Select(v => new[] { v, "a" }).ToArray(), Columns).Features[0];
+        var logged = written.Select(v => ((float)double.Parse(v, CultureInfo.InvariantCulture)).ToString("R", CultureInfo.InvariantCulture)).ToList();
+        Assert.Equal(ratio.BinOf("1"), ratio.BinOf("0.999999993939"));
+        Assert.True(DriftMeasure.Psi(ratio.Shares, ratio.SharesOf(logged)) < 1e-9);
+    }
+
     [Fact]
     public void ACategoricalColumn_KeepsItsCommonCategories_AndCountsTheRestAsOther()
     {
