@@ -30,10 +30,20 @@ SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboo
 OPTIMIZE = {'binary': 'auc', 'multiclass': 'log_loss', 'regression': 'rmse'}
 
 
-def load_table(entry, cache):
+def load_table(entry, cache, attempts=8):
     from sklearn.datasets import fetch_openml
     # The default (pandas) ARFF parser fails on tables whose categories are numbers; liac-arff reads all 16.
-    return fetch_openml(data_id=entry['id'], as_frame=True, parser='liac-arff', data_home=cache).frame
+    # OpenML answers "database connection error" under load (and says a table is not found) — a sweep of many jobs
+    # starts together, so a failed fetch is retried with a growing wait rather than ending the job.
+    for attempt in range(attempts):
+        try:
+            return fetch_openml(data_id=entry['id'], as_frame=True, parser='liac-arff', data_home=cache).frame
+        except Exception as error:
+            if attempt == attempts - 1:
+                raise
+            wait = min(30 * 2 ** attempt, 300)
+            print(f"OpenML fetch of {entry['name']} failed ({type(error).__name__}); retrying in {wait}s", flush=True)
+            time.sleep(wait)
 
 
 def split(entry, df, seed, work):
