@@ -7,7 +7,7 @@ namespace MLoop.CLI.Infrastructure.FileSystem;
 /// One experiment as a machine-readable list shows it: its summary, its own metrics, the quality
 /// gate's verdict and whether it is the production model.
 /// </summary>
-/// <param name="QualityGate"><c>null</c> when the gate passes; otherwise why a promotion is refused without force.</param>
+/// <param name="QualityGate"><c>null</c> when the fixed quality gate passes; otherwise why a promotion is refused without force. The project's own <c>gate:</c> policy is judged at promotion — it costs an evaluation — and is not part of the listing.</param>
 /// <param name="QualityWarning"><c>null</c> unless the gate passes a model whose predicted labels are still not usable.</param>
 public sealed record ExperimentListRow(
     string ModelName,
