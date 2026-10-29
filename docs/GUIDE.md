@@ -603,6 +603,10 @@ models:
       slice_by: site                    # the limits hold in every slice with 30+ rows too
 ```
 
+Every limit names its `max`; one without it cannot be judged, so `validate` reports an error and every promotion is refused.
+A key `mloop.yaml` does not read — a misspelled `no_worse_than_production` or `max`, for instance — is ignored, and `validate`
+and every command that loads the file say so once, naming the nearest setting it does read.
+
 `no_worse_than_production` is the row-by-row comparison of `evaluate --against production`: refused
 when the paired interval says production is better (a first model has nothing to be worse than).
 With it on, that comparison — not the recorded scores — decides whether a training run promotes: a

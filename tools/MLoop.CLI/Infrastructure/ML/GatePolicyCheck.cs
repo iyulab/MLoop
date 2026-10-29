@@ -77,15 +77,21 @@ public static class GatePolicyCheck
         return reasons.Count == 0 ? null : string.Join("; ", reasons);
     }
 
-    private static IEnumerable<string> Exceeded(IEnumerable<GateLimit> limits, ConfusionCounts confusion, string? scope)
+    internal static IEnumerable<string> Exceeded(IEnumerable<GateLimit> limits, ConfusionCounts confusion, string? scope)
     {
         foreach (var limit in limits)
         {
-            if (confusion.ShareOf(limit.Actual, limit.Predicted) is not { } share || share <= limit.Max)
-                continue;
             var where = scope is null ? "" : $" in {scope}";
+            if (limit.Max is not { } max)
+            {
+                // A rule it cannot judge refuses — a limit with no 'max' left at its default would otherwise read as 0%.
+                yield return $"the limit on rows labeled {string.Join("|", limit.Actual)} answered {string.Join("|", limit.Predicted)}{where} has no 'max'";
+                continue;
+            }
+            if (confusion.ShareOf(limit.Actual, limit.Predicted) is not { } share || share <= max)
+                continue;
             // Shares in the output culture, as every other percentage the CLI prints.
-            yield return $"of the rows labeled {string.Join("|", limit.Actual)}{where}, {share:P1} were answered {string.Join("|", limit.Predicted)} (limit {limit.Max:P1})";
+            yield return $"of the rows labeled {string.Join("|", limit.Actual)}{where}, {share:P1} were answered {string.Join("|", limit.Predicted)} (limit {max:P1})";
         }
     }
 

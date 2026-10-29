@@ -47,10 +47,13 @@ public class ConfigLoader
     }
 
     /// <summary>
-    /// Loads mloop.yaml (user configuration) with backward compatibility for old format
+    /// Loads mloop.yaml (user configuration) with backward compatibility for old format.
+    /// Keys nothing reads are still ignored, and said so once per process (<paramref name="warnUnknownKeys"/>) —
+    /// a command that reports them itself, as <c>validate</c> does, passes <see langword="false"/>.
     /// </summary>
     public async Task<MLoopConfig> LoadUserConfigAsync(
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool warnUnknownKeys = true)
     {
         var projectRoot = _projectDiscovery.FindRoot();
         var yamlPath = _fileSystem.CombinePath(projectRoot, MLoopYamlFileName);
@@ -61,7 +64,43 @@ public class ConfigLoader
         }
 
         var yamlContent = await _fileSystem.ReadTextAsync(yamlPath, cancellationToken);
+        var config = Parse(yamlContent, out var legacy);
+        if (legacy)
+            WarningConsole.Warn("Detected old mloop.yaml format. Consider migrating to new multi-model format.");
 
+        if (warnUnknownKeys)
+        {
+            foreach (var unknown in UnknownKeysOf(yamlContent, legacy))
+            {
+                if (Warned.TryAdd((yamlPath, yamlContent.GetHashCode(), unknown.Path), 0))
+                    WarningConsole.Warn($"mloop.yaml: {unknown.Describe()}");
+            }
+        }
+
+        return config;
+    }
+
+    /// <summary>The keys of mloop.yaml that nothing reads — empty when there is no file.</summary>
+    public async Task<IReadOnlyList<UnknownConfigKey>> FindUnknownKeysAsync(CancellationToken cancellationToken = default)
+    {
+        var yamlPath = _fileSystem.CombinePath(_projectDiscovery.FindRoot(), MLoopYamlFileName);
+        if (!_fileSystem.FileExists(yamlPath))
+            return [];
+
+        var yamlContent = await _fileSystem.ReadTextAsync(yamlPath, cancellationToken);
+        Parse(yamlContent, out var legacy);
+        return UnknownKeysOf(yamlContent, legacy);
+    }
+
+    // One file said once per process: a command loads the configuration from several places.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string Path, int Content, string Key), byte> Warned = new();
+
+    private static IReadOnlyList<UnknownConfigKey> UnknownKeysOf(string yamlContent, bool legacy) =>
+        legacy ? ConfigKeyAudit.Find<MLoopConfigV1>(yamlContent) : ConfigKeyAudit.Find<MLoopConfig>(yamlContent);
+
+    private MLoopConfig Parse(string yamlContent, out bool legacy)
+    {
+        legacy = false;
         var deserializer = new DeserializerBuilder()
             .WithNamingConvention(UnderscoredNamingConvention.Instance)
             .IgnoreUnmatchedProperties()
@@ -80,7 +119,7 @@ public class ConfigLoader
         var oldConfig = TryLoadOldFormat(yamlContent, deserializer);
         if (oldConfig != null)
         {
-            WarningConsole.Warn("Detected old mloop.yaml format. Consider migrating to new multi-model format.");
+            legacy = true;
             return oldConfig;
         }
 
@@ -90,7 +129,7 @@ public class ConfigLoader
     /// <summary>
     /// Old mloop.yaml format (v1) for backward compatibility
     /// </summary>
-    private class MLoopConfigV1
+    internal class MLoopConfigV1
     {
         public string? ProjectName { get; set; }
         public string? Task { get; set; }

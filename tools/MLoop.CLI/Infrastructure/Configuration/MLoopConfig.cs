@@ -191,8 +191,8 @@ public class GateLimit
     /// <summary>The answers that count against it.</summary>
     public List<string> Predicted { get; set; } = [];
 
-    /// <summary>The largest share allowed, from 0 to 1.</summary>
-    public double Max { get; set; }
+    /// <summary>The largest share allowed, from 0 to 1. Required: a limit without it cannot be judged, so it refuses.</summary>
+    public double? Max { get; set; }
 }
 
 /// <summary>

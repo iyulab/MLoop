@@ -96,7 +96,7 @@ public static class ValidateCommand
             MLoopConfig config;
             try
             {
-                config = await ctx.ConfigLoader.LoadUserConfigAsync();
+                config = await ctx.ConfigLoader.LoadUserConfigAsync(warnUnknownKeys: false);
             }
             catch (Exception ex)
             {
@@ -105,6 +105,10 @@ public static class ValidateCommand
                 EmitJson(errors, warnings, jsonOutput);
                 return 1;
             }
+
+            // Keys nothing reads: the file is read leniently, so a misspelled setting is dropped without an error.
+            foreach (var unknown in await ctx.ConfigLoader.FindUnknownKeysAsync())
+                warnings.Add(new ValidationWarning(unknown.Path, unknown.Describe()));
 
             // Validate project name
             if (string.IsNullOrWhiteSpace(config.Project))
@@ -649,8 +653,10 @@ public static class ValidateCommand
                 var l = limits[i];
                 if (l.Actual.Count == 0 || l.Predicted.Count == 0)
                     errors.Add(new ValidationError($"{prefix}.limits[{i}]", "A limit names both 'actual' and 'predicted' classes"));
-                if (l.Max is < 0 or > 1 || double.IsNaN(l.Max))
-                    errors.Add(new ValidationError($"{prefix}.limits[{i}].max", $"'max' is a share from 0 to 1, not {l.Max}"));
+                if (l.Max is not { } max)
+                    errors.Add(new ValidationError($"{prefix}.limits[{i}].max", "A limit names the largest share allowed in 'max' (0 to 1); without it the limit cannot be judged and every promotion is refused"));
+                else if (max is < 0 or > 1 || double.IsNaN(max))
+                    errors.Add(new ValidationError($"{prefix}.limits[{i}].max", $"'max' is a share from 0 to 1, not {max}"));
             }
         }
         if (!string.IsNullOrWhiteSpace(gate.SliceBy) && gate.Limits is not { Count: > 0 })

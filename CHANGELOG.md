@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Settings in `mloop.yaml` that nothing reads are reported.** The file has always been read leniently, so a misspelled key was dropped
+  without a word — a `no_worse_than_prod` meant a promotion rule that was never judged, a `time_limit_secs` an automatic time budget. `validate`
+  now lists each unknown key as a warning with its path and the nearest setting it does read, and every command that loads the file says so
+  once per run. Model names, column names and other keys of your own are never reported.
 - **`mloop analyze series <data> [--column <col>] [--max-lag N] [--around-trend]`** reads a numeric column as an ordered series
   and reports its structure for choosing a model order or a transform: the autocorrelation and partial autocorrelation functions
   with the white-noise band and Bartlett's limits, the augmented Dickey-Fuller test (H0: a unit root) and the KPSS test
@@ -30,6 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **A class limit in a `gate:` policy must name its `max`.** A limit written without one (or with the key misspelled) used to read as 0% and
+  refuse every model without saying why. `validate` now reports it as an error, and a promotion judged against such a limit is refused with
+  the reason stated.
 - **LightGBM's search may try as few as 2 examples per leaf (was 20).** The lower bound of `MinimumExampleCountPerLeaf` was LightGBM's own default and the floor of the declaration this space was ported from; FastTree already searches down to 2. The starting value stays 20. On 16 public tables (3 splits, 60 s) the change left 14 tables unchanged and improved two (wine quality RMSE -1.3%, credit-g AUC +0.0025, both near the noise of three splits) and worsened none, so it is taken as a widening that costs nothing measured rather than a proven gain. A seeded search that picks LightGBM follows a different path from this version on.
 
 - **A gate that sets the candidate against production on its own evaluation set (`gate.data` with `gate.no_worse_than_production`) now decides the promotion, in place of the comparison of recorded scores.** The recorded scores are each model's score on the held-out part of the data *it* was trained on; once the data has moved they describe different distributions, and the model that has stopped fitting keeps the better-looking number — a model retrained on the new data was kept in staging with `it does not beat production on accuracy: 0.855 vs 0.89` while the row-by-row comparison on the new data said the candidate was better (error rate 0.12 against 0.47). A project with such a gate is unaffected for a candidate production beats on the gate data (still refused, whatever it recorded) and gains the promotion of one it does not. A project without one keeps the recorded-score rule; the reason it prints (`keptInStagingReason`, `mloop train`) now says the two numbers are each model's own held-out score and names `mloop evaluate <exp> <data> --against production` and the gate as the way to compare them on the same rows.
