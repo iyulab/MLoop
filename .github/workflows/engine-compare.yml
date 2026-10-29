@@ -13,8 +13,8 @@ on:
         description: 'Comma-separated dataset names from benchmarks/engine-compare/datasets.json (empty = all)'
         default: ''
       systems:
-        description: 'Comma-separated systems to run (mloop, mloop-defaults, flaml, flaml-nogbm, lightgbm, xgboost)'
-        default: 'mloop,mloop-defaults,flaml,flaml-nogbm,lightgbm,xgboost'
+        description: 'Comma-separated systems to run (mloop, mloop-defaults, flaml, flaml-nogbm, lightgbm, xgboost, automl-legacy)'
+        default: 'mloop,mloop-defaults,flaml,flaml-nogbm,lightgbm,xgboost,automl-legacy'
 
 concurrency:
   group: engine-compare-${{ github.ref }}
@@ -52,6 +52,9 @@ jobs:
 
     - name: Build the CLI
       run: dotnet build tools/MLoop.CLI --configuration Release
+
+    - name: Build the legacy AutoML runner
+      run: dotnet build benchmarks/engine-compare/automl-legacy --configuration Release
 
     - name: Sweep
       run: >

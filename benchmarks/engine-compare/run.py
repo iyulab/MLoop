@@ -12,6 +12,8 @@ Each (dataset, split seed) gets one stratified 80/20 split; every system receive
   flaml-nogbm   FLAML restricted to rf / extra_tree / a linear model (lrl1, lassolars for regression); no gradient boosting
   lightgbm      LightGBM, library defaults
   xgboost       XGBoost, library defaults
+  automl-legacy ML.NET's own AutoML (Microsoft.ML.AutoML 0.23.1, the package MLoop's search replaced), time budget B,
+                optimizing the reported metric; the runner is automl-legacy/ (build it first)
 
 Metrics: binary ROC AUC, multiclass log-loss, regression RMSE. Datasets are fetched from OpenML by id
 (see datasets.json) and cached; no data is stored in this repository.
@@ -25,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression'}
 # metric -> direction (+1: higher is better)
 PRIMARY = {'binary': ('auc', +1), 'multiclass': ('log_loss', -1), 'regression': ('rmse', -1)}
-SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboost']
+SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboost', 'automl-legacy']
 # what `mloop train --metric` is given so the search optimizes the metric the table reports
 OPTIMIZE = {'binary': 'auc', 'multiclass': 'log_loss', 'regression': 'rmse'}
 
@@ -136,6 +138,18 @@ def run_mloop(mloop, entry, work, budget, aligned):
             'trial_log': read_trials(project, result['experimentId'])}
 
 
+def run_automl_legacy(command, entry, work, budget):
+    started = time.time()
+    done = subprocess.run(command + [os.path.join(work, 'train.csv'), os.path.join(work, 'test.csv'), entry['target'], entry['task'], str(budget)],
+                          capture_output=True, text=True)
+    for line in reversed(done.stdout.splitlines()):
+        if line.startswith('{'):
+            result = json.loads(line)
+            result['wall_s'] = round(time.time() - started, 1)  # the process, load and scoring included, as for the other systems
+            return result
+    return {'error': 'automl-legacy failed: ' + (done.stdout + done.stderr)[-400:]}
+
+
 def run_flaml(entry, train, test, budget, seed, estimators=None):
     from flaml import AutoML
     target, task = entry['target'], entry['task']
@@ -201,6 +215,8 @@ def run_all(args):
                 try:
                     if system in ('mloop', 'mloop-defaults'):
                         result = run_mloop(mloop, entry, work, args.budget, aligned=system == 'mloop')
+                    elif system == 'automl-legacy':
+                        result = run_automl_legacy(shlex.split(args.automl_legacy), entry, work, args.budget)
                     elif system == 'flaml':
                         result = run_flaml(entry, train, test, args.budget, seed)
                     elif system == 'flaml-nogbm':
@@ -244,9 +260,11 @@ def summarize(paths):
         se = diffs.std(ddof=1) / math.sqrt(len(diffs))
         return 'equal' if abs(diffs.mean()) <= se else ('ahead' if diffs.mean() > 0 else 'behind')
 
-    print('| dataset | task | rows | metric | ' + ' | '.join(SYSTEMS) + ' | mloop vs flaml | mloop vs flaml-nogbm |')
-    print('|---|---|---|---|' + '---|' * (len(SYSTEMS) + 2))
     tallies = {'flaml': collections.Counter(), 'flaml-nogbm': collections.Counter()}
+    if any('automl-legacy' in by[name] for name in by):
+        tallies['automl-legacy'] = collections.Counter()
+    print('| dataset | task | rows | metric | ' + ' | '.join(SYSTEMS) + ' | ' + ' | '.join(f'mloop vs {other}' for other in tallies) + ' |')
+    print('|---|---|---|---|' + '---|' * (len(SYSTEMS) + len(tallies)))
     for name in sorted(by, key=lambda n: (meta[n][0], meta[n][1])):
         task, rows = meta[name]
         metric, direction = PRIMARY[task]
@@ -270,6 +288,8 @@ def main():
     r.add_argument('--budget', type=int, default=60, help='time budget in seconds for the searching systems')
     r.add_argument('--datasets', default='', help='comma-separated dataset names from datasets.json (default: all)')
     r.add_argument('--systems', default=','.join(SYSTEMS))
+    r.add_argument('--automl-legacy', default='dotnet ' + os.path.join(HERE, 'automl-legacy', 'bin', 'Release', 'net10.0', 'AutomlLegacy.dll'),
+                   help='command that starts the legacy AutoML runner (system automl-legacy)')
     r.add_argument('--out', default='results.jsonl')
     r.add_argument('--work', default=os.path.join(tempfile.gettempdir(), 'engine-compare'))
     s = sub.add_parser('summarize')

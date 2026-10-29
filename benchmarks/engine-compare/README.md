@@ -13,7 +13,8 @@ the search (or a claim about it) has numbers behind it.
   `mloop-defaults` (the shipped defaults: an accuracy-family metric, 20% of the train file held back), `flaml` (default learners), `flaml-nogbm` (FLAML restricted to random forest, extra trees and
   a linear model — L1 logistic regression, or LassoLars for regression; the learner families MLoop has without a
   gradient-boosting library), `lightgbm`, `xgboost`
-  (library defaults, no tuning).
+  (library defaults, no tuning), `automl-legacy` (ML.NET's own AutoML, Microsoft.ML.AutoML 0.23.1 — the search MLoop's
+  replaced it with — run for the same time budget on the same files; build `automl-legacy/` first).
 - **Reading it**: a pair is "equal" when the mean paired difference over split seeds lies within its standard error.
   With three seeds that is coarse — trust large gaps only. Compare `mloop` with `flaml-nogbm` to see the search policy
   with the same learner families, and with `flaml` to see the effect of having gradient-boosting learners at all.
