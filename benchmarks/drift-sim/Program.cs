@@ -55,6 +55,12 @@ var families = new (string Name, Func<Random, int, IReadOnlySet<int>, double, st
         3 => Poisson(rng, 2 + (moved.Contains(j) ? 0.71 * scale : 0)).ToString(CultureInfo.InvariantCulture),
         _ => (rng.NextDouble() < 0.6 - (moved.Contains(j) ? 0.1 * scale : 0) ? 0 : -Math.Log(1 - rng.NextDouble())).ToString("R", CultureInfo.InvariantCulture),
     })]),
+    // Shape changes that keep the centre: the spread grows (scale), or a share of the values is drawn three times as far out (outliers). "moved" = the changed column;
+    // the unmoved columns draw nothing extra, so their stream (and the null rate) is the normal family's.
+    ("scale 1.5", (rng, c, moved, scale) => Row(c, j => Normal(rng) * (moved.Contains(j) ? 1 + 0.5 * scale : 1))),
+    ("scale 1.25", (rng, c, moved, scale) => Row(c, j => Normal(rng) * (moved.Contains(j) ? 1 + 0.25 * scale : 1))),
+    ("outliers 10%", (rng, c, moved, scale) => Row(c, j => Normal(rng) * (moved.Contains(j) && rng.NextDouble() < 0.10 * scale ? 3 : 1))),
+    ("outliers 5%", (rng, c, moved, scale) => Row(c, j => Normal(rng) * (moved.Contains(j) && rng.NextDouble() < 0.05 * scale ? 3 : 1))),
     ("zero-inflated big", (rng, c, moved, scale) => Row(c, j => rng.NextDouble() < 0.6 - (moved.Contains(j) ? 0.25 * scale : 0) ? 0 : -Math.Log(1 - rng.NextDouble()))),
 };
 var chosen = options.TryGetValue("families", out var list) ? list.Split(',') : null;
