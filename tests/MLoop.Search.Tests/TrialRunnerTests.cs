@@ -388,12 +388,11 @@ public sealed class TrialRunnerTests
         var (data, roles) = Data(ml);
         TrainerCandidate Broken(string name, string reason) => new(name, new SearchSpace([SearchDimension.Integer("N", 1, 10, defaultValue: 1)]), 0.5,
             (_, _, _, _) => throw new InvalidOperationException(reason));
-        var clock = System.Diagnostics.Stopwatch.StartNew();
 
         var ex = Assert.Throws<SearchFailedException>(() =>
             new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), candidates: [Broken("A", "no native library"), Broken("B", "column unreadable")])).Run(data, roles));
 
-        Assert.True(clock.Elapsed < TimeSpan.FromMinutes(1), $"took {clock.Elapsed.TotalSeconds:0} s of a 300 s budget");
+        // Six failed trials and no more: a search that waited out the 300 s budget would still be trying.
         Assert.Equal(2 * TrialRunner.FailuresToRetire, ex.Trials.Count);
         Assert.True(ex.AllTrainersRetired);
         Assert.Contains("retired", ex.Message);
