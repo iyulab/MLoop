@@ -29,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   left. With nothing changed, 3-8 % of windows read "moderate" at any width (the profile is itself a sample of thousands of rows, which sets the rest); a move of half a
   standard deviation, a variance up by half, a strong shift in a category's shares or missing values going from 2 % to 10 % in one column is still caught in nearly
   every window of 300 rows (0.3 standard deviations: six in ten, from seven). The reported `psi` is the smoothed one and is a little under the old one on a column with
-  empty bins; "significant" and the `input_drift` retraining condition (PSI >= 0.25) are unchanged in practice - they had no false alarms in the measurement.
+  empty bins; "significant" is unchanged in practice for a training profile of thousands of rows - it had no false alarms in the measurement (a small training set and the `input_drift` retraining condition: see Fixed).
   `FeatureDrift` has one more member (`Bound`).
 - **A trainer that fails three times in a row without ever scoring is retired from the search, and a search whose every trainer is retired ends at once.**
   A run where nothing works - a native library that is not installed, a column no trainer can read - used to keep trying until the whole
@@ -42,6 +42,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   tables the swap cost score (up to 0.0066 RMSE and 0.0063 AUC, twice the standard error on two tables, at 60 and 240 seconds) with no cost
   in time to give back. The rule now starts at 10 million leaves (about 200 MB on disk), where keeping the model is what costs. A model you
   trained before is unchanged; a new search can pick a larger model than it did, and `trials.ndjson` marks the trial the model was refit from.
+
+### Fixed
+
+- **A model trained on a few hundred rows no longer reads windows of unchanged data as drifted, and `input_drift` no longer asks for a retraining on the noise of a small
+  training set.** Three things were wrong. The two bins past a numeric column's training range expected nothing, but a new draw lies past the largest (or under the
+  smallest) of n training values with probability 1 / (n + 1) on each side - a window of 300 rows carries a stray value or two in most columns of a 500-row profile; the
+  bins now expect that share. The training profile's shares were taken as exact, though a bin that held two or three training rows - 2 % missing values over 150 rows - or
+  none, which counted as 0.0001, made a window with nothing changed read 0.1 on that bin alone; they are now counted with half a row more in every bin, as the window's
+  already were (over thousands of rows this changes nothing). And the `input_drift` condition fired at the bare threshold; it now needs a column over the threshold *and*
+  over the bound the levels are read against, and a condition that is over the threshold but within the bound says so in its details. Simulated, windows of 300 rows with
+  nothing changed against 8 training profiles each, fifty columns: with 150 training rows 4 of 200 windows ask for a retraining (9 with 1 % categories; 0.48.0: all of 200
+  in one simulation), with 500 rows none (0.48.0: 2 of 200, and 38 at two hundred columns); "moderate" or worse is read in 6 of 200 windows at 150 rows and 7 at 500
+  (0.48.0: 134 at 500 rows). One column moved by a standard deviation is still caught in every window; by half a standard deviation in about as many as before (107 of 200
+  against 120 at 150 rows, a count that included the false alarms). Weakest case measured: 100 training rows, two hundred columns, 1 % categories - 38 of 200 windows ask
+  for a retraining. A drift answer over a training profile of fewer than 150 rows says so, and that a "moderate" reading is weak evidence.
 
 ## [0.48.0] - 2026-10-30
 

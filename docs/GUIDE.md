@@ -1600,8 +1600,8 @@ rows against a profile of thousands, with nothing changed, has a PSI of about 0.
 rows (the missing values') can read 0.1 alone when a window holds none of them; across fifty columns that put one such window in five over
 0.1, and across a thousand nearly every one. A column's level therefore needs its PSI over the larger of the usual threshold and the PSI that
 a window of this size would stay under in about 95 % of windows across all the profile's columns (`noDriftBound` in `--json`, which grows with the
-width of the table and shrinks with the window; the profile is a sample too, so in practice 3–8 % of unchanged windows still read moderate), and the window's shares are counted with half a row more in every bin. A move of half a standard
-deviation in a column is still caught in every window of 300 rows; a move of 0.3 standard deviations is caught in six windows of ten rather than seven.
+width of the table and shrinks with the window; the profile is a sample too, so in practice 3–8 % of unchanged windows still read moderate), and the window's shares are counted with half a row more in every bin - the training profile's too, since a bin that held two or three training rows (2 % missing values over 150 rows) is not a share to compare against exactly. A move of half a standard
+deviation in a column is still caught in every window of 300 rows; a move of 0.3 standard deviations is caught in six windows of ten rather than seven. A training profile of fewer than 150 rows is itself a noisy sample: the answer then says that a "moderate" reading weighs little.
 
 **Answers** compares what the model said over the window with what it said over its training rows.
 It is reported apart from the inputs and does not raise their level: answers that move while every
@@ -1614,7 +1614,7 @@ on new traffic.
 
 **Most moved** is the bin whose share changed most — a decile range, a category, `(other)` for
 values training never saw, `(missing)`, or, for a numeric column, `< min` / `> max` when rows left the
-range the model was trained on (counted apart, against a training share of nothing). Numbers are
+range the model was trained on (counted apart, against the share an unchanged window gives: a new value lies past the largest of n training values with probability 1 ÷ (n + 1)). Numbers are
 compared as the model reads them, in single precision. Fewer than 300 logged predictions are too few
 to compare: with ten bins per column an unchanged window of n rows has a PSI of about 9 ÷ n, so a
 smaller window would read chance as drift. Only predictions of the model now in production count:
@@ -1623,7 +1623,7 @@ trained before profiles were recorded, or a task that reads no feature columns (
 recommendation, deep learning), has none — the command says so; retrain and promote to start.
 
 The same measurement is a retraining condition: `mloop trigger check` and `GET /trigger` report
-`input_drift` (met at PSI ≥ 0.25 on any column) with every column's PSI under `drift` in `--json`.
+`input_drift` (met when a column's PSI is at 0.25 or more and over what chance alone gives for that window and training set - the same bound the levels are read against; the details say when it was over the threshold but within the bound) with every column's PSI under `drift` in `--json`.
 `GET /drift?name=&rows=&sliceBy=` returns what `mloop drift --json` does.
 
 ---
@@ -1643,7 +1643,7 @@ mloop trigger check --json                  # shouldRetrain, recommendedAction, 
 | `accuracy_threshold` (`AccuracyDrop`) | accuracy on feedback is established below 70% (`--accuracy`): at least 30 rows of feedback, and the 95% interval's upper end below the threshold | `mloop feedback add` / `POST /feedback` |
 | `feedback_count` (`FeedbackVolume`) | ≥ 100 feedback entries (`--feedback`) | the same feedback |
 | `Scheduled Retraining` (`TimeBased`) | the model is older than 30 days | the production model's training time |
-| `input_drift` (`DataDrift`) | PSI ≥ 0.25 on any column, or on the model's answers | logged predictions against the training profile (`mloop drift`) |
+| `input_drift` (`DataDrift`) | PSI ≥ 0.25 on any input column and over what chance alone gives for the window (the answers' drift is reported apart and does not count) | logged predictions against the training profile (`mloop drift`) |
 
 An accuracy drop is judged on evidence, not on the point estimate: with weighted feedback the count is the
 effective number of rows (`effectiveSampleSize` in `mloop feedback metrics --json`), and the details say which

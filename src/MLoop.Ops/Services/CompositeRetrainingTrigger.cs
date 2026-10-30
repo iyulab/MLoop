@@ -103,6 +103,18 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
         return (await ProductionMetadata.ReadAsync(production, cancellationToken).ConfigureAwait(false))?.ExperimentId;
     }
 
+    /// <summary>
+    /// Whether the window's inputs moved: some column's PSI is at <paramref name="threshold"/> or more <em>and</em> over what chance alone gives
+    /// for a window of this size against a training set of this size across all the columns (<see cref="MLoop.Core.Monitoring.FeatureDrift"/> bound). A training set of
+    /// 150 rows reads a window with nothing changed over 0.25 in most windows (74 of 200 simulated windows at fifty columns), so the bare threshold
+    /// would ask for a retraining on noise.
+    /// </summary>
+    public static bool InputMoved(MLoop.Core.Monitoring.DriftReport report, double threshold)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        return report.Features.Any(f => f.Psi >= Math.Max(threshold, f.Bound));
+    }
+
     public async Task<TriggerEvaluation> EvaluateAsync(
         string modelName,
         IEnumerable<RetrainingCondition> conditions,
@@ -128,10 +140,15 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
                 .ConfigureAwait(false);
             foreach (var condition in driftConditions)
             {
-                var psi = check.Status == DriftCheckStatus.Measured ? check.Report?.MaxPsi : null;
-                results.Add(new ConditionResult(condition, psi >= condition.Threshold, psi, check.Message)
+                var report = check.Status == DriftCheckStatus.Measured ? check.Report : null;
+                var psi = report?.MaxPsi;
+                var moved = report is not null && InputMoved(report, condition.Threshold);
+                var details = check.Message;
+                if (report is not null && !moved && psi >= condition.Threshold)
+                    details = $"{details} The largest PSI ({psi.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}) is within what a window of {report.Rows} rows gives against this training set when nothing has changed.".TrimStart();
+                results.Add(new ConditionResult(condition, moved, psi, details)
                 {
-                    Drift = check.Report,
+                    Drift = report,
                 });
             }
         }

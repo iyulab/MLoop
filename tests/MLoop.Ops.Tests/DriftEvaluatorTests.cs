@@ -27,14 +27,14 @@ public class DriftEvaluatorTests : IDisposable
 
     private string Production => Path.Combine(_root, ExperimentLayout.ModelsDirectory, "m", ExperimentLayout.ProductionDirectory);
 
-    private void Promote(string experimentId, bool withProfile = true, double? yesShareAtTraining = null)
+    private void Promote(string experimentId, bool withProfile = true, double? yesShareAtTraining = null, int profileRows = 1000)
     {
         Directory.CreateDirectory(Production);
         File.WriteAllText(Path.Combine(Production, ExperimentLayout.MetadataFileName),
             JsonSerializer.Serialize(new { experimentId }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
         if (!withProfile)
             return;
-        var rows = Enumerable.Range(0, 1000).Select(i => new[] { (i % 100).ToString(CultureInfo.InvariantCulture) }).ToArray();
+        var rows = Enumerable.Range(0, profileRows).Select(i => new[] { (i % 100).ToString(CultureInfo.InvariantCulture) }).ToArray();
         var profile = DriftProfile.Build(rows, [("x", true)]);
         if (yesShareAtTraining is { } share)
             profile = profile with
@@ -55,6 +55,21 @@ public class DriftEvaluatorTests : IDisposable
                 input["site"] = site(i);
             await _logs.LogPredictionAsync("m", experimentId, input, answer?.Invoke(i) ?? "1");
         }
+    }
+
+    [Theory]
+    [InlineData(100, true)]
+    [InlineData(150, false)]
+    [InlineData(1000, false)]
+    public async Task ASmallTrainingProfile_IsReadButTheAnswerSaysHowMuchItWeighs(int profileRows, bool cautions)
+    {
+        Promote("exp-001", profileRows: profileRows);
+        await Log("exp-001", DriftEvaluator.MinimumRows, i => i % 100);
+
+        var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
+
+        check.Status.Should().Be(DriftCheckStatus.Measured);
+        (check.Message?.Contains($"training profile holds only {profileRows} rows") ?? false).Should().Be(cautions);
     }
 
     [Fact]

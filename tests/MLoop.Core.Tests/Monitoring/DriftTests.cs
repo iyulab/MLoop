@@ -430,11 +430,11 @@ public class DriftLevelBySampleTests
         return row;
     }
 
-    private static (DriftProfile Profile, Random Rng) ProfileOf(int columns, int seed)
+    private static (DriftProfile Profile, Random Rng) ProfileOf(int columns, int seed, int trainRows = TrainRows)
     {
         var rng = new Random(seed);
         var spec = Enumerable.Range(0, columns).Select(c => ($"c{c}", c % 3 != 2)).ToList();
-        return (DriftProfile.Build(Enumerable.Range(0, TrainRows).Select(_ => Row(rng, columns)).ToList(), spec), rng);
+        return (DriftProfile.Build(Enumerable.Range(0, trainRows).Select(_ => Row(rng, columns)).ToList(), spec), rng);
     }
 
     private static List<IReadOnlyDictionary<string, object?>> Window(Random rng, int rows, int columns, int shifted = -1, double delta = 0)
@@ -453,6 +453,55 @@ public class DriftLevelBySampleTests
         var moderate = Enumerable.Range(0, 100).Count(_ => DriftMeasure.Compare(profile, Window(rng, 300, 40)).Level >= DriftLevel.Moderate);
 
         Assert.True(moderate <= 10, $"{moderate} of 100 windows of unchanged data read moderate or worse");
+    }
+
+    [Fact]
+    public void ASmallTrainingSet_DoesNotReadStrayValuesPastItsRangeAsAMove()
+    {
+        // 500 training rows: a new draw lies past their largest (or under their smallest) with probability 1 ÷ 501 each side, so a window of 300
+        // carries a stray value or two in most numeric columns. Expecting none there read 134 of 200 windows with nothing changed as moderate
+        // or worse in a simulation; expecting what chance gives, 20 of 200. Seeded, so the count is fixed.
+        var (profile, rng) = ProfileOf(columns: 40, seed: 2029, trainRows: 500);
+
+        var moderate = Enumerable.Range(0, 100).Count(_ => DriftMeasure.Compare(profile, Window(rng, 300, 40)).Level >= DriftLevel.Moderate);
+
+        Assert.True(moderate <= 25, $"{moderate} of 100 windows of unchanged data read moderate or worse");
+    }
+
+    private static IReadOnlyList<IReadOnlyDictionary<string, object?>> WindowWithSomeMissing(int rows, int missing)
+        => [.. Enumerable.Range(0, rows).Select(i => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>
+        {
+            ["x"] = i < missing ? null : (i % 100).ToString(CultureInfo.InvariantCulture),
+        })];
+
+    [Theory]
+    [InlineData(150, false)]
+    [InlineData(5_000, true)]
+    public void MissingValuesInAColumnTrainingNeverMissed_AreReadAgainstHowMuchTrainingCouldTell(int trainRows, bool drifts)
+    {
+        // Training with no missing value at all: over 150 rows that says the share is under a few per cent, not that it is nothing, so a window with
+        // 2 % missing read 0.1 on that bin alone against the floor; counted with half a row on both sides it reads 0.03. Over 5,000 rows "none" is
+        // a firm statement and 2 % missing is still news.
+        var profile = DriftProfile.Build(
+            Enumerable.Range(0, trainRows).Select(i => new[] { (i % 100).ToString(CultureInfo.InvariantCulture) }).ToArray(), [("x", true)]);
+
+        var report = DriftMeasure.Compare(profile, WindowWithSomeMissing(rows: 300, missing: 6));
+
+        Assert.Equal(drifts, report.Level >= DriftLevel.Moderate);
+    }
+
+    [Fact]
+    public void AWindowPastTheTrainingRangeEntirely_IsStillSignificant_WhateverTheTrainingSize()
+    {
+        var (profile, _) = ProfileOf(columns: 3, seed: 2030, trainRows: 500);
+        var window = Enumerable.Range(0, 300)
+            .Select(i => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?> { ["c0"] = (50 + i % 5).ToString(CultureInfo.InvariantCulture), ["c1"] = "0.1", ["c2"] = "a" })
+            .ToList();
+
+        var report = DriftMeasure.Compare(profile, window);
+
+        Assert.Equal(DriftLevel.Significant, report.Level);
+        Assert.Equal("c0", report.Features[0].Column);
     }
 
     [Fact]

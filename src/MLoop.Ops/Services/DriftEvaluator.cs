@@ -53,6 +53,13 @@ public static class DriftEvaluator
     /// </summary>
     public const int MinimumRows = 300;
 
+    /// <summary>
+    /// A training profile of fewer rows than this is itself a noisy sample: with nothing changed, a profile of 100 rows read a window as
+    /// moved in up to a fifth of the windows (38 of 200 at two hundred columns with 1 % categories; simulated), from 150 rows at most 15
+    /// of 200 in any shape tried. The reading is not refused — a small table is the common case — but the answer says how much weight it bears.
+    /// </summary>
+    public const int SmallProfileRows = 150;
+
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -117,6 +124,8 @@ public static class DriftEvaluator
             ? $"No profiled feature to compare for {experimentId}."
             : $"{Describe(report.Level)} over {entries.Count} predictions of {experimentId}: most moved '{top.Column}' "
               + $"(PSI {top.Psi:F3}; {top.MostChangedBin}: {top.ReferenceShare:P0} → {top.CurrentShare:P0}).";
+        if (top is not null && profile.Rows < SmallProfileRows)
+            message += $" The training profile holds only {profile.Rows} rows, so chance alone moves a PSI more than usual: read a \"moderate\" as weak evidence.";
         if (report.Prediction is { } answers)
             message += $" Answers: {Describe(answers.Level).ToLowerInvariant()} (PSI {answers.Psi:F3}; "
                        + $"{answers.MostChangedBin}: {answers.ReferenceShare:P0} → {answers.CurrentShare:P0}).";

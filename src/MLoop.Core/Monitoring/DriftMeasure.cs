@@ -119,8 +119,9 @@ public static class DriftMeasure
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, double), double> Quantiles = new();
 
-    // The window's shares with half a row added to every bin: a bin that expects a handful of rows and gets none is not a
-    // distribution that left, and the floor alone counts it as one.
+    // Shares with half a row added to every bin, the window's and the training profile's alike: a bin that expects a handful of rows and
+    // gets none is not a distribution that left, and the floor alone counts it as one — and a bin that held two or three training rows, or
+    // none, makes a window with nothing changed read 0.1 on that bin alone (2 % missing values over 150 training rows).
     private static List<double> Smoothed(IReadOnlyList<double> shares, int rows)
         => [.. shares.Select(share => (share * rows + 0.5) / (rows + 0.5 * shares.Count))];
 
@@ -174,30 +175,36 @@ public static class DriftMeasure
     {
         var current = feature.SharesOf(values);
         var reference = feature.Shares;
-        // A numeric column's end bins are open: rows past the training range land beside the rows that were there. Counted apart — against a
-        // reference share of nothing — a window that left the range reads as it should, whatever the training rows did at the edge.
+        // A numeric column's end bins are open: rows past the training range land beside the rows that were there. Counted apart, a window that
+        // left the range reads as it should, whatever the training rows did at the edge. The two bins expect what nothing having changed gives:
+        // a new draw falls past the largest (or under the smallest) of n training values with probability 1 ÷ (n + 1) — expecting none put the
+        // floor on them, and a training set of 500 rows read a window with two stray values as moved (87 % of the windows with nothing changed, in a simulation).
         var (below, above) = feature.OutsideRange(values);
         if (below + above > 0)
         {
             var top = (feature.Edges?.Count ?? 0);
             var shares = current.ToList();
             var expected = reference.ToList();
+            var withValue = 1 - reference[^1];
+            var tail = withValue / (Math.Max(referenceRows, 1) * withValue + 1);
+            for (var i = 0; i < expected.Count; i++)
+                expected[i] *= 1 - 2 * tail;
             shares[0] -= below;
             shares[top] -= above;
             shares.Add(below);
-            expected.Add(0);
+            expected.Add(tail);
             shares.Add(above);
-            expected.Add(0);
-            var extended = Psi(expected, Smoothed(shares, values.Count));
+            expected.Add(tail);
+            var extended = Psi(Smoothed(expected, referenceRows), Smoothed(shares, values.Count));
             var extendedBound = NoDriftBound(expected, values.Count, referenceRows, family);
             var movedBin = Enumerable.Range(0, shares.Count).MaxBy(i => Math.Abs(shares[i] - expected[i]));
             if (movedBin < feature.BinCount)
                 return new FeatureDrift(feature.Column, extended, LevelOf(extended, extendedBound), BinName(feature, movedBin), expected[movedBin], shares[movedBin], extendedBound);
             static string F(double x) => x.ToString("G6", CultureInfo.InvariantCulture);
             var name = movedBin == feature.BinCount ? $"< {F(feature.Min!.Value)}" : $"> {F(feature.Max!.Value)}";
-            return new FeatureDrift(feature.Column, extended, LevelOf(extended, extendedBound), name, 0, shares[movedBin], extendedBound);
+            return new FeatureDrift(feature.Column, extended, LevelOf(extended, extendedBound), name, expected[movedBin], shares[movedBin], extendedBound);
         }
-        var psi = Psi(reference, Smoothed(current, values.Count));
+        var psi = Psi(Smoothed(reference, referenceRows), Smoothed(current, values.Count));
         var bound = NoDriftBound(reference, values.Count, referenceRows, family);
         var moved = Enumerable.Range(0, feature.BinCount).MaxBy(i => Math.Abs(current[i] - reference[i]));
         return new FeatureDrift(feature.Column, psi, LevelOf(psi, bound), BinName(feature, moved), reference[moved], current[moved], bound);
