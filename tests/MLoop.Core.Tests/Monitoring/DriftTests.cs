@@ -403,3 +403,117 @@ public class TextProfileTests
         Assert.Equal(profile.Texts[0].Unseen.Shares, back.Texts[0].Unseen.Shares);
     }
 }
+
+// A window of a few hundred rows against a profile of thousands, with nothing changed: the PSI levels (0.1 · 0.25) are the reading for
+// large samples, and read flat they called such a window "moderate" one time in five at fifty columns. The level is read against what chance
+// alone gives across the profile's columns too, and the window's shares are counted with half a row more in every bin.
+public class DriftLevelBySampleTests
+{
+    private const int TrainRows = 5_000;
+
+    private static string?[] Row(Random rng, int columns, int shifted = -1, double delta = 0)
+    {
+        var row = new string?[columns];
+        for (var c = 0; c < columns; c++)
+        {
+            if (c % 3 == 2)
+            {
+                var u = rng.NextDouble();
+                row[c] = u < 0.4 ? "a" : u < 0.7 ? "b" : u < 0.85 ? "c" : u < 0.95 ? "d" : "e";
+            }
+            else
+            {
+                var gauss = Math.Sqrt(-2 * Math.Log(1 - rng.NextDouble())) * Math.Cos(2 * Math.PI * rng.NextDouble());
+                row[c] = rng.NextDouble() < 0.02 ? null : (gauss + (c == shifted ? delta : 0)).ToString("R", CultureInfo.InvariantCulture);
+            }
+        }
+        return row;
+    }
+
+    private static (DriftProfile Profile, Random Rng) ProfileOf(int columns, int seed)
+    {
+        var rng = new Random(seed);
+        var spec = Enumerable.Range(0, columns).Select(c => ($"c{c}", c % 3 != 2)).ToList();
+        return (DriftProfile.Build(Enumerable.Range(0, TrainRows).Select(_ => Row(rng, columns)).ToList(), spec), rng);
+    }
+
+    private static List<IReadOnlyDictionary<string, object?>> Window(Random rng, int rows, int columns, int shifted = -1, double delta = 0)
+        => [.. Enumerable.Range(0, rows).Select(_ =>
+        {
+            var r = Row(rng, columns, shifted, delta);
+            return (IReadOnlyDictionary<string, object?>)Enumerable.Range(0, columns).ToDictionary(c => $"c{c}", c => (object?)r[c]);
+        })];
+
+    [Fact]
+    public void WindowsWithNothingChanged_SeldomReadModerate_HoweverWideTheTable()
+    {
+        // Seeded, so the count is fixed; measured at 0.03 of the windows for forty columns (the flat reading: about one in five at fifty).
+        var (profile, rng) = ProfileOf(columns: 40, seed: 2026);
+
+        var moderate = Enumerable.Range(0, 100).Count(_ => DriftMeasure.Compare(profile, Window(rng, 300, 40)).Level >= DriftLevel.Moderate);
+
+        Assert.True(moderate <= 10, $"{moderate} of 100 windows of unchanged data read moderate or worse");
+    }
+
+    [Fact]
+    public void AHalfSigmaMove_IsStillCaught_AtThreeHundredRows()
+    {
+        var (profile, rng) = ProfileOf(columns: 40, seed: 2027);
+
+        var caught = Enumerable.Range(0, 40).Count(_ => DriftMeasure.Compare(profile, Window(rng, 300, 40, shifted: 0, delta: 0.5)).Level >= DriftLevel.Moderate);
+
+        Assert.Equal(40, caught);
+    }
+
+    [Fact]
+    public void AWindowWithNoMissingValues_IsNotDriftBecauseTheMissingBinExpectedSix()
+    {
+        // The reference had 2 % missing; a window of 300 with none of them put 1e-4 on that bin and read 0.105 on it alone.
+        var (profile, rng) = ProfileOf(columns: 1, seed: 2028);
+        var window = Enumerable.Range(0, 300)
+            .Select(_ => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?> { ["c0"] = Row(rng, 1)[0] ?? "0.1" })
+            .ToList();
+
+        var report = DriftMeasure.Compare(profile, window);
+
+        Assert.Equal(DriftLevel.None, report.Level);
+    }
+
+    [Fact]
+    public void ABoundGrowsWithTheWidthOfTheTableAndShrinksWithTheWindow()
+    {
+        var bins = Enumerable.Repeat(1.0 / 11, 11).ToList();
+
+        var narrow = DriftMeasure.NoDriftBound(bins, 300, TrainRows, columns: 1);
+        var wide = DriftMeasure.NoDriftBound(bins, 300, TrainRows, columns: 1000);
+        var longer = DriftMeasure.NoDriftBound(bins, 1000, TrainRows, columns: 1000);
+
+        Assert.True(narrow < wide);
+        Assert.True(longer < wide);
+        Assert.True(longer < DriftMeasure.ModerateThreshold, "a thousand rows put chance well under the usual reading even at a thousand columns");
+        Assert.True(wide > DriftMeasure.ModerateThreshold, "three hundred rows across a thousand columns leave chance above it");
+    }
+
+    [Fact]
+    public void ALevelIsReadAgainstTheLargerOfTheUsualThresholdAndTheBound()
+    {
+        Assert.Equal(DriftLevel.None, DriftMeasure.LevelOf(0.12, bound: 0.14));
+        Assert.Equal(DriftLevel.Moderate, DriftMeasure.LevelOf(0.12, bound: 0.05));
+        Assert.Equal(DriftLevel.Moderate, DriftMeasure.LevelOf(0.20, bound: 0.15));
+        Assert.Equal(DriftLevel.Significant, DriftMeasure.LevelOf(0.30, bound: 0.28));
+        Assert.Equal(DriftLevel.None, DriftMeasure.LevelOf(0.30, bound: 0.35));
+        Assert.Equal(DriftLevel.Significant, DriftMeasure.LevelOf(0.30, bound: 0.05));
+        Assert.Equal(DriftMeasure.LevelOf(0.18), DriftMeasure.LevelOf(0.18, 0));
+    }
+
+    [Fact]
+    public void ACategoryThatLeftIsStillSignificant()
+    {
+        var rng = new Random(9);
+        var profile = DriftProfile.Build(Enumerable.Range(0, 2000).Select(i => new string?[] { i % 2 == 0 ? "a" : "b" }).ToList(), [("k", false)]);
+        var window = Enumerable.Range(0, 300).Select(_ => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?> { ["k"] = "c" }).ToList();
+
+        Assert.Equal(DriftLevel.Significant, DriftMeasure.Compare(profile, window).Level);
+        _ = rng;
+    }
+}

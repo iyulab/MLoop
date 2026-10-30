@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`mloop drift` no longer reads a window of unchanged data as "moderate" because the table is wide or the window short.** The PSI levels (0.1, 0.25)
+  are the reading for large samples. A window of 300 logged predictions against a training profile has a PSI of about 0.03 in each column with
+  nothing changed, and a bin that expects a handful of rows - the missing values' - reads 0.1 on that bin alone when the window holds none of them; on
+  a table of fifty columns one such window in five read "moderate", on two hundred one in two, and on a thousand nearly all (a thousand rows: none).
+  The level of a column is now read against the larger of the usual threshold and `FeatureDrift.Bound` - the PSI that a window of its size would
+  stay under in 95 % of windows across all the profile's columns (`DriftMeasure.NoDriftBound`; `noDriftBound` in the `--json` signal and the REST
+  answer) - and the window's shares are counted with half a row more in every bin, so a bin that expects six rows and gets none is not a distribution that
+  left. With nothing changed, 3-8 % of windows read "moderate" at any width (the profile is itself a sample of thousands of rows, which sets the rest); a move of half a
+  standard deviation, a variance up by half, a strong shift in a category's shares or missing values going from 2 % to 10 % in one column is still caught in nearly
+  every window of 300 rows (0.3 standard deviations: six in ten, from seven). The reported `psi` is the smoothed one and is a little under the old one on a column with
+  empty bins; "significant" and the `input_drift` retraining condition (PSI >= 0.25) are unchanged in practice - they had no false alarms in the measurement.
+  `FeatureDrift` has one more member (`Bound`).
 - **A trainer that fails three times in a row without ever scoring is retired from the search, and a search whose every trainer is retired ends at once.**
   A run where nothing works - a native library that is not installed, a column no trainer can read - used to keep trying until the whole
   time budget was gone, and a trainer that could not run on this machine kept being proposed beside the ones that could. A trainer that has
