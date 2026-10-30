@@ -48,8 +48,8 @@ public static class DriftEvaluator
     /// all the PSI of a window of n rows is about 9 ÷ n — 0.09 at a hundred rows, so ten columns read "moderate" in nearly every window and
     /// "significant" (the level a retraining trigger acts on) in one window of twelve, thirty columns in one of four. At three hundred rows
     /// the level is read against what chance alone gives across the profile's columns (<see cref="DriftMeasure.NoDriftBound"/>): read against 0.1
-    /// flat, fifty columns reached "moderate" one window in five and two hundred one in two; read this way, 3–8 % at any width (simulated,
-    /// 200 windows each).
+    /// flat, fifty columns reached "moderate" one window in five and two hundred one in two; read this way, 2–10 % at any width (simulated: two hundred columns, a thousand windows over
+    /// two hundred profiles - about 10 % against a 5,000-row profile, about 4 % against a 500-row one).
     /// </summary>
     public const int MinimumRows = 300;
 

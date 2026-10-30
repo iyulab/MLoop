@@ -1600,7 +1600,7 @@ rows against a profile of thousands, with nothing changed, has a PSI of about 0.
 rows (the missing values') can read 0.1 alone when a window holds none of them; across fifty columns that put one such window in five over
 0.1, and across a thousand nearly every one. A column's level therefore needs its PSI over the larger of the usual threshold and the PSI that
 a window of this size would stay under in about 95 % of windows across all the profile's columns (`noDriftBound` in `--json`, which grows with the
-width of the table and shrinks with the window; the profile is a sample too, so in practice 3–8 % of unchanged windows still read moderate), and the window's shares are counted with half a row more in every bin - the training profile's too, since a bin that held two or three training rows (2 % missing values over 150 rows) is not a share to compare against exactly. A move of half a standard
+width of the table and shrinks with the window; the profile is a sample too, so in practice 2–10 % of unchanged windows still read moderate - about 10 % for two hundred columns against a profile of 5,000 rows), and the window's shares are counted with half a row more in every bin - the training profile's too, since a bin that held two or three training rows (2 % missing values over 150 rows) is not a share to compare against exactly. A move of half a standard
 deviation in a column is still caught in every window of 300 rows; a move of 0.3 standard deviations is caught in six windows of ten rather than seven. A training profile of fewer than 150 rows is itself a noisy sample: the answer then says that a "moderate" reading weighs little.
 
 **Answers** compares what the model said over the window with what it said over its training rows.
