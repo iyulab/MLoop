@@ -566,3 +566,150 @@ public class DriftLevelBySampleTests
         _ = rng;
     }
 }
+
+public class RangeSignalTests
+{
+    private static readonly (string, bool)[] Columns = [("x", true), ("kind", false)];
+
+    // 5,000 distinct training values 0..4999 (every value once, so nothing is tied at the extremes).
+    private static DriftProfile Reference()
+        => DriftProfile.Build(Enumerable.Range(0, 5000)
+            .Select(i => new[] { i.ToString(CultureInfo.InvariantCulture), i % 2 == 0 ? "a" : "b" }).ToArray(), Columns);
+
+    private static IReadOnlyDictionary<string, object?> Row(object? x, object? kind)
+        => new Dictionary<string, object?> { ["x"] = x, ["kind"] = kind };
+
+    private static List<IReadOnlyDictionary<string, object?>> Window(int rows, Func<int, object?> x)
+        => [.. Enumerable.Range(0, rows).Select(i => Row(x(i), i % 2 == 0 ? "a" : "b"))];
+
+    // The probability is a count of arrangements: of the C(n + m, m) ways to say which of the n + m ranks belong to the window, the ones that put
+    // at least k window values above every training value are the ones whose top k ranks are all the window's. Counted here by listing them,
+    // so the closed form is checked against the thing it claims to be and not against itself.
+    [Theory]
+    [InlineData(3, 4, 1)]
+    [InlineData(3, 4, 2)]
+    [InlineData(3, 4, 3)]
+    [InlineData(5, 6, 2)]
+    [InlineData(6, 3, 4)]
+    public void TheTailProbability_IsTheShareOfArrangementsThatPutTheTopRanksInTheWindow(int m, int n, int k)
+    {
+        var total = 0;
+        var atLeastK = 0;
+        for (var mask = 0; mask < 1 << (m + n); mask++)
+        {
+            if (int.PopCount(mask) != m)
+                continue;
+            total++;
+            var top = 0;
+            for (var rank = m + n - 1; rank >= 0 && (mask >> rank & 1) == 1; rank--)
+                top++;
+            if (top >= k)
+                atLeastK++;
+        }
+
+        Assert.Equal(atLeastK / (double)total, DriftMeasure.BeyondExtremeProbability(k, m, n), 12);
+    }
+
+    [Fact]
+    public void TheTailProbability_HasItsEdges()
+    {
+        Assert.Equal(1, DriftMeasure.BeyondExtremeProbability(0, 100, 5000));
+        Assert.Equal(0, DriftMeasure.BeyondExtremeProbability(101, 100, 5000));       // more than the window holds
+        Assert.Equal(1.0 / 5001, DriftMeasure.BeyondExtremeProbability(1, 1, 5000), 12);   // one new value past the largest of n: 1 ÷ (n + 1)
+        Assert.Equal(1, DriftMeasure.BeyondExtremeProbability(0, 0, 0));
+    }
+
+    // The signal is read beside the PSI and never moves it: a handful of values far past the maximum is a notable count, while the bins that
+    // make the PSI hardly change.
+    [Fact]
+    public void StrayValuesPastTheMaximum_AreNotable_AndLeaveTheLevelToThePsi()
+    {
+        var inside = Window(1000, i => (i * 5 % 5000).ToString(CultureInfo.InvariantCulture));
+        var past = inside.Take(994).Concat(Window(6, i => (9000 + i).ToString(CultureInfo.InvariantCulture))).ToList();
+
+        var report = DriftMeasure.Compare(Reference(), past);
+        var x = report.Features.Single(f => f.Column == "x");
+
+        Assert.NotNull(x.Range);
+        Assert.Equal(6, x.Range!.Above);
+        Assert.Equal(0, x.Range.Below);
+        Assert.Equal(1000, x.Range.WindowValues);
+        Assert.Equal(5000, x.Range.ReferenceValues);
+        Assert.True(x.Range.Notable, $"p {x.Range.P}");
+        Assert.Equal([x], report.RangeNotable);
+        Assert.Equal(DriftLevel.None, report.Level);                // the PSI reads this window as it always did
+    }
+
+    [Fact]
+    public void ValuesDrawnFromTheTrainingRows_AreNotNotable()
+    {
+        var report = DriftMeasure.Compare(Reference(), Window(2000, i => (i * 7 % 5000).ToString(CultureInfo.InvariantCulture)));
+
+        var x = report.Features.Single(f => f.Column == "x");
+        Assert.Equal(0, x.Range!.Outside);
+        Assert.Equal(1, x.Range.P);
+        Assert.False(x.Range.Notable);
+        Assert.Empty(report.RangeNotable);
+    }
+
+    [Fact]
+    public void ACountThatChanceCouldHaveGiven_IsNotNotable()
+    {
+        // one value past the maximum in a window of 300: the chance that at least one of 300 new values is past the largest of 5,000 is 300 / 5,300 =
+        // 0.057, over the 0.025 one side of one column may use - a single stray value is not a signal; the same stray value in a window of 50 is
+        var window = Window(299, i => (i * 16).ToString(CultureInfo.InvariantCulture)).Append(Row("6000", "a")).ToList();
+
+        var x = DriftMeasure.Compare(Reference(), window).Features.Single(f => f.Column == "x");
+
+        Assert.Equal(1, x.Range!.Above);
+        Assert.Equal(300 / 5300.0, x.Range.P, 9);
+        Assert.False(x.Range.Notable, $"p {x.Range.P}");
+
+        var small = Window(49, i => (i * 100).ToString(CultureInfo.InvariantCulture)).Append(Row("6000", "a")).ToList();
+        Assert.True(DriftMeasure.Compare(Reference(), small).Features.Single(f => f.Column == "x").Range!.Notable);
+    }
+
+    [Fact]
+    public void ValuesBelowTheMinimum_AreCountedOnTheirOwnSide()
+    {
+        var window = Window(950, i => (i * 5).ToString(CultureInfo.InvariantCulture)).Concat(Window(50, i => (-100 - i).ToString(CultureInfo.InvariantCulture))).ToList();
+
+        var x = DriftMeasure.Compare(Reference(), window).Features.Single(f => f.Column == "x");
+
+        Assert.Equal(50, x.Range!.Below);
+        Assert.Equal(0, x.Range.Above);
+        Assert.True(x.Range.Notable);
+    }
+
+    [Fact]
+    public void MissingValues_AreNotCountedInTheWindow_OrInTheTrainingRows()
+    {
+        // 20 % of the training rows are missing, and so are 20 % of the window's: 4,000 numbers against 800
+        var trained = Enumerable.Range(0, 5000).Select(i => new[] { i % 5 == 0 ? null : i.ToString(CultureInfo.InvariantCulture), "a" }).ToArray();
+        var profile = DriftProfile.Build(trained, Columns);
+        var window = Window(1000, i => i % 5 == 0 ? null : (i * 5).ToString(CultureInfo.InvariantCulture));
+
+        var x = DriftMeasure.Compare(profile, window).Features.Single(f => f.Column == "x");
+
+        Assert.Equal(800, x.Range!.WindowValues);
+        Assert.Equal(4000, x.Range.ReferenceValues);
+    }
+
+    [Fact]
+    public void WhereThereIsNoRangeToRead_ThereIsNoSignal()
+    {
+        var window = Window(500, i => (i % 100).ToString(CultureInfo.InvariantCulture));
+        var profile = Reference();
+
+        var report = DriftMeasure.Compare(profile, window);
+        Assert.Null(report.Features.Single(f => f.Column == "kind").Range);                 // not a number
+
+        var legacy = profile with { Features = [.. profile.Features.Select(f => f with { Min = null, Max = null })] };
+        Assert.All(DriftMeasure.Compare(legacy, window).Features, f => Assert.Null(f.Range));   // written before the range was kept
+
+        var answers = Enumerable.Range(0, 5000).Select(i => (object?)(i * 0.5)).ToList();
+        var withAnswers = profile with { Prediction = DriftProfile.PredictionProfileOf("regression", answers) };
+        var shifted = Enumerable.Range(0, 500).Select(i => (object?)(10_000.0 + i)).ToList();
+        Assert.Null(DriftMeasure.Compare(withAnswers, window, shifted).Prediction!.Range);        // the answers' drift is the PSI's alone
+    }
+}

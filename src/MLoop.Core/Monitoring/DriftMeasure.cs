@@ -27,6 +27,11 @@ public enum DriftLevel
 /// The PSI a window of this size would stay under, in the column's family of columns, when nothing had changed (<see cref="DriftMeasure.NoDriftBound"/>) —
 /// the level is read against it as well as against the usual 0.1 and 0.25. 0 when none was worked out.
 /// </param>
+/// <param name="Range">
+/// How many of the window's values lie outside the range the model was trained on, read apart from the PSI (<see cref="RangeSignal"/>);
+/// <c>null</c> for a column that is not numeric, for a profile written before the range was kept, and for the answers' drift. It never moves
+/// <paramref name="Level"/>.
+/// </param>
 public sealed record FeatureDrift(
     string Column,
     double Psi,
@@ -34,7 +39,31 @@ public sealed record FeatureDrift(
     string MostChangedBin,
     double ReferenceShare,
     double CurrentShare,
-    double Bound = 0);
+    double Bound = 0,
+    RangeSignal? Range = null);
+
+/// <summary>
+/// The values of a window that lie past the training minimum or maximum of a numeric column, counted on their own. The PSI folds them into its two
+/// end bins and barely sees a share of them leaving the range; this reads what it hides. It sees nothing inside the range — a shift of the centre
+/// or a changed share of zeros is the PSI's to read.
+/// </summary>
+/// <param name="Below">Window values below the training minimum.</param>
+/// <param name="Above">Window values above the training maximum.</param>
+/// <param name="WindowValues">Window values that are numbers (missing ones are not counted).</param>
+/// <param name="ReferenceValues">Training values that were numbers.</param>
+/// <param name="P">
+/// The chance that a window with nothing changed has this many values past the nearer side's extreme (<see cref="DriftMeasure.BeyondExtremeProbability"/>) —
+/// the smaller of the two sides'. Exact for values drawn independently from one continuous distribution; ties make it larger.
+/// </param>
+/// <param name="Notable">
+/// <paramref name="P"/> is under <see cref="DriftMeasure.FamilyErrorRate"/> shared over both sides of every column that has a range — with nothing
+/// changed, some column of the window reads notable about one time in a hundred.
+/// </param>
+public sealed record RangeSignal(int Below, int Above, int WindowValues, int ReferenceValues, double P, bool Notable)
+{
+    /// <summary>Window values outside the training range, either side.</summary>
+    public int Outside => Below + Above;
+}
 
 /// <summary>
 /// A window of inputs compared against a training profile, and — when the profile carries one — the
@@ -58,6 +87,10 @@ public sealed record DriftReport(int Rows, IReadOnlyList<FeatureDrift> Features,
 
     /// <summary>The level of the most moved input column.</summary>
     public DriftLevel Level => Features.Count == 0 ? DriftLevel.None : Features.Max(f => f.Level);
+
+    /// <summary>The input columns whose values left the training range by more than chance allows (<see cref="RangeSignal.Notable"/>), the least likely first. Apart from <see cref="Level"/>.</summary>
+    public IReadOnlyList<FeatureDrift> RangeNotable
+        => [.. Features.Where(f => f.Range is { Notable: true }).OrderBy(f => f.Range!.P)];
 }
 
 /// <summary>
@@ -156,8 +189,11 @@ public static class DriftMeasure
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(rows);
         var family = profile.Features.Count + 2 * (profile.Texts?.Count ?? 0);
+        // Free text is left out of the range signal: a training row's words are all in the vocabulary by construction, so its share of unseen
+        // words is not drawn like a new row's.
+        var rangeTests = profile.Features.Count(HasRange);
         var features = profile.Features
-            .Select(feature => Measure(feature, rows.Select(r => ValueOf(r, feature.Column)).ToList(), family, profile.Rows))
+            .Select(feature => Measure(feature, rows.Select(r => ValueOf(r, feature.Column)).ToList(), family, profile.Rows, rangeTests))
             .Concat((profile.Texts ?? []).SelectMany(text =>
             {
                 var (lengths, unseen) = text.Describe(rows.Select(r => ValueOf(r, text.Column)).ToList());
@@ -171,7 +207,45 @@ public static class DriftMeasure
         return new DriftReport(rows.Count, features, prediction);
     }
 
-    private static FeatureDrift Measure(FeatureProfile feature, IReadOnlyCollection<string?> values, int family, int referenceRows)
+    private static bool HasRange(FeatureProfile feature) => feature.IsNumeric && feature.Min.HasValue && feature.Max.HasValue;
+
+    private static FeatureDrift Measure(FeatureProfile feature, IReadOnlyCollection<string?> values, int family, int referenceRows, int rangeTests = 0)
+    {
+        var drift = MeasureBins(feature, values, family, referenceRows);
+        return rangeTests > 0 && HasRange(feature) ? drift with { Range = RangeOf(feature, values, referenceRows, rangeTests) } : drift;
+    }
+
+    private static RangeSignal RangeOf(FeatureProfile feature, IReadOnlyCollection<string?> values, int referenceRows, int rangeTests)
+    {
+        var (below, above, present) = feature.OutsideRangeCounts(values);
+        var referenceValues = (int)Math.Round(referenceRows * (1 - feature.Shares[^1]));
+        var p = Math.Min(BeyondExtremeProbability(below, present, referenceValues), BeyondExtremeProbability(above, present, referenceValues));
+        return new RangeSignal(below, above, present, referenceValues, p, p < FamilyErrorRate / (2.0 * rangeTests));
+    }
+
+    /// <summary>
+    /// The chance that at least <paramref name="k"/> of <paramref name="windowValues"/> new values lie beyond the largest (or beyond the smallest) of
+    /// <paramref name="referenceValues"/> training values, when all of them are drawn independently from one continuous distribution:
+    /// C(m, k) ÷ C(n + m, k), the product of (m − i) ÷ (n + m − i) over i &lt; k — the k largest of the n + m values pooled must all be the window's.
+    /// Whatever the distribution; with ties it is an upper bound. 1 for k = 0.
+    /// </summary>
+    public static double BeyondExtremeProbability(int k, int windowValues, int referenceValues)
+    {
+        if (k <= 0)
+            return 1;
+        if (k > windowValues)
+            return 0;
+        double p = 1;
+        for (var i = 0; i < k; i++)
+        {
+            p *= (windowValues - i) / (double)(referenceValues + windowValues - i);
+            if (p < 1e-300)
+                return 0;
+        }
+        return p;
+    }
+
+    private static FeatureDrift MeasureBins(FeatureProfile feature, IReadOnlyCollection<string?> values, int family, int referenceRows)
     {
         var current = feature.SharesOf(values);
         var reference = feature.Shares;

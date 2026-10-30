@@ -156,6 +156,42 @@ public class DriftEvaluatorTests : IDisposable
             .Should().Be(JsonValueKind.Null);
     }
 
+    // Values past the training range are read apart from the PSI: named in the message and the signal, and never a reason for the level to move.
+    [Fact]
+    public async Task ValuesPastTheTrainingRange_AreNamedInTheMessageAndTheSignal()
+    {
+        Promote("exp-001", profileRows: 5000);
+        await Log("exp-001", 300, i => i < 12 ? 1000 + i : i % 100);
+
+        var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
+
+        var x = check.Report!.Features.Single(f => f.Column == "x");
+        x.Range!.Above.Should().Be(12);
+        x.Range.Notable.Should().BeTrue();
+        check.Message.Should().Contain("Values past the training range, counted apart from the PSI: 'x' (12 of 300 above the training maximum).");
+        var signal = JsonSerializer.SerializeToElement(DriftEvaluator.Signal(check.Report));
+        signal.GetProperty("rangeNotable").EnumerateArray().Select(e => e.GetString()).Should().Equal("x");
+        var range = signal.GetProperty("features")[0].GetProperty("range");
+        range.GetProperty("above").GetInt32().Should().Be(12);
+        range.GetProperty("below").GetInt32().Should().Be(0);
+        range.GetProperty("windowValues").GetInt32().Should().Be(300);
+        range.GetProperty("notable").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AWindowInsideTheTrainingRange_SaysNothingAboutTheRange()
+    {
+        Promote("exp-001", profileRows: 5000);
+        await Log("exp-001", 300, i => i % 100);
+
+        var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
+
+        check.Message.Should().NotContain("training range");
+        var signal = JsonSerializer.SerializeToElement(DriftEvaluator.Signal(check.Report!));
+        signal.GetProperty("rangeNotable").GetArrayLength().Should().Be(0);
+        signal.GetProperty("features")[0].GetProperty("range").GetProperty("notable").GetBoolean().Should().BeFalse();
+    }
+
     [Fact]
     public async Task TheTrigger_MeetsTheDriftCondition_OnSignificantDrift()
     {

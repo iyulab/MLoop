@@ -129,6 +129,8 @@ public static class DriftEvaluator
         if (report.Prediction is { } answers)
             message += $" Answers: {Describe(answers.Level).ToLowerInvariant()} (PSI {answers.Psi:F3}; "
                        + $"{answers.MostChangedBin}: {answers.ReferenceShare:P0} → {answers.CurrentShare:P0}).";
+        if (DescribeRange(report) is { } range)
+            message += " " + range;
         return new DriftCheck(DriftCheckStatus.Measured, experimentId, entries.Count, report, slices, message);
     }
 
@@ -140,16 +142,43 @@ public static class DriftEvaluator
     /// <summary>
     /// The drift signal for machines — one shape for <c>mloop trigger check --json</c>, <c>mloop drift
     /// --json</c> and the REST API: the window size, the inputs' level, every column's PSI (most moved
-    /// first), and the answers' drift — <c>null</c> when the model was trained without an answer profile.
+    /// first) with the values it saw past the training range, the columns where that count is more than chance
+    /// gives (<c>rangeNotable</c>, apart from <c>level</c>), and the answers' drift — <c>null</c> when the model
+    /// was trained without an answer profile.
     /// </summary>
     public static object Signal(DriftReport report) => new
     {
         rows = report.Rows,
         level = report.Level.ToString(),
         maxPsi = report.MaxPsi,
+        rangeNotable = report.RangeNotable.Select(f => f.Column),
         features = report.Features.Select(Signal),
         prediction = report.Prediction is { } p ? Signal(p) : null,
     };
+
+    /// <summary>
+    /// A sentence naming the columns whose values left the training range by more than chance allows, or <c>null</c> when none did. It is read apart
+    /// from the PSI level: the PSI barely sees a share of the values leaving the range.
+    /// </summary>
+    public static string? DescribeRange(DriftReport report)
+    {
+        const int Shown = 5;
+        var notable = report.RangeNotable;
+        if (notable.Count == 0)
+            return null;
+        var parts = notable.Take(Shown).Select(f =>
+        {
+            var r = f.Range!;
+            var sides = new List<string>();
+            if (r.Above > 0)
+                sides.Add($"{r.Above:N0} of {r.WindowValues:N0} above the training maximum");
+            if (r.Below > 0)
+                sides.Add($"{r.Below:N0} of {r.WindowValues:N0} below the training minimum");
+            return $"'{f.Column}' ({string.Join(", ", sides)})";
+        });
+        var more = notable.Count > Shown ? $" and {notable.Count - Shown} more" : "";
+        return $"Values past the training range, counted apart from the PSI: {string.Join(", ", parts)}{more}.";
+    }
 
     private static object Signal(FeatureDrift f) => new
     {
@@ -160,6 +189,7 @@ public static class DriftEvaluator
         referenceShare = f.ReferenceShare,
         currentShare = f.CurrentShare,
         noDriftBound = f.Bound,
+        range = f.Range is { } r ? new { below = r.Below, above = r.Above, windowValues = r.WindowValues, referenceValues = r.ReferenceValues, p = r.P, notable = r.Notable } : null,
     };
 
     private static string Describe(DriftLevel level) => level switch

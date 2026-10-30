@@ -456,20 +456,33 @@ public sealed record FeatureProfile
     /// </summary>
     public (double Below, double Above) OutsideRange(IReadOnlyCollection<string?> values)
     {
-        if (!IsNumeric || Min is not { } lo || Max is not { } hi || values.Count == 0)
+        if (values.Count == 0)
             return (0, 0);
-        double below = 0, above = 0;
+        var (below, above, _) = OutsideRangeCounts(values);
+        return ((double)below / values.Count, (double)above / values.Count);
+    }
+
+    /// <summary>
+    /// How many of <paramref name="values"/> lie below the training minimum and above the training maximum, and how many of them are numbers at
+    /// all (<c>Present</c>: neither empty nor unparseable); all zero when the profile has no range or the column is not numeric.
+    /// </summary>
+    public (int Below, int Above, int Present) OutsideRangeCounts(IReadOnlyCollection<string?> values)
+    {
+        if (!IsNumeric || Min is not { } lo || Max is not { } hi)
+            return (0, 0, 0);
+        int below = 0, above = 0, present = 0;
         foreach (var v in values)
         {
             if (string.IsNullOrWhiteSpace(v) || !double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var x) || double.IsNaN(x))
                 continue;
+            present++;
             x = AsSingle(x);
             if (x < lo)
                 below++;
             else if (x > hi)
                 above++;
         }
-        return (below / values.Count, above / values.Count);
+        return (below, above, present);
     }
 
     private static double[] SharesOf(FeatureProfile profile, IReadOnlyCollection<string?> values)
