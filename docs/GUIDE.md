@@ -1526,7 +1526,7 @@ mloop drift --json
 |--------|-------|-------------|
 | `--name` | `-n` | Model name |
 | `--rows` | | How many of the most recent logged predictions to compare (at least 300) |
-| `--slice-by` | | Report drift per value of this input column (values with 100+ predictions) |
+| `--slice-by` | | Report drift per value of this input column (values with 300+ predictions) |
 | `--json` | | Output in JSON format |
 
 ```
@@ -1542,8 +1542,8 @@ mloop drift --json
 ╭───────┬──────┬─────────┬─────────────┬───────────────────╮
 │ Value │ Rows │ Max PSI │    Level    │ Most moved column │
 ├───────┼──────┼─────────┼─────────────┼───────────────────┤
-│ A     │  200 │   4.745 │ significant │ x                 │
-│ B     │  200 │   0.046 │   stable    │ x                 │
+│ A     │  300 │   4.745 │ significant │ x                 │
+│ B     │  300 │   0.046 │   stable    │ x                 │
 ╰───────┴──────┴─────────┴─────────────┴───────────────────╯
 Answers (default's own predictions): PSI 0.205 moderate — yes: 24% → 45%
 PSI under 0.1 is stable, 0.1–0.25 moderate, 0.25+ significant.
@@ -1559,7 +1559,11 @@ answers on rows it was trained on, so a model that memorized them reads slightly
 on new traffic.
 
 **Most moved** is the bin whose share changed most — a decile range, a category, `(other)` for
-values training never saw, or `(missing)`. Only predictions of the model now in production count:
+values training never saw, `(missing)`, or, for a numeric column, `< min` / `> max` when rows left the
+range the model was trained on (counted apart, against a training share of nothing). Numbers are
+compared as the model reads them, in single precision. Fewer than 300 logged predictions are too few
+to compare: with ten bins per column an unchanged window of n rows has a PSI of about 9 ÷ n, so a
+smaller window would read chance as drift. Only predictions of the model now in production count:
 an earlier model's traffic describes another model. A model
 trained before profiles were recorded, or a task that reads no feature columns (time series,
 recommendation, deep learning), has none — the command says so; retrain and promote to start.
