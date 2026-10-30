@@ -40,3 +40,19 @@ The `Engine compare` workflow (`workflow_dispatch`) runs one job per split seed 
 library and with ML.NET's LightGBM regressor (`MlnetLgbm`) on numeric regression tables and reports the held-out RMSE side by side — if they
 agree, a gap is a matter of search, not of the learner. `sizeprobe.py` trains ML.NET LightGBM at growing sizes (trees × leaves) and reports the
 model file, the time to save and load it and to score the held-out rows. Both run in the `LightGBM parity` workflow (`workflow_dispatch`).
+
+## Averaging the best trials (`ensemble-probe/`)
+
+`ensemble-probe` answers one question outside the product: how much does an equal-weight average of the search's best distinct trials gain over its best single model? It runs
+MLoop's own search (`TrialRunner`) for a time budget on a train file, refits the best K distinct (trainer, settings) on the whole train file,
+and scores the held-out file for the best single model and for the average of the first K members (probabilities for classification, predictions for regression), K = 2..maxK.
+An average with equal weights is the lower bound of what a stacked ensemble with fitted weights could gain, so an average that gains nothing closes the question cheaply.
+
+```bash
+dotnet build benchmarks/engine-compare/ensemble-probe -c Release
+dotnet benchmarks/engine-compare/ensemble-probe/bin/Release/net10.0/EnsembleProbe.dll train.csv test.csv <label> <binary|multiclass|regression> <budget-seconds> <seed> [maxK]
+```
+
+It prints one JSON object (`best_single`, each member's validation, test and `reference` metric — ML.NET's own evaluation of the same predictions, a cross-check of the
+score-column order — and `average.k2..kK`). The metric is AUC for binary, log-loss for multiclass and RMSE for regression. The average costs K times the refit,
+which the table does not charge; run it on Linux x64 so LightGBM is among the trainers, like the rest of this directory.
