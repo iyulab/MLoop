@@ -120,9 +120,32 @@ public static class DriftMeasure
     private static FeatureDrift Measure(FeatureProfile feature, IReadOnlyCollection<string?> values)
     {
         var current = feature.SharesOf(values);
-        var psi = Psi(feature.Shares, current);
-        var moved = Enumerable.Range(0, feature.BinCount).MaxBy(i => Math.Abs(current[i] - feature.Shares[i]));
-        return new FeatureDrift(feature.Column, psi, LevelOf(psi), BinName(feature, moved), feature.Shares[moved], current[moved]);
+        var reference = feature.Shares;
+        // A numeric column's end bins are open: rows past the training range land beside the rows that were there. Counted apart — against a
+        // reference share of nothing — a window that left the range reads as it should, whatever the training rows did at the edge.
+        var (below, above) = feature.OutsideRange(values);
+        if (below + above > 0)
+        {
+            var top = (feature.Edges?.Count ?? 0);
+            var shares = current.ToList();
+            var expected = reference.ToList();
+            shares[0] -= below;
+            shares[top] -= above;
+            shares.Add(below);
+            expected.Add(0);
+            shares.Add(above);
+            expected.Add(0);
+            var extended = Psi(expected, shares);
+            var movedBin = Enumerable.Range(0, shares.Count).MaxBy(i => Math.Abs(shares[i] - expected[i]));
+            if (movedBin < feature.BinCount)
+                return new FeatureDrift(feature.Column, extended, LevelOf(extended), BinName(feature, movedBin), expected[movedBin], shares[movedBin]);
+            static string F(double x) => x.ToString("G6", CultureInfo.InvariantCulture);
+            var name = movedBin == feature.BinCount ? $"< {F(feature.Min!.Value)}" : $"> {F(feature.Max!.Value)}";
+            return new FeatureDrift(feature.Column, extended, LevelOf(extended), name, 0, shares[movedBin]);
+        }
+        var psi = Psi(reference, current);
+        var moved = Enumerable.Range(0, feature.BinCount).MaxBy(i => Math.Abs(current[i] - reference[i]));
+        return new FeatureDrift(feature.Column, psi, LevelOf(psi), BinName(feature, moved), reference[moved], current[moved]);
     }
 
     /// <summary>A readable name for bin <paramref name="bin"/> of <paramref name="feature"/>: a category, a range, "other" or "missing".</summary>

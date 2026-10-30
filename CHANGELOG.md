@@ -87,6 +87,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`drift` sees a column leave the range it was trained on.** A numeric column is cut in ten bins that are open at both ends, so values far past the
+  training maximum sat in the end bin beside the rows that were there — and when the maximum was tied across many rows (a capped column), a window
+  that had all moved past it changed that bin's share very little and read as moderate at most. The profile now keeps the training minimum and maximum
+  (profiles written before read as they did) and counts the rows below and above the range as bins of their own, reported as `< min` / `> max`;
+  a constant column that takes a new value drifts.
 - **`drift` no longer reports a shift in inputs that did not move when a column's values differ only below single precision.** The model reads every
   number as a single-precision float, and the prediction log records that value — a training file's `0.999999993939` is the `1` in the log, and
   `15.0013` written as `15.001299999999999` is `15.0013`. The profile's cut points were compared in double precision, so rows drawn from the

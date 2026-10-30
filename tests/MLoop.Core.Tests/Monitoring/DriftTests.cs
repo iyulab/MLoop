@@ -175,6 +175,36 @@ public class DriftMeasureTests
         Assert.True(report.MaxPsi < 0.01, $"PSI {report.MaxPsi}");
     }
 
+    // A column capped at its maximum (half of the training rows sit on it): the end bin is open, so a window that left the range altogether
+    // used to land in the same bin as the capped rows and move its share by half. Counted apart, it is the plain drift it is.
+    [Fact]
+    public void AWindowPastACappedMaximum_Drifts_AndNamesTheRangeItLeft()
+    {
+        var trained = Enumerable.Range(0, 2000).Select(i => new[] { (i % 2 == 0 ? 8 : i % 8).ToString(CultureInfo.InvariantCulture), "a" }).ToArray();
+        var profile = DriftProfile.Build(trained, Columns);
+        var inside = Enumerable.Range(0, 600).Select(i => Row(i % 2 == 0 ? 8 : i % 8, "a")).ToList();
+        // a third of the window left the range, the rest is as trained
+        var past = inside.Take(400).Concat(Enumerable.Range(0, 200).Select(i => Row(9 + i % 7, "a"))).ToList();
+
+        var report = DriftMeasure.Compare(profile, past);
+        Assert.Equal(DriftLevel.Significant, report.Level);
+        Assert.Equal("> 8", report.Features.First(f => f.Column == "x").MostChangedBin);
+        Assert.Equal(DriftLevel.None, DriftMeasure.Compare(profile, inside).Level);
+
+        // a profile written before the range was kept reads as it did: the window shares the capped rows' bin and the shift stays small
+        var legacy = profile with { Features = [.. profile.Features.Select(f => f with { Min = null, Max = null })] };
+        Assert.True(DriftMeasure.Compare(legacy, past).Features.First(f => f.Column == "x").Psi < DriftMeasure.SignificantThreshold);
+    }
+
+    [Fact]
+    public void ANewValueInAConstantColumn_Drifts()
+    {
+        var profile = DriftProfile.Build(Enumerable.Range(0, 500).Select(_ => new[] { "5", "a" }).ToArray(), Columns);
+
+        Assert.Equal(DriftLevel.None, DriftMeasure.Compare(profile, Enumerable.Range(0, 400).Select(_ => Row(5, "a")).ToList()).Level);
+        Assert.Equal(DriftLevel.Significant, DriftMeasure.Compare(profile, Enumerable.Range(0, 400).Select(_ => Row(6, "a")).ToList()).Level);
+    }
+
     [Fact]
     public void ShiftedNumbersAndANewCategory_Drift_AndSayWhere()
     {

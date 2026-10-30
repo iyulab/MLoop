@@ -333,6 +333,17 @@ public sealed record FeatureProfile
     public IReadOnlyList<double>? Edges { get; init; }
 
     /// <summary>
+    /// Numeric: the smallest and largest value the profile was built from (single precision, as compared). The bins are open at both ends, so
+    /// without these a value far past the training range sits in the end bin beside the rows that were there — and when the largest
+    /// value is tied across many rows, a whole window of new values past it moves that bin's share very little. Absent from profiles
+    /// written before; those read as they did.
+    /// </summary>
+    public double? Min { get; init; }
+
+    /// <inheritdoc cref="Min"/>
+    public double? Max { get; init; }
+
+    /// <summary>
     /// Categorical: the categories kept by name, most frequent first; one more bin holds the rest.
     /// Matched ignoring case — a CSV's <c>true</c> and a JSON log's <c>True</c> are one value.
     /// </summary>
@@ -401,7 +412,15 @@ public sealed record FeatureProfile
             if ((edges.Count == 0 || edge > edges[^1]) && edge < parsed[^1])
                 edges.Add(edge);
         }
-        var profile = new FeatureProfile { Column = column, IsNumeric = true, Edges = edges, Shares = new double[edges.Count + 2] };
+        var profile = new FeatureProfile
+        {
+            Column = column,
+            IsNumeric = true,
+            Edges = edges,
+            Min = parsed.Count > 0 ? parsed[0] : null,
+            Max = parsed.Count > 0 ? parsed[^1] : null,
+            Shares = new double[edges.Count + 2],
+        };
         return profile with { Shares = SharesOf(profile, values) };
     }
 
@@ -430,6 +449,28 @@ public sealed record FeatureProfile
     /// <summary>The share of <paramref name="values"/> in each of this profile's bins.</summary>
     public double[] SharesOf(IReadOnlyCollection<string?> values)
         => SharesOf(this, values);
+
+    /// <summary>
+    /// The shares of <paramref name="values"/> (all of them, missing included) below the training minimum and above the training maximum;
+    /// zero for both when the profile has no range or the column is not numeric.
+    /// </summary>
+    public (double Below, double Above) OutsideRange(IReadOnlyCollection<string?> values)
+    {
+        if (!IsNumeric || Min is not { } lo || Max is not { } hi || values.Count == 0)
+            return (0, 0);
+        double below = 0, above = 0;
+        foreach (var v in values)
+        {
+            if (string.IsNullOrWhiteSpace(v) || !double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var x) || double.IsNaN(x))
+                continue;
+            x = AsSingle(x);
+            if (x < lo)
+                below++;
+            else if (x > hi)
+                above++;
+        }
+        return (below / values.Count, above / values.Count);
+    }
 
     private static double[] SharesOf(FeatureProfile profile, IReadOnlyCollection<string?> values)
     {
