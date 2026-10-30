@@ -34,6 +34,14 @@ var multipliers = options.TryGetValue("multipliers", out var multiplierList)
 const int ManyMoved = 20;
 const double ManyScale = 0.4; // 0.4 of the 0.5 sigma unit = 0.2 sigma
 
+// Clustered rows: every 50 consecutive rows (training and windows alike) share a per-column effect, so rows inside a block are correlated (0.5)
+// while each value is still N(0, 1) on its own - what a window of rows from one machine or one shift looks like.
+var blockEffects = new double[columns];
+var blockRows = 0;
+// rho=0.5 block=50: the correlation inside a block and the rows per block (the defaults are a strong cluster; ordinary logs are weaker).
+var blockCorrelation = options.TryGetValue("rho", out var rhoText) ? double.Parse(rhoText, CultureInfo.InvariantCulture) : 0.5;
+var blockSize = Opt("block", 50);
+
 var families = new (string Name, Func<Random, int, IReadOnlySet<int>, double, string[]> Row)[]
 {
     ("normal", (rng, c, moved, scale) => Row(c, j => Normal(rng) + Moved(moved, j, 0.5 * scale))),
@@ -62,6 +70,23 @@ var families = new (string Name, Func<Random, int, IReadOnlySet<int>, double, st
     ("outliers 10%", (rng, c, moved, scale) => Row(c, j => Normal(rng) * (moved.Contains(j) && rng.NextDouble() < 0.10 * scale ? 3 : 1))),
     ("outliers 5%", (rng, c, moved, scale) => Row(c, j => Normal(rng) * (moved.Contains(j) && rng.NextDouble() < 0.05 * scale ? 3 : 1))),
     ("zero-inflated big", (rng, c, moved, scale) => Row(c, j => rng.NextDouble() < 0.6 - (moved.Contains(j) ? 0.25 * scale : 0) ? 0 : -Math.Log(1 - rng.NextDouble()))),
+    // A fifth of the cells are empty (the same in training and in windows).
+    ("normal_missing20", (rng, c, moved, scale) => RowOrEmpty(rng, c, 0.2, j => Normal(rng) + Moved(moved, j, 0.5 * scale))),
+    ("outliers10_missing20", (rng, c, moved, scale) => RowOrEmpty(rng, c, 0.2, j => Normal(rng) * (moved.Contains(j) && rng.NextDouble() < 0.10 * scale ? 3 : 1))),
+    ("clustered", (rng, c, moved, scale) =>
+    {
+        if (blockRows++ % blockSize == 0)
+            for (var j = 0; j < c; j++)
+                blockEffects[j] = Normal(rng);
+        return Row(c, j => Math.Sqrt(blockCorrelation) * blockEffects[j] + Math.Sqrt(1 - blockCorrelation) * Normal(rng) + Moved(moved, j, 0.5 * scale));
+    }),
+    ("clustered_outliers10", (rng, c, moved, scale) =>
+    {
+        if (blockRows++ % blockSize == 0)
+            for (var j = 0; j < c; j++)
+                blockEffects[j] = Normal(rng);
+        return Row(c, j => (Math.Sqrt(blockCorrelation) * blockEffects[j] + Math.Sqrt(1 - blockCorrelation) * Normal(rng)) * (moved.Contains(j) && rng.NextDouble() < 0.10 * scale ? 3 : 1));
+    }),
 };
 var chosen = options.TryGetValue("families", out var list) ? list.Split(',') : null;
 var schema = Enumerable.Range(0, columns).Select(j => ($"c{j}", true)).ToList();
@@ -151,23 +176,20 @@ foreach (var (name, row) in families)
 }
 return 0;
 
-// How a count of window values outside the training range reads, apart from the PSI. For a window of m values drawn like the n training values
-// (continuous, exchangeable), the chance that at least k of them lie above the training maximum is exactly C(m, k) / C(n + m, k) - the top k of
-// the n + m pooled values all belong to the window - whatever the distribution (ties make it conservative); likewise below the minimum. A column's
-// p is the smaller of its two sides. Two thresholds: family-wise (0.05 shared over 2 x columns tests) and per column (p < 1e-3, informational).
-// Prints: the share of windows with nothing moved where any column fires, and, for column c0 moved as the family says (`onescale`), how often
-// the range signal fires beside how often the PSI reads that column moderate or worse as shipped.
+// How the count of window values outside the training range reads, apart from the PSI - the product's own `FeatureDrift.Range` (the exact
+// chance of that many values beyond the training extreme, and the family-wise `Notable`). Prints: the share of windows with nothing moved where
+// any column is notable (and where any column's p is under 1e-3, informational), and, for column c0 moved as the family says (`onescale`),
+// how often it is notable beside how often the PSI reads that column moderate or worse as shipped.
 int RangeSignal()
 {
     Console.WriteLine($"range signal: train {trainRows} rows, window {windowRows} rows, {columns} columns, {profiles} profiles x {windowsPerProfile} windows per kind, seed {seed}");
-    Console.WriteLine("| family | null: any column fires (family-wise) | null: any column fires (p<1e-3) | c0 moved: range signal (family-wise) | c0 moved: range signal (p<1e-3) | c0 moved: PSI moderate+ as shipped |");
-    Console.WriteLine("|---|---|---|---|---|---|");
-    var familyP = 0.05 / (2.0 * columns);
+    Console.WriteLine("| family | null: any column notable | null: any column p<1e-3 | c0 moved: range notable | c0 moved: p<1e-3 | c0 moved: PSI moderate+ as shipped | null: PSI moderate+ (any column) | null: PSI significant (what the retraining trigger reads) |");
+    Console.WriteLine("|---|---|---|---|---|---|---|---|");
     foreach (var (name, row) in families)
     {
         if (name == "mixed" || (chosen is not null && !chosen.Contains(name.Split(' ')[0]) && !chosen.Contains(name)))
             continue;
-        int nullFamily = 0, nullColumn = 0, oneFamily = 0, oneColumn = 0, onePsi = 0, total = 0;
+        int nullNotable = 0, nullColumn = 0, oneNotable = 0, oneColumn = 0, onePsi = 0, nullModerate = 0, nullTrigger = 0, total = 0;
         for (var p = 0; p < profiles; p++)
         {
             var rng = new Random(unchecked(seed * 100_003 + p));
@@ -176,38 +198,21 @@ int RangeSignal()
             for (var w = 0; w < windowsPerProfile; w++)
             {
                 total++;
-                var quiet = Window(row, rng, none, 0);
-                var one = Window(row, rng, first, oneScale);
-                var quietLowest = profile.Features.Min(f => RangeP(profile, f, quiet));
-                nullFamily += quietLowest < familyP ? 1 : 0;
-                nullColumn += quietLowest < 1e-3 ? 1 : 0;
-                var c0 = profile.Features.First(f => f.Column == "c0");
-                var oneP = RangeP(profile, c0, one);
-                oneFamily += oneP < familyP ? 1 : 0;
-                oneColumn += oneP < 1e-3 ? 1 : 0;
-                onePsi += DriftMeasure.Compare(profile, one).Features.First(f => f.Column == "c0").Level >= DriftLevel.Moderate ? 1 : 0;
+                var quiet = DriftMeasure.Compare(profile, Window(row, rng, none, 0));
+                nullNotable += quiet.RangeNotable.Count > 0 ? 1 : 0;
+                nullColumn += quiet.Features.Any(f => f.Range is { } r && r.P < 1e-3) ? 1 : 0;
+                nullModerate += quiet.Level >= DriftLevel.Moderate ? 1 : 0;
+                nullTrigger += quiet.Features.Any(f => f.Psi >= Math.Max(DriftMeasure.SignificantThreshold, f.Bound)) ? 1 : 0;
+                var one = DriftMeasure.Compare(profile, Window(row, rng, first, oneScale)).Features.First(f => f.Column == "c0");
+                oneNotable += one.Range is { Notable: true } ? 1 : 0;
+                oneColumn += one.Range is { } r0 && r0.P < 1e-3 ? 1 : 0;
+                onePsi += one.Level >= DriftLevel.Moderate ? 1 : 0;
             }
         }
         string R(int n) => (n / (double)total).ToString("0.000", CultureInfo.InvariantCulture);
-        Console.WriteLine($"| {name} | {R(nullFamily)} | {R(nullColumn)} | {R(oneFamily)} | {R(oneColumn)} | {R(onePsi)} |");
+        Console.WriteLine($"| {name} | {R(nullNotable)} | {R(nullColumn)} | {R(oneNotable)} | {R(oneColumn)} | {R(onePsi)} | {R(nullModerate)} | {R(nullTrigger)} |");
     }
     return 0;
-}
-
-static double RangeP(DriftProfile profile, FeatureProfile feature, List<IReadOnlyDictionary<string, object?>> window)
-{
-    var values = window.Select(r => TextOf(r[feature.Column])).ToList();
-    var (below, above) = feature.OutsideRange(values);
-    return Math.Min(TailP((int)Math.Round(below * values.Count), values.Count, profile.Rows), TailP((int)Math.Round(above * values.Count), values.Count, profile.Rows));
-}
-
-// P(at least k of m window values beyond the training extreme on one side) for n training values: the product of (m - i) / (n + m - i) over i < k.
-static double TailP(int k, int m, int n)
-{
-    double p = 1;
-    for (var i = 0; i < k; i++)
-        p *= (m - i) / (double)(n + m - i);
-    return p;
 }
 
 List<IReadOnlyDictionary<string, object?>> Window(Func<Random, int, IReadOnlySet<int>, double, string[]> row, Random rng, IReadOnlySet<int> moved, double scale)
@@ -220,6 +225,9 @@ List<IReadOnlyDictionary<string, object?>> Window(Func<Random, int, IReadOnlySet
 static string? TextOf(object? cell) => cell as string;
 
 static double Moved(IReadOnlySet<int> moved, int column, double amount) => moved.Contains(column) ? amount : 0;
+
+static string[] RowOrEmpty(Random rng, int columns, double missing, Func<int, double> draw)
+    => [.. Enumerable.Range(0, columns).Select(j => rng.NextDouble() < missing ? "" : draw(j).ToString("R", CultureInfo.InvariantCulture))];
 
 static string[] Row(int columns, Func<int, double> draw)
     => [.. Enumerable.Range(0, columns).Select(j => draw(j).ToString("R", CultureInfo.InvariantCulture))];
