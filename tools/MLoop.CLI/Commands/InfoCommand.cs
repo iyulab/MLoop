@@ -428,19 +428,15 @@ public static class InfoCommand
         AnsiConsole.Write(new Rule("[blue]Deep Analysis (DataLens)[/]").LeftJustified());
         AnsiConsole.WriteLine();
 
-        var options = new AnalysisOptions
+        var options = DataLensAnalyzer.Only(o =>
         {
-            IncludeProfiling = false, // Already done above
-            IncludeDescriptive = true,
-            IncludeCorrelation = true,
-            IncludeDistribution = true,
-            IncludeOutliers = true,
-            IncludeFeatures = !string.IsNullOrEmpty(labelColumn),
-            IncludeRegression = false,
-            IncludeClustering = false,
-            IncludePca = false,
-            TargetColumn = labelColumn
-        };
+            o.IncludeDescriptive = true;
+            o.IncludeCorrelation = true;
+            o.IncludeDistribution = true;
+            o.IncludeOutliers = true;
+            o.IncludeFeatures = !string.IsNullOrEmpty(labelColumn);
+            o.TargetColumn = labelColumn;
+        });
 
         var result = await dataLens.AnalyzeAsync(dataFile, options);
         if (result == null)

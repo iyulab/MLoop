@@ -1,3 +1,4 @@
+using System.Reflection;
 using DataLens;
 using DataLens.Models;
 using Spectre.Console;
@@ -30,6 +31,23 @@ internal sealed class DataLensAnalyzer
         {
             IsAvailable = false;
         }
+    }
+
+    /// <summary>
+    /// The options for the analyses <paramref name="choose"/> turns on, and no other: every <c>Include…</c> switch of <see cref="AnalysisOptions"/> starts off.
+    /// DataLens runs whatever its defaults say, and a switch added in a later version defaults to on — change points came in that way and
+    /// ran on every <c>mloop info --analyze</c> and <c>mloop analyze</c>, quadratic in the rows (ten seconds for fifty thousand), though nothing here reads them.
+    /// Naming what is wanted keeps the next one out until someone wants it.
+    /// </summary>
+    public static AnalysisOptions Only(Action<AnalysisOptions> choose)
+    {
+        ArgumentNullException.ThrowIfNull(choose);
+        var options = new AnalysisOptions();
+        foreach (var property in typeof(AnalysisOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            if (property.PropertyType == typeof(bool) && property.CanWrite && property.Name.StartsWith("Include", StringComparison.Ordinal))
+                property.SetValue(options, false);
+        choose(options);
+        return options;
     }
 
     /// <summary>

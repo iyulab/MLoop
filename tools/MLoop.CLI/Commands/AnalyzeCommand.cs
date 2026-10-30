@@ -296,18 +296,10 @@ public static class AnalyzeCommand
             var dataLens = new Infrastructure.ML.DataLensAnalyzer();
             if (!dataLens.IsAvailable) { Emit(AnalyzeJson.Unavailable("correlation"), json, _ => { }); return 0; }
 
-            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
+            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, Infrastructure.ML.DataLensAnalyzer.Only(o =>
             {
-                IncludeProfiling = false,
-                IncludeDescriptive = false,
-                IncludeCorrelation = true,
-                IncludeDistribution = false,
-                IncludeOutliers = false,
-                IncludeFeatures = false,
-                IncludeRegression = false,
-                IncludeClustering = false,
-                IncludePca = false
-            });
+                o.IncludeCorrelation = true;
+            }));
 
             var env = AnalyzeJson.MapCorrelation(result?.Correlation);
             Emit(env, json, _ =>
@@ -368,19 +360,11 @@ public static class AnalyzeCommand
             var dataLens = new Infrastructure.ML.DataLensAnalyzer();
             if (!dataLens.IsAvailable) { Emit(AnalyzeJson.Unavailable("importance"), json, _ => { }); return 0; }
 
-            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
+            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, Infrastructure.ML.DataLensAnalyzer.Only(o =>
             {
-                IncludeProfiling = false,
-                IncludeDescriptive = false,
-                IncludeCorrelation = false,
-                IncludeDistribution = false,
-                IncludeOutliers = false,
-                IncludeFeatures = true,
-                IncludeRegression = false,
-                IncludeClustering = false,
-                IncludePca = false,
-                TargetColumn = ctx.Value.Label
-            });
+                o.IncludeFeatures = true;
+                o.TargetColumn = ctx.Value.Label;
+            }));
 
             var env = AnalyzeJson.MapImportance(result?.Features, ctx.Value.Label);
             Emit(env, json, _ =>
@@ -445,18 +429,10 @@ public static class AnalyzeCommand
             var dataLens = new Infrastructure.ML.DataLensAnalyzer();
             if (!dataLens.IsAvailable) { Emit(AnalyzeJson.Unavailable("outliers"), json, _ => { }); return 0; }
 
-            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
+            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, Infrastructure.ML.DataLensAnalyzer.Only(o =>
             {
-                IncludeProfiling = false,
-                IncludeDescriptive = false,
-                IncludeCorrelation = false,
-                IncludeDistribution = false,
-                IncludeOutliers = true,
-                IncludeFeatures = false,
-                IncludeRegression = false,
-                IncludeClustering = false,
-                IncludePca = false
-            });
+                o.IncludeOutliers = true;
+            }));
 
             var env = AnalyzeJson.MapOutliers(result?.Outliers);
             Emit(env, json, _ =>
@@ -511,18 +487,11 @@ public static class AnalyzeCommand
             var dataLens = new Infrastructure.ML.DataLensAnalyzer();
             if (!dataLens.IsAvailable) { Emit(AnalyzeJson.Unavailable("distribution"), json, _ => { }); return 0; }
 
-            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, new AnalysisOptions
+            var result = await dataLens.AnalyzeAsync(ctx.Value.DataFile, Infrastructure.ML.DataLensAnalyzer.Only(o =>
             {
-                IncludeProfiling = false,
-                IncludeDescriptive = true,
-                IncludeCorrelation = false,
-                IncludeDistribution = true,
-                IncludeOutliers = false,
-                IncludeFeatures = false,
-                IncludeRegression = false,
-                IncludeClustering = false,
-                IncludePca = false
-            });
+                o.IncludeDescriptive = true;
+                o.IncludeDistribution = true;
+            }));
 
             // Per-column cardinality (MLoop's own scan, same as `profile`) lets MapDistribution
             // suppress non-actionable skew flags on low-cardinality/categorical columns.

@@ -46,6 +46,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop info --analyze` and `mloop analyze` no longer run change-point detection nobody reads.** DataLens switches on every analysis it has unless told otherwise, and change points - added in a later version than the code that builds the options - ran on each call, quadratic in the number of rows: `analyze correlation` took 10 seconds on 50,000 rows and about a quarter of an hour on a million, for four numeric columns, to show a correlation matrix. The options are now built in one place from everything off, naming what each command shows, so a switch added later stays off until it is asked for: `analyze correlation`, `distribution` and `importance` take 0.4 to 0.7 seconds on 50,000 rows and about 2.5 seconds on a million. `info --analyze` and `analyze outliers` still take seconds to minutes on large files because the local outlier factor DataLens runs there is itself quadratic in the rows (8 seconds at 25,000 rows, 34 seconds at 50,000).
+
 - **A model trained on a few hundred rows no longer reads windows of unchanged data as drifted, and `input_drift` no longer asks for a retraining on the noise of a small
   training set.** Three things were wrong. The two bins past a numeric column's training range expected nothing, but a new draw lies past the largest (or under the
   smallest) of n training values with probability 1 / (n + 1) on each side - a window of 300 rows carries a stray value or two in most columns of a 500-row profile; the
