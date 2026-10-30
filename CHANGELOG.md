@@ -56,6 +56,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`mloop predict --output <file> --json` is refused.** `--json` answers on stdout instead of writing the CSV, so a file named beside it was never written - the
   command exited 0 with the JSON and the path holding nothing. The two are alternatives (the command's description always said "`--json` or `--output`"); the pair
   now ends with an error that says so, before anything is predicted. A caller who passed both and read the file gets the error instead of an empty path.
+- **`mloop analyze outliers` and `info --analyze` leave out the local outlier factor above 20,000 rows, and say so.** DataLens 0.21.1 skips the two analyses
+  that are quadratic in the rows above a row threshold; `analyze outliers` on 50,000 rows takes 0.9 s instead of 43 s. The skip is reported as a warning
+  (printed, and in `warnings` with `--json`) because the answer changes: with the local outlier factor out, a row is an outlier when isolation forest and Mahalanobis
+  distance both flag it. Builds on DataLens 0.21.1 (the pin moves with this change).
 
 - **`mloop drift` no longer reads a window of unchanged data as "moderate" because the table is wide or the window short.** The PSI levels (0.1, 0.25)
   are the reading for large samples. A window of 300 logged predictions against a training profile has a PSI of about 0.03 in each column with

@@ -972,9 +972,11 @@ mloop analyze series sensor.csv --column temp   # a column read as an ordered se
 | `profile` | Per column: missing count and rate, approximate unique values, type, and mean/stddev/min/max |
 | `correlation` | The full pairwise correlation matrix, label included |
 | `importance` | Permutation importance of each feature against the label |
-| `outliers` | Isolation Forest: how many rows are outliers, and the score threshold used |
+| `outliers` | How many rows are outliers - rows that at least two of isolation forest, local outlier factor and Mahalanobis distance flag - and the isolation forest score threshold used |
 | `distribution` | Median, quartiles, IQR, skewness and kurtosis per column |
 | `series` | One column as an ordered series: autocorrelation and partial autocorrelation with their bands, the ADF and KPSS stationarity tests read together at 5% (`stationary`, `non-stationary`, `unsettled`), and the dominant period. Evidence only — whether to difference or detrend is your call |
+
+The local outlier factor that `outliers` and `info --analyze` run costs time that grows with the square of the rows (8 seconds at 25,000 rows and 34 at 50,000, four numeric columns), so above 20,000 rows it is left out: the command says so in a warning (`warnings` with `--json`), and a row then counts as an outlier when isolation forest and Mahalanobis distance both flag it. The other subcommands take under a second on 50,000 rows and a few seconds on a million.
 
 When an analysis cannot run - too few rows or numeric columns, or every value undefined - or leaves columns out because they are constant or empty, the command says so (a warning in the table output, and in `warnings` with `--json`); an empty result is then not a finding. Notes about the data itself, such as repeated rows, are not repeated here.
 
