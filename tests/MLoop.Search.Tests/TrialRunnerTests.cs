@@ -365,6 +365,58 @@ public sealed class TrialRunnerTests
     }
 
     [Fact]
+    public void ATrainerThatFailsEveryTry_IsRetiredAfterThreeFailures_AndTheOthersGoOn()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+        var broken = new TrainerCandidate("Broken", new SearchSpace([SearchDimension.Integer("N", 1, 10, defaultValue: 1)]), 0.5,
+            (_, _, _, _) => throw new InvalidOperationException("no native library"));
+        var candidates = new[] { broken }.Concat(CandidateCatalog.Binary(name => name == "LbfgsLogisticRegression")).ToList();
+
+        var result = new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 12, candidates)).Run(data, roles);
+
+        Assert.Equal(TrialRunner.FailuresToRetire, result.Trials.Count(t => t.Trainer == "Broken"));
+        Assert.True(result.Trials.Count(t => t.Trainer == "LbfgsLogisticRegression") > 3);
+        Assert.Equal("LbfgsLogisticRegression", result.Best.Trainer);
+    }
+
+    [Fact]
+    public void WhenEveryTrainerIsRetired_TheSearchEndsAtOnce_NotAtTheEndOfTheBudget()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+        TrainerCandidate Broken(string name, string reason) => new(name, new SearchSpace([SearchDimension.Integer("N", 1, 10, defaultValue: 1)]), 0.5,
+            (_, _, _, _) => throw new InvalidOperationException(reason));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var ex = Assert.Throws<SearchFailedException>(() =>
+            new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), candidates: [Broken("A", "no native library"), Broken("B", "column unreadable")])).Run(data, roles));
+
+        Assert.True(clock.Elapsed < TimeSpan.FromMinutes(1), $"took {clock.Elapsed.TotalSeconds:0} s of a 300 s budget");
+        Assert.Equal(2 * TrialRunner.FailuresToRetire, ex.Trials.Count);
+        Assert.Contains("retired", ex.Message);
+        Assert.Contains("A: no native library", ex.Message);
+        Assert.Contains("B: column unreadable", ex.Message);
+    }
+
+    [Fact]
+    public void ATrainerThatHasScored_IsNotRetiredByLaterFailures()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+        var lbfgs = CandidateCatalog.Binary(name => name == "LbfgsLogisticRegression").Single();
+        var builds = 0;
+        // The first build works; the next six fail (settings that cannot fit); the refit's build, after them, works.
+        var flaky = new TrainerCandidate("Flaky", lbfgs.Space, lbfgs.InitialCost, (context, point, columns, settings) =>
+            ++builds is > 1 and <= 7 ? throw new InvalidOperationException("these settings cannot fit") : lbfgs.Build(context, point, columns, settings));
+
+        var result = new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 7, candidates: [flaky])).Run(data, roles);
+
+        Assert.Equal(6, result.Trials.Count(t => t.Error is not null));
+        Assert.Equal("Flaky", result.Best.Trainer);
+    }
+
+    [Fact]
     public void TheCallersCancellation_StopsTheSearch()
     {
         var ml = new MLContext(seed: 1);

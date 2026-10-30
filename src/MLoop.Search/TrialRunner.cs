@@ -117,6 +117,14 @@ public sealed class TrialRunner
     /// </summary>
     public const double LargeModelSize = 10_000_000;
 
+    /// <summary>
+    /// How many failures in a row, without one scored trial, retire a trainer from the search. A trainer whose first few trials —
+    /// the cheapest settings it has — all fail (a native library that is not there, a column it cannot read) is not going to
+    /// succeed on a later setting, and each further try spends budget a trainer that works could use. A trainer that has
+    /// scored is never retired: its failures belong to the settings that failed, which the tuner already steers away from.
+    /// </summary>
+    public const int FailuresToRetire = 3;
+
     /// <summary>Cells up to which the search keeps the training rows in memory (50 million: a few hundred megabytes).</summary>
     internal const long CacheCellLimit = 50_000_000;
 
@@ -160,6 +168,8 @@ public sealed class TrialRunner
 
         var trials = new List<TrialResult>();
         var lastSeconds = new Dictionary<string, double>(StringComparer.Ordinal);
+        var failuresWithoutScore = new Dictionary<string, int>(StringComparer.Ordinal);
+        var retired = new HashSet<string>(StringComparer.Ordinal);
         var scored = new List<Scored>();
         Scored? best = null;     // the highest score so far
 
@@ -175,7 +185,7 @@ public sealed class TrialRunner
 
             // Past the first success, only a schema whose last trial fits the time left may run next.
             var left = deadline - clock.Elapsed.TotalSeconds;
-            var schemaId = proposer.Propose(id => best is null || !lastSeconds.TryGetValue(id, out var expected) || expected <= left);
+            var schemaId = proposer.Propose(id => !retired.Contains(id) && (best is null || !lastSeconds.TryGetValue(id, out var expected) || expected <= left));
             if (schemaId is null)
                 break;
             var schema = schemas.First(s => s.Id == schemaId);
@@ -274,6 +284,10 @@ public sealed class TrialRunner
                 tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.InitialCost);
                 proposer.Update(schemaId, double.NaN, schema.Candidate.InitialCost);
                 _sink?.Completed(failed, _request.Metric.Name);
+                // A trainer that has not scored once and keeps failing is retired; one that has scored is not (see FailuresToRetire).
+                if (!scored.Any(t => t.Trial.Trainer == schema.Candidate.Name)
+                    && (failuresWithoutScore[schemaId] = failuresWithoutScore.GetValueOrDefault(schemaId) + 1) >= FailuresToRetire)
+                    retired.Add(schemaId);
                 if (best is null && clock.Elapsed >= _request.Budget)
                     break;
             }
@@ -281,9 +295,10 @@ public sealed class TrialRunner
 
         if (best is not { } top)
         {
-            throw new SearchFailedException(trials,
-                $"No trial produced a score in {_request.Budget.TotalSeconds:0} s ({trials.Count} tried): "
-                + string.Join("; ", trials.Where(t => t.Error is not null).Select(t => $"{t.Trainer}: {t.Error}").Distinct().Take(5)));
+            var why = string.Join("; ", trials.Where(t => t.Error is not null).Select(t => $"{t.Trainer}: {t.Error}").Distinct().Take(5));
+            throw new SearchFailedException(trials, retired.Count == schemas.Count
+                ? $"No trial produced a score: every trainer failed {FailuresToRetire} times in a row and was retired ({trials.Count} tried in {clock.Elapsed.TotalSeconds:0} s of {_request.Budget.TotalSeconds:0} s): {why}"
+                : $"No trial produced a score in {_request.Budget.TotalSeconds:0} s ({trials.Count} tried): {why}");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
