@@ -87,6 +87,16 @@ public static partial class ErrorSuggestions
     /// wrapper's type and silently never fires — the failure mode that kept the memory rule dark on
     /// every real training run.
     /// </remarks>
+    private static T? FindInChain<T>(Exception ex) where T : Exception
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is T found) return found;
+        }
+
+        return null;
+    }
+
     private static bool HasInChain<T>(Exception ex) where T : Exception
     {
         for (Exception? current = ex; current is not null; current = current.InnerException)
@@ -171,10 +181,19 @@ public static partial class ErrorSuggestions
         // "timeout" nor "memory", so every message rule below misses it and the generic training
         // fallback used to answer with "try --time 30": shrink the budget that already bought nothing.
         // Both causes are named because MLoop cannot tell them apart here (see NoSuccessfulTrialException).
-        var noTrialCompleted = HasInChain<NoSuccessfulTrialException>(ex)
+        var noTrial = FindInChain<NoSuccessfulTrialException>(ex);
+        var noTrialCompleted = noTrial is not null
             || (context == "training" && HasInChain<TimeoutException>(ex));
+        // A search that stopped because every trainer failed its first trials did not run out of time: more of it changes nothing.
+        var allTrainersFailed = noTrial is { AllTrainersFailed: true };
 
-        if (noTrialCompleted)
+        if (noTrialCompleted && allTrainersFailed)
+        {
+            suggestions.Add("Every trainer failed its first trials, so the search stopped before the time budget ran out — a longer budget will not change it");
+            suggestions.Add("Read the failures in the message: each trainer's own error is listed");
+            suggestions.Add("Check the data the trainers read: [cyan]mloop info <data-file>[/]");
+        }
+        else if (noTrialCompleted)
         {
             suggestions.Add("No trial finished, so there is no model to report — either the time budget was too short, or every trial died before finishing");
             suggestions.Add("Give it more time: [cyan]mloop train --time <seconds>[/]");
@@ -197,7 +216,7 @@ public static partial class ErrorSuggestions
         // Skipped once the no-trial rule has spoken: that rule already offers the same remedies, and its
         // message names memory as a candidate cause — which would otherwise match the substring test
         // below and print each remedy twice, in slightly different words.
-        if (!noTrialCompleted
+        if ((!noTrialCompleted || allTrainersFailed)
             && (HasInChain<OutOfMemoryException>(ex) || message.Contains("out of memory") || message.Contains("memory")
                 || message.Contains("bad allocation") || message.Contains("bad_alloc")))
         {

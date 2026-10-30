@@ -65,10 +65,16 @@ public sealed record SearchResult(
     OutOfFoldScores? OutOfFold = null);
 
 /// <summary>No trial of a search produced a score. <see cref="Trials"/> says why each failed.</summary>
-public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, string message) : Exception(message)
+public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, string message, bool allTrainersRetired = false) : Exception(message)
 {
     /// <summary>The trials run, every one failed.</summary>
     public IReadOnlyList<TrialResult> Trials { get; } = trials;
+
+    /// <summary>
+    /// Whether the search stopped because every trainer had failed <see cref="TrialRunner.FailuresToRetire"/> times in a row —
+    /// before its time budget ran out, so more time would not have changed it. False when the budget ended with nothing scored.
+    /// </summary>
+    public bool AllTrainersRetired { get; } = allTrainersRetired;
 }
 
 /// <summary>
@@ -296,9 +302,10 @@ public sealed class TrialRunner
         if (best is not { } top)
         {
             var why = string.Join("; ", trials.Where(t => t.Error is not null).Select(t => $"{t.Trainer}: {t.Error}").Distinct().Take(5));
-            throw new SearchFailedException(trials, retired.Count == schemas.Count
+            var allRetired = retired.Count == schemas.Count;
+            throw new SearchFailedException(trials, allRetired
                 ? $"No trial produced a score: every trainer failed {FailuresToRetire} times in a row and was retired ({trials.Count} tried in {clock.Elapsed.TotalSeconds:0} s of {_request.Budget.TotalSeconds:0} s): {why}"
-                : $"No trial produced a score in {_request.Budget.TotalSeconds:0} s ({trials.Count} tried): {why}");
+                : $"No trial produced a score in {_request.Budget.TotalSeconds:0} s ({trials.Count} tried): {why}", allRetired);
         }
 
         cancellationToken.ThrowIfCancellationRequested();

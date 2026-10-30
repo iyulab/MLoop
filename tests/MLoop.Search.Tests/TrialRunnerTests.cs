@@ -362,6 +362,7 @@ public sealed class TrialRunnerTests
 
         Assert.Contains("Broken: no native library", ex.Message);
         Assert.NotEmpty(ex.Trials);
+        Assert.False(ex.AllTrainersRetired);   // the budget ended the search, not the retirement
     }
 
     [Fact]
@@ -394,6 +395,7 @@ public sealed class TrialRunnerTests
 
         Assert.True(clock.Elapsed < TimeSpan.FromMinutes(1), $"took {clock.Elapsed.TotalSeconds:0} s of a 300 s budget");
         Assert.Equal(2 * TrialRunner.FailuresToRetire, ex.Trials.Count);
+        Assert.True(ex.AllTrainersRetired);
         Assert.Contains("retired", ex.Message);
         Assert.Contains("A: no native library", ex.Message);
         Assert.Contains("B: column unreadable", ex.Message);

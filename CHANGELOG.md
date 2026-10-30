@@ -12,7 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   A run where nothing works - a native library that is not installed, a column no trainer can read - used to keep trying until the whole
   time budget was gone, and a trainer that could not run on this machine kept being proposed beside the ones that could. A trainer that has
   scored is never retired: its failures belong to the settings that failed, which the search already steers away from. The error that ends a
-  search names each retired trainer's failure.
+  search says it stopped early, names each retired trainer's failure, and no longer advises a longer time budget
+  (`NoSuccessfulTrialException.AllTrainersFailed`).
 - **The search keeps the top-scoring trial unless its model is very large.** It used to replace a top model of 100,000 leaves (trees × leaves) or more
   with the smallest model within one standard error of its score; an ordinary model of a few hundred trees reaches that, and on sixteen public
   tables the swap cost score (up to 0.0066 RMSE and 0.0063 AUC, twice the standard error on two tables, at 60 and 240 seconds) with no cost

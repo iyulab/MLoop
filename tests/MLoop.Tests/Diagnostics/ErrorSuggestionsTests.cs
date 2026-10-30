@@ -271,6 +271,37 @@ public class ErrorSuggestionsTests
         Assert.Contains(suggestions, s => s.Contains("--max-rows") || s.Contains("mloop sample"));
     }
 
+    private static NoSuccessfulTrialException EveryTrainerRetired()
+    {
+        MLoop.Search.TrialResult Failed(string trainer, string error) => new() { Trainer = trainer, Error = error };
+        var search = new MLoop.Search.SearchFailedException(
+            [Failed("A", "no native library"), Failed("B", "column unreadable")], "every trainer failed", allTrainersRetired: true);
+        return new NoSuccessfulTrialException(900, search);
+    }
+
+    [Fact]
+    public void NoSuccessfulTrial_WhenEveryTrainerWasRetired_SaysSoAndNamesTheFailures()
+    {
+        var ex = EveryTrainerRetired();
+
+        Assert.True(ex.AllTrainersFailed);
+        Assert.Contains("stopped early", ex.Message);
+        Assert.Contains("A: no native library", ex.Message);
+        Assert.Contains("B: column unreadable", ex.Message);
+        Assert.DoesNotContain("budget was too small", ex.Message);
+        Assert.False(new NoSuccessfulTrialException(900, null).AllTrainersFailed);
+    }
+
+    [Fact]
+    public void GetSuggestions_NoSuccessfulTrial_WhenEveryTrainerWasRetired_DoesNotAskForMoreTime()
+    {
+        var suggestions = ErrorSuggestions.GetSuggestions(AsTrainingEngineWraps(EveryTrainerRetired()), "training");
+
+        Assert.DoesNotContain(suggestions, s => s.Contains("--time"));
+        Assert.Contains(suggestions, s => s.Contains("a longer budget will not change it"));
+        Assert.Contains(suggestions, s => s.Contains("mloop info"));
+    }
+
     [Fact]
     public void GetSuggestions_NoSuccessfulTrial_DoesNotRepeatTheSameRemedyTwice()
     {
