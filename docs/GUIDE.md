@@ -756,6 +756,52 @@ command refuses a model that has a threshold, and a threshold chosen afterwards 
 calibrated probability. The ONNX export carries the trained model's own probability; the manifest
 names the calibration for the consumer to apply.
 
+### `mloop explain`
+
+Which input columns a trained model relies on. The model scores a labeled file; then one feature column's values at a time are shuffled among
+the rows and the file is scored again. The fall of the score is how much the model needs the column — *permutation importance* — in the units of
+the metric `mloop evaluate` reports for the task, taken the way `evaluate` takes it (same loader, schema, weights).
+
+```bash
+mloop explain --data datasets/test.csv              # the production model
+mloop explain exp-004 --data datasets/test.csv      # a staged candidate
+mloop explain --data datasets/test.csv --repeats 5 --rows 5000 --seed 7 --json
+```
+
+```
+exp-001 on test.csv: 300 rows, accuracy 0.8433 (higher is better), 3 shuffle(s) per column
+╭────────┬──────────────────┬────────╮
+│ Column │ Fall in accuracy │   ± sd │
+├────────┼──────────────────┼────────┤
+│ age    │          +0.3311 │ 0.0347 │
+│ noise  │          +0.0056 │ 0.0069 │
+│ income │          +0.0022 │ 0.0051 │
+╰────────┴──────────────────┴────────╯
+```
+
+| Option | Description |
+|--------|-------------|
+| `[experiment-id]` | Experiment to explain (default: the production model) |
+| `--data`, `-d` | The labeled file to score (default: `datasets/test.csv`); it needs the label column |
+| `--name`, `-n` | Model name |
+| `--weight` | Column that weights the rows (defaults as `evaluate --weight` does) |
+| `--repeats` | Shuffles per column; the importance is their mean (default 3) |
+| `--rows` | Most rows scored (default 2,000); a larger file is sampled — every column costs `--repeats` scorings |
+| `--seed` | Seed of the sample and the shuffles; the same seed gives the same numbers (default 1) |
+| `--json` | `features` (`column`, `importance`, `standardDeviation`), `metric`, `higherIsBetter`, `baseline`, `rows`, `repeats`, `notShuffled` |
+
+**Cost.** One scoring of 2,000 rows takes about a tenth of a second on a laptop, and the whole run is columns × `--repeats` of them: a table of 50 columns takes about 4 seconds with one shuffle each
+(12 seconds at the default of three) and 150 columns about 13 seconds (40 at three). A progress bar shows where it is; lower `--rows` or `--repeats` for a very wide table.
+
+**Reading it.** A column near zero is one the model does not use, however strongly it relates to the label; a column that carries the score
+falls it by about what it carried. A negative fall is chance (shuffling happened to help) and is shown, not hidden — compare it with `± sd`.
+This is the model's reliance, not the data's: two columns that say the same thing share what either would show alone (shuffle one and the model
+leans on the other), so a small fall for each of a correlated pair does not mean neither matters. It is also not a cause — it says what the model
+used, not what moves the outcome in the world. When a held-out score is suspiciously near-perfect (the training warning about a possible leaked
+column), `explain` on the held-out file names the column that carries it. `mloop analyze importance` is the other question: which columns relate to
+the label in the data, before or without any model. Binary-classification, multiclass-classification and regression models are explained; the
+columns the model did not read as features (excluded as an identifier, a date or a constant at training) are listed as not shuffled.
+
 ### `mloop rollback`
 
 Returns production to the experiment it held before the current one, from the promotion history.

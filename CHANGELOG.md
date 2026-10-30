@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`mloop explain` shows which input columns a trained model relies on.** `mloop analyze importance` reads the data - how strongly each column relates to
+  the label, whatever model is trained on it - and nothing so far read a model. `explain [experiment-id] --data <file>` scores the model on a labeled file, then
+  shuffles one feature column's values among the rows at a time and scores again; the fall of the score is how much the model needs that column (permutation
+  importance), in the units of the metric `mloop evaluate` reports for the task, mean and spread over `--repeats` shuffles (3), on at most `--rows` rows
+  (2,000, sampled with `--seed`; the same seed gives the same numbers). A column the model did not read as a feature (excluded or ignored at training) is listed
+  as not shuffled; the label and the weight column are not features. It is the question to ask when a score looks too good - which column carries it? - or a column
+  is costly to collect - does the model use it? The training warning about a near-perfect held-out score, which said what to check but not where, now suggests it. Two correlated columns share what either would show alone. Binary, multiclass and regression models; `--json`
+  carries `features` (`column`, `importance`, `standardDeviation`), the `metric`, its direction and the `baseline`.
+
 ### Changed
 
 - **`mloop drift` no longer reads a window of unchanged data as "moderate" because the table is wide or the window short.** The PSI levels (0.1, 0.25)

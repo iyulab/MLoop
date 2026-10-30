@@ -747,6 +747,8 @@ public class PerformanceDiagnosticsTests
         var result = _diagnostics.Analyze(task, new Dictionary<string, double> { [metric] = value }, rowCount: 1628);
 
         Assert.Contains(result.Warnings, w => w.Contains("Near-perfect on held-out rows") && w.Contains("computed from the label"));
+        // …and says where to look next: the command that names the column the score rests on.
+        Assert.Contains(result.Suggestions, x => x.Contains("mloop explain"));
     }
 
     [Fact]
@@ -756,6 +758,7 @@ public class PerformanceDiagnosticsTests
         var result = _diagnostics.Analyze("binary-classification", new Dictionary<string, double> { ["auc"] = 1.0 }, rowCount: 50);
 
         Assert.DoesNotContain(result.Warnings, w => w.Contains("Near-perfect"));
+        Assert.DoesNotContain(result.Suggestions, x => x.Contains("mloop explain"));
     }
 
     [Fact]

@@ -148,6 +148,7 @@ internal class Program
             RollbackCommand.Create(),
             ThresholdCommand.Create(),
             CalibrateCommand.Create(),
+            ExplainCommand.Create(),
             ExportCommand.Create(),
             InfoCommand.Create(),
             AnalyzeCommand.Create(),

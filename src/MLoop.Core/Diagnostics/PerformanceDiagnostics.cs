@@ -152,6 +152,8 @@ public class PerformanceDiagnostics
 
         result.Warnings.Add($"Near-perfect on held-out rows ({metric} {value:F4}) — check that no feature is computed " +
             "from the label or recorded after it: a leaked column scores like this and is missing from new data");
+        // The warning says what to check, not where: the column that carries a leaked score is the one the model leans on most.
+        result.Suggestions.Add("Find the column that carries the score: `mloop explain --data <labeled file>` ranks the input columns by how much the model relies on them");
     }
 
     /// <summary>
