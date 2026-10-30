@@ -147,12 +147,18 @@ if (members.Count > 1)
         }
         var weighted = Weighted(members.Select(m => m.Scores).ToList(), bestCounts);
         var oofSingles = oof.Select(o => Metric(task, o, oofTruthArray)).ToArray();
+        var oofBest = higherIsBetter ? oofSingles.Max() : oofSingles.Min();
+        // The member the out-of-fold answers alone would pick, and how it scores on the held-out rows: forward selection with its weights
+        // collapsed onto one member, so what forward selection gains beyond it is the blend, not the choice made on out-of-fold answers.
+        var oofPick = Array.IndexOf(oofSingles, oofBest);
         forward = new
         {
             steps = bestCounts.Sum(),
             counts = bestCounts,
             oof_selected = bestScore,
-            oof_best_single = higherIsBetter ? oofSingles.Max() : oofSingles.Min(),
+            oof_best_single = oofBest,
+            oof_pick = oofPick,
+            oof_pick_test = members[oofPick].Test,
             test = Metric(task, weighted, truth!),
         };
     }

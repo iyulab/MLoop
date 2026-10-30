@@ -20,7 +20,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ARMS = [('single', lambda p: p['best_single']), ('k3', lambda p: p['average'].get('k3')), ('k5', lambda p: p['average'].get('k5')),
-        ('forward', lambda p: (p.get('forward') or {}).get('test'))]
+        ('oofpick', lambda p: (p.get('forward') or {}).get('oof_pick_test')), ('forward', lambda p: (p.get('forward') or {}).get('test'))]
 # metric -> direction (+1: higher is better), as run.py's PRIMARY
 DIRECTION = {'auc': +1, 'log_loss': -1, 'rmse': -1}
 
@@ -68,9 +68,9 @@ def main():
     probe = shlex.split(args.probe)
     chosen = [t for t in args.tables.split(',') if t]
     print('| table | task | rows | metric | ' + ' | '.join(name for name, _ in ARMS)
-          + ' | k3 vs single | k5 vs single | forward vs single | forward vs k5 | forward members used | forward top-member share |')
-    print('|---|---|---|---|' + '---|' * (len(ARMS) + 6))
-    summary = {key: {'better': 0, 'equal': 0, 'worse': 0} for key in ('k3', 'k5', 'forward', 'forward vs k5')}
+          + ' | k3 vs single | k5 vs single | oofpick vs single | forward vs single | forward vs oofpick | forward vs k5 | forward members used | forward top-member share |')
+    print('|---|---|---|---|' + '---|' * (len(ARMS) + 8))
+    summary = {key: {'better': 0, 'equal': 0, 'worse': 0} for key in ('k3', 'k5', 'oofpick', 'forward', 'forward vs oofpick', 'forward vs k5')}
     for name, (task, target, frame) in tables().items():
         if chosen and name not in chosen:
             continue
@@ -104,14 +104,15 @@ def main():
         by = {arm: [fn(r) for r in runs] for arm, fn in ARMS}
         cells = ['%.4f±%.4f' % mean_se(by[arm]) for arm, _ in ARMS]
         verdicts = {'k3': verdict(by['k3'], by['single'], direction), 'k5': verdict(by['k5'], by['single'], direction),
-                    'forward': verdict(by['forward'], by['single'], direction), 'forward vs k5': verdict(by['forward'], by['k5'], direction)}
+                    'oofpick': verdict(by['oofpick'], by['single'], direction), 'forward': verdict(by['forward'], by['single'], direction),
+                    'forward vs oofpick': verdict(by['forward'], by['oofpick'], direction), 'forward vs k5': verdict(by['forward'], by['k5'], direction)}
         for key, v in verdicts.items():
             summary[key][v] += 1
         # What forward selection chose: how many of the five members got any weight, and the largest member's share of the steps.
         chosen_counts = [r['forward']['counts'] for r in runs]
         used = sum(sum(1 for c in counts if c > 0) for counts in chosen_counts) / len(chosen_counts)
         top_share = sum(max(counts) / sum(counts) for counts in chosen_counts) / len(chosen_counts)
-        print(f'| {name} | {task} | {len(frame)} | {metric} | ' + ' | '.join(cells) + ' | ' + ' | '.join(verdicts[k] for k in ('k3', 'k5', 'forward', 'forward vs k5'))
+        print(f'| {name} | {task} | {len(frame)} | {metric} | ' + ' | '.join(cells) + ' | ' + ' | '.join(verdicts[k] for k in ('k3', 'k5', 'oofpick', 'forward', 'forward vs oofpick', 'forward vs k5'))
               + f' | {used:.1f} | {top_share:.2f} |  (n={len(runs)})')
     print()
     for key, tally in summary.items():

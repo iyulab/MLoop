@@ -29,8 +29,9 @@ TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classi
 PRIMARY = {'binary': ('auc', +1), 'multiclass': ('log_loss', -1), 'regression': ('rmse', -1)}
 SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboost', 'automl-legacy']
 # `ensemble` is a probe, not a system: one search yields four rows - its best single model, the equal-weight average of its best 3 and 5 trials,
-# and a forward-selected blend of its best 5 (weights chosen on the train rows' out-of-fold answers)
-ENSEMBLE_ROWS = ['ens-single', 'ens-k3', 'ens-k5', 'ens-fwd']
+# the member the train rows' out-of-fold answers pick (what forward selection collapses to on one member), and a forward-selected blend of its
+# best 5 (weights chosen on those same out-of-fold answers)
+ENSEMBLE_ROWS = ['ens-single', 'ens-k3', 'ens-k5', 'ens-oofpick', 'ens-fwd']
 # what `mloop train --metric` is given so the search optimizes the metric the table reports
 OPTIMIZE = {'binary': 'auc', 'multiclass': 'log_loss', 'regression': 'rmse'}
 
@@ -163,7 +164,7 @@ def run_ensemble(command, entry, work, budget, seed):
             wall = round(time.time() - started, 1)
             metric = probe['metric']
             values = {'ens-single': probe['best_single'], 'ens-k3': probe['average'].get('k3'), 'ens-k5': probe['average'].get('k5'),
-                      'ens-fwd': (probe.get('forward') or {}).get('test')}
+                      'ens-oofpick': (probe.get('forward') or {}).get('oof_pick_test'), 'ens-fwd': (probe.get('forward') or {}).get('test')}
             return {name: {'test': {metric: value}, 'wall_s': wall, 'trials': probe['trials']} for name, value in values.items() if value is not None}
     return {'ens-single': {'error': 'ensemble-probe failed: ' + (done.stdout + done.stderr)[-400:]}}
 
@@ -310,9 +311,9 @@ def summarize(paths):
     print('\nA pair counts as equal when the mean paired difference over split seeds is within its standard error.')
     if any('ens-single' in by[name] for name in by):
         # The average of the search's best trials against that same search's best single model: only the average differs.
-        counts = {k: collections.Counter() for k in ('ens-k3', 'ens-k5', 'ens-fwd')}
-        print('\n| dataset | task | rows | metric | ens-single | ens-k3 | ens-k5 | ens-fwd | k3 vs single | k5 vs single | fwd vs single |')
-        print('|---|---|---|---|---|---|---|---|---|---|---|')
+        counts = {k: collections.Counter() for k in ('ens-k3', 'ens-k5', 'ens-oofpick', 'ens-fwd')}
+        print('\n| dataset | task | rows | metric | ens-single | ens-k3 | ens-k5 | ens-oofpick | ens-fwd | k3 vs single | k5 vs single | oofpick vs single | fwd vs single |')
+        print('|---|---|---|---|---|---|---|---|---|---|---|---|---|')
         for name in sorted(by, key=lambda n: (meta[n][0], meta[n][1])):
             if 'ens-single' not in by[name]:
                 continue
