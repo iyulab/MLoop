@@ -70,6 +70,15 @@ var families = new (string Name, Func<Random, int, IReadOnlySet<int>, double, st
     ("outliers 10%", (rng, c, moved, scale) => Row(c, j => Normal(rng) * (moved.Contains(j) && rng.NextDouble() < 0.10 * scale ? 3 : 1))),
     ("outliers 5%", (rng, c, moved, scale) => Row(c, j => Normal(rng) * (moved.Contains(j) && rng.NextDouble() < 0.05 * scale ? 3 : 1))),
     ("zero-inflated big", (rng, c, moved, scale) => Row(c, j => rng.NextDouble() < 0.6 - (moved.Contains(j) ? 0.25 * scale : 0) ? 0 : -Math.Log(1 - rng.NextDouble()))),
+    // Categorical columns (names starting `cat_`; every column is categorical). "moved" is the changed column.
+    // cat_new: 10 levels, the moved column draws a level training never saw ("new") for 5 % x scale of its values.
+    ("cat_new", (rng, c, moved, scale) => RowText(c, j => moved.Contains(j) && rng.NextDouble() < 0.05 * scale ? "new" : rng.Next(10).ToString(CultureInfo.InvariantCulture))),
+    // cat_rare: level 0 holds 0.5 % at training and 0.5 + 4.5 x scale % in the moved column; ten other levels share the rest.
+    ("cat_rare", (rng, c, moved, scale) => RowText(c, j => rng.NextDouble() < 0.005 + (moved.Contains(j) ? 0.045 * scale : 0) ? "0" : (1 + rng.Next(10)).ToString(CultureInfo.InvariantCulture))),
+    // cat_vanish: level 0 holds 10 % at training and 10 - 5 x scale % in the moved column; nine other levels share the rest.
+    ("cat_vanish", (rng, c, moved, scale) => RowText(c, j => rng.NextDouble() < 0.10 - (moved.Contains(j) ? 0.05 * scale : 0) ? "0" : (1 + rng.Next(9)).ToString(CultureInfo.InvariantCulture))),
+    // cat_highcard_new: 200 levels (the profile names the 20 commonest; the other 180 share its "other" bin), 5 % x scale of the moved column's values a new level.
+    ("cat_highcard_new", (rng, c, moved, scale) => RowText(c, j => moved.Contains(j) && rng.NextDouble() < 0.05 * scale ? "new" : rng.Next(200).ToString(CultureInfo.InvariantCulture))),
     // A fifth of the cells are empty (the same in training and in windows).
     ("normal_missing20", (rng, c, moved, scale) => RowOrEmpty(rng, c, 0.2, j => Normal(rng) + Moved(moved, j, 0.5 * scale))),
     ("outliers10_missing20", (rng, c, moved, scale) => RowOrEmpty(rng, c, 0.2, j => Normal(rng) * (moved.Contains(j) && rng.NextDouble() < 0.10 * scale ? 3 : 1))),
@@ -92,6 +101,7 @@ var chosen = options.TryGetValue("families", out var list) ? list.Split(',') : n
 var schema = Enumerable.Range(0, columns).Select(j => ($"c{j}", true)).ToList();
 // In the mixed family every fifth column (0, 5, 10, ...) is categorical.
 var mixedSchema = Enumerable.Range(0, columns).Select(j => ($"c{j}", j % 5 != 0)).ToList();
+var categoricalSchema = Enumerable.Range(0, columns).Select(j => ($"c{j}", false)).ToList();
 IReadOnlySet<int> none = new HashSet<int>();
 IReadOnlySet<int> first = new HashSet<int> { 0 };
 IReadOnlySet<int> many = Enumerable.Range(0, ManyMoved).ToHashSet();
@@ -121,7 +131,7 @@ foreach (var (name, row) in families)
     {
         var rng = new Random(unchecked(seed * 100_003 + p));
         var train = Enumerable.Range(0, trainRows).Select(_ => row(rng, columns, none, 0)).ToList();
-        var profile = DriftProfile.Build(train, name == "mixed" ? mixedSchema : schema);
+        var profile = DriftProfile.Build(train, name == "mixed" ? mixedSchema : name.StartsWith("cat_", StringComparison.Ordinal) ? categoricalSchema : schema);
         // The bound of each column under each alternative reading, for a window with nothing outside the training range; a column with stray
         // values gets the bound `Compare` builds for the extended bins.
         var plainBounds = multipliers
@@ -225,6 +235,9 @@ List<IReadOnlyDictionary<string, object?>> Window(Func<Random, int, IReadOnlySet
 static string? TextOf(object? cell) => cell as string;
 
 static double Moved(IReadOnlySet<int> moved, int column, double amount) => moved.Contains(column) ? amount : 0;
+
+static string[] RowText(int columns, Func<int, string> draw)
+    => [.. Enumerable.Range(0, columns).Select(draw)];
 
 static string[] RowOrEmpty(Random rng, int columns, double missing, Func<int, double> draw)
     => [.. Enumerable.Range(0, columns).Select(j => rng.NextDouble() < missing ? "" : draw(j).ToString("R", CultureInfo.InvariantCulture))];
