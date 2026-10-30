@@ -10,8 +10,9 @@ using MLoop.Search.Candidates;
 // what a stacked ensemble could gain (a weight fitted on out-of-fold answers is no worse than equal weights). Outside the product:
 // it runs the product's own search (TrialRunner) and refits the top settings, so the only difference between "single" and "average"
 // is the average. args: train.csv test.csv label task(binary|multiclass|regression) budgetSeconds seed [maxK=5]
-// Prints one JSON object: the best single model's test metric (binary: auc, multiclass: log_loss, regression: rmse), every member's, and the
-// average of the first K members for K = 2..maxK.
+// Prints one JSON object: the best single model's test metric (binary: auc, multiclass: log_loss, regression: rmse), every member's, the
+// average of the first K members for K = 2..maxK, and `forward` - forward selection with replacement on the members' out-of-fold answers
+// (the member counts it chose, its out-of-fold metric against the best member's, and its test metric).
 var (trainPath, testPath, label, task, budget, seed) = (args[0], args[1], args[2], args[3], int.Parse(args[4]), int.Parse(args[5]));
 var maxK = args.Length > 6 ? int.Parse(args[6]) : 5;
 var metricName = task switch { "binary" => "auc", "multiclass" => "log_loss", _ => "rmse" };
@@ -92,6 +93,75 @@ foreach (var trial in ranked)
 }
 
 double AverageMetric(int k) => Metric(task, Average(members.Take(k).Select(m => m.Scores).ToList()), truth!);
+
+// Forward selection (Caruana et al. 2004): from the members' out-of-fold answers on the TRAIN rows, greedily add - with replacement - the member
+// whose addition most improves the running average's metric, and keep the best prefix. The weights are the member counts of that prefix and are
+// chosen without the test rows, which only score the result. The out-of-fold answers come from a five-fold split of the train rows, a plain one
+// (ML.NET has no stratified split) made once and shared by every member. A failure here drops only this arm: the equal-weight rows stay.
+object? forward = null;
+string? forwardError = null;
+if (members.Count > 1)
+{
+    try
+    {
+        const int Steps = 20;
+        var folds = ml.Data.CrossValidationSplit(train, numberOfFolds: 5, seed: seed);
+        var oof = new List<double[][]>();
+        var oofTruth = new List<double>();
+        foreach (var member in members)
+        {
+            var candidate = candidates.First(c => c.Name == member.Trial.Trainer);
+            var point = candidate.Space.PointOf((member.Trial.Parameters ?? []).ToDictionary(p => p.Key, p => double.Parse(p.Value, CultureInfo.InvariantCulture)));
+            var rows = new List<double[]>();
+            foreach (var fold in folds)
+            {
+                var context = new MLContext(seed);
+                var pipeline = Featurizer.Build(context, fold.TrainSet.Schema, roles, withMissing, "Features")!.Append(candidate.Build(context, point, columns, settings));
+                var predicted = pipeline.Fit(fold.TrainSet).Transform(fold.TestSet);
+                rows.AddRange(Scores(predicted, task));
+                if (oof.Count == 0) oofTruth.AddRange(Truth(predicted, label, task));
+            }
+            oof.Add([.. rows]);
+        }
+        var oofTruthArray = oofTruth.ToArray();
+        bool Better(double a, double b) => higherIsBetter ? a > b : a < b;
+
+        var counts = new int[members.Count];
+        double[][]? sum = null;
+        var total = 0;
+        var bestScore = double.NaN;
+        var bestCounts = (int[])counts.Clone();
+        for (var step = 0; step < Steps; step++)
+        {
+            var (pick, pickScore) = (-1, double.NaN);
+            for (var j = 0; j < members.Count; j++)
+            {
+                var score = Metric(task, Blend(sum, oof[j], total), oofTruthArray);
+                if (double.IsFinite(score) && (pick < 0 || Better(score, pickScore))) (pick, pickScore) = (j, score);
+            }
+            if (pick < 0) break;
+            sum = Add(sum, oof[pick]);
+            counts[pick]++;
+            total++;
+            if (double.IsNaN(bestScore) || Better(pickScore, bestScore)) (bestScore, bestCounts) = (pickScore, (int[])counts.Clone());
+        }
+        var weighted = Weighted(members.Select(m => m.Scores).ToList(), bestCounts);
+        var oofSingles = oof.Select(o => Metric(task, o, oofTruthArray)).ToArray();
+        forward = new
+        {
+            steps = bestCounts.Sum(),
+            counts = bestCounts,
+            oof_selected = bestScore,
+            oof_best_single = higherIsBetter ? oofSingles.Max() : oofSingles.Min(),
+            test = Metric(task, weighted, truth!),
+        };
+    }
+    catch (Exception e)
+    {
+        forwardError = e.GetType().Name + ": " + e.Message;
+    }
+}
+
 var result = new
 {
     task,
@@ -103,6 +173,8 @@ var result = new
     best_single = members.Count > 0 ? members[0].Test : double.NaN,
     members = members.Select(m => new { m.Trial.Trainer, validation = m.Trial.Metrics![metricName], test = m.Test, reference = m.Reference }),
     average = Enumerable.Range(2, Math.Max(0, Math.Min(maxK, members.Count) - 1)).ToDictionary(k => "k" + k, AverageMetric),
+    forward,
+    forward_error = forwardError,
 };
 Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals }));
 return 0;
@@ -155,6 +227,21 @@ static double[][] Scores(IDataView predicted, string task)
 
 static double[][] Average(IReadOnlyList<double[][]> members)
     => [.. Enumerable.Range(0, members[0].Length).Select(r => Enumerable.Range(0, members[0][r].Length).Select(c => members.Average(m => m[r][c])).ToArray())];
+
+// (sum + add) / (n + 1) per cell: the average of n members already summed, with one more.
+static double[][] Blend(double[][]? sum, double[][] add, int n)
+    => [.. add.Select((row, r) => row.Select((x, c) => ((sum is null ? 0 : sum[r][c]) + x) / (n + 1)).ToArray())];
+
+static double[][] Add(double[][]? sum, double[][] add)
+    => [.. add.Select((row, r) => row.Select((x, c) => (sum is null ? 0 : sum[r][c]) + x).ToArray())];
+
+// The members' answers averaged with the given counts as weights.
+static double[][] Weighted(IReadOnlyList<double[][]> members, int[] counts)
+{
+    var total = (double)counts.Sum();
+    return [.. Enumerable.Range(0, members[0].Length).Select(r => Enumerable.Range(0, members[0][r].Length)
+        .Select(c => Enumerable.Range(0, members.Count).Sum(j => counts[j] * members[j][r][c]) / total).ToArray())];
+}
 
 static double[] Truth(IDataView test, string label, string task) => task switch
 {

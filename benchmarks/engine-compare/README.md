@@ -46,14 +46,16 @@ model file, the time to save and load it and to score the held-out rows. Both ru
 `ensemble-probe` answers one question outside the product: how much does an equal-weight average of the search's best distinct trials gain over its best single model? It runs
 MLoop's own search (`TrialRunner`) for a time budget on a train file, refits the best K distinct (trainer, settings) on the whole train file,
 and scores the held-out file for the best single model and for the average of the first K members (probabilities for classification, predictions for regression), K = 2..maxK.
-An average with equal weights is the lower bound of what a stacked ensemble with fitted weights could gain, so an average that gains nothing closes the question cheaply.
+An average with equal weights is a floor for what a blend with fitted weights could gain, but it can lose to the best single model (few trials, multiclass) - so the probe also fits the weights: forward selection with replacement (Caruana et al., 2004) on the members' out-of-fold answers over the train rows (a plain five-fold split, one for every member), keeping the best prefix. Its weights never see the held-out rows, which only score it.
 
 ```bash
 dotnet build benchmarks/engine-compare/ensemble-probe -c Release
 dotnet benchmarks/engine-compare/ensemble-probe/bin/Release/net10.0/EnsembleProbe.dll train.csv test.csv <label> <binary|multiclass|regression> <budget-seconds> <seed> [maxK]
 ```
 
-`run.py run --systems ensemble` runs it on the same split files as the other systems and writes three rows (`ens-single`, `ens-k3`, `ens-k5`); `summarize` then adds a table that sets the average of the best 3 and 5 trials against that same search's best single model, per table and over split seeds. The `Engine compare` workflow builds the probe and takes `ensemble` in its `systems` input.
+`run.py run --systems ensemble` runs it on the same split files as the other systems and writes four rows (`ens-single`, `ens-k3`, `ens-k5`, `ens-fwd`); `summarize` then adds a table that sets the average of the best 3 and 5 trials and the forward-selected blend against that same search's best single model, per table and over split seeds. The `Engine compare` workflow builds the probe and takes `ensemble` in its `systems` input. The forward arm refits each of the best five members five more times on the train rows, so a probe run costs more than its time budget.
+
+Without OpenML, `bundled-tables.py <work-dir>` runs the probe on the five small tables scikit-learn ships (breast cancer, wine, digits, iris, diabetes; 150 - 1,800 rows) over split seeds and prints the same comparison - it reads the shape of the answer, not the 16-table result.
 
 It prints one JSON object (`best_single`, each member's validation, test and `reference` metric — ML.NET's own evaluation of the same predictions, a cross-check of the
 score-column order — and `average.k2..kK`). The metric is AUC for binary, log-loss for multiclass and RMSE for regression. The average costs K times the refit,
