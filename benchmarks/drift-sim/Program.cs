@@ -7,7 +7,7 @@ using MLoop.Core.Monitoring;
 // with `DriftMeasure.Compare` - the levels printed are the product's own. Synthetic data only; nothing is read from disk.
 //
 // args (key=value): train=5000 window=300 columns=200 profiles=20 windows=50 seed=1 families=normal,correlated,...
-//   train   rows the profile is built from        window  rows in each window       columns  columns in the table (all one family)
+//   train   rows the profile is built from        window  rows in each window       columns  columns in the table (all one family, or `mixed`: a family per column index mod 5)
 //   profiles  independent profiles (the profile is itself a sample: its error is systematic within one, so several are drawn)
 //   windows   windows read per profile, for each of the three kinds below
 // Window kinds: null (nothing moved) | one (column c0 moved by 0.5 of the family's robust sigma, times onescale) | many (columns c0..c19 each moved by 0.2).
@@ -45,10 +45,22 @@ var families = new (string Name, Func<Random, int, IReadOnlySet<int>, double, st
     // 60 % zeros, the rest exponential. The "moved" unit is the zero share: 10 points down (population PSI about 0.05, under the usual 0.1 on purpose:
     // a half-sigma has no meaning here) and 25 points down (population PSI about 0.26).
     ("zero-inflated", (rng, c, moved, scale) => Row(c, j => rng.NextDouble() < 0.6 - (moved.Contains(j) ? 0.1 * scale : 0) ? 0 : -Math.Log(1 - rng.NextDouble()))),
+    // Mixed table: the family of a column is its index mod 5 - 0 categorical (10 levels, level 0 holds 0.10; "moved" lifts it by 0.15 x scale),
+    // 1 normal, 2 lognormal 1.5, 3 Poisson 2, 4 zero-inflated (60 % zeros). Column order is the schema's (see `MixedSchema`).
+    ("mixed", (rng, c, moved, scale) => [.. Enumerable.Range(0, c).Select(j => (j % 5) switch
+    {
+        0 => (rng.NextDouble() < 0.10 + (moved.Contains(j) ? 0.15 * scale : 0) ? 0 : 1 + rng.Next(9)).ToString(CultureInfo.InvariantCulture),
+        1 => (Normal(rng) + Moved(moved, j, 0.5 * scale)).ToString("R", CultureInfo.InvariantCulture),
+        2 => (Math.Exp(1.5 * Normal(rng)) + Moved(moved, j, 0.5 * 1.77 * scale)).ToString("R", CultureInfo.InvariantCulture),
+        3 => Poisson(rng, 2 + (moved.Contains(j) ? 0.71 * scale : 0)).ToString(CultureInfo.InvariantCulture),
+        _ => (rng.NextDouble() < 0.6 - (moved.Contains(j) ? 0.1 * scale : 0) ? 0 : -Math.Log(1 - rng.NextDouble())).ToString("R", CultureInfo.InvariantCulture),
+    })]),
     ("zero-inflated big", (rng, c, moved, scale) => Row(c, j => rng.NextDouble() < 0.6 - (moved.Contains(j) ? 0.25 * scale : 0) ? 0 : -Math.Log(1 - rng.NextDouble()))),
 };
 var chosen = options.TryGetValue("families", out var list) ? list.Split(',') : null;
 var schema = Enumerable.Range(0, columns).Select(j => ($"c{j}", true)).ToList();
+// In the mixed family every fifth column (0, 5, 10, ...) is categorical.
+var mixedSchema = Enumerable.Range(0, columns).Select(j => ($"c{j}", j % 5 != 0)).ToList();
 IReadOnlySet<int> none = new HashSet<int>();
 IReadOnlySet<int> first = new HashSet<int> { 0 };
 IReadOnlySet<int> many = Enumerable.Range(0, ManyMoved).ToHashSet();
@@ -73,7 +85,7 @@ foreach (var (name, row) in families)
     {
         var rng = new Random(unchecked(seed * 100_003 + p));
         var train = Enumerable.Range(0, trainRows).Select(_ => row(rng, columns, none, 0)).ToList();
-        var profile = DriftProfile.Build(train, schema);
+        var profile = DriftProfile.Build(train, name == "mixed" ? mixedSchema : schema);
         // The bound of each column under each alternative reading, for a window with nothing outside the training range; a column with stray
         // values gets the bound `Compare` builds for the extended bins.
         var plainBounds = multipliers

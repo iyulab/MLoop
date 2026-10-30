@@ -7,7 +7,9 @@ dotnet build benchmarks/drift-sim -c Release
 dotnet benchmarks/drift-sim/bin/Release/net10.0/DriftSim.dll train=5000 window=300 columns=200 profiles=200 windows=5 [families=normal,poisson] [seed=1]
 ```
 
-Every family fills all `columns` of the table: normal, correlated (ten-column blocks sharing one factor), heavy-tailed (t with two degrees of freedom), log-normal, Poisson, integer 0-49, and zero-inflated (60 % zeros, twice: a move of 10 and of 25 points in the zero share). Three kinds of windows are read against each profile:
+The `mixed` family is a table of five kinds side by side (column `j` is categorical with ten levels, normal, log-normal, Poisson or zero-inflated by `j mod 5`; a categorical column moves by lifting level 0 from 0.10).
+
+Every other family fills all `columns` of the table: normal, correlated (ten-column blocks sharing one factor), heavy-tailed (t with two degrees of freedom), log-normal, Poisson, integer 0-49, and zero-inflated (60 % zeros, twice: a move of 10 and of 25 points in the zero share). Three kinds of windows are read against each profile:
 
 - **null** - nothing moved: the share of windows where any column reads "moderate" or worse (and "significant");
 - **one** - column `c0` moved by half the family's robust standard deviation: the share of windows where that column reads "moderate" or worse;
