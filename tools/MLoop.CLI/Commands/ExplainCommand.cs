@@ -28,6 +28,27 @@ public static class ExplainCommand
     /// </summary>
     internal const int DisplayedColumns = 20;
 
+    /// <summary>
+    /// Scorings from which a <c>--json</c> run narrates its progress. Each takes about 0.05–0.13 s on a few hundred to a thousand columns
+    /// (measured), so below this a run ends within the time a caller waits without a sign of life.
+    /// </summary>
+    internal const int NarratedFrom = 300;
+
+    /// <summary>
+    /// The line to write when <paramref name="done"/> of <paramref name="total"/> scorings have finished and a new tenth of them has been
+    /// reached since <paramref name="reportedTenth"/>; null when it is not yet time, or the run is too short to narrate.
+    /// </summary>
+    internal static string? ProgressNote(int done, int total, ref int reportedTenth)
+    {
+        if (total < NarratedFrom)
+            return null;
+        var tenth = done * 10 / total;
+        if (tenth <= reportedTenth)
+            return null;
+        reportedTenth = tenth;
+        return $"explain: {tenth * 10}% ({done} of {total} scorings)";
+    }
+
     public static Command Create()
     {
         var experimentArg = new Argument<string?>("experiment-id")
@@ -114,7 +135,16 @@ public static class ExplainCommand
 
             ModelExplanation.Explanation explanation = null!;
             if (jsonOutput)
-                explanation = await ModelExplanation.ExplainAsync(new EvaluationEngine(), modelPath, dataPath, experiment, weightColumn, repeats, rows, seed);
+            {
+                // No progress bar in machine mode, and a thousand columns take minutes: say how far it is on stderr, a tenth at a time.
+                var reportedTenth = 0;
+                explanation = await ModelExplanation.ExplainAsync(new EvaluationEngine(), modelPath, dataPath, experiment, weightColumn, repeats, rows, seed,
+                    (done, total) =>
+                    {
+                        if (ProgressNote(done, total, ref reportedTenth) is { } note)
+                            AnsiConsole.WriteLine(note);
+                    });
+            }
             else
                 await AnsiConsole.Progress().StartAsync(async ctx =>
                 {

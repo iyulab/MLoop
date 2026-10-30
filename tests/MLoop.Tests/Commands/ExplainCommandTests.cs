@@ -124,6 +124,24 @@ public sealed class ExplainCommandTests : IDisposable
     }
 
     [Fact]
+    public void ALongJsonRun_SaysHowFarItIsATenthAtATime_AShortOneStaysSilent()
+    {
+        var reported = 0;
+        var notes = new List<string>();
+        for (var done = 1; done <= 3000; done++)
+            if (ExplainCommand.ProgressNote(done, 3000, ref reported) is { } note)
+                notes.Add(note);
+
+        Assert.Equal(10, notes.Count);
+        Assert.Equal("explain: 10% (300 of 3000 scorings)", notes[0]);
+        Assert.Equal("explain: 100% (3000 of 3000 scorings)", notes[^1]);
+
+        var quiet = 0;
+        for (var done = 1; done < ExplainCommand.NarratedFrom; done++)
+            Assert.Null(ExplainCommand.ProgressNote(done, ExplainCommand.NarratedFrom - 1, ref quiet));
+    }
+
+    [Fact]
     public async Task ARegressor_IsExplainedInTheMetricEvaluateReports()
     {
         await TrainAsync("regression", Regression(400, 3), Regression(400, 9));

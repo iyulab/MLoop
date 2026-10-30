@@ -793,7 +793,8 @@ The table lists the 20 columns the model relies on most and says how many it lef
 | `--json` | `features` (`column`, `importance`, `standardDeviation`), `metric`, `higherIsBetter`, `baseline`, `rows`, `repeats`, `notShuffled` |
 
 **Cost.** One scoring of 2,000 rows takes about a tenth of a second on a laptop, and the whole run is columns × `--repeats` of them: a table of 50 columns takes about 4 seconds with one shuffle each
-(12 seconds at the default of three) and 150 columns about 13 seconds (40 at three). A progress bar shows where it is; lower `--rows` or `--repeats` for a very wide table.
+(12 seconds at the default of three) and 150 columns about 13 seconds (40 at three). A progress bar shows where it is (with `--json`, a line on stderr at each tenth of a run of 300 scorings or more); lower `--rows` or `--repeats` for a very wide table.
+A scoring also grows with the width of the table, so the cost climbs faster than the column count: 1,000 numeric columns on 1,000 rows take about 6 minutes at the default (0.13 s a scoring), and 47 seconds with `--repeats 1 --rows 200` (0.05 s a scoring). A column the model cannot use costs as much as one it relies on.
 
 **Reading it.** A column near zero is one the model does not use, however strongly it relates to the label; a column that carries the score
 falls it by about what it carried. A negative fall is chance (shuffling happened to help) and is shown, not hidden — compare it with `± sd`.
