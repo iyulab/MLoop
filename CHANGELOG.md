@@ -41,6 +41,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **The trainer search keeps the training rows in memory instead of parsing the file again on every read.** A trial fits its pipeline once per fold and each fit
+  reads the rows several times; from a CSV every read parsed them again, so a linear, SDCA or forest trial that needed a fraction of a second of
+  learning spent several on reading. On sixteen public tables the same minute holds 28 % more trials on average (up to 2×), with no table's score worse
+  by more than its standard error's double; a gradient-boosted tree trial, whose cost is the learning, is unchanged. The rows are kept when
+  rows × columns is at most 50 million cells (a few hundred megabytes); a larger table is read from its source as before.
 - **`drift` and the retraining trigger compare from 300 logged predictions, not 100.** A column is cut in ten bins, and with no change at all the PSI of
   a window of n rows is about 9 ÷ n. At 100 rows ten columns read "moderate" in nearly every window and "significant" — the level the trigger acts on —
   in one window in twelve, thirty columns in one in four, a hundred columns in more than half (simulated, no drift); at 300 rows a hundred

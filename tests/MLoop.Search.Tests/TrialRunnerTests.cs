@@ -388,6 +388,17 @@ public sealed class TrialRunnerTests
         }
     }
 
+    /// <summary>The training rows are kept in memory for the search while their weight fits the limit — a text cell weighs a kilobyte — and read from their source past it.</summary>
+    [Theory]
+    [InlineData(1_000, 20, 0, true)]
+    [InlineData(1_000_000, 50, 0, true)]        // exactly the limit
+    [InlineData(1_000_001, 50, 0, false)]
+    [InlineData(5_000_000, 100, 0, false)]
+    [InlineData(100_000, 3, 2, false)]          // a corpus: 100,000 rows of two documents is some 200 MB of text but 5,000 times its cell count
+    [InlineData(10_000, 12, 2, true)]
+    public void TheTrainingRows_AreKeptInMemoryWhileTheyFit(long rows, int columns, int textColumns, bool kept)
+        => Assert.Equal(kept, TrialRunner.KeepsRowsInMemory(rows, columns, textColumns));
+
     /// <summary>
     /// The one-standard-error rule, from a large top model: the smallest model within the margin is kept, the better
     /// score between two of one size. Under the size it starts at, or without a margin, the top trial stands.
