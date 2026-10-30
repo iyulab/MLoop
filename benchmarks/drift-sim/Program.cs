@@ -10,7 +10,7 @@ using MLoop.Core.Monitoring;
 //   train   rows the profile is built from        window  rows in each window       columns  columns in the table (all one family)
 //   profiles  independent profiles (the profile is itself a sample: its error is systematic within one, so several are drawn)
 //   windows   windows read per profile, for each of the three kinds below
-// Window kinds: null (nothing moved) | one (column c0 moved by 0.5 of the family's robust sigma) | many (columns c0..c19 each moved by 0.2).
+// Window kinds: null (nothing moved) | one (column c0 moved by 0.5 of the family's robust sigma, times onescale) | many (columns c0..c19 each moved by 0.2).
 // A window's columns are independent draws within a profile, but the profile is one sample: its error repeats in every window read against it,
 // so the null rates carry a standard error of about sqrt(rate * (1 - rate) / profiles) - use many profiles (profiles=200 windows=5) to resolve a rate.
 // Prints a markdown table. A window "reads moderate" when any column's level is Moderate or Significant; for `one` it is c0's level.
@@ -22,6 +22,15 @@ var columns = Opt("columns", 200);
 var profiles = Opt("profiles", 20);
 var windowsPerProfile = Opt("windows", 50);
 var seed = Opt("seed", 1);
+// onescale=0.6: how far the one moved column moves, in units of the half sigma (1 = 0.5 sigma, 0.6 = 0.3 sigma).
+var oneScale = options.TryGetValue("onescale", out var oneScaleText) ? double.Parse(oneScaleText, CultureInfo.InvariantCulture) : 1.0;
+// multipliers=2,4: also read each window as if the family error rate were divided by each (the bound is then worked out for that many times
+// the columns), beside the reading as shipped. Needs only the public `NoDriftBound`, `LevelOf` and `OutsideRange`: the bound is rebuilt the way
+// `DriftMeasure.Compare` builds it, including the two end bins a window that left the training range gets - multiplier 1 reproduces the
+// shipped levels (the first line of a run with `multipliers=1,...` is that check).
+var multipliers = options.TryGetValue("multipliers", out var multiplierList)
+    ? multiplierList.Split(',').Select(m => double.Parse(m, CultureInfo.InvariantCulture)).ToArray()
+    : [];
 const int ManyMoved = 20;
 const double ManyScale = 0.4; // 0.4 of the 0.5 sigma unit = 0.2 sigma
 
@@ -45,34 +54,77 @@ IReadOnlySet<int> first = new HashSet<int> { 0 };
 IReadOnlySet<int> many = Enumerable.Range(0, ManyMoved).ToHashSet();
 
 Console.WriteLine($"train {trainRows} rows, window {windowRows} rows, {columns} columns, {profiles} profiles x {windowsPerProfile} windows per kind, seed {seed}");
-Console.WriteLine("| family | null: moderate+ | null: significant | one column 0.5 sigma: that column moderate+ | one column: significant | 20 columns 0.2 sigma: any moderate+ | many: a moved column moderate+ |");
-Console.WriteLine("|---|---|---|---|---|---|---|");
+Console.WriteLine("| family | reading | null: moderate+ | null: significant | one column 0.5 sigma: that column moderate+ | one column: significant | 20 columns 0.2 sigma: any moderate+ | many: a moved column moderate+ |");
+Console.WriteLine("|---|---|---|---|---|---|---|---|");
 foreach (var (name, row) in families)
 {
     if (chosen is not null && !chosen.Contains(name.Split(' ')[0]) && !chosen.Contains(name))
         continue;
-    int nullModerate = 0, nullSignificant = 0, oneModerate = 0, oneSignificant = 0, manyAny = 0, manyMoved = 0, total = 0;
+    // Reading 0 is the one shipped; reading v (1-based) divides the family error rate by multipliers[v - 1].
+    var readings = multipliers.Length + 1;
+    var nullModerate = new int[readings];
+    var nullSignificant = new int[readings];
+    var oneModerate = new int[readings];
+    var oneSignificant = new int[readings];
+    var manyAny = new int[readings];
+    var manyMoved = new int[readings];
+    var total = 0;
     for (var p = 0; p < profiles; p++)
     {
         var rng = new Random(unchecked(seed * 100_003 + p));
         var train = Enumerable.Range(0, trainRows).Select(_ => row(rng, columns, none, 0)).ToList();
         var profile = DriftProfile.Build(train, schema);
+        // The bound of each column under each alternative reading, for a window with nothing outside the training range; a column with stray
+        // values gets the bound `Compare` builds for the extended bins.
+        var plainBounds = multipliers
+            .Select(m => profile.Features.Select(f => DriftMeasure.NoDriftBound(f.Shares, windowRows, profile.Rows, (int)Math.Round(profile.Features.Count * m))).ToArray())
+            .ToArray();
+        double[][] BoundsOf(List<IReadOnlyDictionary<string, object?>> window)
+            => multipliers.Select((m, v) => profile.Features.Select((feature, col) =>
+            {
+                var (below, above) = feature.OutsideRange(window.Select(r => TextOf(r[feature.Column])).ToList());
+                if (below + above == 0)
+                    return plainBounds[v][col];
+                var reference = feature.Shares;
+                var withValue = 1 - reference[^1];
+                var tail = withValue / (Math.Max(profile.Rows, 1) * withValue + 1);
+                var expected = reference.Select(x => x * (1 - 2 * tail)).Append(tail).Append(tail).ToList();
+                return DriftMeasure.NoDriftBound(expected, window.Count, profile.Rows, (int)Math.Round(profile.Features.Count * m));
+            }).ToArray()).ToArray();
+        // The level of one column's drift under reading v (0 = as shipped), for the window whose bounds are `windowBounds`.
+        DriftLevel Level(FeatureDrift f, int v, double[][] windowBounds)
+            => v == 0 ? f.Level : DriftMeasure.LevelOf(f.Psi, windowBounds[v - 1][int.Parse(f.Column[1..], CultureInfo.InvariantCulture)]);
+        DriftLevel Worst(DriftReport report, int v, double[][] windowBounds)
+            => report.Features.Count == 0 ? DriftLevel.None : report.Features.Max(f => Level(f, v, windowBounds));
         for (var w = 0; w < windowsPerProfile; w++)
         {
             total++;
-            var quiet = DriftMeasure.Compare(profile, Window(row, rng, none, 0));
-            nullModerate += quiet.Level >= DriftLevel.Moderate ? 1 : 0;
-            nullSignificant += quiet.Level >= DriftLevel.Significant ? 1 : 0;
-            var one = DriftMeasure.Compare(profile, Window(row, rng, first, 1)).Features.First(f => f.Column == "c0");
-            oneModerate += one.Level >= DriftLevel.Moderate ? 1 : 0;
-            oneSignificant += one.Level >= DriftLevel.Significant ? 1 : 0;
-            var spread = DriftMeasure.Compare(profile, Window(row, rng, many, ManyScale));
-            manyAny += spread.Level >= DriftLevel.Moderate ? 1 : 0;
-            manyMoved += spread.Features.Any(f => f.Level >= DriftLevel.Moderate && int.Parse(f.Column[1..], CultureInfo.InvariantCulture) < ManyMoved) ? 1 : 0;
+            var quietWindow = Window(row, rng, none, 0);
+            var oneWindow = Window(row, rng, first, oneScale);
+            var spreadWindow = Window(row, rng, many, ManyScale);
+            var quiet = DriftMeasure.Compare(profile, quietWindow);
+            var one = DriftMeasure.Compare(profile, oneWindow).Features.First(f => f.Column == "c0");
+            var spread = DriftMeasure.Compare(profile, spreadWindow);
+            var quietBounds = BoundsOf(quietWindow);
+            var oneBounds = BoundsOf(oneWindow);
+            var spreadBounds = BoundsOf(spreadWindow);
+            for (var v = 0; v < readings; v++)
+            {
+                nullModerate[v] += Worst(quiet, v, quietBounds) >= DriftLevel.Moderate ? 1 : 0;
+                nullSignificant[v] += Worst(quiet, v, quietBounds) >= DriftLevel.Significant ? 1 : 0;
+                oneModerate[v] += Level(one, v, oneBounds) >= DriftLevel.Moderate ? 1 : 0;
+                oneSignificant[v] += Level(one, v, oneBounds) >= DriftLevel.Significant ? 1 : 0;
+                manyAny[v] += Worst(spread, v, spreadBounds) >= DriftLevel.Moderate ? 1 : 0;
+                manyMoved[v] += spread.Features.Any(f => Level(f, v, spreadBounds) >= DriftLevel.Moderate && int.Parse(f.Column[1..], CultureInfo.InvariantCulture) < ManyMoved) ? 1 : 0;
+            }
         }
     }
     string R(int n) => (n / (double)total).ToString("0.000", CultureInfo.InvariantCulture);
-    Console.WriteLine($"| {name} | {R(nullModerate)} | {R(nullSignificant)} | {R(oneModerate)} | {R(oneSignificant)} | {R(manyAny)} | {R(manyMoved)} |");
+    for (var v = 0; v < readings; v++)
+    {
+        var label = v == 0 ? "as shipped (0.05)" : $"error rate / {multipliers[v - 1].ToString(CultureInfo.InvariantCulture)} ({(0.05 / multipliers[v - 1]).ToString("0.####", CultureInfo.InvariantCulture)})";
+        Console.WriteLine($"| {name} | {label} | {R(nullModerate[v])} | {R(nullSignificant[v])} | {R(oneModerate[v])} | {R(oneSignificant[v])} | {R(manyAny[v])} | {R(manyMoved[v])} |");
+    }
 }
 return 0;
 
@@ -82,6 +134,8 @@ List<IReadOnlyDictionary<string, object?>> Window(Func<Random, int, IReadOnlySet
         var cells = row(rng, columns, moved, scale);
         return (IReadOnlyDictionary<string, object?>)Enumerable.Range(0, columns).ToDictionary(j => $"c{j}", j => (object?)cells[j]);
     })];
+
+static string? TextOf(object? cell) => cell as string;
 
 static double Moved(IReadOnlySet<int> moved, int column, double amount) => moved.Contains(column) ? amount : 0;
 
