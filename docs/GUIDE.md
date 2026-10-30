@@ -510,6 +510,8 @@ mloop predict [data-file] [options]
 #                                machine/automation consumption. The default output mixes a
 #                                human-readable summary into stdout.
 #   --output <path>              Output file path
+#   --include-features <bool>    Write the input columns beside the answers (default: true);
+#                                `--include-features false` writes only the answer columns
 #                                (default: predictions/<model>-predictions-TIMESTAMP.csv;
 #                                 object detection writes <model>-detections-TIMESTAMP.json and
 #                                 forecasting writes <model>-forecast-TIMESTAMP.csv)
@@ -563,6 +565,8 @@ mloop promote --latest             # Auto-select the most recent experiment
 mloop promote --best               # Auto-select the best-scoring experiment
 mloop promote exp-002 --force      # Promote even though the quality gate refuses it
 mloop promote --history            # Every change of production so far (--json for machines)
+mloop promote exp-002 --no-backup  # Skip the backup of the current production model
+mloop promote --best --decide-only --json   # Report which experiment would be promoted; production does not move
 ```
 
 `promote` applies the quality gate training applies before it promotes. A model no better than a
@@ -987,6 +991,7 @@ mloop info <data-file> [options]
 # Options (v0.5.0+):
 #   --label, -l <column>   Specify label column for proper column inference
 #   --name, -n <model>     Model name to read label from mloop.yaml (default: "default")
+#   --sample-size <n>      Most rows read for the deep analysis of `--analyze` (default: 50000)
 
 # Basic usage
 mloop info datasets/train.csv
@@ -1919,7 +1924,7 @@ mloop prep plan --set fill-missing:mean --columns income
 mloop prep plan --remove normalize                             # remove steps of a type
 mloop prep plan --list                                         # the plan, with each step's leakage class
 mloop prep run --dry-run                                       # the steps that would run
-mloop prep run -i datasets/train.csv -o datasets/train_prep.csv
+mloop prep run -i datasets/train.csv -o datasets/train_prep.csv   # --input, --output
 ```
 
 Step types: `fill-missing` (mean · median · mode · constant · forward · backward), `normalize`, `scale`,
