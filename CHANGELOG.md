@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-10-30
+
 ### Added
 
 - **`mloop train --max-trials <n>`** (also `training.max_trials` in `mloop.yaml`, and `maxTrials` in a `POST /train` request) stops the trainer
