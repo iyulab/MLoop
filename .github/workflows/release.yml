@@ -265,18 +265,12 @@ jobs:
         dotnet pack src/MLoop.Search/MLoop.Search.csproj --configuration Release -o ./nupkg
         dotnet pack src/MLoop.Core/MLoop.Core.csproj --configuration Release -o ./nupkg
 
-    # Trusted publishing: a short-lived key from the repository's OIDC token. The long-lived
-    # NUGET_API_KEY stays as the fallback until one release has gone through the login step.
+    # Trusted publishing: a short-lived key from the repository's OIDC token. A failed login fails the job.
     - name: NuGet login (trusted publishing)
       id: login
-      continue-on-error: true
       uses: NuGet/login@v1
       with:
         user: ${{ secrets.NUGET_USER }}
 
-    - name: Warn when falling back to the long-lived key
-      if: steps.login.outcome != 'success'
-      run: echo "::warning::NuGet trusted-publishing login failed; pushing with NUGET_API_KEY"
-
     - name: Push to NuGet.org
-      run: dotnet nuget push ./nupkg/*.nupkg --api-key "${{ steps.login.outputs.NUGET_API_KEY || secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+      run: dotnet nuget push ./nupkg/*.nupkg --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
