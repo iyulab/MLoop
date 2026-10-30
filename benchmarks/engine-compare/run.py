@@ -28,6 +28,8 @@ TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classi
 # metric -> direction (+1: higher is better)
 PRIMARY = {'binary': ('auc', +1), 'multiclass': ('log_loss', -1), 'regression': ('rmse', -1)}
 SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboost', 'automl-legacy']
+# `ensemble` is a probe, not a system: one search yields three rows - its best single model and the equal-weight average of its best 3 and 5 trials
+ENSEMBLE_ROWS = ['ens-single', 'ens-k3', 'ens-k5']
 # what `mloop train --metric` is given so the search optimizes the metric the table reports
 OPTIMIZE = {'binary': 'auc', 'multiclass': 'log_loss', 'regression': 'rmse'}
 
@@ -150,6 +152,20 @@ def run_automl_legacy(command, entry, work, budget):
     return {'error': 'automl-legacy failed: ' + (done.stdout + done.stderr)[-400:]}
 
 
+def run_ensemble(command, entry, work, budget, seed):
+    started = time.time()
+    done = subprocess.run(command + [os.path.join(work, 'train.csv'), os.path.join(work, 'test.csv'), entry['target'], entry['task'], str(budget), str(seed), '5'],
+                          capture_output=True, text=True)
+    for line in reversed(done.stdout.splitlines()):
+        if line.startswith('{'):
+            probe = json.loads(line)
+            wall = round(time.time() - started, 1)
+            metric = probe['metric']
+            values = {'ens-single': probe['best_single'], 'ens-k3': probe['average'].get('k3'), 'ens-k5': probe['average'].get('k5')}
+            return {name: {'test': {metric: value}, 'wall_s': wall, 'trials': probe['trials']} for name, value in values.items() if value is not None}
+    return {'ens-single': {'error': 'ensemble-probe failed: ' + (done.stdout + done.stderr)[-400:]}}
+
+
 def run_flaml(entry, train, test, budget, seed, estimators=None):
     from flaml import AutoML
     target, task = entry['target'], entry['task']
@@ -196,6 +212,7 @@ def run_all(args):
     if args.datasets:
         wanted = set(args.datasets.split(','))
         entries = [e for e in entries if e['name'] in wanted]
+    ensemble_command = shlex.split(args.ensemble_probe)
     done = set()
     if os.path.exists(args.out):
         for line in open(args.out):
@@ -207,11 +224,23 @@ def run_all(args):
             work = os.path.abspath(os.path.join(args.work, f"{entry['name']}-seed{seed}"))
             df = None
             for system in args.systems.split(','):
-                if (entry['name'], seed, system) in done:
+                if (entry['name'], seed, 'ens-single' if system == 'ensemble' else system) in done:
                     continue
                 if df is None:
                     df = load_table(entry, cache)
                     train, test = split(entry, df, seed, work)
+                if system == 'ensemble':
+                    try:
+                        rows = run_ensemble(ensemble_command, entry, work, args.budget, seed)
+                    except Exception as error:
+                        rows = {'ens-single': {'error': repr(error)[:300]}}
+                    for name, result in rows.items():
+                        record = {'dataset': entry['name'], 'openml_id': entry['id'], 'task': entry['task'], 'rows': len(df),
+                                  'seed': seed, 'system': name, 'budget': args.budget, **result}
+                        with open(args.out, 'a') as out:
+                            out.write(json.dumps(record) + '\n')
+                        print(entry['name'], seed, name, json.dumps(result.get('test') or result.get('error'))[:100], flush=True)
+                    continue
                 try:
                     if system in ('mloop', 'mloop-defaults'):
                         result = run_mloop(mloop, entry, work, args.budget, aligned=system == 'mloop')
@@ -277,6 +306,26 @@ def summarize(paths):
     for other, tally in tallies.items():
         print(f'mloop vs {other}: {dict(tally)}')
     print('\nA pair counts as equal when the mean paired difference over split seeds is within its standard error.')
+    if any('ens-single' in by[name] for name in by):
+        # The average of the search's best trials against that same search's best single model: only the average differs.
+        counts = {k: collections.Counter() for k in ('ens-k3', 'ens-k5')}
+        print('\n| dataset | task | rows | metric | ens-single | ens-k3 | ens-k5 | k3 vs single | k5 vs single |')
+        print('|---|---|---|---|---|---|---|---|---|')
+        for name in sorted(by, key=lambda n: (meta[n][0], meta[n][1])):
+            if 'ens-single' not in by[name]:
+                continue
+            task, rows = meta[name]
+            metric, direction = PRIMARY[task]
+            cells = ['%.4f±%.4f' % mean_se(by[name][s]) if s in by[name] else '—' for s in ENSEMBLE_ROWS]
+            verdicts = []
+            for k in counts:
+                v = verdict(by[name].get(k, {}), by[name]['ens-single'], direction)
+                counts[k][v] += 1
+                verdicts.append(v)
+            print(f'| {name} | {task} | {rows} | {metric} | ' + ' | '.join(cells) + ' | ' + ' | '.join(verdicts) + ' |')
+        print()
+        for k, tally in counts.items():
+            print(f'{k} vs ens-single: {dict(tally)}')
 
 
 def main():
@@ -290,6 +339,8 @@ def main():
     r.add_argument('--systems', default=','.join(SYSTEMS))
     r.add_argument('--automl-legacy', default='dotnet ' + os.path.join(HERE, 'automl-legacy', 'bin', 'Release', 'net10.0', 'AutomlLegacy.dll'),
                    help='command that starts the legacy AutoML runner (system automl-legacy)')
+    r.add_argument('--ensemble-probe', default='dotnet ' + os.path.join(HERE, 'ensemble-probe', 'bin', 'Release', 'net10.0', 'EnsembleProbe.dll'),
+                   help='command that starts the ensemble probe (used by the `ensemble` pseudo-system)')
     r.add_argument('--out', default='results.jsonl')
     r.add_argument('--work', default=os.path.join(tempfile.gettempdir(), 'engine-compare'))
     s = sub.add_parser('summarize')

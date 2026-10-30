@@ -13,7 +13,7 @@ on:
         description: 'Comma-separated dataset names from benchmarks/engine-compare/datasets.json (empty = all)'
         default: ''
       systems:
-        description: 'Comma-separated systems to run (mloop, mloop-defaults, flaml, flaml-nogbm, lightgbm, xgboost, automl-legacy)'
+        description: 'Comma-separated systems to run (mloop, mloop-defaults, flaml, flaml-nogbm, lightgbm, xgboost, automl-legacy, ensemble)'
         default: 'mloop,mloop-defaults,flaml,flaml-nogbm,lightgbm,xgboost,automl-legacy'
 
 concurrency:
@@ -55,6 +55,9 @@ jobs:
 
     - name: Build the legacy AutoML runner
       run: dotnet build benchmarks/engine-compare/automl-legacy --configuration Release
+
+    - name: Build the ensemble probe
+      run: dotnet build benchmarks/engine-compare/ensemble-probe --configuration Release
 
     - name: Sweep
       run: >

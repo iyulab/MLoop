@@ -53,6 +53,8 @@ dotnet build benchmarks/engine-compare/ensemble-probe -c Release
 dotnet benchmarks/engine-compare/ensemble-probe/bin/Release/net10.0/EnsembleProbe.dll train.csv test.csv <label> <binary|multiclass|regression> <budget-seconds> <seed> [maxK]
 ```
 
+`run.py run --systems ensemble` runs it on the same split files as the other systems and writes three rows (`ens-single`, `ens-k3`, `ens-k5`); `summarize` then adds a table that sets the average of the best 3 and 5 trials against that same search's best single model, per table and over split seeds. The `Engine compare` workflow builds the probe and takes `ensemble` in its `systems` input.
+
 It prints one JSON object (`best_single`, each member's validation, test and `reference` metric — ML.NET's own evaluation of the same predictions, a cross-check of the
 score-column order — and `average.k2..kK`). The metric is AUC for binary, log-loss for multiclass and RMSE for regression. The average costs K times the refit,
 which the table does not charge; run it on Linux x64 so LightGBM is among the trainers, like the rest of this directory.
