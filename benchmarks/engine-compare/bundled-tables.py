@@ -67,8 +67,9 @@ def main():
     from sklearn.model_selection import train_test_split
     probe = shlex.split(args.probe)
     chosen = [t for t in args.tables.split(',') if t]
-    print('| table | task | rows | metric | ' + ' | '.join(name for name, _ in ARMS) + ' | k3 vs single | k5 vs single | forward vs single | forward vs k5 |')
-    print('|---|---|---|---|' + '---|' * (len(ARMS) + 4))
+    print('| table | task | rows | metric | ' + ' | '.join(name for name, _ in ARMS)
+          + ' | k3 vs single | k5 vs single | forward vs single | forward vs k5 | forward members used | forward top-member share |')
+    print('|---|---|---|---|' + '---|' * (len(ARMS) + 6))
     summary = {key: {'better': 0, 'equal': 0, 'worse': 0} for key in ('k3', 'k5', 'forward', 'forward vs k5')}
     for name, (task, target, frame) in tables().items():
         if chosen and name not in chosen:
@@ -106,7 +107,12 @@ def main():
                     'forward': verdict(by['forward'], by['single'], direction), 'forward vs k5': verdict(by['forward'], by['k5'], direction)}
         for key, v in verdicts.items():
             summary[key][v] += 1
-        print(f'| {name} | {task} | {len(frame)} | {metric} | ' + ' | '.join(cells) + ' | ' + ' | '.join(verdicts[k] for k in ('k3', 'k5', 'forward', 'forward vs k5')) + f' |  (n={len(runs)})')
+        # What forward selection chose: how many of the five members got any weight, and the largest member's share of the steps.
+        chosen_counts = [r['forward']['counts'] for r in runs]
+        used = sum(sum(1 for c in counts if c > 0) for counts in chosen_counts) / len(chosen_counts)
+        top_share = sum(max(counts) / sum(counts) for counts in chosen_counts) / len(chosen_counts)
+        print(f'| {name} | {task} | {len(frame)} | {metric} | ' + ' | '.join(cells) + ' | ' + ' | '.join(verdicts[k] for k in ('k3', 'k5', 'forward', 'forward vs k5'))
+              + f' | {used:.1f} | {top_share:.2f} |  (n={len(runs)})')
     print()
     for key, tally in summary.items():
         print(f'{key}{"" if " vs " in key else " vs single"}: {tally}')
