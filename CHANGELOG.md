@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (2,000, sampled with `--seed`; the same seed gives the same numbers). A column the model did not read as a feature (excluded or ignored at training) is listed
   as not shuffled; the label and the weight column are not features. It is the question to ask when a score looks too good - which column carries it? - or a column
   is costly to collect - does the model use it? The training warning about a near-perfect held-out score, which said what to check but not where, now suggests it. Two correlated columns share what either would show alone. Binary, multiclass and regression models; `--json`
-  carries `features` (`column`, `importance`, `standardDeviation`), the `metric`, its direction and the `baseline`.
+  carries `features` (`column`, `importance`, `standardDeviation`), the `metric`, its direction and the `baseline`. The table lists the 20 columns the model relies on most and says how many it left out (`--json` has every column) - on a table of hundreds of columns the rest fall the score by about nothing.
 
 ### Changed
 

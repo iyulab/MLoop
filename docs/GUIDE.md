@@ -779,6 +779,8 @@ exp-001 on test.csv: 300 rows, accuracy 0.8433 (higher is better), 3 shuffle(s) 
 ╰────────┴──────────────────┴────────╯
 ```
 
+The table lists the 20 columns the model relies on most and says how many it left out; `--json` carries every column. On a table of hundreds of columns the model relies on a handful and the rest fall the score by about nothing - the largest of 295 noise columns fell it by 0.007, the weakest of five real ones by 0.015 - so read the standard deviation beside a small fall before reading it as reliance. Every column costs `--repeats` scorings of the sample: 300 numeric columns at the defaults took about a minute on a laptop, 60 columns (40 of them categorical) about 13 seconds.
+
 | Option | Description |
 |--------|-------------|
 | `[experiment-id]` | Experiment to explain (default: the production model) |

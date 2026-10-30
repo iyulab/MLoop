@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using MLoop.CLI.Commands;
 
 namespace MLoop.Tests.Commands;
 
@@ -84,6 +85,42 @@ public sealed class ExplainCommandTests : IDisposable
         Assert.True(x > 0.2, $"shuffling the deciding column should cost a lot of {explanation.GetProperty("metric").GetString()}, cost {x}");
         Assert.All(noise, n => Assert.True(Math.Abs(n) < x / 4, $"a noise column fell the score by {n} against {x}"));
         Assert.Equal(400, explanation.GetProperty("rows").GetInt32());
+    }
+
+    // x decides the answer; n01..n(columns-1) are noise.
+    private static string Wide(int rows, int seed, int columns)
+    {
+        var header = "x," + string.Join(",", Enumerable.Range(1, columns - 1).Select(j => $"n{j:D2}")) + ",y\n";
+        var csv = new StringBuilder(header);
+        var rng = new Random(seed);
+        for (var i = 0; i < rows; i++)
+        {
+            var x = rng.NextDouble();
+            var yes = rng.NextDouble() < (x > 0.5 ? 0.92 : 0.08);
+            csv.Append(x.ToString("F4", CultureInfo.InvariantCulture));
+            for (var j = 1; j < columns; j++)
+                csv.Append(',').Append(rng.NextDouble().ToString("F4", CultureInfo.InvariantCulture));
+            csv.Append(',').Append(yes ? "yes" : "no").Append('\n');
+        }
+        return csv.ToString();
+    }
+
+    [Fact]
+    public async Task AWideTable_ShowsTheColumnsTheModelReliesOnMost_AndSaysHowManyItLeftOut()
+    {
+        const int columns = 30;
+        await TrainAsync("binary-classification", Wide(400, 3, columns), Wide(400, 9, columns));
+
+        var (exit, table, _) = await CliRunner.RunAsync("explain", "exp-001", "--data", "datasets/recheck.csv", "--repeats", "1");
+        var all = await JsonAsync("explain", "exp-001", "--data", "datasets/recheck.csv", "--repeats", "1");
+
+        Assert.Equal(0, exit);
+        Assert.Equal(columns, all.GetProperty("features").GetArrayLength());   // --json carries every column
+        var shown = Enumerable.Range(1, columns - 1).Count(j => table.Contains($"n{j:D2}", StringComparison.Ordinal));
+        Assert.Equal(ExplainCommand.DisplayedColumns - 1, shown);               // x is the one more of the twenty
+        Assert.Contains(" x ", table);
+        Assert.Contains($"and {columns - ExplainCommand.DisplayedColumns} more columns", table);
+        Assert.Contains("--json lists every column", table);
     }
 
     [Fact]

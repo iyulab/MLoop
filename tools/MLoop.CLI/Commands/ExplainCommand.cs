@@ -21,6 +21,13 @@ namespace MLoop.CLI.Commands;
 /// </remarks>
 public static class ExplainCommand
 {
+    /// <summary>
+    /// How many columns the table lists. On a table of hundreds of columns the model relies on a handful and the rest fall the score by
+    /// about nothing (the largest of two hundred ninety-five noise columns fell it by 0.007 against 0.015 for the weakest of five real
+    /// ones): listed in full they bury the answer. <c>--json</c> carries every column.
+    /// </summary>
+    internal const int DisplayedColumns = 20;
+
     public static Command Create()
     {
         var experimentArg = new Argument<string?>("experiment-id")
@@ -151,9 +158,11 @@ public static class ExplainCommand
 
         AnsiConsole.MarkupLineInterpolated($"[bold]{experimentId}[/] on {Path.GetFileName(dataPath)}: {e.Rows:N0} rows, {e.Metric} {e.Baseline.ToString("0.0000", CultureInfo.InvariantCulture)} ({(e.HigherIsBetter ? "higher" : "lower")} is better), {e.Repeats} shuffle(s) per column");
         var table = new Table().Border(TableBorder.Rounded).AddColumn("Column").AddColumn(new TableColumn($"Fall in {e.Metric}").RightAligned()).AddColumn(new TableColumn("± sd").RightAligned());
-        foreach (var f in e.Features)
+        foreach (var f in e.Features.Take(DisplayedColumns))
             table.AddRow(Markup.Escape(f.Column), f.Importance.ToString("+0.0000;-0.0000;0.0000", CultureInfo.InvariantCulture), f.StandardDeviation.ToString("0.0000", CultureInfo.InvariantCulture));
         AnsiConsole.Write(table);
+        if (e.Features.Count > DisplayedColumns)
+            AnsiConsole.MarkupLineInterpolated($"[grey]... and {e.Features.Count - DisplayedColumns} more columns (the {DisplayedColumns} the model relies on most are shown; the next falls {e.Features[DisplayedColumns].Importance.ToString("+0.0000;-0.0000;0.0000", CultureInfo.InvariantCulture)}; --json lists every column)[/]");
         AnsiConsole.MarkupLine("[grey]A column's fall is how much the score drops when its values are shuffled among the rows: the model relies on it that much. Near zero: it does not.[/]");
         if (e.NotShuffled.Count > 0)
             AnsiConsole.MarkupLineInterpolated($"[grey]Not shuffled (the model does not read them as features): {string.Join(", ", e.NotShuffled)}[/]");
