@@ -81,6 +81,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`train --test-split 0` (a negative share, `training.test_split: 0` or a `POST /train` request with `testSplit: 0`) is refused instead of reporting training scores as test scores.**
+  A share that holds no rows out trained on every row and reported the scores of those same rows as its test metrics - accuracy 0.96 where a held-out 20 % gave 0.85 - with no
+  warning, and the model could be promoted on them. A share outside 0 and 1 is now refused with the reason, as `mloop validate` already said of the file's value
+  (a time series and a task without a label hold nothing out and are left alone). **This changes a run that passed 0 on purpose**: it must name a share between 0 and 1,
+  or supply its own test file.
+- **`train` names a classification label that is not a column of the file.** It was reported as "Cannot train a classifier with only one class", the failure of the next step; the
+  message is now "Label column 'x' not found", with the columns the file has and the one that differs only in case.
+- **`evaluate` and `predict` no longer warn that a numeric column "does not read as numeric" for a table whose every value is a number**, when a text column holds quoted line
+  breaks: the check read the file line by line and took the second line of such a field for a row of its own ("50 of the first 200 rows do not read as that ... those values
+  load as missing"). It reads CSV records.
+- **`analyze profile` flags a strictly increasing id column in a table whose text column holds quoted line breaks**, as it does without them; the check read lines.
+- **`prep run` reports the records of a table, not its lines.** Each line break inside a quoted field was counted as a row (403 records reported as 471 rows); the transformed file was
+  right, the counts were not.
+- **`evaluate --json` and `explain` name the file they were given.** When the file's Hangul was written as jamo and the text had to be composed first, they named the temporary copy
+  (`testDataFile`, `data`).
+
 - **A file with a numeric column the model was not trained on no longer fails with "Could not find input column".** `predict`, `evaluate` and every command that loads a
   data file folds the numeric columns of the file into one vector; a model trained on a single numeric feature reads a column named after it, and found none once a second
   numeric column (a weight, an id) made the vector. This was the case `evaluate --weight <column>` exists for - a test file whose weight column the model never saw -
