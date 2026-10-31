@@ -198,6 +198,8 @@ public static partial class EvaluateCommand
             var resolvedTestDataFile = ResolveTestData(testDataFile, experimentData, projectRoot, fileSystem);
             if (resolvedTestDataFile is null)
                 return 1;
+            // What the output names is the file the user gave; validation may hand back a composed or converted copy to read instead.
+            var reportedTestDataFile = resolvedTestDataFile;
 
             // Validate schema before evaluation (CSV-column validation; not applicable to image directories)
             if (!isDirectoryBased)
@@ -270,7 +272,7 @@ public static partial class EvaluateCommand
             }
 
             if (jsonOutput)
-                EmitJson(resolvedModelName, resolvedExperimentId, resolvedTestDataFile,
+                EmitJson(resolvedModelName, resolvedExperimentId, reportedTestDataFile,
                     trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices, weightColumn: weightColumn,
                     comparison: comparison, confusion: confusion);
 

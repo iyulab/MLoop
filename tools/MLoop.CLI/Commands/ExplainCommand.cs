@@ -115,16 +115,18 @@ public static class ExplainCommand
                 return Fail($"Permutation importance explains binary-classification, multiclass-classification and regression models; {id} is {experiment.Task}.");
 
             string? dataPath = null;
+            string? reportedDataPath = null; // the file the user named; dataPath may be a composed or converted copy of it
             if (!string.IsNullOrWhiteSpace(data))
             {
                 dataPath = ProjectPaths.Resolve(data, projectRoot);
                 if (!TabularDataFile.Exists(dataPath))
                     return Fail($"Data not found: {data}");
+                reportedDataPath = dataPath;
                 dataPath = await TabularDataFile.AsCsvAsync(dataPath, records);
             }
             else if (new DatasetDiscovery(fileSystem).FindDatasets(projectRoot)?.TestPath is { } discovered)
             {
-                dataPath = discovered;
+                dataPath = reportedDataPath = discovered;
             }
             if (dataPath is null)
                 return Fail("Give the labeled file to score the model on with --data (or keep one as datasets/test.csv).");
@@ -153,7 +155,7 @@ public static class ExplainCommand
                         (done, total) => { task.MaxValue = total; task.Value = done; });
                 });
 
-            return Emit(name, id, dataPath, weightColumn, explanation, jsonOutput);
+            return Emit(name, id, reportedDataPath!, weightColumn, explanation, jsonOutput);
         }
         catch (Exception ex)
         {
