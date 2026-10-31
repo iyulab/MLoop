@@ -1624,11 +1624,12 @@ public class CsvDataLoader : DataProviderBase
 
         try
         {
-            var lines = File.ReadLines(filePath, System.Text.Encoding.UTF8).Take(maxSampleRows + 1).ToList();
-            if (lines.Count < minRows + 1) return result; // Need header + at least minRows data
+            // Records, not lines: a quoted field with line breaks is one row, whether or not the file was folded first.
+            var records = TableRows.ReadRecords(filePath, maxSampleRows, includeHeader: true).ToList();
+            if (records.Count < minRows + 1) return result; // Need header + at least minRows data
 
-            var headers = ParseCsvLine(lines[0]);
-            var dataRows = lines.Skip(1).ToList();
+            var headers = records[0];
+            var dataRows = records.Skip(1).ToList();
 
             for (int col = 0; col < headers.Length; col++)
             {
@@ -1643,9 +1644,8 @@ public class CsvDataLoader : DataProviderBase
                 bool isMonotonic = true;
                 long? prevValue = null;
 
-                foreach (var row in dataRows)
+                foreach (var fields in dataRows)
                 {
-                    var fields = ParseCsvLine(row);
                     if (col >= fields.Length || !long.TryParse(fields[col].Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value))
                     {
                         isMonotonic = false;

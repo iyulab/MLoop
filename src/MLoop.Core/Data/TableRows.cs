@@ -21,11 +21,11 @@ public static class TableRows
     }
 
     /// <summary>
-    /// The first <paramref name="maxRecords"/> records after the header, read as CSV: a quoted field that holds line breaks is one record
+    /// The first <paramref name="maxRecords"/> records after the header (the header too, first, when <paramref name="includeHeader"/>), read as CSV: a quoted field that holds line breaks is one record
     /// (the fields of its second line are not a row of their own), a blank line is none. For a check that reads a sample of a table's values
     /// from the file as the user wrote it, where <see cref="IsRow"/> over lines would see the pieces of such a field as rows.
     /// </summary>
-    public static IEnumerable<string[]> ReadRecords(string path, int maxRecords = int.MaxValue)
+    public static IEnumerable<string[]> ReadRecords(string path, int maxRecords = int.MaxValue, bool includeHeader = false)
     {
         ArgumentNullException.ThrowIfNull(path);
         using var reader = new StreamReader(path, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
@@ -39,6 +39,8 @@ public static class TableRows
         using var csv = new CsvReader(reader, configuration);
         if (!csv.Read())
             yield break; // no header
+        if (includeHeader)
+            yield return [.. csv.Parser.Record!];
         for (var taken = 0; taken < maxRecords && csv.Read(); taken++)
             yield return [.. csv.Parser.Record!];
     }

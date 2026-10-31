@@ -842,6 +842,17 @@ public class CsvDataLoaderTests : IDisposable
     }
 
     [Fact]
+    public void DetectMonotonicColumns_AQuotedFieldWithLineBreaks_IsOneRow()
+    {
+        // read line by line, the second line of a note is a row whose first field is not an integer
+        var csv = "ID,Note,Label\n1,\"a\nb\",A\n2,plain,B\n3,\"c\nd\ne\",A\n4,plain,B\n5,\"f\ng\",A\n6,plain,B\n";
+        var csvPath = Path.Combine(_tempDirectory, "mono_multiline.csv");
+        File.WriteAllText(csvPath, csv);
+
+        Assert.Contains("ID", CsvDataLoader.DetectMonotonicColumns(csvPath, "Label"));
+    }
+
+    [Fact]
     public void DetectMonotonicColumns_NormalFeature_DoesNotReturn()
     {
         var csv = "Temperature,Pressure,Label\n25,100,A\n30,95,B\n22,105,A\n28,98,B\n26,102,A\n";
