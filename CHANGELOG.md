@@ -63,6 +63,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop train --analyze-data --json` answered with nothing.** The data check is that run's whole job — it trains nothing — and it showed its findings
+  only on the console, which `--json` silences, so a consumer read an empty stdout and a zero exit: the same as data with no findings. The findings are now
+  one `analysis` event (`issues`, each with `type`, `severity`, `column`, `description` and `suggestedFix`; the list is empty when the check found nothing),
+  and a script written by `--generate-script` is a `script` event with its path.
+
 - **A file that does not split into columns says which line is the odd one.** "Unable to split the file provided into multiple, consistent columns ... check for
   a consistent number of columns" left the reader to find one short or long row in a file of thousands - in `train`, `info` and every command that reads the
   file's layout. The refusal now ends with the first such line - "Line 10 has 3 field(s) where the header has 4." Lines that belong to a quoted field spread over

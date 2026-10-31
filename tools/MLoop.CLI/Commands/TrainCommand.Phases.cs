@@ -400,7 +400,7 @@ public static partial class TrainCommand
     private static async Task<PreparedData> PrepareTabularDataAsync(
         string resolvedDataFile, ModelDefinition effectiveDefinition, string projectRoot, string? records,
         int? maxRows, string? samplingStrategy, int? seed, bool? dropMissingLabels, bool analyzeData,
-        string? generateScript, string? balance)
+        string? generateScript, string? balance, TrainJsonEmitter? events = null)
     {
         var allDataFilesUsed = new List<string> { resolvedDataFile };
         string? testDataFile = null;
@@ -549,6 +549,7 @@ public static partial class TrainCommand
             var issues = await analyzer.AnalyzeAsync(resolvedDataFile, effectiveDefinition.Label);
 
             TrainPresenter.DisplayDataQualityIssues(issues);
+            events?.Analysis(issues);
 
             // Generate preprocessing script if requested
             if (!string.IsNullOrEmpty(generateScript))
@@ -561,6 +562,7 @@ public static partial class TrainCommand
 
                 if (generated)
                 {
+                    events?.Script(generateScript);
                     AnsiConsole.MarkupLine($"[green]✓[/] Generated preprocessing script: [cyan]{generateScript}[/]");
                     AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
                     AnsiConsole.MarkupLine($"  1. Review the generated script: {generateScript}");

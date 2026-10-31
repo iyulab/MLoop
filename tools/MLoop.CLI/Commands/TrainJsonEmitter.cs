@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MLoop.Core.DataQuality;
 using MLoop.Core.Models;
 
 namespace MLoop.CLI.Commands;
@@ -183,6 +184,33 @@ public sealed class TrainJsonEmitter(TextWriter output)
         experimentId,
         promoted,
         keptInStagingReason,
+        ts = Now()
+    });
+
+    /// <summary>
+    /// What <c>--analyze-data</c> found, and the whole of its answer: that run trains nothing, so there is no
+    /// <c>result</c>. <c>issues</c> is empty when the data raised none — an empty list says the check ran and found
+    /// nothing, where no event at all would read as a check that never ran.
+    /// </summary>
+    public void Analysis(IReadOnlyList<DataQualityIssue> issues) => Write(new
+    {
+        @event = "analysis",
+        issues = issues.Select(i => new
+        {
+            type = i.Type.ToString(),
+            severity = i.Severity.ToString().ToLowerInvariant(),
+            column = i.ColumnName,
+            description = i.Description,
+            suggestedFix = i.SuggestedFix
+        }),
+        ts = Now()
+    });
+
+    /// <summary>The preprocessing script <c>--generate-script</c> wrote, by the path it was asked to write to.</summary>
+    public void Script(string path) => Write(new
+    {
+        @event = "script",
+        path,
         ts = Now()
     });
 

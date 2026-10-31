@@ -57,7 +57,9 @@ mloop evaluate --json
 
 `mloop train --json` is the one stream: a JSON object per line as the run goes — `phase`, `trial`, `warning`, then
 `result` (the experiment and its metrics) and `promotion` (`promoted`, and `keptInStagingReason` when it stayed in
-staging), or `error`:
+staging), or `error`. A run that only checks the data (`--analyze-data`) trains nothing and so has no `result`: it
+answers with one `analysis` event (`issues`: type, severity, column, description, suggestedFix — empty when nothing
+was found), and `--generate-script` adds a `script` event with the path written:
 
 ```bash
 mloop train datasets/train.csv --label Churn --time 300 --json

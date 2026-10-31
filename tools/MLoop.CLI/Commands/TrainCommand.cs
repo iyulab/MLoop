@@ -324,7 +324,7 @@ public static partial class TrainCommand
             {
                 var prepared = await PrepareTabularDataAsync(
                     resolvedDataFile, effectiveDefinition, projectRoot, records, maxRows, samplingStrategy, seed,
-                    dropMissingLabels, analyzeData, generateScript, balance);
+                    dropMissingLabels, analyzeData, generateScript, balance, events);
                 if (prepared.ExitCode is { } exitCode)
                     return exitCode;
                 resolvedDataFile = prepared.DataFile;
