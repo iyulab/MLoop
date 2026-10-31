@@ -95,6 +95,25 @@ public static class ModelTrainingConfig
     }
 
     /// <summary>
+    /// Why the test split in <paramref name="definition"/> cannot be honoured, or <c>null</c>. It is the share of the rows held out to
+    /// measure the model on, so it lies between 0 and 1: a share of nothing leaves the scores to be those of rows the model was trained on,
+    /// reported as if they were a test's. A task that holds nothing out (a time series keeps its order, an unsupervised task has no label)
+    /// has no share to refuse.
+    /// </summary>
+    public static string? TestSplitConflict(ModelDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        if (definition.Training?.TestSplit is not { } share)
+            return null;
+        if (!MLoop.Core.Training.TrainingRunner.RequiresLabel(definition.Task) || MLoop.Core.Training.TrainingRunner.IsTimeSeriesTask(definition.Task))
+            return null;
+        return share > 0 && share < 1
+            ? null
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"test split: {share} is not a share of the rows. It must be between 0 and 1 (exclusive): the part held out to measure the model on - with none held out the scores would be those of rows the model was trained on.");
+    }
+
+    /// <summary>
     /// Why the epoch count in <paramref name="definition"/> cannot be honoured, or <c>null</c>. A count for a task
     /// that does not train by epochs, or below one epoch, would be set and silently meant nothing.
     /// </summary>

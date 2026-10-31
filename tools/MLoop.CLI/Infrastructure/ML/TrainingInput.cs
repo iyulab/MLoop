@@ -2,6 +2,7 @@ using MLoop.CLI.Commands;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
+using MLoop.Core.Prediction;
 using MLoop.Core.Training;
 using MLoop.Extensibility.Preprocessing;
 
@@ -25,6 +26,31 @@ public static class TrainingInput
         TrainingRunner.RequiresLabel(task)
         && !TrainingRunner.IsTimeSeriesTask(task)
         && !DataLoaderFactory.IsDirectoryBased(task);
+
+    /// <summary>
+    /// Why a task that learns from a label column cannot train on <paramref name="dataFile"/>: the label is not one of its columns. Said
+    /// first, and as that, with the columns the file has - the steps after it read the label, and one of them fails with "only one class"
+    /// when there is none. <c>null</c> when the label is a column, or the task reads no label column from a table.
+    /// </summary>
+    public static string? LabelColumnRefusal(string dataFile, string? task, string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label) || !TrainingRunner.RequiresLabel(task) || DataLoaderFactory.IsDirectoryBased(task))
+            return null;
+        if (!dataFile.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) && !dataFile.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase))
+            return null;
+        string? header;
+        try { header = File.ReadLines(dataFile).FirstOrDefault()?.TrimStart('\uFEFF'); }
+        catch (IOException) { return null; }
+        if (string.IsNullOrEmpty(header))
+            return null;
+        var columns = CsvFieldParser.ParseFields(header);
+        if (columns.Any(column => string.Equals(column, label, StringComparison.Ordinal)))
+            return null;
+        var message = $"Label column '{label}' not found in {Path.GetFileName(dataFile)}. Available columns: {string.Join(", ", columns)}.";
+        return columns.FirstOrDefault(column => string.Equals(column, label, StringComparison.OrdinalIgnoreCase)) is { } sameLetters
+            ? $"{message} '{sameLetters}' differs only in case; column names are case-sensitive."
+            : message;
+    }
 
     /// <summary>The file a job trains on, and what preparing it did.</summary>
     /// <param name="DataFile">The prepared file.</param>

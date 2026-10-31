@@ -94,6 +94,20 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         (await response.Content.ReadAsStringAsync()).Should().Contain("not a number of trials");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-0.2)]
+    [InlineData(1)]
+    public async Task ATestSplitOutsideZeroAndOne_IsRefusedBeforeAJobExists(double testSplit)
+    {
+        var data = WriteData();
+
+        var response = await _client.PostAsJsonAsync("/train", new { dataFile = data, labelColumn = "y", task = "binary-classification", name = "tsplit", testSplit });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("between 0 and 1");
+    }
+
     [Fact]
     public async Task EpochsOnATaskThatDoesNotCountEpochs_AreRefusedBeforeAJobExists()
     {

@@ -40,7 +40,7 @@ public static class TrainingDefinition
         // The request's weight in --weight's place; refused, like the definition's, where the run could not honour it.
         if (!string.IsNullOrWhiteSpace(weight))
             definition.Weight = weight.Trim();
-        if ((ModelTrainingConfig.MaxTrialsConflict(definition) ?? ModelTrainingConfig.EpochsConflict(definition)) is { } maxTrialsError)
+        if ((ModelTrainingConfig.MaxTrialsConflict(definition) ?? ModelTrainingConfig.TestSplitConflict(definition) ?? ModelTrainingConfig.EpochsConflict(definition)) is { } maxTrialsError)
             return (null, maxTrialsError);
         if (ModelTrainingConfig.WeightConflict(definition) is { } weightError)
             return (null, weightError);

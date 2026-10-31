@@ -113,6 +113,7 @@ public static partial class TrainCommand
         if (!string.IsNullOrEmpty(weight))
             effectiveDefinition.Weight = weight;
         if ((ModelTrainingConfig.MaxTrialsConflict(effectiveDefinition)
+             ?? ModelTrainingConfig.TestSplitConflict(effectiveDefinition)
              ?? ModelTrainingConfig.EpochsConflict(effectiveDefinition)
              ?? TrainingInput.BalanceConflict(effectiveDefinition, balance)
              ?? ModelTrainingConfig.WeightConflict(effectiveDefinition, balance)) is { } weightError)
@@ -457,6 +458,12 @@ public static partial class TrainCommand
                 ErrorConsole.Out.WriteLine(ex.Message);
                 return PreparedData.Exit(1);
             }
+        }
+
+        if (TrainingInput.LabelColumnRefusal(resolvedDataFile, effectiveDefinition.Task, effectiveDefinition.Label) is { } labelRefusal)
+        {
+            ErrorConsole.Error(labelRefusal);
+            return PreparedData.Exit(1);
         }
 
         // Handle missing label values (T4.2)
