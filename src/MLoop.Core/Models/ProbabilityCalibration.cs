@@ -168,10 +168,16 @@ public sealed record ProbabilityCalibration(
         var negatives = rows.Where(r => !r.Positive).Sum(r => r.Weight);
         var positiveTarget = (positives + 1) / (positives + 2);
         var negativeTarget = 1 / (negatives + 2);
+        // A pull toward leaving the probabilities as they are (a = 1, b = 0), a millionth of the weight: when the rows hold
+        // one probability (or two weights dwarf the rest) only a·logit(p) + b is fixed and the loss is flat along the
+        // rest, where an unanchored fit wanders to a slope of 2e4 and an intercept of −3e5 and then maps every other
+        // probability to 0. With it the fit is the one nearest the identity; where the rows pin both numbers it moves
+        // them by about a millionth.
+        var ridge = 1e-6 * rows.Sum(r => r.Weight);
         double a = 1, b = 0;
         for (var iteration = 0; iteration < 100; iteration++)
         {
-            double ga = 0, gb = 0, haa = 1e-6, hab = 0, hbb = 1e-6;
+            double ga = -ridge * (a - 1), gb = -ridge * b, haa = ridge, hab = 0, hbb = ridge;
             foreach (var (p, y, w) in rows)
             {
                 var z = Logit(Math.Clamp(p, 0, 1));
@@ -191,9 +197,9 @@ public sealed record ProbabilityCalibration(
             // A full Newton step can overshoot far from the optimum — on 24 out-of-fold rows of a model that ranked them
             // perfectly it sent the slope to −5e5, so every probability became 0 and the model answered one class. The
             // loss is convex, so halving the step until it falls always finds a step that makes progress.
-            var current = PlattLoss(rows, a, b, positiveTarget, negativeTarget);
+            var current = PlattLoss(rows, a, b, positiveTarget, negativeTarget, ridge);
             var step = 1.0;
-            while (step > 1e-10 && PlattLoss(rows, a + step * da, b + step * db, positiveTarget, negativeTarget) > current + 1e-12)
+            while (step > 1e-10 && PlattLoss(rows, a + step * da, b + step * db, positiveTarget, negativeTarget, ridge) > current + 1e-12 * (1 + Math.Abs(current)))
                 step /= 2;
             if (step <= 1e-10) break;
             da *= step;
@@ -205,11 +211,11 @@ public sealed record ProbabilityCalibration(
         return new ProbabilityCalibration("platt", a, b, null, null, 0, "", null, null, null, default);
     }
 
-    // The weighted cross-entropy against Platt's targets that FitPlatt minimizes.
+    // The weighted cross-entropy against Platt's targets, plus the pull toward the identity, that FitPlatt minimizes.
     private static double PlattLoss(List<(double Probability, bool Positive, double Weight)> rows, double a, double b,
-        double positiveTarget, double negativeTarget)
+        double positiveTarget, double negativeTarget, double ridge)
     {
-        var loss = 0.0;
+        var loss = 0.5 * ridge * ((a - 1) * (a - 1) + b * b);
         foreach (var (p, y, w) in rows)
         {
             var q = Math.Clamp(Sigmoid(a * Logit(Math.Clamp(p, 0, 1)) + b), 1e-15, 1 - 1e-15);
@@ -295,7 +301,10 @@ public sealed record ProbabilityCalibration(
             else { lo = x1; x1 = x2; f1 = f2; x2 = lo + golden * (hi - lo); f2 = LogLoss(x2); }
         }
 
-        var fitted = Temperatured(Math.Exp((lo + hi) / 2));
+        // Rows the model is sure of and right about leave the loss at ~0 for every T below 1: the search then compares noise
+        // and may end on the rising side. A temperature is never worse than leaving the probabilities as they are.
+        var logT = (lo + hi) / 2;
+        var fitted = Temperatured(LogLoss(0) <= LogLoss(logT) + 1e-12 ? 1.0 : Math.Exp(logT));
         return fitted with
         {
             Rows = usable.Count,

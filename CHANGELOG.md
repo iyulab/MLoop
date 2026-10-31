@@ -81,6 +81,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The Platt fit stays near the identity when the rows fix only one number, and a temperature is never worse than leaving the probabilities as they are.** When the
+  rows a binary model is calibrated on all sit at one probability (a model that learned nothing, or one whose answers are all exactly 0 or 1) only
+  `slope * logit(p) + intercept` is determined, and the fit wandered along the flat direction to a slope of 2e4 and an intercept of -3e5 - which maps every
+  other probability to 0. The fit now carries a pull toward the identity worth a millionth of the weight (it moves a fit the rows pin by about that much), so
+  such rows give the calibration nearest to leaving the probabilities alone. A multiclass temperature whose search ended on a loss that is flat below 1 (rows the
+  model is sure of and right about) could land above 1 with a worse loss; it now falls back to 1 when the search does not beat it.
 - **A binary model's probability calibration no longer runs away on a handful of rows, and its precision and F1 no longer contradict its recall.** The Platt fit
   (`mloop train`, `mloop calibrate --method platt`) took a full Newton step every iteration, which overshoots when few rows are fitted: on 24 out-of-fold rows of a
   model that ranked them perfectly (AUC 1.0) the slope went to -5e5, every calibrated probability became 0, and the model answered "no" to every row - recorded
