@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.Prediction;
 
 namespace MLoop.Core.Data;
 
@@ -122,7 +123,15 @@ public static class ColumnLayoutInference
     public static ColumnLayout Infer(MLContext mlContext, string path, string? label, char separator = ',')
     {
         var sample = ColumnLayoutSample.Read(path);
-        var split = InferSplit(mlContext, sample, separator);
+        Split split;
+        try
+        {
+            split = InferSplit(mlContext, sample, separator);
+        }
+        catch (ColumnLayoutException refusal) when (separator == ',' && RaggedLineHint(path) is { } hint)
+        {
+            throw new ColumnLayoutException($"{refusal.Message} {hint}");
+        }
         var columns = InferTypes(mlContext, sample, split, label);
 
         var typed = new TextLoader.Options
@@ -151,6 +160,49 @@ public static class ColumnLayoutInference
         };
         return new ColumnLayout(options, label, [.. groups.Select(g => new ColumnLayoutColumn(g.Name, g.Purpose))],
             [.. columns.Select((c, i) => new ColumnLayoutFileColumn(c.Name, c.Kind, purposes[i]))]);
+    }
+
+    /// <summary>
+    /// The first line whose number of fields is not the header's, said as the reason a file does not split, or
+    /// <c>null</c> when no line plainly is. A line that opens, continues or closes a quoted field spread over
+    /// several lines is left alone — its fields are not countable one line at a time — and so is a blank line,
+    /// which is no row. A header of one field is a file that is not comma-separated; nothing is said of it.
+    /// </summary>
+    private static string? RaggedLineHint(string path)
+    {
+        try
+        {
+            using var reader = new StreamReader(path, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            if (reader.ReadLine() is not { } header)
+                return null;
+            var width = CsvFieldParser.ParseFields(header).Length;
+            if (width < 2)
+                return null;   // a header of one field is a file that is not comma-separated, not one with a short row
+            var inQuotes = false;
+            var number = 1;
+            while (reader.ReadLine() is { } line)
+            {
+                number++;
+                var touchesAMultilineField = inQuotes;
+                if (line.Count(c => c == '"') % 2 == 1)
+                {
+                    inQuotes = !inQuotes;
+                    touchesAMultilineField = true;
+                }
+
+                if (touchesAMultilineField || !TableRows.IsRow(line, width))
+                    continue;
+                var fields = CsvFieldParser.ParseFields(line).Length;
+                if (fields != width)
+                    return $"Line {number} has {fields} field(s) where the header has {width}.";
+            }
+        }
+        catch (IOException)
+        {
+            // A hint is a courtesy: a file that cannot be read again is refused without one.
+        }
+
+        return null;
     }
 
     private sealed record Split(char Separator, bool Sparse, bool Quoting, bool Multiline, int ColumnCount);

@@ -56,6 +56,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A file that does not split into columns says which line is the odd one.** "Unable to split the file provided into multiple, consistent columns ... check for
+  a consistent number of columns" left the reader to find one short or long row in a file of thousands - in `train`, `info` and every command that reads the
+  file's layout. The refusal now ends with the first such line - "Line 10 has 3 field(s) where the header has 4." Lines that belong to a quoted field spread over
+  several lines, and blank lines, are not counted as short rows, and a file whose header is a single field (not comma-separated) gets no hint.
 - **A table's blank line is not a row in the training-time checks either.** The size warnings ("only N rows", "N samples for M features"), the "no data rows"
   check and the row count the training-time estimate is made from counted a blank line as a row, while the loaders skip it: three trailing blank lines turned
   a critically small file of eight rows into one of eleven, and a file of a header and blank lines was reported as having no valid label values rather than

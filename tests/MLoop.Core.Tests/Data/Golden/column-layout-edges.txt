@@ -332,7 +332,7 @@ numeric: v
 ignored: code
 
 ## ragged-rows (label: label)
-throws: Unable to split the file provided into multiple, consistent columns. Readable formats include delimited files such as CSV/TSV. Check for a consistent number of columns and proper escaping and quoting.
+throws: Unable to split the file provided into multiple, consistent columns. Readable formats include delimited files such as CSV/TSV. Check for a consistent number of columns and proper escaping and quoting. Line 52 has 4 field(s) where the header has 3.
 
 ## semicolons (label: label)
 throws: Unable to split the file provided into multiple, consistent columns. Readable formats include delimited files such as CSV/TSV. Check for a consistent number of columns and proper escaping and quoting.
