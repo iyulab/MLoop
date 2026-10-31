@@ -4,6 +4,20 @@ namespace MLoop.Tests;
 internal static class WorkbookFile
 {
     public static string Write(string path, string[] header, IEnumerable<double[]> rows)
+        => Write(path, header, rows.Select(r => r.Select(v => (object)v).ToArray()));
+
+    /// <summary>The workbook holding the same table as a plain comma-separated file: a cell that is a number is a number, any other is text.</summary>
+    public static string FromCsv(string csvPath, string workbookPath)
+    {
+        var lines = File.ReadAllLines(csvPath).Where(l => l.Length > 0).ToArray();
+        var header = lines[0].Split(',');
+        return Write(workbookPath, header, lines.Skip(1).Select(l => l.Split(',')
+            .Select(cell => double.TryParse(cell, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number) ? (object)number : cell)
+            .ToArray()));
+    }
+
+    /// <summary>Cells are numbers (<see cref="double"/>) or text (anything else).</summary>
+    public static string Write(string path, string[] header, IEnumerable<object[]> rows)
     {
         using var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
         void Entry(string entry, string xml)
@@ -31,7 +45,9 @@ internal static class WorkbookFile
             rowNumber++;
             sheet.Append($"<row r=\"{rowNumber}\">");
             for (var c = 0; c < row.Length; c++)
-                sheet.Append(System.FormattableString.Invariant($"<c r=\"{(char)('A' + c)}{rowNumber}\"><v>{row[c]}</v></c>"));
+                sheet.Append(row[c] is double number
+                    ? System.FormattableString.Invariant($"<c r=\"{(char)('A' + c)}{rowNumber}\"><v>{number:R}</v></c>")
+                    : $"<c r=\"{(char)('A' + c)}{rowNumber}\" t=\"inlineStr\"><is><t>{System.Security.SecurityElement.Escape(row[c]?.ToString())}</t></is></c>");
             sheet.Append("</row>");
         }
         sheet.Append("</sheetData></worksheet>");

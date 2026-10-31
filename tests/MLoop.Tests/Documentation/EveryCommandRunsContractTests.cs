@@ -32,9 +32,16 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
     /// One invocation and the effect that shows it did its work. <paramref name="Then"/> runs after the effect is checked, to put back
     /// what the command changed for the commands that follow (a decision threshold stands in the way of calibration).
     /// </summary>
-    internal sealed record Case(string[] Args, Action<Seen, string> Effect, string[]? Then = null, int Exit = 0);
+    internal sealed record Case(string[] Args, Action<Seen, string> Effect, string[]? Then = null, int Exit = 0,
+        Action<Seen, string>? OnWorkbook = null);
 
     private static void Parses(Seen seen, string project) => seen.Json();
+
+    /// <summary>The columns of the project's data, in order - what a command that read the workbook as a table can name.</summary>
+    internal static readonly string[] Columns = ["x", "z", "w", "y"];
+
+    private static Action<Seen, string> NamesTheColumns(Func<JsonElement, IEnumerable<string>> columnsOf) => (seen, _) =>
+        Assert.Equal(Columns, columnsOf(seen.Json()));
 
     private static Action<Seen, string> File(string relative) => (_, project) =>
         Assert.True(System.IO.File.Exists(Path.Combine(project, relative)) || Directory.Exists(Path.Combine(project, relative)),
@@ -52,7 +59,15 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
         ["logs prune"] = new(["logs", "prune", "--days", "30", "--dry-run", "--json"], Parses),
         ["feedback list"] = new(["feedback", "list", "--json"], Parses),
         ["feedback metrics"] = new(["feedback", "metrics", "--json"], Parses),
-        ["sample create"] = new(["sample", "create", "--from", "datasets/train.csv", "--rows", "50", "-o", "datasets/sample.csv"], File("datasets/sample.csv")),
+        ["sample create"] = new(["sample", "create", "--from", "datasets/train.csv", "--rows", "50", "-o", "datasets/sample.csv"], File("datasets/sample.csv"),
+            OnWorkbook: (seen, project) =>
+            {
+                File("datasets/sample.csv")(seen, project);
+                // the table's rows, not the zip's bytes: a header of its columns, and 50 rows under it
+                var lines = System.IO.File.ReadAllLines(Path.Combine(project, "datasets", "sample.csv"));
+                Assert.Equal("x,z,w,y", lines[0].TrimStart('\uFEFF'));
+                Assert.Equal(51, lines.Length);
+            }),
         ["sample stats"] = new(["sample", "stats"], (s, _) => Assert.NotEmpty(s.Out)),
         ["trigger check"] = new(["trigger", "check"], (s, _) => Assert.NotEmpty(s.Out)),
         ["drift"] = new(["drift", "--json"], (s, _) =>
@@ -66,8 +81,10 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
             Then: ["calibrate", "exp-001", "--clear"]),
         ["explain"] = new(["explain", "exp-001", "--data", "datasets/test.csv", "--repeats", "2", "--rows", "100", "--json"], Parses),
         ["export onnx"] = new(["export", "onnx", "exp-001", "--data", "datasets/train.csv", "-o", "onnx-out"], File("onnx-out")),
-        ["info"] = new(["info", "datasets/train.csv", "--json"], Parses),
-        ["analyze profile"] = new(["analyze", "profile", "datasets/train.csv", "--json"], Parses),
+        ["info"] = new(["info", "datasets/train.csv", "--json"], Parses,
+            OnWorkbook: NamesTheColumns(j => j.GetProperty("columns").EnumerateArray().Select(c => c.GetProperty("name").GetString()!))),
+        ["analyze profile"] = new(["analyze", "profile", "datasets/train.csv", "--json"], Parses,
+            OnWorkbook: NamesTheColumns(j => j.GetProperty("data").GetProperty("columns").EnumerateArray().Select(c => c.GetProperty("name").GetString()!))),
         ["analyze correlation"] = new(["analyze", "correlation", "datasets/train.csv", "--json"], Parses),
         ["analyze importance"] = new(["analyze", "importance", "datasets/train.csv", "--label", "y", "--json"], Parses),
         ["analyze outliers"] = new(["analyze", "outliers", "datasets/train.csv", "--json"], Parses),
@@ -145,6 +162,66 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
         Assert.Empty(Runs.Keys.Intersect(Exempt.Keys));
     }
 
+    /// <summary>The data files of the project, by name: each exists as a CSV and as a workbook holding the same table.</summary>
+    internal static readonly string[] DataFiles = ["train", "test"];
+
+    private static bool IsOutputPath(string[] args, int i) => i > 0 && args[i - 1] is "-o" or "--output";
+
+    /// <summary>The command line with each data file it reads named by its workbook instead of its CSV; an output path is left as it is.</summary>
+    internal static string[] OnWorkbooks(string[] args) =>
+        [.. args.Select((a, i) => !IsOutputPath(args, i) && DataFiles.Any(f => a == $"datasets/{f}.csv") ? Path.ChangeExtension(a, ".xlsx") : a)];
+
+    /// <summary>The cases that read a data file named on their command line.</summary>
+    internal static List<string> DataFileCases() =>
+        [.. Runs.OrderBy(r => r.Key, StringComparer.Ordinal).Where(r => !OnWorkbooks(r.Value.Args).SequenceEqual(r.Value.Args)).Select(r => r.Key)];
+
+    public static TheoryData<string> DataFileCommandNames()
+    {
+        var data = new TheoryData<string>();
+        foreach (var name in DataFileCases()) data.Add(name);
+        return data;
+    }
+
+    /// <summary>
+    /// A data file is any table MLoop reads, and a command settles which one it was given by converting it once (<c>TabularDataFile</c>).
+    /// <c>sample create</c>, <c>prep run</c>, <c>preprocess</c>, <c>features select</c> and <c>validate</c> each opened the path as lines of text
+    /// instead: a workbook became 57 rows of a zip's bytes, or a column name written into <c>mloop.yaml</c>. Each command that reads a data
+    /// file named on its command line runs here once more with a workbook of the same table, and must do what it does with the CSV.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(DataFileCommandNames))]
+    public async Task TheCommandReadsAWorkbookAsTheTableItHolds(string name)
+    {
+        var plan = Runs[name];
+        var args = OnWorkbooks(plan.Args);
+        Assert.NotEqual(plan.Args, args);
+
+        var seen = await _project.RunAsync(args);
+
+        Assert.True(seen.Exit == plan.Exit, $"mloop {string.Join(' ', args)} exited {seen.Exit}\n{seen.Out}\n{seen.Err}");
+        (plan.OnWorkbook ?? plan.Effect)(seen, _project.Root);
+        if (plan.Then is { } undo) await _project.RunAsync(undo);
+    }
+
+    [Fact]
+    public void TheWorkbookRunsSeeTheCommandsThatReadDataFiles_AndAnUnknownCsvIsDeclared()
+    {
+        var names = DataFileCases();
+
+        // It reads the table it polices: the commands known to read a data file are among its cases.
+        foreach (var known in new[] { "info", "evaluate", "explain", "sample create", "analyze profile", "threshold", "calibrate", "export onnx", "detect" })
+            Assert.Contains(known, names);
+
+        // A case that names a CSV the fixture has no workbook of reads a data file this test cannot swap, so it must say how.
+        var unswapped = Runs.Where(r => r.Value.Args.Where((a, i) => a.EndsWith(".csv", StringComparison.Ordinal) && !IsOutputPath(r.Value.Args, i))
+            .Any(a => !DataFiles.Any(f => a == $"datasets/{f}.csv"))).Select(r => r.Key).ToList();
+        Assert.True(unswapped.Count == 0, "These cases name a CSV the workbook run does not swap (add it to DataFiles or use a file in it):\n" + string.Join('\n', unswapped));
+
+        // And the swap leaves an output path alone.
+        Assert.Equal(["sample", "create", "--from", "datasets/train.xlsx", "--rows", "50", "-o", "datasets/sample.csv"],
+            OnWorkbooks(Runs["sample create"].Args));
+    }
+
     [Fact]
     public void TheEnumeration_SeesTheNestedCommandsAndNotTheGroupsThemselves()
     {
@@ -193,6 +270,10 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
                 Check(await CliRunner.RunAsync("predict", "datasets/predict.csv", "--log"));
                 Assert.True(Directory.EnumerateFiles(Path.Combine(Root, ".mloop", "logs"), "*.jsonl", SearchOption.AllDirectories).Any(),
                     "predict --log wrote no log");
+
+                // The same two tables as workbooks - made last, so the runs above never see them.
+                foreach (var name in DataFiles)
+                    WorkbookFile.FromCsv(Path.Combine("datasets", name + ".csv"), Path.Combine("datasets", name + ".xlsx"));
             }
             finally
             {
