@@ -162,6 +162,13 @@ public static partial class PredictCommand
                     experimentId = possibleExpId;
                 }
             }
+
+            // A model file carries no record of the columns it was trained on - that sits in its experiment folder. Without it the
+            // data is scored as it reads, and a table whose columns read differently from training fails with a message about the data.
+            if (experimentId is null)
+                WarningConsole.Warn($"'{Path.GetFileName(resolvedModelPath)}' is not in an experiment folder of model '{resolvedModelName}', so the " +
+                    "columns it was trained on are unknown and the data is scored as it reads (a categorical column or a changed column type can fail or " +
+                    "score wrongly). Predict with --experiment <exp-id> or keep the model in its experiment folder.");
         }
 
         return new PredictModel(resolvedModelPath, experimentId, trainedSchema, configLabelColumn, taskType, preserveColumns, interval);
@@ -234,7 +241,7 @@ public static partial class PredictCommand
     private static async Task<string> ResolveOutputPathAsync(
         string? output, string projectRoot, string resolvedModelName, FileSystemManager fileSystem)
     {
-        // Resolve output path (Convention: predictions/predictions.csv)
+        // Resolve output path (Convention: predictions/<model>-predictions-<timestamp>.csv)
         string resolvedOutputPath;
 
         if (string.IsNullOrEmpty(output))

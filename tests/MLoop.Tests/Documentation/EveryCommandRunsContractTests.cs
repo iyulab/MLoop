@@ -203,6 +203,27 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
         if (plan.Then is { } undo) await _project.RunAsync(undo);
     }
 
+    /// <summary>
+    /// A model file carries no record of the columns it was trained on - that sits in its experiment folder. Predicting with one that
+    /// is not in an experiment folder scored the data as it reads, and a table that reads differently from training failed with a
+    /// message about the data. It now says what is missing.
+    /// </summary>
+    [Fact]
+    public async Task APredictionWithAModelFileOutsideAnExperimentFolderSaysItHasNoTrainingSchema()
+    {
+        var alone = Path.Combine(Path.GetTempPath(), "mloop-alone-" + Guid.NewGuid().ToString("N") + ".zip");
+        System.IO.File.Copy(Path.Combine(_project.Root, "models", "default", "staging", "exp-001", "model.zip"), alone);
+        try
+        {
+            var seen = await _project.RunAsync("predict", "datasets/test.csv", "--model", alone, "-o", "datasets/alone.csv");
+
+            // The console wraps a long warning at the terminal's width: read it as the words it is.
+            var said = System.Text.RegularExpressions.Regex.Replace(seen.Out + seen.Err, @"\s+", " ");
+            Assert.True(said.Contains("is not in an experiment folder", StringComparison.Ordinal), $"exit {seen.Exit}\nstdout: {seen.Out}\nstderr: {seen.Err}");
+        }
+        finally { System.IO.File.Delete(alone); }
+    }
+
     [Fact]
     public void TheWorkbookRunsSeeTheCommandsThatReadDataFiles_AndAnUnknownCsvIsDeclared()
     {

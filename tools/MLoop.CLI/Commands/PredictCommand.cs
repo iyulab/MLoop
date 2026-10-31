@@ -54,7 +54,7 @@ public static partial class PredictCommand
 
         var outputOption = new Option<string?>("--output", "-o")
         {
-            Description = "Output path for predictions (defaults to predictions/predictions.csv)"
+            Description = "Output path for predictions (defaults to a time-stamped CSV named for the model, in predictions/)"
         };
 
         var unknownStrategyOption = new Option<string>("--unknown-strategy")
@@ -246,7 +246,7 @@ public static partial class PredictCommand
             if (resolvedDataFile is null)
                 return 1;
 
-            // Resolve output path (Convention: predictions/predictions.csv)
+            // Resolve output path (Convention: predictions/<model>-predictions-<timestamp>.csv)
             var resolvedOutputPath = await ResolveOutputPathAsync(output, projectRoot, resolvedModelName, fileSystem);
 
             // Any format as a table, UTF-8, flattened, validated against the training schema, preprocessed.

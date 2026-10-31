@@ -541,7 +541,7 @@ mloop predict [data-file] [options]
 # Examples
 mloop predict                                          # Auto mode
 mloop predict data/test.csv --experiment exp-003      # Candidate's answers, production untouched
-mloop predict data/test.csv --model ../other/model.zip
+mloop predict data/test.csv --model ../other/model.zip   # a model file outside an experiment folder is scored without the schema it was trained on (a warning says so)
 mloop predict --output results/forecast.csv
 mloop predict --unknown-strategy use-most-frequent     # Handle unseen categorical values
 ```

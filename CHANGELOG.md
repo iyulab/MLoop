@@ -77,6 +77,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop predict --model <file>` says so when the file is not in an experiment folder.** A model file carries no record of the columns it was trained on - that sits in
+  its experiment folder - so a model from anywhere else was scored with the data read as it comes, and a table whose categorical or changed columns read differently from
+  training failed with "Feature vector dimension mismatch", a message about the data. It now warns first that the training schema is unknown and points to
+  `--experiment <exp-id>`. The `--output` help also named a default file (`predictions/predictions.csv`) that the command has never written: it is
+  `predictions/<model>-predictions-<timestamp>.csv`.
 - **`sample create --from`, `prep run`, `preprocess`, `features select` and `validate` read a workbook, a Parquet or a JSON data file as the table it holds.** Each
   of them opened its data path as lines of text. `sample create --from rows.xlsx` took the zip's bytes for 57 rows and wrote a sample of binary garbage (a JSON file was
   refused as empty); `prep run` failed in the CSV parser, and `preprocess` handed its scripts the unreadable file; `features select --keep a,b` on a project whose
