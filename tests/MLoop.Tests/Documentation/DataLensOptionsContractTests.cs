@@ -20,7 +20,7 @@ public class DataLensOptionsContractTests
 
     private static IEnumerable<PropertyInfo> Switches() =>
         typeof(AnalysisOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.PropertyType == typeof(bool) && p.CanWrite && p.Name.StartsWith("Include", StringComparison.Ordinal));
+            .Where(p => p.PropertyType == typeof(bool) && p.CanWrite);
 
     [Fact]
     public void Only_TurnsOnNothingButWhatIsChosen()

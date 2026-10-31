@@ -34,7 +34,8 @@ internal sealed class DataLensAnalyzer
     }
 
     /// <summary>
-    /// The options for the analyses <paramref name="choose"/> turns on, and no other: every <c>Include…</c> switch of <see cref="AnalysisOptions"/> starts off.
+    /// The options for the analyses <paramref name="choose"/> turns on, and no other: every boolean switch of <see cref="AnalysisOptions"/> starts off
+    /// (the <c>Include…</c> ones and any other, such as <c>ComputeSilhouette</c>, which defaults to on and does not carry the prefix).
     /// DataLens runs whatever its defaults say, and a switch added in a later version defaults to on — change points came in that way and
     /// ran on every <c>mloop info --analyze</c> and <c>mloop analyze</c>, quadratic in the rows (ten seconds for fifty thousand), though nothing here reads them.
     /// Naming what is wanted keeps the next one out until someone wants it.
@@ -44,7 +45,7 @@ internal sealed class DataLensAnalyzer
         ArgumentNullException.ThrowIfNull(choose);
         var options = new AnalysisOptions();
         foreach (var property in typeof(AnalysisOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            if (property.PropertyType == typeof(bool) && property.CanWrite && property.Name.StartsWith("Include", StringComparison.Ordinal))
+            if (property.PropertyType == typeof(bool) && property.CanWrite)
                 property.SetValue(options, false);
         choose(options);
         return options;
