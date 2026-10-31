@@ -338,6 +338,22 @@ public class InfoCommandJsonTests : IDisposable
     }
 
     [Fact]
+    public async Task AnalyzeProfile_Json_ReadsABlankLineOfATableAsNoRow_AsInfoDoes()
+    {
+        // The two commands each counted rows and missing values on their own, and agreed on nothing but the file: 40% of x
+        // missing for a file whose three rows have an x each.
+        var path = WriteCsv("trailing-profile.csv", "x,y\n1,2\n3,4\n5,6\n\n\n");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("analyze", "profile", path, "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var columns = doc.RootElement.GetProperty("data").GetProperty("columns").EnumerateArray().ToList();
+        Assert.Equal(2, columns.Count);
+        Assert.All(columns, c => Assert.Equal(0, c.GetProperty("missingCount").GetInt64()));
+    }
+
+    [Fact]
     public void IsRow_ABlankLineIsNoRowOfATable_AndOneOfAFileOfOneColumn()
     {
         Assert.False(InfoCommand.IsRow("", 2));
