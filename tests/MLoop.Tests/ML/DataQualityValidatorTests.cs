@@ -451,6 +451,48 @@ public class DataQualityValidatorTests : IDisposable
         Assert.Contains(result.Warnings, w => w.Contains("Critically small dataset: only 8 rows"));
     }
 
+    // A price written with its thousands separator is words to the loader, and a model that needed its size has none.
+    private string PriceTable(Func<int, string> price) => CreateCsv(
+        "id,price,other,y\n" + string.Concat(Enumerable.Range(1, 40).Select(i => $"{i},{price(i)},{i % 7},{i * 3}\n")));
+
+    [Fact]
+    public void ValidateTrainingData_ANumberColumnWrittenWithSeparators_IsNamedAndExplained()
+    {
+        var result = _validator.ValidateTrainingData(PriceTable(i => $"\"{i * 1000:N0}\""), "y", "regression");
+
+        Assert.True(result.IsValid);
+        Assert.Contains(result.Warnings, w => w.Contains("'price'") && w.Contains("1,000") && w.Contains("read as text"));
+        Assert.Single(result.Warnings, w => w.Contains("read as text"));
+        Assert.Contains(result.Suggestions, s => s.Contains("plain number"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_PlainNumbers_AreNotWarnedAbout()
+    {
+        var result = _validator.ValidateTrainingData(PriceTable(i => (i * 1000).ToString()), "y", "regression");
+
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("read as text"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_APercentColumn_IsWarnedAbout_ButNotTheLabelColumn()
+    {
+        var csv = CreateCsv("id,rate,y\n" + string.Concat(Enumerable.Range(1, 40).Select(i => $"{i},{i % 90}%,{(i % 2 == 0 ? "10%" : "20%")}\n")));
+
+        var result = _validator.ValidateTrainingData(csv, "y", "binary-classification");
+
+        Assert.Contains(result.Warnings, w => w.Contains("'rate'"));
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("'y'") && w.Contains("read as text"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_ATaskThatReadsNoFeatureColumns_IsNotWarnedAboutThem()
+    {
+        var result = _validator.ValidateTrainingData(PriceTable(i => $"\"{i * 1000:N0}\""), "y", "forecasting");
+
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("read as text"));
+    }
+
     [Fact]
     public void ValidateTrainingData_AFileOfHeaderAndBlankLinesOnly_HasNoDataRows()
     {

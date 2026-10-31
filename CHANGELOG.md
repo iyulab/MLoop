@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`mloop train` warns of a column of numbers written for people.** A feature column whose values are numbers with a thousands separator, a percent sign or a
+  currency sign (`"1,234.5"`, `12%`, `$3`, `₩5,000`) is read as text, so the model gets its characters and not its size: a regression on a price written
+  with its separator scored R² -0.004 where the plain number scored 0.9997, and the only trace was a quality gate refusing the model, with no word of why. The
+  data check before training now names each such column, shows a value, and says to write the plain number in the file or convert it in a preprocessing
+  script. A column is judged on its first thousand rows: at least five non-empty values, nine in ten of them numbers in a written form, at least one carrying
+  the formatting. The label column and tasks that read no feature columns are not asked.
 - **`mloop train --epochs <n>`** (also `training.epochs` in `mloop.yaml`, and `epochs` in a `POST /train` request) sets how many epochs a deep-learning task
   trains for - text classification, sentence similarity, NER, question answering and object detection. Those fits run a fixed number of epochs and take no time
   budget, so `--time` cannot bound them, and the count was a constant 10: an object-detection epoch over a few hundred images takes minutes on a CPU. The

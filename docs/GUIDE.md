@@ -235,6 +235,10 @@ regression; the experiment records `portable: true`.
 - **Schema Validation**: Same-schema files auto-detected for `--auto-merge`
 - **Label Handling**: Missing labels auto-dropped for classification tasks
 - **Data Quality Analysis**: Automatic class distribution and quality warnings
+- **Numbers written for people**: a column whose values are numbers with a thousands separator, a percent sign or a
+  currency sign (`"1,234.5"`, `12%`, `$3`) is read as text — the model sees the characters, not the size (a regression on
+  a price written that way scored R² −0.004 where `1234.5` scored 0.9997) — so training warns, naming the column. Write the
+  plain number in the file, or convert it in a preprocessing script (`.mloop/scripts/preprocess/`).
 - **Feature Exclusion**: Columns that cannot carry signal are dropped before training (see below)
 
 **Output** (under `models/<name>/staging/exp-XXX/`):

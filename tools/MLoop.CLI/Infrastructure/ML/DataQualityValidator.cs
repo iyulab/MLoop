@@ -36,9 +36,62 @@ public class DataQualityValidator
         }
 
         // Then check dataset size — against the feature count only where the model reads the features.
-        CheckDatasetSize(dataFile, result, TrainingRunner.ReadsFeatureColumns(taskType));
+        var readsFeatureColumns = TrainingRunner.ReadsFeatureColumns(taskType);
+        CheckDatasetSize(dataFile, result, readsFeatureColumns);
+
+        // And the columns the model would read as words that are numbers written for people.
+        if (readsFeatureColumns)
+            CheckFormattedNumbers(dataFile, labelColumn, result);
 
         return result;
+    }
+
+    /// <summary>How many data rows are read to judge whether a text column is numbers written for people.</summary>
+    private const int FormattedNumberSampleRows = 1000;
+
+    /// <summary>
+    /// Warns of each feature column whose values are numbers with a thousands separator, a percent sign or a currency
+    /// sign. The loader reads such a column as text, so the model has its characters and not its size — a regression
+    /// that scored R² 0.9997 on the plain numbers scored −0.004 on the formatted ones, with nothing in the run saying why.
+    /// </summary>
+    private static void CheckFormattedNumbers(string dataFile, string labelColumn, DataQualityResult result)
+    {
+        try
+        {
+            var readable = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile, CoreNarration.Sink);
+            using var reader = new StreamReader(readable, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            if (reader.ReadLine() is not { } header)
+                return;
+
+            var names = CsvFieldParser.ParseFields(header);
+            var values = names.Select(_ => new List<string>()).ToArray();
+            var rows = 0;
+            while (rows < FormattedNumberSampleRows && reader.ReadLine() is { } line)
+            {
+                if (!TableRows.IsRow(line, names.Length))
+                    continue;
+                rows++;
+                var fields = CsvFieldParser.ParseFields(line);
+                for (var i = 0; i < Math.Min(fields.Length, names.Length); i++)
+                    values[i].Add(fields[i]);
+            }
+
+            for (var i = 0; i < names.Length; i++)
+            {
+                if (string.Equals(names[i], labelColumn, StringComparison.OrdinalIgnoreCase)
+                    || !FormattedNumbers.Looks(values[i], out var example))
+                    continue;
+
+                result.Warnings.Add($"⚠ Column '{names[i]}' holds numbers written for people (e.g. {example}) and is read as text");
+                result.Warnings.Add("   A thousands separator, a percent sign or a currency sign makes a number words to the model: it sees the characters, not the size");
+                result.Warnings.Add("");
+                result.Suggestions.Add($"💡 Write '{names[i]}' as a plain number in the file (1234.5), or convert it in a preprocessing script (.mloop/scripts/preprocess/)");
+            }
+        }
+        catch
+        {
+            // Non-critical check, ignore errors
+        }
     }
 
     /// <summary>
