@@ -266,30 +266,22 @@ public class SchemaValidator
         var disagreements = checkable.ToDictionary(x => x.Column.Name, _ => (Count: 0, Sample: (string?)null));
         var rowsRead = 0;
 
-        using (var reader = new StreamReader(inputDataPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        // Records, not lines: a quoted field with line breaks is one record, and the pieces of it are no row.
+        foreach (var fields in TableRows.ReadRecords(inputDataPath, TypeCheckSampleRows))
         {
-            reader.ReadLine(); // header
+            rowsRead++;
 
-            while (rowsRead < TypeCheckSampleRows && reader.ReadLine() is { } line)
+            foreach (var (column, index) in checkable)
             {
-                if (!TableRows.IsRow(line, inputColumns.Length))
+                if (index >= fields.Length)
                     continue;
 
-                rowsRead++;
-                var fields = CsvFieldParser.ParseFields(line);
+                var value = fields[index];
+                if (SchemaDataTypes.ValueReadsAs(column.DataType, value))
+                    continue;
 
-                foreach (var (column, index) in checkable)
-                {
-                    if (index >= fields.Length)
-                        continue;
-
-                    var value = fields[index];
-                    if (SchemaDataTypes.ValueReadsAs(column.DataType, value))
-                        continue;
-
-                    var (count, sample) = disagreements[column.Name];
-                    disagreements[column.Name] = (count + 1, sample ?? value);
-                }
+                var (count, sample) = disagreements[column.Name];
+                disagreements[column.Name] = (count + 1, sample ?? value);
             }
         }
 

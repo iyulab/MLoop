@@ -1,3 +1,7 @@
+using System.Globalization;
+using CsvHelper;
+using CsvHelper.Configuration;
+
 namespace MLoop.Core.Data;
 
 /// <summary>
@@ -14,6 +18,29 @@ public static class TableRows
     {
         ArgumentNullException.ThrowIfNull(line);
         return columnCount == 1 || !string.IsNullOrWhiteSpace(line);
+    }
+
+    /// <summary>
+    /// The first <paramref name="maxRecords"/> records after the header, read as CSV: a quoted field that holds line breaks is one record
+    /// (the fields of its second line are not a row of their own), a blank line is none. For a check that reads a sample of a table's values
+    /// from the file as the user wrote it, where <see cref="IsRow"/> over lines would see the pieces of such a field as rows.
+    /// </summary>
+    public static IEnumerable<string[]> ReadRecords(string path, int maxRecords = int.MaxValue)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        using var reader = new StreamReader(path, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var configuration = new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            HasHeaderRecord = false,
+            MissingFieldFound = null,
+            BadDataFound = null,
+            TrimOptions = TrimOptions.Trim,
+        };
+        using var csv = new CsvReader(reader, configuration);
+        if (!csv.Read())
+            yield break; // no header
+        for (var taken = 0; taken < maxRecords && csv.Read(); taken++)
+            yield return [.. csv.Parser.Record!];
     }
 
     /// <summary>

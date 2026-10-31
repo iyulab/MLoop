@@ -65,6 +65,19 @@ public class SchemaTypeDriftWarningTests
         Assert.DoesNotContain("'age'", warning, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A quoted field that holds a line break is one record. Read line by line, the second line of the field
+    /// is taken for a row of its own, whose first field is text - and a numeric column is reported as text.
+    /// </summary>
+    [Fact]
+    public void AQuotedFieldWithLineBreaks_IsOneRecord_NotARowPerLine()
+    {
+        Assert.Empty(WarningsFor(
+            Schema(("age", SchemaDataTypes.Numeric, "Feature"),
+                   ("note", SchemaDataTypes.Text, "Feature")),
+            "age,note\n30,\"first line\nsecond line\"\n41,plain\n55,\"x\r\ny\"\n"));
+    }
+
     [Fact]
     public void AFileThatStillMatchesSaysNothing()
     {

@@ -35,4 +35,23 @@ public class TableRowsTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public void ReadRecords_ReturnsTheFirstRecordsAfterTheHeader_AQuotedFieldWithLineBreaksBeingOne()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "mloop-table-records-" + Guid.NewGuid().ToString("N") + ".csv");
+        try
+        {
+            File.WriteAllText(path, "a,note\n1,\"first\nsecond\"\n\n2, plain \n3,\"x\ny\"\n");
+            var records = TableRows.ReadRecords(path, 2).ToList();
+            Assert.Equal(2, records.Count);
+            Assert.Equal(["1", "first\nsecond"], records[0]);
+            Assert.Equal(["2", "plain"], records[1]);
+            Assert.Equal(3, TableRows.ReadRecords(path).Count());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }
