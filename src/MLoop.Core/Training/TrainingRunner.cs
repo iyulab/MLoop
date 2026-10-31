@@ -1474,13 +1474,8 @@ public partial class TrainingRunner
                     bestDbi = useDbi ? dbi : bestDbi;
                     bestModel = model;
                     bestK = k;
-                    bestMetrics = new Dictionary<string, double>
-                    {
-                        ["average_distance"] = avgDistance,
-                        ["davies_bouldin_index"] = dbi,
-                        ["normalized_mutual_information"] = nmi,
-                        ["num_clusters"] = k
-                    };
+                    bestMetrics = MetricReport.Describe(clusterMetrics);
+                    bestMetrics["num_clusters"] = k;
                 }
             }
 

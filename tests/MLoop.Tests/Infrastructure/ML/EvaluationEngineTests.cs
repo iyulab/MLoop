@@ -297,6 +297,35 @@ public class EvaluationEngineTests : IDisposable
         Assert.Equal(3, metrics["cluster_count"]);
     }
 
+    private sealed class FeaturesRow
+    {
+        [Microsoft.ML.Data.VectorType(2)]
+        public float[] Features { get; set; } = [];
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_ClusteringWithoutALabel_EvaluatesAndReportsNoMutualInformation()
+    {
+        // A clustering project records an empty label. Evaluate looked for a column named "" in the file and failed with
+        // "Specified label column '' was not found" - on every unlabeled clustering model. With no label ML.NET has no
+        // mutual information (NaN), which was reported as 0. The model reads "Features", as one trained through
+        // MLoop does (the loader merges the file's numeric columns into it).
+        var rng = new Random(42);
+        (float X, float Y)[] centers = { (0f, 0f), (10f, 10f), (20f, 0f) };
+        var rows = Enumerable.Range(0, 60).Select(i => (X: centers[i % 3].X + (float)rng.NextDouble(), Y: centers[i % 3].Y + (float)rng.NextDouble())).ToList();
+        var trainData = _mlContext.Data.LoadFromEnumerable(rows.Select(r => new FeaturesRow { Features = [r.X, r.Y] }));
+        var model = _mlContext.Clustering.Trainers.KMeans(featureColumnName: "Features", numberOfClusters: 3).Fit(trainData);
+        var modelPath = Path.Combine(_testDir, "clustering_unlabeled.zip");
+        _mlContext.Model.Save(model, trainData.Schema, modelPath);
+        var testDataPath = Path.Combine(_testDir, "clustering_unlabeled.csv");
+        File.WriteAllText(testDataPath, BuildCsv("f0,f1", rows.Take(30).Select(r => FormattableString.Invariant($"{r.X},{r.Y}"))));
+
+        var metrics = (await _engine.EvaluateAsync(modelPath, testDataPath, "", "clustering")).Metrics;
+
+        Assert.Contains("average_distance", metrics.Keys);
+        Assert.DoesNotContain("normalized_mutual_information", metrics.Keys);
+    }
+
     [Fact]
     public async Task EvaluateAsync_Ranking_PreservesGroupColumn_ReturnsNdcg()
     {

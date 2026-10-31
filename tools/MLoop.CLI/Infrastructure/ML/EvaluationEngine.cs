@@ -331,7 +331,8 @@ public class EvaluationEngine
         string loadPath = InferenceDataPreprocessor.Prepare(testDataPath, labelColumn, trainedSchema, out tempFiles, keepColumns: keepColumns);
 
         // Infer column types from the data
-        var loaderOptions = ColumnLayoutInference.Infer(_mlContext, loadPath, labelColumn).Options;
+        // A task without a label (clustering) records an empty one: no column to find, not a column named "".
+        var loaderOptions = ColumnLayoutInference.Infer(_mlContext, loadPath, string.IsNullOrEmpty(labelColumn) ? null : labelColumn).Options;
 
         // Shared non-label reconciliation — overrides feature types from the trained schema
         // (including the "String" raw-type-name case that predict had but evaluate
@@ -646,9 +647,8 @@ public class EvaluationEngine
         try
         {
             var metrics = _mlContext.Clustering.Evaluate(predictions, scoreColumnName: "Score", featureColumnName: "Features");
-            metricsDict["average_distance"] = double.IsNaN(metrics.AverageDistance) ? 0 : metrics.AverageDistance;
-            metricsDict["davies_bouldin_index"] = double.IsNaN(metrics.DaviesBouldinIndex) ? 0 : metrics.DaviesBouldinIndex;
-            metricsDict["normalized_mutual_information"] = double.IsNaN(metrics.NormalizedMutualInformation) ? 0 : metrics.NormalizedMutualInformation;
+            foreach (var (name, value) in MetricReport.Describe(metrics))
+                metricsDict[name] = value;
         }
         catch
         {

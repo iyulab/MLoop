@@ -66,4 +66,31 @@ public class MetricReportTests
 
         Assert.Subset(metrics.Keys.ToHashSet(), MetricNames.OptimizableFor("regression")!.ToHashSet());
     }
+
+    private sealed class Point
+    {
+        [Microsoft.ML.Data.VectorType(2)]
+        public float[] Features { get; set; } = [];
+    }
+
+    private IDataView Points(params (float X, float Y)[] points)
+        => _ml.Data.LoadFromEnumerable(points.Select(p => new Point { Features = [p.X, p.Y] }));
+
+    [Fact]
+    public void Clustering_ReportsOnlyWhatMlNetCouldCompute()
+    {
+        var train = Points((0, 0), (0.1f, 0), (0, 0.2f), (0.2f, 0.1f), (5, 5), (5.1f, 5), (5, 5.2f), (5.2f, 5.1f));
+        var model = _ml.Clustering.Trainers.KMeans(numberOfClusters: 2).Fit(train);
+
+        // Rows in both clusters: the index exists. No label column: no mutual information.
+        var both = MetricReport.Describe(_ml.Clustering.Evaluate(model.Transform(train), scoreColumnName: "Score", featureColumnName: "Features"));
+        Assert.True(both["davies_bouldin_index"] > 0);
+        Assert.True(both.ContainsKey("average_distance"));
+        Assert.False(both.ContainsKey("normalized_mutual_information"));
+
+        // Rows in a single cluster: ML.NET answers 0, which would read as the best possible index.
+        var one = MetricReport.Describe(_ml.Clustering.Evaluate(
+            model.Transform(Points((0, 0), (0.1f, 0.1f))), scoreColumnName: "Score", featureColumnName: "Features"));
+        Assert.False(one.ContainsKey("davies_bouldin_index"));
+    }
 }

@@ -81,6 +81,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop evaluate` of a clustering model works.** A clustering project records an empty label, and `evaluate` looked for a column named "" in the file: every unlabeled
+  clustering model failed with `Specified label column '' was not found`. The file is now read without a label for a task that has none.
+- **A clustering run no longer reports metrics it could not compute as 0.** `normalized_mutual_information` (it needs a label; ML.NET answers NaN for the rows of an
+  unlabeled clustering, which `train` and `evaluate` wrote as 0 into every such run) and `davies_bouldin_index` (ML.NET answers 0 when fewer than two clusters
+  hold a test row - a 0 that reads as the best possible index, and that the K search already treated as unavailable) are left out of the result when they are not
+  defined, in `train`, in `evaluate` and in the experiment's `metrics.json`; `average_distance` is unchanged. One mapping from ML.NET's clustering metrics to MLoop's names
+  (`MetricReport`) serves both commands.
 - **`mloop train` no longer reports scores for a regression test partition that cannot give one.** A file of four or five rows leaves a 20 % test partition with no row, and
   the evaluator answered it with `r_squared`, `rmse` and `mae` all 0 - a perfect error next to no explained variance - which `train` printed as measured; six rows leave one
   row, and `r_squared` came out as 17,940,886. Both are now recorded as undefined (the worst value of the metric's direction, as for a model that scores NaN), `train` says

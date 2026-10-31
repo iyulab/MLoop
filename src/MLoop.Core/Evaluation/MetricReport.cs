@@ -49,6 +49,24 @@ public static class MetricReport
         };
     }
 
+    /// <summary>
+    /// A clustering model's metrics, keyed by canonical name. <c>average_distance</c> is as ML.NET gives it (the caller's
+    /// policy decides what a non-finite one means); the other two are present only when ML.NET could compute them. It
+    /// answers 0 for a Davies-Bouldin index when fewer than two clusters hold a scored row (the index of two distinct
+    /// clusters is above 0, and 0 would read as the best possible), and NaN for a normalized mutual information when the
+    /// rows carry no label — which no unlabeled clustering run has.
+    /// </summary>
+    public static Dictionary<string, double> Describe(ClusteringMetrics m)
+    {
+        ArgumentNullException.ThrowIfNull(m);
+        var metrics = new Dictionary<string, double> { ["average_distance"] = m.AverageDistance };
+        if (double.IsFinite(m.DaviesBouldinIndex) && m.DaviesBouldinIndex > 0)
+            metrics["davies_bouldin_index"] = m.DaviesBouldinIndex;
+        if (double.IsFinite(m.NormalizedMutualInformation))
+            metrics["normalized_mutual_information"] = m.NormalizedMutualInformation;
+        return metrics;
+    }
+
     /// <summary>A regression model's metrics, keyed by canonical name.</summary>
     public static Dictionary<string, double> Describe(RegressionMetrics m)
     {
