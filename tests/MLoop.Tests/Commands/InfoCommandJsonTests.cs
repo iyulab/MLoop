@@ -432,4 +432,48 @@ public class InfoCommandJsonTests : IDisposable
         Assert.Equal(2, columns.Count);
         Assert.All(columns, c => Assert.Equal(0, c.GetProperty("missingCount").GetInt64()));
     }
+
+    private async Task<List<string>> ProfileFlags(string path)
+    {
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("analyze", "profile", path, "--json");
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        return doc.RootElement.GetProperty("flags").EnumerateArray().Select(f => f.GetString()!).ToList();
+    }
+
+    [Fact]
+    public async Task AnalyzeProfile_Json_ANumberColumnThatTheProfileDoesNotReadAsNumbers_SaysWhyAndWhere()
+    {
+        // 14,000 values and 166 of them "--" below the first 12,000: the profile does not call the column numbers and gives it no
+        // statistics, and used to say nothing of the cells that made it so.
+        var path = WriteCsv("stray-profile.csv", "reading,other\n" + string.Concat(Enumerable.Range(1, 14_000).Select(i =>
+            $"{(i > 12_000 && i % 12 == 0 ? "--" : (i % 97 + 0.5).ToString(System.Globalization.CultureInfo.InvariantCulture))},{i % 13}\n")));
+
+        var flags = await ProfileFlags(path);
+
+        var flag = Assert.Single(flags, f => f.StartsWith("numbers-read-as-text: reading", StringComparison.Ordinal));
+        Assert.Contains("166 of 14,000", flag, StringComparison.Ordinal);
+        Assert.Contains("first '--' on line 12,013", flag, StringComparison.Ordinal);
+        Assert.DoesNotContain(flags, f => f.Contains("other", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnalyzeProfile_Json_ANumberColumnWrittenWithSeparators_IsFlaggedAsInfoAndTrainWarnIt()
+    {
+        var path = WriteFormattedPrices(i => $"\"{i * 1000:N0}\"");
+
+        var flags = await ProfileFlags(path);
+
+        Assert.Contains(flags, f => f.StartsWith("formatted-numbers: price", StringComparison.Ordinal) && f.Contains("1,000", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnalyzeProfile_Json_PlainNumbers_AreNotFlaggedAsText()
+    {
+        var path = WriteFormattedPrices(i => (i * 1000).ToString());
+
+        var flags = await ProfileFlags(path);
+
+        Assert.DoesNotContain(flags, f => f.StartsWith("formatted-numbers", StringComparison.Ordinal) || f.StartsWith("numbers-read-as-text", StringComparison.Ordinal));
+    }
 }

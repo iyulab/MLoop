@@ -92,4 +92,24 @@ public class NonNumericCellsTests
 
         Assert.Null(census.Describe(0, "name"));
     }
+
+    [Theory]
+    [InlineData(100, 1, true)]    // numbers with one cell that is not
+    [InlineData(100, 10, true)]   // nine in ten are numbers
+    [InlineData(100, 11, false)]  // fewer than nine in ten
+    [InlineData(100, 0, false)]   // nothing that is not a number: a number column
+    [InlineData(4, 1, false)]     // too few values to call it a habit
+    public void AColumnIsMostlyNumbersWhenNineInTenNonEmptyCellsAre(int rows, int stray, bool mostly)
+        => Assert.Equal(mostly, Counted(rows, stray).MostlyNumbers(0));
+
+    [Fact]
+    public void EmptyCellsAreNeitherNumbersNorTheirContrary()
+    {
+        var census = new NonNumericCells([true]);
+        for (var i = 0; i < 50; i++)
+            census.Add([""], line: i + 2);
+        census.Add(["N/A"], line: 52);
+
+        Assert.False(census.MostlyNumbers(0)); // one non-empty value
+    }
 }

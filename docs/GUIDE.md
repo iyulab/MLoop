@@ -970,6 +970,8 @@ mloop analyze series sensor.csv --column temp   # a column read as an ordered se
 
 When an analysis cannot run - too few rows or numeric columns, or every value undefined - or leaves columns out because they are constant or empty, the command says so (a warning in the table output, and in `warnings` with `--json`); an empty result is then not a finding. Notes about the data itself, such as repeated rows, are not repeated here.
 
+`profile` flags, besides constant and mostly-empty columns and likely indexes, a column that holds numbers but that the profile does not read as numbers (so it has no mean or range): `numbers-read-as-text: <column> (…)` when a few cells are not numbers (`N/A`, `--`), with their count and the first one's line, and `formatted-numbers: <column> (…)` when the numbers carry a thousands separator, a percent sign or a currency sign — the same two causes `train` and `info` warn of.
+
 Every subcommand takes the same arguments, except that `series` has no label and no model: it takes `--column` / `-c` (the series; optional when the CSV has one column), `--max-lag` and `--around-trend` (test around a linear trend instead of a constant level) in their place.
 
 | Argument / Option | Short | Description |

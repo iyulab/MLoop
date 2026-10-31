@@ -57,7 +57,8 @@ public static class AnalyzeJson
         ProfileReport? report,
         Dictionary<string, (long MissingCount, int UniqueCount)> stats,
         int rowCount,
-        IReadOnlyCollection<string>? monotonicColumns = null)
+        IReadOnlyCollection<string>? monotonicColumns = null,
+        IReadOnlyCollection<string>? numberLikeTextFlags = null)
     {
         var profileLookup = new Dictionary<string, ColumnProfile>();
         if (report?.Columns != null)
@@ -102,6 +103,10 @@ public static class AnalyzeJson
             if (monotonicSet?.Contains(name) == true)
                 flags.Add($"likely-index: {name} (strictly increasing integers; exclude to avoid leakage)");
         }
+
+        // Columns the profile reads as text that are numbers to a reader: it gives them no statistics, and says nothing of why.
+        if (numberLikeTextFlags is { Count: > 0 })
+            flags.AddRange(numberLikeTextFlags);
 
         var summary = $"{columns.Count} column(s); "
             + $"{flags.Count(f => f.StartsWith("constant-column"))} constant, "

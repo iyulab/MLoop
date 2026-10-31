@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`mloop analyze profile` says why a column of numbers has no statistics.** The profile reads a column as text or categories when a few of its cells are not numbers
+  (`N/A`, `--`) or when its numbers carry a thousands separator, a percent sign or a currency sign, and gave such a column no mean, no range and no word of the cause -
+  while `train` and `info` already named both. The profile now adds a flag per column: `numbers-read-as-text` with the count, the first cell and its line
+  (nine in ten non-empty cells numbers, at least one not), or `formatted-numbers` with an example. The flags are in `--json` and printed in the table's footer.
 - **`mloop train` and `mloop info` count the cells in a numeric column that are not numbers.** A column is typed from the first 10,000 lines of the file, so a column of
   numbers stays numeric when `N/A` or `--` turns up further down, and each such cell loads as a missing value. A 14,000-row file with 785 of them reported no missing
   cell anywhere, `info` called the column numeric in one list and text in another, and the model trained on a column with 5.6 % of its rows gone (R² 0.948 where the same

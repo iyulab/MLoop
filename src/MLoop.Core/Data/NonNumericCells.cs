@@ -29,6 +29,7 @@ public sealed class NonNumericCells
 
     private readonly bool[] _asked;
     private readonly long[] _counts;
+    private readonly long[] _nonEmpty;
     private readonly long[] _firstLines;
     private readonly string?[] _examples;
     private long _rows;
@@ -39,6 +40,7 @@ public sealed class NonNumericCells
         ArgumentNullException.ThrowIfNull(asked);
         _asked = [.. asked];
         _counts = new long[_asked.Length];
+        _nonEmpty = new long[_asked.Length];
         _firstLines = new long[_asked.Length];
         _examples = new string?[_asked.Length];
     }
@@ -59,7 +61,11 @@ public sealed class NonNumericCells
         _rows++;
         for (var i = 0; i < Math.Min(fields.Count, _counts.Length); i++)
         {
-            if (!_asked[i] || ReadsAsNumber(fields[i]))
+            if (!_asked[i])
+                continue;
+            if (!string.IsNullOrWhiteSpace(fields[i]))
+                _nonEmpty[i]++;
+            if (ReadsAsNumber(fields[i]))
                 continue;
             if (_counts[i]++ == 0)
             {
@@ -67,6 +73,18 @@ public sealed class NonNumericCells
                 _examples[i] = fields[i].Trim();
             }
         }
+    }
+
+    /// <summary>
+    /// Whether column <paramref name="index"/> is numbers with a few cells that are not: at least <see cref="FormattedNumbers.MinimumValues"/>
+    /// non-empty cells, <see cref="FormattedNumbers.MinimumShare"/> of them numbers, and at least one that is not.
+    /// </summary>
+    public bool MostlyNumbers(int index)
+    {
+        if (index < 0 || index >= _counts.Length || _counts[index] == 0)
+            return false;
+        var nonEmpty = _nonEmpty[index];
+        return nonEmpty >= FormattedNumbers.MinimumValues && nonEmpty - _counts[index] >= FormattedNumbers.MinimumShare * nonEmpty;
     }
 
     /// <summary>The rows counted so far.</summary>

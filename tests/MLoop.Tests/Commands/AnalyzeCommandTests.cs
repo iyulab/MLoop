@@ -115,6 +115,17 @@ public class AnalyzeCommandTests
     }
 
     [Fact]
+    public void MapProfile_CarriesTheNumberLikeTextFlagsItIsGiven()
+    {
+        var stats = new Dictionary<string, (long MissingCount, int UniqueCount)> { ["reading"] = (0, 50) };
+
+        var env = AnalyzeJson.MapProfile(report: null, stats, rowCount: 100,
+            numberLikeTextFlags: ["numbers-read-as-text: reading (3 of 100 cells are not numbers)"]);
+
+        Assert.Contains("numbers-read-as-text: reading (3 of 100 cells are not numbers)", env.Flags);
+    }
+
+    [Fact]
     public void MapProfile_NoMonotonicColumns_NoIndexFlag()
     {
         // Regression guard: omitting monotonicColumns (default) must not add index flags.

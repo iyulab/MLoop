@@ -188,14 +188,18 @@ public static class AnalyzeCommand
             var profile = await dataLens.ProfileAsync(ctx.Value.DataFile);
 
             // Column stats (missing/unique) come from MLoop's own scan, matching `info`.
-            var (rowCount, stats) = ComputeColumnStats(ctx.Value.DataFile);
+            // The columns the profile reads as text or categories are asked whether they are numbers a reader would call numbers.
+            var textColumns = profile?.Columns?.Where(c => c.DataType.Equals("text", StringComparison.OrdinalIgnoreCase)
+                                                        || c.DataType.Equals("categorical", StringComparison.OrdinalIgnoreCase))
+                .Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
+            var (rowCount, stats, numberLikeText) = ComputeColumnStats(ctx.Value.DataFile, textColumns);
 
             // surface strictly-increasing ID/index columns (same detector train uses) as a profile
             // flag, so the agent's FE loop can drop them. analyze was silent while train warned (inconsistency).
             var (convertedForScan, _) = EncodingDetector.ConvertToUtf8WithBom(ctx.Value.DataFile);
             var monotonic = CsvDataLoader.DetectMonotonicColumns(convertedForScan, ctx.Value.Label);
 
-            var env = AnalyzeJson.MapProfile(profile, stats, rowCount, monotonic);
+            var env = AnalyzeJson.MapProfile(profile, stats, rowCount, monotonic, numberLikeText);
             Emit(env, json, e => RenderProfileConsole(e, profile, stats, rowCount));
             return 0;
         }
@@ -206,9 +210,17 @@ public static class AnalyzeCommand
         }
     }
 
-    /// <summary>Counts rows and per-column (missing, unique-sample) from the CSV header + body.</summary>
-    private static (int RowCount, Dictionary<string, (long MissingCount, int UniqueCount)> Stats)
-        ComputeColumnStats(string csvPath)
+    /// <summary>How many data rows are read to judge whether a text column is numbers written for people (as <c>train</c> and <c>info</c> do).</summary>
+    private const int FormattedNumberSampleRows = 1000;
+
+    /// <summary>
+    /// Counts rows and per-column (missing, unique-sample) from the CSV header + body. For each column of
+    /// <paramref name="textColumns"/> (the ones the profile reads as text or as categories) it also says when the values are numbers a reader would call
+    /// numbers: a few cells that are not (<c>N/A</c>) keep the profile from reading the column as one and give it no statistics,
+    /// and a thousands separator, a percent sign or a currency sign does the same to a column of all numbers.
+    /// </summary>
+    private static (int RowCount, Dictionary<string, (long MissingCount, int UniqueCount)> Stats, IReadOnlyList<string> NumberLikeText)
+        ComputeColumnStats(string csvPath, IReadOnlySet<string>? textColumns = null)
     {
         var (converted, _) = EncodingDetector.ConvertToUtf8WithBom(csvPath);
         var flattened = CsvDataLoader.FlattenMultiLineQuotedFields(converted, CoreNarration.Sink);
@@ -218,33 +230,55 @@ public static class AnalyzeCommand
         using var reader = new StreamReader(flattened, System.Text.Encoding.UTF8, true);
         var header = reader.ReadLine();
         if (string.IsNullOrEmpty(header))
-            return (0, new Dictionary<string, (long, int)>());
+            return (0, new Dictionary<string, (long, int)>(), []);
 
         var columns = CsvFieldParser.ParseFields(header);
         var missing = new long[columns.Length];
         var seen = new HashSet<string>[columns.Length];
         for (int i = 0; i < columns.Length; i++) seen[i] = new HashSet<string>();
 
+        var asked = columns.Select(c => textColumns?.Contains(c) == true).ToArray();
+        var census = new NonNumericCells(asked);
+        var sample = asked.Select(a => a ? new List<string>() : null).ToArray();
+
         int rows = 0;
+        long lineNumber = 1;
         string? line;
         while ((line = reader.ReadLine()) != null)
         {
+            lineNumber++;
             if (!TableRows.IsRow(line, columns.Length))
                 continue;
             rows++;
             var fields = CsvFieldParser.ParseFields(line);
+            census.Add(fields, lineNumber);
             for (int i = 0; i < columns.Length; i++)
             {
                 var v = i < fields.Length ? fields[i] : "";
                 if (string.IsNullOrWhiteSpace(v)) missing[i]++;
                 else if (seen[i].Count <= 10_000) seen[i].Add(v);
+                if (rows <= FormattedNumberSampleRows)
+                    sample[i]?.Add(v);
             }
         }
 
         var stats = new Dictionary<string, (long, int)>();
+        var numberLike = new List<string>();
         for (int i = 0; i < columns.Length; i++)
+        {
             stats[columns[i]] = (missing[i], seen[i].Count);
-        return (rows, stats);
+
+            if (!asked[i])
+                continue;
+            var (stray, firstLine, example) = census.Of(i);
+            if (census.MostlyNumbers(i))
+                numberLike.Add($"numbers-read-as-text: {columns[i]} ({stray:N0} of {rows:N0} cells are not numbers, first '{example}' on line {firstLine:N0}; " +
+                               "the profile does not read the column as numbers and gives it no statistics)");
+            else if (FormattedNumbers.Looks(sample[i]!, out var formatted) && formatted is not null)
+                numberLike.Add($"formatted-numbers: {columns[i]} (e.g. {formatted} - a thousands separator, percent sign or currency sign makes numbers text; " +
+                               "write the plain number)");
+        }
+        return (rows, stats, numberLike);
     }
 
     private static void RenderProfileConsole(
@@ -497,7 +531,7 @@ public static class AnalyzeCommand
 
             // Per-column cardinality (MLoop's own scan, same as `profile`) lets MapDistribution
             // suppress non-actionable skew flags on low-cardinality/categorical columns.
-            var (_, stats) = ComputeColumnStats(ctx.Value.DataFile);
+            var (_, stats, _) = ComputeColumnStats(ctx.Value.DataFile);
 
             var env = AnalyzeJson.MapDistribution(result?.Descriptive, result?.Distribution, stats);
             Emit(env, json, _ =>
