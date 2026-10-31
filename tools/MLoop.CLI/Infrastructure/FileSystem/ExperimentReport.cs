@@ -176,7 +176,7 @@ internal static class ExperimentReport
         sb.AppendLine("| Metric | Value |");
         sb.AppendLine("|---|---|");
         foreach (var (name, value) in experiment.Metrics.OrderBy(m => m.Key, StringComparer.Ordinal))
-            Row(sb, name, Number(value));
+            Row(sb, name, Measured(name, value));
         sb.AppendLine();
     }
 
@@ -238,7 +238,7 @@ internal static class ExperimentReport
             var value = trial.Error is not null
                 ? "failed"
                 : metric is not null && trial.Metrics.TryGetValue(metric, out var v)
-                ? Number(v)
+                ? Measured(metric, v)
                 : NoValue;
 
             sb.AppendLine($"| {rank.ToString(CultureInfo.InvariantCulture)} | {shown} | {value} | {Seconds(trial.RuntimeSeconds)} |");
@@ -322,6 +322,10 @@ internal static class ExperimentReport
 
     private static string Number(double value) =>
         double.IsFinite(value) ? value.ToString("F4", CultureInfo.InvariantCulture) : NoValue;
+
+    /// <summary>A metric's value: the words for the undefined-measurement sentinel, otherwise the number.</summary>
+    private static string Measured(string metric, double value) =>
+        MetricSanitizer.IsUndefinedSentinel(metric, value) ? "not measured" : Number(value);
 
     private static string Seconds(double seconds) =>
         $"{seconds.ToString("F1", CultureInfo.InvariantCulture)} s";

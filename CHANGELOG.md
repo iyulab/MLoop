@@ -81,6 +81,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop list`, `compare`, `status`, `promote` and an experiment's `report.md` show an undefined metric as `not measured`.** A metric the evaluator could not measure is stored as the worst
+  value a double holds so that it never wins a ranking, and these tables printed that value as a 308-digit number (`train` and `evaluate` already said `not measured`). `compare` also
+  no longer marks an undefined value as the best of its row. The `--json` outputs are unchanged.
 - **`mloop evaluate` says why an r² cannot be given, and shows an undefined metric in words.** A file of a single row, or whose label never varies, has no spread to compare the error
   with: the evaluator answered a single row with an r² in the millions and a constant label with minus infinity, which was recorded as the worst value with no word of why.
   `evaluate` now warns (`The evaluated file's label never varies, so r_squared is undefined …`), keeps the errors, and the table (and the overfitting check) shows an undefined

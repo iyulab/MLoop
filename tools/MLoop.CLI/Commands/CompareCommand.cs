@@ -281,6 +281,9 @@ public static class CompareCommand
                     {
                         var nonNullValues = values.Where(v => v.HasValue).Select(v => v!.Value);
                         bestValue = isLowerBetter ? nonNullValues.Min() : nonNullValues.Max();
+                        // Every value being "not measured" leaves nothing to call the best.
+                        if (MetricSanitizer.IsUndefinedSentinel(metricName, bestValue.Value))
+                            bestValue = null;
                     }
 
                     var row = new List<string> { $"[bold]{metricName}[/]" };
@@ -288,8 +291,8 @@ public static class CompareCommand
                     {
                         if (value.HasValue)
                         {
-                            var isBest = Math.Abs(value.Value - (bestValue ?? 0)) < 0.0001;
-                            var formatted = value.Value.ToString("F4");
+                            var isBest = bestValue.HasValue && Math.Abs(value.Value - bestValue.Value) < 0.0001;
+                            var formatted = MetricSanitizer.Display(metricName, value.Value);
                             row.Add(isBest ? $"[green bold]{formatted}[/]" : $"[yellow]{formatted}[/]");
                         }
                         else
@@ -354,12 +357,12 @@ public static class CompareCommand
 
                     if (recommendedExp is not null)
                     {
-                        AnsiConsole.MarkupLine($"[grey]Recommendation: Consider promoting [cyan]{recommendedExp.ExperimentId}[/] to production (best {primaryMetric}: {recommendedExp.Metrics![primaryMetric]:F4})[/]");
+                        AnsiConsole.MarkupLine($"[grey]Recommendation: Consider promoting [cyan]{recommendedExp.ExperimentId}[/] to production (best {primaryMetric}: {MetricSanitizer.Display(primaryMetric, recommendedExp.Metrics![primaryMetric])})[/]");
                         AnsiConsole.MarkupLine($"[grey]  Run: [blue]mloop promote {recommendedExp.ExperimentId} --name {recommendedExp.ModelName}[/][/]");
                     }
                     else if (isProduction)
                     {
-                        AnsiConsole.MarkupLine($"[grey]Best experiment [cyan]{bestExp.ExperimentId}[/] is already in production ({primaryMetric}: {bestExp.Metrics![primaryMetric]:F4})[/]");
+                        AnsiConsole.MarkupLine($"[grey]Best experiment [cyan]{bestExp.ExperimentId}[/] is already in production ({primaryMetric}: {MetricSanitizer.Display(primaryMetric, bestExp.Metrics![primaryMetric])})[/]");
                     }
                     else if (held.Count > 0)
                     {

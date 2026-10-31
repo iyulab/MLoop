@@ -3,6 +3,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.Display;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Storage;
 using Spectre.Console;
 
@@ -149,7 +150,7 @@ public static class StatusCommand
                 // The cell names the metric only — the weighting goes to a note under the table, since a
                 // longer cell tears every row across lines at 80 columns.
                 var bestMetricStr = row.BestMetric.HasValue
-                    ? $"[yellow]{row.BestMetric.Value:F4}[/] [grey]{Markup.Escape(row.BestMeasurement?.Metric ?? string.Empty)}[/]"
+                    ? $"[yellow]{MetricSanitizer.Display(row.BestMeasurement?.Metric ?? string.Empty, row.BestMetric.Value)}[/] [grey]{Markup.Escape(row.BestMeasurement?.Metric ?? string.Empty)}[/]"
                       + (NeedsMetricNote(row) ? "[grey]*[/]" : string.Empty)
                     : "[grey]-[/]";
 

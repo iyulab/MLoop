@@ -144,7 +144,7 @@ public static class ListCommand
                 var metricDisplay = trial.Error is not null
                     ? "[yellow]failed[/]"
                     : leaderboard.Metric != null && trial.Metrics.TryGetValue(leaderboard.Metric, out var v)
-                    ? v.ToString("F4")
+                    ? MetricSanitizer.Display(leaderboard.Metric, v)
                     : "[grey]-[/]";
                 var rankDisplay = ReferenceEquals(trial, selected) ? $"[green bold]{rank}[/]" : rank.ToString();
 
@@ -466,7 +466,7 @@ public static class ListCommand
         if (!exp.BestMetric.HasValue)
             return "[grey]-[/]";
 
-        var value = $"{exp.BestMetric.Value:F4}";
+        var value = MetricSanitizer.Display(exp.MetricName ?? string.Empty, exp.BestMetric.Value);
         var name = !nameInHeading && !string.IsNullOrEmpty(exp.MetricName)
             ? $" [grey]({exp.MetricName})[/]"
             : "";

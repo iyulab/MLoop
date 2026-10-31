@@ -415,7 +415,7 @@ public static class PromoteCommand
             .ThenByDescending(e => e.Timestamp) // deterministic tie-break: newer wins
             .First();
 
-        return (winner.ExperimentId, $"best {metricNames[0]}={winner.BestMetric!.Value:F4}", null);
+        return (winner.ExperimentId, $"best {metricNames[0]}={MetricSanitizer.Display(metricNames[0], winner.BestMetric!.Value)}", null);
     }
 
     private static void ShowPromotionDetails(string modelName, ExperimentData experiment, string? autoSelectionReason)
@@ -441,7 +441,7 @@ public static class PromoteCommand
 
         if (experiment.Metrics != null && experiment.Metrics.Any())
         {
-            var metricsStr = string.Join(", ", experiment.Metrics.Select(m => $"{m.Key}={m.Value:F4}"));
+            var metricsStr = string.Join(", ", experiment.Metrics.Select(m => $"{m.Key}={MetricSanitizer.Display(m.Key, m.Value)}"));
             table.AddRow("Metrics", $"[yellow]{metricsStr}[/]");
         }
 
