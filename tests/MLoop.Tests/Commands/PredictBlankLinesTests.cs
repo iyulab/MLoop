@@ -62,4 +62,27 @@ public sealed class PredictBlankLinesTests : IDisposable
         Assert.True(exit == 0, stdout + stderr);
         Assert.Equal(rows + 1, File.ReadAllLines("out.csv").Count(l => l.Length > 0));
     }
+
+    [Fact]
+    public async Task IncludedFeatures_StayWithTheirOwnPrediction_WhenABlankLineSitsBetweenRows()
+    {
+        // The features are written beside the predictions by line number, and predict skips the blank line: every row after it
+        // came out with the features of the row below.
+        Assert.Equal(0, (await CliRunner.RunAsync("init", "p", "--task", "binary-classification")).ExitCode);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
+        await File.WriteAllTextAsync("datasets/train.csv", Rows(200, labelled: true));
+        var (trained, trainOut, trainErr) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10");
+        Assert.True(trained == 0, trainOut + trainErr);
+        Assert.Equal(0, (await CliRunner.RunAsync("promote", "exp-001")).ExitCode);
+
+        var rows = Rows(12, labelled: false).TrimEnd('\n').Split('\n');
+        var lines = rows.Take(6).Append("").Concat(rows.Skip(6)).ToArray();
+        await File.WriteAllTextAsync("datasets/predict.csv", string.Join('\n', lines) + "\n");
+
+        var (exit, stdout, stderr) = await CliRunner.RunAsync("predict", "datasets/predict.csv", "--include-features", "--output", "out.csv");
+
+        Assert.True(exit == 0, stdout + stderr);
+        var written = File.ReadAllLines("out.csv").Skip(1).Select(l => l.Split(',')[0]).ToArray();
+        Assert.Equal(rows.Skip(1).Select(l => l.Split(',')[0]), written);
+    }
 }

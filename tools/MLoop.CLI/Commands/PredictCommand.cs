@@ -366,12 +366,14 @@ public static partial class PredictCommand
         var featureHeaders = keepIndices.Select(i => CsvFieldParser.Quote(inputHeaders[i]));
         writer.WriteLine(string.Join(",", featureHeaders) + "," + predLines[0]);
 
-        // Data rows
-        for (int r = 1; r < Math.Min(inputLines.Length, predLines.Length); r++)
+        // Data rows, paired with the predictions by position: a blank line of the input is no row and has no prediction,
+        // so it is left out or every row after it is written beside the prediction of the one before
+        var inputRows = inputLines.Skip(1).Where(line => TableRows.IsRow(line, inputHeaders.Length)).ToList();
+        for (int r = 0; r < Math.Min(inputRows.Count, predLines.Length - 1); r++)
         {
-            var fields = CsvFieldParser.ParseFields(inputLines[r]);
+            var fields = CsvFieldParser.ParseFields(inputRows[r]);
             var featureValues = keepIndices.Select(i => i < fields.Length ? CsvFieldParser.Quote(fields[i]) : "");
-            writer.WriteLine(string.Join(",", featureValues) + "," + predLines[r]);
+            writer.WriteLine(string.Join(",", featureValues) + "," + predLines[r + 1]);
         }
     }
 
