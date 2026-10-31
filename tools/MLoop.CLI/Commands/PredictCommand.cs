@@ -126,6 +126,18 @@ public static partial class PredictCommand
     /// or <c>--output</c>"), so the pair is refused where <c>--json</c> bypasses the file. Image anomaly takes both and says what
     /// each does, and is not asked.
     /// </summary>
+    /// <summary>
+    /// Where a forecast is written: the file the caller named with <c>--output</c> (relative to the project), or else the
+    /// conventional name under <c>predictions/</c>. It used to be the conventional name always - a path given was accepted
+    /// and ignored, the forecast landing somewhere the caller was not looking.
+    /// </summary>
+    internal static string ForecastOutputPath(string? output, string projectRoot, string modelName, DateTimeOffset at)
+        => !string.IsNullOrEmpty(output)
+            ? ProjectPaths.Resolve(output, projectRoot)
+            : Path.Combine(
+                projectRoot, ProjectLayout.PredictionsDirectory,
+                ProjectLayout.PredictionFileName(modelName, ProjectLayout.PredictionKind.Forecast, at));
+
     private static bool OutputBesideJsonRefused(string? output)
     {
         if (string.IsNullOrEmpty(output))
@@ -194,10 +206,7 @@ public static partial class PredictCommand
                         ? 1
                         : await PredictForecastingJsonAsync(resolvedModelPath, resolvedModelName, experimentId);
 
-                var forecastOutputPath = fileSystem.CombinePath(
-                    projectRoot, ProjectLayout.PredictionsDirectory,
-                    ProjectLayout.PredictionFileName(
-                        resolvedModelName, ProjectLayout.PredictionKind.Forecast, DateTimeOffset.Now));
+                var forecastOutputPath = ForecastOutputPath(output, projectRoot, resolvedModelName, DateTimeOffset.Now);
                 return await PredictForecastingAsync(resolvedModelPath, forecastOutputPath, experimentId);
             }
 

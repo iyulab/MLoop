@@ -67,6 +67,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop predict --output <file>` on a forecasting model wrote the forecast somewhere else.** The path was accepted and ignored: the forecast always went to the
+  conventional `predictions/<model>-forecast-<time>.csv`, and the file named stayed absent. It now goes to the file named (relative to the project), and to the
+  conventional name only when none is given.
+
 - **`mloop train --analyze-data --generate-script <path>` says when it wrote no script.** The generator writes one only for a high or critical finding; with
   none, the command ended without a file and, under `--json`, without a word. It now warns "No preprocessing script was written: ...".
 

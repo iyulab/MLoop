@@ -29,6 +29,22 @@ public class PredictForecastingTests : IDisposable
         try { Directory.Delete(_tempDir, recursive: true); } catch { }
     }
 
+    [Fact]
+    public void ForecastOutputPath_IsTheFileTheCallerNamed_ElseTheConventionalOneUnderPredictions()
+    {
+        var at = new DateTimeOffset(2026, 10, 31, 9, 0, 0, TimeSpan.Zero);
+        var root = Path.Combine(_tempDir, "proj");
+
+        Assert.Equal(Path.Combine(root, "out", "f.csv"), PredictCommand.ForecastOutputPath(Path.Combine("out", "f.csv"), root, "default", at));
+        var absolute = Path.Combine(_tempDir, "elsewhere.csv");
+        Assert.Equal(absolute, PredictCommand.ForecastOutputPath(absolute, root, "default", at));
+
+        var conventional = PredictCommand.ForecastOutputPath(null, root, "default", at);
+        Assert.Equal(Path.Combine(root, "predictions"), Path.GetDirectoryName(conventional));
+        Assert.StartsWith("default-forecast-", Path.GetFileName(conventional));
+        Assert.Equal(conventional, PredictCommand.ForecastOutputPath("", root, "default", at));
+    }
+
     private class ProbePoint
     {
         public float Value { get; set; }
