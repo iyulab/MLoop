@@ -39,6 +39,67 @@ public class ValidateCommandJsonTests : IDisposable
     private void WriteYaml(string content) =>
         File.WriteAllText(Path.Combine(_testProjectRoot, "mloop.yaml"), content);
 
+    // The training data is a workbook: its header is the table's (a, b, y), not the first line of a zip.
+    private void WriteWorkbookProject()
+    {
+        Directory.CreateDirectory(Path.Combine(_testProjectRoot, "datasets"));
+        WorkbookFile.Write(Path.Combine(_testProjectRoot, "datasets", "train.xlsx"), ["a", "b", "y"],
+            Enumerable.Range(1, 30).Select(i => new[] { i * 1.0, i * 2.0, i * 3.0 }));
+        WriteYaml("project: p\nmodels:\n  default:\n    task: regression\n    label: y\ndata:\n  train: datasets/train.xlsx\n");
+    }
+
+    [Fact]
+    public async Task Validate_Json_ALabelInAWorkbooksHeader_IsFound()
+    {
+        WriteWorkbookProject();
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("validate", "--json");
+
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal(0, exitCode);
+        Assert.DoesNotContain(doc.RootElement.GetProperty("errors").EnumerateArray(),
+            e => e.GetProperty("message").GetString()!.Contains("not found in training CSV", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task PrepRun_OnAWorkbook_RunsThePipelineOverItsRowsAndWritesCsv()
+    {
+        WriteWorkbookProject();
+        WriteYaml(File.ReadAllText(Path.Combine(_testProjectRoot, "mloop.yaml")).Replace("    label: y\n",
+            "    label: y\n    prep:\n      - type: normalize\n        columns: [a, b]\n        method: minmax\n"));
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("prep", "run", "--json");
+
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal(0, exitCode);
+        Assert.Equal(30, doc.RootElement.GetProperty("rowsBefore").GetInt32());
+        Assert.Equal(30, doc.RootElement.GetProperty("rowsAfter").GetInt32());
+        // named for what it holds, not for what was read
+        Assert.Equal("train_prep.csv", Path.GetFileName(doc.RootElement.GetProperty("output").GetString()));
+        Assert.StartsWith("a,b,y", File.ReadAllText(doc.RootElement.GetProperty("output").GetString()!).TrimStart('\uFEFF'), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FeaturesSelect_DropAndKeep_ReadTheColumnsOfAWorkbook()
+    {
+        WriteWorkbookProject();
+
+        var (dropExit, dropOut, _) = await CliRunner.RunAsync("features", "select", "--drop", "b", "--json");
+        using (var drop = System.Text.Json.JsonDocument.Parse(dropOut))
+        {
+            Assert.Equal(0, dropExit);
+            Assert.Equal(["b"], drop.RootElement.GetProperty("applied").GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
+        }
+
+        await CliRunner.RunAsync("features", "select", "--reset", "--json");
+        var (keepExit, keepOut, _) = await CliRunner.RunAsync("features", "select", "--keep", "a", "--json");
+        using var keep = System.Text.Json.JsonDocument.Parse(keepOut);
+        Assert.Equal(0, keepExit);
+        // the complement is the table's other column - not the bytes of the zip written into mloop.yaml as a column name
+        Assert.Equal(["b"], keep.RootElement.GetProperty("ignored").EnumerateArray().Select(c => c.GetString()));
+        Assert.DoesNotContain("PK", File.ReadAllText(Path.Combine(_testProjectRoot, "mloop.yaml")), StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// Loading the old single-model format warns. The warning was written to stdout ahead of the document, so
     /// <c>validate --json</c> printed something no JSON parser reads, with an empty <c>warnings</c>.

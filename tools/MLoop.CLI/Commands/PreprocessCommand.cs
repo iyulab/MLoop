@@ -2,6 +2,7 @@ using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Data;
 using MLoop.Core.Preprocessing;
 using MLoop.Core.Scripting;
 using MLoop.Core.Storage;
@@ -137,13 +138,16 @@ public static class PreprocessCommand
             // Validate explicit input file
             resolvedInputFile = ProjectPaths.Resolve(inputFile, projectRoot);
 
-            if (!File.Exists(resolvedInputFile))
+            if (!TabularDataFile.Exists(resolvedInputFile))
             {
                 ErrorConsole.Error($"Input file not found: {resolvedInputFile}", ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
 
             ValueLine.Write("[green]✓[/] Using input file: ", Path.GetRelativePath(projectRoot, resolvedInputFile));
+
+            // A data file in another format (Excel, Parquet, JSON, TSV) is read as a table by the scripts.
+            resolvedInputFile = await TabularDataFile.AsCsvAsync(resolvedInputFile);
         }
 
         AnsiConsole.WriteLine();

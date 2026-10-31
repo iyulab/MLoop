@@ -1,6 +1,7 @@
 using System.CommandLine;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.Core.Data;
 using MLoop.Core.Preprocessing;
 using MLoop.Core.Storage;
 using MLoop.Extensibility.Preprocessing;
@@ -18,7 +19,7 @@ public static class PrepRunCommand
     {
         var inputOption = new Option<string?>("--input", "-i")
         {
-            Description = "Input CSV file path (defaults to datasets/train.csv)"
+            Description = "Input data file path: CSV, TSV, JSON, Excel or Parquet (defaults to data.train, else datasets/train.csv)"
         };
 
         var outputOption = new Option<string?>("--output", "-o")
@@ -140,10 +141,10 @@ public static class PrepRunCommand
                 }
             }
 
-            if (!File.Exists(resolvedInput))
+            if (!TabularDataFile.Exists(resolvedInput))
             {
                 ErrorConsole.Error($"Input file not found: {resolvedInput}",
-                    "Use --input to specify the CSV file path.");
+                    "Use --input to specify the data file path.");
                 EmitJson(resolvedModelName, dryRun, resolvedInput, null, modelDef.Prep,
                     [$"Input file not found: {resolvedInput}"], null, null, jsonOutput);
                 return 1;
@@ -188,7 +189,8 @@ public static class PrepRunCommand
             {
                 var dir = Path.GetDirectoryName(resolvedInput) ?? ".";
                 var name = Path.GetFileNameWithoutExtension(resolvedInput);
-                var ext = Path.GetExtension(resolvedInput);
+                // The output is CSV: beside a workbook or a Parquet file it takes the extension of what it holds.
+                var ext = TabularDataFile.NeedsConversion(resolvedInput) ? ".csv" : Path.GetExtension(resolvedInput);
                 resolvedOutput = Path.Combine(dir, $"{name}_prep{ext}");
             }
 
@@ -199,15 +201,18 @@ public static class PrepRunCommand
             var logger = new ConsoleLogger();
             var executor = new DataPipelineExecutor(logger);
 
+            // A data file in another format (Excel, Parquet, JSON, TSV) is read as a table from here on.
+            var pipelineInput = await TabularDataFile.AsCsvAsync(resolvedInput);
+
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync("Running preprocessing pipeline...", async ctx =>
                 {
-                    await executor.ExecuteAsync(resolvedInput, modelDef.Prep, resolvedOutput);
+                    await executor.ExecuteAsync(pipelineInput, modelDef.Prep, resolvedOutput);
                 });
 
             // Show result summary
-            var inputLines = File.ReadLines(resolvedInput).Count();
+            var inputLines = File.ReadLines(pipelineInput).Count();
             var outputLines = File.ReadLines(resolvedOutput).Count();
 
             AnsiConsole.MarkupLine("[green]Pipeline executed successfully![/]");

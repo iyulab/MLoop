@@ -476,4 +476,57 @@ public class InfoCommandJsonTests : IDisposable
 
         Assert.DoesNotContain(flags, f => f.StartsWith("formatted-numbers", StringComparison.Ordinal) || f.StartsWith("numbers-read-as-text", StringComparison.Ordinal));
     }
+
+    private string WriteWorkbook(string name, string[] header, IEnumerable<double[]> rows)
+        => WorkbookFile.Write(Path.Combine(_testDir, name), header, rows);
+
+    private async Task<(int ExitCode, System.Text.Json.JsonElement Root, string Output)> SampleFrom(string source, string output, params string[] more)
+    {
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["sample", "create", "--from", source, "--rows", "5", "--strategy", "head", "-o", output, "--json", .. more]);
+        var root = System.Text.Json.JsonDocument.Parse(stdout).RootElement.Clone();
+        return (exitCode, root, output);
+    }
+
+    [Fact]
+    public async Task SampleCreate_FromAnExcelWorkbook_SamplesItsRowsNotItsBytes()
+    {
+        // The command read every input as lines of text: a workbook (a zip) became "rows" of binary, 57 of them, and a sample of those.
+        var workbook = WriteWorkbook("rows.xlsx", ["a", "b"], Enumerable.Range(1, 40).Select(i => new[] { i * 1.5, i * 2.0 }));
+        var output = Path.Combine(_testDir, "sample.csv");
+
+        var (exitCode, root, _) = await SampleFrom(workbook, output);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(40, root.GetProperty("totalRows").GetInt32());
+        Assert.Equal(5, root.GetProperty("sampled").GetInt32());
+        var lines = File.ReadAllLines(output);
+        Assert.Equal("a,b", lines[0].TrimStart('\uFEFF'));
+        Assert.Equal("1.5,2", lines[1]);
+        Assert.Equal(6, lines.Length);
+    }
+
+    [Fact]
+    public async Task SampleCreate_FromAJsonTable_SamplesItsRows()
+    {
+        var json = WriteCsv("rows.json", "[" + string.Join(",", Enumerable.Range(1, 30).Select(i => $"{{\"a\":{i},\"b\":{i * 2}}}")) + "]");
+        var output = Path.Combine(_testDir, "sample-json.csv");
+
+        var (exitCode, root, _) = await SampleFrom(json, output);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(30, root.GetProperty("totalRows").GetInt32());
+        Assert.Equal("1,2", File.ReadAllLines(output)[1]);
+    }
+
+    [Fact]
+    public async Task SampleCreate_FromANonCsvFileWithNoOutput_WritesACsvBesideIt()
+    {
+        var workbook = WriteWorkbook("rows.xlsx", ["a", "b"], Enumerable.Range(1, 10).Select(i => new[] { i * 1.0, i * 2.0 }));
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("sample", "create", "--from", workbook, "--rows", "3", "--json");
+
+        Assert.Equal(0, exitCode);
+        var written = System.Text.Json.JsonDocument.Parse(stdout).RootElement.GetProperty("outputPath").GetString()!;
+        Assert.Equal("rows_sampled.csv", Path.GetFileName(written)); // the extension of what it holds, not of what it was read from
+    }
 }

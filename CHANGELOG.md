@@ -77,6 +77,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`sample create --from`, `prep run`, `preprocess`, `features select` and `validate` read a workbook, a Parquet or a JSON data file as the table it holds.** Each
+  of them opened its data path as lines of text. `sample create --from rows.xlsx` took the zip's bytes for 57 rows and wrote a sample of binary garbage (a JSON file was
+  refused as empty); `prep run` failed in the CSV parser, and `preprocess` handed its scripts the unreadable file; `features select --keep a,b` on a project whose
+  training data is an Excel file wrote the first bytes of the archive into `mloop.yaml` as the name of an ignored column, and `--drop` skipped the column it was asked to
+  drop as "not in the header"; `validate` reported the label missing from a header made of the same bytes. They now convert the file as `train`, `info` and `evaluate`
+  do, and a sample or a prepared file is written as `.csv` whatever the input was. `sample create` takes `--records` for a JSON file whose rows sit in a nested array.
 - **A served JSON row names its columns as text, not as bytes: decomposed Hangul (NFD) is the same column as composed Hangul (NFC).** `POST /predict` matched a row's
   keys to the model's columns by bytes (ignoring case only), so a client that writes `지역` as jamo got either a refusal - "none of the model's input columns", naming
   the same-looking columns it expected - when every key was in the other form, or a score made with those columns read as missing when only some were. Values were

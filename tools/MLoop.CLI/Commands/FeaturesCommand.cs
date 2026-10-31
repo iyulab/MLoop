@@ -94,10 +94,11 @@ public sealed class FeaturesCommand : Command
                 // Best-effort: when no train data is resolvable, keep the prior unconditional behaviour.
                 var dropTrainPath = ResolveTrainPath(ctx, config);
                 List<string> dropped;
-                if (dropTrainPath != null && File.Exists(dropTrainPath))
+                if (dropTrainPath != null && TabularDataFile.Exists(dropTrainPath))
                 {
+                    // The header of a workbook or a Parquet file is read from the table it holds, not from its bytes.
                     var (known, unknown) = FeatureSelector.PartitionByHeader(
-                        requested, ReadHeaderColumns(dropTrainPath));
+                        requested, ReadHeaderColumns(await TabularDataFile.AsCsvAsync(dropTrainPath)));
                     if (unknown.Count > 0)
                         warnings.Add($"Not found in train data header, skipped: {string.Join(", ", unknown)}");
                     dropped = known.ToList();
@@ -121,14 +122,14 @@ public sealed class FeaturesCommand : Command
             else if (!string.IsNullOrWhiteSpace(keepCsv))
             {
                 var trainPath = ResolveTrainPath(ctx, config);
-                if (trainPath == null || !File.Exists(trainPath))
+                if (trainPath == null || !TabularDataFile.Exists(trainPath))
                 {
                     ErrorConsole.Error("--keep requires train data to compute the complement.",
                         "Expected datasets/train.csv or data.train in mloop.yaml.");
                     return 1;
                 }
                 var kept = SplitCsv(keepCsv);
-                var allColumns = ReadHeaderColumns(trainPath);
+                var allColumns = ReadHeaderColumns(await TabularDataFile.AsCsvAsync(trainPath));
                 FeatureSelector.ApplyKeep(model.Columns, allColumns, kept, model.Label);
                 applied = new FeaturesApplied("keep", kept, ResetCount: null);
                 if (!json) AnsiConsole.MarkupLineInterpolated($"[green]Kept:[/] {keepCsv} [grey](+ label {model.Label}); others excluded[/]");

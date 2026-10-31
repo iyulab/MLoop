@@ -1565,12 +1565,14 @@ x1,x2,churn,weight
   balancing the train part after the test part is split off — and a request without `timeLimitSeconds` or
   `testSplit` leaves them to `mloop.yaml`. A `balance` the run cannot honour (not `auto`/`none`/a ratio, a task that
   is not classification, a weight column) is refused with 400 before a job exists.
-- `mloop sample create --from <csv>` samples a plain CSV instead (`random`, `head`, `stratified --label <col>`) — a
-- `--json` on `sample create`, `feedback add` and `init` prints one document on stdout (the narration goes to stderr); a failure is `{"error": …}` with exit 1.
-  relative path is the project's, as for every command, and the current directory's outside a project. The file is
+- `mloop sample create --from <file>` samples a plain data file instead (`random`, `head`, `stratified --label <col>`) — a
+  relative path is the project's, as for every command, and the current directory's outside a project. A CSV is
   streamed, so memory follows the sample, not the file (a 100,000-row sample of a 2-million-row CSV ≈ 150 MB); the
-  sampled rows keep their file order, and `stratified` gives every class at least one row when the sample has room;
+  sampled rows keep their file order, and `stratified` gives every class at least one row when the sample has room.
+  A file in another format (TSV, JSON — `--records` names the array of rows —, Excel, Parquet) is read as the table it holds
+  and the sample is written as CSV, named `<file>_sampled.csv` when no `--output` is given.
   `mloop sample stats --name <model>` reports how many logged predictions have feedback.
+- `--json` on `sample create`, `feedback add` and `init` prints one document on stdout (the narration goes to stderr); a failure is `{"error": …}` with exit 1.
 
 ---
 
@@ -1950,7 +1952,7 @@ mloop prep plan --set fill-missing:mean --columns income
 mloop prep plan --remove normalize                             # remove steps of a type
 mloop prep plan --list                                         # the plan, with each step's leakage class
 mloop prep run --dry-run                                       # the steps that would run
-mloop prep run -i datasets/train.csv -o datasets/train_prep.csv   # --input, --output
+mloop prep run -i datasets/train.csv -o datasets/train_prep.csv   # --input (any table format), --output (CSV)
 ```
 
 Step types: `fill-missing` (mean · median · mode · constant · forward · backward), `normalize`, `scale`,

@@ -39,8 +39,10 @@ public static class SampleCommand
 
         var fromOption = new Option<string?>("--from")
         {
-            Description = "CSV file to sample from (general-purpose mode)"
+            Description = "Data file to sample from (general-purpose mode): CSV, TSV, JSON, Excel or Parquet; the sample is written as CSV"
         };
+
+        var recordsOption = DataFileOptions.Records();
 
         var sizeOption = new Option<int>("--rows")
         {
@@ -73,6 +75,7 @@ public static class SampleCommand
         var command = new Command("create", "Create a sampled dataset from CSV file or prediction logs");
         command.Options.Add(nameOption);
         command.Options.Add(fromOption);
+        command.Options.Add(recordsOption);
         command.Options.Add(sizeOption);
         command.Options.Add(strategyOption);
         command.Options.Add(outputOption);
@@ -88,9 +91,10 @@ public static class SampleCommand
             var strategy = parseResult.GetValue(strategyOption)!;
             var output = parseResult.GetValue(outputOption);
             var label = parseResult.GetValue(labelOption);
+            var records = parseResult.GetValue(recordsOption);
 
             if (!string.IsNullOrEmpty(fromPath))
-                return ExecuteFromCsvAsync(fromPath, size, strategy, output, label, json);
+                return ExecuteFromCsvAsync(fromPath, size, strategy, output, label, json, records);
 
             if (!string.IsNullOrEmpty(modelName))
                 return ExecuteCreateAsync(modelName, size, strategy, output, json);
@@ -138,7 +142,8 @@ public static class SampleCommand
         string strategyName,
         string? outputPath,
         string? labelColumn,
-        bool jsonOutput)
+        bool jsonOutput,
+        string? records = null)
     {
         using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
         try
@@ -153,21 +158,25 @@ public static class SampleCommand
             // The project's, as every command's — or the working directory's outside a project, where this one also works.
             var projectRoot = ProjectRootOrNull();
             var resolvedInput = ProjectPaths.Resolve(fromPath, projectRoot);
-            if (!File.Exists(resolvedInput))
+            if (!TabularDataFile.Exists(resolvedInput))
             {
                 ErrorConsole.Error($"File not found: {resolvedInput}",
                     projectRoot is null ? ErrorConsole.PathNotFoundTipCwd() : ErrorConsole.PathNotFoundTip(projectRoot));
                 return 1;
             }
 
-            // Generate default output path if not provided
+            // Generate default output path if not provided. The sample is CSV: beside a file in another format
+            // (Excel, JSON, Parquet, TSV) it is named for that file, with the extension of what it holds.
             if (string.IsNullOrEmpty(outputPath))
             {
                 var dir = Path.GetDirectoryName(resolvedInput) ?? ".";
                 var name = Path.GetFileNameWithoutExtension(resolvedInput);
-                var ext = Path.GetExtension(resolvedInput);
+                var ext = TabularDataFile.NeedsConversion(resolvedInput) ? ".csv" : Path.GetExtension(resolvedInput);
                 outputPath = Path.Combine(dir, $"{name}_sampled{ext}");
             }
+
+            // A data file in another format is read as a table from here on.
+            resolvedInput = await TabularDataFile.AsCsvAsync(resolvedInput, records);
 
             var sampler = new CsvSampler();
 

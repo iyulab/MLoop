@@ -149,9 +149,18 @@ public static class ValidateCommand
                 if (!string.IsNullOrWhiteSpace(config.Data.Train) && config.Models != null)
                 {
                     var trainPath = ctx.FileSystem.CombinePath(ctx.ProjectRoot, config.Data.Train);
-                    if (ctx.FileSystem.FileExists(trainPath))
+                    if (MLoop.Core.Data.TabularDataFile.Exists(trainPath))
                     {
-                        ValidateLabelColumnsInCsv(trainPath, config.Models, errors, warnings);
+                        // The header of a workbook or a Parquet file is the table's, not its bytes'.
+                        string? table = null;
+                        try { table = await MLoop.Core.Data.TabularDataFile.AsCsvAsync(trainPath); }
+                        catch (Exception ex)
+                        {
+                            warnings.Add(new ValidationWarning("data.train", $"Training data could not be read as a table: {ex.Message}"));
+                        }
+
+                        if (table is not null)
+                            ValidateLabelColumnsInCsv(table, config.Models, errors, warnings);
                     }
                 }
             }
