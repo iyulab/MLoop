@@ -1,6 +1,7 @@
 using System.Reflection;
 using DataLens;
 using DataLens.Models;
+using MLoop.CLI.Infrastructure.Diagnostics;
 using Spectre.Console;
 
 namespace MLoop.CLI.Infrastructure.ML;
@@ -78,12 +79,38 @@ internal sealed class DataLensAnalyzer
         if (!IsAvailable) return null;
         try
         {
-            return await DataLensEngine.Analyze(csvPath, options);
+            var result = await DataLensEngine.Analyze(csvPath, options);
+            foreach (var warning in result.Warnings)
+                if (AnalysisLimit(warning) is { } limit)
+                    WarningConsole.Warn(limit);
+            return result;
         }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"[yellow]DataLens analysis failed: {ex.GetType().Name}: {Markup.Escape(ex.Message)}[/]");
             return null;
         }
+    }
+
+    /// <summary>
+    /// What a DataLens warning means for the answer, when it means the analysis did not run or ran on less than the file holds - the cases where
+    /// an empty or short result would otherwise read as a finding (<c>analyze correlation</c> on two rows said "no high-correlation pairs"). Warnings
+    /// that describe the data instead (duplicate rows, a column pair that is the same column, a covariance that may be singular) are not passed on:
+    /// they are not about whether the analysis ran, and the commands show the pairs themselves. Null for those.
+    /// </summary>
+    internal static string? AnalysisLimit(AnalysisWarning warning)
+    {
+        var name = warning.Analyzer;
+        var columns = warning.AffectedColumns is { Count: > 0 } affected ? string.Join(", ", affected) : null;
+        return warning.Category switch
+        {
+            WarningCategory.InsufficientRows => $"The {name} analysis did not run (too few rows); an empty result here says nothing about the data.",
+            WarningCategory.InsufficientColumns => $"The {name} analysis did not run (too few numeric columns); an empty result here says nothing about the data.",
+            WarningCategory.InsufficientUsableColumns => $"The {name} analysis did not run (too few columns are left once constant and empty ones are set aside); an empty result here says nothing about the data.",
+            WarningCategory.DegenerateColumnsExcluded => $"The {name} analysis left out {(columns is null ? "constant or empty columns" : $"the constant or empty column(s) {columns}")}.",
+            WarningCategory.AllPairsUndefined => $"The {name} analysis could not compute a value for any pair of columns; an empty result here says nothing about the data.",
+            WarningCategory.ComputationFailed or WarningCategory.UpstreamError => $"The {name} analysis failed and is not in the result: {warning.Message}",
+            _ => null,
+        };
     }
 }

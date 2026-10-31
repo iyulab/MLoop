@@ -43,6 +43,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   tables the swap cost score (up to 0.0066 RMSE and 0.0063 AUC, twice the standard error on two tables, at 60 and 240 seconds) with no cost
   in time to give back. The rule now starts at 10 million leaves (about 200 MB on disk), where keeping the model is what costs. A model you
   trained before is unchanged; a new search can pick a larger model than it did, and `trials.ndjson` marks the trial the model was refit from.
+- **`mloop analyze` and `info --analyze` say when an analysis did not run or left columns out.** DataLens answers an analysis it cannot run with an empty
+  result and a warning of its own, and the empty result read as a finding: `analyze correlation` on a two-row file printed "No high-correlation pairs
+  found", and on a file with one numeric column the same. The warnings that mean the analysis did not run (too few rows, too few numeric columns,
+  every pair undefined, a failure), or ran on less (constant or empty columns set aside, named), are now printed and carried in `warnings` with `--json`.
+  Warnings that describe the data rather than the analysis (repeated rows, a column pair that is one column, a covariance that may be singular) are not.
 
 ### Fixed
 

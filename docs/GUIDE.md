@@ -952,6 +952,8 @@ mloop analyze series sensor.csv --column temp   # a column read as an ordered se
 | `distribution` | Median, quartiles, IQR, skewness and kurtosis per column |
 | `series` | One column as an ordered series: autocorrelation and partial autocorrelation with their bands, the ADF and KPSS stationarity tests read together at 5% (`stationary`, `non-stationary`, `unsettled`), and the dominant period. Evidence only — whether to difference or detrend is your call |
 
+When an analysis cannot run - too few rows or numeric columns, or every value undefined - or leaves columns out because they are constant or empty, the command says so (a warning in the table output, and in `warnings` with `--json`); an empty result is then not a finding. Notes about the data itself, such as repeated rows, are not repeated here.
+
 Every subcommand takes the same arguments, except that `series` has no label and no model: it takes `--column` / `-c` (the series; optional when the CSV has one column), `--max-lag` and `--around-trend` (test around a linear trend instead of a constant level) in their place.
 
 | Argument / Option | Short | Description |
