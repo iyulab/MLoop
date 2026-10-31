@@ -395,10 +395,12 @@ public class PredictionEngine
             {
                 // Add label column to header
                 writer.WriteLine(labelColumn + "," + allLines[0]);
-                // Add empty label value for each data row
+                // Add empty label value for each data row - a blank line is no row, and with the comma in front of
+                // it it would be one: the line the layout is read from, with the wrong number of fields
                 for (int i = 1; i < allLines.Length; i++)
                 {
-                    writer.WriteLine("," + allLines[i]);
+                    if (TableRows.IsRow(allLines[i], columns.Length))
+                        writer.WriteLine("," + allLines[i]);
                 }
             }
 

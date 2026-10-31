@@ -51,6 +51,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop predict` reads a file of fewer than a hundred rows that has a blank line.** A prediction file has no label column, so predict wrote a copy with an
+  empty one in front of every line - a blank line became `,`, a line of the wrong width, and among fewer than a hundred rows it failed the split of the file into
+  columns ("unable to split the file into multiple, consistent columns", with no word about the blank line). Blank lines are left out of the copy, as everywhere
+  else they are no row.
 - **`mloop info` describes a file of one column, and `info`, `analyze profile` and the data summary `train` prints no longer count a table's blank lines as rows.** A one-column file (a series) failed with "unable to split the file into multiple columns" - the layout training splits a file by - although `analyze profile` and `detect` read it; `info` now reads such a file from its sample. Blank lines after or between the rows of a table were counted as rows with every value missing (3 rows and two blank lines reported 5 rows, a column 40% missing), while training and `sample create` skip them (the summary `train` prints said 303 rows for 300 and two blank lines, beside a label check that said 300); all three skip them too, by one rule. In a file of one column a blank line stays a missing value, the way the series commands read it.
 - **`mloop detect` and `mloop analyze series` no longer close up a one-column file over a blank line.** The reader takes a blank line for nothing, so a series
   stored one reading per line with a reading missing came out shorter and every reading after the gap sat at the wrong row - `detect` named the wrong rows.
