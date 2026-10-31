@@ -824,7 +824,9 @@ public class PredictionService
             {
                 uint labelValue = 0;
                 labelGetter(ref labelValue);
-                clusterId = (int)labelValue;
+                // ML.NET's cluster key runs 1..k (0 is "missing"); the file predict writes it from 0, like the Score.<i>
+                // columns it sits beside, and `distances` is indexed from 0 - the id is the index into it.
+                clusterId = labelValue == 0 ? null : (int)labelValue - 1;
             }
 
             if (scoreGetter != null)

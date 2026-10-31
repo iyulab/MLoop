@@ -81,6 +81,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop predict` and `mloop evaluate` answer a file whose columns are in another order the way they answer the same rows in the training order.** The loader merges a file's
+  numeric columns into the model's feature vector by position, so a file that carried the same columns in a different order (an export from another system, the label moved
+  to the front) fed every slot the wrong column and the model answered without a word: a regression model's answers differed from the original file's for 116 of 120 rows, and
+  `evaluate` reported the damage as a model quality. The columns the model was trained on are now put back in its order before the file is read (the file's other columns
+  follow); a file already in order is read as it is. The serving path (`predict --json`, `POST /predict`) reads rows by name and was not affected.
+- **A clustering row's `clusterId` in `predict --json` and `POST /predict` counts from 0, like the file predict.** The structured answer gave ML.NET's cluster key (1 to k) while
+  `mloop predict` wrote the same cluster as 0 to k-1, beside `Score.0`, `Score.1` and so on, and the `distances` array is indexed from 0: `distances[clusterId]` was the wrong
+  centroid. The id is now the index into `distances` of the nearest centroid in both. **This changes the `clusterId` of every clustering answer from the served path**, and the
+  cluster recorded in a prediction log from it: subtract 1 from `clusterId` values recorded before.
 - **`mloop predict --json` and `mloop serve` answer a ranking model whose query id is a number.** The saved schema listed the group column as a plain numeric feature, and
   the paths that build the feature vector from the schema (`predict --json`, `POST /predict`) put it into the vector: a ranking model trained on `q,f0,f1,label` with `q`
   = 0, 1, 2... took 2 features and was given 3, and every request failed with `Feature vector dimension mismatch` while `mloop predict` to a CSV, which keeps the group column

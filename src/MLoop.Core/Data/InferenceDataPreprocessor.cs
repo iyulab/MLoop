@@ -69,6 +69,10 @@ public static class InferenceDataPreprocessor
                 .Where(c => keepColumns is null || !keepColumns.Contains(c.Name, StringComparer.OrdinalIgnoreCase))
                 .Select(c => c.Name);
             current = Step(CsvDataLoader.RemoveExcludedColumns(current, excluded, log), current, tempFiles);
+
+            // 5. Column order. The loader merges the numeric columns into the feature vector by position, so the file's
+            //    columns stand where training had them, whatever order the file wrote them in.
+            current = Step(CsvDataLoader.ReorderColumnsToSchema(current, trainedSchema.Columns.Select(c => c.Name).ToList(), log), current, tempFiles);
         }
         else
         {

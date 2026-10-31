@@ -69,8 +69,8 @@ information about the task. A field without a value is absent, never zero and ne
 | `score` | number | binary classification (P of the positive class), regression, forecasting, ranking, recommendation |
 | `scoreLowerBound`, `scoreUpperBound` | number | regression, when the model carries a conformal band |
 | `intervalConfidence` | number | with the band above |
-| `clusterId` | integer | clustering |
-| `distances` | number[] | clustering |
+| `clusterId` | integer, from 0 | clustering — the index into `distances` of the nearest centroid, as `mloop predict`'s `PredictedLabel` and `Score.<i>` columns number them |
+| `distances` | number[] | clustering — the distance to each centroid, in the order of `clusterId` |
 | `isAnomaly` | boolean | anomaly detection, time-series anomaly |
 | `anomalyScore` | number | anomaly detection, time-series anomaly |
 | `confidence` | number in [0,1] | wherever the task has a usable uncertainty signal |

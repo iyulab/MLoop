@@ -616,6 +616,50 @@ public class CsvDataLoaderTests : IDisposable
 
     #endregion
 
+    #region ReorderColumnsToSchema
+
+    [Fact]
+    public void ReorderColumnsToSchema_FileAlreadyInTheModelsOrder_ReturnsOriginalPath()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "inorder.csv");
+        File.WriteAllText(csvPath, "F1,F2,Label\n1,2,A\n", System.Text.Encoding.UTF8);
+
+        Assert.Equal(csvPath, CsvDataLoader.ReorderColumnsToSchema(csvPath, ["F1", "F2", "Label"]));
+        // Extra columns anywhere do not move the schema's own relative order.
+        File.WriteAllText(csvPath, "F1,Note,F2,Label\n1,x,2,A\n", System.Text.Encoding.UTF8);
+        Assert.Equal(csvPath, CsvDataLoader.ReorderColumnsToSchema(csvPath, ["F1", "F2", "Label"]));
+    }
+
+    // The loader merges the numeric columns into one feature vector by position: a file with the same columns in
+    // another order fed every slot the wrong column and the model answered without a word.
+    [Fact]
+    public void ReorderColumnsToSchema_FileInAnotherOrder_PutsTheSchemaColumnsFirstInItsOrder_AndKeepsTheRestAfter()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "reordered.csv");
+        File.WriteAllText(csvPath, "Label,Note,F2,F1\nA,x,2,1\nB,\"y, z\",4,3\n", System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.ReorderColumnsToSchema(csvPath, ["F1", "F2", "Label"]);
+
+        Assert.NotEqual(csvPath, result);
+        var lines = File.ReadAllLines(result);
+        Assert.Equal("F1,F2,Label,Note", lines[0].TrimStart('\uFEFF'));
+        Assert.Equal("1,2,A,x", lines[1]);
+        Assert.Equal("3,4,B,\"y, z\"", lines[2]);
+    }
+
+    [Fact]
+    public void ReorderColumnsToSchema_FileWithAColumnTheSchemaNamesMissing_ReordersWhatIsThere()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "partial.csv");
+        File.WriteAllText(csvPath, "F2,F1\n2,1\n", System.Text.Encoding.UTF8);
+
+        var result = CsvDataLoader.ReorderColumnsToSchema(csvPath, ["F1", "F2", "Label"]);
+
+        Assert.Equal("F1,F2", File.ReadAllLines(result)[0].TrimStart('\uFEFF'));
+    }
+
+    #endregion
+
     #region RemoveExcludedColumns
 
     [Fact]

@@ -396,6 +396,10 @@ public class PredictJsonContractTests : IDisposable
         {
             Assert.True(row.GetProperty("clusterId").GetInt32() >= 0);
             Assert.Equal(3, row.GetProperty("distances").GetArrayLength());
+            // The id numbers the centroids from 0, as the distances (and the file predict's Score.<i> columns) do: it is the
+            // index of the nearest one. ML.NET's own key starts at 1, which put every id one past its distance.
+            var distances = row.GetProperty("distances").EnumerateArray().Select(d => d.GetDouble()).ToList();
+            Assert.Equal(distances.IndexOf(distances.Min()), row.GetProperty("clusterId").GetInt32());
             // No class vocabulary exists for clustering, so neither field the document ties to
             // classification may appear — including confidence, whose classification rule is the
             // winning class probability.

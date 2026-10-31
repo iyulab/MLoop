@@ -1504,6 +1504,48 @@ public class CsvDataLoader : DataProviderBase
     }
 
     /// <summary>
+    /// Puts the columns of a prediction or evaluation file in the order the model was trained on. The loader merges the
+    /// file's numeric columns into one feature vector by position, so a file that carries the same columns in another
+    /// order (an export from another system, a column moved to the front) fed every slot the wrong column and the model
+    /// answered without a word - 116 of 120 rows different from the same rows in the training order. The columns the
+    /// schema names come first, in its order; the file's other columns follow in theirs. Returns the original path when
+    /// the schema's columns already stand in its order (or fewer than two are in the file), otherwise a UTF-8 BOM temp file.
+    /// </summary>
+    public static string ReorderColumnsToSchema(string filePath, IReadOnlyList<string> schemaOrder, Action<string>? log = null)
+    {
+        var write = log ?? NoLog;
+        try
+        {
+            string? firstLine;
+            using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+                firstLine = reader.ReadLine();
+            if (string.IsNullOrEmpty(firstLine)) return filePath;
+
+            var headers = ParseCsvLine(firstLine).Select(h => h.Trim()).ToArray();
+            var inSchemaOrder = new List<int>();
+            var taken = new HashSet<int>();
+            foreach (var name in schemaOrder)
+            {
+                var index = Array.FindIndex(headers, h => h.Equals(name, StringComparison.OrdinalIgnoreCase));
+                if (index >= 0 && taken.Add(index))
+                    inSchemaOrder.Add(index);
+            }
+            if (inSchemaOrder.Count < 2 || inSchemaOrder.SequenceEqual(inSchemaOrder.Order()))
+                return filePath;
+
+            var keep = inSchemaOrder.Concat(Enumerable.Range(0, headers.Length).Where(i => !taken.Contains(i))).ToArray();
+            var tempPath = ScratchFiles.New("mloop_reorder_", Path.GetExtension(filePath));
+            WriteColumns(filePath, tempPath, keep);
+            write($"[Info] Reordered the columns to the order the model was trained on: {string.Join(", ", inSchemaOrder.Select(i => headers[i]))}");
+            return tempPath;
+        }
+        catch
+        {
+            return filePath; // Non-critical, continue with original
+        }
+    }
+
+    /// <summary>
     /// The single authority for "which columns does featurization drop?" — DateTime, sparse,
     /// constant, and identifier, in the exact order and with the exact semantics
     /// <see cref="LoadData"/> applies them.
