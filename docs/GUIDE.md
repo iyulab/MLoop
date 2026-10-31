@@ -743,7 +743,8 @@ model (`fitOn: "out-of-fold (training partition)"`): Platt for a binary model, a
 multiclass one. A trainer's own probability is not fitted to the data (FastTree's is a fixed sigmoid of
 its score; a one-versus-all model normalizes several), so without it a model that ranks every row right
 can still say 0.66. The run's metrics are the calibrated model's. `mloop calibrate` replaces it with one fitted
-on your rows; `--clear` goes back to the trainer's probability.
+on your rows; `--clear` goes back to the trainer's probability (clearing the calibration training fitted warns: the recorded metrics are its,
+and only retraining brings it back).
 
 ```bash
 mloop calibrate --data datasets/recheck.csv                        # the production model, Platt

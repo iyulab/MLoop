@@ -48,6 +48,9 @@ public sealed record ProbabilityCalibration(
     DateTimeOffset FitAt,
     double? Temperature = null)
 {
+    /// <summary>What <see cref="FitOn"/> says of a calibration training fitted on the search's out-of-fold answers.</summary>
+    public const string TrainingFitSource = Training.TrainingRunner.OutOfFoldSource;
+
     /// <summary>The binary methods, by the name the CLI and the file use; the first is the default.</summary>
     public static IReadOnlyList<string> BinaryMethods { get; } = ["platt", "isotonic"];
 

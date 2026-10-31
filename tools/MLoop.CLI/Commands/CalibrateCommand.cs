@@ -107,6 +107,12 @@ public static class CalibrateCommand
 
             if (clear)
             {
+                // The file also holds the calibration training fitted (out of fold), which the experiment's recorded metrics describe:
+                // removing it is not undoing something the user did, and only retraining brings it back.
+                if (ProbabilityCalibration.ReadBeside(modelPath) is { FitOn: ProbabilityCalibration.TrainingFitSource })
+                    WarningConsole.Warn(Markup.Escape(
+                        $"The calibration beside {id} is the one training fitted on out-of-fold answers; the metrics recorded for {id} are the calibrated model's. " +
+                        "Clearing it leaves the trainer's own probabilities, which can be far from calibrated, and only retraining brings the fitted one back."));
                 foreach (var path in targets)
                     if (File.Exists(ProbabilityCalibration.PathBeside(path)))
                         File.Delete(ProbabilityCalibration.PathBeside(path));

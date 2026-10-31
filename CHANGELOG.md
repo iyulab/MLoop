@@ -42,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`mloop calibrate --clear` says when it removes the calibration training fitted.** The file beside a classifier holds the calibration fitted on the search's out-of-fold answers,
+  and the metrics recorded for the experiment are the calibrated model's; clearing it (it is also how a calibration you fitted is undone) leaves the trainer's own probabilities,
+  which can be far from calibrated, and only retraining brings the fitted one back. The command still clears - that is what `--clear` is documented to do - and now warns
+  when what it removed was training's, in the text and in `warnings` with `--json`. Clearing a calibration you fitted is silent.
 - **`mloop predict --output <file> --json` is refused.** `--json` answers on stdout instead of writing the CSV, so a file named beside it was never written - the
   command exited 0 with the JSON and the path holding nothing. The two are alternatives (the command's description always said "`--json` or `--output`"); the pair
   now ends with an error that says so, before anything is predicted. A caller who passed both and read the file gets the error instead of an empty path.

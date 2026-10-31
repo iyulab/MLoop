@@ -69,7 +69,10 @@ public sealed class CalibrateCommandTests : IDisposable
         Assert.True(File.Exists("models/default/production/calibration.json"));
         var calibrated = (await JsonAsync("evaluate", "exp-001", "datasets/recheck.csv")).GetProperty("testMetrics");
 
-        Assert.Equal("cleared", (await JsonAsync("calibrate", "exp-001", "--clear")).GetProperty("status").GetString());
+        var cleared = await JsonAsync("calibrate", "exp-001", "--clear");
+        Assert.Equal("cleared", cleared.GetProperty("status").GetString());
+        // what is removed is the calibration training fitted, which the recorded metrics describe: it says so
+        Assert.Contains(cleared.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()), w => w!.Contains("the one training fitted", StringComparison.Ordinal));
         Assert.False(File.Exists("models/default/staging/exp-001/calibration.json"));
         var own = (await JsonAsync("evaluate", "exp-001", "datasets/recheck.csv")).GetProperty("testMetrics");
         // Same model, same rows, same ranking: only how sure it says it is moved.
@@ -105,7 +108,11 @@ public sealed class CalibrateCommandTests : IDisposable
             Assert.Equal(yes >= 0.5 ? "yes" : "no", row.GetProperty("predictedLabel").GetString());
         }
 
-        Assert.Equal("cleared", (await JsonAsync("calibrate", "--clear")).GetProperty("status").GetString());
+        var undone = await JsonAsync("calibrate", "--clear");
+        Assert.Equal("cleared", undone.GetProperty("status").GetString());
+        // a calibration the user fitted is undone without a word: nothing training made is lost
+        var warnings = undone.GetProperty("warnings");
+        Assert.True(warnings.ValueKind == JsonValueKind.Null || warnings.GetArrayLength() == 0, warnings.ToString());
         Assert.False(File.Exists("models/default/production/calibration.json"));
         Assert.Equal(before.GetProperty("ece").GetDouble(),
             (await JsonAsync("evaluate", "exp-001", "datasets/recheck.csv")).GetProperty("testMetrics").GetProperty("ece").GetDouble(), 9);
