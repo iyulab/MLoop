@@ -168,9 +168,7 @@ public static class MetricPolicy
     /// metric lands on ±double.Max/MinValue.
     /// </summary>
     public static bool IsUndefinedMetricSentinel(string metricName, double value)
-        => MetricDirection.IsLowerBetter(metricName)
-            ? value == double.MaxValue
-            : value == double.MinValue;
+        => MetricSanitizer.IsUndefinedSentinel(metricName, value);
 
     /// <summary>
     /// Detects degenerate classification models: ones whose accuracy only reflects the class

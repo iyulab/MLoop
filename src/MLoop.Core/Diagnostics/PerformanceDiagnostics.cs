@@ -221,7 +221,7 @@ public class PerformanceDiagnostics
             else
             {
                 result.OverallAssessment = PerformanceLevel.Poor;
-                result.Summary = $"Poor model fit (R² = {rSquared:F4})";
+                result.Summary = $"Poor model fit (R² = {MetricSanitizer.Display("r_squared", rSquared)})";
                 result.Warnings.Add("Model performance is near random");
                 result.Suggestions.Add("Verify label column is correct");
                 result.Suggestions.Add("Check if the problem is actually predictable with available features");

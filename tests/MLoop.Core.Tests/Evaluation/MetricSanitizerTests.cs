@@ -88,4 +88,13 @@ public class MetricSanitizerTests
         Assert.Same(metrics, result);
         Assert.Equal(double.MaxValue, result["rmse"]);
     }
+
+    [Fact]
+    public void Display_ShowsTheUndefinedSentinelInWords_AndAnyOtherValueAsANumber()
+    {
+        Assert.Equal("not measured", MetricSanitizer.Display("r_squared", double.MinValue));
+        Assert.Equal("not measured", MetricSanitizer.Display("rmse", double.MaxValue));
+        Assert.Equal("0.8125", MetricSanitizer.Display("r_squared", 0.8125));
+        Assert.False(MetricSanitizer.IsUndefinedSentinel("rmse", double.MinValue));   // the other direction's sentinel is a value
+    }
 }

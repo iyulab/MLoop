@@ -1218,10 +1218,16 @@ public partial class TrainingRunner
     {
         var metricsDict = ScoreRegression(predictions, labelColumn);
 
+        // A test partition too small to score (none, or one row): the evaluator still answers, with zeros or an r² of 1e7.
+        var holdout = RegressionHoldout.Count(predictions, labelColumn);
+        var allNonFinite = AllScoresNonFinite(predictions);   // says it in its own words below
+        if (RegressionHoldout.MarkUndefined(metricsDict, holdout) is { } undefined && !allNonFinite)
+            _logger.Warning(undefined);
+
         // Every score non-finite: the metrics are already NaN (ScoreRegression), and intervals over NaN
         // residuals mean nothing.
         ITransformer? residualModel = null;
-        if (AllScoresNonFinite(predictions))
+        if (allNonFinite)
         {
             _logger.Warning(
                 "The selected model scored a non-finite value (NaN/Infinity) for every holdout row — a " +
@@ -1231,7 +1237,7 @@ public partial class TrainingRunner
             // Conformal calibration over all-NaN residuals is meaningless — skip it (its graceful
             // key-omission contract would drop everything anyway).
         }
-        else
+        else if (holdout.Rows != 0)   // none: nothing to calibrate an interval on
         {
             // ② regression wave: derive split-conformal prediction-interval half-widths from the same
             // held-out test predictions used for metrics, so predict/serve can surface an uncertainty

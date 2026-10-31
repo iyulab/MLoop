@@ -57,6 +57,22 @@ public static class MetricSanitizer
     }
 
     /// <summary>
+    /// True when a metric value is the worst-case sentinel <see cref="SanitizeInPlace"/> records for an undefined
+    /// measurement — <see cref="double.MaxValue"/> for lower-is-better metrics, <see cref="double.MinValue"/> for
+    /// higher-is-better. Exact equality is right: the sentinels are exact assignments, and no real evaluator metric
+    /// lands on them.
+    /// </summary>
+    public static bool IsUndefinedSentinel(string metricName, double value)
+        => MetricDirection.IsLowerBetter(metricName) ? value == double.MaxValue : value == double.MinValue;
+
+    /// <summary>
+    /// A metric value for people: "not measured" for the sentinel (three hundred digits are not a number anyone can
+    /// read), otherwise the value in <paramref name="format"/>.
+    /// </summary>
+    public static string Display(string metricName, double value, string format = "F4")
+        => IsUndefinedSentinel(metricName, value) ? "not measured" : value.ToString(format);
+
+    /// <summary>
     /// Fluent variant of <see cref="SanitizeInPlace"/> that sanitizes <paramref name="metrics"/>
     /// in place and returns the same dictionary, for use at <c>return</c> sites that don't need
     /// the replaced-key list.

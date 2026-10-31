@@ -81,6 +81,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop train` no longer reports scores for a regression test partition that cannot give one.** A file of four or five rows leaves a 20 % test partition with no row, and
+  the evaluator answered it with `r_squared`, `rmse` and `mae` all 0 - a perfect error next to no explained variance - which `train` printed as measured; six rows leave one
+  row, and `r_squared` came out as 17,940,886. Both are now recorded as undefined (the worst value of the metric's direction, as for a model that scores NaN), `train` says
+  why, and the quality gate keeps the model out of production (`its r_squared could not be measured`). `r_squared` is also undefined, and recorded so, when the test rows share
+  one label value. A metric recorded as undefined is shown as `not measured` in the `train` table and the diagnostics instead of a 308-digit number.
 - **The Platt fit stays near the identity when the rows fix only one number, and a temperature is never worse than leaving the probabilities as they are.** When the
   rows a binary model is calibrated on all sit at one probability (a model that learned nothing, or one whose answers are all exactly 0 or 1) only
   `slope * logit(p) + intercept` is determined, and the fit wandered along the flat direction to a slope of 2e4 and an intercept of -3e5 - which maps every

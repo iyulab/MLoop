@@ -206,8 +206,9 @@ internal static class TrainPresenter
 
         foreach (var (metricName, metricValue) in result.Metrics.OrderByDescending(m => m.Value))
         {
-            var formattedValue = metricValue.ToString("F4");
-            var color = metricValue >= 0.9 ? "green" :
+            var formattedValue = MetricSanitizer.Display(metricName, metricValue);
+            var color = MetricSanitizer.IsUndefinedSentinel(metricName, metricValue) ? "red" :
+                       metricValue >= 0.9 ? "green" :
                        metricValue >= 0.8 ? "yellow" :
                        metricValue >= 0.7 ? "orange1" : "red";
 
