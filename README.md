@@ -71,6 +71,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 | **Ranking** | Learning to Rank (LightGBM, FastTree) | Built-in |
 | **Time Series** | Forecasting (SSA), Time Series Anomaly (SR-CNN) | Built-in |
 | **Recommendation** | Matrix Factorization (collaborative filtering) | Built-in |
+| **Image Anomaly** | Patch distances to a bank of normal pictures (no label, no runtime install) | An installed image encoder (`mloop encoder install`) |
 | **Deep Learning** | Image Classification, Object Detection, Text Classification, NER, Sentence Similarity, QA | On-demand (`mloop runtime install`) |
 
 > Image Classification (directory loader → TensorFlow transfer learning, `tf` runtime) and Object
@@ -205,6 +206,17 @@ mloop compare <exp1> <exp2>            # Compare experiment metrics
 mloop compare --metrics-file <path> --json  # Provided-state: rank/select best from supplied metrics (no local .mloop/; distributed consumers)
 mloop serve                            # Start REST API server
 mloop docker                           # Generate Docker deployment files
+mloop status [-v] [--json]             # Project status at a glance
+mloop explain [exp-id] [--data <file>] # Which input columns the model relies on (permutation importance on a labeled file)
+mloop threshold [exp-id] --precision <p> --data <file>   # Binary decision threshold for a target precision
+mloop calibrate [exp-id] --data <file> [--method platt|isotonic|temperature]  # Probability calibration on labeled rows, no retraining
+mloop drift [--rows N] [--slice-by <col>] [--json]  # Recent logged inputs vs the training data (PSI per column)
+mloop trigger check                    # Evaluate the retraining triggers
+mloop logs [--limit N] [--json]        # View prediction logs (`logs prune` drops those past the retention period)
+mloop feedback add --prediction-id <id> --actual-value <value> [--source <source>]  # Record feedback on a prediction (`feedback list` and `feedback metrics` read it back)
+mloop sample create --from <file> [--rows N] [--strategy <strategy>]  # Sample a CSV, or the prediction logs with --name, into a dataset (`sample stats` summarizes)
+mloop preprocess <input-file>          # Run the scripts in .mloop/scripts/preprocess/
+mloop new hook <name> <type>           # Generate a hook script
 mloop update                           # Self-update to latest version
 ```
 
