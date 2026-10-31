@@ -377,6 +377,15 @@ public class CsvDataLoader : DataProviderBase
             (preserveColumns ?? []).Concat(trainedSchema?.ReadByNameColumns ?? []));
     }
 
+    /// <summary>The names of the numeric feature columns training read, as the saved schema spells them.</summary>
+    private static List<string> TrainedNumericFeatureNames(InputSchemaInfo trainedSchema, string? labelColumn) =>
+        trainedSchema.Columns
+            .Where(c => c.Purpose == "Feature"
+                     && SchemaDataTypes.ToDataKind(c.DataType, DataKind.String) == DataKind.Single
+                     && (labelColumn == null || !c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase)))
+            .Select(c => c.Name)
+            .ToList();
+
     /// <summary>
     /// Rebuilds the merged numeric feature range so it spans the columns training merged, rather
     /// than the ones this file happens to read as numeric.
@@ -457,10 +466,15 @@ public class CsvDataLoader : DataProviderBase
         }
         else
         {
-            if (SameRanges(merged.Source!, desired))
+            // What the range is called is a property of training too: one numeric feature keeps its own header name, two or more fold into
+            // the vector. A file with a numeric column training did not read (a weight, an id) makes inference fold it together with the
+            // trained one, and a model trained on one numeric feature then finds no column of that name - "Could not find input column".
+            var folded = ColumnLayoutInference.FoldedName(TrainedNumericFeatureNames(trainedSchema, labelColumn), DataKind.Single);
+            if (SameRanges(merged.Source!, desired) && string.Equals(merged.Name, folded, StringComparison.Ordinal))
                 return;
 
             merged.Source = desired;
+            merged.Name = folded;
         }
 
         // Narrowing the range can leave a column with nothing to read it: a feature training loaded

@@ -77,6 +77,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A file with a numeric column the model was not trained on no longer fails with "Could not find input column".** `predict`, `evaluate` and every command that loads a
+  data file folds the numeric columns of the file into one vector; a model trained on a single numeric feature reads a column named after it, and found none once a second
+  numeric column (a weight, an id) made the vector. This was the case `evaluate --weight <column>` exists for - a test file whose weight column the model never saw -
+  and it failed before reading the option. The vector the loader narrows to the trained feature now takes the name training gave it. A model trained on two or more
+  numeric features, which read the vector, was not affected.
 - **`mloop predict --model <file>` uses the experiment record of the model it is given.** The columns a model was trained on, its label and its task are in the
   experiment record beside it, not in the file. The command looked that record up by the name of the file's folder *in the current project*, so the file in a
   model's `production` slot (which holds a pointer, not the record) and a model kept with a copy of its experiment folder somewhere else were scored as the data reads: a

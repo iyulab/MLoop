@@ -109,6 +109,51 @@ public class InferenceSchemaReconciliationTests : IDisposable
         Assert.Single(queryCol!.Source);
     }
 
+    [Theory]
+    [InlineData("x,kind,y,w")]   // the column training did not read, last
+    [InlineData("w,x,kind,y")]   // first
+    [InlineData("x,w,kind,y")]   // between the features
+    public void ReconcileInferredSchema_ANumericColumnTrainingDidNotRead_DoesNotTakeTheOneTrainedFeatureIntoAVector(string header)
+    {
+        // Training read one numeric feature, so the model reads a column named after it. A file with a second numeric column (a weight,
+        // an id) is inferred as one Features vector over both; narrowing the vector to the trained feature left it named Features, and
+        // the model found no column 'x' ("Could not find input column") - on predict, evaluate and everything else that loads a file.
+        var columns = header.Split(',');
+        var rows = new[]
+        {
+            new Dictionary<string, string> { ["x"] = "0.5", ["kind"] = "a", ["y"] = "yes", ["w"] = "1" },
+            new Dictionary<string, string> { ["x"] = "1.5", ["kind"] = "b", ["y"] = "no", ["w"] = "3" },
+            new Dictionary<string, string> { ["x"] = "2.5", ["kind"] = "a", ["y"] = "yes", ["w"] = "1" },
+            new Dictionary<string, string> { ["x"] = "3.5", ["kind"] = "b", ["y"] = "no", ["w"] = "3" },
+        };
+        var csv = string.Join('\n', new[] { header }.Concat(rows.Select(r => string.Join(',', columns.Select(c => r[c]))))) + "\n";
+        var csvPath = WriteCsv("extra_numeric.csv", csv);
+        var inference = ColumnLayoutInference.Infer(_mlContext, csvPath, "y").Options;
+        var trainedSchema = MakeSchema(("x", "Numeric", "Feature"), ("kind", "Categorical", "Feature"), ("y", "Categorical", "Label"));
+
+        CsvDataLoader.ReconcileInferredSchemaForInference(inference, trainedSchema, "y", csvPath, null);
+
+        var x = Assert.Single(inference.Columns!, c => c.Name == "x");
+        var source = Assert.Single(x.Source!);
+        Assert.Equal(Array.IndexOf(columns, "x"), source.Min);
+        Assert.Equal(source.Min, source.Max);
+        Assert.DoesNotContain(inference.Columns!, c => c.Name == ColumnLayoutInference.NumericVectorName);
+    }
+
+    [Fact]
+    public void ReconcileInferredSchema_TwoTrainedNumericFeatures_StayAVectorOfThoseTwo_WhateverTheFileAdds()
+    {
+        var csvPath = WriteCsv("two_numeric.csv", "x,z,w,y\n1,2,9,yes\n2,3,8,no\n3,4,7,yes\n4,5,6,no\n");
+        var inference = ColumnLayoutInference.Infer(_mlContext, csvPath, "y").Options;
+        var trainedSchema = MakeSchema(("x", "Numeric", "Feature"), ("z", "Numeric", "Feature"), ("y", "Categorical", "Label"));
+
+        CsvDataLoader.ReconcileInferredSchemaForInference(inference, trainedSchema, "y", csvPath, null);
+
+        var vector = Assert.Single(inference.Columns!, c => c.Name == ColumnLayoutInference.NumericVectorName);
+        var source = Assert.Single(vector.Source!);
+        Assert.Equal((0, 1), (source.Min, source.Max));
+    }
+
     private string WriteCsv(string name, string content)
     {
         var path = Path.Combine(_testDir, name);
