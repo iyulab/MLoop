@@ -212,16 +212,16 @@ public static class PrepRunCommand
                 });
 
             // Show result summary
-            var inputLines = File.ReadLines(pipelineInput).Count();
-            var outputLines = File.ReadLines(resolvedOutput).Count();
+            var rowsBefore = await TableRows.CountAsync(pipelineInput);
+            var rowsAfter = await TableRows.CountAsync(resolvedOutput);
 
             AnsiConsole.MarkupLine("[green]Pipeline executed successfully![/]");
-            AnsiConsole.MarkupLine($"[grey]  Rows: {inputLines - 1} → {outputLines - 1}[/]");
+            AnsiConsole.MarkupLine($"[grey]  Rows: {rowsBefore} → {rowsAfter}[/]");
             AnsiConsole.MarkupLineInterpolated($"[grey]  Output: {resolvedOutput}[/]");
             AnsiConsole.WriteLine();
 
             EmitJson(resolvedModelName, dryRun, resolvedInput, resolvedOutput, modelDef.Prep, null,
-                inputLines - 1, outputLines - 1, jsonOutput);
+                rowsBefore, rowsAfter, jsonOutput);
             return 0;
         }
         catch (Exception ex)

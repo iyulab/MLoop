@@ -15,4 +15,17 @@ public static class TableRows
         ArgumentNullException.ThrowIfNull(line);
         return columnCount == 1 || !string.IsNullOrWhiteSpace(line);
     }
+
+    /// <summary>
+    /// The records of a table file, counted by reading it as CSV: a quoted field that holds line breaks is one record, a blank line
+    /// is none. Where the lines are not yet folded (<see cref="IsRow"/> sees lines), a count of lines is more than the table holds.
+    /// </summary>
+    public static async Task<int> CountAsync(string path, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        var count = 0;
+        await foreach (var _ in new CsvHelperImpl().ReadRowsAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false))
+            count++;
+        return count;
+    }
 }

@@ -133,6 +133,30 @@ public class PrepRunCommandJsonTests : IDisposable
         Assert.NotNull(doc.RootElement.GetProperty("output").GetString());
     }
 
+    // The counts are of records, not of lines: a quoted field holding a line break is one record, and a blank line is none.
+    [Fact]
+    public async Task PrepRun_Json_Execute_CountsRecordsNotLines()
+    {
+        WriteYaml("""
+            project: test
+            models:
+              default:
+                task: regression
+                label: b
+                prep:
+                  - type: drop-duplicates
+            """);
+        File.WriteAllText(Path.Combine(_testProjectRoot, "datasets", "train.csv"),
+            "a,note,b\n1,\"first\nsecond\nthird\",4\n\n2,plain,5\n2,plain,5\n3,\"x\ny\",6\n");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("prep", "run", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal(4, doc.RootElement.GetProperty("rowsBefore").GetInt32());
+        Assert.Equal(3, doc.RootElement.GetProperty("rowsAfter").GetInt32());   // the repeated record is dropped
+    }
+
     // Regression guard: a step with no parameters (e.g. drop-duplicates) renders its Details cell
     // via the empty-case sentinel in GetStepDetails, which is itself Spectre markup ("[grey]-[/]")
     // rather than escapable user data. Escaping it at the wrong layer once made this literal text
