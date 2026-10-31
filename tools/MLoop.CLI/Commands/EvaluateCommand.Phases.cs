@@ -213,12 +213,14 @@ public static partial class EvaluateCommand
             var trainingValue = trainingMetrics.ContainsKey(metricName) ? trainingMetrics[metricName] : 0;
             var difference = testValue - trainingValue;
 
-            var differenceText = FormatMetricDifference(metricName, difference);
+            // A metric recorded as undefined is the worst value of its direction: shown in words, with no difference to read.
+            var undefined = MetricSanitizer.IsUndefinedSentinel(metricName, testValue) || MetricSanitizer.IsUndefinedSentinel(metricName, trainingValue);
+            var differenceText = undefined ? "-" : FormatMetricDifference(metricName, difference);
 
             table.AddRow(
                 metricName,
-                trainingValue.ToString("F4"),
-                testValue.ToString("F4"),
+                MetricSanitizer.Display(metricName, trainingValue),
+                MetricSanitizer.Display(metricName, testValue),
                 differenceText);
         }
 
@@ -229,7 +231,10 @@ public static partial class EvaluateCommand
         if (confusion is not null)
             ShowConfusion(confusion, weightColumn is not null);
 
-        var overfitting = DetectOverfitting(experimentData.Task ?? "", trainingMetrics, testMetrics);
+        // Only what was measured says anything about overfitting; an undefined metric's worst value would read as a collapse.
+        var overfitting = DetectOverfitting(experimentData.Task ?? "",
+            trainingMetrics.Where(m => !MetricSanitizer.IsUndefinedSentinel(m.Key, m.Value)).ToDictionary(m => m.Key, m => m.Value),
+            testMetrics.Where(m => !MetricSanitizer.IsUndefinedSentinel(m.Key, m.Value)).ToDictionary(m => m.Key, m => m.Value));
 
         // Overfitting warning
         if (overfitting)

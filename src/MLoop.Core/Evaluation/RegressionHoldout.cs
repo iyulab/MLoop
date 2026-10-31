@@ -53,7 +53,7 @@ public static class RegressionHoldout
     /// worst value of the metric's direction, so the quality gate refuses the model. Returns the reason, or
     /// <c>null</c> when the holdout can be scored (or could not be counted).
     /// </summary>
-    public static string? MarkUndefined(Dictionary<string, double> metrics, Census census)
+    public static string? MarkUndefined(Dictionary<string, double> metrics, Census census, string subject = "test partition")
     {
         ArgumentNullException.ThrowIfNull(metrics);
         if (census.Rows < 0)
@@ -62,15 +62,15 @@ public static class RegressionHoldout
         {
             foreach (var key in metrics.Keys.ToArray())
                 metrics[key] = double.NaN;
-            return "The test partition holds no row the model could be scored on, so no metric can be measured: it is recorded as the worst value and the model cannot pass the quality gate. Provide more rows.";
+            return $"The {subject} holds no row the model could be scored on, so no metric can be measured: it is recorded as the worst value (a quality gate refuses such a value). Provide more rows.";
         }
         if (census.Rows < 2 || !(census.LabelVariance > 0))
         {
             if (metrics.ContainsKey("r_squared"))
                 metrics["r_squared"] = double.NaN;
             return census.Rows < 2
-                ? "The test partition holds a single row, so r_squared is undefined (it compares the error to the label's spread); it is recorded as the worst value and the model cannot pass the quality gate. Provide more rows."
-                : "The test partition's label never varies, so r_squared is undefined (it compares the error to the label's spread); it is recorded as the worst value and the model cannot pass the quality gate. Provide more rows.";
+                ? $"The {subject} holds a single row, so r_squared is undefined (it compares the error to the label's spread); it is recorded as the worst value (a quality gate refuses such a value). Provide more rows."
+                : $"The {subject}'s label never varies, so r_squared is undefined (it compares the error to the label's spread); it is recorded as the worst value (a quality gate refuses such a value). Provide more rows.";
         }
         return null;
     }

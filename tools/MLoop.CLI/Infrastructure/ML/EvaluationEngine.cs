@@ -442,9 +442,14 @@ public class EvaluationEngine
 
     private Dictionary<string, double> EvaluateRegression(IDataView predictions, string labelColumn)
     {
-        var metrics = _mlContext.Regression.Evaluate(predictions, labelColumnName: labelColumn, scoreColumnName: "Score");
+        var metrics = MetricReport.Describe(_mlContext.Regression.Evaluate(predictions, labelColumnName: labelColumn, scoreColumnName: "Score"));
 
-        return MetricReport.Describe(metrics);
+        // A file of no row, one row, or one label value cannot give an r²: the evaluator answers zeros or a number in
+        // the millions. Marked undefined here, the sanitizer at the end of EvaluateAsync records the worst value.
+        if (RegressionHoldout.MarkUndefined(metrics, RegressionHoldout.Count(predictions, labelColumn), "evaluated file") is { } undefined)
+            WarningConsole.Warn(Spectre.Console.Markup.Escape(undefined));
+
+        return metrics;
     }
 
     private Dictionary<string, double> EvaluateBinaryClassification(IDataView predictions, string labelColumn)

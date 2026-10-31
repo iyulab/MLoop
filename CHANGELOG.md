@@ -81,6 +81,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop evaluate` says why an r² cannot be given, and shows an undefined metric in words.** A file of a single row, or whose label never varies, has no spread to compare the error
+  with: the evaluator answered a single row with an r² in the millions and a constant label with minus infinity, which was recorded as the worst value with no word of why.
+  `evaluate` now warns (`The evaluated file's label never varies, so r_squared is undefined …`), keeps the errors, and the table (and the overfitting check) shows an undefined
+  metric as `not measured` instead of a 308-digit number.
 - **`mloop predict` and `mloop evaluate` answer a file whose columns are in another order the way they answer the same rows in the training order.** The loader merges a file's
   numeric columns into the model's feature vector by position, so a file that carried the same columns in a different order (an export from another system, the label moved
   to the front) fed every slot the wrong column and the model answered without a word: a regression model's answers differed from the original file's for 116 of 120 rows, and

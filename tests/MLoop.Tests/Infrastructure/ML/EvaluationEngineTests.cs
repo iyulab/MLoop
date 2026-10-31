@@ -148,6 +148,25 @@ public class EvaluationEngineTests : IDisposable
         Assert.Contains("unsupported-type", ex.Message);
     }
 
+    // A file whose label never varies has no spread to compare the error with: r-squared is undefined (the sanitizer already
+    // recorded the evaluator's -infinity as the worst value, silently; one row gives a number in the millions instead). The
+    // evaluation says why, and the errors, which are defined, stay.
+    [Theory]
+    [InlineData("1,3;4,3")]
+    [InlineData("1,3;4,3;7,3")]
+    public async Task EvaluateAsync_Regression_FileThatCannotGiveAnRSquared_SaysWhy_AndKeepsTheErrors(string rows)
+    {
+        var (modelPath, _) = TrainSimpleRegressionModel();
+        var testPath = CreateBomCsv("regression_degenerate.csv", BuildCsv("Feature1,Label", rows.Split(';')));
+
+        using var collected = MLoop.CLI.Infrastructure.Diagnostics.WarningConsole.Collect();
+        var metrics = (await _engine.EvaluateAsync(modelPath, testPath, "Label", "regression")).Metrics;
+
+        Assert.Equal(double.MinValue, metrics["r_squared"]);
+        Assert.InRange(metrics["rmse"], 0, 1000);
+        Assert.Contains(collected.Warnings, w => w.Contains("label never varies", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task EvaluateAsync_Regression_ReturnsRegressionMetrics()
     {
