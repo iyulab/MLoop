@@ -1570,6 +1570,7 @@ x1,x2,churn,weight
   relative path is the project's, as for every command, and the current directory's outside a project. A CSV is
   streamed, so memory follows the sample, not the file (a 100,000-row sample of a 2-million-row CSV ≈ 150 MB); the
   sampled rows keep their file order, and `stratified` gives every class at least one row when the sample has room.
+  The text is written composed (NFC): Hangul typed as jamo comes out as syllables, the same text every command reads.
   A file in another format (TSV, JSON — `--records` names the array of rows —, Excel, Parquet) is read as the table it holds
   and the sample is written as CSV, named `<file>_sampled.csv` when no `--output` is given.
   `mloop sample stats --name <model>` reports how many logged predictions have feedback.
