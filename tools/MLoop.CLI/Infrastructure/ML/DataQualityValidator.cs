@@ -79,7 +79,7 @@ public class DataQualityValidator
 
             // Read all data lines with UTF-8 encoding
             var allLines = File.ReadAllLines(dataFile, System.Text.Encoding.UTF8);
-            var dataLines = allLines.Skip(1).ToArray(); // Skip header
+            var dataLines = allLines.Skip(1).Where(line => TableRows.IsRow(line, columnNames.Length)).ToArray(); // Skip header and blank lines
 
             if (dataLines.Length == 0)
             {
@@ -514,9 +514,10 @@ public class DataQualityValidator
                 return; // Already handled by label validation
             }
 
-            var featureCount = CsvFieldParser.ParseFields(firstLine).Length - 1; // Exclude label column
+            var columnCount = CsvFieldParser.ParseFields(firstLine).Length;
+            var featureCount = columnCount - 1; // Exclude label column
             var allLines = File.ReadAllLines(dataFile, System.Text.Encoding.UTF8);
-            var sampleCount = allLines.Length - 1; // Exclude header
+            var sampleCount = allLines.Skip(1).Count(line => TableRows.IsRow(line, columnCount)); // Exclude header and blank lines
 
             if (sampleCount <= 0)
             {

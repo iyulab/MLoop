@@ -56,6 +56,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A table's blank line is not a row in the training-time checks either.** The size warnings ("only N rows", "N samples for M features"), the "no data rows"
+  check and the row count the training-time estimate is made from counted a blank line as a row, while the loaders skip it: three trailing blank lines turned
+  a critically small file of eight rows into one of eleven, and a file of a header and blank lines was reported as having no valid label values rather than
+  no rows. They now ask the same question the loaders, `info`, `predict` and the training summary ask.
 - **`mloop predict` reads a file of fewer than a hundred rows that has a blank line.** A prediction file has no label column, so predict wrote a copy with an
   empty one in front of every line - a blank line became `,`, a line of the wrong width, and among fewer than a hundred rows it failed the split of the file into
   columns ("unable to split the file into multiple, consistent columns", with no word about the blank line). Blank lines are left out of the copy, as everywhere

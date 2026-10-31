@@ -255,7 +255,7 @@ public class SchemaValidator
 
             while (rowsRead < TypeCheckSampleRows && reader.ReadLine() is { } line)
             {
-                if (string.IsNullOrWhiteSpace(line))
+                if (!TableRows.IsRow(line, inputColumns.Length))
                     continue;
 
                 rowsRead++;

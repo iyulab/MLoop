@@ -437,5 +437,28 @@ public class DataQualityValidatorTests : IDisposable
         Assert.Contains(result.Warnings, w => w.Contains("Small dataset") || w.Contains("Borderline"));
     }
 
+    // Eight rows, then blank lines: a table's blank line is not a row (the loaders skip it), so the size warnings count eight.
+    private string EightRowsThenBlankLines(int blankLines) => CreateCsv(
+        "x,z,y\n" + string.Concat(Enumerable.Range(0, 8).Select(i => $"{i},{i * 2},{i % 2}\n")) + new string('\n', blankLines));
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public void ValidateTrainingData_BlankLinesAreNotRows_InTheDatasetSizeWarning(int blankLines)
+    {
+        var result = _validator.ValidateTrainingData(EightRowsThenBlankLines(blankLines), "y", "binary-classification");
+
+        Assert.Contains(result.Warnings, w => w.Contains("Critically small dataset: only 8 rows"));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_AFileOfHeaderAndBlankLinesOnly_HasNoDataRows()
+    {
+        var result = _validator.ValidateTrainingData(CreateCsv("x,y\n\n\n\n"), "y", "regression");
+
+        Assert.False(result.IsValid);
+        Assert.Equal("No data rows found", result.ErrorMessage);
+    }
+
     #endregion
 }

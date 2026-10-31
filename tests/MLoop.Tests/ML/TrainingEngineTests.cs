@@ -69,6 +69,19 @@ public class TrainingEngineTests : IDisposable
     }
 
     [Fact]
+    public void CollectDataStats_BlankLinesInATable_AreNotRows()
+    {
+        // The loaders skip a table's blank line, so the row count the time estimate is made from skips it too.
+        var csv = "Feature1,Feature2,Label\n1,2,A\n\n3,4,B\n5,6,C\n\n\n";
+        var path = CreateCsv("blank-lines.csv", csv);
+
+        var (rowCount, _, _, classCount) = TrainingEngine.CollectDataStats(path, "Label", "multiclass-classification");
+
+        Assert.Equal(3, rowCount);
+        Assert.Equal(3, classCount);
+    }
+
+    [Fact]
     public void CollectDataStats_BinaryClassification_CountsClasses()
     {
         var csv = "Feature1,Label\n1,Positive\n2,Negative\n3,Positive\n";

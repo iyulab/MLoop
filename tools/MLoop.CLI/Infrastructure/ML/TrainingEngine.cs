@@ -812,6 +812,9 @@ public class TrainingEngine : ITrainingEngine
         string? line;
         while ((line = reader.ReadLine()) != null)
         {
+            if (!TableRows.IsRow(line, columnCount))
+                continue;
+
             rowCount++;
 
             var fields = CsvFieldParser.ParseFields(line);
@@ -1019,7 +1022,8 @@ public class TrainingEngine : ITrainingEngine
                 string? sampleLine;
                 while (sampleLines.Count < 1000 && (sampleLine = sampleReader.ReadLine()) != null)
                 {
-                    sampleLines.Add(sampleLine);
+                    if (TableRows.IsRow(sampleLine, columnNames.Length))
+                        sampleLines.Add(sampleLine);
                 }
             }
             var dataLines = sampleLines.ToArray();
