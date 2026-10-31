@@ -119,6 +119,7 @@ public class SchemaValidator
             var missingColumns = new List<string>();
             var extraColumns = new List<string>();
             var potentialEncodingIssues = new List<(string expected, string found)>();
+            var unicodeFormTwins = new List<(string expected, string found)>();
 
             // Check for missing required columns (Features only, not Label)
             foreach (var savedCol in savedSchema.Columns.Where(c => c.Purpose == "Feature"))
@@ -135,6 +136,15 @@ public class SchemaValidator
                     if (caseInsensitiveMatch != null)
                     {
                         // ASCII column found with different case - OK
+                        continue;
+                    }
+
+                    // The same text in another Unicode form (decomposed Hangul): found, but not byte for byte
+                    var sameText = inputColumns.FirstOrDefault(ic => MLoop.Core.Data.CanonicalText.SameText(ic, savedCol.Name));
+                    if (sameText != null)
+                    {
+                        unicodeFormTwins.Add((savedCol.Name, sameText));
+                        missingColumns.Add(savedCol.Name);
                         continue;
                     }
 
@@ -170,7 +180,14 @@ public class SchemaValidator
                 result.MissingColumns = missingColumns;
 
                 // Enhanced error message with encoding issue detection
-                if (potentialEncodingIssues.Any())
+                if (unicodeFormTwins.Any())
+                {
+                    result.ErrorMessage = $"Missing required columns: {string.Join(", ", missingColumns)}\n\n" +
+                        UnicodeFormNote(unicodeFormTwins);
+                    result.Suggestions.Add("✅ Solution: save the file with its text composed (NFC), e.g. " +
+                        "python3 -c \"import sys,unicodedata as u; sys.stdout.write(u.normalize('NFC', sys.stdin.read()))\" < in.csv > out.csv");
+                }
+                else if (potentialEncodingIssues.Any())
                 {
                     result.ErrorMessage = $"Missing required columns: {string.Join(", ", missingColumns)}\n\n" +
                         "⚠️ Encoding issue detected:\n" +
@@ -288,6 +305,18 @@ public class SchemaValidator
     /// <summary>
     /// Find similar column name that might have encoding issues
     /// </summary>
+    /// <summary>
+    /// Why a column the file visibly has is reported missing: its name is the same text written in another Unicode form, so
+    /// the two look identical and differ in their bytes.
+    /// </summary>
+    internal static string UnicodeFormNote(IEnumerable<(string expected, string found)> twins) =>
+        "⚠️ Same text, different Unicode form: the file has the column, but not spelled the way training saw it " +
+        "(Hangul composed as syllables, NFC, or decomposed into jamo, NFD — they look identical):\n" +
+        string.Join("\n", twins.Select(t => $"  Expected: '{t.expected}' ({Describe(t.expected)}) → Found: '{t.found}' ({Describe(t.found)})"));
+
+    private static string Describe(string text) =>
+        MLoop.Core.Data.CanonicalText.Nfc(text) == text ? "composed" : "decomposed";
+
     private static string? FindSimilarColumnWithEncodingIssue(string expectedName, string[] inputColumns)
     {
         // Check if expected name contains non-ASCII characters (Korean, Japanese, Chinese, etc.)

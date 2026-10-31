@@ -232,7 +232,7 @@ regression; the experiment records `portable: true`.
   as a row, and a row also carries the fields of the items it sits in, named by their array
   (`paragraphs.context`, `qas.question`). Without it, such a file is refused with the paths that would
   read it.
-- **Encoding Detection**: CP949/EUC-KR files auto-converted to UTF-8 (Korean text support)
+- **Encoding Detection**: CP949/EUC-KR files auto-converted to UTF-8 (Korean text support); Hangul written as jamo (NFD, as macOS files often carry it) is read as the same text as syllables (NFC)
 - **Schema Validation**: Same-schema files auto-detected for `--auto-merge`
 - **Label Handling**: Missing labels auto-dropped for classification tasks
 - **Data Quality Analysis**: Automatic class distribution and quality warnings

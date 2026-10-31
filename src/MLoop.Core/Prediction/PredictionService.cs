@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Runtime;
 using MLoop.Core.Storage;
@@ -197,6 +198,7 @@ public class PredictionService
         foreach (var col in categoricalColumns)
         {
             var knownValues = new HashSet<string>(col.CategoricalValues!);
+            var knownByNfc = CanonicalText.LookupByNfc(col.CategoricalValues!);
             var fallbackValue = col.CategoricalValues![0]; // Most frequent value
 
             foreach (var row in rows)
@@ -207,6 +209,13 @@ public class PredictionService
                 var strValue = rawValue.ToString() ?? "";
                 if (!string.IsNullOrEmpty(strValue) && !knownValues.Contains(strValue))
                 {
+                    // The same text in another Unicode form (decomposed Hangul) is the value training saw, not a new one.
+                    if (CanonicalText.Resolve(knownValues, knownByNfc, strValue) is { } trained)
+                    {
+                        row[col.Name] = trained;
+                        continue;
+                    }
+
                     row[col.Name] = fallbackValue;
                     warnings.Add($"Column '{col.Name}': unknown value '{strValue}' replaced with '{fallbackValue}'");
                 }

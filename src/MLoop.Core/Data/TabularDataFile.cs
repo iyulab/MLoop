@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using FilePrepper.Pipeline;
 using FilePrepper.Utils;
 
@@ -13,7 +14,8 @@ namespace MLoop.Core.Data;
 /// <para>MLoop reads data in many places, all of them as CSV. Rather than teach each of them other
 /// formats, a command passes its data path through <see cref="AsCsvAsync"/> as soon as the path is
 /// known, and everything after sees CSV. Delimited text (<c>.csv</c>, and any extension FilePrepper
-/// does not claim) is returned unchanged; Excel, Parquet, JSON, SVMlight and TSV are written to a temporary
+/// does not claim) is returned as it is — unless its Hangul is decomposed (see <see cref="CanonicalText"/>), when it is a
+/// temporary copy with the text composed; Excel, Parquet, JSON, SVMlight and TSV are written to a temporary
 /// <c>.csv</c> — the extension matters, because readers downstream route on it.</para>
 /// <para>A folder is a table when it holds data files FilePrepper reads: their rows, in file-name
 /// order (<see cref="DataPipeline.FromDirectoryAsync"/>). That is the shape of exports that write a
@@ -27,6 +29,7 @@ public static class TabularDataFile
 {
     // One process converts one input once, however many of its steps ask.
     private static readonly ConcurrentDictionary<(string Path, DateTime Written, long Length), string> Converted = new();
+    private static readonly ConcurrentDictionary<(string Path, DateTime Written, long Length), string> Composed = new();
 
     /// <summary>Whether <paramref name="path"/> is a folder holding data files to read as one table.</summary>
     public static bool IsTableFolder(string path) =>
@@ -68,8 +71,10 @@ public static class TabularDataFile
             throw new ArgumentException(
                 $"--records reads the rows of a JSON file; '{Path.GetFileName(path)}' is not one.", nameof(jsonRecordPath));
 
-        if (!NeedsConversion(path) || !Exists(path))
+        if (!Exists(path))
             return path;
+        if (!NeedsConversion(path))
+            return ComposedCopy(path);
 
         var key = isFolder
             ? (Path.GetFullPath(path) + "#" + jsonRecordPath, LastWriteTimeOf(path).ToUniversalTime(), (long)DataFileFormats.FilesIn(path).Count)
@@ -95,6 +100,74 @@ public static class TabularDataFile
 
         Converted[key] = csv;
         return csv;
+    }
+
+    /// <summary>
+    /// <paramref name="path"/> when its text is composed already — the case for nearly every file, and for a file that is not
+    /// UTF-8, whose own encoding the readers detect and which is never rewritten here — else a temporary copy with the text
+    /// composed (NFC), byte for byte the same apart from that: line endings, a byte-order mark and the quoting stay.
+    /// </summary>
+    private static string ComposedCopy(string path)
+    {
+        var info = new FileInfo(path);
+        var key = (info.FullName, info.LastWriteTimeUtc, info.Length);
+        if (Composed.TryGetValue(key, out var known) && (known == path || File.Exists(known)))
+            return known;
+
+        var result = ComposeText(path);
+        Composed[key] = result;
+        return result;
+    }
+
+    private static string ComposeText(string path)
+    {
+        var strict = new UTF8Encoding(false, throwOnInvalidBytes: true);
+        try
+        {
+            if (WholeLines(path, strict).All(chunk => chunk.IsNormalized(NormalizationForm.FormC)))
+                return path;
+
+            var copy = ScratchFiles.New("mloop_composed_", ".csv");
+            using var writer = new StreamWriter(copy, false, new UTF8Encoding(HasUtf8Bom(path)));
+            foreach (var chunk in WholeLines(path, strict))
+                writer.Write(CanonicalText.Nfc(chunk));
+            return copy;
+        }
+        catch (DecoderFallbackException)
+        {
+            return path; // not UTF-8: the readers' own encoding detection decides
+        }
+    }
+
+    /// <summary>
+    /// The file's text in pieces that end at a line break (the last at the end of the file): a character never combines
+    /// across a line break, so each piece composes on its own, and no more than a buffer of it is held at once.
+    /// </summary>
+    private static IEnumerable<string> WholeLines(string path, UTF8Encoding strict)
+    {
+        using var reader = new StreamReader(path, strict, detectEncodingFromByteOrderMarks: true);
+        var buffer = new char[1 << 16];
+        var pending = new StringBuilder();
+        int read;
+        while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            pending.Append(buffer, 0, read);
+            var text = pending.ToString();
+            var cut = text.LastIndexOf('\n') + 1;
+            if (cut == 0)
+                continue;
+            pending.Clear().Append(text, cut, text.Length - cut);
+            yield return text[..cut];
+        }
+        if (pending.Length > 0)
+            yield return pending.ToString();
+    }
+
+    private static bool HasUtf8Bom(string path)
+    {
+        using var stream = File.OpenRead(path);
+        Span<byte> head = stackalloc byte[3];
+        return stream.Read(head) == 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF;
     }
 
     private static bool IsJson(string path, bool isFolder) =>

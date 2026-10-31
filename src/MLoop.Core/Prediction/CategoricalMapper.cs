@@ -108,6 +108,7 @@ public class CategoricalMapper
             // Process each data line
             var processedLines = new List<string> { header };
             var unknownValuesByColumn = new Dictionary<string, HashSet<string>>();
+            var trainedForms = TrainedForms(categoricalColumns.Values);
 
             foreach (var line in dataLines)
             {
@@ -121,9 +122,13 @@ public class CategoricalMapper
                     {
                         var value = values[colIndex].Trim();
 
+                        // The same text in another Unicode form (decomposed Hangul) is the value training saw.
+                        if (!string.IsNullOrEmpty(value) && trainedForms[schemaCol].Resolve(value) is { } trained && trained != value)
+                            processedValues[colIndex] = trained;
+
                         // Check if value exists in training schema
                         if (!string.IsNullOrEmpty(value) &&
-                            !schemaCol.CategoricalValues!.Contains(value))
+                            trainedForms[schemaCol].Resolve(value) is null)
                         {
                             // Track unknown value
                             if (!unknownValuesByColumn.ContainsKey(schemaCol.Name))
@@ -141,7 +146,7 @@ public class CategoricalMapper
 
                                 case UnknownValueStrategy.UseMostFrequent:
                                     // Use first value (after sorting, it's consistent)
-                                    processedValues[colIndex] = schemaCol.CategoricalValues[0];
+                                    processedValues[colIndex] = schemaCol.CategoricalValues![0];
                                     break;
 
                                 case UnknownValueStrategy.UseMissing:
@@ -190,6 +195,19 @@ public class CategoricalMapper
             result.ErrorMessage = $"Error preprocessing categorical data: {ex.Message}";
             return result;
         }
+    }
+
+    /// <summary>What each categorical column was trained on, ready to match a value as text (see <see cref="CanonicalText"/>).</summary>
+    private static Dictionary<ColumnSchema, TrainedValues> TrainedForms(IEnumerable<ColumnSchema> columns)
+        => columns.ToDictionary(c => c, c => new TrainedValues(c.CategoricalValues!));
+
+    private sealed class TrainedValues(IReadOnlyList<string> values)
+    {
+        private readonly HashSet<string> _exact = new(values);
+        private readonly Dictionary<string, string> _byNfc = CanonicalText.LookupByNfc(values);
+
+        /// <summary>The trained spelling of <paramref name="value"/>, or null when training never saw it.</summary>
+        public string? Resolve(string value) => CanonicalText.Resolve(_exact, _byNfc, value);
     }
 
     private string BuildUnknownValueErrorMessage(
@@ -263,6 +281,7 @@ public class CategoricalMapper
         // Calculate unknown value statistics
         int totalCategoricalValues = 0;
         int unknownValueCount = 0;
+        var trainedForms = TrainedForms(categoricalColumns.Values);
 
         foreach (var line in dataLines)
         {
@@ -277,7 +296,7 @@ public class CategoricalMapper
                     {
                         totalCategoricalValues++;
 
-                        if (!schemaCol.CategoricalValues!.Contains(value))
+                        if (trainedForms[schemaCol].Resolve(value) is null)
                         {
                             unknownValueCount++;
                         }

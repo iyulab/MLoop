@@ -175,4 +175,72 @@ public class TabularDataFileTests : IDisposable
 
         await Assert.ThrowsAsync<ArgumentException>(() => TabularDataFile.AsCsvAsync(folder, "data"));
     }
+
+    // ── delimited text whose Hangul is decomposed (NFD) is read as the same text, composed ──
+
+    private static string Nfd(string text) => text.Normalize(System.Text.NormalizationForm.FormD);
+
+    private string WriteText(string name, string content, System.Text.Encoding encoding)
+    {
+        var path = Path.Combine(_dir, name);
+        File.WriteAllText(path, content, encoding);
+        return path;
+    }
+
+    [Fact]
+    public async Task A_file_already_composed_is_returned_as_it_is()
+    {
+        var plain = WriteText("composed.csv", "지역,면적\n서울,1\n", new System.Text.UTF8Encoding(false));
+        var ascii = WriteText("ascii.csv", "a,b\n1,2\n", new System.Text.UTF8Encoding(false));
+        var empty = WriteText("empty.csv", "", new System.Text.UTF8Encoding(false));
+
+        Assert.Equal(plain, await TabularDataFile.AsCsvAsync(plain));
+        Assert.Equal(ascii, await TabularDataFile.AsCsvAsync(ascii));
+        Assert.Equal(empty, await TabularDataFile.AsCsvAsync(empty));
+    }
+
+    [Fact]
+    public async Task A_decomposed_file_becomes_a_copy_with_the_text_composed_and_nothing_else_changed()
+    {
+        // CRLF endings, a byte-order mark and a quoted field with a comma and a doubled quote: all of it stays.
+        var original = $"{Nfd("지역")},{Nfd("면적")}\r\n\"{Nfd("서울, 강남")}\",1\r\n{Nfd("부산")},\"a \"\"b\"\"\"\r\n";
+        var path = WriteText("decomposed.csv", original, new System.Text.UTF8Encoding(true));
+
+        var result = await TabularDataFile.AsCsvAsync(path);
+
+        Assert.NotEqual(path, result);
+        Assert.EndsWith(".csv", result);
+        var bytes = await File.ReadAllBytesAsync(result);
+        Assert.Equal([0xEF, 0xBB, 0xBF], bytes[..3]);                       // the byte-order mark stays
+        var text = System.Text.Encoding.UTF8.GetString(bytes[3..]);
+        Assert.Equal(original.Normalize(System.Text.NormalizationForm.FormC), text);
+        Assert.Contains("\r\n", text);                                      // line endings stay
+        Assert.Equal(original, await File.ReadAllTextAsync(path));          // the file named is not touched
+        Assert.Equal(result, await TabularDataFile.AsCsvAsync(path));       // decided once per process
+    }
+
+    [Fact]
+    public async Task A_file_that_is_not_utf8_is_never_rewritten()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var cp949 = System.Text.Encoding.GetEncoding(949);
+        var path = WriteText("cp949.csv", "지역,면적\n서울,1\n", cp949);
+
+        Assert.Equal(path, await TabularDataFile.AsCsvAsync(path));
+    }
+
+    [Fact]
+    public async Task A_decomposed_line_far_into_a_large_file_is_found()
+    {
+        var lines = Enumerable.Range(0, 20000).Select(i => $"서울,{i}").ToList();
+        lines.Insert(15000, $"{Nfd("부산")},0");
+        var path = WriteText("large.csv", "지역,값\n" + string.Join('\n', lines) + "\n", new System.Text.UTF8Encoding(false));
+
+        var result = await TabularDataFile.AsCsvAsync(path);
+
+        Assert.NotEqual(path, result);
+        // Ordinal: the culture-aware comparison xunit's Contains defaults to treats the two forms as equal.
+        Assert.False((await File.ReadAllTextAsync(result)).Contains(Nfd("부산"), StringComparison.Ordinal));
+        Assert.Equal(20002, (await File.ReadAllLinesAsync(result)).Length);
+    }
 }

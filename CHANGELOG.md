@@ -67,6 +67,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Hangul written as jamo (NFD) is read as the same text as Hangul written as syllables (NFC).** A CSV saved on macOS, or exported by a tool that decomposes,
+  carries `서울` as different bytes from the `서울` a model was trained on, and the two look identical. Compared as bytes, a category was a value training never
+  saw - replaced by the most frequent one in `predict`, and silently scored as unknown in `evaluate` (R² 0.9997 became 0.48 on the same rows) - and a column
+  `지역` was "missing" from a file that visibly has it. Every command that settles its data file now reads delimited text through one step: a UTF-8 file whose
+  text is not composed is read from a temporary copy that is - the file you named is not touched, and line endings, a byte-order mark and quoting stay as they
+  were. A file in another encoding is never rewritten. Served rows (`POST /predict`, `predict --json`) and the categorical check match a category as text too.
+  A column named in the other form than the one the model was trained on is still refused, now with a message that says the two are the same text in
+  different Unicode forms and how to compose the file. A model trained on a decomposed file keeps its spelling: a composed file is matched to it.
+
 - **`mloop predict --output <file>` on a forecasting model wrote the forecast somewhere else.** The path was accepted and ignored: the forecast always went to the
   conventional `predictions/<model>-forecast-<time>.csv`, and the file named stayed absent. It now goes to the file named (relative to the project), and to the
   conventional name only when none is given.

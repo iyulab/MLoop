@@ -75,4 +75,16 @@ public class SchemaValidatorTests : IDisposable
         Assert.NotNull(result.Suggestions);
         Assert.Empty(result.Suggestions);
     }
+
+    [Fact]
+    public void UnicodeFormNote_says_which_spelling_each_side_has()
+    {
+        var composed = "지역";
+        var decomposed = composed.Normalize(System.Text.NormalizationForm.FormD);
+
+        var note = SchemaValidator.UnicodeFormNote([(composed, decomposed)]);
+
+        Assert.Contains("Same text, different Unicode form", note);
+        Assert.Contains($"Expected: '{composed}' (composed) → Found: '{decomposed}' (decomposed)", note);
+    }
 }
