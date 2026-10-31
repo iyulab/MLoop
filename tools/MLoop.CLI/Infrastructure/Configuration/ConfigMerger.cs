@@ -234,6 +234,9 @@ public class ConfigMerger
         if (source.MaxTrials.HasValue)
             target.MaxTrials = source.MaxTrials;
 
+        if (source.Epochs.HasValue)
+            target.Epochs = source.Epochs;
+
         if (!string.IsNullOrEmpty(source.Metric))
             target.Metric = source.Metric;
 

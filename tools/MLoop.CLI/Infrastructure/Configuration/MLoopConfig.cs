@@ -239,6 +239,11 @@ public class TrainingSettings
     public int? MaxTrials { get; set; }
 
     /// <summary>
+    /// How many epochs a deep-learning task trains for (default: 10). The time limit does not shorten such a fit.
+    /// </summary>
+    public int? Epochs { get; set; }
+
+    /// <summary>
     /// Optimization metric (e.g., accuracy, auc, r2, rmse)
     /// </summary>
     public string? Metric { get; set; }

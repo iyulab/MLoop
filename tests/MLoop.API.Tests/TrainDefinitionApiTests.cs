@@ -95,6 +95,17 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task EpochsOnATaskThatDoesNotCountEpochs_AreRefusedBeforeAJobExists()
+    {
+        var data = WriteData();
+
+        var response = await _client.PostAsJsonAsync("/train", new { dataFile = data, labelColumn = "y", task = "binary-classification", name = "tepochs", epochs = 3 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("no epoch count to set");
+    }
+
+    [Fact]
     public async Task PrepTheApiDoesNotRun_IsRefused_NotSkipped()
     {
         var data = WriteData();

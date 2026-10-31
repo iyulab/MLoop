@@ -102,6 +102,8 @@ internal static class TrainPresenter
             : $"{definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds}s");
         if (definition.Training?.MaxTrials is { } maxTrials)
             table.AddRow("Max Trials", maxTrials.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (definition.Training?.Epochs is { } epochs)
+            table.AddRow("Epochs", epochs.ToString(System.Globalization.CultureInfo.InvariantCulture));
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
 
         if (TrainingRunner.IsTimeSeriesTask(definition.Task))

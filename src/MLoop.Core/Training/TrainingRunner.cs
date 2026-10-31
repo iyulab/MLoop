@@ -196,6 +196,19 @@ public partial class TrainingRunner
             _ => null,
         };
 
+    /// <summary>
+    /// Why <paramref name="task"/> has no epoch count to set, or <c>null</c> when it has one. The tasks that
+    /// do are the ones whose fit runs a fixed number of epochs (<c>EpochProgress</c>) — image classification
+    /// stops on its own once accuracy stops improving, and a tabular task searches trainers instead.
+    /// </summary>
+    public static string? EpochsUnused(string? task) =>
+        Models.TaskTypes.Canonical(task) switch
+        {
+            "text-classification" or "sentence-similarity" or "ner" or "question-answering" or "object-detection" => null,
+            "image-classification" => "stops early on its own once accuracy stops improving",
+            _ => "does not train by epochs",
+        };
+
     public async Task<TrainedModel> RunAsync(
         TrainingConfig config,
         IProgress<TrainingProgress>? progress = null,

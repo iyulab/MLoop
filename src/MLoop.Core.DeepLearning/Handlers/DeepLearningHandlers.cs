@@ -122,13 +122,13 @@ internal static class DeepLearningHandlers
 
             var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", config.LabelColumn)
                 .Append(mlContext.MulticlassClassification.Trainers.TextClassification(
-                    labelColumnName: "Label", sentence1ColumnName: textCol, maxEpochs: EpochProgress.MaxEpochs))
+                    labelColumnName: "Label", sentence1ColumnName: textCol, maxEpochs: EpochProgress.Of(config)))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             var trialChannel = new TrialProgressChannel(progress);
 
             ITransformer model;
-            using (EpochProgress.Attach(mlContext, progress, "Text classification (NAS-BERT)", log))
+            using (EpochProgress.Attach(mlContext, progress, "Text classification (NAS-BERT)", EpochProgress.Of(config), log))
                 model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
             // Scored as every prediction path scores it: the classifier's logits as probabilities (ClassScores) — the
             // evaluator's log loss reads them as probabilities.
@@ -175,12 +175,12 @@ internal static class DeepLearningHandlers
                 labelColumnName: config.LabelColumn,
                 sentence1ColumnName: textCols[0],
                 sentence2ColumnName: textCols[1],
-                maxEpochs: EpochProgress.MaxEpochs);
+                maxEpochs: EpochProgress.Of(config));
 
             var trialChannel = new TrialProgressChannel(progress);
 
             ITransformer model;
-            using (EpochProgress.Attach(mlContext, progress, "Sentence similarity (NAS-BERT)", log))
+            using (EpochProgress.Attach(mlContext, progress, "Sentence similarity (NAS-BERT)", EpochProgress.Of(config), log))
                 model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
             var predictions = model.Transform(testSet);
             var metrics = mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
@@ -232,13 +232,13 @@ internal static class DeepLearningHandlers
 
             var pipeline = mlContext.MulticlassClassification.Trainers.NamedEntityRecognition(
                     labelColumnName: tagKeys, outputColumnName: "PredictedLabel",
-                    sentence1ColumnName: textCol, maxEpochs: EpochProgress.MaxEpochs)
+                    sentence1ColumnName: textCol, maxEpochs: EpochProgress.Of(config))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
             var trialChannel = new TrialProgressChannel(progress);
 
             ITransformer model;
-            using (EpochProgress.Attach(mlContext, progress, "NER (NAS-BERT)", log))
+            using (EpochProgress.Attach(mlContext, progress, "NER (NAS-BERT)", EpochProgress.Of(config), log))
                 model = PretrainedWeights.Guard(() => pipeline.Fit(preparedTrain));
 
             var scores = NerTagAccuracy.Measure(mlContext, model.Transform(testSet), config.LabelColumn);
@@ -287,7 +287,7 @@ internal static class DeepLearningHandlers
                     labelColumnName: "LabelKey",
                     boundingBoxColumnName: CocoDataLoader.BoundingBoxColumn,
                     imageColumnName: "Image",
-                    maxEpoch: EpochProgress.MaxEpochs))
+                    maxEpoch: EpochProgress.Of(config)))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue(
                     outputColumnName: "PredictedLabel", inputColumnName: "PredictedLabel"));
 
@@ -304,7 +304,7 @@ internal static class DeepLearningHandlers
             // No trial is reported: a fixed-epoch fit has one result, scored once below on the test
             // partition, and the progress channel carries a metric value by construction.
             ITransformer model;
-            using (EpochProgress.Attach(mlContext, progress, "Object detection (AutoFormerV2)", log))
+            using (EpochProgress.Attach(mlContext, progress, "Object detection (AutoFormerV2)", EpochProgress.Of(config), log))
                 model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
             // mAP on the held-out images, as `mloop evaluate` scores them — what the quality gate and
             // promotion judge. A value the evaluator could not define (no test image) is left out.
@@ -367,12 +367,12 @@ internal static class DeepLearningHandlers
                 questionColumnName: questionCol,
                 trainingAnswerColumnName: answerCol,
                 answerIndexColumnName: start,
-                maxEpochs: EpochProgress.MaxEpochs);
+                maxEpochs: EpochProgress.Of(config));
 
             var trialChannel = new TrialProgressChannel(progress);
 
             ITransformer model;
-            using (EpochProgress.Attach(mlContext, progress, "Question answering", log))
+            using (EpochProgress.Attach(mlContext, progress, "Question answering", EpochProgress.Of(config), log))
                 model = PretrainedWeights.Guard(() => pipeline.Fit(prepared));
 
             var (exact, f1) = AnswerOverlap.Measure(model.Transform(testSet), answerCol);

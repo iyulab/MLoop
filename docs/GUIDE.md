@@ -131,6 +131,12 @@ mloop train [data-file] [options]    # the label is --label, or the one in mloop
 #                               question answering, object detection) run 10 epochs whatever the
 #                               budget — a fit cannot stop early and keep a model. Their progress
 #                               bar counts epochs and estimates the time left after the first one.
+#   --epochs <n>                Epochs those tasks train for (also training.epochs in mloop.yaml;
+#                               default 10). It is their one dial on cost: on a CPU an object-detection
+#                               epoch over a few hundred images takes minutes, so a first run with
+#                               --epochs 2 shows what the fit costs before a full one. Other tasks
+#                               refuse it (image classification already stops on its own once accuracy
+#                               stops improving; tabular tasks search trainers, they do not run epochs)
 
 # Data:
 #   --data, -d <files...>       Training file(s); several files with the same schema are merged

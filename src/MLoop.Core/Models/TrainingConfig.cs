@@ -234,6 +234,13 @@ public record TrainingConfig
     public int? MaxTrials { get; init; }
 
     /// <summary>
+    /// How many epochs a deep-learning fit runs; <see langword="null"/> for the module's default (10). A fit
+    /// that trains by epochs takes no time budget, so this is the one dial on its cost. A task that does not
+    /// count epochs (<c>TrainingRunner.EpochsUnused</c>) has nothing for it to set.
+    /// </summary>
+    public int? Epochs { get; init; }
+
+    /// <summary>
     /// Columns this run has claimed for a purpose of its own — the ranking group, the recommendation
     /// user and item, the row weight, pre-featurizer inputs, and every column the user gave an
     /// explicit type override other than <c>ignore</c>. No feature-exclusion heuristic drops one of

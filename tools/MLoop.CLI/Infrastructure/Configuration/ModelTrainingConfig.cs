@@ -33,6 +33,7 @@ public static class ModelTrainingConfig
             Task = definition.Task,
             TimeLimitSeconds = timeLimitSeconds,
             MaxTrials = definition.Training?.MaxTrials,
+            Epochs = definition.Training?.Epochs,
             Metric = definition.Training?.Metric ?? ConfigDefaults.DefaultMetric,
             TestSplit = testSplit,
             TestDataFile = testDataFile,
@@ -90,6 +91,21 @@ public static class ModelTrainingConfig
             return $"max trials: {maxTrials} is not a number of trials; use 1 or more, or leave it unset for the time limit alone.";
         return MLoop.Core.Training.TrainingRunner.TimeBudgetUnused(definition.Task) is { } why
             ? $"max trials: '{definition.Task}' {why}, so it has no trials to count; leave --max-trials / training.max_trials unset."
+            : null;
+    }
+
+    /// <summary>
+    /// Why the epoch count in <paramref name="definition"/> cannot be honoured, or <c>null</c>. A count for a task
+    /// that does not train by epochs, or below one epoch, would be set and silently meant nothing.
+    /// </summary>
+    public static string? EpochsConflict(ModelDefinition definition)
+    {
+        if (definition.Training?.Epochs is not { } epochs)
+            return null;
+        if (epochs < 1)
+            return $"epochs: {epochs} is not a number of epochs; use 1 or more, or leave it unset for the default.";
+        return MLoop.Core.Training.TrainingRunner.EpochsUnused(definition.Task) is { } why
+            ? $"epochs: '{definition.Task}' {why}, so it has no epoch count to set; leave --epochs / training.epochs unset."
             : null;
     }
 
