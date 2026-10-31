@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`mloop train` and `mloop info` count the cells in a numeric column that are not numbers.** A column is typed from the first 10,000 lines of the file, so a column of
+  numbers stays numeric when `N/A` or `--` turns up further down, and each such cell loads as a missing value. A 14,000-row file with 785 of them reported no missing
+  cell anywhere, `info` called the column numeric in one list and text in another, and the model trained on a column with 5.6 % of its rows gone (R² 0.948 where the same
+  numbers without the strings scored 1.0). The count now runs over every row for each column the loader reads as numbers: `train` warns with the count, the share and the
+  first cell's line and text, and `info` warns the same and adds `nonNumericCount`, `firstNonNumericLine` and `nonNumericExample` to the column in `--json`. A column needs five
+  such cells or half a percent of the rows to be named; the label and a column the project declares a type for are not asked.
 - **`mloop train` warns of a column of numbers written for people.** A feature column whose values are numbers with a thousands separator, a percent sign or a
   currency sign (`"1,234.5"`, `12%`, `$3`, `₩5,000`) is read as text, so the model gets its characters and not its size: a regression on a price written
   with its separator scored R² -0.004 where the plain number scored 0.9997, and the only trace was a quality gate refusing the model, with no word of why. The

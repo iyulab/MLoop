@@ -92,6 +92,43 @@ public class InfoCommandJsonTests : IDisposable
         Assert.DoesNotContain(Warnings(stdout), w => w.Contains("'y'") && w.Contains("read as text"));
     }
 
+    // The loader types a column from the first 10,000 lines; strings below them load as missing values and the report used to say nothing.
+    private string WriteReadingsWithStrayText(int strayRows) => WriteCsv("readings.csv",
+        "reading,other,y\n" + string.Concat(Enumerable.Range(1, 10_500).Select(i =>
+            $"{(i > 10_500 - strayRows ? "--" : (i % 97 + 0.5).ToString(System.Globalization.CultureInfo.InvariantCulture))},{i % 13},{i * 0.25 + i % 97}\n")));
+
+    [Fact]
+    public async Task Info_Json_StrayTextFarBelowTheTypingSample_IsCountedWithItsFirstLine()
+    {
+        var path = WriteReadingsWithStrayText(20);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "y", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var columns = doc.RootElement.GetProperty("columns").EnumerateArray().ToList();
+        var reading = columns.Single(c => c.GetProperty("name").GetString() == "reading");
+        Assert.Equal("Numeric", reading.GetProperty("dataType").GetString());
+        Assert.Equal(20, reading.GetProperty("nonNumericCount").GetInt64());
+        Assert.Equal(10_482, reading.GetProperty("firstNonNumericLine").GetInt64());
+        Assert.Equal("--", reading.GetProperty("nonNumericExample").GetString());
+        // ...and only the column that has them says so.
+        Assert.False(columns.Single(c => c.GetProperty("name").GetString() == "other").TryGetProperty("nonNumericCount", out _));
+        Assert.Contains(Warnings(stdout), w => w.Contains("'reading'") && w.Contains("20 of 10,500") && w.Contains("missing"));
+    }
+
+    [Fact]
+    public async Task Info_Json_ANumericColumnOfNumbers_HasNoNonNumericCount()
+    {
+        var path = WriteReadingsWithStrayText(0);
+
+        var (_, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "y", "--json");
+
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.All(doc.RootElement.GetProperty("columns").EnumerateArray(), c => Assert.False(c.TryGetProperty("nonNumericCount", out _)));
+        Assert.DoesNotContain(Warnings(stdout), w => w.Contains("missing values"));
+    }
+
     [Fact]
     public async Task Info_Json_FileNotFound_ReportsError()
     {

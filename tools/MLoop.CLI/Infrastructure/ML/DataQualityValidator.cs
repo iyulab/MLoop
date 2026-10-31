@@ -20,9 +20,11 @@ public class DataQualityValidator
     }
 
     /// <summary>
-    /// Validates data quality before training (label column + dataset size)
+    /// Validates data quality before training (label column + dataset size). <paramref name="declaredColumns"/> are the columns the
+    /// project names a type for - the user has said what they are, so they are not asked about.
     /// </summary>
-    public DataQualityResult ValidateTrainingData(string dataFile, string labelColumn, string? taskType = null)
+    public DataQualityResult ValidateTrainingData(string dataFile, string labelColumn, string? taskType = null,
+        IEnumerable<string>? declaredColumns = null)
     {
         // Skip label validation for unsupervised tasks
         if (string.IsNullOrEmpty(labelColumn))
@@ -41,7 +43,10 @@ public class DataQualityValidator
 
         // And the columns the model would read as words that are numbers written for people.
         if (readsFeatureColumns)
+        {
             CheckFormattedNumbers(dataFile, labelColumn, result);
+            CheckNonNumericCells(dataFile, labelColumn, declaredColumns, result);
+        }
 
         return result;
     }
@@ -86,6 +91,56 @@ public class DataQualityValidator
                 result.Warnings.Add("   A thousands separator, a percent sign or a currency sign makes a number words to the model: it sees the characters, not the size");
                 result.Warnings.Add("");
                 result.Suggestions.Add($"💡 Write '{names[i]}' as a plain number in the file (1234.5), or convert it in a preprocessing script (.mloop/scripts/preprocess/)");
+            }
+        }
+        catch
+        {
+            // Non-critical check, ignore errors
+        }
+    }
+
+    /// <summary>
+    /// Warns of each feature column the loader reads as numbers that holds cells which are not, counted over every row. The loader
+    /// types a column from the start of the file, so text further down is no reason to change the type: each such cell
+    /// loads as a missing value and nothing says so - a column of 14,000 values with 785 <c>N/A</c> trained to R² 0.948 where the
+    /// same numbers without them scored 1.0, and no line of the run (nor <c>info</c>) mentioned a cell.
+    /// </summary>
+    private void CheckNonNumericCells(string dataFile, string labelColumn, IEnumerable<string>? declaredColumns, DataQualityResult result)
+    {
+        try
+        {
+            var declared = new HashSet<string>(declaredColumns ?? [], StringComparer.OrdinalIgnoreCase);
+            var readable = CsvDataLoader.FlattenMultiLineQuotedFields(dataFile, CoreNarration.Sink);
+            var layout = ColumnLayoutInference.Infer(_mlContext, readable, labelColumn);
+            using var reader = new StreamReader(readable, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            if (reader.ReadLine() is not { } header)
+                return;
+
+            var names = CsvFieldParser.ParseFields(header);
+            var asked = names.Select(n => !string.Equals(n, labelColumn, StringComparison.OrdinalIgnoreCase)
+                                       && !declared.Contains(n)
+                                       && layout.FileColumn(n)?.Kind == Microsoft.ML.Data.DataKind.Single).ToArray();
+            if (!asked.Contains(true))
+                return;
+
+            var census = new NonNumericCells(asked);
+            long line = 1;
+            while (reader.ReadLine() is { } text)
+            {
+                line++;
+                if (TableRows.IsRow(text, names.Length))
+                    census.Add(CsvFieldParser.ParseFields(text), line);
+            }
+
+            for (var i = 0; i < names.Length; i++)
+            {
+                if (census.Describe(i, names[i]) is not { } sentence)
+                    continue;
+
+                result.Warnings.Add($"⚠ {sentence}");
+                result.Warnings.Add("   The model trains on the column with those rows' values missing, not on what the cells say");
+                result.Warnings.Add("");
+                result.Suggestions.Add($"💡 Make '{names[i]}' hold numbers only (leave a cell empty where the value is unknown), or declare the column (`type: categorical`, `text` or `ignore` in mloop.yaml) if it is not a measurement");
             }
         }
         catch

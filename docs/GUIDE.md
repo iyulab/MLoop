@@ -240,6 +240,11 @@ regression; the experiment records `portable: true`.
   currency sign (`"1,234.5"`, `12%`, `$3`) is read as text — the model sees the characters, not the size (a regression on
   a price written that way scored R² −0.004 where `1234.5` scored 0.9997) — so training warns, naming the column. Write the
   plain number in the file, or convert it in a preprocessing script (`.mloop/scripts/preprocess/`). `mloop info` warns of the same columns.
+- **Text in a numeric column**: a column is typed from the first 10,000 lines of the file, so a column of numbers stays numeric when
+  `N/A`, `--` or `unknown` turns up further down, and each such cell loads as a missing value — the model trains on that column with those rows
+  missing, and nothing in the table showed it. Training and `mloop info` count the cells that are not numbers over every row and warn
+  once they are five or half a percent of the rows (`info --json` carries `nonNumericCount`, `firstNonNumericLine` and `nonNumericExample` on the column).
+  Leave a cell empty where the value is unknown, or declare the column's type in `mloop.yaml` (a declared column is not asked about).
 - **Feature Exclusion**: Columns that cannot carry signal are dropped before training (see below)
 
 **Output** (under `models/<name>/staging/exp-XXX/`):

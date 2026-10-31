@@ -375,7 +375,20 @@ public static class InfoCommand
         }
 
         // 4. Calculate column stats from raw CSV
-        var (columnStats, labelDistribution) = CalculateColumnStats(dataFile, columns, labelColumn);
+        // The columns the loader reads as numbers are asked, over every row, whether a cell is one — the loader types a
+        // column from the start of the file and loads the rest as missing values without a word. A column the user typed
+        // or the label is not asked.
+        var numericCells = new NonNumericCells(columns.Select(c =>
+            !string.Equals(c, labelColumn, StringComparison.OrdinalIgnoreCase)
+            && columnOverrides?.ContainsKey(c) != true
+            && layout?.FileColumn(c)?.Kind == DataKind.Single).ToArray());
+        var (columnStats, labelDistribution) = CalculateColumnStats(dataFile, columns, labelColumn, numericCells: numericCells);
+
+        for (int ci = 0; ci < columns.Length; ci++)
+        {
+            if (numericCells.Describe(ci, columns[ci]) is { } sentence)
+                WarningConsole.Warn(sentence + ". The profile below, read from the text, may call the column text.");
+        }
 
         // Convert to the format InfoPresenter expects
         var statsDict = columnStats.ToDictionary(
@@ -394,7 +407,9 @@ public static class InfoCommand
                 ? ot
                 : null;
             var stat = columnStats.TryGetValue(columns[ci], out var s) ? s : new ColumnStatInfo(0, 0);
-            columnRows.Add(new ColumnInfoRow(columns[ci], dataType, purpose, overrideType, stat.MissingCount, stat.UniqueCount));
+            var (strayCount, strayLine, strayExample) = numericCells.Of(ci);
+            columnRows.Add(new ColumnInfoRow(columns[ci], dataType, purpose, overrideType, stat.MissingCount, stat.UniqueCount,
+                strayCount > 0 ? strayCount : null, strayCount > 0 ? strayLine : null, strayCount > 0 ? strayExample : null));
         }
 
         // 5. Display enhanced stats (with profile data if available)
@@ -718,7 +733,8 @@ public static class InfoCommand
     internal record ColumnStatInfo(long MissingCount, int UniqueCount);
 
     internal static (Dictionary<string, ColumnStatInfo> Stats, Dictionary<string, int>? LabelDistribution)
-        CalculateColumnStats(string dataFile, string[] columns, string? labelColumn, int maxUniqueRows = 10000)
+        CalculateColumnStats(string dataFile, string[] columns, string? labelColumn, int maxUniqueRows = 10000,
+            NonNumericCells? numericCells = null)
     {
         var missingCounts = new long[columns.Length];
         var uniqueSets = new HashSet<string>[columns.Length];
@@ -729,16 +745,19 @@ public static class InfoCommand
         Dictionary<string, int>? labelDistribution = labelIndex >= 0 ? new Dictionary<string, int>() : null;
 
         int rowCount = 0;
+        long lineNumber = 1;
         using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
         {
             reader.ReadLine(); // skip header
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
+                lineNumber++;
                 if (!TableRows.IsRow(line, columns.Length))
                     continue;
                 rowCount++;
                 var fields = CsvFieldParser.ParseFields(line);
+                numericCells?.Add(fields, lineNumber);
                 for (int i = 0; i < Math.Min(fields.Length, columns.Length); i++)
                 {
                     if (string.IsNullOrWhiteSpace(fields[i]))
@@ -768,8 +787,12 @@ public static class InfoCommand
 
     internal record FileInfoRow(string FileName, long SizeBytes, int LineCount, DateTime LastModified);
 
+    /// <param name="NonNumericCount">For a column the loader reads as numbers: how many cells are not numbers (they load as missing).</param>
+    /// <param name="FirstNonNumericLine">The file line of the first of them (the header is line 1).</param>
+    /// <param name="NonNumericExample">That cell's text.</param>
     internal record ColumnInfoRow(
-        string Name, string DataType, string Purpose, string? Override, long MissingCount, int UniqueCount);
+        string Name, string DataType, string Purpose, string? Override, long MissingCount, int UniqueCount,
+        long? NonNumericCount = null, long? FirstNonNumericLine = null, string? NonNumericExample = null);
 
     private static void EmitJson(
         string dataFile,

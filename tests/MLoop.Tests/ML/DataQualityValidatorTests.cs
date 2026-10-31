@@ -29,6 +29,53 @@ public class DataQualityValidatorTests : IDisposable
         return path;
     }
 
+    #region Non-numeric cells in a numeric column
+
+    // The loader types a column from the first 10,000 lines, so strings after them are no reason to change it: the column
+    // stays numeric and each string loads as a missing value. 10,500 rows with the last twenty readings written "N/A".
+    private string TableWithStrayReadings(int strayRows)
+    {
+        var rows = Enumerable.Range(1, 10_500).Select(i =>
+            $"{(i > 10_500 - strayRows ? "N/A" : (i % 97 + 0.5).ToString(System.Globalization.CultureInfo.InvariantCulture))},{i % 13},{i * 0.25 + i % 97}");
+        return CreateCsv("reading,other,y\n" + string.Join("\n", rows) + "\n");
+    }
+
+    [Fact]
+    public void ValidateTrainingData_StrayTextFarBelowTheTypingSample_IsNamedWithItsCountAndLine()
+    {
+        var result = _validator.ValidateTrainingData(TableWithStrayReadings(20), "y", "regression");
+
+        var warning = Assert.Single(result.Warnings, w => w.Contains("'reading'", StringComparison.Ordinal));
+        Assert.Contains("20 of 10,500", warning, StringComparison.Ordinal);
+        Assert.Contains("(first: 'N/A' on line 10,482)", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateTrainingData_ANumericColumnOfNumbers_IsNotWarnedAbout()
+    {
+        var result = _validator.ValidateTrainingData(TableWithStrayReadings(0), "y", "regression");
+
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("not (first", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_AColumnTheProjectDeclaresIsNotAskedAbout()
+    {
+        var result = _validator.ValidateTrainingData(TableWithStrayReadings(20), "y", "regression", declaredColumns: ["reading"]);
+
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("'reading'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateTrainingData_ATaskThatReadsNoFeatureColumns_IsNotAskedAboutCells()
+    {
+        var result = _validator.ValidateTrainingData(TableWithStrayReadings(20), "y", "forecasting");
+
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("'reading'", StringComparison.Ordinal));
+    }
+
+    #endregion
+
     #region Structured label
 
     [Theory]
