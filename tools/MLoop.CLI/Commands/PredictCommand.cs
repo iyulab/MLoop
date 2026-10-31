@@ -120,6 +120,22 @@ public static partial class PredictCommand
         WriteIndented = false,
     };
 
+    /// <summary>
+    /// <c>--json</c> answers on stdout instead of writing the CSV, so a file named beside it would be left unwritten without a
+    /// word - exit 0, the JSON, and nothing at the path. The two are alternatives (the command's description says "<c>--json</c>
+    /// or <c>--output</c>"), so the pair is refused where <c>--json</c> bypasses the file. Image anomaly takes both and says what
+    /// each does, and is not asked.
+    /// </summary>
+    private static bool OutputBesideJsonRefused(string? output)
+    {
+        if (string.IsNullOrEmpty(output))
+            return false;
+        ErrorConsole.Error(
+            "--output and --json cannot be used together: --json answers on stdout instead of writing a file.",
+            "Drop --output to read the predictions as JSON, or drop --json to write them to the file.");
+        return true;
+    }
+
     private static async Task<int> ExecuteAsync(
         string? dataFile,
         string? modelName,
@@ -174,7 +190,9 @@ public static partial class PredictCommand
             if (taskType != null && taskType.Equals("forecasting", StringComparison.OrdinalIgnoreCase))
             {
                 if (json)
-                    return await PredictForecastingJsonAsync(resolvedModelPath, resolvedModelName, experimentId);
+                    return OutputBesideJsonRefused(output)
+                        ? 1
+                        : await PredictForecastingJsonAsync(resolvedModelPath, resolvedModelName, experimentId);
 
                 var forecastOutputPath = fileSystem.CombinePath(
                     projectRoot, ProjectLayout.PredictionsDirectory,
@@ -250,7 +268,9 @@ public static partial class PredictCommand
             // the /predict API) and emit them to stdout, so mloop-mcp and other consumers get the conformal
             // band and normalized confidence instead of parsing CSV/Spectre text. Bypasses the CSV output.
             if (json)
-                return await PredictAsJsonAsync(resolvedDataFile, model, logPredictions, projectRoot, resolvedModelName);
+                return OutputBesideJsonRefused(output)
+                    ? 1
+                    : await PredictAsJsonAsync(resolvedDataFile, model, logPredictions, projectRoot, resolvedModelName);
 
             // Make predictions with progress
             int predictedCount = 0;

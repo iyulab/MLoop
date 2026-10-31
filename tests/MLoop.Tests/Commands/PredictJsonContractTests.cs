@@ -134,6 +134,42 @@ public class PredictJsonContractTests : IDisposable
         return predictCsv;
     }
 
+    /// <summary>
+    /// <c>--json</c> answers on stdout instead of writing the CSV. A file named beside it was left unwritten and not mentioned
+    /// (exit 0, the JSON, and nothing at the path); the two are alternatives, so the pair ends with the cause on both streams.
+    /// </summary>
+    [Theory]
+    [InlineData("--output")]
+    [InlineData("-o")]
+    public async Task Predict_OutputBesideJson_IsRefusedInsteadOfLeavingTheFileUnwritten(string outputFlag)
+    {
+        var predictCsv = await SeedMulticlassAsync();
+        var (promoteExit, promoteOut, promoteErr) = await CliRunner.RunAsync("promote", "exp-001");
+        Assert.True(promoteExit == 0, promoteOut + promoteErr);
+        var outputPath = Path.Combine(_testProjectRoot, "out.csv");
+
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", predictCsv, outputFlag, outputPath, "--json");
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("--output and --json cannot be used together", stderr);
+        Assert.Contains("--output and --json cannot be used together", JsonDocument.Parse(stdout.Trim().Split('\n').Last()).RootElement.GetProperty("error").GetString());
+        Assert.False(File.Exists(outputPath));
+    }
+
+    [Fact]
+    public async Task Predict_OutputAlone_StillWritesTheFile()
+    {
+        var predictCsv = await SeedMulticlassAsync();
+        var (promoteExit, promoteOut, promoteErr) = await CliRunner.RunAsync("promote", "exp-001");
+        Assert.True(promoteExit == 0, promoteOut + promoteErr);
+        var outputPath = Path.Combine(_testProjectRoot, "out.csv");
+
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("predict", predictCsv, "--output", outputPath);
+
+        Assert.True(exitCode == 0, stdout + stderr);
+        Assert.True(File.Exists(outputPath));
+    }
+
     [Fact]
     public async Task Predict_Json_Multiclass_MatchesTheDocumentedRow()
     {

@@ -570,6 +570,12 @@ public static partial class TrainCommand
                     AnsiConsole.MarkupLine($"  3. Run 'mloop train' again to apply preprocessing automatically");
                     AnsiConsole.WriteLine();
                 }
+                else
+                {
+                    // Asked for a script and got none: say so, on the console and as a warning event — the file is
+                    // simply not there, and under --json the generator's own "nothing critical" line is not shown.
+                    WarningConsole.Warn("No preprocessing script was written: the data has no high or critical quality issue a script would fix.");
+                }
             }
 
             // If only analyzing (not training), exit here

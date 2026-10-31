@@ -94,6 +94,21 @@ public class TrainAnalyzeJsonTests : IDisposable
     }
 
     [Fact]
+    public async Task A_script_asked_for_and_not_needed_is_a_warning_not_silence()
+    {
+        await InitProjectAsync(Distinct);
+
+        var (exit, stdout, _) = await CliRunner.RunAsync(
+            "train", "datasets/train.csv", "--label", "y", "--analyze-data", "--generate-script", "clean.cs", "--json");
+
+        Assert.True(exit == 0, stdout);
+        var events = Events(stdout);
+        Assert.Equal(["analysis", "warning"], events.Select(e => e.GetProperty("event").GetString()));
+        Assert.Contains("No preprocessing script was written", events[1].GetProperty("message").GetString());
+        Assert.False(File.Exists("clean.cs"));
+    }
+
+    [Fact]
     public void An_issue_without_a_column_or_a_fix_omits_them_instead_of_writing_nulls()
     {
         var sink = new StringWriter();

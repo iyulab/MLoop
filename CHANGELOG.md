@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`mloop predict --output <file> --json` is refused.** `--json` answers on stdout instead of writing the CSV, so a file named beside it was never written - the
+  command exited 0 with the JSON and the path holding nothing. The two are alternatives (the command's description always said "`--json` or `--output`"); the pair
+  now ends with an error that says so, before anything is predicted. A caller who passed both and read the file gets the error instead of an empty path.
+
 - **`mloop drift` no longer reads a window of unchanged data as "moderate" because the table is wide or the window short.** The PSI levels (0.1, 0.25)
   are the reading for large samples. A window of 300 logged predictions against a training profile has a PSI of about 0.03 in each column with
   nothing changed, and a bin that expects a handful of rows - the missing values' - reads 0.1 on that bin alone when the window holds none of them; on
@@ -62,6 +66,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Warnings that describe the data rather than the analysis (repeated rows, a column pair that is one column, a covariance that may be singular) are not.
 
 ### Fixed
+
+- **`mloop train --analyze-data --generate-script <path>` says when it wrote no script.** The generator writes one only for a high or critical finding; with
+  none, the command ended without a file and, under `--json`, without a word. It now warns "No preprocessing script was written: ...".
 
 - **`mloop train --analyze-data --json` answered with nothing.** The data check is that run's whole job — it trains nothing — and it showed its findings
   only on the console, which `--json` silences, so a consumer read an empty stdout and a zero exit: the same as data with no findings. The findings are now
