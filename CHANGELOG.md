@@ -81,6 +81,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop evaluate --weight` (and `--against`, `explain`, `threshold`, `calibrate`) work when the weight column is one of the model's own inputs.** A model trained on a file that has a `w` column
+  without `--weight w` reads `w` as a feature; counting the evaluation rows by `w` took the column out of the feature vector the model reads and the evaluation stopped with
+  `Feature vector dimension mismatch`. The weight is now read a second time under its own name and the vector keeps its width. The same failure stopped `--against` whenever the baseline
+  read the candidate's weight column as a feature, such as an experiment trained with `--weight` set against one trained without it, which is how to ask whether weighting helped.
+- **`GET /compare` no longer recommends promoting a model that `POST /promote` refuses.** The verdict stays on the optimized metric (`candidateIsBetter`), but when the candidate is better and
+  the quality gate or the project's gate policy would refuse it, `promotionRefusal` carries the reason and `recommendation` says `Do not promote …` where it said `Promote …`,
+  as `mloop compare` already did for a model that answers one class for every row.
 - **`mloop list`, `compare`, `status`, `promote` and an experiment's `report.md` show an undefined metric as `not measured`.** A metric the evaluator could not measure is stored as the worst
   value a double holds so that it never wins a ranking, and these tables printed that value as a 308-digit number (`train` and `evaluate` already said `not measured`). `compare` also
   no longer marks an undefined value as the best of its row. The `--json` outputs are unchanged.

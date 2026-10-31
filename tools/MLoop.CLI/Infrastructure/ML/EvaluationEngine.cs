@@ -340,7 +340,14 @@ public class EvaluationEngine
         // preserved group/user/item columns out of any merged Features range (the evaluate twin
         // of predict's). The label is deliberately left to the inferred layout + the task-specific handling
         // below, so the helper does not touch it.
-        CsvDataLoader.ReconcileInferredSchemaForInference(loaderOptions, trainedSchema, labelColumn, loadPath, preserveColumns);
+        // A weight column the model itself reads as a feature is not split out of the feature range (the vector would
+        // lose a slot and the model refuse it) — it is read a second time under its own name instead.
+        var modelReads = (keepColumns ?? [])
+            .Where(k => trainedSchema?.Columns.Any(c => c.Purpose == "Feature" && c.Name.Equals(k, StringComparison.OrdinalIgnoreCase)) == true)
+            .ToList();
+        CsvDataLoader.ReconcileInferredSchemaForInference(loaderOptions, trainedSchema, labelColumn, loadPath,
+            preserveColumns?.Where(c => !modelReads.Contains(c, StringComparer.OrdinalIgnoreCase)),
+            alsoReadByName: modelReads);
 
         // The label loads as training loaded it: the saved schema's type through the one rule
         // (LabelKinds) training and predict follow. Inferred from this file instead, a numeric

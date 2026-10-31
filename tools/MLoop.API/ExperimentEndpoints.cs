@@ -281,6 +281,8 @@ public static class ExperimentEndpoints
             [FromQuery] string baseline,
             [FromQuery] string? name,
             IModelComparer comparer,
+            IExperimentStore experimentStore,
+            IModelRegistry registry,
             ILogger<Program> logger,
             CancellationToken ct) =>
         {
@@ -293,6 +295,16 @@ public static class ExperimentEndpoints
                     candidate, baseline, modelName);
 
                 var result = await comparer.CompareAsync(modelName, candidate, baseline, ct);
+
+                // A better metric is not a promotion: the candidate may be one `POST /promote` refuses (the quality gate,
+                // the project's own gate policy). `mloop compare` says so (PromotionAdvice); so does this.
+                string? promotionRefusal = null;
+                if (result.CandidateIsBetter)
+                {
+                    var candidateData = await experimentStore.LoadAsync(modelName, candidate, ct);
+                    promotionRefusal = ModelRegistry.QualityGateRefusal(candidateData, candidateData.Config?.Metric)
+                        ?? await registry.GatePolicyRefusalAsync(modelName, candidate, ct);
+                }
 
                 logger.LogInformation("Comparison completed in {ElapsedMs}ms: candidate is {Better}",
                     stopwatch.ElapsedMilliseconds, result.CandidateIsBetter ? "better" : "worse");
@@ -308,7 +320,10 @@ public static class ExperimentEndpoints
                     candidateScore = result.CandidateScore,
                     baselineScore = result.BaselineScore,
                     improvement = result.Improvement,
-                    recommendation = result.Recommendation,
+                    recommendation = promotionRefusal is null
+                        ? result.Recommendation
+                        : $"Do not promote {result.CandidateExpId} - it is better on {result.Metric} but would not be promoted: {promotionRefusal}",
+                    promotionRefusal,
                     metricDetails = result.MetricDetails.ToDictionary(
                         kvp => kvp.Key,
                         kvp => new

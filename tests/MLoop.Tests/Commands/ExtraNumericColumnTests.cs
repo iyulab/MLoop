@@ -81,6 +81,71 @@ public sealed class ExtraNumericColumnTests : IDisposable
         Assert.Equal(Answers("plain-out.csv", 2), Answers("weight-out.csv", 3));
     }
 
+    /// <summary>
+    /// A weight column that is one of the model's own inputs: trained without <c>--weight</c> on a file that has a
+    /// <c>w</c> column, <c>w</c> is a feature. Counting the evaluation rows by <c>w</c> must not take it out of the
+    /// vector the model reads (<c>Feature vector dimension mismatch</c>), and a paired comparison of that model with one
+    /// trained <i>with</i> <c>--weight w</c> (where <c>w</c> is not a feature) must score each on its own inputs.
+    /// </summary>
+    [Fact]
+    public async Task AWeightColumnTheModelReadsAsAFeature_StillWeighsTheEvaluationRows()
+    {
+        Assert.Equal(0, (await CliRunner.RunAsync("init", "p", "--task", "regression")).ExitCode);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
+
+        static string Table(int rows, int seed)
+        {
+            var rng = new Random(seed);
+            var lines = new List<string> { "x1,x2,w,y" };
+            for (var i = 0; i < rows; i++)
+            {
+                double x1 = rng.NextDouble() * 4 - 2, x2 = rng.NextDouble() * 4 - 2;
+                var w = i % 3 == 0 ? 3 : 1;
+                var y = 2 * x1 + x2 + (rng.NextDouble() - 0.5) * (w == 3 ? 3 : 0.4);
+                lines.Add(string.Create(CultureInfo.InvariantCulture, $"{x1:F4},{x2:F4},{w},{y:F4}"));
+            }
+            return string.Join('\n', lines) + "\n";
+        }
+
+        await File.WriteAllTextAsync("datasets/train.csv", Table(240, seed: 1));
+        await File.WriteAllTextAsync("datasets/test.csv", Table(90, seed: 2));
+        // exp-001: w is a feature. exp-002: w weights the training rows and is not an input.
+        var first = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "30", "--max-trials", "4");
+        Assert.True(first.ExitCode == 0, first.Stdout + first.Stderr);
+        var second = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--weight", "w", "--time", "30", "--max-trials", "4", "--no-promote");
+        Assert.True(second.ExitCode == 0, second.Stdout + second.Stderr);
+
+        var weighted = await CliRunner.RunAsync("evaluate", "exp-001", "datasets/test.csv", "--weight", "w", "--json");
+        Assert.True(weighted.ExitCode == 0, weighted.Stdout + weighted.Stderr);
+        double reported;
+        using (var doc = System.Text.Json.JsonDocument.Parse(weighted.Stdout))
+            reported = doc.RootElement.GetProperty("testMetrics").GetProperty("mse").GetDouble();
+
+        // The same number worked out from the model's own answers, row by row.
+        var predicted = await CliRunner.RunAsync("predict", "datasets/test.csv", "--experiment", "exp-001", "--json");
+        Assert.True(predicted.ExitCode == 0, predicted.Stdout + predicted.Stderr);
+        double sumWeightedSquares = 0, sumWeights = 0;
+        var rows = File.ReadAllLines("datasets/test.csv").Skip(1).Select(l => l.Split(',')).ToArray();
+        using (var doc = System.Text.Json.JsonDocument.Parse(predicted.Stdout))
+        {
+            var answers = doc.RootElement.GetProperty("predictions").EnumerateArray().ToArray();
+            Assert.Equal(rows.Length, answers.Length);
+            for (var i = 0; i < rows.Length; i++)
+            {
+                var w = double.Parse(rows[i][2], CultureInfo.InvariantCulture);
+                var error = double.Parse(rows[i][3], CultureInfo.InvariantCulture) - answers[i].GetProperty("score").GetDouble();
+                sumWeightedSquares += w * error * error;
+                sumWeights += w;
+            }
+        }
+        Assert.Equal(sumWeightedSquares / sumWeights, reported, 4);
+
+        var against = await CliRunner.RunAsync("evaluate", "exp-001", "datasets/test.csv", "--against", "exp-002", "--json");
+        Assert.True(against.ExitCode == 0, against.Stdout + against.Stderr);
+        using var withBaseline = System.Text.Json.JsonDocument.Parse(against.Stdout);
+        Assert.Equal("exp-002", withBaseline.RootElement.GetProperty("comparison").GetProperty("against").GetString());
+    }
+
     /// <summary>The model that reads a column by its own name is the one trained on a lone numeric feature - nothing else in the file.</summary>
     [Theory]
     [InlineData("multiclass-classification")]

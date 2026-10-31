@@ -95,6 +95,56 @@ public class PromoteQualityGateApiTests : IClassFixture<TestWebApplicationFactor
     }
 
     [Fact]
+    public async Task CompareEndpoint_DoesNotRecommendPromotingAModelPromoteWouldRefuse()
+    {
+        // On accuracy the model answering one class for every row outranks the one that learned; `mloop compare` holds it
+        // back with the gate's reason, and `GET /compare` said "Promote" for a model `POST /promote` then refused.
+        var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();
+        async Task SaveAsync(string id, Dictionary<string, double> metrics)
+        {
+            var path = store.GetExperimentPath("cmp", id);
+            Directory.CreateDirectory(path);
+            await File.WriteAllTextAsync(Path.Combine(path, "model.zip"), "model");
+            await store.SaveAsync("cmp", new MLoop.CLI.Infrastructure.FileSystem.ExperimentData
+            {
+                ModelName = "cmp",
+                ExperimentId = id,
+                Timestamp = DateTime.UtcNow,
+                Status = "Completed",
+                Task = "binary-classification",
+                Config = new MLoop.CLI.Infrastructure.FileSystem.ExperimentConfig
+                {
+                    DataFile = "train.csv",
+                    LabelColumn = "y",
+                    Metric = "accuracy",
+                    TimeLimitSeconds = 60,
+                    TestSplit = 0.2,
+                },
+                Metrics = metrics,
+            }, CancellationToken.None);
+        }
+
+        await SaveAsync("exp-001", new() { ["accuracy"] = 0.91, ["f1_score"] = 0.88, ["negative_recall"] = 0.94, ["auc"] = 0.95 });
+        await SaveAsync("exp-002", new() { ["accuracy"] = 0.993, ["f1_score"] = 0, ["negative_recall"] = 1, ["auc"] = 0.5 });
+
+        var response = await _client.GetAsync("/compare?name=cmp&candidate=exp-002&baseline=exp-001");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("\"candidateIsBetter\":true");   // on the metric, as before
+        body.Should().Contain("\"promotionRefusal\":\"it predicts only one class");
+        body.Should().Contain("Do not promote exp-002");
+        body.Should().NotContain("\"recommendation\":\"Promote");
+
+        // A candidate the gate accepts keeps the plain recommendation and no refusal.
+        await SaveAsync("exp-003", new() { ["accuracy"] = 0.95, ["f1_score"] = 0.92, ["negative_recall"] = 0.96, ["auc"] = 0.97 });
+        var clean = await _client.GetAsync("/compare?name=cmp&candidate=exp-003&baseline=exp-001");
+        var cleanBody = await clean.Content.ReadAsStringAsync();
+        cleanBody.Should().Contain("\"candidateIsBetter\":true").And.Contain("\"recommendation\":\"Promote exp-003");
+        cleanBody.Should().NotContain("promotionRefusal\":\"");
+    }
+
+    [Fact]
     public async Task RollbackEndpoint_ReturnsProductionToWhatItReplaced()
     {
         var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();

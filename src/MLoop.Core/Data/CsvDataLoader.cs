@@ -327,7 +327,8 @@ public class CsvDataLoader : DataProviderBase
         InputSchemaInfo? trainedSchema,
         string? labelColumn,
         string csvPath,
-        IEnumerable<string>? preserveColumns)
+        IEnumerable<string>? preserveColumns,
+        IEnumerable<string>? alsoReadByName = null)
     {
         // 1. Override each non-label column's inferred kind with the type training fitted on.
         //    InferColumns can misdetect types (e.g. "0"/"1" as Boolean) when the inference data is
@@ -375,6 +376,39 @@ public class CsvDataLoader : DataProviderBase
         //    model's own featurizers name, which the saved schema records: the caller does not know them.
         ApplyColumnPreservation(options, csvPath,
             (preserveColumns ?? []).Concat(trainedSchema?.ReadByNameColumns ?? []));
+
+        // 4. Columns the caller reads by name that the model also reads as features (an evaluation weight that is
+        //    one of the model's own inputs): they stay in the feature range, so the vector keeps training's width,
+        //    and gain a column of their own over the same field.
+        ApplyColumnOverlap(options, csvPath, alsoReadByName);
+    }
+
+    /// <summary>
+    /// Gives each named column a definition of its own without taking it out of the range it sits in. The twin of
+    /// <see cref="ApplyColumnPreservation"/> for a column the model reads twice — once inside the merged feature
+    /// vector, once by the caller under its own name. A TextLoader reads one field under two names.
+    /// </summary>
+    public static void ApplyColumnOverlap(TextLoader.Options options, string csvPath, IEnumerable<string>? columns)
+    {
+        if (columns == null || options.Columns is null) return;
+        var headers = ReadCsvHeaders(csvPath);
+        foreach (var name in new HashSet<string>(columns.Where(c => !string.IsNullOrEmpty(c)), StringComparer.OrdinalIgnoreCase))
+        {
+            var headerIdx = Array.FindIndex(headers, h => h.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (headerIdx < 0) continue;
+
+            var existsIndividually = options.Columns.Any(c =>
+                c.Name.Equals(name, StringComparison.OrdinalIgnoreCase) &&
+                c.Source.Length == 1 && c.Source[0].Min == headerIdx && c.Source[0].Max == headerIdx);
+            if (existsIndividually) continue;
+
+            var kind = options.Columns
+                .Where(c => c.Source.Any(s => s.Min <= headerIdx && (s.Max ?? s.Min) >= headerIdx))
+                .Select(c => c.DataKind)
+                .DefaultIfEmpty(DataKind.String)
+                .First();
+            options.Columns = options.Columns.Append(new TextLoader.Column(name, kind, headerIdx)).ToArray();
+        }
     }
 
     /// <summary>The names of the numeric feature columns training read, as the saved schema spells them.</summary>
