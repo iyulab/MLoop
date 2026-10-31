@@ -281,6 +281,11 @@ public class ExperimentStore : IExperimentStore
         var configPath = _fileSystem.CombinePath(experimentPath, ConfigFileName);
         var config = await _fileSystem.ReadJsonAsync<ExperimentConfig>(configPath, cancellationToken);
 
+        // A ranking or recommendation record written before training marked its key columns as read by name lists a numeric
+        // group, user or item id as a feature, and every reader that builds the feature vector from the schema widens it.
+        if (config.InputSchema is not null && config.KeyColumns is { Count: > 0 } keys)
+            config.InputSchema = config.InputSchema.WithReadByName(keys.ToList());
+
         // Reconstruct the training result (D5). SaveAsync persists a "result" block
         // (bestTrainer + trainingTimeSeconds), but LoadAsync previously dropped it, leaving
         // experiment.Result null — so promote re-wrote production/metadata.json and registry.json

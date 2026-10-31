@@ -164,7 +164,9 @@ public class ExperimentConfig
 
     public required string Metric { get; init; }
     public required double TestSplit { get; init; }
-    public InputSchemaInfo? InputSchema { get; init; }
+    // Settable: the experiment store marks the key columns read by name (KeyColumns) when it loads a record written before
+    // training did.
+    public InputSchemaInfo? InputSchema { get; set; }
     public string? GroupColumn { get; init; }
     // Recommendation user/item columns — persisted so predict can keep them individually
     // addressable for the model's key transforms (the same as GroupColumn for ranking).
@@ -172,6 +174,14 @@ public class ExperimentConfig
     public string? ItemColumn { get; init; }
     // The column the rows were weighted by. When set, the recorded metrics are weighted by it too.
     public string? WeightColumn { get; init; }
+
+    /// <summary>
+    /// The group (ranking) and user and item (recommendation) columns: the model turns each into a key by its own name, so
+    /// none of them is a slot of the merged feature vector - a numeric group id read as a feature widens the vector and the
+    /// model refuses it.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<string> KeyColumns => [.. new[] { GroupColumn, UserColumn, ItemColumn }.OfType<string>().Where(c => c.Length > 0)];
     // Trained with ONNX-expressible steps only (TrainingConfig.Portable). Absent when false.
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool Portable { get; init; }

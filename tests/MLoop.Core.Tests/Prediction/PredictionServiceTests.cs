@@ -984,6 +984,54 @@ public class PredictionServiceTests : IDisposable
         Assert.All(result.Rows, r => Assert.Null(r.Confidence));
     }
 
+    // A numeric query id is the usual ranking group. The model keys it by name (MapValueToKey) and its Features hold only the
+    // other columns; a schema that lists the id as a plain numeric feature builds a Features one wider and the model refuses it.
+    [Fact]
+    public void Predict_RankingWithANumericGroupId_KeepsTheGroupOutOfTheFeatureVector()
+    {
+        // Trained as MLoop trains: the loader hands the model one Features vector (the group id is not in it) and the group
+        // column on its own.
+        var data = new List<NumericGroupRankingRow>();
+        var rng = new Random(7);
+        for (int g = 0; g < 5; g++)
+            for (int i = 0; i < 20; i++)
+            {
+                var f1 = (float)rng.NextDouble();
+                data.Add(new NumericGroupRankingRow { Query = g, Features = [f1], Label = (float)Math.Clamp(Math.Round(2 * f1), 0, 2) });
+            }
+        var trainData = _mlContext.Data.LoadFromEnumerable(data);
+        var model = _mlContext.Transforms.Conversion.MapValueToKey("GroupId", "Query")
+            .Append(_mlContext.Transforms.NormalizeMinMax("Features"))   // fitted for one slot: a wider vector is refused
+            .Append(_mlContext.Ranking.Trainers.FastTree(
+                labelColumnName: "Label", featureColumnName: "Features", rowGroupColumnName: "GroupId",
+                numberOfTrees: 5, numberOfLeaves: 4, minimumExampleCountPerLeaf: 2))
+            .Fit(trainData);
+
+        ColumnSchema Column(string name, string purpose, bool byName = false)
+            => new() { Name = name, DataType = "Numeric", Purpose = purpose, ReadByName = byName };
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["Query"] = 1f, ["F1"] = 0.9f },
+            new Dictionary<string, object> { ["Query"] = 1f, ["F1"] = 0.1f },
+        };
+        var service = new PredictionService(_mlContext);
+
+        var asRecorded = new InputSchemaInfo { Columns = [Column("Query", "Feature", byName: true), Column("F1", "Feature"), Column("Label", "Label")], CapturedAt = DateTime.UtcNow };
+        var result = service.Predict(rows, asRecorded, model, "ranking", "Label");
+        Assert.True(result.Rows[0].Score > result.Rows[1].Score);
+
+        var listedAsAFeature = new InputSchemaInfo { Columns = [Column("Query", "Feature"), Column("F1", "Feature"), Column("Label", "Label")], CapturedAt = DateTime.UtcNow };
+        Assert.Throws<InvalidOperationException>(() => service.Predict(rows, listedAsAFeature, model, "ranking", "Label"));
+    }
+
+    private sealed class NumericGroupRankingRow
+    {
+        public float Query { get; set; }
+        [Microsoft.ML.Data.VectorType(1)]
+        public float[] Features { get; set; } = [];
+        public float Label { get; set; }
+    }
+
     #endregion
 
     // Generalizes that family — a task/model mismatch (a model trained for one task

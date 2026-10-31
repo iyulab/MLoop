@@ -259,8 +259,12 @@ public class TrainingEngine : ITrainingEngine
 
             // The columns a prep step's featurizer names were loaded as columns of their own; say so, or every
             // reader after training merges them into the feature vector and the model cannot find them.
-            if (inputSchema is not null && config.PreFeaturizerColumns is { Count: > 0 } byName)
-                inputSchema = inputSchema.WithReadByName(byName);
+            // The ranking group and the recommendation user and item are keyed by name as well.
+            var readByName = (config.PreFeaturizerColumns ?? [])
+                .Concat(new[] { config.GroupColumn, config.UserColumn, config.ItemColumn }.OfType<string>().Where(c => c.Length > 0))
+                .ToList();
+            if (inputSchema is not null && readByName.Count > 0)
+                inputSchema = inputSchema.WithReadByName(readByName);
 
             // Prepare experiment data
             var experimentData = new ExperimentData

@@ -286,6 +286,39 @@ public class ExperimentStoreTests : IDisposable
         Assert.Equal(1.34, loadedData.Result.TrainingTimeSeconds, precision: 2);
     }
 
+    // A ranking or recommendation record written before training marked its key columns lists a numeric group id as a feature.
+    // The model keys it by name, so a reader that builds the feature vector from the schema widens it by one and the model
+    // refuses the rows ("Feature vector dimension mismatch") - on `predict --json` and `serve`, while the CSV path worked.
+    [Fact]
+    public async Task LoadAsync_MarksTheGroupUserAndItemColumnsAsReadByName()
+    {
+        var experimentId = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+        ColumnSchema Column(string name, string purpose = "Feature") => new() { Name = name, DataType = "Numeric", Purpose = purpose };
+        await _experimentStore.SaveAsync(DefaultModelName, new ExperimentData
+        {
+            ModelName = DefaultModelName,
+            ExperimentId = experimentId,
+            Timestamp = DateTime.UtcNow,
+            Status = "Completed",
+            Task = "ranking",
+            Config = new ExperimentConfig
+            {
+                DataFile = "t.csv",
+                LabelColumn = "label",
+                TimeLimitSeconds = 5,
+                Metric = "ndcg",
+                TestSplit = 0.2,
+                GroupColumn = "q",
+                InputSchema = new InputSchemaInfo { Columns = [Column("q"), Column("f0"), Column("label", "Label")], CapturedAt = DateTime.UtcNow },
+            },
+        }, CancellationToken.None);
+
+        var schema = (await _experimentStore.LoadAsync(DefaultModelName, experimentId, CancellationToken.None)).Config!.InputSchema!;
+
+        Assert.Equal(["q"], schema.ReadByNameColumns);
+        Assert.False(schema.Columns.Single(c => c.Name == "f0").ReadByName);
+    }
+
     [Fact]
     public async Task LoadAsync_NoResultBlock_LeavesResultNull()
     {

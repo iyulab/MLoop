@@ -81,6 +81,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop predict --json` and `mloop serve` answer a ranking model whose query id is a number.** The saved schema listed the group column as a plain numeric feature, and
+  the paths that build the feature vector from the schema (`predict --json`, `POST /predict`) put it into the vector: a ranking model trained on `q,f0,f1,label` with `q`
+  = 0, 1, 2... took 2 features and was given 3, and every request failed with `Feature vector dimension mismatch` while `mloop predict` to a CSV, which keeps the group column
+  out of the range, worked. The group (ranking) and user and item (recommendation) columns are recorded as read by name when a model is trained, and the experiment
+  store marks them so when it loads a record written before - existing experiments need no retraining.
 - **`mloop evaluate` of a clustering model works.** A clustering project records an empty label, and `evaluate` looked for a column named "" in the file: every unlabeled
   clustering model failed with `Specified label column '' was not found`. The file is now read without a label for a task that has none.
 - **A clustering run no longer reports metrics it could not compute as 0.** `normalized_mutual_information` (it needs a label; ML.NET answers NaN for the rows of an
