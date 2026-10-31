@@ -49,6 +49,49 @@ public class InfoCommandJsonTests : IDisposable
         return path;
     }
 
+    // A price written with its thousands separator is words to the loader: info says so before a train run finds out the hard way.
+    private string WriteFormattedPrices(Func<int, string> price) => WriteCsv("prices.csv",
+        "id,price,y\n" + string.Concat(Enumerable.Range(1, 30).Select(i => $"{i},{price(i)},{i * 3}\n")));
+
+    private static List<string> Warnings(string stdout)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        return doc.RootElement.TryGetProperty("warnings", out var w) && w.ValueKind == System.Text.Json.JsonValueKind.Array
+            ? w.EnumerateArray().Select(e => e.GetString()!).ToList()
+            : [];
+    }
+
+    [Fact]
+    public async Task Info_Json_ANumberColumnWrittenWithSeparators_IsWarnedAbout()
+    {
+        var path = WriteFormattedPrices(i => $"\"{i * 1000:N0}\"");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--json");
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains(Warnings(stdout), w => w.Contains("'price'") && w.Contains("1,000") && w.Contains("read as text"));
+    }
+
+    [Fact]
+    public async Task Info_Json_PlainNumbers_AreNotWarnedAbout()
+    {
+        var path = WriteFormattedPrices(i => (i * 1000).ToString());
+
+        var (_, stdout, _) = await CliRunner.RunAsync("info", path, "--json");
+
+        Assert.DoesNotContain(Warnings(stdout), w => w.Contains("read as text"));
+    }
+
+    [Fact]
+    public async Task Info_Json_TheLabelColumn_IsNotWarnedAbout()
+    {
+        var path = WriteCsv("label.csv", "id,y\n" + string.Concat(Enumerable.Range(1, 30).Select(i => $"{i},\"{i * 1000:N0}\"\n")));
+
+        var (_, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "y", "--json");
+
+        Assert.DoesNotContain(Warnings(stdout), w => w.Contains("'y'") && w.Contains("read as text"));
+    }
+
     [Fact]
     public async Task Info_Json_FileNotFound_ReportsError()
     {

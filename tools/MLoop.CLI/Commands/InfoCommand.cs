@@ -349,6 +349,10 @@ public static class InfoCommand
             (colName, dataType) => GetColumnPurpose(colName, reportedLabel, layout?.Columns ?? [], dataType, excluded, categories),
             columnOverrides);
 
+        foreach (var (column, example) in FormattedNumberColumns(columns, sampleLines, labelColumn, columnOverrides))
+            WarningConsole.Warn($"Column '{column}' holds numbers written for people (e.g. {example}) and is read as text: " +
+                "training gets its characters, not its size. Write the plain number in the file, or convert it in a preprocessing script.");
+
         // 3. DataLens Profile (always-on, nullable)
         // DataLens uses its own CSV loading (FilePrepper CsvBridge) which requires .csv extension,
         // so we pass the original file path instead of the ML.NET-converted .tmp path.
@@ -675,6 +679,27 @@ public static class InfoCommand
         /// <summary><see langword="true"/> a category, <see langword="false"/> text, <see langword="null"/> not judged.</summary>
         internal bool? IsCategory(string column) =>
             _categories.Contains(column) ? true : _notJudged.Contains(column) ? null : false;
+    }
+
+    /// <summary>
+    /// The columns of the file whose sampled values are numbers with a thousands separator, a percent sign or a currency
+    /// sign, with a value of each — read as text by the loader, so a model has their characters and not their size. The
+    /// label and the columns the user typed are not asked. A column training drops as an identifier is: a price whose
+    /// values are all different looks like one, and then the model has neither its size nor the column.
+    /// </summary>
+    internal static IEnumerable<(string Column, string Example)> FormattedNumberColumns(
+        string[] columns, string[] sampleLines, string? labelColumn, IReadOnlyDictionary<string, string>? overrides)
+    {
+        var rows = sampleLines.Where(line => TableRows.IsRow(line, columns.Length)).Select(CsvFieldParser.ParseFields).ToList();
+        for (var i = 0; i < columns.Length; i++)
+        {
+            var name = columns[i];
+            if (string.Equals(name, labelColumn, StringComparison.OrdinalIgnoreCase)
+                || overrides?.ContainsKey(name) == true)
+                continue;
+            if (FormattedNumbers.Looks(rows.Select(r => i < r.Length ? r[i] : ""), out var example) && example is not null)
+                yield return (name, example);
+        }
     }
 
     private static string[] ReadSampleLines(string dataFile, int maxLines)
