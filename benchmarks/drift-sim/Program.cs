@@ -108,8 +108,13 @@ IReadOnlySet<int> many = Enumerable.Range(0, ManyMoved).ToHashSet();
 
 // signal=range: instead of the PSI table, read the count of window values outside the training range (above the training maximum, below the
 // training minimum) as a signal of its own - see `RangeSignal`.
-if (options.TryGetValue("signal", out var signal) && signal == "range")
+options.TryGetValue("signal", out var signalMode);
+if (signalMode == "range")
     return RangeSignal();
+
+// signal=text: free-text columns read through their two descriptors (length, share of words outside the training vocabulary).
+if (signalMode == "text")
+    return TextSignal();
 
 Console.WriteLine($"train {trainRows} rows, window {windowRows} rows, {columns} columns, {profiles} profiles x {windowsPerProfile} windows per kind, seed {seed}");
 Console.WriteLine("| family | reading | null: moderate+ | null: significant | one column 0.5 sigma: that column moderate+ | one column: significant | 20 columns 0.2 sigma: any moderate+ | many: a moved column moderate+ |");
@@ -222,6 +227,79 @@ int RangeSignal()
         string R(int n) => (n / (double)total).ToString("0.000", CultureInfo.InvariantCulture);
         Console.WriteLine($"| {name} | {R(nullNotable)} | {R(nullColumn)} | {R(oneNotable)} | {R(oneColumn)} | {R(onePsi)} | {R(nullModerate)} | {R(nullTrigger)} |");
     }
+    return 0;
+}
+
+// The sentences are Zipf-distributed words (vocabulary `vocab`, exponent 1) of 1 + Poisson(`words`) words; `fresh` is the chance that a word is
+// replaced by one the training text never contained, `longer` multiplies the mean length. Prints, per shift, the share of windows where the
+// column reads moderate or worse and where each descriptor does.
+int TextSignal()
+{
+    var vocab = options.TryGetValue("vocab", out var v) ? int.Parse(v, CultureInfo.InvariantCulture) : 3000;
+    var words = options.TryGetValue("words", out var wv) ? double.Parse(wv, CultureInfo.InvariantCulture) : 11.0;
+    var cumulative = new double[vocab];
+    var sum = 0.0;
+    for (var i = 0; i < vocab; i++)
+        cumulative[i] = sum += 1.0 / (i + 1);
+    var fresh = 0;
+    string Sentence(Random rng, double newShare, double longer)
+    {
+        var count = 1 + Poisson(rng, words * longer);
+        var parts = new string[count];
+        for (var k = 0; k < count; k++)
+        {
+            if (rng.NextDouble() < newShare)
+            {
+                parts[k] = "z" + (++fresh).ToString(CultureInfo.InvariantCulture);
+                continue;
+            }
+            var target = rng.NextDouble() * sum;
+            var lo = 0;
+            var hi = vocab - 1;
+            while (lo < hi)
+            {
+                var mid = (lo + hi) / 2;
+                if (cumulative[mid] < target) lo = mid + 1; else hi = mid;
+            }
+            parts[k] = "w" + lo.ToString(CultureInfo.InvariantCulture);
+        }
+        return string.Join(' ', parts);
+    }
+
+    var shifts = new (string Name, double NewShare, double Longer)[]
+    {
+        ("nothing moved", 0, 1), ("5% new words", 0.05, 1), ("10% new words", 0.10, 1), ("20% new words", 0.20, 1), ("length x1.3", 0, 1.3),
+    };
+    Console.WriteLine($"text signal: train {trainRows} rows, window {windowRows} rows, vocabulary {vocab}, {words} words a sentence, {profiles} profiles x {windowsPerProfile} windows per shift, seed {seed}");
+    Console.WriteLine("| shift | column moderate+ | column significant | length descriptor moderate+ | unseen-words descriptor moderate+ |");
+    Console.WriteLine("|---|---|---|---|---|");
+    var counts = new int[shifts.Length, 4];
+    var total = 0;
+    for (var p = 0; p < profiles; p++)
+    {
+        var rng = new Random(unchecked(seed * 100_003 + p));
+        var train = Enumerable.Range(0, trainRows).Select(_ => new string?[] { Sentence(rng, 0, 1) }).ToList();
+        var profile = DriftProfile.Build(train.Select(_ => Array.Empty<string?>()).ToList(), []) with
+        {
+            Texts = [TextProfile.Build("t0", train.Select(r => r[0]).ToList())],
+        };
+        total += windowsPerProfile;
+        for (var w = 0; w < windowsPerProfile; w++)
+            for (var s = 0; s < shifts.Length; s++)
+            {
+                var window = Enumerable.Range(0, windowRows)
+                    .Select(_ => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?> { ["t0"] = Sentence(rng, shifts[s].NewShare, shifts[s].Longer) })
+                    .ToList();
+                var report = DriftMeasure.Compare(profile, window);
+                counts[s, 0] += report.Features.Any(f => f.Level >= DriftLevel.Moderate) ? 1 : 0;
+                counts[s, 1] += report.Features.Any(f => f.Level >= DriftLevel.Significant) ? 1 : 0;
+                counts[s, 2] += report.Features.Any(f => f.Column == TextProfile.LengthColumn("t0") && f.Level >= DriftLevel.Moderate) ? 1 : 0;
+                counts[s, 3] += report.Features.Any(f => f.Column == TextProfile.UnseenColumn("t0") && f.Level >= DriftLevel.Moderate) ? 1 : 0;
+            }
+    }
+    string R(int n) => (n / (double)total).ToString("0.000", CultureInfo.InvariantCulture);
+    for (var s = 0; s < shifts.Length; s++)
+        Console.WriteLine($"| {shifts[s].Name} | {R(counts[s, 0])} | {R(counts[s, 1])} | {R(counts[s, 2])} | {R(counts[s, 3])} |");
     return 0;
 }
 

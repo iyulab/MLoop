@@ -1568,7 +1568,7 @@ background — it is computed when you ask. A free-text column is profiled throu
 reported as two more columns: `<column> (length)` (characters, by decile) and `<column> (unseen words)`
 (the share of each value's words that training never saw — none, up to 10 %, 25 %, 50 %, 75 %, more).
 The second is the one that moves when the text is about something new; it is measured against
-training rows the vocabulary was not built from, so ordinary new text reads as stable. Words are runs
+training rows the vocabulary was not built from, so ordinary new text reads as stable. In a simulation of 300-row windows against 5,000 training rows, a window in which one word in ten is new read as moderate drift or worse every time, and one in twenty most of the time (less when the vocabulary is far larger than the training text), while windows with nothing changed almost never did. Words are runs
 of letters and digits; Chinese, Japanese and Thai characters count one by one.
 
 ```bash
