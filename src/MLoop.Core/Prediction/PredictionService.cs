@@ -95,8 +95,10 @@ public class PredictionService
 
         // A row's fields are matched to the schema's columns ignoring case, everywhere below — the
         // overlap guard always did, the value lookup did not, so a camelCase JSON body (`x1` for `X1`)
-        // passed the guard and then every one of its values was dropped and scored as missing.
-        rows = Array.ConvertAll(rows, ByColumnName);
+        // passed the guard and then every one of its values was dropped and scored as missing. A name written
+        // in another Unicode form (decomposed Hangul) is the same name: it takes the schema's spelling here.
+        var schemaNames = SchemaNamesByText(schema);
+        rows = Array.ConvertAll(rows, row => ByColumnName(row, schemaNames));
 
         // Silent-GIGO guard: if the input rows share NO column with the trained schema (e.g. the
         // caller wrapped rows in an envelope like {"rows":[...]} or posted an unrelated payload),
@@ -285,11 +287,19 @@ public class PredictionService
     }
 
     // The last of two fields that differ only in case wins, as a JSON object's last duplicate key does.
-    private static Dictionary<string, object> ByColumnName(Dictionary<string, object> row)
+    private static Dictionary<string, string> SchemaNamesByText(InputSchemaInfo schema)
+    {
+        var byText = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in schema.Columns)
+            byText.TryAdd(CanonicalText.Nfc(column.Name), column.Name);
+        return byText;
+    }
+
+    private static Dictionary<string, object> ByColumnName(Dictionary<string, object> row, IReadOnlyDictionary<string, string> schemaNames)
     {
         var byName = new Dictionary<string, object>(row.Count, StringComparer.OrdinalIgnoreCase);
         foreach (var (name, value) in row)
-            byName[name] = value;
+            byName[schemaNames.TryGetValue(CanonicalText.Nfc(name), out var schemaName) ? schemaName : name] = value;
         return byName;
     }
 

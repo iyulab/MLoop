@@ -73,6 +73,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A served JSON row names its columns as text, not as bytes: decomposed Hangul (NFD) is the same column as composed Hangul (NFC).** `POST /predict` matched a row's
+  keys to the model's columns by bytes (ignoring case only), so a client that writes `지역` as jamo got either a refusal - "none of the model's input columns", naming
+  the same-looking columns it expected - when every key was in the other form, or a score made with those columns read as missing when only some were. Values were
+  already matched as text; keys now take the model's spelling in the same way.
 - **`evaluate`, `explain` and `predict` on a file no longer fail with `Could not find input column 'Features'` when a numeric column holds a few strings.** A file
   whose `reading` column carries `N/A` or `--` in some rows is read with that column as text, which left one numeric column - and a single column keeps its own name
   instead of forming the `Features` vector a model trained on two or more numeric features reads. The trained feature range was repaired only when inference had
