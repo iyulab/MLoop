@@ -51,6 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop info` describes a file of one column, and no longer counts a table's blank lines as rows.** A one-column file (a series) failed with "unable to split the file into multiple columns" - the layout training splits a file by - although `analyze profile` and `detect` read it; `info` now reads such a file from its sample. Blank lines after or between the rows of a table were counted as rows with every value missing (3 rows and two blank lines reported 5 rows, a column 40% missing), while training and `sample create` skip them; `info` skips them too. In a file of one column a blank line stays a missing value, the way the series commands read it. (`analyze profile` still counts them: its fast path reads the file itself.)
 - **`mloop detect` and `mloop analyze series` no longer close up a one-column file over a blank line.** The reader takes a blank line for nothing, so a series
   stored one reading per line with a reading missing came out shorter and every reading after the gap sat at the wrong row - `detect` named the wrong rows.
   A blank line inside a one-column file is now the same error as a non-numeric value: the series must be fully numeric with no gaps. (In a wider file the

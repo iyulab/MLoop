@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using DataLens;
 using DataLens.Models;
 using Microsoft.ML;
@@ -258,9 +259,12 @@ public static class InfoCommand
         using (var reader = new StreamReader(dataFile, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
         {
             firstLine = reader.ReadLine(); // Read header
-            while (reader.ReadLine() != null)
+            var width = firstLine is null ? 0 : CsvFieldParser.ParseFields(firstLine).Length;
+            string? row;
+            while ((row = reader.ReadLine()) != null)
             {
-                lineCount++;
+                if (IsRow(row, width))
+                    lineCount++;
             }
         }
 
@@ -307,7 +311,17 @@ public static class InfoCommand
             }
         }
 
-        var layout = ColumnLayoutInference.Infer(mlContext, dataFile, inferLabel);
+        // A file of one column is a series, not a table: the layout is how training splits a file into a label and
+        // features, and it refuses a file that does not split. Everything this report says about such a file it reads
+        // from the sample.
+        ColumnLayout? layout = null;
+        try
+        {
+            layout = ColumnLayoutInference.Infer(mlContext, dataFile, inferLabel);
+        }
+        catch (ColumnLayoutException) when (columns.Length == 1)
+        {
+        }
 
         // A guessed label only lets the inference run; no one named it the label, so no column is
         // reported as one — each keeps the role its type gives it.
@@ -332,7 +346,7 @@ public static class InfoCommand
         InfoPresenter.DisplayColumnInfo(
             columns,
             (colName, colIdx) => InferDisplayType(colName, layout, colIdx, sampleLines, categories),
-            (colName, dataType) => GetColumnPurpose(colName, reportedLabel, layout.Columns, dataType, excluded, categories),
+            (colName, dataType) => GetColumnPurpose(colName, reportedLabel, layout?.Columns ?? [], dataType, excluded, categories),
             columnOverrides);
 
         // 3. DataLens Profile (always-on, nullable)
@@ -371,7 +385,7 @@ public static class InfoCommand
         for (int ci = 0; ci < columns.Length; ci++)
         {
             var dataType = InferDisplayType(columns[ci], layout, ci, sampleLines, categories);
-            var purpose = GetColumnPurpose(columns[ci], reportedLabel, layout.Columns, dataType, excluded, categories);
+            var purpose = GetColumnPurpose(columns[ci], reportedLabel, layout?.Columns ?? [], dataType, excluded, categories);
             string? overrideType = columnOverrides != null && columnOverrides.TryGetValue(columns[ci], out var ot)
                 ? ot
                 : null;
@@ -533,16 +547,16 @@ public static class InfoCommand
         layout.FirstOrDefault(c => c.Name == columnName)?.Purpose;
 
     private static string InferDisplayType(
-        string columnName, ColumnLayout layout, int csvColumnIndex, string[] sampleLines, CategoryReading? categories = null)
+        string columnName, ColumnLayout? layout, int csvColumnIndex, string[] sampleLines, CategoryReading? categories = null)
     {
-        var inferred = PurposeOf(layout.Columns, columnName);
+        var inferred = PurposeOf(layout?.Columns ?? [], columnName);
         // A string column training judged is a category or it is text, whatever ML.NET's inference — which
         // leaves out the column it guessed to be the label — made of it.
-        if (categories?.IsCategory(columnName) is { } category && IsStringColumn(layout, csvColumnIndex, columnName))
+        if (categories?.IsCategory(columnName) is { } category && layout is not null && IsStringColumn(layout, csvColumnIndex, columnName))
             return category ? "Text/Categorical" : "Text";
 
         // A column folded into a vector, by its own name: what the layout read it as.
-        if (inferred is null && layout.FileColumn(columnName) is { } folded && folded.Purpose != ColumnLayoutPurpose.Label)
+        if (inferred is null && layout?.FileColumn(columnName) is { } folded && folded.Purpose != ColumnLayoutPurpose.Label)
             return folded.Kind == DataKind.Boolean ? "Boolean" : folded.Purpose == ColumnLayoutPurpose.Numeric ? "Numeric" : folded.Kind.ToString();
 
         if (inferred == ColumnLayoutPurpose.Categorical)
@@ -569,7 +583,7 @@ public static class InfoCommand
             return "Text";
 
         // A column folded into a vector, or the label: its type from the loader column covering it
-        foreach (var col in layout.Options.Columns)
+        foreach (var col in layout?.Options.Columns ?? [])
         {
             bool matched = false;
 
@@ -602,7 +616,19 @@ public static class InfoCommand
             }
         }
 
-        return "Unknown";
+        return layout is null ? ReadFromSample(csvColumnIndex, sampleLines) : "Unknown";
+    }
+
+    // A column no layout covers is numeric when every value in the sample is a number, text otherwise.
+    private static string ReadFromSample(int csvColumnIndex, string[] sampleLines)
+    {
+        var values = sampleLines
+            .Select(line => CsvFieldParser.ParseFields(line))
+            .Where(fields => csvColumnIndex < fields.Length && !string.IsNullOrWhiteSpace(fields[csvColumnIndex]))
+            .Select(fields => fields[csvColumnIndex].Trim())
+            .ToList();
+        return values.Count > 0 && values.All(v => double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
+            ? "Numeric" : "Text";
     }
 
     /// <summary>The columns <see cref="CategoryColumns.Decide"/> does not judge: the label the user named, what training
@@ -666,6 +692,14 @@ public static class InfoCommand
 
     internal record ColumnStatInfo(long MissingCount, int UniqueCount);
 
+    /// <summary>
+    /// Whether a line of the file is a row. A blank line in a table is not one - training and sampling skip it, so a
+    /// report that counted it would state more rows than anything reads, with a column of missing values to go with
+    /// them. A file of one column is the exception: a blank line there is a record of one empty value (a gap in a
+    /// series), the way the series commands read it.
+    /// </summary>
+    internal static bool IsRow(string line, int columnCount) => columnCount == 1 || !string.IsNullOrWhiteSpace(line);
+
     internal static (Dictionary<string, ColumnStatInfo> Stats, Dictionary<string, int>? LabelDistribution)
         CalculateColumnStats(string dataFile, string[] columns, string? labelColumn, int maxUniqueRows = 10000)
     {
@@ -684,6 +718,8 @@ public static class InfoCommand
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
+                if (!IsRow(line, columns.Length))
+                    continue;
                 rowCount++;
                 var fields = CsvFieldParser.ParseFields(line);
                 for (int i = 0; i < Math.Min(fields.Length, columns.Length); i++)

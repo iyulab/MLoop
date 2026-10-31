@@ -1,5 +1,6 @@
 using System.CommandLine;
 using MLoop.CLI;
+using MLoop.CLI.Commands;
 using Spectre.Console;
 
 namespace MLoop.Tests.Commands;
@@ -286,4 +287,65 @@ public class InfoCommandJsonTests : IDisposable
             .Single(c => c.GetProperty("name").GetString() == "scores");
         Assert.Equal("Excluded (Structured)", scores.GetProperty("purpose").GetString());
     }
+
+    [Fact]
+    public async Task Info_Json_ReadsAFileOfOneColumn_FromTheSample()
+    {
+        // A series is one column; the layout training splits a file by refuses it ("multiple columns"), and info said that
+        // instead of describing the file.
+        var path = WriteCsv("series.csv", "x\n1\n2.5\n3\n4\n");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        var column = Assert.Single(doc.RootElement.GetProperty("columns").EnumerateArray());
+        Assert.Equal("x", column.GetProperty("name").GetString());
+        Assert.Equal("Numeric", column.GetProperty("dataType").GetString());
+        Assert.Equal(4, doc.RootElement.GetProperty("fileInfo").GetProperty("lineCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Info_Json_DoesNotCountTheBlankLinesOfATable_AsRows()
+    {
+        // Two blank lines after the data (an editor's habit) were two rows with every value missing: 5 rows, x 40% missing,
+        // for a file with 3 - while training and sampling skip them.
+        var path = WriteCsv("trailing.csv", "x,y\n1,2\n3,4\n5,6\n\n\n");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal(3, doc.RootElement.GetProperty("fileInfo").GetProperty("lineCount").GetInt32());
+        Assert.All(doc.RootElement.GetProperty("columns").EnumerateArray(),
+            c => Assert.Equal(0, c.GetProperty("missingCount").GetInt64()));
+    }
+
+    [Fact]
+    public async Task Info_Json_KeepsABlankLineOfOneColumn_AsAMissingValue()
+    {
+        // In a table a blank line is no record; in a file of one column it is one with an empty value - a gap in the series,
+        // which is how the series commands read it (and refuse it).
+        var path = WriteCsv("gap.csv", "x\n1\n\n3\n4\n");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal(4, doc.RootElement.GetProperty("fileInfo").GetProperty("lineCount").GetInt32());
+        var column = Assert.Single(doc.RootElement.GetProperty("columns").EnumerateArray());
+        Assert.Equal(1, column.GetProperty("missingCount").GetInt64());
+    }
+
+    [Fact]
+    public void IsRow_ABlankLineIsNoRowOfATable_AndOneOfAFileOfOneColumn()
+    {
+        Assert.False(InfoCommand.IsRow("", 2));
+        Assert.False(InfoCommand.IsRow("  ", 3));
+        Assert.True(InfoCommand.IsRow("1,2", 2));
+        Assert.True(InfoCommand.IsRow(",", 2));
+        Assert.True(InfoCommand.IsRow("", 1));
+        Assert.True(InfoCommand.IsRow("1", 1));
+    }
 }
+
