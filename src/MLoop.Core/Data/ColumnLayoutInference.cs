@@ -102,6 +102,9 @@ public static class ColumnLayoutInference
     private const int PurposeRows = 1_000;
     private const int MaxColumns = 10_000;
 
+    /// <summary>The loaded name of the vector the numeric feature columns fold into (two or more of them).</summary>
+    public const string NumericVectorName = "Features";
+
     /// <summary>
     /// The loaded name of the feature columns of one kind that fold together — the one column's own name, or
     /// the vector's (<c>Features</c> for numbers, <c>BooleanFeatures</c> for yes/no columns). A reader that
@@ -424,7 +427,7 @@ public static class ColumnLayoutInference
 
     private static string GroupName(ColumnLayoutPurpose purpose, DataKind kind) => purpose switch
     {
-        ColumnLayoutPurpose.Numeric => kind == DataKind.Boolean ? "BooleanFeatures" : "Features",
+        ColumnLayoutPurpose.Numeric => kind == DataKind.Boolean ? "BooleanFeatures" : NumericVectorName,
         ColumnLayoutPurpose.Label => "Label",
         _ => purpose.ToString(),
     };

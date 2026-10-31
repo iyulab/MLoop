@@ -155,6 +155,65 @@ public class TrainedFeatureRangeTests
         Assert.DoesNotContain(layout, c => c.Name == "income");
     }
 
+    private static InputSchemaInfo TrainedOnTwoNumericFeatures() => new()
+    {
+        CapturedAt = DateTime.UtcNow,
+        Columns =
+        [
+            new ColumnSchema { Name = "reading", DataType = SchemaDataTypes.Numeric, Purpose = "Feature" },
+            new ColumnSchema { Name = "other", DataType = SchemaDataTypes.Numeric, Purpose = "Feature" },
+            new ColumnSchema { Name = "label", DataType = SchemaDataTypes.Numeric, Purpose = "Label" },
+        ],
+    };
+
+    private static InputSchemaInfo TrainedOnOneNumericFeature() => new()
+    {
+        CapturedAt = DateTime.UtcNow,
+        Columns =
+        [
+            new ColumnSchema { Name = "other", DataType = SchemaDataTypes.Numeric, Purpose = "Feature" },
+            new ColumnSchema { Name = "label", DataType = SchemaDataTypes.Numeric, Purpose = "Label" },
+        ],
+    };
+
+    // Two numeric features; in this file one of them holds text, so inference leaves ONE numeric column —
+    // a group of one, which keeps its own name instead of forming a vector.
+    private const string OneOfTwoFeaturesIsText =
+        "reading,other,label\nN/A,1.5,3\n2.5,2.5,6\n--,3.5,8\n4.5,4.5,10\n";
+
+    /// <summary>
+    /// The case the range repair used to walk past: with only one column left numeric there is no
+    /// merged column to repair, so the model — trained on a two-slot vector — found no <c>Features</c>
+    /// at all and failed with <c>Could not find input column 'Features'</c>. A numeric column holding a
+    /// few stray strings in a small file produced it.
+    /// </summary>
+    [Fact]
+    public void AVectorThatInferenceDidNotFormIsFormedFromTheTrainedFeatures()
+    {
+        var layout = Layout(WriteCsv("stray.csv", OneOfTwoFeaturesIsText), TrainedOnTwoNumericFeatures());
+
+        Assert.Equal("0..1", Assert.Single(layout, c => c.Name == "Features").Ranges);
+    }
+
+    /// <summary>Its negative control: without the repair, inference really leaves no vector here.</summary>
+    [Fact]
+    public void WithoutTheTrainedSchemaNoVectorIsFormedWhenOnlyOneColumnIsNumeric()
+    {
+        var layout = Layout(WriteCsv("stray.csv", OneOfTwoFeaturesIsText), trainedSchema: null);
+
+        Assert.DoesNotContain(layout, c => c.Name == "Features");
+        Assert.Contains(layout, c => c.Name == "other");
+    }
+
+    /// <summary>Training folded nothing when it had one numeric feature, so its own name is the right one.</summary>
+    [Fact]
+    public void ASingleTrainedFeatureIsNotGivenAVector()
+    {
+        var layout = Layout(WriteCsv("stray.csv", OneOfTwoFeaturesIsText), TrainedOnOneNumericFeature());
+
+        Assert.DoesNotContain(layout, c => c.Name == "Features");
+    }
+
     /// <summary>
     /// The negative control the other three rest on: without the repair, the range really does lose
     /// a slot. If inference ever stopped splitting the column out, these tests would pass while

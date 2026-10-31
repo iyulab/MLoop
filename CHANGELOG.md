@@ -67,6 +67,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`evaluate`, `explain` and `predict` on a file no longer fail with `Could not find input column 'Features'` when a numeric column holds a few strings.** A file
+  whose `reading` column carries `N/A` or `--` in some rows is read with that column as text, which left one numeric column - and a single column keeps its own name
+  instead of forming the `Features` vector a model trained on two or more numeric features reads. The trained feature range was repaired only when inference had
+  formed a vector at all. It is now rebuilt from the saved schema whenever the model expects one, so the strings load as missing values, as they did in training. A
+  large file hid it (a column is typed from its first 10,000 lines), which is why the same data worked at 14,000 rows and failed when cut to a few hundred;
+  `predict --json`, which scores rows, never failed.
 - **Hangul written as jamo (NFD) is read as the same text as Hangul written as syllables (NFC).** A CSV saved on macOS, or exported by a tool that decomposes,
   carries `서울` as different bytes from the `서울` a model was trained on, and the two look identical. Compared as bytes, a category was a value training never
   saw - replaced by the most frequent one in `predict`, and silently scored as unknown in `evaluate` (R² 0.9997 became 0.48 on the same rows) - and a column

@@ -422,8 +422,6 @@ public class CsvDataLoader : DataProviderBase
         var merged = options.Columns.FirstOrDefault(c => c.Source is { Length: > 0 }
                                                       && c.DataKind == DataKind.Single
                                                       && SpansMoreThanOneSource(c));
-        if (merged == null)
-            return;
 
         var headers = ReadCsvHeaders(csvPath);
         if (headers.Length == 0)
@@ -444,10 +442,26 @@ public class CsvDataLoader : DataProviderBase
             return;
 
         var desired = ToRanges(trainedNumericFeatures);
-        if (SameRanges(merged.Source!, desired))
-            return;
 
-        merged.Source = desired;
+        if (merged == null)
+        {
+            // No vector at all: inference left at most one column numeric, and a group of one keeps its
+            // header name — so a model trained on several numeric features finds no 'Features' to read.
+            // Training folded two or more, so the name is the vector's (ColumnLayoutInference.FoldedName).
+            // With one trained feature there is nothing folded and the column's own name is right.
+            if (trainedNumericFeatures.Length < 2
+                || options.Columns.Any(c => string.Equals(c.Name, ColumnLayoutInference.NumericVectorName, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            options.Columns = [.. options.Columns, new TextLoader.Column(ColumnLayoutInference.NumericVectorName, DataKind.Single, desired)];
+        }
+        else
+        {
+            if (SameRanges(merged.Source!, desired))
+                return;
+
+            merged.Source = desired;
+        }
 
         // Narrowing the range can leave a column with nothing to read it: a feature training loaded
         // as text, arriving here as digits, is inside the range inference built and outside the one
