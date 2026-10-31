@@ -138,8 +138,7 @@ public class EvaluationEngine
                     // answers it gives.
                     if ((DecisionThreshold.ReadBeside(modelPath) is not null || ProbabilityCalibration.ReadBeside(modelPath) is not null)
                         && BinaryCounts.Metrics(predictions, labelColumn) is { } answered)
-                        foreach (var key in new[] { "accuracy", "precision", "recall", "negative_precision", "negative_recall", "f1_score" })
-                            if (answered.TryGetValue(key, out var value)) metrics[key] = value;
+                        BinaryCounts.ReplaceAnswerMetrics(metrics, answered);
                 }
                 else if (taskType.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase))
                 {

@@ -33,6 +33,31 @@ public class ProbabilityCalibrationTests
         Assert.Equal(9 * 200, calibration.Rows);
     }
 
+    // Out-of-fold probabilities of a tree on twelve rows (a probability of 0.98 on a negative among them): a full Newton
+    // step from the starting point overshoots and the slope runs to ~1e7, after which every probability is 0 or 1 and a
+    // model that ranked the rows answers one class (a model with AUC 1.0 answering "no" to every row).
+    [Fact]
+    public void Platt_OnFewRowsWhereAFullNewtonStepOvershoots_StaysFiniteAndFallsInLoss()
+    {
+        (double, bool, double)[] rows =
+        [
+            (0.9674, true, 1), (0.1, false, 1), (0.0083, false, 1), (0.03, false, 1), (0.0416, false, 1), (0.1, false, 1),
+            (0.98, false, 1), (0.03, false, 1), (0.98, false, 1), (0.03, false, 1), (0.03, false, 1), (0.025, false, 1),
+        ];
+
+        var calibration = ProbabilityCalibration.Fit(rows, "platt", "f", null, DateTimeOffset.UtcNow)!;
+
+        Assert.InRange(calibration.A!.Value, -20, 20);
+        Assert.InRange(calibration.B!.Value, -20, 20);
+        // Not all-zero: the two ends of the model's own ranking stay apart, and the fit is not worse than leaving p as it is.
+        Assert.True(calibration.Map(0.9674) > calibration.Map(0.0083) || Math.Abs(calibration.A.Value) < 1e-9);
+        Assert.True(Loss(rows, p => calibration.Map(p)) <= Loss(rows, p => p) + 1e-9,
+            $"loss {Loss(rows, p => calibration.Map(p))} vs identity {Loss(rows, p => p)}");
+    }
+
+    private static double Loss((double P, bool Y, double W)[] rows, Func<double, double> map)
+        => -rows.Sum(r => r.W * Math.Log(Math.Clamp(r.Y ? map(r.P) : 1 - map(r.P), 1e-15, 1)));
+
     [Fact]
     public void Platt_OnRowsTheModelSeparates_StaysAtPlattsTargets()
     {

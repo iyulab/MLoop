@@ -52,8 +52,31 @@ public static class BinaryCounts
         if (tp + fn > 0) metrics["recall"] = (double)tp / (tp + fn);
         if (tn + fp > 0) metrics["negative_recall"] = (double)tn / (tn + fp);
         if (tn + fn > 0) metrics["negative_precision"] = (double)tn / (tn + fn);
-        if (metrics.TryGetValue("precision", out var pr) && metrics.TryGetValue("recall", out var rc))
-            metrics["f1_score"] = pr + rc > 0 ? 2 * pr * rc / (pr + rc) : 0;
+        // F1 is defined whenever the rows hold a positive, even when the model predicted none: it found none of them, so
+        // it is 0 — not absent, which would leave the evaluator's own F1 (counted from the raw scores) standing next to
+        // answers it did not give.
+        if (metrics.TryGetValue("recall", out var rc))
+            metrics["f1_score"] = metrics.TryGetValue("precision", out var pr) && pr + rc > 0 ? 2 * pr * rc / (pr + rc) : 0;
         return metrics;
+    }
+
+    /// <summary>The metrics that depend on the answers a model gives rather than on its scores.</summary>
+    public static readonly string[] AnswerMetrics = ["accuracy", "precision", "recall", "negative_precision", "negative_recall", "f1_score"];
+
+    /// <summary>
+    /// Replaces, in <paramref name="metrics"/> (ML.NET's evaluation, which re-derives each answer from the raw score at 0),
+    /// the metrics that depend on the answers with the ones counted from the answers the model gives. One that the
+    /// answers leave undefined is removed: it would otherwise stay as the raw-score value beside the counted ones
+    /// (measured: <c>recall</c> 0 next to <c>precision</c> 1 and <c>f1_score</c> 1 for a model answering "no" to every row).
+    /// </summary>
+    public static void ReplaceAnswerMetrics(IDictionary<string, double> metrics, IReadOnlyDictionary<string, double> counted)
+    {
+        ArgumentNullException.ThrowIfNull(metrics);
+        ArgumentNullException.ThrowIfNull(counted);
+        foreach (var key in AnswerMetrics)
+        {
+            if (counted.TryGetValue(key, out var value)) metrics[key] = value;
+            else metrics.Remove(key);
+        }
     }
 }

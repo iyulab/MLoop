@@ -81,6 +81,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A binary model's probability calibration no longer runs away on a handful of rows, and its precision and F1 no longer contradict its recall.** The Platt fit
+  (`mloop train`, `mloop calibrate --method platt`) took a full Newton step every iteration, which overshoots when few rows are fitted: on 24 out-of-fold rows of a
+  model that ranked them perfectly (AUC 1.0) the slope went to -5e5, every calibrated probability became 0, and the model answered "no" to every row - recorded
+  with `precision` 1.0 and `f1_score` 1.0 next to `recall` 0, because the metrics counted from the model's answers replaced only the ones they define
+  (no row was predicted positive, so `precision` was undefined and the evaluator's own value, counted from the raw scores, stayed; the same in `mloop evaluate` of a
+  model with a calibration or a threshold). The fit now halves the step until the loss falls, so it converges where it used to diverge and is unchanged where it did
+  not; an answer-based metric the answers leave undefined is removed instead of kept, and `f1_score` is 0 (not absent) when the rows hold a positive and the model predicted
+  none - so the performance diagnostics say that the model answers one class at its decision threshold. Calibrations fitted before this keep their coefficients; refit with
+  `mloop calibrate`.
 - **`train --test-split 0` (a negative share, `training.test_split: 0` or a `POST /train` request with `testSplit: 0`) is refused instead of reporting training scores as test scores.**
   A share that holds no rows out trained on every row and reported the scores of those same rows as its test metrics - accuracy 0.96 where a held-out 20 % gave 0.85 - with no
   warning, and the model could be promoted on them. A share outside 0 and 1 is now refused with the reason, as `mloop validate` already said of the file's value

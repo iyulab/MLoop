@@ -648,12 +648,9 @@ public partial class TrainingRunner
         // ML.NET's binary evaluator re-derives each answer from the raw score at 0; the calibrated model answers at
         // its own 0.5, so the metrics that depend on the answer are counted from the answers it gives.
         if (BinaryCounts.Metrics(calibrated, config.LabelColumn) is { } answered)
-            foreach (var key in AnswerMetrics)
-                if (answered.TryGetValue(key, out var value)) metrics[key] = value;
+            BinaryCounts.ReplaceAnswerMetrics(metrics, answered);
         return (model, metrics, null, calibration);
     }
-
-    private static readonly string[] AnswerMetrics = ["accuracy", "precision", "recall", "negative_precision", "negative_recall", "f1_score"];
 
     private sealed class OutOfFoldScore
     {

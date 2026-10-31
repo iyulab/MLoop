@@ -188,11 +188,35 @@ public sealed record ProbabilityCalibration(
             if (det <= 0) break;
             var da = (hbb * ga - hab * gb) / det;
             var db = (haa * gb - hab * ga) / det;
+            // A full Newton step can overshoot far from the optimum — on 24 out-of-fold rows of a model that ranked them
+            // perfectly it sent the slope to −5e5, so every probability became 0 and the model answered one class. The
+            // loss is convex, so halving the step until it falls always finds a step that makes progress.
+            var current = PlattLoss(rows, a, b, positiveTarget, negativeTarget);
+            var step = 1.0;
+            while (step > 1e-10 && PlattLoss(rows, a + step * da, b + step * db, positiveTarget, negativeTarget) > current + 1e-12)
+                step /= 2;
+            if (step <= 1e-10) break;
+            da *= step;
+            db *= step;
             a += da;
             b += db;
             if (Math.Abs(da) < 1e-9 && Math.Abs(db) < 1e-9) break;
         }
         return new ProbabilityCalibration("platt", a, b, null, null, 0, "", null, null, null, default);
+    }
+
+    // The weighted cross-entropy against Platt's targets that FitPlatt minimizes.
+    private static double PlattLoss(List<(double Probability, bool Positive, double Weight)> rows, double a, double b,
+        double positiveTarget, double negativeTarget)
+    {
+        var loss = 0.0;
+        foreach (var (p, y, w) in rows)
+        {
+            var q = Math.Clamp(Sigmoid(a * Logit(Math.Clamp(p, 0, 1)) + b), 1e-15, 1 - 1e-15);
+            var t = y ? positiveTarget : negativeTarget;
+            loss -= w * (t * Math.Log(q) + (1 - t) * Math.Log(1 - q));
+        }
+        return loss;
     }
 
     // Weighted pool-adjacent-violators over the rows sorted by probability; each pooled block becomes a

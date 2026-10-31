@@ -50,6 +50,17 @@ public class WeightedMetricsTests
         Assert.Equal(WeightedMetrics.Binary(view, "Label", "W"), WeightedMetrics.Binary(view, "Label", weightColumn: null));
     }
 
+    [Fact]
+    public void Binary_AModelThatPredictsNoPositive_HasF1Zero_AndNoPrecision()
+    {
+        var rows = BinaryRows().Select(r => { r.PredictedLabel = false; return r; }).ToList();
+        var weighted = WeightedMetrics.Binary(_ml.Data.LoadFromEnumerable(rows), "Label", "W")!;
+
+        Assert.Equal(0, weighted["recall"]);
+        Assert.Equal(0, weighted["f1_score"]);
+        Assert.False(weighted.ContainsKey("precision"));
+    }
+
     // ML.NET's evaluator throws on rows of one class ("AUC is not defined"); a fold of rare positives is such
     // rows, and a search scores it with what those rows define.
     [Fact]
