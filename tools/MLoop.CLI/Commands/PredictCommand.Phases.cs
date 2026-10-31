@@ -63,11 +63,11 @@ public static partial class PredictCommand
         // What the model was trained on (schema · label · task · band) comes from its experiment
         // record, whichever way the model was named. A record that does not load leaves these
         // null and the predict path continues without categorical preprocessing.
-        async Task<bool> ReadExperimentAsync(string id)
+        async Task<bool> ReadRecordAsync(Func<Task<ExperimentData>> load)
         {
             try
             {
-                var experimentData = await experimentStore.LoadAsync(resolvedModelName, id, CancellationToken.None);
+                var experimentData = await load();
                 trainedSchema = experimentData?.Config?.InputSchema;
                 configLabelColumn = string.IsNullOrEmpty(experimentData?.Config?.LabelColumn) ? null : experimentData.Config.LabelColumn;
                 taskType = experimentData?.Task;
@@ -80,6 +80,9 @@ public static partial class PredictCommand
                 return false;
             }
         }
+
+        Task<bool> ReadExperimentAsync(string id) =>
+            ReadRecordAsync(() => experimentStore.LoadAsync(resolvedModelName, id, CancellationToken.None));
 
         if (!string.IsNullOrEmpty(experiment) && !string.IsNullOrEmpty(modelPath))
         {
@@ -150,25 +153,28 @@ public static partial class PredictCommand
             AnsiConsole.MarkupLine($"[green]>[/] Model: [cyan]{resolvedModelName}[/]");
             ValueLine.Write("[green]>[/] Using model file: ", Path.GetRelativePath(projectRoot, resolvedModelPath));
 
-            // Try to infer experiment ID from path
-            var modelDir = Path.GetDirectoryName(resolvedModelPath);
-            if (modelDir != null)
+            // What the model was trained on is in its experiment record, not in the file: beside it when it sits in an experiment
+            // folder (this project's or a copy kept elsewhere), or the experiment a production slot points at. Without it the
+            // data is scored as it reads - the label names of a classifier are lost (True/False for yes/no) and a categorical
+            // column or a changed column type can fail or score wrongly.
+            var record = await ExperimentRecordLocation.FindAsync(resolvedModelPath);
+            var recordRead = record is not null && await ReadRecordAsync(
+                () => experimentStore.LoadFromDirectoryAsync(record.Directory, resolvedModelName, record.ExperimentId));
+            if (recordRead)
             {
-                var possibleExpId = Path.GetFileName(modelDir);
-
-                if (experimentStore.ExperimentExists(resolvedModelName, possibleExpId)
-                    && await ReadExperimentAsync(possibleExpId))
-                {
-                    experimentId = possibleExpId;
-                }
+                // The experiment's id names it for logging, shadow comparison and forecast replay, which look it up in this project:
+                // a record that is not this project's experiment gives the columns, label and task, and no id.
+                if (ProjectPaths.IsSame(record!.Directory, experimentStore.GetExperimentPath(resolvedModelName, record.ExperimentId)))
+                    experimentId = record.ExperimentId;
+                else
+                    ValueLine.Write("[green]>[/] Training schema: ", Path.GetRelativePath(projectRoot, record.Directory));
             }
-
-            // A model file carries no record of the columns it was trained on - that sits in its experiment folder. Without it the
-            // data is scored as it reads, and a table whose columns read differently from training fails with a message about the data.
-            if (experimentId is null)
-                WarningConsole.Warn($"'{Path.GetFileName(resolvedModelPath)}' is not in an experiment folder of model '{resolvedModelName}', so the " +
-                    "columns it was trained on are unknown and the data is scored as it reads (a categorical column or a changed column type can fail or " +
-                    "score wrongly). Predict with --experiment <exp-id> or keep the model in its experiment folder.");
+            else
+            {
+                WarningConsole.Warn($"'{Path.GetFileName(resolvedModelPath)}' is not in an experiment folder, and no experiment record is beside it, so the " +
+                    "columns it was trained on are unknown and the data is scored as it reads (a classifier's label names are lost, and a categorical column or a changed column type can fail or " +
+                    "score wrongly). Predict with --experiment <exp-id>, or keep the model in its experiment folder.");
+            }
         }
 
         return new PredictModel(resolvedModelPath, experimentId, trainedSchema, configLabelColumn, taskType, preserveColumns, interval);

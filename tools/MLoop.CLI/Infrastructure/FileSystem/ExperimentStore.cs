@@ -255,6 +255,17 @@ public class ExperimentStore : IExperimentStore
             throw new FileNotFoundException($"Experiment not found: {resolvedName}/{experimentId}");
         }
 
+        return await LoadFromDirectoryAsync(experimentPath, resolvedName, experimentId, cancellationToken);
+    }
+
+    /// <summary>
+    /// The experiment record in <paramref name="experimentPath"/>, wherever that folder is - this project's staging folder
+    /// (<see cref="LoadAsync"/>), or a copy of an experiment folder kept elsewhere
+    /// (<see cref="MLoop.Core.Storage.ExperimentRecordLocation"/>). The one reader of the record's files.
+    /// </summary>
+    public async Task<ExperimentData> LoadFromDirectoryAsync(
+        string experimentPath, string resolvedName, string experimentId, CancellationToken cancellationToken = default)
+    {
         var metadataPath = _fileSystem.CombinePath(experimentPath, MetadataFileName);
         var metadata = await _fileSystem.ReadJsonAsync<Dictionary<string, object>>(metadataPath, cancellationToken);
 

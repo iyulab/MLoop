@@ -16,6 +16,10 @@ public static class ProjectPaths
     public static string Resolve(string path, string? projectRoot) =>
         Path.GetFullPath(path, Path.GetFullPath(projectRoot ?? Directory.GetCurrentDirectory()));
 
+    /// <summary>Whether two full paths name the same place, by the file system's own case rule.</summary>
+    public static bool IsSame(string left, string right) =>
+        Path.GetRelativePath(Path.GetFullPath(left), Path.GetFullPath(right)) == ".";
+
     /// <summary>
     /// Whether <paramref name="fullPath"/> is <paramref name="projectRoot"/> or lies under it — compared by path
     /// segments, with the file system's own case rule, never as a string prefix.

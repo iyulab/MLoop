@@ -77,6 +77,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop predict --model <file>` uses the experiment record of the model it is given.** The columns a model was trained on, its label and its task are in the
+  experiment record beside it, not in the file. The command looked that record up by the name of the file's folder *in the current project*, so the file in a
+  model's `production` slot (which holds a pointer, not the record) and a model kept with a copy of its experiment folder somewhere else were scored as the data reads: a
+  classifier trained on `yes`/`no` answered `True`/`False` with a `Score` column in place of `RawScore` and no `Confidence`, and a categorical column or a changed column type
+  could fail. The record is now found from the file's own location - the experiment folder it sits in (or a copy of one), or the experiment a production slot points at -
+  and the answer is the one `mloop predict` gives. A record that is not an experiment of this project gives the schema, label and task but no experiment id (predictions
+  are logged without one), and a folder of another project that shared an experiment id no longer takes this project's record. A bare model file still warns that its
+  training schema is unknown.
 - **`mloop predict --model <file>` says so when the file is not in an experiment folder.** A model file carries no record of the columns it was trained on - that sits in
   its experiment folder - so a model from anywhere else was scored with the data read as it comes, and a table whose categorical or changed columns read differently from
   training failed with "Feature vector dimension mismatch", a message about the data. It now warns first that the training schema is unknown and points to

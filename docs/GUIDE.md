@@ -521,7 +521,7 @@ mloop predict [data-file] [options]
 #                                does not move. --json names it in `experimentId`; --log records
 #                                its rows under its own id, so `mloop drift` (production's rows)
 #                                and feedback keep the two apart
-#   --model <path>               Predict with a model file (outside the project's experiments)
+#   --model <path>               Predict with a model file (its experiment record - beside it, or the experiment of a production slot - gives the training schema)
 #   --json                       Emit pure JSON to stdout (progress on stderr) — use this for
 #                                machine/automation consumption. The default output mixes a
 #                                human-readable summary into stdout.
@@ -541,7 +541,7 @@ mloop predict [data-file] [options]
 # Examples
 mloop predict                                          # Auto mode
 mloop predict data/test.csv --experiment exp-003      # Candidate's answers, production untouched
-mloop predict data/test.csv --model ../other/model.zip   # a model file outside an experiment folder is scored without the schema it was trained on (a warning says so)
+mloop predict data/test.csv --model ../other/model.zip   # the experiment record beside the file (its experiment folder, or a copy of it) gives the schema it was trained on; a bare model file is scored without it (a warning says so)
 mloop predict --output results/forecast.csv
 mloop predict --unknown-strategy use-most-frequent     # Handle unseen categorical values
 ```
@@ -2314,7 +2314,7 @@ my-ml-project/
 **Manual Override**:
 All paths can be explicitly specified when needed:
 ```bash
-mloop predict data/custom.csv --model models/staging/exp-005/model.zip --output results.csv
+mloop predict data/custom.csv --model models/default/staging/exp-005/model.zip --output results.csv
 ```
 
 ---

@@ -26,6 +26,14 @@ public class ProjectPathsTests
         Assert.Equal(Path.Combine(Directory.GetCurrentDirectory(), "x.csv"), ProjectPaths.Resolve("x.csv", projectRoot: null));
     }
 
+    [Fact]
+    public void IsSame_ComparesPlaces_NotSpellings()
+    {
+        Assert.True(ProjectPaths.IsSame(Path.Combine(Root, "a", "..", "b"), Path.Combine(Root, "b")));
+        Assert.False(ProjectPaths.IsSame(Path.Combine(Root, "b"), Path.Combine(Root, "b2")));
+        Assert.False(ProjectPaths.IsSame(Path.Combine(Root, "b"), Path.Combine(Root, "b", "c")));
+    }
+
     [Theory]
     [InlineData("datasets/train.csv", true)]
     [InlineData(".", true)]
