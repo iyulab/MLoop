@@ -263,7 +263,7 @@ public static class InfoCommand
             string? row;
             while ((row = reader.ReadLine()) != null)
             {
-                if (IsRow(row, width))
+                if (TableRows.IsRow(row, width))
                     lineCount++;
             }
         }
@@ -692,14 +692,6 @@ public static class InfoCommand
 
     internal record ColumnStatInfo(long MissingCount, int UniqueCount);
 
-    /// <summary>
-    /// Whether a line of the file is a row. A blank line in a table is not one - training and sampling skip it, so a
-    /// report that counted it would state more rows than anything reads, with a column of missing values to go with
-    /// them. A file of one column is the exception: a blank line there is a record of one empty value (a gap in a
-    /// series), the way the series commands read it.
-    /// </summary>
-    internal static bool IsRow(string line, int columnCount) => columnCount == 1 || !string.IsNullOrWhiteSpace(line);
-
     internal static (Dictionary<string, ColumnStatInfo> Stats, Dictionary<string, int>? LabelDistribution)
         CalculateColumnStats(string dataFile, string[] columns, string? labelColumn, int maxUniqueRows = 10000)
     {
@@ -718,7 +710,7 @@ public static class InfoCommand
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
-                if (!IsRow(line, columns.Length))
+                if (!TableRows.IsRow(line, columns.Length))
                     continue;
                 rowCount++;
                 var fields = CsvFieldParser.ParseFields(line);

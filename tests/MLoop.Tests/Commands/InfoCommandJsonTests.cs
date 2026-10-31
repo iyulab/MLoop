@@ -352,16 +352,4 @@ public class InfoCommandJsonTests : IDisposable
         Assert.Equal(2, columns.Count);
         Assert.All(columns, c => Assert.Equal(0, c.GetProperty("missingCount").GetInt64()));
     }
-
-    [Fact]
-    public void IsRow_ABlankLineIsNoRowOfATable_AndOneOfAFileOfOneColumn()
-    {
-        Assert.False(InfoCommand.IsRow("", 2));
-        Assert.False(InfoCommand.IsRow("  ", 3));
-        Assert.True(InfoCommand.IsRow("1,2", 2));
-        Assert.True(InfoCommand.IsRow(",", 2));
-        Assert.True(InfoCommand.IsRow("", 1));
-        Assert.True(InfoCommand.IsRow("1", 1));
-    }
 }
-

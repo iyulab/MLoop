@@ -35,7 +35,12 @@ internal static class TrainPresenter
 
             var columns = CsvFieldParser.ParseFields(header).Length;
             var rowCount = 0;
-            while (reader.ReadLine() != null) rowCount++;
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                if (TableRows.IsRow(line, columns))
+                    rowCount++;
+            }
 
             AnsiConsole.WriteLine();
             AnsiConsole.Write(new Rule("[blue]Data Summary[/]").LeftJustified());

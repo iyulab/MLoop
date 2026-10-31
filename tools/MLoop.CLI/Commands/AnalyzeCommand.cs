@@ -229,7 +229,7 @@ public static class AnalyzeCommand
         string? line;
         while ((line = reader.ReadLine()) != null)
         {
-            if (!InfoCommand.IsRow(line, columns.Length))
+            if (!TableRows.IsRow(line, columns.Length))
                 continue;
             rows++;
             var fields = CsvFieldParser.ParseFields(line);
