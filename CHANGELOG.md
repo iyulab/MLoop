@@ -51,6 +51,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`mloop detect` and `mloop analyze series` no longer close up a one-column file over a blank line.** The reader takes a blank line for nothing, so a series
+  stored one reading per line with a reading missing came out shorter and every reading after the gap sat at the wrong row - `detect` named the wrong rows.
+  A blank line inside a one-column file is now the same error as a non-numeric value: the series must be fully numeric with no gaps. (In a wider file the
+  empty cell already failed.)
+
 - **`mloop info --analyze` and `mloop analyze` no longer run change-point detection nobody reads.** DataLens switches on every analysis it has unless told otherwise, and change points - added in a later version than the code that builds the options - ran on each call, quadratic in the number of rows: `analyze correlation` took 10 seconds on 50,000 rows and about a quarter of an hour on a million, for four numeric columns, to show a correlation matrix. The options are now built in one place from everything off, naming what each command shows, so a switch added later stays off until it is asked for: `analyze correlation`, `distribution` and `importance` take 0.4 to 0.7 seconds on 50,000 rows and about 2.5 seconds on a million. `info --analyze` and `analyze outliers` still take seconds to minutes on large files because the local outlier factor DataLens runs there is itself quadratic in the rows (8 seconds at 25,000 rows, 34 seconds at 50,000).
 
 - **A model trained on a few hundred rows no longer reads windows of unchanged data as drifted, and `input_drift` no longer asks for a retraining on the noise of a small

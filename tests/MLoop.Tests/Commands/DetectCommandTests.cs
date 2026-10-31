@@ -69,6 +69,37 @@ public class DetectCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadSeries_OneColumnWithABlankLineInside_Fails()
+    {
+        // The reader takes a blank line for nothing, so without the check the series would close up over the missing reading.
+        var csv = WriteCsv("Value", "1", "2", "", "4");
+
+        var result = await DetectCommand.LoadSeriesAsync(csv, column: null, jsonOutput: true);
+
+        Assert.Null(result);
+        Assert.Equal(4, DetectCommand.BlankLineInside(csv));
+    }
+
+    [Fact]
+    public async Task LoadSeries_OneColumnWithBlankLinesOnlyAtTheEnd_IsTheWholeSeries()
+    {
+        var csv = WriteCsv("Value", "1", "2", "3", "");
+
+        var result = await DetectCommand.LoadSeriesAsync(csv, column: null, jsonOutput: true);
+
+        Assert.Equal(new[] { 1.0, 2.0, 3.0 }, result!.Value.Values);
+        Assert.Null(DetectCommand.BlankLineInside(csv));
+    }
+
+    [Fact]
+    public async Task LoadSeries_AnEmptyCellInAWiderFile_StillFails()
+    {
+        var csv = WriteCsv("A,B", "1,2", "3,", "5,6");
+
+        Assert.Null(await DetectCommand.LoadSeriesAsync(csv, column: "B", jsonOutput: true));
+    }
+
+    [Fact]
     public async Task LoadSeries_NonNumericValue_Fails()
     {
         // The transform needs a contiguous numeric series — a gap must be an input error, not skipped.

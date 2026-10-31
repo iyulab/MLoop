@@ -232,6 +232,15 @@ public static class DetectCommand
             return null;
         }
 
+        // A one-column file has no comma to make an empty reading a field: the reader takes a blank line for nothing and the series closes up over the
+        // gap, so every reading after it sits at the wrong row. In a wider file the empty cell fails the parse below.
+        if (headers.Count == 1 && BlankLineInside(dataFile) is { } blankLine)
+        {
+            ErrorConsole.Error(Markup.Escape($"Column '{resolved}' has a blank value at data row {blankLine} — " +
+                       "the series must be fully numeric with no gaps."));
+            return null;
+        }
+
         var index = headers.IndexOf(resolved);
         var values = new List<double>();
         await foreach (var row in csv.ReadRowsAsync(dataFile))
@@ -255,6 +264,26 @@ public static class DetectCommand
         }
 
         return (values, resolved);
+    }
+
+    /// <summary>
+    /// The line number of the first blank line that has data after it, or null. Blank lines at the end are only the file's last newline; the
+    /// numbering is the file's (the header is line 1), as in the non-numeric message.
+    /// </summary>
+    internal static int? BlankLineInside(string path)
+    {
+        int? firstBlank = null;
+        var line = 0;
+        foreach (var text in File.ReadLines(path))
+        {
+            line++;
+            if (line == 1) continue;
+            if (text.AsSpan().Trim().IsEmpty)
+                firstBlank ??= line;
+            else if (firstBlank is not null)
+                return firstBlank;
+        }
+        return null;
     }
 
     /// <summary>Per-point output columns. Control = the band to chart.</summary>
