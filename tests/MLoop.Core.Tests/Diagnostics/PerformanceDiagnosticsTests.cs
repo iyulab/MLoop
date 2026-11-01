@@ -27,14 +27,20 @@ public class PerformanceDiagnosticsTests
     }
 
     [Fact]
-    public void Analyze_ObjectDetection_ThatMatchedNothing_WarnsAndSuggestsTrainingAgain()
+    public void Analyze_ObjectDetection_ThatMatchedNothing_NamesTheThresholdAndDoesNotAdviseTrainingAgain()
     {
         var result = _diagnostics.Analyze("object-detection",
             new Dictionary<string, double> { ["map_50"] = 0, ["map_50_95"] = 0 });
 
         Assert.Equal(PerformanceLevel.Poor, result.OverallAssessment);
-        Assert.Contains(result.Warnings, w => w.Contains("learned nothing"));
-        Assert.Contains(result.Suggestions, s => s.Contains("Train again"));
+        // mAP 0 is "no box passed the score threshold and matched" — not proof that nothing was learned.
+        var warning = Assert.Single(result.Warnings);
+        Assert.Contains("score threshold", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("learned nothing", warning, StringComparison.Ordinal);
+        // Training is repeatable, so the same data and settings give the same detector: say what to change.
+        var suggestion = Assert.Single(result.Suggestions);
+        Assert.Contains("--epochs", suggestion, StringComparison.Ordinal);
+        Assert.DoesNotContain("Train again:", suggestion, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -129,7 +129,7 @@ internal static class DeepLearningHandlers
 
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Text classification (NAS-BERT)", EpochProgress.Of(config), log))
-                model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
+                model = TorchFit.Run(() => pipeline.Fit(trainSet));
             // Scored as every prediction path scores it: the classifier's logits as probabilities (ClassScores) — the
             // evaluator's log loss reads them as probabilities.
             var predictions = MLoop.Core.Models.ClassScores.AsProbabilities(mlContext, model).Transform(testSet);
@@ -181,7 +181,7 @@ internal static class DeepLearningHandlers
 
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Sentence similarity (NAS-BERT)", EpochProgress.Of(config), log))
-                model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
+                model = TorchFit.Run(() => pipeline.Fit(trainSet));
             var predictions = model.Transform(testSet);
             var metrics = mlContext.Regression.Evaluate(predictions, labelColumnName: config.LabelColumn);
 
@@ -239,7 +239,7 @@ internal static class DeepLearningHandlers
 
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "NER (NAS-BERT)", EpochProgress.Of(config), log))
-                model = PretrainedWeights.Guard(() => pipeline.Fit(preparedTrain));
+                model = TorchFit.Run(() => pipeline.Fit(preparedTrain));
 
             var scores = NerTagAccuracy.Measure(mlContext, model.Transform(testSet), config.LabelColumn);
             // The tag average is named as multiclass names it, and for the same reason: it is what a model
@@ -305,7 +305,7 @@ internal static class DeepLearningHandlers
             // partition, and the progress channel carries a metric value by construction.
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Object detection (AutoFormerV2)", EpochProgress.Of(config), log))
-                model = PretrainedWeights.Guard(() => pipeline.Fit(trainSet));
+                model = TorchFit.Run(() => pipeline.Fit(trainSet));
             // mAP on the held-out images, as `mloop evaluate` scores them — what the quality gate and
             // promotion judge. A value the evaluator could not define (no test image) is left out.
             var metrics = ObjectDetectionEvaluator.Evaluate(mlContext, model.Transform(testSet))
@@ -373,7 +373,7 @@ internal static class DeepLearningHandlers
 
             ITransformer model;
             using (EpochProgress.Attach(mlContext, progress, "Question answering", EpochProgress.Of(config), log))
-                model = PretrainedWeights.Guard(() => pipeline.Fit(prepared));
+                model = TorchFit.Run(() => pipeline.Fit(prepared));
 
             var (exact, f1) = AnswerOverlap.Measure(model.Transform(testSet), answerCol);
             var metricsDict = new Dictionary<string, double>
