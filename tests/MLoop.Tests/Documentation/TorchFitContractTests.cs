@@ -63,6 +63,29 @@ public class TorchFitContractTests
         Assert.Empty(offenders);
     }
 
+    private static readonly Regex DetectorOptions = new(
+        @"ObjectDetectionTrainer\.Options\s*\{[^}]*\}", RegexOptions.CultureInvariant | RegexOptions.Singleline | RegexOptions.Compiled);
+
+    /// <summary>Whether the detector's trainer options set the learning rate to MLoop's constant, not left at the trainer's default of 1.0.</summary>
+    internal static bool SetsTheLearningRate(string source)
+    {
+        var options = DetectorOptions.Match(CodeOf(source));
+        return options.Success && options.Value.Contains("InitLearningRate = ObjectDetectionDefaults.InitLearningRate", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheDetectorIsTrainedAtMLoopsLearningRateNotTheTrainersOne()
+    {
+        // At the trainer's 1.0 the loss rose after epoch 4 and a noisy 60-image set scored map_50 0 in every seed tried.
+        var handlers = RepoSourceTree.ProductionSourceFiles(Path.Combine("src", "MLoop.Core.DeepLearning", "Handlers"))
+            .Single(f => Path.GetFileName(f) == "DeepLearningHandlers.cs");
+
+        Assert.True(SetsTheLearningRate(File.ReadAllText(handlers)));
+        Assert.False(SetsTheLearningRate("var o = new ObjectDetectionTrainer.Options { MaxEpoch = 10 };"));
+        Assert.False(SetsTheLearningRate("// InitLearningRate = ObjectDetectionDefaults.InitLearningRate\nvar o = new ObjectDetectionTrainer.Options { MaxEpoch = 10 };"));
+        Assert.Equal(0.3, MLoop.Core.DeepLearning.ObjectDetectionDefaults.InitLearningRate);
+    }
+
     [Fact]
     public void TheMatcherSeesTheShapesItForbidsAndAcceptsTheOneItAllows()
     {

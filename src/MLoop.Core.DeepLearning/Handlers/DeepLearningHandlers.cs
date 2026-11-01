@@ -293,6 +293,7 @@ internal static class DeepLearningHandlers
                         ImageColumnName = "Image",
                         MaxEpoch = EpochProgress.Of(config),
                         ScoreThreshold = MLoop.Core.Prediction.DetectionScoreThreshold.Floor,
+                        InitLearningRate = ObjectDetectionDefaults.InitLearningRate,
                         LogEveryNStep = 1,   // the loss of every step, for EpochLoss (50 logs nothing on a small set)
                     }))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue(
