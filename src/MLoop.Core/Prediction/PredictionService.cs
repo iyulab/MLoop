@@ -208,7 +208,12 @@ public class PredictionService
                 if (!row.TryGetValue(col.Name, out var rawValue) || rawValue == null)
                     continue;
 
-                var strValue = rawValue.ToString() ?? "";
+                // A file's fields are trimmed when read (training and `predict` both); a served row's value is the same cell and
+                // is judged the same way — " 서울 " is 서울, not a value training never saw.
+                var written = rawValue.ToString() ?? "";
+                var strValue = written.Trim();
+                if (strValue != written && knownValues.Contains(strValue))
+                    row[col.Name] = strValue;
                 if (!string.IsNullOrEmpty(strValue) && !knownValues.Contains(strValue))
                 {
                     // The same text in another Unicode form (decomposed Hangul) is the value training saw, not a new one.

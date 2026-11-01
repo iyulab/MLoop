@@ -91,6 +91,26 @@ public class CanonicalTextTests : IDisposable
     }
 
     [Fact]
+    public void Served_rows_with_padded_categories_are_the_trained_value_as_a_file_field_is()
+    {
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["지역"] = " 서울 ", ["면적"] = 1.0f },
+            new Dictionary<string, object> { ["지역"] = "\t" + Nfd("부산") + "\n", ["면적"] = 1.0f },   // padded and decomposed
+            new Dictionary<string, object> { ["지역"] = " 광주 ", ["면적"] = 2.0f },                    // a real unknown, said as written
+        };
+        var warnings = new List<string>();
+
+        PredictionService.MapCategoricalValues(rows, Schema(), warnings);
+
+        Assert.Equal("서울", rows[0]["지역"]);
+        Assert.Equal("부산", rows[1]["지역"]);
+        Assert.Equal("대구", rows[2]["지역"]);
+        var only = Assert.Single(warnings);
+        Assert.Contains("광주", only);
+    }
+
+    [Fact]
     public void A_prediction_file_with_decomposed_categories_has_no_unknown_values()
     {
         var file = Path.Combine(_dir, "predict.csv");
