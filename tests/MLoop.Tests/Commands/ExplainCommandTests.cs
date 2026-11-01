@@ -166,7 +166,30 @@ public sealed class ExplainCommandTests : IDisposable
         var second = await JsonAsync("explain", "exp-001", "--data", "datasets/recheck.csv", "--rows", "150", "--seed", "5");
 
         Assert.Equal(150, first.GetProperty("rows").GetInt32());
-        Assert.Equal(first.GetProperty("features").GetRawText(), second.GetProperty("features").GetRawText());
+
+        // This has failed twice in a full serial run, by one row of 450 (0.4333 against 0.4311), and could not be reproduced:
+        // 24 explains in separate processes (under load too), 20 predictions of one model in separate processes and 80 explains
+        // in one process with the heap churned between them were all identical. A third time needs the evidence the first two lacked,
+        // so a mismatch keeps the model, the data and both answers where they can be read after the run.
+        var firstFeatures = first.GetProperty("features").GetRawText();
+        var secondFeatures = second.GetProperty("features").GetRawText();
+        if (firstFeatures != secondFeatures)
+        {
+            var kept = Path.Combine(Path.GetTempPath(), "mloop-explain-same-seed-" + Guid.NewGuid().ToString("N"));
+            CopyDirectory(Directory.GetCurrentDirectory(), kept);
+            await File.WriteAllTextAsync(Path.Combine(kept, "first.json"), firstFeatures);
+            await File.WriteAllTextAsync(Path.Combine(kept, "second.json"), secondFeatures);
+            Assert.Fail($"The same seed gave two answers. The project, its model and both answers are kept in {kept}.\nfirst:  {firstFeatures}\nsecond: {secondFeatures}");
+        }
+    }
+
+    private static void CopyDirectory(string from, string to)
+    {
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.EnumerateFiles(from))
+            File.Copy(file, Path.Combine(to, Path.GetFileName(file)), overwrite: true);
+        foreach (var directory in Directory.EnumerateDirectories(from))
+            CopyDirectory(directory, Path.Combine(to, Path.GetFileName(directory)));
     }
 
     // The column that decides the answer is also the one that weights the rows (positive: 1..2).
