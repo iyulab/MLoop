@@ -74,3 +74,7 @@ csharp_style_var_elsewhere = true:suggestion
 dotnet_style_prefer_auto_properties = true:suggestion
 dotnet_style_prefer_conditional_expression_over_return = false:silent
 csharp_prefer_simple_using_statement = true:suggestion
+
+[{src,tools}/**/*.cs]
+# A text comparison names its StringComparison: the default is the machine's culture, so a name or a prefix is read differently on a Turkish or a Thai machine.
+dotnet_diagnostic.CA1310.severity = error

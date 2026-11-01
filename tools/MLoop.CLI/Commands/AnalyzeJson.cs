@@ -109,9 +109,9 @@ public static class AnalyzeJson
             flags.AddRange(numberLikeTextFlags);
 
         var summary = $"{columns.Count} column(s); "
-            + $"{flags.Count(f => f.StartsWith("constant-column"))} constant, "
-            + $"{flags.Count(f => f.StartsWith("high-null"))} high-null, "
-            + $"{flags.Count(f => f.StartsWith("likely-index"))} likely-index.";
+            + $"{flags.Count(f => f.StartsWith("constant-column", StringComparison.Ordinal))} constant, "
+            + $"{flags.Count(f => f.StartsWith("high-null", StringComparison.Ordinal))} high-null, "
+            + $"{flags.Count(f => f.StartsWith("likely-index", StringComparison.Ordinal))} likely-index.";
 
         return new AnalyzeEnvelope("profile", true, summary, new { columns }, flags);
     }

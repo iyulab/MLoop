@@ -664,7 +664,7 @@ public static class ValidateCommand
         table.AddRow("Labels specified", errors.Any(e => e.Path.Contains(".label")) ? "[red]✗[/]" : "[green]✓[/]");
         table.AddRow("Training settings", errors.Any(e => e.Path.Contains(".training")) ? "[red]✗[/]" :
             warnings.Any(w => w.Path.Contains(".training")) ? "[yellow]⚠[/]" : "[green]✓[/]");
-        table.AddRow("Data paths", warnings.Any(w => w.Path.StartsWith("data.")) ? "[yellow]⚠[/]" : "[green]✓[/]");
+        table.AddRow("Data paths", warnings.Any(w => w.Path.StartsWith("data.", StringComparison.Ordinal)) ? "[yellow]⚠[/]" : "[green]✓[/]");
         table.AddRow("Prep steps", errors.Any(e => e.Path.Contains(".prep")) ? "[red]✗[/]" :
             warnings.Any(w => w.Path.Contains(".prep")) ? "[yellow]⚠[/]" : "[green]✓[/]");
 

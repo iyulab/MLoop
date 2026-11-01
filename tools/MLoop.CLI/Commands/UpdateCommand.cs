@@ -134,7 +134,7 @@ public static class UpdateCommand
     private static async Task<int> UpdateViaStandaloneBinaryAsync(string version)
     {
         var rid = InstallDetector.GetRuntimeIdentifier();
-        var ext = rid.StartsWith("win") ? ".exe" : "";
+        var ext = rid.StartsWith("win", StringComparison.Ordinal) ? ".exe" : "";
         var tempPath = Path.Combine(Path.GetTempPath(), $"mloop-update{ext}");
 
         try

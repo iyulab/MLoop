@@ -65,7 +65,7 @@ public static class UpdateChecker
 
             // Find the latest release that has a binary asset for our platform
             var rid = InstallDetector.GetRuntimeIdentifier();
-            var ext = rid.StartsWith("win") ? ".exe" : "";
+            var ext = rid.StartsWith("win", StringComparison.Ordinal) ? ".exe" : "";
             var expectedAsset = $"mloop-{rid}{ext}";
 
             string? latestVersion = null;
@@ -101,7 +101,7 @@ public static class UpdateChecker
     public static async Task DownloadLatestBinaryAsync(
         string version, string rid, string destinationPath, Action<long, long?>? onProgress = null)
     {
-        var ext = rid.StartsWith("win") ? ".exe" : "";
+        var ext = rid.StartsWith("win", StringComparison.Ordinal) ? ".exe" : "";
         var assetName = $"mloop-{rid}{ext}";
         var downloadUrl = $"https://github.com/iyulab/MLoop/releases/download/v{version}/{assetName}";
 

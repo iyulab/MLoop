@@ -26,9 +26,9 @@ public static class DateTimeDetector
     {
         var lowerName = columnName.ToLowerInvariant();
         return lowerName == "date" || lowerName == "time" ||
-               lowerName.EndsWith("_date") || lowerName.EndsWith("_time") ||
-               lowerName.EndsWith("_dt") ||
-               lowerName.StartsWith("date_") || lowerName.StartsWith("time_");
+               lowerName.EndsWith("_date", StringComparison.Ordinal) || lowerName.EndsWith("_time", StringComparison.Ordinal) ||
+               lowerName.EndsWith("_dt", StringComparison.Ordinal) ||
+               lowerName.StartsWith("date_", StringComparison.Ordinal) || lowerName.StartsWith("time_", StringComparison.Ordinal);
     }
 
     /// <summary>

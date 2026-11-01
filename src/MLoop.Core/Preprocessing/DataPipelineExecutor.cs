@@ -178,12 +178,12 @@ public class DataPipelineExecutor
         {
             // Simple expression: "concat:col1,col2,separator" or "copy:col_name"
             var expr = step.Expression;
-            if (expr.StartsWith("copy:"))
+            if (expr.StartsWith("copy:", StringComparison.Ordinal))
             {
                 var sourceCol = expr["copy:".Length..];
                 pipeline.AddColumn(columnName, row => row.GetValueOrDefault(sourceCol, ""));
             }
-            else if (expr.StartsWith("concat:"))
+            else if (expr.StartsWith("concat:", StringComparison.Ordinal))
             {
                 var parts = expr["concat:".Length..].Split(',');
                 if (parts.Length < 2)
