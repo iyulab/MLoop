@@ -84,7 +84,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`mloop evaluate --weight` (and `--against`, `explain`, `threshold`, `calibrate`) work when the weight column is one of the model's own inputs.** A model trained on a file that has a `w` column
   without `--weight w` reads `w` as a feature; counting the evaluation rows by `w` took the column out of the feature vector the model reads and the evaluation stopped with
   `Feature vector dimension mismatch`. The weight is now read a second time under its own name and the vector keeps its width. The same failure stopped `--against` whenever the baseline
-  read the candidate's weight column as a feature, such as an experiment trained with `--weight` set against one trained without it, which is how to ask whether weighting helped.
+  read the candidate's weight column as a feature, such as an experiment trained with `--weight` set against one trained without it, which is how to ask whether weighting helped. `explain --weight w` also left `w` out of the list although the model reads it, so the column a model relied on was the one never reported; it is now
+  shuffled like the others while each row keeps its own weight.
 - **`GET /compare` no longer recommends promoting a model that `POST /promote` refuses.** The verdict stays on the optimized metric (`candidateIsBetter`), but when the candidate is better and
   the quality gate or the project's gate policy would refuse it, `promotionRefusal` carries the reason and `recommendation` says `Do not promote …` where it said `Promote …`,
   as `mloop compare` already did for a model that answers one class for every row.

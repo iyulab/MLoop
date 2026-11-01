@@ -63,6 +63,21 @@ public static class ModelExplanation
             rows = [.. PermutationImportance.Order(rows.Count, seed).Take(maxRows).Order().Select(i => rows[i])];
 
         var features = FeatureColumns(header, experiment, weightColumn, out var notShuffled);
+
+        // A weight column the model also reads as a feature is shuffled like any other — but shuffling it in the file would shuffle
+        // the row's weight with it. The weights ride in a column of their own that no shuffle touches.
+        var scoredHeader = header;
+        var scoringWeight = weightColumn;
+        if (WeightIsAFeature(experiment, weightColumn))
+        {
+            var taken = header.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            scoringWeight = weightColumn + ".weight";
+            while (taken.Contains(scoringWeight))
+                scoringWeight += "_";
+            var source = Array.FindIndex(header, h => h.Trim().Equals(weightColumn, StringComparison.OrdinalIgnoreCase));
+            scoredHeader = [.. header, scoringWeight];
+            rows = [.. rows.Select(r => (string[])[.. r, source >= 0 ? r[source] : ""])];
+        }
         var directory = Path.Combine(Path.GetTempPath(), "mloop-explain-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
@@ -71,10 +86,10 @@ public static class ModelExplanation
             async Task<Dictionary<string, double>> ScoreAsync(string name, IReadOnlyList<string[]> table)
             {
                 var path = Path.Combine(directory, name);
-                await WriteAsync(path, header, table, cancellationToken).ConfigureAwait(false);
+                await WriteAsync(path, scoredHeader, table, cancellationToken).ConfigureAwait(false);
                 var evaluation = await engine.EvaluateAsync(
                     modelPath, path, label, experiment.Task, cancellationToken, schema,
-                    experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn).ConfigureAwait(false);
+                    experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn, scoringWeight).ConfigureAwait(false);
                 return evaluation.Metrics;
             }
 
@@ -117,12 +132,18 @@ public static class ModelExplanation
         }
     }
 
+    // The weight is a feature when the saved schema says the model read that column — a model trained without `--weight` on a file that
+    // has one. Without a schema nothing says so, and the weight stays structural.
+    private static bool WeightIsAFeature(ExperimentData experiment, string? weightColumn) =>
+        !string.IsNullOrWhiteSpace(weightColumn)
+        && experiment.Config.InputSchema?.Columns.Any(c => c.Purpose == "Feature" && c.Name.Equals(weightColumn, StringComparison.OrdinalIgnoreCase)) == true;
+
     // The columns of the file to shuffle: those the model read as features. A column the saved schema calls Ignore or Exclude (an
-    // identifier, a date, a constant) is not shuffled — the model never saw it — and the label and the weight are not features.
+    // identifier, a date, a constant) is not shuffled — the model never saw it — and the label is not a feature (nor is the weight, unless the model read it).
     private static List<(string Column, int Index)> FeatureColumns(
         IReadOnlyList<string> header, ExperimentData experiment, string? weightColumn, out List<string> notShuffled)
     {
-        var structural = new[] { experiment.Config.LabelColumn, weightColumn, experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn }
+        var structural = new[] { experiment.Config.LabelColumn, WeightIsAFeature(experiment, weightColumn) ? null : weightColumn, experiment.Config.GroupColumn, experiment.Config.UserColumn, experiment.Config.ItemColumn }
             .Where(c => !string.IsNullOrWhiteSpace(c)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var read = experiment.Config.InputSchema?.Columns
             .Where(c => c.Purpose == "Feature").Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);

@@ -169,6 +169,39 @@ public sealed class ExplainCommandTests : IDisposable
         Assert.Equal(first.GetProperty("features").GetRawText(), second.GetProperty("features").GetRawText());
     }
 
+    // The column that decides the answer is also the one that weights the rows (positive: 1..2).
+    private static string DecidingWeight(int rows, int seed)
+    {
+        var csv = new StringBuilder("q,z,y\n");
+        var rng = new Random(seed);
+        for (var i = 0; i < rows; i++)
+        {
+            var q = 1 + rng.NextDouble();
+            var yes = rng.NextDouble() < (q > 1.5 ? 0.92 : 0.08);
+            csv.Append(CultureInfo.InvariantCulture, $"{q:F4},{rng.NextDouble():F4},{(yes ? "yes" : "no")}\n");
+        }
+        return csv.ToString();
+    }
+
+    [Fact]
+    public async Task AWeightColumnTheModelReadsAsAFeature_IsExplainedLikeAnyOther_AndKeepsItsWeights()
+    {
+        await TrainAsync("binary-classification", DecidingWeight(400, 3), DecidingWeight(400, 9));
+
+        var unweighted = await JsonAsync("explain", "exp-001", "--data", "datasets/recheck.csv", "--repeats", "3");
+        var weighted = await JsonAsync("explain", "exp-001", "--data", "datasets/recheck.csv", "--weight", "q", "--repeats", "3");
+
+        // `q` is the weight and also what the model reads: leaving it out of the list hid the one column the model relies on.
+        var features = weighted.GetProperty("features").EnumerateArray().ToList();
+        Assert.Contains(features, f => f.GetProperty("column").GetString() == "q");
+        Assert.Equal("q", features[0].GetProperty("column").GetString());
+        Assert.True(features[0].GetProperty("importance").GetDouble() > 0.2);
+        Assert.DoesNotContain(weighted.GetProperty("notShuffled").EnumerateArray(), c => c.GetString() == "q");
+        Assert.Equal("q", weighted.GetProperty("weightColumn").GetString());
+        // Shuffling `q` shuffles what the model sees, not the row's weight: the baseline is the weighted score of the file as it is.
+        Assert.NotEqual(unweighted.GetProperty("baseline").GetDouble(), weighted.GetProperty("baseline").GetDouble());
+    }
+
     [Theory]
     [InlineData("--repeats", "0")]
     [InlineData("--rows", "1")]
