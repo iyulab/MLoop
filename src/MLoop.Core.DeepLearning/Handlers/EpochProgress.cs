@@ -33,10 +33,13 @@ public sealed partial class EpochProgress : IDisposable
     private readonly string _trainerName;
     private readonly int _epochs;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly Action<string>? _log;
+    private readonly EpochLoss _loss = new();
     private int _finished;
 
-    private EpochProgress(MLContext mlContext, IProgress<TrainingProgress>? progress, string trainerName, int epochs)
+    private EpochProgress(MLContext mlContext, IProgress<TrainingProgress>? progress, string trainerName, int epochs, Action<string>? log)
     {
+        _log = log;
         _mlContext = mlContext;
         _progress = progress;
         _trainerName = trainerName;
@@ -50,22 +53,34 @@ public sealed partial class EpochProgress : IDisposable
     {
         log?.Invoke($"{trainerName} trains for {epochs} epochs; the time limit does not shorten it (--epochs sets the count). " +
                     "Progress is reported per epoch.");
-        return new EpochProgress(mlContext, progress, trainerName, epochs);
+        return new EpochProgress(mlContext, progress, trainerName, epochs, log);
     }
 
     /// <summary>Epochs finished so far.</summary>
     public int Finished => _finished;
+
+    /// <summary>The mean loss of each finished epoch, when the trainer logged its steps (see <see cref="EpochLoss"/>).</summary>
+    public IReadOnlyList<double> EpochLosses => _loss.EpochMeans;
 
     [GeneratedRegex(@"Finished epoch (\d+)")]
     private static partial Regex FinishedEpoch();
 
     private void OnLog(object? sender, LoggingEventArgs e)
     {
-        if (!FinishedEpoch().IsMatch(e.RawMessage ?? e.Message))
+        var message = e.RawMessage ?? e.Message;
+        if (EpochLoss.TryParseStep(message, out var stepLoss))
+        {
+            _loss.AddStep(stepLoss);
+            return;
+        }
+
+        if (!FinishedEpoch().IsMatch(message))
             return;
 
         // The trainer numbers epochs from zero; what the user wants is how many are done.
         var done = Interlocked.Increment(ref _finished);
+        if (_loss.FinishEpoch() is { } epochLoss)
+            _log?.Invoke(EpochLoss.Describe(_trainerName, Math.Min(done, _epochs), _epochs, epochLoss.Mean, epochLoss.Steps));
         _progress?.Report(new TrainingProgress
         {
             Phase = TrainingPhase.Epoch,
