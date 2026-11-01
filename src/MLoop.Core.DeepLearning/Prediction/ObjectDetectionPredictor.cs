@@ -57,8 +57,10 @@ public static class ObjectDetectionPredictor
     /// <param name="model">A trained object-detection model.</param>
     /// <param name="imagePaths">The images, in the order their results are returned.</param>
     /// <param name="labelColumn">The model's label column; <c>null</c> for the loaders' default.</param>
+    /// <param name="scoreThreshold">A box below this confidence is left out (<see cref="DetectionScoreThreshold"/>).</param>
     public static IReadOnlyList<ImageDetectionResult> Detect(
-        MLContext mlContext, ITransformer model, IEnumerable<string> imagePaths, string? labelColumn = null)
+        MLContext mlContext, ITransformer model, IEnumerable<string> imagePaths, string? labelColumn = null,
+        double scoreThreshold = DetectionScoreThreshold.Default)
     {
         ArgumentNullException.ThrowIfNull(mlContext);
         ArgumentNullException.ThrowIfNull(model);
@@ -73,7 +75,7 @@ public static class ObjectDetectionPredictor
         if (!string.Equals(label, MLoop.Core.Data.CocoDataLoader.DefaultLabelColumn, StringComparison.Ordinal))
             input = mlContext.Transforms.CopyColumns(label, MLoop.Core.Data.CocoDataLoader.DefaultLabelColumn).Fit(input).Transform(input);
 
-        return Predict(mlContext, model.Transform(input));
+        return Predict(mlContext, model.Transform(input), scoreThreshold);
     }
 
     /// <summary>A row the loaders would produce for an image with no objects marked.</summary>
@@ -89,9 +91,11 @@ public static class ObjectDetectionPredictor
     /// </summary>
     /// <param name="mlContext">The ML.NET context (reserved for symmetry with the evaluator).</param>
     /// <param name="scoredData">The output of <c>model.Transform(data)</c> for an OD model.</param>
+    /// <param name="scoreThreshold">A box below this confidence is left out (<see cref="DetectionScoreThreshold"/>).</param>
     /// <returns>One <see cref="ImageDetectionResult"/> per input image, in input order.</returns>
     /// <exception cref="InvalidOperationException">A required column is missing from the schema.</exception>
-    public static IReadOnlyList<ImageDetectionResult> Predict(MLContext mlContext, IDataView scoredData)
+    public static IReadOnlyList<ImageDetectionResult> Predict(
+        MLContext mlContext, IDataView scoredData, double scoreThreshold = DetectionScoreThreshold.Default)
     {
         ArgumentNullException.ThrowIfNull(mlContext);
         ArgumentNullException.ThrowIfNull(scoredData);
@@ -134,6 +138,9 @@ public static class ObjectDetectionPredictor
             var detections = new List<ObjectDetectionBox>(scoreValues.Length);
             for (int i = 0; i < scoreValues.Length; i++)
             {
+                if (scoreValues[i] < scoreThreshold)
+                    continue;
+
                 var label = i < labelValues.Length ? labelValues[i].ToString() : string.Empty;
                 var b = i * BoxStride;
                 detections.Add(new ObjectDetectionBox(

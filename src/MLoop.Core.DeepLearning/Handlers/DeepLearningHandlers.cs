@@ -283,11 +283,17 @@ internal static class DeepLearningHandlers
                     outputColumnName: "Image", imageFolder: string.Empty, inputColumnName: CocoDataLoader.ImagePathColumn)
                 .Append(mlContext.Transforms.Conversion.MapValueToKey(
                     outputColumnName: "LabelKey", inputColumnName: labelColumn))
+                // The trainer keeps a box only above its score threshold; it keeps every box down to the floor, so mAP can be
+                // scored over the whole ranking and predict cuts at the operating threshold afterwards (DetectionScoreThreshold).
                 .Append(mlContext.MulticlassClassification.Trainers.ObjectDetection(
-                    labelColumnName: "LabelKey",
-                    boundingBoxColumnName: CocoDataLoader.BoundingBoxColumn,
-                    imageColumnName: "Image",
-                    maxEpoch: EpochProgress.Of(config)))
+                    new Microsoft.ML.TorchSharp.AutoFormerV2.ObjectDetectionTrainer.Options
+                    {
+                        LabelColumnName = "LabelKey",
+                        BoundingBoxColumnName = CocoDataLoader.BoundingBoxColumn,
+                        ImageColumnName = "Image",
+                        MaxEpoch = EpochProgress.Of(config),
+                        ScoreThreshold = MLoop.Core.Prediction.DetectionScoreThreshold.Floor,
+                    }))
                 .Append(mlContext.Transforms.Conversion.MapKeyToValue(
                     outputColumnName: "PredictedLabel", inputColumnName: "PredictedLabel"));
 
@@ -308,7 +314,7 @@ internal static class DeepLearningHandlers
                 model = TorchFit.Run(() => pipeline.Fit(trainSet));
             // mAP on the held-out images, as `mloop evaluate` scores them — what the quality gate and
             // promotion judge. A value the evaluator could not define (no test image) is left out.
-            var metrics = ObjectDetectionEvaluator.Evaluate(mlContext, model.Transform(testSet))
+            var metrics = ObjectDetectionEvaluator.Evaluate(mlContext, model.Transform(testSet), MLoop.Core.Prediction.DetectionScoreThreshold.Default)
                 .Where(m => double.IsFinite(m.Value))
                 .ToDictionary(m => m.Key, m => m.Value);
             foreach (var (name, value) in metrics)

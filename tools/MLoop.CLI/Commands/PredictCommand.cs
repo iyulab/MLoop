@@ -74,6 +74,12 @@ public static partial class PredictCommand
             DefaultValueFactory = _ => true
         };
 
+        var scoreThresholdOption = new Option<double?>("--score-threshold")
+        {
+            Description = "Object detection: report only boxes with at least this confidence, 0 to 1 (default 0.5). A detector trained since " +
+                          "0.05 keeps every box down to 0.05, so a lower value shows boxes a not-yet-confident detector finds; a model trained before keeps only boxes of 0.5 and over"
+        };
+
         var jsonOption = new Option<bool>("--json")
         {
             Description = "Emit structured predictions as JSON to stdout (same schema as the /predict API, incl. normalized confidence) instead of writing a CSV. Progress goes to stderr."
@@ -92,6 +98,7 @@ public static partial class PredictCommand
         command.Options.Add(logOption);
         command.Options.Add(includeFeaturesOption);
         command.Options.Add(jsonOption);
+        command.Options.Add(scoreThresholdOption);
         var recordsOption = DataFileOptions.Records();
         command.Options.Add(recordsOption);
 
@@ -105,7 +112,7 @@ public static partial class PredictCommand
             var logPredictions = parseResult.GetValue(logOption);
             var includeFeatures = parseResult.GetValue(includeFeaturesOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures, json, parseResult.GetValue(recordsOption), parseResult.GetValue(experimentOption));
+            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures, json, parseResult.GetValue(recordsOption), parseResult.GetValue(experimentOption), parseResult.GetValue(scoreThresholdOption));
         });
 
         return command;
@@ -158,7 +165,8 @@ public static partial class PredictCommand
         bool includeFeatures,
         bool json = false,
         string? records = null,
-        string? experiment = null)
+        string? experiment = null,
+        double? scoreThreshold = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -232,8 +240,21 @@ public static partial class PredictCommand
             // CSV-oriented resolution, schema validation, preprocessing, and categorical mapping below.
             if (taskType != null && taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
             {
+                if (scoreThreshold is { } asked && !DetectionScoreThreshold.IsValid(asked))
+                {
+                    ErrorConsole.Error($"--score-threshold must be above 0 and at most 1, got {asked.ToString(System.Globalization.CultureInfo.InvariantCulture)}.");
+                    return 1;
+                }
+
                 return await PredictObjectDetectionAsync(
-                    projectRoot, resolvedModelPath, dataFile, output, resolvedModelName, configLabelColumn, fileSystem);
+                    projectRoot, resolvedModelPath, dataFile, output, resolvedModelName, configLabelColumn, fileSystem,
+                    scoreThreshold ?? DetectionScoreThreshold.Default);
+            }
+
+            if (scoreThreshold is not null)
+            {
+                ErrorConsole.Error("--score-threshold applies to object detection; this model's task is " + taskType + ".");
+                return 1;
             }
 
             // Image anomaly scores pictures against the bank beside the model: no table, schema or categories.
@@ -818,7 +839,8 @@ public static partial class PredictCommand
         string? output,
         string modelName,
         string? labelColumn,
-        FileSystemManager fileSystem)
+        FileSystemManager fileSystem,
+        double scoreThreshold)
     {
         // Resolve the input dataset directory (or a direct COCO .json).
         string resolvedDataDir;
@@ -892,7 +914,7 @@ public static partial class PredictCommand
                     var mlContext = new MLContext(seed: 42);
                     var model = ScoringModel.Load(mlContext, modelPath, "object-detection");
 
-                    detections = ObjectDetectionPredictor.Detect(mlContext, model, images, labelColumn);
+                    detections = ObjectDetectionPredictor.Detect(mlContext, model, images, labelColumn, scoreThreshold);
                 });
 
                 ctx.Status("[green]Detection complete![/]");

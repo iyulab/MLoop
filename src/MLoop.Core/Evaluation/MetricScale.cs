@@ -48,6 +48,8 @@ public static class MetricScale
         "char_f1",
         "map_50",
         "map_50_95",
+        "map_50_ranked",
+        "map_50_95_ranked",
         "entity_precision",
         "entity_recall",
         "entity_f1",

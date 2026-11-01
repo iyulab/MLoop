@@ -73,16 +73,30 @@ public class PerformanceDiagnostics
                 result.Summary = result.Metrics.TryGetValue("map_50_95", out var map5095)
                     ? $"Detection: mAP@0.5:0.95 {map5095:F4}, mAP@0.5 {result.Metrics.GetValueOrDefault("map_50"):F4} on the test images"
                     : "Detection: no mAP — no test image could be scored";
-                // mAP 0 says no box passed the trainer's score threshold (0.5) AND matched an object. That is not the same
-                // as "learned nothing": on a noisy 60-image set a detector scored mAP@0.5 of 0.06 after 10 epochs and 0.27 after
-                // 30 at a threshold of 0.05, and 0 at 0.5 after both — it ranked boxes well and was never 0.5 confident.
-                // Training is repeatable now (the first fit used to draw from an unseeded generator, so "train again" was a
-                // lottery; it is the same detector every time), which makes "train again" the wrong advice.
+                // map_50 0 says no box at or above the operating threshold (0.5) matched an object. map_50_ranked scores every
+                // box the detector kept (down to 0.05): above 0 there means it finds objects and is not confident enough, 0 there
+                // means it found none at any score the detector keeps. A model trained before the ranked metric existed kept only
+                // boxes of 0.5 and over, so for it "no box at all" cannot be told from "none confident enough" and is not claimed.
+                // On a noisy 60-image set a detector had map_50 0 at 0.5 after 10 and 30 epochs and 0.06 and 0.27 over its ranking.
+                // Training is repeatable (the first fit used to draw from an unseeded generator), so "train again" is not advice.
                 if (result.Metrics.TryGetValue("map_50", out var map50) && map50 <= 0)
                 {
                     result.OverallAssessment = PerformanceLevel.Poor;
-                    result.Warnings.Add("No box passed the score threshold (0.5) and matched an object in the test images — the detector has not learned to find them yet, or finds them with less than 0.5 confidence");
-                    result.Suggestions.Add("Training again with the same data and settings gives the same detector; change something: more epochs (--epochs; the default is 10, a short run for real images), more training images, or a training set whose boxes look like the test ones");
+                    if (result.Metrics.TryGetValue("map_50_ranked", out var ranked) && ranked > 0)
+                    {
+                        result.Warnings.Add($"No box reached the score threshold (0.5) and matched an object in the test images, but the boxes the detector found score map_50 {ranked:F4} when ranked by confidence — it finds objects and is not confident enough yet");
+                        result.Suggestions.Add("See what it finds with a lower threshold (mloop predict --score-threshold 0.3, then lower; it keeps boxes down to 0.05, and a detector that is not confident yet keeps a great many of them), and train longer for more confidence (--epochs; the default is 10)");
+                    }
+                    else if (result.Metrics.ContainsKey("map_50_ranked"))
+                    {
+                        result.Warnings.Add("No box matched an object in the test images at any confidence the detector keeps — it has not learned to find them yet");
+                        result.Suggestions.Add("Training again with the same data and settings gives the same detector; change something: more epochs (--epochs; the default is 10, a short run for real images), more training images, or a training set whose boxes look like the test ones");
+                    }
+                    else
+                    {
+                        result.Warnings.Add("No box passed the score threshold (0.5) and matched an object in the test images — the detector has not learned to find them yet, or finds them with less than 0.5 confidence");
+                        result.Suggestions.Add("Training again with the same data and settings gives the same detector; change something: more epochs (--epochs; the default is 10), more training images, or a training set whose boxes look like the test ones");
+                    }
                 }
                 break;
             case "image-classification":

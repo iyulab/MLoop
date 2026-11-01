@@ -1,5 +1,7 @@
 using Microsoft.ML;
+using Microsoft.ML.Data;
 using Microsoft.ML.TorchSharp;
+using MLoop.Core.Prediction;
 
 namespace MLoop.Core.Evaluation;
 
@@ -65,6 +67,104 @@ public static class ObjectDetectionEvaluator
             { "map_50", metrics.MAP50 },
             { "map_50_95", metrics.MAP50_95 }
         };
+    }
+
+    /// <summary>
+    /// The mAP a user gets at <paramref name="scoreThreshold"/> and the mAP over everything the model kept.
+    /// <c>map_50</c> and <c>map_50_95</c> are scored on the boxes at or above the threshold — what <c>predict</c> shows by default,
+    /// and what the quality gate judges; <c>map_50_ranked</c> and <c>map_50_95_ranked</c> are scored on every box the model
+    /// kept (down to <see cref="DetectionScoreThreshold.Floor"/> for a model trained now, 0.5 for one trained before), which is
+    /// mAP as it is usually reported. A detector that ranks boxes well and is never confident enough scores 0 on the first
+    /// pair and above 0 on the second.
+    /// </summary>
+    public static Dictionary<string, double> Evaluate(MLContext mlContext, IDataView scoredData, double scoreThreshold)
+    {
+        var ranked = Evaluate(mlContext, scoredData);
+        var operating = scoreThreshold <= DetectionScoreThreshold.Floor
+            ? ranked
+            : Evaluate(mlContext, WithScoreAtLeast(mlContext, scoredData, scoreThreshold));
+
+        return new Dictionary<string, double>
+        {
+            { "map_50", operating["map_50"] },
+            { "map_50_95", operating["map_50_95"] },
+            { "map_50_ranked", ranked["map_50"] },
+            { "map_50_95_ranked", ranked["map_50_95"] },
+        };
+    }
+
+    /// <summary>
+    /// The scored data with every predicted box below <paramref name="scoreThreshold"/> removed, the labels, boxes and scores
+    /// of the remaining ones kept in step. The ground-truth columns pass through.
+    /// </summary>
+    public static IDataView WithScoreAtLeast(MLContext mlContext, IDataView scoredData, double scoreThreshold)
+    {
+        var schema = scoredData.Schema;
+        var labelCol = ResolveColumn(schema, ActualLabelColumn);
+        var actualBoxCol = ResolveColumn(schema, ActualBoundingBoxColumn);
+        var predictedLabelCol = ResolveColumn(schema, PredictedLabelColumn);
+        var predictedBoxCol = ResolveColumn(schema, PredictedBoundingBoxColumn);
+        var scoreCol = ResolveColumn(schema, ScoreColumn);
+
+        var rows = new List<KeptRow>();
+        using (var cursor = scoredData.GetRowCursor(new[] { labelCol, actualBoxCol, predictedLabelCol, predictedBoxCol, scoreCol }))
+        {
+            var labelGetter = cursor.GetGetter<VBuffer<ReadOnlyMemory<char>>>(labelCol);
+            var actualBoxGetter = cursor.GetGetter<VBuffer<float>>(actualBoxCol);
+            var predictedLabelGetter = cursor.GetGetter<VBuffer<ReadOnlyMemory<char>>>(predictedLabelCol);
+            var predictedBoxGetter = cursor.GetGetter<VBuffer<float>>(predictedBoxCol);
+            var scoreGetter = cursor.GetGetter<VBuffer<float>>(scoreCol);
+
+            VBuffer<ReadOnlyMemory<char>> label = default, predictedLabel = default;
+            VBuffer<float> actualBox = default, predictedBox = default, score = default;
+            while (cursor.MoveNext())
+            {
+                labelGetter(ref label);
+                actualBoxGetter(ref actualBox);
+                predictedLabelGetter(ref predictedLabel);
+                predictedBoxGetter(ref predictedBox);
+                scoreGetter(ref score);
+
+                var scores = score.DenseValues().ToArray();
+                var labels = predictedLabel.DenseValues().Select(l => l.ToString()).ToArray();
+                var boxes = predictedBox.DenseValues().ToArray();
+
+                var keptLabels = new List<string>();
+                var keptBoxes = new List<float>();
+                var keptScores = new List<float>();
+                for (var i = 0; i < scores.Length; i++)
+                {
+                    if (scores[i] < scoreThreshold)
+                        continue;
+
+                    keptScores.Add(scores[i]);
+                    keptLabels.Add(i < labels.Length ? labels[i] : string.Empty);
+                    for (var c = 0; c < 4; c++)
+                        keptBoxes.Add(i * 4 + c < boxes.Length ? boxes[i * 4 + c] : 0f);
+                }
+
+                rows.Add(new KeptRow
+                {
+                    Label = label.DenseValues().Select(l => l.ToString()).ToArray(),
+                    BoundingBoxes = actualBox.DenseValues().ToArray(),
+                    PredictedLabel = [.. keptLabels],
+                    PredictedBoundingBoxes = [.. keptBoxes],
+                    Score = [.. keptScores],
+                });
+            }
+        }
+
+        return mlContext.Data.LoadFromEnumerable(rows);
+    }
+
+    /// <summary>One scored image with the columns the evaluator reads, under the names it reads them by.</summary>
+    private sealed class KeptRow
+    {
+        [VectorType] public string[] Label { get; set; } = [];
+        [VectorType] public float[] BoundingBoxes { get; set; } = [];
+        [VectorType] public string[] PredictedLabel { get; set; } = [];
+        [VectorType] public float[] PredictedBoundingBoxes { get; set; } = [];
+        [VectorType] public float[] Score { get; set; } = [];
     }
 
     /// <summary>

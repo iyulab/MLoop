@@ -80,7 +80,10 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 > over image directories: image classification `evaluate` reports multiclass accuracy, object detection
 > `predict` emits per-image detections (label + score + box) as JSON, and training and `evaluate` report mAP
 > (`map_50` / `map_50_95`) via ML.NET's built-in object-detection evaluator — `map_50_95` (COCO's) is what the quality
-> gate and promotion judge.
+> gate and promotion judge. Those two are scored on the boxes at or above the operating score threshold (0.5, what `predict`
+> shows by default); `map_50_ranked` / `map_50_95_ranked` are scored on every box the detector kept (down to 0.05), the way mAP
+> is usually reported. A detector that finds objects without being 0.5 confident scores 0 on the first pair and above 0 on the
+> second: look at what it finds with `mloop predict --score-threshold 0.3` (then lower), and train longer with `--epochs`.
 
 **What the text and vision trainers can and cannot do — measured.** Text classification, sentence
 similarity, NER and question answering each train, predict and evaluate end to end. Their limits come

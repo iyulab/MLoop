@@ -27,20 +27,55 @@ public class PerformanceDiagnosticsTests
     }
 
     [Fact]
-    public void Analyze_ObjectDetection_ThatMatchedNothing_NamesTheThresholdAndDoesNotAdviseTrainingAgain()
+    public void Analyze_ObjectDetection_UnderConfident_SaysItFindsObjectsAndHowToSeeThem()
     {
+        // map_50 0 at the operating threshold, above 0 over the ranking: found, but never 0.5 confident.
+        var result = _diagnostics.Analyze("object-detection", new Dictionary<string, double>
+        {
+            ["map_50"] = 0,
+            ["map_50_95"] = 0,
+            ["map_50_ranked"] = 0.27,
+            ["map_50_95_ranked"] = 0.13
+        });
+
+        Assert.Equal(PerformanceLevel.Poor, result.OverallAssessment);
+        var warning = Assert.Single(result.Warnings);
+        Assert.Contains("not confident enough", warning, StringComparison.Ordinal);
+        Assert.Contains("0.2700", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("learned nothing", warning, StringComparison.Ordinal);
+        Assert.Contains("--score-threshold", Assert.Single(result.Suggestions), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Analyze_ObjectDetection_NothingAtAnyConfidence_SaysSoAndDoesNotAdviseTrainingAgain()
+    {
+        var result = _diagnostics.Analyze("object-detection", new Dictionary<string, double>
+        {
+            ["map_50"] = 0,
+            ["map_50_95"] = 0,
+            ["map_50_ranked"] = 0,
+            ["map_50_95_ranked"] = 0
+        });
+
+        var warning = Assert.Single(result.Warnings);
+        Assert.Contains("at any confidence", warning, StringComparison.Ordinal);
+        var suggestion = Assert.Single(result.Suggestions);
+        Assert.Contains("--epochs", suggestion, StringComparison.Ordinal);
+        Assert.DoesNotContain("Train again:", suggestion, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Analyze_ObjectDetection_WithoutRankedMetric_DoesNotClaimNothingWasFoundAtAnyScore()
+    {
+        // A model trained before the ranked metric kept only boxes of 0.5 and over: nothing can be said of lower ones.
         var result = _diagnostics.Analyze("object-detection",
             new Dictionary<string, double> { ["map_50"] = 0, ["map_50_95"] = 0 });
 
         Assert.Equal(PerformanceLevel.Poor, result.OverallAssessment);
-        // mAP 0 is "no box passed the score threshold and matched" — not proof that nothing was learned.
         var warning = Assert.Single(result.Warnings);
         Assert.Contains("score threshold", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("at any", warning, StringComparison.Ordinal);
         Assert.DoesNotContain("learned nothing", warning, StringComparison.Ordinal);
-        // Training is repeatable, so the same data and settings give the same detector: say what to change.
-        var suggestion = Assert.Single(result.Suggestions);
-        Assert.Contains("--epochs", suggestion, StringComparison.Ordinal);
-        Assert.DoesNotContain("Train again:", suggestion, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -30,6 +30,8 @@ public class MetricVocabularyRoundTripTests
             "mape",                  // forecasting's second metric
             "exact_match",           // question answering's second metric
             "map_50",                // object detection's second metric
+            "map_50_ranked",         // object detection's mAP over every box kept, beside the one at the operating threshold
+            "map_50_95_ranked",
             CalibrationError.MetricName,
         ];
         var optimizable = new[] { "binary-classification", "multiclass-classification", "regression" }

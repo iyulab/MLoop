@@ -66,7 +66,7 @@ public class EvaluationEngine
                     var dirScored = trainedModel.Transform(dirData);
 
                     if (taskType.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
-                        return new Evaluation(MetricSanitizer.SanitizeAndReturn(MLoop.Core.Evaluation.ObjectDetectionEvaluator.Evaluate(_mlContext, dirScored)), null);
+                        return new Evaluation(MetricSanitizer.SanitizeAndReturn(MLoop.Core.Evaluation.ObjectDetectionEvaluator.Evaluate(_mlContext, dirScored, MLoop.Core.Prediction.DetectionScoreThreshold.Default)), null);
 
                     return new Evaluation(MetricSanitizer.SanitizeAndReturn(EvaluateMulticlassClassification(dirScored, "Label")), null);
                 }

@@ -536,6 +536,13 @@ mloop predict [data-file] [options]
 #                                'error'              - Fail on unknown values
 #                                'use-most-frequent'  - Replace with most common value
 #                                'use-missing'        - Replace with empty
+#   --score-threshold <0-1>      Object detection: report only boxes with at least this confidence
+#                                (default 0.5). A detector trained since 0.05 keeps every box
+#                                down to 0.05, so `--score-threshold 0.3` (then lower) shows the boxes a
+#                                not-yet-confident detector finds, many of them; a model trained before keeps
+#                                only boxes of 0.5 and over, and a lower value shows no more of it.
+#                                Any other task refuses the option. `POST /predict` takes the same
+#                                as `?scoreThreshold=` or a `scoreThreshold` field beside `images`.
 #   --log                        Enable prediction logging to DataStore
 
 # Examples

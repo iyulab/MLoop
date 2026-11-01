@@ -191,9 +191,12 @@ public static class PredictEndpoint
                 {
                     if (images is null)
                         return Results.BadRequest(new { error = $"'{modelName}' is an object-detection model: send images by content — {{\"images\": [base64…]}} or a multipart form." });
+                    var (scoreThreshold, thresholdError) = ObjectDetectionPredictions.ReadScoreThreshold(request, input);
+                    if (thresholdError is not null)
+                        return Results.BadRequest(new { error = thresholdError });
                     return await ObjectDetectionPredictions.RespondAsync(
                         images, imageFiles, modelName, answeringId, modelPath, mlContext, modelCache, experimentStore,
-                        predictionLogger, configuration, logger, stopwatch, ct);
+                        predictionLogger, configuration, logger, stopwatch, ct, scoreThreshold);
                 }
 
                 // Image anomaly answers each image with a score and a grid of patch distances against the bank beside the model:

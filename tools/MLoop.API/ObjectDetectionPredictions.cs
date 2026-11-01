@@ -21,6 +21,26 @@ public sealed record ImageDetections(string ImageSha256, IReadOnlyList<DetectedO
 /// </summary>
 public static class ObjectDetectionPredictions
 {
+    /// <summary>
+    /// The confidence a box needs to be reported, from <c>?scoreThreshold=</c> or the JSON body's <c>scoreThreshold</c> (the query
+    /// wins); <see cref="DetectionScoreThreshold.Default"/> when neither is given. A value that cannot select a box is refused with
+    /// what was wrong, not ignored.
+    /// </summary>
+    public static (double Threshold, string? Error) ReadScoreThreshold(HttpRequest request, System.Text.Json.JsonElement body)
+    {
+        string? raw = request.Query["scoreThreshold"].FirstOrDefault();
+        if (raw is null && body.ValueKind == System.Text.Json.JsonValueKind.Object && body.TryGetProperty("scoreThreshold", out var field))
+            raw = field.ValueKind == System.Text.Json.JsonValueKind.Number ? field.GetRawText() : field.ToString();
+        if (raw is null)
+            return (DetectionScoreThreshold.Default, null);
+
+        if (!double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var threshold)
+            || !DetectionScoreThreshold.IsValid(threshold))
+            return (DetectionScoreThreshold.Default, $"scoreThreshold must be a number above 0 and at most 1, got '{raw}'.");
+
+        return (threshold, null);
+    }
+
     public static async Task<IResult> RespondAsync(
         IReadOnlyList<byte[]> images,
         List<string> imageFiles,
@@ -34,7 +54,8 @@ public static class ObjectDetectionPredictions
         IConfiguration configuration,
         ILogger logger,
         Stopwatch stopwatch,
-        CancellationToken ct)
+        CancellationToken ct,
+        double scoreThreshold = DetectionScoreThreshold.Default)
     {
         // The caller's finally releases these, as it does an image-classification request's.
         foreach (var image in images)
@@ -48,7 +69,7 @@ public static class ObjectDetectionPredictions
         var model = modelCache.GetOrLoad(modelPath);
         var labelColumn = (await experimentStore.LoadAsync(modelName, experimentId, ct))?.Config?.LabelColumn;
 
-        var found = ObjectDetectionPredictor.Detect(mlContext, model, imageFiles, labelColumn);
+        var found = ObjectDetectionPredictor.Detect(mlContext, model, imageFiles, labelColumn, scoreThreshold);
         var predictions = found
             .Select((result, i) => new ImageDetections(
                 Convert.ToHexStringLower(SHA256.HashData(images[i])),
