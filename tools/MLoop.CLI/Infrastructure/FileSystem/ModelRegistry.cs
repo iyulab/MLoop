@@ -244,7 +244,7 @@ public class ModelRegistry : IModelRegistry
         }
 
         return models.OrderBy(m => m.ModelName == ConfigDefaults.DefaultModelName ? 0 : 1)
-                     .ThenBy(m => m.ModelName);
+                     .ThenBy(m => m.ModelName, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />

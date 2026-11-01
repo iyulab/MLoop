@@ -150,7 +150,7 @@ public class HookEngine
         {
             // Discover all hook scripts
             var scriptFiles = Directory.GetFiles(hookPath, "*.cs", SearchOption.TopDirectoryOnly)
-                .OrderBy(f => Path.GetFileName(f))  // Alphabetical execution order
+                .OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal)  // Alphabetical execution order, the same on every machine
                 .ToList();
 
             if (scriptFiles.Count == 0)

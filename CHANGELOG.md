@@ -82,6 +82,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Orders that were the machine's culture order are ordinal.** Hook scripts and preprocessing scripts run in file-name order, and the default string comparer sorts by the current culture, so names with mixed case or punctuation ran in a different order on different machines; the saved `CategoricalValues` of a schema, the order files are merged in, the unknown values in a prediction report, and the order of model and metric names in `status`, `compare` and `/status` were the same. Scripts, saved lists and merge order now sort ordinally (`01_a.cs` before `01_b.cs` before `02_Z.cs`, upper case before lower case), and names meant for reading sort ordinally ignoring case. A text comparison without a `StringComparison` is a build error under `src` and `tools` (CA1310).
+
 - **The pre-train and pre-predict hook templates count rows without blank lines.** `mloop new hook` generates a row-count check that counted every line of the data file minus the header, so a file with trailing blank lines passed a minimum-rows check it should have failed.
 - **`mloop evaluate --weight` (and `--against`, `explain`, `threshold`, `calibrate`) work when the weight column is one of the model's own inputs.** A model trained on a file that has a `w` column
   without `--weight w` reads `w` as a feature; counting the evaluation rows by `w` took the column out of the feature vector the model reads and the evaluation stopped with

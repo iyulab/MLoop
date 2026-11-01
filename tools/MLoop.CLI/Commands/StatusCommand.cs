@@ -85,7 +85,7 @@ public static class StatusCommand
             var modelNames = experimentsList
                 .Select(e => e.ModelName ?? ConfigDefaults.DefaultModelName)
                 .Distinct()
-                .OrderBy(n => n)
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             if (modelNames.Count == 0)

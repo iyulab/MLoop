@@ -171,7 +171,7 @@ public static class ExperimentEndpoints
                 var modelNames = allExperiments
                     .Select(e => e.ModelName ?? ConfigDefaults.DefaultModelName)
                     .Distinct()
-                    .OrderBy(n => n)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
                 var productionDict = productionModels.ToDictionary(m => m.ModelName, m => m);

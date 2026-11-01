@@ -1285,7 +1285,7 @@ public class TrainingEngine : ITrainingEngine
         // A category or text — the rule training featurizes by (CategoryColumns), not a copy of it.
         if (CategoryColumns.IsCategory(Sample(colIndex, dataLines), uniqueCount, totalCount))
         {
-            var categoricalValues = uniqueValues.OrderBy(v => v).ToList();
+            var categoricalValues = uniqueValues.OrderBy(v => v, StringComparer.Ordinal).ToList();
             return (SchemaDataTypes.Categorical, categoricalValues, uniqueCount);
         }
 
@@ -1322,7 +1322,7 @@ public class TrainingEngine : ITrainingEngine
             }
         }
 
-        return (uniqueValues.OrderBy(v => v).ToList(), uniqueValues.Count);
+        return (uniqueValues.OrderBy(v => v, StringComparer.Ordinal).ToList(), uniqueValues.Count);
     }
 
     /// <summary>
@@ -1450,7 +1450,7 @@ public class TrainingEngine : ITrainingEngine
                     Name = col.Name,
                     DataType = col.DataType,
                     Purpose = col.Purpose,
-                    CategoricalValues = counts.Keys.OrderBy(v => v).ToList(),
+                    CategoricalValues = counts.Keys.OrderBy(v => v, StringComparer.Ordinal).ToList(),
                     UniqueValueCount = counts.Count,
                     // Only for the label: on a feature this number would describe nothing the
                     // pipeline acts on, and a plausible-looking value invites a use it cannot support.

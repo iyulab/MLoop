@@ -187,7 +187,7 @@ public static class CompareCommand
                 .Where(e => e.Metrics != null)
                 .SelectMany(e => e.Metrics!.Keys)
                 .Distinct()
-                .OrderBy(m => m)
+                .OrderBy(m => m, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             // Sort experiments by metric: --metric flag, or optimizing metric from config
@@ -417,7 +417,7 @@ public static class CompareCommand
             .Where(e => e.Metrics != null)
             .SelectMany(e => e.Metrics!.Keys)
             .Distinct()
-            .OrderBy(m => m)
+            .OrderBy(m => m, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         string? metric = null;

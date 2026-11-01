@@ -167,11 +167,11 @@ public class CategoricalMapper
                 result.UnknownValuesByColumn = unknownValuesByColumn
                     .ToDictionary(
                         kvp => kvp.Key,
-                        kvp => kvp.Value.OrderBy(v => v).ToList());
+                        kvp => kvp.Value.OrderBy(v => v, StringComparer.Ordinal).ToList());
 
                 result.UnknownValues = unknownValuesByColumn
                     .SelectMany(kvp => kvp.Value.Select(v => $"{kvp.Key}={v}"))
-                    .OrderBy(v => v)
+                    .OrderBy(v => v, StringComparer.Ordinal)
                     .ToList();
 
                 if (strategy == UnknownValueStrategy.Error)

@@ -254,6 +254,21 @@ public class CategoricalMapperTests : IDisposable
     #region UnknownValuesByColumn Tracking
 
     [Fact]
+    public void UnknownValues_AreListedInOrdinalOrder_NotTheMachinesCultureOrder()
+    {
+        // A culture order puts a, A, b, B; ordinal puts A, B, a, b. The list reaches a message and a report, which
+        // should read the same on every machine.
+        var csv = "Color\nb\nA\nB\na\n";
+        var path = CreateCsv(csv);
+        var schema = CreateSchema(CategoricalFeature("Color", "Red", "Blue"));
+
+        var result = _mapper.PreprocessPredictionData(path, schema, CategoricalMapper.UnknownValueStrategy.Error);
+
+        Assert.Equal(["A", "B", "a", "b"], result.UnknownValuesByColumn["Color"]);
+        Assert.Equal(["Color=A", "Color=B", "Color=a", "Color=b"], result.UnknownValues);
+    }
+
+    [Fact]
     public void PreprocessPredictionData_TracksUnknownsByColumn()
     {
         var csv = "Color,Shape\nYellow,Star\nPurple,Circle\n";

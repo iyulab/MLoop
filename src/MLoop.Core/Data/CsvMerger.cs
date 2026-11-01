@@ -91,7 +91,7 @@ public class CsvMerger : ICsvMerger
             {
                 SchemaId = schemaId,
                 Columns = files.First().Headers,
-                FilePaths = files.Select(f => f.Path).OrderBy(f => f).ToList(),
+                FilePaths = files.Select(f => f.Path).OrderBy(f => f, StringComparer.Ordinal).ToList(),
                 DetectedPattern = pattern,
                 PatternConfidence = confidence
             });

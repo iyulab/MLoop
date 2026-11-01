@@ -60,7 +60,7 @@ public class PreprocessingEngine
         {
             // Discover all preprocessing scripts
             var scriptFiles = Directory.GetFiles(preprocessPath, "*.cs", SearchOption.TopDirectoryOnly)
-                .OrderBy(f => Path.GetFileName(f))  // 01_*.cs, 02_*.cs, 03_*.cs
+                .OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal)  // 01_*.cs, 02_*.cs, 03_*.cs — the same order on every machine
                 .ToList();
 
             if (scriptFiles.Count == 0)

@@ -113,7 +113,7 @@ public class ModelNameResolver : IModelNameResolver
         }
 
         return summaries.OrderBy(m => m.Name == ConfigDefaults.DefaultModelName ? 0 : 1)
-                        .ThenBy(m => m.Name);
+                        .ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />
