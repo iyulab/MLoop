@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-11-02
+
 ### Added
 
 - **The object-detection training log shows the mean loss of each epoch.** It said how many epochs had finished and nothing of whether the loss was falling, so a detector that was learning could not be told from one that was not. The trainer logs the loss at every step it is asked to (every 50th by default, so a small set logged none); the loss of every step is now collected and each epoch's mean is written beside the epoch count (`Object detection (AutoFormerV2) epoch 3/10: loss 0.4399 (mean of 17 steps)`). Epoch 1 is mostly the first steps' loss falling from a large start; what reads is the epochs after it. On a noisy 60-image set the loss fell to 0.27 by epoch 4 and rose to about 1.2 from epoch 6 on. The other TorchSharp tasks do not log it yet.
