@@ -82,6 +82,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The pre-train and pre-predict hook templates count rows without blank lines.** `mloop new hook` generates a row-count check that counted every line of the data file minus the header, so a file with trailing blank lines passed a minimum-rows check it should have failed.
 - **`mloop evaluate --weight` (and `--against`, `explain`, `threshold`, `calibrate`) work when the weight column is one of the model's own inputs.** A model trained on a file that has a `w` column
   without `--weight w` reads `w` as a feature; counting the evaluation rows by `w` took the column out of the feature vector the model reads and the evaluation stopped with
   `Feature vector dimension mismatch`. The weight is now read a second time under its own name and the vector keeps its width. The same failure stopped `--against` whenever the baseline

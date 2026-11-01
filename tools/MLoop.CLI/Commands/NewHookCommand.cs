@@ -229,7 +229,7 @@ public static class NewHookCommand
                         // The data, as a DataView when the stage has one, otherwise the file it reads.
                         long? rowCount = ctx.DataView?.GetRowCount();
                         if (rowCount is null && ctx.GetMetadata<string>("DataFile", "") is { Length: > 0 } dataFile && File.Exists(dataFile))
-                            rowCount = File.ReadLines(dataFile).LongCount() - 1; // minus the header
+                            rowCount = File.ReadLines(dataFile).LongCount(line => !string.IsNullOrWhiteSpace(line)) - 1; // minus the header; blank lines are not rows
 
                         if (rowCount is null)
                         {
