@@ -89,6 +89,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   found", and on a file with one numeric column the same. The warnings that mean the analysis did not run (too few rows, too few numeric columns,
   every pair undefined, a failure), or ran on less (constant or empty columns set aside, named), are now printed and carried in `warnings` with `--json`.
   Warnings that describe the data rather than the analysis (repeated rows, a column pair that is one column, a covariance that may be singular) are not.
+- **`prep` steps run on FilePrepper 0.13.2 (the pin moves with this change).** What a `prep` step now does that it did not: `fill-missing` with `mode`, `forward` or `backward`
+  fills by those names instead of writing `0`; `extract-date` reads a value ending in `Z` or a UTC offset the same on every machine and counts the ISO week; a clock kept in
+  a date is kept. A table written with decomposed Hangul (the form macOS gives many files) is read as the same text as the table written with syllables. Numbers are written
+  in one form (no thousands separator, finite), so a column of `"1,234"` needs a `clean` step before it is a number. A file with no columns, or a header naming a column
+  twice, is refused where it is read instead of being passed on with a column gone.
 
 ### Fixed
 
