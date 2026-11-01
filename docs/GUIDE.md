@@ -1970,7 +1970,7 @@ Step types: `fill-missing` (mean · median · mode · constant · forward · bac
 `remove-columns`, `rename-columns`, `drop-duplicates`, `extract-date`, `parse-datetime`, `filter-rows`,
 `add-column`, `parse-korean-time`, `parse-excel-date`, `rolling`, `resample`, `sample`, `explode`, `split-list`.
 
-`rolling` and `resample` aggregate with `method:` `mean` (default) · `min` · `max` · `sum` · `count` · `std` · `var` · `median` · `first` · `last`; `filter-rows` compares with `operator:` `gt` · `gte` · `lt` · `lte` (the value must be a number; a cell that is not one is dropped) or `eq` · `neq` · `contains` · `not-contains` (`contains` ignores case). `mloop validate` checks the method and the operator before anything runs.
+`rolling` and `resample` aggregate with `method:` `mean` (default) · `min` · `max` · `sum` · `count` · `std` · `var` · `median` · `first` · `last` (`std` and `var` divide by the window's own row count, as the window is the population described; a `rolling` window not yet full holds the rows so far); `filter-rows` compares with `operator:` `gt` · `gte` · `lt` · `lte` (the value must be a number; a cell that is not one is dropped) or `eq` · `neq` · `contains` · `not-contains` (`contains` ignores case). `mloop validate` checks the method and the operator before anything runs.
 
 `explode` and `split-list` reshape list columns — a list per cell, the way a Parquet or JSON list is read. A file
 holding a group per row (a query with its documents' grades and feature vectors) becomes one row per document with

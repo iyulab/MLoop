@@ -316,6 +316,77 @@ public class DataPipelineExecutorTests : IDisposable
         Assert.Equal(6, lines.Length); // header + 5 rows
     }
 
+    // The values 10, 20, 35, 40, 100 in a window of three: a window not yet full holds the rows so far, and std/var divide by the
+    // window's own n (the window is the population described, not a sample of it). Worked by hand, so a method that quietly
+    // computes another thing - or none, as median, var, first and last did under an older FilePrepper - fails here.
+    [Theory]
+    [InlineData("mean", "10,15,21.666666666666668,31.666666666666668,58.333333333333336")]
+    [InlineData("min", "10,10,10,20,35")]
+    [InlineData("max", "10,20,35,40,100")]
+    [InlineData("sum", "10,30,65,95,175")]
+    [InlineData("count", "1,2,3,3,3")]
+    [InlineData("std", "0,5,10.274023338281626,8.498365855987975,29.53340857778225")]
+    [InlineData("var", "0,25,105.55555555555554,72.22222222222223,872.2222222222222")]
+    [InlineData("median", "10,15,20,35,40")]
+    [InlineData("first", "10,10,10,20,35")]
+    [InlineData("last", "10,20,35,40,100")]
+    public async Task ExecuteAsync_WithRolling_ComputesEveryAggregationMethod(string method, string expected)
+    {
+        var inputPath = CreateTestCsv("time,value", "1,10", "2,20", "3,35", "4,40", "5,100");
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "rolling", Columns = ["value"], WindowSize = 3, Method = method, OutputSuffix = "_r" }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        Assert.Equal("time,value,value_r", lines[0].TrimStart('\uFEFF'));
+        var got = lines.Skip(1).Select(l => double.Parse(l.Split(',')[2], System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        var want = expected.Split(',').Select(v => double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        Assert.Equal(want.Length, got.Length);
+        for (var i = 0; i < want.Length; i++)
+            Assert.Equal(want[i], got[i], 9);
+    }
+
+    // Two windows of an hour: 10, 20, 35 and 40, 100.
+    [Theory]
+    [InlineData("mean", "21.666666666666668,70")]
+    [InlineData("min", "10,40")]
+    [InlineData("max", "35,100")]
+    [InlineData("sum", "65,140")]
+    [InlineData("count", "3,2")]
+    [InlineData("std", "10.274023338281626,30")]
+    [InlineData("var", "105.55555555555554,900")]
+    [InlineData("median", "20,70")]
+    [InlineData("first", "10,40")]
+    [InlineData("last", "35,100")]
+    public async Task ExecuteAsync_WithResample_ComputesEveryAggregationMethod(string method, string expected)
+    {
+        var inputPath = CreateTestCsv(
+            "timestamp,v",
+            "2024-01-01 00:00:00,10",
+            "2024-01-01 00:20:00,20",
+            "2024-01-01 00:40:00,35",
+            "2024-01-01 01:00:00,40",
+            "2024-01-01 01:30:00,100");
+        var outputPath = Path.Combine(_tempDirectory, "output.csv");
+        var steps = new List<PrepStep>
+        {
+            new() { Type = "resample", TimeColumn = "timestamp", Window = "1H", Columns = ["v"], Method = method }
+        };
+
+        await _executor.ExecuteAsync(inputPath, steps, outputPath);
+
+        var lines = await File.ReadAllLinesAsync(outputPath);
+        var got = lines.Skip(1).Select(l => double.Parse(l.Split(',')[1], System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        var want = expected.Split(',').Select(v => double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        Assert.Equal(want.Length, got.Length);
+        for (var i = 0; i < want.Length; i++)
+            Assert.Equal(want[i], got[i], 9);
+    }
+
     [Fact]
     public async Task ExecuteAsync_WithResample_AggregatesTimeWindows()
     {
