@@ -531,11 +531,15 @@ mloop predict [data-file] [options]
 #                                (default: predictions/<model>-predictions-TIMESTAMP.csv;
 #                                 object detection writes <model>-detections-TIMESTAMP.json and
 #                                 forecasting writes <model>-forecast-TIMESTAMP.csv)
-#   --unknown-strategy <mode>    Handle unknown categorical values (v0.6.1+):
-#                                'auto'               - Auto-select based on ratio (default)
+#   --unknown-strategy <mode>    Handle categorical values the model was not trained on (v0.6.1+;
+#                                the same in `--json` and in `POST /predict`, where only the default applies):
+#                                'auto'               - Read as missing (no category on), and say how many rows
+#                                                       held it — a row's answer does not depend on the rows
+#                                                       around it; a share of 30 % or more is said as a likely
+#                                                       data problem (default)
 #                                'error'              - Fail on unknown values
 #                                'use-most-frequent'  - Replace with most common value
-#                                'use-missing'        - Replace with empty
+#                                'use-missing'        - Same as 'auto'
 #   --score-threshold <0-1>      Object detection: report only boxes with at least this confidence
 #                                (default 0.5). A detector trained since 0.05 keeps every box
 #                                down to 0.05, so `--score-threshold 0.3` (then lower) shows the boxes a
@@ -2744,7 +2748,8 @@ This occurs when a text column was treated as categorical during training, and n
 # Use unknown-strategy to handle unseen values
 mloop predict --unknown-strategy use-most-frequent
 
-# Or use auto mode (replaces if ratio is low, errors if high)
+# Or the default, auto: an unseen value is read as missing (no category on) in every row that holds it,
+# whatever share of the file that is, and the warning says how many rows
 mloop predict --unknown-strategy auto
 ```
 

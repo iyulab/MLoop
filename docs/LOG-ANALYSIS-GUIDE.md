@@ -131,7 +131,7 @@ Log message content is classified as **Text** when unique values exceed 50% of t
 If you encounter categorical mismatch errors during prediction:
 
 ```bash
-# Auto-handle unknown categorical values
+# Read unseen categorical values as missing (the default)
 mloop predict data.csv --unknown-strategy auto
 
 # Replace unknown values with empty string

@@ -85,7 +85,7 @@ public class CanonicalTextTests : IDisposable
         PredictionService.MapCategoricalValues(rows, Schema(), warnings);
 
         Assert.Equal("서울", rows[0]["지역"]);
-        Assert.Equal("대구", rows[1]["지역"]);                // still replaced by the fallback...
+        Assert.Equal("", rows[1]["지역"]);                    // still not a trained value (read as missing)...
         var only = Assert.Single(warnings);                    // ...and still said
         Assert.Contains("광주", only);
     }
@@ -105,7 +105,7 @@ public class CanonicalTextTests : IDisposable
 
         Assert.Equal("서울", rows[0]["지역"]);
         Assert.Equal("부산", rows[1]["지역"]);
-        Assert.Equal("대구", rows[2]["지역"]);
+        Assert.Equal("", rows[2]["지역"]);
         var only = Assert.Single(warnings);
         Assert.Contains("광주", only);
     }

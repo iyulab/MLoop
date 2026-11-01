@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (0.x): a value the model was not trained on is read as missing — in a file, in `--json` and in `POST /predict` alike — and a row's answer no longer depends on the rows around it.** `mloop predict <file>` chose its rule by the share of unseen values in the whole file (under 5 % replaced with the most frequent category, 5–30 % read as missing, more refused), so the same row scored 1.3e-06 in one file and 1.1e-04 in another, and a one-row file — the shape a served request has — was refused. `--json` and `serve` always replaced the value with the most frequent category, and repeated the warning on every row. Replacing with the most frequent category states a fact the row never gave; missing says "none of the known categories". The default (`auto`, and `use-missing`) now reads an unseen value as missing everywhere and says it once per value with the number of rows (`unseen value 'X' in 3 rows read as missing`); a share of 30 % or more is added as "suggests the data is not what the model was trained on" and no longer refuses the file. **Scores of rows with an unseen value change** (most visibly the under-5 % case and every `serve` request); `--unknown-strategy error` keeps the refusal.
+- **`predict --json` ignored `--unknown-strategy`.** `mloop predict data.csv --json --unknown-strategy error` answered every row. The option is passed to the structured path now: `error` refuses and names the values and their row counts, `use-most-frequent` replaces and says so.
+
 ### Fixed
 
 - **A value padded with spaces was a category training never saw when it arrived in a `POST /predict` row, and the same cell in a file was not.** A file's fields are trimmed when read (training and `mloop predict` both), so `" 서울 "` in a CSV is `서울`; in a served JSON row it was compared as written, replaced by the most frequent category with an "unknown value" warning, and the answer changed (24 of 100 rows in a check). A served row's categorical value is now trimmed before it is matched, as a file's is; a real unknown value is still replaced and said, as written.

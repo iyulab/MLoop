@@ -359,7 +359,8 @@ public static partial class PredictCommand
     /// written to stdout with the conformal band and normalized confidence. Bypasses the CSV output.
     /// </summary>
     private static async Task<int> PredictAsJsonAsync(
-        string resolvedDataFile, PredictModel model, bool logPredictions, string projectRoot, string resolvedModelName)
+        string resolvedDataFile, PredictModel model, bool logPredictions, string projectRoot, string resolvedModelName,
+        UnknownValueStrategy unknownStrategy)
     {
         var (resolvedModelPath, experimentId, trainedSchema, configLabelColumn, taskType, _, interval) = model;
 
@@ -371,8 +372,18 @@ public static partial class PredictCommand
 
         var jsonRows = PredictionEngine.LoadCsvAsRows(
             resolvedDataFile, trainedSchema, LabelColumnToExcludeFromRows(taskType, configLabelColumn));
-        var jsonResult = new PredictionEngine().PredictWithService(
-            jsonRows, trainedSchema, resolvedModelPath, taskType, configLabelColumn, interval);
+        PredictionResult jsonResult;
+        try
+        {
+            jsonResult = new PredictionEngine().PredictWithService(
+                jsonRows, trainedSchema, resolvedModelPath, taskType, configLabelColumn, interval, unknownStrategy);
+        }
+        catch (ArgumentException ex) when (unknownStrategy == UnknownValueStrategy.Error)
+        {
+            // The caller asked for a refusal on an unseen value (--unknown-strategy error): say it as the file path does.
+            ErrorConsole.Error(Markup.Escape(ex.Message));
+            return 1;
+        }
 
         // --log under --json logs as `POST /predict` does, and each row carries the id it was logged
         // under — the id `mloop feedback add` takes. Before, this branch returned before logging.

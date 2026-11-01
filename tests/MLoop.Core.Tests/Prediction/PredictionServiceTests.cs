@@ -636,7 +636,7 @@ public class PredictionServiceTests : IDisposable
     #region MapCategoricalValues
 
     [Fact]
-    public void MapCategoricalValues_ReplacesUnknownValues()
+    public void MapCategoricalValues_ReadsUnknownValuesAsMissing_AndSaysHowManyRows()
     {
         var schema = new InputSchemaInfo
         {
@@ -659,16 +659,70 @@ public class PredictionServiceTests : IDisposable
             new Dictionary<string, object> { ["Color"] = "Red", ["Value"] = 1.0f },
             new Dictionary<string, object> { ["Color"] = "Yellow", ["Value"] = 2.0f }, // unknown
             new Dictionary<string, object> { ["Color"] = "Green", ["Value"] = 3.0f },
+            new Dictionary<string, object> { ["Color"] = "Yellow", ["Value"] = 4.0f }, // the same unknown again
         };
 
         var warnings = new List<string>();
         PredictionService.MapCategoricalValues(rows, schema, warnings);
 
         Assert.Equal("Red", rows[0]["Color"]);    // unchanged
-        Assert.Equal("Red", rows[1]["Color"]);     // replaced with first (most frequent)
-        Assert.Equal("Green", rows[2]["Color"]);   // unchanged
-        Assert.Single(warnings);
-        Assert.Contains("Yellow", warnings[0]);
+        Assert.Equal("", rows[1]["Color"]);       // missing: no category on - not the most frequent one, which the row never said
+        Assert.Equal("Green", rows[2]["Color"]);  // unchanged
+        Assert.Equal("", rows[3]["Color"]);
+        var only = Assert.Single(warnings);       // one line for the value, not one per row
+        Assert.Contains("'Yellow' in 2 rows read as missing", only);
+    }
+
+    private static InputSchemaInfo ColorSchema() => new()
+    {
+        Columns = [new() { Name = "Color", DataType = "Categorical", Purpose = "Feature", CategoricalValues = ["Red", "Green", "Blue"] }],
+        CapturedAt = DateTime.UtcNow
+    };
+
+    [Fact]
+    public void MapCategoricalValues_AnAnswerDoesNotDependOnTheRowsAroundIt()
+    {
+        // The share of unseen values in the batch used to choose the rule (< 5 % most frequent, 5-30 % missing, more: refused).
+        var alone = new[] { new Dictionary<string, object> { ["Color"] = "Yellow" } };
+        var among = Enumerable.Range(0, 20).Select(_ => new Dictionary<string, object> { ["Color"] = "Red" })
+            .Append(new Dictionary<string, object> { ["Color"] = "Yellow" }).ToArray();
+        var mostlyUnseen = Enumerable.Range(0, 10).Select(_ => new Dictionary<string, object> { ["Color"] = "Yellow" }).ToArray();
+
+        PredictionService.MapCategoricalValues(alone, ColorSchema(), []);
+        PredictionService.MapCategoricalValues(among, ColorSchema(), []);
+        PredictionService.MapCategoricalValues(mostlyUnseen, ColorSchema(), []);
+
+        Assert.Equal("", alone[0]["Color"]);
+        Assert.Equal("", among[^1]["Color"]);
+        Assert.All(mostlyUnseen, r => Assert.Equal("", r["Color"]));
+    }
+
+    [Fact]
+    public void MapCategoricalValues_UseMostFrequent_ReplacesAsTheOptionAsks()
+    {
+        var rows = new[] { new Dictionary<string, object> { ["Color"] = "Yellow" } };
+        var warnings = new List<string>();
+
+        PredictionService.MapCategoricalValues(rows, ColorSchema(), warnings, CategoricalMapper.UnknownValueStrategy.UseMostFrequent);
+
+        Assert.Equal("Red", rows[0]["Color"]);
+        Assert.Contains("replaced with 'Red'", Assert.Single(warnings));
+    }
+
+    [Fact]
+    public void MapCategoricalValues_Error_RefusesAndNamesTheValues()
+    {
+        var rows = new[]
+        {
+            new Dictionary<string, object> { ["Color"] = "Red" },
+            new Dictionary<string, object> { ["Color"] = "Yellow" },
+        };
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            PredictionService.MapCategoricalValues(rows, ColorSchema(), [], CategoricalMapper.UnknownValueStrategy.Error));
+
+        Assert.Contains("'Color' = 'Yellow' (1 row)", error.Message);
+        Assert.Contains("--unknown-strategy", error.Message);
     }
 
     [Fact]

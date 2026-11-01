@@ -24,7 +24,7 @@ public class PredictionService
 
     /// <summary>
     /// Runs prediction on in-memory row data using a saved ML.NET model file.
-    /// Loads the model from disk on every call — use the <see cref="Predict(Dictionary{string, object}[], InputSchemaInfo, ITransformer, string, string?, RegressionInterval?, ITransformer?)"/>
+    /// Loads the model from disk on every call — use the <see cref="Predict(Dictionary{string, object}[], InputSchemaInfo, ITransformer, string, string?, RegressionInterval?, ITransformer?, CategoricalMapper.UnknownValueStrategy)"/>
     /// overload with a pre-loaded model for warm-path scenarios (e.g. API serve with model caching).
     /// </summary>
     public PredictionResult Predict(
@@ -33,7 +33,8 @@ public class PredictionService
         string modelPath,
         string taskType,
         string? labelColumn = null,
-        RegressionInterval? interval = null)
+        RegressionInterval? interval = null,
+        CategoricalMapper.UnknownValueStrategy unknownStrategy = CategoricalMapper.UnknownValueStrategy.Auto)
     {
         RejectRowBasedForecasting(taskType);
 
@@ -54,7 +55,7 @@ public class PredictionService
         // interval carries the normalized-conformal parameters and the file was promoted alongside.
         var residualModel = interval?.IsHeteroscedastic == true ? ScoringModel.LoadResidual(_mlContext, modelPath) : null;
 
-        return Predict(rows, schema, model, taskType, labelColumn, interval, residualModel);
+        return Predict(rows, schema, model, taskType, labelColumn, interval, residualModel, unknownStrategy);
     }
 
     /// <summary>
@@ -75,7 +76,8 @@ public class PredictionService
         string taskType,
         string? labelColumn = null,
         RegressionInterval? interval = null,
-        ITransformer? residualModel = null)
+        ITransformer? residualModel = null,
+        CategoricalMapper.UnknownValueStrategy unknownStrategy = CategoricalMapper.UnknownValueStrategy.Auto)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -111,7 +113,7 @@ public class PredictionService
         // say so, so the answer is not mistaken for one made from a complete row.
         warnings.AddRange(ServedRowAudit.Describe(rows, schema));
 
-        MapCategoricalValues(rows, schema, warnings);
+        MapCategoricalValues(rows, schema, warnings, unknownStrategy);
 
         bool needsDummyLabel = IsLabelRequiredForTransform(taskType);
         using var csvStream = CsvStreamBuilder.Build(rows, schema, injectDummyLabel: needsDummyLabel);
@@ -184,12 +186,23 @@ public class PredictionService
     }
 
     /// <summary>
-    /// Maps unknown categorical values to known training values in-place.
+    /// Settles, in place, the categorical values a row holds that training never saw — one rule for a served row and a
+    /// <c>--json</c> row alike, and a function of the row and the model alone (the file path's <c>auto</c> chose by the
+    /// share of such values in the whole file, so a row's answer moved with its neighbours).
     /// </summary>
+    /// <remarks>
+    /// The default (<see cref="CategoricalMapper.UnknownValueStrategy.Auto"/> and <c>UseMissing</c>) reads an unseen value as
+    /// missing — "none of the known categories" — and says so once per value, with how many rows held it: the row never
+    /// said it was the most frequent category, and replacing it with that one states a fact nobody gave.
+    /// <c>UseMostFrequent</c> replaces it, as the option asks; <c>Error</c> refuses the request and names the values.
+    /// A value padded with white space is the value (a file's fields are trimmed when read), and the same text in another
+    /// Unicode form is the value training saw.
+    /// </remarks>
     public static void MapCategoricalValues(
         Dictionary<string, object>[] rows,
         InputSchemaInfo schema,
-        List<string> warnings)
+        List<string> warnings,
+        CategoricalMapper.UnknownValueStrategy strategy = CategoricalMapper.UnknownValueStrategy.Auto)
     {
         var categoricalColumns = schema.Columns
             .Where(c => c.CategoricalValues != null && c.CategoricalValues.Count > 0)
@@ -197,11 +210,13 @@ public class PredictionService
 
         if (categoricalColumns.Count == 0) return;
 
+        var refused = new List<string>();
         foreach (var col in categoricalColumns)
         {
             var knownValues = new HashSet<string>(col.CategoricalValues!);
             var knownByNfc = CanonicalText.LookupByNfc(col.CategoricalValues!);
             var fallbackValue = col.CategoricalValues![0]; // Most frequent value
+            var unseen = new Dictionary<string, int>(StringComparer.Ordinal);
 
             foreach (var row in rows)
             {
@@ -214,20 +229,45 @@ public class PredictionService
                 var strValue = written.Trim();
                 if (strValue != written && knownValues.Contains(strValue))
                     row[col.Name] = strValue;
-                if (!string.IsNullOrEmpty(strValue) && !knownValues.Contains(strValue))
-                {
-                    // The same text in another Unicode form (decomposed Hangul) is the value training saw, not a new one.
-                    if (CanonicalText.Resolve(knownValues, knownByNfc, strValue) is { } trained)
-                    {
-                        row[col.Name] = trained;
-                        continue;
-                    }
+                if (string.IsNullOrEmpty(strValue) || knownValues.Contains(strValue))
+                    continue;
 
+                // The same text in another Unicode form (decomposed Hangul) is the value training saw, not a new one.
+                if (CanonicalText.Resolve(knownValues, knownByNfc, strValue) is { } trained)
+                {
+                    row[col.Name] = trained;
+                    continue;
+                }
+
+                unseen[strValue] = unseen.GetValueOrDefault(strValue) + 1;
+                if (strategy == CategoricalMapper.UnknownValueStrategy.UseMostFrequent)
                     row[col.Name] = fallbackValue;
-                    warnings.Add($"Column '{col.Name}': unknown value '{strValue}' replaced with '{fallbackValue}'");
+                else if (strategy != CategoricalMapper.UnknownValueStrategy.Error)
+                    row[col.Name] = ""; // missing: no category is on
+            }
+
+            foreach (var (value, count) in unseen.OrderBy(u => u.Key, StringComparer.Ordinal))
+            {
+                var rowsText = count == 1 ? "1 row" : $"{count} rows";
+                switch (strategy)
+                {
+                    case CategoricalMapper.UnknownValueStrategy.Error:
+                        refused.Add($"'{col.Name}' = '{value}' ({rowsText})");
+                        break;
+                    case CategoricalMapper.UnknownValueStrategy.UseMostFrequent:
+                        warnings.Add($"Column '{col.Name}': unseen value '{value}' in {rowsText} replaced with '{fallbackValue}'");
+                        break;
+                    default:
+                        warnings.Add($"Column '{col.Name}': unseen value '{value}' in {rowsText} read as missing");
+                        break;
                 }
             }
         }
+
+        if (refused.Count > 0)
+            throw new ArgumentException(
+                $"Categorical values the model was not trained on: {string.Join("; ", refused)}. " +
+                "Send a value it was trained on, or choose --unknown-strategy use-missing (read as missing) or use-most-frequent.");
     }
 
     /// <summary>

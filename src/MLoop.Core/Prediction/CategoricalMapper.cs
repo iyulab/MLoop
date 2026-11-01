@@ -12,10 +12,8 @@ public class CategoricalMapper
     public enum UnknownValueStrategy
     {
         /// <summary>
-        /// Automatically select the best strategy based on unknown value ratio
-        /// - If unknown ratio less than 5%: Use most frequent value (safe replacement)
-        /// - If unknown ratio 5-30%: Use missing (let ML.NET handle)
-        /// - If unknown ratio greater than 30%: Error (likely data quality issue)
+        /// The default: a value training never saw is read as missing (no category on), whatever share of the file it is —
+        /// a row's answer does not depend on the rows around it. A share of 30% or more is said as a likely data problem.
         /// </summary>
         Auto,
 
@@ -310,25 +308,13 @@ public class CategoricalMapper
             ? (double)unknownValueCount / totalCategoricalValues
             : 0;
 
-        // Select strategy based on ratio
-        UnknownValueStrategy selectedStrategy;
-        string reason;
-
-        if (unknownRatio < 0.05) // < 5%
-        {
-            selectedStrategy = UnknownValueStrategy.UseMostFrequent;
-            reason = $"Low unknown value ratio ({unknownRatio:P2}) - safely replacing with most frequent values";
-        }
-        else if (unknownRatio < 0.30) // 5-30%
-        {
-            selectedStrategy = UnknownValueStrategy.UseMissing;
-            reason = $"Moderate unknown value ratio ({unknownRatio:P2}) - treating as missing values";
-        }
-        else // > 30%
-        {
-            selectedStrategy = UnknownValueStrategy.Error;
-            reason = $"High unknown value ratio ({unknownRatio:P2}) - likely data quality issue, manual review recommended";
-        }
+        // One rule whatever the share: an unseen value is read as missing. The share used to choose the strategy,
+        // so a row's answer moved with the rows around it, and a single-row file (the shape a served request has) was
+        // refused. A large share is said as a likely data problem; it no longer changes an answer.
+        var selectedStrategy = UnknownValueStrategy.UseMissing;
+        var reason = unknownRatio >= 0.30
+            ? $"{unknownRatio:P2} of the categorical values were not seen in training - read as missing; a share this high suggests the data is not what the model was trained on"
+            : $"{unknownRatio:P2} of the categorical values were not seen in training - read as missing";
 
         // Process with selected strategy
         var result = PreprocessPredictionData(predictionDataPath, trainedSchema, selectedStrategy);

@@ -300,7 +300,7 @@ public static partial class PredictCommand
             if (json)
                 return OutputBesideJsonRefused(output)
                     ? 1
-                    : await PredictAsJsonAsync(resolvedDataFile, model, logPredictions, projectRoot, resolvedModelName);
+                    : await PredictAsJsonAsync(resolvedDataFile, model, logPredictions, projectRoot, resolvedModelName, strategy);
 
             // Make predictions with progress
             int predictedCount = 0;

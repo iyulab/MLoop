@@ -671,10 +671,11 @@ public class PredictionEngine
         string modelPath,
         string taskType,
         string? labelColumn = null,
-        RegressionInterval? interval = null)
+        RegressionInterval? interval = null,
+        CategoricalMapper.UnknownValueStrategy unknownStrategy = CategoricalMapper.UnknownValueStrategy.Auto)
     {
         var service = new PredictionService(_mlContext);
-        return service.Predict(rows, schema, modelPath, taskType, labelColumn, interval);
+        return service.Predict(rows, schema, modelPath, taskType, labelColumn, interval, unknownStrategy);
     }
 
     /// <summary>

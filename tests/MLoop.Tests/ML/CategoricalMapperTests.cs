@@ -181,9 +181,9 @@ public class CategoricalMapperTests : IDisposable
     #region Auto Strategy
 
     [Fact]
-    public void PreprocessPredictionData_AutoStrategy_LowUnknownRatio_UsesMostFrequent()
+    public void PreprocessPredictionData_AutoStrategy_LowUnknownRatio_ReadsAsMissing()
     {
-        // 1 unknown out of 21 ≈ 4.76% (< 5%) → UseMostFrequent
+        // 1 unknown out of 21 ≈ 4.76% — the share no longer chooses the rule: unseen is missing at any share
         var lines = new List<string> { "Color,Value" };
         for (int i = 0; i < 20; i++) lines.Add("Red,10");
         lines.Add("Yellow,20"); // 1 unknown out of 21 categorical values
@@ -196,13 +196,14 @@ public class CategoricalMapperTests : IDisposable
             CategoricalMapper.UnknownValueStrategy.Auto);
 
         Assert.True(result.Success);
-        Assert.Equal(CategoricalMapper.UnknownValueStrategy.UseMostFrequent, result.AppliedStrategy);
+        Assert.Equal(CategoricalMapper.UnknownValueStrategy.UseMissing, result.AppliedStrategy);
+        Assert.DoesNotContain("suggests", result.StrategyReason);
     }
 
     [Fact]
-    public void PreprocessPredictionData_AutoStrategy_HighUnknownRatio_ReturnsError()
+    public void PreprocessPredictionData_AutoStrategy_HighUnknownRatio_StillAnswers_AndSaysItLooksWrong()
     {
-        // All unknown = 100% → Error
+        // All unknown = 100%: a single-row file (a served request's shape) is this too. It is said, not refused.
         var lines = new List<string> { "Color,Value" };
         for (int i = 0; i < 10; i++) lines.Add("Unknown,10");
         var path = CreateCsv(string.Join("\n", lines));
@@ -213,8 +214,9 @@ public class CategoricalMapperTests : IDisposable
         var result = _mapper.PreprocessPredictionData(path, schema,
             CategoricalMapper.UnknownValueStrategy.Auto);
 
-        Assert.False(result.Success);
-        Assert.Equal(CategoricalMapper.UnknownValueStrategy.Error, result.AppliedStrategy);
+        Assert.True(result.Success);
+        Assert.Equal(CategoricalMapper.UnknownValueStrategy.UseMissing, result.AppliedStrategy);
+        Assert.Contains("suggests the data is not what the model was trained on", result.StrategyReason);
     }
 
     #endregion
