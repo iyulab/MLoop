@@ -169,6 +169,36 @@ public class EvaluateCommandJsonTests : IDisposable
     }
 
     /// <summary>
+    /// The first positional is the experiment, the second the test data. A lone argument that is not an experiment but names a file is the
+    /// test data of the production model — not "experiment not found: test.csv".
+    /// </summary>
+    [Fact]
+    public async Task Evaluate_ALoneFileArgument_IsTheTestDataOfProduction()
+    {
+        var testCsvPath = await CreateRegressionFixtureAsync("default", "exp-001");
+        var (promoted, promoteOut, promoteErr) = await CliRunner.RunAsync("promote", "exp-001", "--force");
+        Assert.True(promoted == 0, promoteOut + promoteErr);
+
+        var (exitCode, stdout, stderr) = await CliRunner.RunAsync("evaluate", testCsvPath, "--json");
+
+        Assert.True(exitCode == 0, stdout + stderr);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal("exp-001", doc.RootElement.GetProperty("experimentId").GetString());
+        Assert.True(doc.RootElement.GetProperty("testMetrics").GetProperty("r_squared").GetDouble() > 0.9);
+    }
+
+    [Fact]
+    public async Task Evaluate_ALoneArgumentThatIsNeitherAnExperimentNorAFile_StillSaysExperimentNotFound()
+    {
+        await CreateRegressionFixtureAsync("default", "exp-001");
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("evaluate", "exp-999", "--json");
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Experiment not found: exp-999", System.Text.Json.JsonDocument.Parse(stdout).RootElement.GetProperty("error").GetString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Evaluating on the training file — recognised by content, not name — is warned about in the
     /// document as well as on the console; a held-out file carries no warnings.
     /// </summary>

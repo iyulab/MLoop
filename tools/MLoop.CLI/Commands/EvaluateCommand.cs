@@ -180,6 +180,17 @@ public static partial class EvaluateCommand
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
             var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
 
+            // `mloop evaluate test.csv`: the one argument names a file, not an experiment — it is the test data, scored with production.
+            // (The first of the two positionals is the experiment; an id that does not exist but is a file that does can only be a mistake
+            // about that order, and answering "experiment not found: test.csv" makes the user find that out.)
+            if (testDataFile is null && !string.IsNullOrWhiteSpace(experimentId)
+                && !experimentStore.ExperimentExists(resolvedModelName, experimentId)
+                && (File.Exists(ProjectPaths.Resolve(experimentId, projectRoot)) || Directory.Exists(ProjectPaths.Resolve(experimentId, projectRoot))))
+            {
+                testDataFile = experimentId;
+                experimentId = null;
+            }
+
             var model = await ResolveModelAsync(experimentId, resolvedModelName, jsonOutput, fileSystem, experimentStore, modelRegistry);
             if (model.ExitCode is { } exitCode)
                 return exitCode;

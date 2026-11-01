@@ -42,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`mloop evaluate test.csv` scores production on that file.** The first of `evaluate`'s two positionals is the experiment, so a lone file name was looked up as an experiment and refused (`Experiment not found: test.csv`). An argument that is not an experiment but names an existing file or folder is now taken as the test data; `evaluate exp-001 test.csv` is unchanged.
 - **`mloop calibrate --clear` says when it removes the calibration training fitted.** The file beside a classifier holds the calibration fitted on the search's out-of-fold answers,
   and the metrics recorded for the experiment are the calibrated model's; clearing it (it is also how a calibration you fitted is undone) leaves the trainer's own probabilities,
   which can be far from calibrated, and only retraining brings the fitted one back. The command still clears - that is what `--clear` is documented to do - and now warns
