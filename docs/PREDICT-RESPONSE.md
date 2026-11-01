@@ -153,7 +153,11 @@ request, as `POST /embed` takes them; rows sent to it are a `400`. Each predicti
 ```
 
 A box is in the image's pixels: `x0 y0` its top-left corner, `x1 y1` its bottom-right. `score` is the detector's
-confidence in that object; an image with nothing found has an empty `detections`. The image is named by its SHA-256
+confidence in that object; an image with nothing found has an empty `detections`. Only boxes with a score of at least
+0.5 are listed unless the request says otherwise: `?scoreThreshold=0.3` or a `scoreThreshold` field beside `images` (above 0,
+at most 1; the query wins; anything else is a `400`). A detector trained since this was added keeps every box down to 0.05,
+so a lower threshold shows the boxes a not-yet-confident one finds (there are many of them, so start at 0.3); a model
+trained before keeps only boxes of 0.5 and over, and a lower threshold shows no more of it. The image is named by its SHA-256
 — the server never sees a path — and is logged under it, with the detections as the answer and the highest score as
 the confidence. `mloop predict <images>` writes the same detections to a file (`ImagePath` in place of the hash).
 
