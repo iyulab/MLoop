@@ -1,3 +1,5 @@
+using FilePrepper.Tasks.WindowOps;
+
 namespace MLoop.Core.Preprocessing;
 
 /// <summary>
@@ -16,6 +18,55 @@ public static class PrepStepRules
         ["scale"] = "normalize",
         ["data-sampling"] = "sample",
     };
+
+    // The aggregation methods of rolling and resample, by every spelling a config may use: the executor reads them here and both
+    // validators check them here, so a method the executor cannot run is refused before it is run.
+    private static readonly Dictionary<string, AggregationMethod> AggregationSpellings = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["mean"] = AggregationMethod.Mean,
+        ["average"] = AggregationMethod.Mean,
+        ["avg"] = AggregationMethod.Mean,
+        ["min"] = AggregationMethod.Min,
+        ["max"] = AggregationMethod.Max,
+        ["sum"] = AggregationMethod.Sum,
+        ["count"] = AggregationMethod.Count,
+        ["std"] = AggregationMethod.Std,
+        ["stdev"] = AggregationMethod.Std,
+        ["var"] = AggregationMethod.Var,
+        ["variance"] = AggregationMethod.Var,
+        ["median"] = AggregationMethod.Median,
+        ["first"] = AggregationMethod.First,
+        ["last"] = AggregationMethod.Last,
+    };
+
+    /// <summary>The aggregation methods <c>rolling</c> and <c>resample</c> take (<c>method:</c>), in their canonical spelling.</summary>
+    public static IReadOnlyList<string> AggregationMethods { get; } =
+        ["mean", "min", "max", "sum", "count", "std", "var", "median", "first", "last"];
+
+    /// <summary>Reads a <c>method:</c> of <c>rolling</c> or <c>resample</c>; false when it is not one of <see cref="AggregationMethods"/> (or an alias).</summary>
+    public static bool TryParseAggregation(string? name, out AggregationMethod method)
+    {
+        method = default;
+        return name is not null && AggregationSpellings.TryGetValue(name.Trim(), out method);
+    }
+
+    // The filter-rows operators, by every spelling: the first four compare numbers, the rest text.
+    private static readonly HashSet<string> NumericFilterOperators = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "gt", ">", "gte", ">=", "lt", "<", "lte", "<=",
+    };
+
+    private static readonly HashSet<string> TextFilterOperators = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "eq", "==", "neq", "!=", "contains", "not-contains", "not_contains",
+    };
+
+    /// <summary>Whether <paramref name="op"/> is a <c>filter-rows</c> operator.</summary>
+    public static bool IsFilterOperator(string? op) =>
+        op is not null && (NumericFilterOperators.Contains(op.Trim()) || TextFilterOperators.Contains(op.Trim()));
+
+    /// <summary>Whether <paramref name="op"/> compares numbers (<c>gt</c> <c>gte</c> <c>lt</c> <c>lte</c> and their symbols), so its value must be one.</summary>
+    public static bool IsNumericFilterOperator(string? op) => op is not null && NumericFilterOperators.Contains(op.Trim());
 
     /// <summary>The step types, by their canonical names.</summary>
     public static IReadOnlyList<string> CanonicalNames { get; } =
@@ -89,6 +140,11 @@ public static class PrepStepRules
                     yield return "'filter-rows' requires 'operator'";
                 if (string.IsNullOrEmpty(step.Value))
                     yield return "'filter-rows' requires 'value'";
+                if (!string.IsNullOrEmpty(step.Operator) && !IsFilterOperator(step.Operator))
+                    yield return $"'filter-rows' operator '{step.Operator}' is not one of: gt, gte, lt, lte, eq, neq, contains, not-contains (or > >= < <= == !=)";
+                else if (IsNumericFilterOperator(step.Operator) && !string.IsNullOrEmpty(step.Value)
+                    && !double.TryParse(step.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
+                    yield return $"'filter-rows' operator '{step.Operator}' compares numbers, but value '{step.Value}' is not a number";
                 break;
 
             case "add-column":
@@ -103,6 +159,8 @@ public static class PrepStepRules
                     yield return "'rolling' requires 'window_size' > 0";
                 if (!hasColumns)
                     yield return "'rolling' requires 'columns'";
+                if (!TryParseAggregation(step.Method ?? "mean", out _))
+                    yield return $"'rolling' method '{step.Method}' is not one of: {string.Join(", ", AggregationMethods)}";
                 break;
 
             case "resample":
@@ -112,6 +170,8 @@ public static class PrepStepRules
                     yield return "'resample' requires 'window'";
                 if (!hasColumns)
                     yield return "'resample' requires 'columns'";
+                if (!TryParseAggregation(step.Method ?? "mean", out _))
+                    yield return $"'resample' method '{step.Method}' is not one of: {string.Join(", ", AggregationMethods)}";
                 break;
 
             case "sample":

@@ -75,6 +75,69 @@ public class PrepStepRulesTests : IDisposable
         Assert.Contains("Unknown prep step type 'unpivot'", ex.Message);
     }
 
+    [Theory]
+    [InlineData("mean")]
+    [InlineData("avg")]
+    [InlineData("median")]
+    [InlineData("variance")]
+    [InlineData("first")]
+    [InlineData("LAST")]
+    [InlineData("stdev")]
+    public void Rolling_and_resample_accept_every_aggregation_FilePrepper_can_compute(string method)
+    {
+        Assert.Empty(PrepStepRules.Problems(new PrepStep { Type = "rolling", WindowSize = 3, Columns = ["x"], Method = method }));
+        Assert.Empty(PrepStepRules.Problems(new PrepStep { Type = "resample", TimeColumn = "t", Window = "1H", Columns = ["x"], Method = method }));
+    }
+
+    [Fact]
+    public void An_aggregation_the_executor_cannot_run_is_refused_before_it_runs()
+    {
+        var problems = PrepStepRules.Problems(new PrepStep { Type = "rolling", WindowSize = 3, Columns = ["x"], Method = "mode" }).ToList();
+
+        Assert.Single(problems);
+        Assert.Contains("'rolling' method 'mode' is not one of: mean, min, max, sum, count, std, var, median, first, last", problems[0]);
+    }
+
+    [Fact]
+    public void Every_listed_aggregation_parses()
+    {
+        foreach (var name in PrepStepRules.AggregationMethods)
+            Assert.True(PrepStepRules.TryParseAggregation(name, out _), name);
+    }
+
+    [Theory]
+    [InlineData("gt", "abc", true)]
+    [InlineData(">=", "", true)]
+    [InlineData("gt", "10", false)]
+    [InlineData("eq", "abc", false)]
+    [InlineData("contains", "abc", false)]
+    public void A_number_operator_needs_a_number_for_a_value(string op, string value, bool refused)
+    {
+        var problems = PrepStepRules.Problems(new PrepStep { Type = "filter-rows", Column = "x", Operator = op, Value = value }).ToList();
+
+        Assert.Equal(refused, problems.Count > 0);
+    }
+
+    [Fact]
+    public void An_unknown_filter_operator_is_refused_by_name()
+    {
+        var problems = PrepStepRules.Problems(new PrepStep { Type = "filter-rows", Column = "x", Operator = "startswith", Value = "a" }).ToList();
+
+        Assert.Contains(problems, p => p.Contains("'filter-rows' operator 'startswith' is not one of", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_filter_value_that_is_not_a_number_names_the_step_instead_of_a_format_exception()
+    {
+        var input = Path.Combine(_dir, "f.csv");
+        await File.WriteAllTextAsync(input, "x\n1\n2\n");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => new DataPipelineExecutor(new TestLogger())
+            .ExecuteAsync(input, [new PrepStep { Type = "filter-rows", Column = "x", Operator = "gt", Value = "abc" }], Path.Combine(_dir, "o.csv")));
+
+        Assert.Contains("filter-rows operator 'gt' compares numbers, but value 'abc' is not a number", ex.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void List_steps_need_their_columns()
     {

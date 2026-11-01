@@ -32,7 +32,8 @@ public class PrepStep
 
     /// <summary>
     /// Method parameter (e.g., fill-missing: mean/median/mode/forward/backward/constant,
-    /// normalize: min-max/z-score/robust, scale: min-max/z-score/robust)
+    /// normalize: min-max/z-score/robust, scale: min-max/z-score/robust,
+    /// rolling and resample: mean/min/max/sum/count/std/var/median/first/last — <see cref="PrepStepRules.AggregationMethods"/>)
     /// </summary>
     public string? Method { get; set; }
 

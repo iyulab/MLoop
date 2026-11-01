@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`prep` `rolling` and `resample` take `var`, `median`, `first` and `last`, and `mloop validate` checks a step's `method` and `filter-rows` operator.** The aggregation names lived in the executor alone and an unknown one failed when the step ran; they are now one list shared with both validators (`PrepStepRules.AggregationMethods`), so `method: mode` is refused with the valid names before anything runs. A `filter-rows` operator that compares numbers (`gt` `gte` `lt` `lte`) with a value that is not a number says which step and value are wrong (it was a bare `FormatException` raised on the first row). Needs FilePrepper 0.13.2 for `var`, `median`, `first` and `last` to compute.
+
 - **`mloop analyze profile` says why a column of numbers has no statistics.** The profile reads a column as text or categories when a few of its cells are not numbers
   (`N/A`, `--`) or when its numbers carry a thousands separator, a percent sign or a currency sign, and gave such a column no mean, no range and no word of the cause -
   while `train` and `info` already named both. The profile now adds a flag per column: `numbers-read-as-text` with the count, the first cell and its line

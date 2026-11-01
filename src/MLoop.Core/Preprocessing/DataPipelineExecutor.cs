@@ -147,12 +147,23 @@ public class DataPipelineExecutor
         var value = step.Value
             ?? throw new InvalidOperationException("filter-rows step requires 'value' parameter");
 
+        // A number operator compares with a number; the value is read once, and a value that is not one says so by step.
+        double threshold = 0;
+        if (PrepStepRules.IsNumericFilterOperator(op)
+            && !double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out threshold))
+        {
+            throw new InvalidOperationException($"filter-rows operator '{op}' compares numbers, but value '{value}' is not a number");
+        }
+
+        static bool Cell(Dictionary<string, string> row, string column, out double cell) =>
+            double.TryParse(row.GetValueOrDefault(column), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out cell);
+
         Func<Dictionary<string, string>, bool> predicate = op.ToLowerInvariant() switch
         {
-            "gt" or ">" => row => double.TryParse(row.GetValueOrDefault(column), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > double.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
-            "gte" or ">=" => row => double.TryParse(row.GetValueOrDefault(column), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= double.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
-            "lt" or "<" => row => double.TryParse(row.GetValueOrDefault(column), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v < double.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
-            "lte" or "<=" => row => double.TryParse(row.GetValueOrDefault(column), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v <= double.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
+            "gt" or ">" => row => Cell(row, column, out var v) && v > threshold,
+            "gte" or ">=" => row => Cell(row, column, out var v) && v >= threshold,
+            "lt" or "<" => row => Cell(row, column, out var v) && v < threshold,
+            "lte" or "<=" => row => Cell(row, column, out var v) && v <= threshold,
             "eq" or "==" => row => row.GetValueOrDefault(column) == value,
             "neq" or "!=" => row => row.GetValueOrDefault(column) != value,
             "contains" => row => row.GetValueOrDefault(column)?.Contains(value, StringComparison.OrdinalIgnoreCase) == true,
@@ -353,19 +364,11 @@ public class DataPipelineExecutor
         };
     }
 
-    private static AggregationMethod ParseAggregationMethod(string method)
-    {
-        return method.ToLowerInvariant() switch
-        {
-            "mean" or "average" or "avg" => AggregationMethod.Mean,
-            "min" => AggregationMethod.Min,
-            "max" => AggregationMethod.Max,
-            "sum" => AggregationMethod.Sum,
-            "count" => AggregationMethod.Count,
-            "std" or "stdev" => AggregationMethod.Std,
-            _ => throw new InvalidOperationException($"Unknown aggregation method: '{method}'")
-        };
-    }
+    private static AggregationMethod ParseAggregationMethod(string method) =>
+        PrepStepRules.TryParseAggregation(method, out var parsed)
+            ? parsed
+            : throw new InvalidOperationException(
+                $"Unknown aggregation method: '{method}'. Valid methods: {string.Join(", ", PrepStepRules.AggregationMethods)}");
 
     private static DateFeatures ParseDateFeatures(List<string>? features)
     {
