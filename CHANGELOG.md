@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Numbers written in full-width characters (`１７２４．３２`) were reported as "an identifier" instead of as numbers written for people.** A spreadsheet or form entered in an East Asian input mode writes digits, point and comma in full-width forms; the loader reads them as words, so the column was dropped as "a distinct value in every row" with no word about the digits, while the same column written with a thousands separator got the "numbers written for people" warning. The check (`FormattedNumbers`, read by `train`, `info` and `analyze`) now judges a value after compatibility composition (NFKC), so a full-width number gets the same warning and example; the cell itself is not changed (a number written for people is still not converted — write the plain number in the file).
+
 ## [0.49.0] - 2026-11-02
 
 ### Added

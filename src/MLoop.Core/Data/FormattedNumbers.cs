@@ -1,10 +1,12 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace MLoop.Core.Data;
 
 /// <summary>
-/// Whether a column of text is really numbers written for people: <c>1,234.5</c>, <c>12%</c>, <c>$3</c>, <c>₩5,000</c>.
+/// Whether a column of text is really numbers written for people: <c>1,234.5</c>, <c>12%</c>, <c>$3</c>, <c>₩5,000</c>, or in full-width
+/// characters (<c>１２３４．５</c>, the form East Asian spreadsheets and forms enter numbers in).
 /// A column like that is not a number to the loader, so it is read as words, and a model that needed its magnitude
 /// has none (a regression on a price written with its thousands separator scored R² 0.9997 as <c>1234.5</c> and −0.004
 /// as <c>"1,234.5"</c>, with nothing in the run saying why). The question is asked of the values of a column the
@@ -23,15 +25,16 @@ public static partial class FormattedNumbers
     [GeneratedRegex(@"^[+-]?\s*[$€£¥₩]?\s*(\d{1,3}(,\d{3})+|\d+)(\.\d+)?\s*(%|원)?$", RegexOptions.CultureInvariant)]
     private static partial Regex Form();
 
-    /// <summary>Whether one value is a number in one of the written forms, plain or formatted.</summary>
-    public static bool IsNumberInAnyForm(string value) => Form().IsMatch(value.Trim());
+    // Full-width digits, point, comma, sign and percent are the same characters in a form the loader does not read; compatibility
+    // composition (NFKC) is what Unicode defines for "the same character, narrower". Only the judgement uses it — the cell is not rewritten.
+    private static string Narrow(string value) => value.Trim().Normalize(NormalizationForm.FormKC);
 
-    /// <summary>Whether one value is such a number and carries something the loader does not read as one (a separator, <c>%</c>, a currency sign).</summary>
-    public static bool IsFormatted(string value)
-    {
-        var trimmed = value.Trim();
-        return Form().IsMatch(trimmed) && !double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
-    }
+    /// <summary>Whether one value is a number in one of the written forms, plain or formatted.</summary>
+    public static bool IsNumberInAnyForm(string value) => Form().IsMatch(Narrow(value));
+
+    /// <summary>Whether one value is such a number and carries something the loader does not read as one (a separator, <c>%</c>, a currency sign, full-width digits).</summary>
+    public static bool IsFormatted(string value) =>
+        Form().IsMatch(Narrow(value)) && !double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out _);
 
     /// <summary>
     /// Whether the values of a text column are numbers written with a separator, <c>%</c> or a currency sign: at

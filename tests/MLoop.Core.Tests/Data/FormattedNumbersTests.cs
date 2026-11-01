@@ -18,6 +18,9 @@ public class FormattedNumbersTests
     [InlineData("€ 1,000.00")]
     [InlineData("₩5,000")]
     [InlineData("5,000원")]
+    [InlineData("１７２４．３２")]      // full-width digits and point
+    [InlineData("１，２３４")]          // full-width digits and comma
+    [InlineData("１２％")]
     public void AFormattedNumber_IsFormatted(string value) => Assert.True(FormattedNumbers.IsFormatted(value));
 
     [Theory]
@@ -28,6 +31,16 @@ public class FormattedNumbersTests
     [InlineData("1,23")]        // not a thousands grouping
     [InlineData("")]
     public void APlainNumberOrWords_IsNotFormatted(string value) => Assert.False(FormattedNumbers.IsFormatted(value));
+
+    [Fact]
+    public void AColumnOfFullWidthNumbers_Looks_AndNamesTheValueAsWritten()
+    {
+        var column = Enumerable.Range(1, 40).Select(i => $"{i * 37}．{i % 10}".Replace("0", "０").Replace("1", "１").Replace("2", "２").Replace("3", "３")
+            .Replace("4", "４").Replace("5", "５").Replace("6", "６").Replace("7", "７").Replace("8", "８").Replace("9", "９"));
+
+        Assert.True(FormattedNumbers.Looks(column, out var example));
+        Assert.Equal("３７．１", example);
+    }
 
     [Fact]
     public void AColumnOfFormattedNumbers_Looks_AndNamesAnExample()

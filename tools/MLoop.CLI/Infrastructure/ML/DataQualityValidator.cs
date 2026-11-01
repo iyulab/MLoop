@@ -88,7 +88,7 @@ public class DataQualityValidator
                     continue;
 
                 result.Warnings.Add($"⚠ Column '{names[i]}' holds numbers written for people (e.g. {example}) and is read as text");
-                result.Warnings.Add("   A thousands separator, a percent sign or a currency sign makes a number words to the model: it sees the characters, not the size");
+                result.Warnings.Add("   A thousands separator, a percent sign, a currency sign or full-width digits make a number words to the model: it sees the characters, not the size");
                 result.Warnings.Add("");
                 result.Suggestions.Add($"💡 Write '{names[i]}' as a plain number in the file (1234.5), or convert it in a preprocessing script (.mloop/scripts/preprocess/)");
             }
