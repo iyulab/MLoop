@@ -146,7 +146,7 @@ public static class ExportCommand
             var task = TaskTypes.Canonical(experiment.Task) ?? experiment.Task ?? "unknown";
             if (!SupportedTasks.Contains(task))
             {
-                ErrorConsole.Error(Markup.Escape($"ONNX export supports {string.Join(", ", SupportedTasks.Order())} models; '{experimentId}' is {task}."));
+                ErrorConsole.Error(Markup.Escape($"ONNX export supports {string.Join(", ", SupportedTasks.Order(StringComparer.Ordinal))} models; '{experimentId}' is {task}."));
                 return 1;
             }
 

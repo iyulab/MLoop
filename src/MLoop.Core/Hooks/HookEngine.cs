@@ -76,7 +76,7 @@ public class HookEngine
     {
         var root = Path.Combine(_projectRoot, ".mloop", "scripts", "hooks");
         return Directory.Exists(root)
-            ? Directory.GetFiles(root, "*.cs", SearchOption.TopDirectoryOnly).Select(Path.GetFileName).OfType<string>().Order().ToList()
+            ? Directory.GetFiles(root, "*.cs", SearchOption.TopDirectoryOnly).Select(Path.GetFileName).OfType<string>().Order(StringComparer.Ordinal).ToList()
             : [];
     }
 

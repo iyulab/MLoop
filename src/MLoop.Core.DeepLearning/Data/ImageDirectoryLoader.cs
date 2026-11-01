@@ -287,12 +287,12 @@ public sealed class ImageDirectoryLoader : DataProviderBase
     {
         if (emptyClasses.Count > 0)
             _log(CoreMessage.Warning($"{emptyClasses.Count} class folder(s) contain no supported images and were skipped: " +
-                 $"{string.Join(", ", emptyClasses)}. Supported extensions: {string.Join(", ", SupportedExtensions.OrderBy(e => e))}."));
+                 $"{string.Join(", ", emptyClasses)}. Supported extensions: {string.Join(", ", SupportedExtensions.OrderBy(e => e, StringComparer.Ordinal))}."));
 
         if (totalImages == 0)
             throw new InvalidOperationException(
                 $"No supported image files found under '{directory}'. " +
-                $"Supported extensions: {string.Join(", ", SupportedExtensions.OrderBy(e => e))}.");
+                $"Supported extensions: {string.Join(", ", SupportedExtensions.OrderBy(e => e, StringComparer.Ordinal))}.");
 
         if (classCounts.Count < 2)
             _log(CoreMessage.Warning($"Only {classCounts.Count} class with images was found. " +
