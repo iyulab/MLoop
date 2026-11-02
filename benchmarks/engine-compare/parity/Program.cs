@@ -40,9 +40,15 @@ if (config.TryGetValue("subsample", out var subsample))
     ((GradientBooster.Options)options.Booster).SubsampleFraction = subsample;
 if (config.TryGetValue("subsampleFreq", out var subsampleFreq))
     ((GradientBooster.Options)options.Booster).SubsampleFrequency = (int)subsampleFreq;
+if (config.TryGetValue("threads", out var threads))
+    options.NumberOfThreads = (int)threads;
 var pipeline = ml.Transforms.Concatenate("Features", features).Append(ml.Regression.Trainers.LightGbm(options));
+var fitClock = System.Diagnostics.Stopwatch.StartNew();
 var model = pipeline.Fit(train);
+var fitSeconds0 = fitClock.Elapsed.TotalSeconds;
+fitClock.Restart();
 var metrics = ml.Regression.Evaluate(model.Transform(test), labelColumnName: label);
+var evaluateSeconds = fitClock.Elapsed.TotalSeconds;
 
 // What the model costs to keep: its file, the time to write and read it back, the time to score the held-out rows.
 var path = Path.Combine(Path.GetTempPath(), $"mlnet-lgbm-{Guid.NewGuid():N}.zip");
@@ -57,4 +63,4 @@ clock.Restart();
 var scored = loaded.Transform(test).GetColumn<float>("Score").Count();
 var scoreSeconds = clock.Elapsed.TotalSeconds;
 File.Delete(path);
-Console.WriteLine(JsonSerializer.Serialize(new { rmse = metrics.RootMeanSquaredError, modelBytes, saveSeconds, loadSeconds, scoreSeconds, scoredRows = scored }));
+Console.WriteLine(JsonSerializer.Serialize(new { rmse = metrics.RootMeanSquaredError, modelBytes, saveSeconds, loadSeconds, scoreSeconds, scoredRows = scored, fitSeconds = fitSeconds0, evaluateSeconds }));

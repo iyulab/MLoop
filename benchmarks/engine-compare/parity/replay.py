@@ -47,28 +47,34 @@ def from_mloop(p):
             'l1': float(p['L1Regularization']), 'l2': float(p['L2Regularization']), 'subsample': float(p['SubsampleFraction'])}
 
 
-def mlnet_rmse(mlnet, cfg, train_csv, test_csv, label):
+def mlnet_run(mlnet, cfg, train_csv, test_csv, label):
     done = subprocess.run(shlex.split(mlnet) + [train_csv, test_csv, label, json.dumps(cfg)], capture_output=True, text=True)
     try:
-        return json.loads(done.stdout.strip().splitlines()[-1])['rmse']
+        return json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError, KeyError):
         sys.stderr.write(done.stderr[-300:] + '\n')
-        return None
+        return {}
 
 
 def library_rmse(cfg, xtr, ytr, xte, yte):
-    import numpy as np
+    import numpy as np, time
     from lightgbm import LGBMRegressor
     m = LGBMRegressor(num_leaves=cfg['leaves'], n_estimators=cfg['trees'], min_child_samples=cfg['minChild'], learning_rate=cfg['lr'],
                       max_bin=cfg['bins'], colsample_bytree=cfg['colsample'], reg_alpha=cfg['l1'], reg_lambda=cfg['l2'],
                       random_state=0, deterministic=True, verbose=-1)
+    started = time.perf_counter()
     m.fit(xtr, ytr)
-    return float(np.sqrt(np.mean((m.predict(xte) - yte) ** 2)))
+    fit_seconds = time.perf_counter() - started
+    started = time.perf_counter()
+    predicted = m.predict(xte)
+    return float(np.sqrt(np.mean((predicted - yte) ** 2))), fit_seconds, time.perf_counter() - started
 
 
 def variants(kind, cfg):
     yield 'as-recorded', cfg
     yield 'l2-capped-at-1', {**cfg, 'l2': min(cfg['l2'], 1.0)}
+    # what a trial of the product costs: one thread, its seed
+    yield 'one-thread', {**cfg, 'threads': 1, 'seed': 1}
     if kind == 'mloop':
         yield 'bagging-on', {**cfg, 'subsampleFreq': 1}
         yield 'subsample-1', {**cfg, 'subsample': 1.0}
@@ -106,20 +112,22 @@ def main():
                     subset = train.sample(frac=fraction, random_state=seed)
                     run_tr = os.path.join(work, 'numeric-train-subset.csv')
                     subset.to_csv(run_tr, index=False)
+                ran = mlnet_run(args.mlnet, variant, run_tr, te, target)
+                lib = library_rmse(variant, xtr, train[target].values, xte, test[target].values) if name in ('as-recorded', 'l2-capped-at-1') else (None, None, None)
                 record = {'source': kind, 'dataset': dataset, 'seed': seed, 'variant': name, 'reported_rmse': reported,
-                          'mlnet': mlnet_rmse(args.mlnet, variant, run_tr, te, target),
-                          'library': library_rmse(variant, xtr, train[target].values, xte, test[target].values) if name in ('as-recorded', 'l2-capped-at-1') else None}
+                          'mlnet': ran.get('rmse'), 'library': lib[0], 'mlnet_fit_s': ran.get('fitSeconds'), 'mlnet_eval_s': ran.get('evaluateSeconds'),
+                          'library_fit_s': lib[1], 'library_predict_s': lib[2]}
                 rows.append(record)
                 out.write(json.dumps(record) + '\n')
                 out.flush()
                 print(kind, dataset, seed, name, record['reported_rmse'], record['mlnet'], record['library'], flush=True)
-    print('\n| source | dataset | variant | reported | ML.NET | library | seeds |\n|---|---|---|---|---|---|---|')
+    print('\n| source | dataset | variant | reported | ML.NET | library | ML.NET fit s | ML.NET score s | library fit s | library predict s | seeds |\n|---|---|---|---|---|---|---|---|---|---|---|')
     keyed = {}
     for r in rows:
         keyed.setdefault((r['source'], r['dataset'], r['variant']), []).append(r)
     for (kind, dataset, name), rs in sorted(keyed.items()):
         mean = lambda key: statistics.fmean(r[key] for r in rs if r[key] is not None) if any(r[key] is not None for r in rs) else float('nan')
-        print(f"| {kind} | {dataset} | {name} | {mean('reported_rmse'):.4f} | {mean('mlnet'):.4f} | {mean('library'):.4f} | {len(rs)} |")
+        print(f"| {kind} | {dataset} | {name} | {mean('reported_rmse'):.4f} | {mean('mlnet'):.4f} | {mean('library'):.4f} | {mean('mlnet_fit_s'):.2f} | {mean('mlnet_eval_s'):.2f} | {mean('library_fit_s'):.2f} | {mean('library_predict_s'):.3f} | {len(rs)} |")
 
 
 if __name__ == '__main__':
