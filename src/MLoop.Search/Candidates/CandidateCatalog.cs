@@ -336,9 +336,7 @@ public static class CandidateCatalog
         ["NumberOfTrees"] = o.NumberOfTrees,
         ["NumberOfLeaves"] = o.NumberOfLeaves,
         ["FeatureFraction"] = o.FeatureFraction,
-        // A forest grows each tree to purity — scikit-learn's and FLAML's start at one example per leaf, where ML.NET's own
-        // default is ten, which measured a large loss on the tables a forest wins.
-        ["MinimumExampleCountPerLeaf"] = 1,
+        ["MinimumExampleCountPerLeaf"] = o.MinimumExampleCountPerLeaf,
         ["FeatureFractionPerSplit"] = o.FeatureFractionPerSplit,
     };
 

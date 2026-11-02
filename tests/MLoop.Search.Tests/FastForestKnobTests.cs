@@ -137,11 +137,11 @@ public sealed class FastForestKnobTests
     }
 
     [Fact]
-    public void AForestStartsGrownToPurity_AndTheSearchCanMoveBothSettings()
+    public void AForestStartsAtItsLibrarysDefaults_AndTheSearchCanMoveBothSettings()
     {
-        // The start is the library's defaults except for the one setting measured to cost most where a forest wins.
+        // The start is the library's defaults (ten examples per leaf, seven tenths of the features at each split).
         var start = CandidateCatalog.Regression().Single(c => c.Name == "FastForest").StartingPoints.Last();
-        Assert.Equal((1d, 0.7), (start["MinimumExampleCountPerLeaf"], Math.Round(start["FeatureFractionPerSplit"], 6)));
+        Assert.Equal((10d, 0.7), (start["MinimumExampleCountPerLeaf"], Math.Round(start["FeatureFractionPerSplit"], 6)));
 
         foreach (var candidate in CandidateCatalog.Binary().Concat(CandidateCatalog.Multiclass()).Concat(CandidateCatalog.Regression()).Where(c => c.Name.StartsWith("FastForest", StringComparison.Ordinal)))
         {
