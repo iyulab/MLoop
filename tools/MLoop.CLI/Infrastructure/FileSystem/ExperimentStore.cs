@@ -248,6 +248,10 @@ public class ExperimentStore : IExperimentStore
     public async Task<ExperimentData> LoadAsync(string modelName, string experimentId, CancellationToken cancellationToken = default)
     {
         var resolvedName = ResolveModelName(modelName);
+        if (!ExperimentLayout.IsFolderName(experimentId))
+        {
+            throw new FileNotFoundException($"Experiment not found: {resolvedName}/{experimentId}");
+        }
         var experimentPath = GetExperimentPath(resolvedName, experimentId);
 
         if (!_fileSystem.DirectoryExists(experimentPath))
@@ -409,7 +413,7 @@ public class ExperimentStore : IExperimentStore
     /// <inheritdoc />
     public bool ExperimentExists(string modelName, string experimentId)
     {
-        return _fileSystem.DirectoryExists(GetExperimentPath(modelName, experimentId));
+        return ExperimentLayout.IsFolderName(experimentId) && _fileSystem.DirectoryExists(GetExperimentPath(modelName, experimentId));
     }
 
     private string GetIndexPath(string modelName)

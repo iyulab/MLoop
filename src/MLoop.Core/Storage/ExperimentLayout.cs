@@ -18,6 +18,14 @@ namespace MLoop.Core.Storage;
 /// </summary>
 public static class ExperimentLayout
 {
+    /// <summary>
+    /// Whether <paramref name="id"/> can be an experiment's folder name: something, that is not a path (no separator, not
+    /// <c>.</c> or <c>..</c>). An id arrives from a request, a file a user was handed or a command line, and an id that
+    /// climbs out of <c>staging/</c> is not an experiment however the folder it reaches looks.
+    /// </summary>
+    public static bool IsFolderName([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? id) =>
+        !string.IsNullOrWhiteSpace(id) && id == Path.GetFileName(id) && id is not ("." or "..");
+
     /// <summary>Top-level per-project directory holding every model namespace.</summary>
     public const string ModelsDirectory = "models";
 

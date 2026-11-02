@@ -177,7 +177,9 @@ public static class ModelEndpoints
         {
             var stopwatch = Stopwatch.StartNew();
             var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
-            var experimentId = request.ExperimentId;
+            if (string.IsNullOrWhiteSpace(request.ExperimentId))
+                return Results.BadRequest(new { error = "experimentId is required: the experiment to promote (see GET /experiments)." });
+            var experimentId = request.ExperimentId.Trim();
 
             try
             {
@@ -345,7 +347,7 @@ public static class ModelEndpoints
 }
 
 public record PromoteRequest(
-    string ExperimentId,
+    string? ExperimentId,
     string? Name = null,
     bool? CreateBackup = true,
     bool Force = false);

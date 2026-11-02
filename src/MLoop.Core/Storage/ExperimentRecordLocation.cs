@@ -37,7 +37,7 @@ public static class ExperimentRecordLocation
 
         var slot = await ProductionMetadata.ReadAsync(directory, cancellationToken).ConfigureAwait(false);
         // The id comes from a file the user may have been handed: it names a folder, never a path.
-        if (slot?.ExperimentId is not { Length: > 0 } id || id != Path.GetFileName(id) || id is "." or "..")
+        if (slot?.ExperimentId is not { } id || !ExperimentLayout.IsFolderName(id))
             return null;
         var staged = Directory.GetParent(directory) is { } model
             ? Path.Combine(model.FullName, ExperimentLayout.StagingDirectory, id)
