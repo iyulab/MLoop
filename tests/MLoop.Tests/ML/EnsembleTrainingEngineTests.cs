@@ -45,6 +45,28 @@ public class EnsembleTrainingEngineTests : IDisposable
         return csv;
     }
 
+    /// <summary>A table with two numbers, a category (a few colors) — none of which tells the classes apart — and a free-text column that alone carries the signal.</summary>
+    private async Task<string> TextCsvAsync()
+    {
+        var csv = Path.Combine(_tempDir, "reviews.csv");
+        var random = new Random(7);
+        string[] colors = ["red", "green", "blue", "amber"], good = ["great", "love", "excellent", "fast", "works", "happy", "recommend"],
+            bad = ["broken", "slow", "refund", "bad", "late", "awful", "waste"], filler = ["the", "a", "it", "this", "was", "is", "very", "product", "item", "really"];
+        var lines = new List<string> { "x1,color,review,x2,label" };
+        for (var i = 0; i < 900; i++)
+        {
+            var positive = random.NextDouble() < 0.5;
+            var x1 = (random.NextDouble() - 0.5) * 3;
+            var color = colors[random.Next(colors.Length)];
+            var words = Enumerable.Range(0, 5).Select(_ => filler[random.Next(filler.Length)])
+                .Concat(Enumerable.Range(0, 2).Select(_ => (random.NextDouble() < 0.8 ? positive : !positive) ? good[random.Next(good.Length)] : bad[random.Next(bad.Length)]))
+                .OrderBy(_ => random.Next());
+            lines.Add(string.Create(CultureInfo.InvariantCulture, $"{x1:F3},{color},{string.Join(' ', words)},{random.NextDouble() - 0.5:F3},{(positive ? "yes" : "no")}"));
+        }
+        await File.WriteAllLinesAsync(csv, lines);
+        return csv;
+    }
+
     [Fact]
     public async Task ABlend_IsRecordedInTheExperiment_AndTheSavedModelServesAnswers()
     {
@@ -92,5 +114,48 @@ public class EnsembleTrainingEngineTests : IDisposable
             rows, result.Schema!, Path.Combine(experimentPath, ExperimentLayout.ModelFileName), "binary-classification", "hit");
         Assert.Equal(rows.Count(), answered.Rows.Count());
         Assert.All(answered.Rows, r => Assert.NotNull(r));
+    }
+
+    [Fact]
+    public async Task ABlendOverACategoryAndATextColumn_TrainsAndTheSavedModelAnswersEveryRow()
+    {
+        // The table's string columns are read by featurizers the blend's members share; a blend that dropped or re-ran them would fail here, or answer from the numbers alone.
+        var csv = await TextCsvAsync();
+        var fs = new FileSystemManager();
+        var store = new ExperimentStore(fs, new ProjectDiscovery(fs), _tempDir);
+        var originalOut = Console.Out;
+        Console.SetOut(new StringWriter());
+        TrainingResult result;
+        try
+        {
+            result = await new TrainingEngine(fs, store).TrainAsync(new TrainingConfig
+            {
+                ModelName = "reviews",
+                DataFile = csv,
+                LabelColumn = "label",
+                Task = "binary-classification",
+                Metric = "auc",
+                TimeLimitSeconds = 120,
+                MaxTrials = 16,
+                Ensemble = true,
+            }, progress: null, CancellationToken.None);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        var loaded = await store.LoadAsync("reviews", result.ExperimentId);
+        Assert.True(loaded.Result!.Ensemble!.IsBlend, "the blend was kept: " + loaded.Result.Ensemble.SkippedBecause);
+
+        var experimentPath = store.GetExperimentPath("reviews", result.ExperimentId);
+        var rows = PredictionEngine.LoadCsvAsRows(csv, result.Schema!, "label");
+        var answered = new PredictionEngine().PredictWithService(
+            rows, result.Schema!, Path.Combine(experimentPath, ExperimentLayout.ModelFileName), "binary-classification", "label");
+        Assert.Equal(rows.Count(), answered.Rows.Count());
+        Assert.All(answered.Rows, r => Assert.NotNull(r));
+
+        // The words carry the signal, so a model that read the text separates the classes far better than chance.
+        Assert.True(result.Metrics["auc"] > 0.8, "held-out auc " + result.Metrics["auc"]);
     }
 }
