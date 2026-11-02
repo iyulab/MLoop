@@ -31,7 +31,7 @@ var options = new LightGbmRegressionTrainer.Options
         L1Regularization = config["l1"],
         L2Regularization = config["l2"],
     },
-    Seed = 0,
+    Seed = config.TryGetValue("seed", out var seedValue) ? (int)seedValue : 0,
     Deterministic = true,
 };
 // Optional bagging: the fraction of rows each tree sees, and how often (every N iterations) the rows are redrawn. ML.NET's

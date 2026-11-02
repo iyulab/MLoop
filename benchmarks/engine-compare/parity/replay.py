@@ -72,6 +72,9 @@ def variants(kind, cfg):
     if kind == 'mloop':
         yield 'bagging-on', {**cfg, 'subsampleFreq': 1}
         yield 'subsample-1', {**cfg, 'subsample': 1.0}
+        yield 'seed-1', {**cfg, 'seed': 1}
+        # the product fits its final model on 95 % of the train file (5 % is held back for its own test) and seeds with 1
+        yield 'train-95-seed-1', {**cfg, 'seed': 1, '_train_fraction': 0.95}
 
 
 def main():
@@ -96,8 +99,15 @@ def main():
             target = entry['target']
             xtr, xte = train.drop(columns=[target]), test.drop(columns=[target])
             for name, variant in variants(kind, cfg):
+                variant = dict(variant)
+                fraction = variant.pop('_train_fraction', None)
+                run_tr = tr
+                if fraction:
+                    subset = train.sample(frac=fraction, random_state=seed)
+                    run_tr = os.path.join(work, 'numeric-train-subset.csv')
+                    subset.to_csv(run_tr, index=False)
                 record = {'source': kind, 'dataset': dataset, 'seed': seed, 'variant': name, 'reported_rmse': reported,
-                          'mlnet': mlnet_rmse(args.mlnet, variant, tr, te, target),
+                          'mlnet': mlnet_rmse(args.mlnet, variant, run_tr, te, target),
                           'library': library_rmse(variant, xtr, train[target].values, xte, test[target].values) if name in ('as-recorded', 'l2-capped-at-1') else None}
                 rows.append(record)
                 out.write(json.dumps(record) + '\n')
