@@ -66,23 +66,40 @@ public static partial class NumericLabelCheck
         var counted = seen == SampleRows
             ? $"at least {unreadable:N0} of the first {SampleRows:N0} label values in the training rows"
             : $"{unreadable:N0} of the {seen:N0} label values in the training rows";
+        return Message(labelColumn, task, counted, example);
+    }
+
+    /// <summary>
+    /// The refusal for a label column whose values the loader cannot read as numbers: <paramref name="counted"/> says how many
+    /// and over what, <paramref name="example"/> is the first such value. One wording for the check on the loaded data (above)
+    /// and the one over every row of the file (<c>DataQualityValidator</c>) — the loader types a column from the start of
+    /// the file, so a value further down loads as a missing number and only the file shows it.
+    /// </summary>
+    public static string Message(string labelColumn, string task, string counted, string? example, bool columnReadAsText = true)
+    {
+        // The column is text when the start of the file already holds such values; further down it is numbers with holes.
+        var lead = columnReadAsText
+            ? $"Label column '{labelColumn}' is read as text, not as numbers: {counted}"
+            : $"Label column '{labelColumn}' holds values that are not read as numbers: {counted}";
         if (example is not null && FormattedNumbers.IsFormatted(example))
-            return $"Label column '{labelColumn}' is read as text, not as numbers: {counted} are numbers written for people " +
+            return $"{lead} are numbers written for people " +
                    $"(for example '{example}' — a thousands separator, a percent or currency sign, or full-width digits). The loader does not read " +
-                   $"those as numbers, and a {task} model needs the label's size, so no trainer can fit it; dropping the rows would leave out the large values. " +
+                   (columnReadAsText
+                       ? $"those as numbers, and a {task} model needs the label's size, so no trainer can fit it; dropping the rows would leave out the large values. "
+                       : $"those as numbers: each loads as a missing label and its row is dropped, and the large values are the ones written this way, so the {task} model would never see them. ") +
                    "Write the column as plain numbers (1234.5 for 1,234.5) and train again.";
         if (example is not null && DecimalComma().IsMatch(example))
-            return $"Label column '{labelColumn}' is read as text, not as numbers: {counted} are written with a decimal comma " +
+            return $"{lead} are written with a decimal comma " +
                    $"(for example '{example}'). The loader reads a point as the decimal mark and anything else as text, and a {task} model needs the label's size. " +
                    "Write them with a point (1.5 for 1,5) and train again.";
-        return $"Label column '{labelColumn}' is read as text, not as numbers: {counted} are not numbers" +
+        return $"{lead} are not numbers" +
                (example is null ? "." : $" (for example '{example}').") +
                $" A {task} label has to be numeric. If it names classes, train with --task multiclass-classification or binary-classification instead; " +
                "otherwise fix or empty those values (an empty value, N/A, NA, NaN or ? is read as a missing number).";
     }
 
-    // The loader's reading of a cell as a float, or as a missing number (ColumnLayoutValues: ?, NA, N/A, NaN in any case).
-    private static bool ReadsAsNumberOrMissing(ReadOnlySpan<char> value) =>
+    /// <summary>The loader's reading of a cell as a float, or as a missing number (<c>ColumnLayoutValues</c>: ?, NA, N/A, NaN in any case).</summary>
+    public static bool ReadsAsNumberOrMissing(ReadOnlySpan<char> value) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
         || value is "?"
         || value.Equals("NA", StringComparison.OrdinalIgnoreCase)

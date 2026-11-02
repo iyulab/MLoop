@@ -550,4 +550,54 @@ public class DataQualityValidatorTests : IDisposable
     }
 
     #endregion
+
+    #region A numeric label with values the loader does not read, far below the typing sample
+
+    // The loader types the label from the first 10,000 lines, so a value after them never makes it text: it loads as a missing
+    // number and the row is dropped — the large values first, since those are the ones written with a thousands separator.
+    private string TableWithLabelTail(string tailLabel, int tailRows)
+    {
+        var rows = Enumerable.Range(1, 10_500).Select(i =>
+            $"{i % 13},{(i > 10_500 - tailRows ? tailLabel : (i * 0.25 + i % 97).ToString(System.Globalization.CultureInfo.InvariantCulture))}");
+        return CreateCsv("x,y\n" + string.Join("\n", rows) + "\n");
+    }
+
+    [Theory]
+    [InlineData("regression")]
+    [InlineData("ranking")]
+    [InlineData("forecasting")]
+    public void ValidateTrainingData_NumbersWrittenForPeopleFarBelowTheTypingSample_AreRefusedWithTheFileCount(string task)
+    {
+        var result = _validator.ValidateTrainingData(TableWithLabelTail("\"1,234.5\"", 20), "y", task);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("20 of the 10,500 label values in the file", result.ErrorMessage!, StringComparison.Ordinal);
+        Assert.Contains("'1,234.5'", result.ErrorMessage!, StringComparison.Ordinal);
+        Assert.Contains("plain numbers", result.ErrorMessage!, StringComparison.Ordinal);
+        // The column is numbers with holes here, not text — the sentence must not say what the loader did not do.
+        Assert.DoesNotContain("is read as text", result.ErrorMessage!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateTrainingData_MissingTokensFarBelowTheTypingSample_AreNotRefused()
+    {
+        foreach (var token in new[] { "N/A", "NA", "NaN", "?", "" })
+        {
+            var result = _validator.ValidateTrainingData(TableWithLabelTail(token, 20), "y", "regression");
+
+            Assert.True(result.IsValid, $"'{token}' is a missing number to the loader and no reason to refuse");
+        }
+    }
+
+    [Fact]
+    public void ValidateTrainingData_AClassLabelWithTextFarBelowTheTypingSample_IsNotRefused()
+    {
+        // A class label holds text by nature; only a task whose label is a number asks for numbers.
+        var rows = Enumerable.Range(1, 10_500).Select(i => $"{i % 13},{(i > 10_480 ? "big" : (i % 3 == 0 ? "low" : i % 3 == 1 ? "mid" : "high"))}");
+        var result = _validator.ValidateTrainingData(CreateCsv("x,y\n" + string.Join("\n", rows) + "\n"), "y", "multiclass-classification");
+
+        Assert.True(result.IsValid, result.ErrorMessage);
+    }
+
+    #endregion
 }
