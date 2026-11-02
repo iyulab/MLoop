@@ -10,6 +10,9 @@ on:
       seeds:
         description: 'Comma-separated split seeds'
         default: '0,1,2,3,4'
+      replay:
+        description: 'true = replay recorded LightGBM settings (parity/replay.py) instead of the fixed configurations'
+        default: 'false'
 
 permissions:
   contents: read
@@ -38,12 +41,21 @@ jobs:
       run: dotnet build benchmarks/engine-compare/parity/MlnetLgbm.csproj --configuration Release
 
     - name: Compare
+      if: ${{ inputs.replay != 'true' }}
       run: >
         python benchmarks/engine-compare/parity/parity.py
         --mlnet "dotnet $PWD/benchmarks/engine-compare/parity/bin/Release/net10.0/MlnetLgbm.dll"
         --seeds "${{ inputs.seeds || '0,1,2,3,4' }}" --out parity.jsonl | tee parity.txt
 
+    - name: Replay recorded settings
+      if: ${{ inputs.replay == 'true' }}
+      run: >
+        python benchmarks/engine-compare/parity/replay.py
+        --mlnet "dotnet $PWD/benchmarks/engine-compare/parity/bin/Release/net10.0/MlnetLgbm.dll"
+        --out replay.jsonl | tee replay.txt
+
     - name: Cost of a large model
+      if: ${{ inputs.replay != 'true' }}
       run: >
         python benchmarks/engine-compare/parity/sizeprobe.py
         --mlnet "dotnet $PWD/benchmarks/engine-compare/parity/bin/Release/net10.0/MlnetLgbm.dll" | tee sizeprobe.txt
@@ -57,4 +69,6 @@ jobs:
           parity.jsonl
           parity.txt
           sizeprobe.txt
+          replay.jsonl
+          replay.txt
         retention-days: 30
