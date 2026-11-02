@@ -115,6 +115,9 @@ public static partial class NumericLabelCheck
         /// <summary>Label cells that are neither a number nor a missing number (N/A, NA, NaN, ?).</summary>
         public long Unreadable { get; private set; }
 
+        /// <summary>Label cells written as a missing number (N/A, NA, NaN, ?) — read as missing, so the row has no label.</summary>
+        public long MissingTokens { get; private set; }
+
         /// <summary>The first such cell, as written.</summary>
         public string? Example { get; private set; }
 
@@ -131,7 +134,10 @@ public static partial class NumericLabelCheck
                 return;
             }
             if (ReadsAsNumberOrMissing(value))
+            {
+                MissingTokens++;
                 return;
+            }
             Unreadable++;
             Example ??= value.ToString();
         }

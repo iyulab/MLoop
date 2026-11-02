@@ -228,6 +228,7 @@ public class NumericLabelCheckTests : IDisposable
         Assert.Equal(2, census.Numbers);
         Assert.Equal(7, census.Labelled);
         Assert.Equal(3, census.Unreadable);
+        Assert.Equal(2, census.MissingTokens);
         Assert.Equal("12%", census.Example);
     }
 }

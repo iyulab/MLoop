@@ -477,7 +477,7 @@ public static partial class TrainCommand
             }
             else
             {
-                AnsiConsole.MarkupLineInterpolated($"[green]✓[/] Label column '{effectiveDefinition.Label}' has no missing values ({labelAnalysis.ValidCount} rows, {labelAnalysis.UniqueValueCount} unique values)");
+                AnsiConsole.MarkupLineInterpolated($"[green]✓[/] Label column '{effectiveDefinition.Label}' has no empty values ({labelAnalysis.ValidCount} rows, {labelAnalysis.UniqueValueCount} unique values)");
             }
         }
 

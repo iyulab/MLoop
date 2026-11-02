@@ -319,7 +319,11 @@ public class DataQualityValidator
             // For regression or mixed labels, require numeric values
             if (parseErrors > 0 && !isClassificationTask)
             {
-                result.Warnings.Add($"⚠ {parseErrors} values in label column '{labelColumn}' could not be parsed as numbers");
+                // N/A, NA, NaN and ? are not unparseable: the loader reads them as missing numbers, and a row without a label is
+                // left out of training. Said as what they are, next to the line that counted the empty ones.
+                result.Warnings.Add(taskType is not null && NumericLabelCheck.HasNumericLabel(taskType) && census.Unreadable == 0 && census.MissingTokens == parseErrors
+                    ? $"⚠ {parseErrors} values in label column '{labelColumn}' are written as missing numbers (N/A, NA, NaN or ?): those rows have no label and are left out of training"
+                    : $"⚠ {parseErrors} values in label column '{labelColumn}' could not be parsed as numbers");
             }
 
             if (numericLabelValues.Count == 0 && !isClassificationTask)

@@ -590,6 +590,18 @@ public class DataQualityValidatorTests : IDisposable
     }
 
     [Fact]
+    public void ValidateTrainingData_MissingTokensInANumericLabel_AreSaidToBeMissingNumbers_NotUnparseable()
+    {
+        var result = _validator.ValidateTrainingData(TableWithLabelTail("N/A", 20), "y", "regression");
+
+        Assert.True(result.IsValid);
+        var warning = Assert.Single(result.Warnings, w => w.Contains("label column 'y'", StringComparison.Ordinal));
+        Assert.Contains("20 values", warning, StringComparison.Ordinal);
+        Assert.Contains("missing numbers", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("could not be parsed", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ValidateTrainingData_AClassLabelWithTextFarBelowTheTypingSample_IsNotRefused()
     {
         // A class label holds text by nature; only a task whose label is a number asks for numbers.
