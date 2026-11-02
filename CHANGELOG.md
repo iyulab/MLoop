@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **`MLoop.Search` can keep the answers of the best few trials, a regression's included.** `SearchRequest.KeepTopOutOfFold` (default 0; needs `KeepOutOfFold`) keeps the out-of-fold answers of the best N trials whatever their distance from the top, and `SearchResult.Retained` returns them best first with the pipeline that made each (`RetainedTrial`) — what a blend of the best trials is chosen and weighted on. `OutOfFoldScores.Read` reads a regression (`IsRegression`, `Target`, `Score` the predicted value) only when asked (`regression: true`); a request that asks for nothing new keeps and returns exactly what it did.
+- **`MLoop.Search` can keep the answers of the best few trials, a regression's included.** `SearchRequest.KeepTopOutOfFold` (default 0; needs `KeepOutOfFold`) keeps the out-of-fold answers of the best N trials whatever their distance from the top, and `SearchResult.Retained` returns them best first with the pipeline that made each (`RetainedTrial`) — what a blend of the best trials is chosen and weighted on. `OutOfFoldScores.Read` reads a regression (`IsRegression`, `Target`, `Score` the predicted value) only when asked (`regression: true`); a request that asks for nothing new keeps and returns exactly what it did. `ForwardSelection.Select` chooses how often each of a few members is counted in an average of their answers — forward selection with replacement, keeping the prefix that scored best — from the members' out-of-fold answers and a metric the caller supplies (a probability per row or a predicted value; weighted or not).
 
 ### Changed
 
