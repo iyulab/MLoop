@@ -61,6 +61,7 @@ internal static class ExperimentReport
 
         RenderOverview(sb, experiment, projectRoot);
         RenderResult(sb, experiment);
+        RenderEnsemble(sb, experiment);
         RenderWarnings(sb, experiment);
         RenderMetrics(sb, experiment);
         RenderTrials(sb, experiment, rankedTrials);
@@ -139,6 +140,33 @@ internal static class ExperimentReport
         if (!string.IsNullOrEmpty(result.Trainer?.FallbackReason))
             Row(sb, "Fallback", result.Trainer.FallbackReason);
         Row(sb, "Training time", Seconds(result.TrainingTimeSeconds));
+        sb.AppendLine();
+    }
+
+    // A run that was asked for a blend: the members and their weights and how the blend scored out of fold against the best trial
+    // alone — or why the single best model stands. Nothing when a blend was not asked for.
+    private static void RenderEnsemble(StringBuilder sb, ExperimentData experiment)
+    {
+        if (experiment.Result?.Ensemble is not { } ensemble)
+            return;
+        var metric = experiment.RankingMetric ?? "the optimized metric";
+        sb.AppendLine("## Ensemble");
+        sb.AppendLine();
+        if (ensemble.Members is not { Count: > 0 } members)
+        {
+            sb.AppendLine($"A blend of the best trials was asked for; the single best model stands: {Escape(ensemble.SkippedBecause ?? "no reason was recorded")}.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine($"The model is a weighted average of {members.Count} trials' models, each fitted on the whole training partition.");
+        if (ensemble.OutOfFoldScore is { } blended && ensemble.BestSingleOutOfFoldScore is { } single)
+            sb.AppendLine($"Out of fold, `{metric}` is {Number(blended)} for the blend and {Number(single)} for the best of those trials alone.");
+        sb.AppendLine();
+        sb.AppendLine("| Trainer | Count | Weight |");
+        sb.AppendLine("|---|---|---|");
+        foreach (var member in members)
+            sb.AppendLine($"| {Escape(TrainerDisplay.Short(new TrainerDescriptor { Name = member.Trainer, Params = member.Params }))} | {member.Count} | {Number(member.Weight)} |");
         sb.AppendLine();
     }
 

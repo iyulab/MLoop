@@ -28,7 +28,8 @@ public class ExperimentReportTests
         string? rankingMetric = "auc",
         InputSchemaInfo? schema = null,
         TrainerDescriptor? trainer = null,
-        string dataFile = "/proj/datasets/train.csv") =>
+        string dataFile = "/proj/datasets/train.csv",
+        EnsembleOutcome? ensemble = null) =>
         new()
         {
             ModelName = "churn",
@@ -49,12 +50,46 @@ public class ExperimentReportTests
             {
                 BestTrainer = (trainer ?? TrainerDescriptor.Of("ReplaceMissingValues=>Concatenate=>LightGbmBinary")).Display,
                 Trainer = trainer ?? TrainerDescriptor.Of("ReplaceMissingValues=>Concatenate=>LightGbmBinary"),
-                TrainingTimeSeconds = 91.37
+                TrainingTimeSeconds = 91.37,
+                Ensemble = ensemble
             },
             Metrics = new Dictionary<string, double> { ["auc"] = 0.91234, ["accuracy"] = 0.85 },
             Trials = trials ?? [],
             RankingMetric = rankingMetric
         };
+
+    private static ExperimentData WithEnsemble(EnsembleOutcome outcome) => Completed(ensemble: outcome);
+
+    [Fact]
+    public void ABlend_IsListedWithItsMembersWeightsAndOutOfFoldScores()
+    {
+        var page = ExperimentReport.Render(WithEnsemble(new EnsembleOutcome
+        {
+            Members = [new EnsembleMemberRecord("FastTree", 3, 0.75, new Dictionary<string, string> { ["NumberOfLeaves"] = "17" }), new EnsembleMemberRecord("LbfgsLogisticRegression", 1, 0.25)],
+            OutOfFoldScore = 0.9455,
+            BestSingleOutOfFoldScore = 0.9413,
+        }), null, Root, Version);
+
+        Assert.Contains("## Ensemble", page);
+        Assert.Contains("weighted average of 2 trials' models", page);
+        Assert.Contains("`auc` is 0.9455 for the blend and 0.9413 for the best of those trials alone", page);
+        Assert.Contains("| FastTree (NumberOfLeaves=17) | 3 | 0.7500 |", page);
+        Assert.Contains("| LbfgsLogisticRegression | 1 | 0.2500 |", page);
+    }
+
+    [Fact]
+    public void ARunThatKeptTheSingleModel_SaysWhy()
+    {
+        var page = ExperimentReport.Render(WithEnsemble(new EnsembleOutcome { SkippedBecause = "no blend of the best trials scores better than the best one out of fold" }), null, Root, Version);
+
+        Assert.Contains("## Ensemble", page);
+        Assert.Contains("the single best model stands: no blend of the best trials scores better", page);
+        Assert.DoesNotContain("| Trainer | Count | Weight |", page);
+    }
+
+    [Fact]
+    public void ARunNotAskedForABlend_HasNoEnsembleSection()
+        => Assert.DoesNotContain("## Ensemble", ExperimentReport.Render(Completed(), null, Root, Version));
 
     private static ExperimentData Failed() =>
         new()

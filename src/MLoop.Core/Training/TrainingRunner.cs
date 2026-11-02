@@ -820,7 +820,9 @@ public partial class TrainingRunner
                 $"({metric} {plan.Score:0.####} out of fold, the best trial alone {plan.BestSingleScore:0.####}).");
             return (chain, plan, new EnsembleOutcome
             {
-                Members = [.. plan.Members.Select((t, i) => new EnsembleMemberRecord(t.Trial.Trainer, plan.Counts[i], (double)plan.Counts[i] / plan.Steps))],
+                Members = [.. plan.Members.Select((t, i) => new EnsembleMemberRecord(
+                    t.Trial.Trainer, plan.Counts[i], (double)plan.Counts[i] / plan.Steps,
+                    t.Trial.Parameters is { Count: > 0 } chosen ? chosen.ToDictionary(p => p.Key, p => p.Value) : null))],
                 OutOfFoldScore = plan.Score,
                 BestSingleOutOfFoldScore = plan.BestSingleScore,
             });
@@ -841,10 +843,14 @@ public partial class TrainingRunner
         }
     }
 
+    // The blend by trainer, in the order of their best trial: the same trainer with different settings is one entry (the settings
+    // and the out-of-fold scores are in the experiment's ensemble record), which keeps the name `list` shows short.
     private static List<KeyValuePair<string, string>> EnsembleParameters(EnsemblePlan plan) =>
     [
-        new("members", string.Join(" + ", plan.Members.Select((t, i) => $"{t.Trial.Trainer}×{plan.Counts[i]}"))),
-        new("out_of_fold_score", plan.Score.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)),
+        new("members", string.Join(" + ", plan.Members
+            .Select((t, i) => (Trainer: t.Trial.Trainer, Count: plan.Counts[i]))
+            .GroupBy(m => m.Trainer)
+            .Select(g => $"{g.Key}×{g.Sum(m => m.Count)}"))),
     ];
 
     private sealed class BinaryBlendRow

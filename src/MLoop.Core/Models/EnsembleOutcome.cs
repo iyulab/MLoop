@@ -4,7 +4,8 @@ namespace MLoop.Core.Models;
 /// <param name="Trainer">The member's trainer, as the trial records name it.</param>
 /// <param name="Count">How many times forward selection added the member.</param>
 /// <param name="Weight">The member's share of the blend: its count over the sum of all counts.</param>
-public sealed record EnsembleMemberRecord(string Trainer, int Count, double Weight);
+/// <param name="Params">The settings the member's trial chose, as the trial records have them; <see langword="null"/> when it chose none.</param>
+public sealed record EnsembleMemberRecord(string Trainer, int Count, double Weight, IReadOnlyDictionary<string, string>? Params = null);
 
 /// <summary>
 /// What a run that was asked for a blend (<see cref="TrainingConfig.Ensemble"/>) came to: the blend it answers with and how it
