@@ -74,6 +74,41 @@ public class NumericLabelCheckTests : IDisposable
     }
 
     [Fact]
+    public void ADecimalComma_IsNamedAsSuch_NotSentToClassification()
+    {
+        var refusal = RefusalFor(Write("decimal.csv", _ => "\"1,5\""));
+
+        Assert.NotNull(refusal);
+        Assert.Contains("decimal comma", refusal, StringComparison.Ordinal);
+        Assert.Contains("'1,5'", refusal, StringComparison.Ordinal);
+        Assert.Contains("1.5 for 1,5", refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain("multiclass-classification", refusal, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("recommendation")]
+    [InlineData("ranking")]
+    [InlineData("forecasting")]
+    public void EveryTaskWhoseLabelIsANumber_IsAskedAboutIt(string task)
+    {
+        Assert.True(NumericLabelCheck.HasNumericLabel(task));
+        Assert.NotNull(RefusalFor(Write($"{task}.csv", _ => "\"1,234.5\""), task));
+    }
+
+    [Theory]
+    [InlineData("binary-classification")]
+    [InlineData("multiclass-classification")]
+    [InlineData("text-classification")]
+    [InlineData("ner")]
+    [InlineData("question-answering")]
+    [InlineData("clustering")]
+    [InlineData("anomaly-detection")]
+    [InlineData("image-classification")]
+    [InlineData("object-detection")]
+    public void ATaskWhoseLabelIsAClassOrTextOrNone_IsNotAskedAboutIt(string task)
+        => Assert.False(NumericLabelCheck.HasNumericLabel(task));
+
+    [Fact]
     public void AWordAmongTheNumbers_IsRefusedAndPointsToClassification()
     {
         var refusal = RefusalFor(Write("word.csv", _ => "unknown"));
