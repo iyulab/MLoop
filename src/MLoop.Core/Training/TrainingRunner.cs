@@ -141,6 +141,14 @@ public partial class TrainingRunner
     }
 
     /// <summary>
+    /// Whether the user has to name the label column. A task that reads a table does — the label is one of its columns. A task that
+    /// reads a directory (image classification: the class folders; object detection: the COCO annotations) has its loader make the
+    /// label column itself, under <see cref="Data.CocoDataLoader.DefaultLabelColumn"/>, so there is nothing to name, and asking for
+    /// one (<c>Label not specified … Use &lt;label&gt;</c>, with no such argument on the command) was a question with no answer.
+    /// </summary>
+    public static bool LabelColumnMustBeNamed(string? task) => RequiresLabel(task) && !Data.DataLoaderFactory.IsDirectoryBased(task);
+
+    /// <summary>
     /// Whether a task's label is text that is neither a class nor a number: NER labels every word
     /// of a sentence (one tag per word, space-separated), question answering labels with the text
     /// of the answer. Checks written for the other two kinds — a numeric label's variance, a class

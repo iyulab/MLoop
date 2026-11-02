@@ -63,10 +63,11 @@ public static class TrainingEndpoints
             {
                 // Images: a directory, as `mloop train` reads it (class subfolders; a COCO annotations file plus
                 // its images) — named, or the task's place under datasets/ when the request names none.
-                if (request.AdditionalDataFiles is { Count: > 0 })
-                    return Results.BadRequest(new { error = $"additionalDataFiles merges tables; '{trainDefinition.Task}' trains on one directory of images." });
-                if (request.MaxRows is not null)
-                    return Results.BadRequest(new { error = $"maxRows samples a table's rows; '{trainDefinition.Task}' trains on a directory of images." });
+                var tableOnly = new List<string>();
+                if (request.AdditionalDataFiles is { Count: > 0 }) tableOnly.Add("additionalDataFiles");
+                if (request.MaxRows is not null) tableOnly.Add("maxRows");
+                if (TrainingInput.TableOnlyOptionsRefusal(trainDefinition.Task, tableOnly) is { } tableOnlyRefusal)
+                    return Results.BadRequest(new { error = tableOnlyRefusal });
                 var directory = TrainingInput.ResolveDirectoryDataset(trainDefinition.Task, request.DataFile, null, projectRootPath.Value);
                 if (directory is null)
                 {

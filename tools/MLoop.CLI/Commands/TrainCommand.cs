@@ -302,6 +302,23 @@ public static partial class TrainCommand
             var datasetDiscovery = new DatasetDiscovery(fileSystem);
             var isDirectoryBased = DataLoaderFactory.IsDirectoryBased(effectiveDefinition.Task);
 
+            // Options that shape a table's rows do nothing to a directory of images; say so rather than let them be believed.
+            var tableOnly = new List<string>();
+            if (maxRows is not null) tableOnly.Add("--max-rows");
+            if (!string.IsNullOrEmpty(samplingStrategy)) tableOnly.Add("--sampling-strategy");
+            if (seed is not null) tableOnly.Add("--seed");
+            if (!string.IsNullOrEmpty(records)) tableOnly.Add("--records");
+            if (autoMerge) tableOnly.Add("--auto-merge");
+            if (dropMissingLabels is not null) tableOnly.Add("--drop-missing-labels");
+            if (analyzeData) tableOnly.Add("--analyze-data");
+            if (!string.IsNullOrEmpty(generateScript)) tableOnly.Add("--generate-script");
+            if (dataPaths is { Length: > 1 }) tableOnly.Add("--data with several paths");
+            if (TrainingInput.TableOnlyOptionsRefusal(effectiveDefinition.Task, tableOnly) is { } tableOnlyRefusal)
+            {
+                ErrorConsole.Error(tableOnlyRefusal);
+                return 1;
+            }
+
             var resolvedDataFile = await ResolveDataFileAsync(
                 effectiveDefinition, dataFile, dataPaths, autoMerge, autoTime, noAutoTime, time, records,
                 projectRoot, userConfig, fileSystem, datasetDiscovery);

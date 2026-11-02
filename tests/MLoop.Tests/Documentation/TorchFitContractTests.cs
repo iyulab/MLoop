@@ -83,7 +83,9 @@ public class TorchFitContractTests
         Assert.True(SetsTheLearningRate(File.ReadAllText(handlers)));
         Assert.False(SetsTheLearningRate("var o = new ObjectDetectionTrainer.Options { MaxEpoch = 10 };"));
         Assert.False(SetsTheLearningRate("// InitLearningRate = ObjectDetectionDefaults.InitLearningRate\nvar o = new ObjectDetectionTrainer.Options { MaxEpoch = 10 };"));
-        Assert.Equal(0.3, MLoop.Core.DeepLearning.ObjectDetectionDefaults.InitLearningRate);
+        // The rate itself is a measured default (its doc comment carries the measurements) and moves with them; what holds is that
+        // it is not the trainer's 1.0 and is a rate at all.
+        Assert.InRange(MLoop.Core.DeepLearning.ObjectDetectionDefaults.InitLearningRate, 0.01, 0.5);
     }
 
     [Fact]

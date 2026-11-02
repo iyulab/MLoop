@@ -68,7 +68,7 @@ public static class TrainingInput
         ArgumentNullException.ThrowIfNull(definition);
         // TrainingRunner.RequiresLabel is the single source for which tasks need a label.
         if (string.IsNullOrEmpty(definition.Task) ||
-            (TrainingRunner.RequiresLabel(definition.Task) && string.IsNullOrEmpty(definition.Label)))
+            (TrainingRunner.LabelColumnMustBeNamed(definition.Task) && string.IsNullOrEmpty(definition.Label)))
             return new Refusal("Task is required. Label is required for supervised tasks. Use --task and <label> arguments, or define them in mloop.yaml");
 
         // The spelling is already canonical by now (ConfigMerger), so a name that fails here is
@@ -87,6 +87,21 @@ public static class TrainingInput
             return new Refusal("Forecasting task requires horizon > 0. Set 'horizon' in mloop.yaml");
 
         return null;
+    }
+
+    /// <summary>
+    /// Why options that shape a table cannot be given to a task that trains on a directory of images — or <c>null</c>. Each would
+    /// do nothing there (no rows to sample, merge, drop, analyze or seed), and an option that silently did nothing would leave its
+    /// user believing the run was shaped by it. <paramref name="given"/> names the options as the caller spells them.
+    /// </summary>
+    public static string? TableOnlyOptionsRefusal(string? task, IEnumerable<string> given)
+    {
+        if (!DataLoaderFactory.IsDirectoryBased(task))
+            return null;
+        var names = given.ToList();
+        return names.Count == 0
+            ? null
+            : $"{string.Join(", ", names)} shape{(names.Count == 1 ? "s" : "")} a table's rows; '{task}' trains on a directory of images, where {(names.Count == 1 ? "it" : "they")} would do nothing.";
     }
 
     /// <summary>

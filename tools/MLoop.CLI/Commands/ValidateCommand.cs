@@ -256,7 +256,7 @@ public static class ValidateCommand
         // Validate label — only for supervised tasks. The unsupervised tasks (anomaly-detection /
         // clustering / time-series-anomaly) are label-optional: merge/train/init/CsvDataLoader all
         // accept a missing label (a dummy is loaded), so requiring one here contradicted train.
-        if (TrainingRunner.RequiresLabel(model.Task) && string.IsNullOrWhiteSpace(model.Label))
+        if (TrainingRunner.LabelColumnMustBeNamed(model.Task) && string.IsNullOrWhiteSpace(model.Label))
         {
             errors.Add(new ValidationError($"{prefix}.label", "Label column is required"));
         }

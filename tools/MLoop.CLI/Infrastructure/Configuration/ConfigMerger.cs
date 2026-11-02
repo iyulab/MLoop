@@ -1,4 +1,5 @@
 using MLoop.Core.Evaluation;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Training;
 
@@ -73,10 +74,11 @@ public class ConfigMerger
         // Label is optional for unsupervised tasks (TrainingRunner.RequiresLabel — single source).
         var label = cliLabel
             ?? baseDefinition?.Label
-            ?? (TrainingRunner.RequiresLabel(task)
+            ?? (TrainingRunner.LabelColumnMustBeNamed(task)
                 ? throw new InvalidOperationException(
                     $"Label not specified for model '{modelName}'. Use <label> argument or define in mloop.yaml")
-                : "");
+                // A directory of images has its loader make the label column; the name it makes is this one.
+                : DataLoaderFactory.IsDirectoryBased(task) ? CocoDataLoader.DefaultLabelColumn : "");
 
         var training = MergeTrainingSettings(
             ConfigDefaults.CreateDefaultTrainingSettings(),
