@@ -179,7 +179,26 @@ public sealed class ExplainCommandTests : IDisposable
             CopyDirectory(Directory.GetCurrentDirectory(), kept);
             await File.WriteAllTextAsync(Path.Combine(kept, "first.json"), firstFeatures);
             await File.WriteAllTextAsync(Path.Combine(kept, "second.json"), secondFeatures);
-            Assert.Fail($"The same seed gave two answers. The project, its model and both answers are kept in {kept}.\nfirst:  {firstFeatures}\nsecond: {secondFeatures}");
+
+            // Two more answers from this same process say what kind of difference it was: a third that equals the second means the
+            // first call after training is the odd one (state this process carries); a third that equals the first means the answer
+            // wobbles from call to call. The model's hash and what this process was running on go beside them.
+            var third = (await JsonAsync("explain", "exp-001", "--data", "datasets/recheck.csv", "--rows", "150", "--seed", "5")).GetProperty("features").GetRawText();
+            var fourth = (await JsonAsync("explain", "exp-001", "--data", "datasets/recheck.csv", "--rows", "150", "--seed", "5")).GetProperty("features").GetRawText();
+            var modelFile = Directory.EnumerateFiles(Directory.GetCurrentDirectory(), "model.zip", SearchOption.AllDirectories).FirstOrDefault();
+            ThreadPool.GetAvailableThreads(out var freeWorkers, out _);
+            ThreadPool.GetMaxThreads(out var maxWorkers, out _);
+            var evidence = new StringBuilder()
+                .AppendLine($"third equals first: {third == firstFeatures}; third equals second: {third == secondFeatures}")
+                .AppendLine($"fourth equals first: {fourth == firstFeatures}; fourth equals second: {fourth == secondFeatures}")
+                .AppendLine($"model.zip sha256 now: {(modelFile is null ? "(none)" : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(modelFile))))}")
+                .AppendLine($"processors: {Environment.ProcessorCount}; thread pool workers busy: {maxWorkers - freeWorkers}; gen2 collections: {GC.CollectionCount(2)}; process age: {(DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMinutes:F1} min")
+                .AppendLine($"DOTNET_ environment: {string.Join(", ", Environment.GetEnvironmentVariables().Keys.Cast<string>().Where(k => k.StartsWith("DOTNET_", StringComparison.Ordinal)).Select(k => $"{k}={Environment.GetEnvironmentVariable(k)}"))}")
+                .AppendLine($"culture: {CultureInfo.CurrentCulture.Name}; cwd: {Directory.GetCurrentDirectory()}")
+                .AppendLine($"third:  {third}")
+                .AppendLine($"fourth: {fourth}");
+            await File.WriteAllTextAsync(Path.Combine(kept, "evidence.txt"), evidence.ToString());
+            Assert.Fail($"The same seed gave two answers. The project, its model, both answers and what a third and fourth call in this process gave are kept in {kept}.\n{evidence}\nfirst:  {firstFeatures}\nsecond: {secondFeatures}");
         }
     }
 
