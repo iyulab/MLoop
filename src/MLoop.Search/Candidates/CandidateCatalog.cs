@@ -63,7 +63,6 @@ public static class CandidateCatalog
                 MaximumBinCountPerFeature = p.Int("MaximumBinCountPerFeature"),
                 Booster = new GradientBooster.Options
                 {
-                    SubsampleFraction = p["SubsampleFraction"],
                     FeatureFraction = p["FeatureFraction"],
                     L1Regularization = p["L1Regularization"],
                     L2Regularization = p["L2Regularization"],
@@ -145,7 +144,6 @@ public static class CandidateCatalog
                 MaximumBinCountPerFeature = p.Int("MaximumBinCountPerFeature"),
                 Booster = new GradientBooster.Options
                 {
-                    SubsampleFraction = p["SubsampleFraction"],
                     FeatureFraction = p["FeatureFraction"],
                     L1Regularization = p["L1Regularization"],
                     L2Regularization = p["L2Regularization"],
@@ -242,7 +240,6 @@ public static class CandidateCatalog
                 MaximumBinCountPerFeature = p.Int("MaximumBinCountPerFeature"),
                 Booster = new GradientBooster.Options
                 {
-                    SubsampleFraction = p["SubsampleFraction"],
                     FeatureFraction = p["FeatureFraction"],
                     L1Regularization = p["L1Regularization"],
                     L2Regularization = p["L2Regularization"],
@@ -340,7 +337,6 @@ public static class CandidateCatalog
         ["MinimumExampleCountPerLeaf"] = 20,
         ["LearningRate"] = 0.1,
         ["NumberOfTrees"] = 100,
-        ["SubsampleFraction"] = 1,
         ["MaximumBinCountPerFeature"] = 255,
         ["FeatureFraction"] = 1,
         ["L1Regularization"] = 2e-10,
@@ -381,13 +377,16 @@ public static class CandidateCatalog
             .Append(trainer)
             .Append(ml.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
-    /// <summary>LightGBM (<c>lgbm_search_space.json</c>).</summary>
+    /// <summary>
+    /// LightGBM (<c>lgbm_search_space.json</c>), without the subsample fraction: ML.NET bags only every
+    /// <c>SubsampleFrequency</c> iterations and that defaults to 0, so the fraction changed nothing — a replay of one
+    /// search's best settings scored the same with the fraction at 0.26 and at 1 — and the search spent a dimension on it.
+    /// </summary>
     public static SearchSpace LightGbmSpace { get; } = new([
         SearchDimension.Integer("NumberOfLeaves", 4, 32768, logBase: false, defaultValue: 4),
         SearchDimension.Integer("MinimumExampleCountPerLeaf", 2, 1024, logBase: true, defaultValue: 20),
         SearchDimension.Double("LearningRate", 2e-10, 1, logBase: true, defaultValue: 1),
         SearchDimension.Integer("NumberOfTrees", 4, 32768, logBase: false, defaultValue: 4),
-        SearchDimension.Double("SubsampleFraction", 2e-10, 1, logBase: true, defaultValue: 1),
         SearchDimension.Integer("MaximumBinCountPerFeature", 8, 1024, logBase: true, defaultValue: 256),
         SearchDimension.Double("FeatureFraction", 2e-10, 1, logBase: false, defaultValue: 1),
         SearchDimension.Double("L1Regularization", 2e-10, 1, logBase: true, defaultValue: 2e-10),
