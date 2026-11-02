@@ -44,7 +44,7 @@ public static class TrainingEndpoints
             // project's mloop.yaml asks for that this run could not honour (a weight on a task it does not reach,
             // prep steps the API does not run), and what no task could train (an unknown task, a missing label).
             var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
-                request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit, request.Weight, request.MaxTrials, request.Epochs);
+                request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit, request.Weight, request.MaxTrials, request.Epochs, request.Ensemble);
             if (definitionError != null)
                 return Results.BadRequest(new { error = definitionError });
             if (TrainingInput.BalanceConflict(trainDefinition!, request.Balance) is { } balanceError)
@@ -180,6 +180,7 @@ public static class TrainingEndpoints
                 timeLimitSeconds = job.TimeLimitSeconds,
                 maxTrials = job.MaxTrials,
                 epochs = job.Epochs,
+                ensemble = job.Ensemble,
                 metric = job.Metric,
                 testSplit = job.TestSplit,
                 maxRows = job.MaxRows,

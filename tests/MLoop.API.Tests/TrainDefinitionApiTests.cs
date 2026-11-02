@@ -120,6 +120,44 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task EnsembleOnATaskThatHasNoBlend_IsRefusedBeforeAJobExists()
+    {
+        var data = WriteData();
+
+        var response = await _client.PostAsJsonAsync("/train", new { dataFile = data, labelColumn = "y", task = "multiclass-classification", name = "tens", ensemble = true });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("a blend is made for binary-classification or regression");
+    }
+
+    [Fact]
+    public async Task AJobAskedForABlend_RecordsItOnTheExperiment_AndEchoesItBack()
+    {
+        var data = WriteData();
+        WriteYaml("wens", "    task: binary-classification\n    label: y\n    weight: w\n    columns:\n      z:\n        type: ignore\n");
+
+        var response = await _client.PostAsJsonAsync("/train",
+            new { dataFile = data, labelColumn = "y", task = "binary-classification", name = "wens", timeLimitSeconds = 60, maxTrials = 10, ensemble = true });
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var jobId = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("jobId").GetString();
+
+        string? status = null;
+        JsonElement job = default;
+        for (var i = 0; i < 240 && status is not ("Completed" or "Failed"); i++)
+        {
+            await Task.Delay(500);
+            job = JsonDocument.Parse(await _client.GetStringAsync($"/jobs/{jobId}")).RootElement;
+            status = job.GetProperty("status").GetString();
+        }
+        status.Should().Be("Completed");
+        job.GetProperty("ensemble").GetBoolean().Should().BeTrue("the job states what it was asked for");
+
+        var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();
+        var experiment = await store.LoadAsync("wens", "exp-001", CancellationToken.None);
+        experiment.Config.Ensemble.Should().BeTrue("the request asked for a blend, as --ensemble does");
+    }
+
+    [Fact]
     public async Task PrepTheApiDoesNotRun_IsRefused_NotSkipped()
     {
         var data = WriteData();

@@ -225,7 +225,8 @@ search is given 70 % of the time limit and the rest fits the members, the model 
 larger and a single-row request to `serve` takes several times as long (measured once: a blend of five
 members answered in about 11 ms against 2.3 ms for the single model; scoring a 200,000-row file with
 `predict` took 1.08 times as long), and `mloop export onnx` refuses it (it names the ensemble; train without
-`--ensemble` to export). `--ensemble` cannot be combined with `--portable`. The experiment records
+`--ensemble` to export). `--ensemble` cannot be combined with `--portable`. `POST /train` takes `"ensemble": true` for the same
+request (absent: `mloop.yaml` decides; refused with 400 for another task or with `portable`). The experiment records
 `ensemble: true` in `config.json` and, under `result.ensemble` in `metadata.json`, the members, their
 weights and the out-of-fold score of the blend and of the best trial.
 
