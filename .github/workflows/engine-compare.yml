@@ -15,6 +15,12 @@ on:
       systems:
         description: 'Comma-separated systems to run (mloop, mloop-defaults, mloop-ensemble, flaml, flaml-nogbm, flaml-lgbm, flaml-forest, autogluon, lightgbm, xgboost, automl-legacy, ensemble)'
         default: 'mloop,mloop-defaults,flaml,flaml-nogbm,lightgbm,xgboost,automl-legacy'
+      trainers:
+        description: 'EXPERIMENT: comma-separated trainer names the mloop search may use (empty = all)'
+        default: ''
+      threads:
+        description: 'EXPERIMENT: threads per trainer in the mloop search (empty = 1)'
+        default: ''
       seeds:
         description: 'Comma-separated split seeds, one job each (for example 0,1,2,3,4)'
         default: '0,1,2'
@@ -86,6 +92,9 @@ jobs:
       run: dotnet build benchmarks/engine-compare/ensemble-probe --configuration Release
 
     - name: Sweep
+      env:
+        MLOOP_EXPERIMENT_TRAINERS: ${{ inputs.trainers }}
+        MLOOP_EXPERIMENT_THREADS: ${{ inputs.threads }}
       run: >
         python benchmarks/engine-compare/run.py run
         --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll"

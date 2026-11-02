@@ -621,7 +621,7 @@ public partial class TrainingRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
         => RunWithMLoopSearchAsync(trainSet, testSet, config,
-            CandidateCatalog.Binary(name => name != "LightGbm" || LightGbmLoads.Value),
+            CandidateCatalog.Binary(name => (name != "LightGbm" || LightGbmLoads.Value) && ExperimentTrainerAllowed(name)),
             OptimizingMetric(config), ScoreBinaryWithCalibrationError, progress, cancellationToken,
             (model, predictions, outOfFold) => FinishBinary(model, trainSet, testSet, predictions, outOfFold, config));
 
@@ -921,7 +921,12 @@ public partial class TrainingRunner
 
     // The seed and threads the MLoop search runs with unless the run sets its own (TrainingConfig.SearchSettings);
     // recorded with the experiment (TrainedModel.Search).
-    private static readonly SearchSettings Settings = new(Seed: 1, Threads: 1);
+    private static readonly SearchSettings Settings = new(Seed: 1, Threads: int.TryParse(Environment.GetEnvironmentVariable("MLOOP_EXPERIMENT_THREADS"), out var experimentThreads) ? experimentThreads : 1);
+
+    // EXPERIMENT ONLY (not for main): restrict the search to the trainers named in MLOOP_EXPERIMENT_TRAINERS.
+    private static bool ExperimentTrainerAllowed(string name)
+        => Environment.GetEnvironmentVariable("MLOOP_EXPERIMENT_TRAINERS") is not { Length: > 0 } list
+            || list.Split(',').Contains(name, StringComparer.Ordinal);
 
     // A fold's metrics: weighted by the run's weight column when it has one, as the test partition's are.
     private static Dictionary<string, double> ScoreFold(
@@ -1339,7 +1344,7 @@ public partial class TrainingRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
         => RunWithMLoopSearchAsync(trainSet, testSet, config,
-            CandidateCatalog.Multiclass(name => name != "LightGbm" || LightGbmLoads.Value),
+            CandidateCatalog.Multiclass(name => (name != "LightGbm" || LightGbmLoads.Value) && ExperimentTrainerAllowed(name)),
             OptimizingMetric(config), ScoreMulticlass, progress, cancellationToken,
             (model, predictions, outOfFold) => FinishMulticlass(model, testSet, predictions, outOfFold, config));
 
@@ -1371,7 +1376,7 @@ public partial class TrainingRunner
         IProgress<TrainingProgress>? progress,
         CancellationToken cancellationToken)
         => RunWithMLoopSearchAsync(trainSet, testSet, config,
-            CandidateCatalog.Regression(name => name != "LightGbm" || LightGbmLoads.Value),
+            CandidateCatalog.Regression(name => (name != "LightGbm" || LightGbmLoads.Value) && ExperimentTrainerAllowed(name)),
             OptimizingMetric(config), ScoreRegression, progress, cancellationToken,
             (model, predictions, _) =>
             {
