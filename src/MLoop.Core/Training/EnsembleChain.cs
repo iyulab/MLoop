@@ -14,6 +14,14 @@ public enum EnsembleKind
     Regression,
 }
 
+/// <summary>The fit of a blend was stopped between members because the caller's time was up.</summary>
+public sealed class EnsembleOverBudgetException(int fitted, int total)
+    : Exception($"the time budget ran out after fitting {fitted} of the {total} members")
+{
+    /// <summary>How many members were fitted.</summary>
+    public int Fitted { get; } = fitted;
+}
+
 /// <summary>One member of a blend: how to build its pipeline and how often the blend counts it.</summary>
 /// <param name="Pipeline">Builds the member's whole pipeline (featurizer and trainer) in a context.</param>
 /// <param name="Count">How many times the forward selection added the member — its weight is this over the sum of all counts.</param>
@@ -51,9 +59,11 @@ public static class EnsembleChain
     /// <param name="members">The members; one whose <see cref="EnsembleMember.Count"/> is 0 is left out.</param>
     /// <param name="train">The training partition every member is fitted on.</param>
     /// <param name="kind">What the blend is of.</param>
+    /// <param name="giveUp">Asked after each member is fitted; when it says so, the fit stops (<see cref="EnsembleOverBudgetException"/>) — the caller's time is up.</param>
+    /// <exception cref="EnsembleOverBudgetException"><paramref name="giveUp"/> said so after a member was fitted.</exception>
     /// <exception cref="ArgumentException">No member counts, or more than <see cref="MaxMembers"/> do.</exception>
     public static TransformerChain<ITransformer> Fit(
-        MLContext mlContext, IReadOnlyList<EnsembleMember> members, IDataView train, EnsembleKind kind)
+        MLContext mlContext, IReadOnlyList<EnsembleMember> members, IDataView train, EnsembleKind kind, Func<bool>? giveUp = null)
     {
         ArgumentNullException.ThrowIfNull(mlContext);
         ArgumentNullException.ThrowIfNull(members);
@@ -74,10 +84,13 @@ public static class EnsembleChain
         {
             // Every member reads the raw columns, as it was fitted on them. A step that rewrites a column under its own name (a
             // normalization, a one-hot or text featurization) leaves the next member a vector where it was fitted on a string, so
-            // the columns this member rewrites are kept under other names ahead of it and put back under their own after it.
-            var seen = Seen();
-            var member = counted[i].Pipeline(mlContext).Fit(seen);
-            var rewritten = RewrittenColumns(seen.Schema, member.GetOutputSchema(seen.Schema));
+            // the columns this member rewrites are kept under other names ahead of it and put back under their own after it. A
+            // member sees the raw columns either way, so it is fitted on the training rows themselves: fitted on the chain's output
+            // every pass of its trainer would run the members before it again.
+            var member = counted[i].Pipeline(mlContext).Fit(train);
+            if (giveUp?.Invoke() == true)
+                throw new EnsembleOverBudgetException(i + 1, counted.Length);
+            var rewritten = RewrittenColumns(train.Schema, member.GetOutputSchema(train.Schema));
             var kept = rewritten.Select(name => $"{RawPrefix}{i}_{name}").ToArray();
             for (var c = 0; c < rewritten.Length; c++)
                 Add(mlContext.Transforms.CopyColumns(kept[c], rewritten[c]));

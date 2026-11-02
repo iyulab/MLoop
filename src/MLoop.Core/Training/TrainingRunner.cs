@@ -737,7 +737,7 @@ public partial class TrainingRunner
         }
 
         (ITransformer? Model, EnsemblePlan? Plan, EnsembleOutcome Outcome)? ensemble = UsesEnsemble(config)
-            ? FitEnsemble(search, request, metric, score, config, trainSet, TimeSpan.FromSeconds(config.TimeLimitSeconds) - clock.Elapsed)
+            ? FitEnsemble(search, request, metric, score, config, trainSet, clock)
             : null;
         var bestModel = PortableTextFeaturizer.Prepend(portableText, ensemble?.Model ?? search.Model);
         var predictions = bestModel.Transform(testSet);
@@ -784,7 +784,7 @@ public partial class TrainingRunner
     /// </summary>
     private (ITransformer? Model, EnsemblePlan? Plan, EnsembleOutcome Outcome) FitEnsemble(
         SearchResult search, SearchRequest request, string metric,
-        Func<IDataView, string, Dictionary<string, double>> score, TrainingConfig config, IDataView trainSet, TimeSpan timeLeft)
+        Func<IDataView, string, Dictionary<string, double>> score, TrainingConfig config, IDataView trainSet, Stopwatch clock)
     {
         (ITransformer?, EnsemblePlan?, EnsembleOutcome) Single(string why, EnsemblePlan? weighed = null)
         {
@@ -806,12 +806,16 @@ public partial class TrainingRunner
 
         // The members are fitted again on the whole partition, one after another: their estimated fit times, summed, have to fit in
         // what is left of the time budget (the search was given a share of it for this).
-        if (EnsembleBudget.Shortfall(plan.Members, timeLeft) is { } shortfall)
+        var limit = TimeSpan.FromSeconds(config.TimeLimitSeconds);
+        if (EnsembleBudget.Shortfall(plan.Members, limit - clock.Elapsed) is { } shortfall)
             return Single(shortfall, plan);
         try
         {
             var members = plan.Members.Select((trial, i) => new EnsembleMember(trial.Pipeline, plan.Counts[i])).ToArray();
-            var chain = EnsembleChain.Fit(_mlContext, members, trainSet, IsBinary(config) ? EnsembleKind.Binary : EnsembleKind.Regression);
+            // The estimate above can be wrong; the clock is asked again after every member, and a blend that has run past the
+            // time budget is given up for the single model (what is left of the members is not fitted).
+            var chain = EnsembleChain.Fit(
+                _mlContext, members, trainSet, IsBinary(config) ? EnsembleKind.Binary : EnsembleKind.Regression, () => clock.Elapsed > limit);
             _logger.Info($"Ensemble: {string.Join(" + ", plan.Members.Select((t, i) => $"{t.Trial.Trainer}×{plan.Counts[i]}"))} " +
                 $"({metric} {plan.Score:0.####} out of fold, the best trial alone {plan.BestSingleScore:0.####}).");
             return (chain, plan, new EnsembleOutcome
@@ -820,6 +824,10 @@ public partial class TrainingRunner
                 OutOfFoldScore = plan.Score,
                 BestSingleOutOfFoldScore = plan.BestSingleScore,
             });
+        }
+        catch (EnsembleOverBudgetException ex)
+        {
+            return Single($"{ex.Message}, so the blend was given up", plan);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {

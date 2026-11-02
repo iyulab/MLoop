@@ -230,6 +230,21 @@ public sealed class EnsembleChainTests
     }
 
     [Fact]
+    public void ABlendWhoseTimeIsUp_StopsBetweenMembers()
+    {
+        var ml = new MLContext(seed: 1);
+        var train = ml.Data.LoadFromEnumerable(BinaryRows(200, 1));
+        var asked = 0;
+
+        var ex = Assert.Throws<EnsembleOverBudgetException>(() => EnsembleChain.Fit(
+            ml, [new EnsembleMember(Logistic(), 1), new EnsembleMember(Lbfgs(), 1), new EnsembleMember(Logistic(), 1)], train, EnsembleKind.Binary,
+            giveUp: () => ++asked >= 2));
+
+        Assert.Equal(2, ex.Fitted);
+        Assert.Contains("2 of the 3 members", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WeightedMean_PrintsIntegerCountsOnly()
         => Assert.Equal("(x0, x1, x2) => (2 * x0 + 1 * x1 + 3 * x2) / 6", EnsembleChain.WeightedMean([2, 1, 3]));
 
