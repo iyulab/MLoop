@@ -208,6 +208,13 @@ public class ExperimentResult
     public TrainerDescriptor? Trainer { get; init; }
 
     public required double TrainingTimeSeconds { get; init; }
+
+    /// <summary>
+    /// What a run asked for a blend (<c>ensemble</c>) came to: the blend's members and weights and its out-of-fold score against the
+    /// best single trial's, or why the single best model stands. Absent where a blend was not asked for.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public MLoop.Core.Models.EnsembleOutcome? Ensemble { get; init; }
 }
 
 /// <summary>

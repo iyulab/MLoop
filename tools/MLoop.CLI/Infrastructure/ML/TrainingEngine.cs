@@ -295,7 +295,8 @@ public class TrainingEngine : ITrainingEngine
                 {
                     BestTrainer = trained.BestTrainer,
                     Trainer = trained.Trainer,
-                    TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds
+                    TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds,
+                    Ensemble = trained.Ensemble
                 },
                 Metrics = trained.Metrics,
                 Trials = trained.Trials,

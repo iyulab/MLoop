@@ -79,7 +79,14 @@ public sealed class EnsembleChainTests
         for (var i = 0; i < probability.Length; i++)
             Assert.Equal((first[i] + 2 * second[i]) / 3, probability[i], 4);
         Assert.Equal(probability.Select(p => p >= 0.5f), blended.GetColumn<bool>("PredictedLabel"));
-        Assert.Equal(probability.Select(p => p - 0.5f), Column(blended, "Score"));
+        // The score is the log-odds of the probability: zero exactly where the probability is one half.
+        var score = Column(blended, "Score");
+        for (var i = 0; i < probability.Length; i++)
+        {
+            var p = Math.Clamp(probability[i], 1e-6f, 1 - 1e-6f);
+            Assert.Equal(Math.Log(p / (1 - p)), score[i], 3);
+            Assert.Equal(probability[i] >= 0.5f, score[i] >= 0);
+        }
     }
 
     [Fact]
@@ -149,6 +156,31 @@ public sealed class EnsembleChainTests
         // normalization fitted on the raw column moves the answers by far more than this.
         var worst = alone.Select((a, i) => Math.Abs(a - blended[i])).Max();
         Assert.True(worst < 0.03, $"The blend of a member with itself differs from the member by {worst:0.####}.");
+    }
+
+    [Fact]
+    public void ABlend_IsRefusedForOnnx_InWordsThatNameTheEnsembleAndTheWayOut()
+    {
+        var ml = new MLContext(seed: 1);
+        var train = ml.Data.LoadFromEnumerable(BinaryRows(300, 1));
+        var chain = EnsembleChain.Fit(ml, [new EnsembleMember(Logistic(), 1), new EnsembleMember(Lbfgs(), 1)], train, EnsembleKind.Binary);
+
+        Assert.Contains("ensemble", MLoop.Core.Export.OnnxExport.FindNotExportable(chain), StringComparison.Ordinal);
+        using var sink = new MemoryStream();
+        var ex = Assert.Throws<MLoop.Core.Export.OnnxExportException>(() =>
+            MLoop.Core.Export.OnnxExport.Write(ml, chain, train, new TextLoader.Options(), ["A", "B", "Y"], "Y", sink));
+        Assert.Contains("ensemble", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("single best model", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, sink.Length);
+    }
+
+    [Fact]
+    public void ASingleModel_IsNotRefusedAsABlend()
+    {
+        var ml = new MLContext(seed: 1);
+        var train = ml.Data.LoadFromEnumerable(BinaryRows(300, 1));
+
+        Assert.Null(MLoop.Core.Export.OnnxExport.FindNotExportable(Logistic()(ml).Fit(train)));
     }
 
     [Fact]

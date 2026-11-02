@@ -354,11 +354,17 @@ public class ExperimentStore : IExperimentStore
             ? td.Deserialize<TrainerDescriptor>(TrialJsonOptions)
             : null;
 
+        var ensemble = resultElement.TryGetProperty("ensemble", out var en)
+                       && en.ValueKind == JsonValueKind.Object
+            ? en.Deserialize<MLoop.Core.Models.EnsembleOutcome>(TrialJsonOptions)
+            : null;
+
         return new ExperimentResult
         {
             BestTrainer = bestTrainer,
             Trainer = trainer,
-            TrainingTimeSeconds = trainingTime
+            TrainingTimeSeconds = trainingTime,
+            Ensemble = ensemble
         };
     }
 

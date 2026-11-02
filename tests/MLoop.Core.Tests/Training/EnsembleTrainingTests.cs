@@ -143,6 +143,38 @@ public class EnsembleTrainingTests
     }
 
     [Fact]
+    public async Task ABinaryEnsemble_IsReadBackByTheScoringLayers_ThroughItsFileAndItsCalibrationBesideIt()
+    {
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(NoisyBinary());
+        var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(Config("binary-classification", "auc", ensemble: true));
+        Assert.Equal("Ensemble", result.Trainer.Name);
+        var test = ctx.Data.TrainTestSplit(data, 0.2, seed: 42).TestSet;
+        var directory = Path.Combine(Path.GetTempPath(), $"ensemble-layers-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "model.zip");
+            ctx.Model.Save(result.Model, data.Schema, path);
+            result.Calibration!.WriteBeside(path);
+
+            // The path every scoring command takes: the file, then the calibration beside it.
+            var loaded = ScoringModel.Load(new MLContext(), path, task: null);
+            var expected = result.ScoringModel(ctx).Transform(test);
+            var scored = loaded.Transform(test);
+
+            Assert.Equal(expected.GetColumn<float>("Probability").ToArray(), scored.GetColumn<float>("Probability").ToArray());
+            Assert.Equal(expected.GetColumn<bool>("PredictedLabel").ToArray(), scored.GetColumn<bool>("PredictedLabel").ToArray());
+            // The report's metrics are what the saved model answers when evaluated by the shared evaluator.
+            Assert.Equal(result.Metrics[CalibrationError.MetricName], CalibrationError.Binary(scored, "Label")!.Value, 6);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ARegressionRun_WithEnsemble_AnswersWithOneChainOfTheBestTrials()
     {
         var ctx = new MLContext(seed: 42);

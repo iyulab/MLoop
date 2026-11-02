@@ -23,8 +23,8 @@ public sealed record EnsembleMember(Func<MLContext, IEstimator<ITransformer>> Pi
 /// Fits the members of a blend (<c>ForwardSelection</c>'s counts) and joins them in <em>one</em> transformer chain that
 /// saves as one <c>model.zip</c> and answers with the weighted mean: members and their answers in turn
 /// (<c>CopyColumns</c> keeps each member's answer under its own name), then one <c>Expression</c> over them that writes the
-/// answer under the names every scoring path reads (<c>Probability</c> · <c>PredictedLabel</c> · <c>Score</c> for a binary
-/// classifier, <c>Score</c> for a regression). Public API only — no format of ML.NET's own is relied on.
+/// answer under the names every scoring path reads (<c>Probability</c> · <c>PredictedLabel</c> · <c>Score</c> — the log-odds
+/// of the probability — for a binary classifier, <c>Score</c> for a regression). Public API only — no format of ML.NET's own is relied on.
 /// </summary>
 /// <remarks>
 /// Each member is fitted on the training rows <em>as the chain before it transforms them</em>, not on the raw rows: a
@@ -83,12 +83,23 @@ public static class EnsembleChain
             var blended = new TransformerChain<ITransformer>(steps.ToArray()).Transform(train);
             steps.Add(mlContext.Transforms.Expression("PredictedLabel", $"(p) => p >= {DecisionPoint.ToString("R", CultureInfo.InvariantCulture)}", "Probability").Fit(blended));
             blended = new TransformerChain<ITransformer>(steps.ToArray()).Transform(train);
-            steps.Add(mlContext.Transforms.Expression("Score", $"(p) => p - {DecisionPoint.ToString("R", CultureInfo.InvariantCulture)}", "Probability").Fit(blended));
+            steps.Add(mlContext.Transforms.Expression("Score", LogitLambda, "Probability").Fit(blended));
         }
         var finished = new TransformerChain<ITransformer>(steps.ToArray()).Transform(train);
         steps.Add(mlContext.Transforms.DropColumns([.. names]).Fit(finished));
         return new TransformerChain<ITransformer>(steps.ToArray());
     }
+
+    /// <summary>
+    /// The log-odds of a probability — what a binary classifier's raw <c>Score</c> is for a logistic model, and zero where the
+    /// probability is <see cref="DecisionPoint"/>. A probability of exactly 0 or 1 (a mean of members that all say so) is held
+    /// off the edge so the score stays finite.
+    /// </summary>
+    internal const string LogitLambda = "(p) => log(max(p, 0.000001) / max(1 - p, 0.000001))";
+
+    /// <summary>The log-odds of <paramref name="probability"/> as <see cref="LogitLambda"/> computes them, for rows built outside the chain.</summary>
+    public static float LogOdds(float probability)
+        => MathF.Log(Math.Max(probability, 0.000001f) / Math.Max(1 - probability, 0.000001f));
 
     /// <summary>The lambda of a weighted mean over integer counts: <c>(a, b) =&gt; (2 * a + 3 * b) / 5</c>.</summary>
     public static string WeightedMean(IReadOnlyList<int> counts)

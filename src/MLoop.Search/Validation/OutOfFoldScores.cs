@@ -119,7 +119,7 @@ public sealed class OutOfFoldScores
 
     /// <summary>
     /// The rows of a blend: <paramref name="reference"/>'s labels (or targets) and weights, with the blend's own answer for
-    /// every row — a probability (its <see cref="Score"/> that probability less one half, where a binary evaluator splits) or
+    /// every row — a probability (its <see cref="Score"/> the log-odds of it, zero where a binary evaluator splits) or
     /// a regression's value. What a calibration of the blend is fitted on, in the shape the single trial's rows have.
     /// </summary>
     /// <param name="reference">Any member's rows — the truth and the weights are the same for every member.</param>
@@ -144,7 +144,7 @@ public sealed class OutOfFoldScores
         {
             rows._label.AddRange(reference._label);
             rows._probability!.AddRange(answer);
-            rows._score.AddRange(answer.Select(p => p - 0.5f));
+            rows._score.AddRange(answer.Select(p => MathF.Log(Math.Max(p, 1e-6f) / Math.Max(1 - p, 1e-6f))));
         }
         return rows;
     }

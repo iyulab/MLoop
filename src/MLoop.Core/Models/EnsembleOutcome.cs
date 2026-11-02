@@ -13,17 +13,22 @@ public sealed record EnsembleMemberRecord(string Trainer, int Count, double Weig
 public sealed record EnsembleOutcome
 {
     /// <summary>The blend's members, best trial first; <see langword="null"/> when the single model stands.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<EnsembleMemberRecord>? Members { get; init; }
 
     /// <summary>The blend's metric on the out-of-fold answers; <see langword="null"/> when none was chosen.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public double? OutOfFoldScore { get; init; }
 
     /// <summary>The best retained trial's metric on the same answers; <see langword="null"/> when no blend was weighed.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public double? BestSingleOutOfFoldScore { get; init; }
 
     /// <summary>Why the single best model stands, or <see langword="null"/> when the run answers with the blend.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? SkippedBecause { get; init; }
 
     /// <summary>Whether the run answers with the blend.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public bool IsBlend => Members is not null;
 }

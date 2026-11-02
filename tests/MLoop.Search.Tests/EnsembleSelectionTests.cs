@@ -95,7 +95,7 @@ public sealed class EnsembleSelectionTests
 
         var rows = plan.Blended;
         Assert.Equal(plan.OutOfFold, rows.Probability);
-        Assert.Equal(plan.OutOfFold.Select(p => p - 0.5f), rows.Score);
+        Assert.Equal(plan.OutOfFold.Select(p => MathF.Log(p / (1 - p))), rows.Score);
         Assert.Equal(Labels, rows.Label);
         Assert.All(rows.Weight, w => Assert.Equal(3f, w));
     }

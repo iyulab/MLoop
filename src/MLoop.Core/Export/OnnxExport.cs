@@ -66,7 +66,14 @@ public static class OnnxExport
     [
         ("Microsoft.ML.Transforms.Text.TextFeaturizingEstimator+Transformer",
             "it featurizes a string column as free text (ML.NET FeaturizeText), which has no ONNX form"),
+        (ExpressionTransformerTypeName, EnsembleReason),
     ];
+
+    // The only thing in a MLoop model that runs a lambda is the weighted blend of an ensemble (EnsembleChain): the graph of an
+    // average of several models' answers, written as a lambda, has no ONNX form.
+    private const string ExpressionTransformerTypeName = "Microsoft.ML.Transforms.ExpressionTransformer";
+    private const string EnsembleReason =
+        "it is a blend of several models (an ensemble), and the weighted average that joins them has no ONNX form";
 
     /// <summary>
     /// Converts <paramref name="model"/> to ONNX and writes it to <paramref name="destination"/>.
@@ -95,6 +102,10 @@ public static class OnnxExport
 
         if (FindNotExportable(model) is { } reason)
         {
+            if (string.Equals(reason, EnsembleReason, StringComparison.Ordinal))
+                throw new OnnxExportException(
+                    $"This model cannot be exported to ONNX: {reason}. Train without `ensemble` (`ensemble: false` in mloop.yaml, or "
+                    + "leave out `mloop train --ensemble`) to export the single best model.");
             var stringColumns = input.Schema
                 .Where(c => !c.IsHidden && c.Type is TextDataViewType
                             && !string.Equals(c.Name, labelColumn, StringComparison.OrdinalIgnoreCase))

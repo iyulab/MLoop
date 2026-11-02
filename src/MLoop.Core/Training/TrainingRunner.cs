@@ -875,7 +875,7 @@ public partial class TrainingRunner
                 answers.Select((a, i) => new BinaryBlendRow
                 {
                     Label = rows.Label[i],
-                    Score = (float)a - 0.5f,
+                    Score = EnsembleChain.LogOdds((float)a),
                     Probability = (float)a,
                     PredictedLabel = a >= 0.5,
                     Weight = rows.Weight[i],
