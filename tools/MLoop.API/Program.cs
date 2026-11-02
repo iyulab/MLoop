@@ -316,6 +316,9 @@ try
 
     app.UseCors();
 
+    // A control character in a path or query value names nothing; refused here, not as a 500 from the file APIs behind a handler.
+    app.UseControlCharacterGuard();
+
     // After authentication, so the limiter knows the caller; before authorization, so a request without a token
     // is counted (by address) before it is refused.
     app.UseAuthentication();
