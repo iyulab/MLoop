@@ -119,6 +119,14 @@ public static partial class ErrorSuggestions
     public static List<string> GetSuggestions(Exception ex, string context = "", string? task = null)
     {
         var suggestions = new List<string>();
+
+        // The values are named in the message; advice about column names (the keyword rules below) would point away from them.
+        if (HasInChain<UnreadableLabelException>(ex))
+        {
+            suggestions.Add("Write the label column as plain numbers in the file you score (1234.5, a point for a decimal mark), or empty where unknown");
+            suggestions.Add("See what MLoop reads from the file: [cyan]mloop info <data-file>[/]");
+            return suggestions;
+        }
         var message = ex.Message.ToLowerInvariant();
         var typeName = ex.GetType().Name;
 

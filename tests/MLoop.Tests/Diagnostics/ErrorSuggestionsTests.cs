@@ -370,4 +370,18 @@ public class ErrorSuggestionsTests
         Assert.DoesNotContain(suggestions, s => s.Contains("mloop promote"));
     }
 
+    [Fact]
+    public void GetSuggestions_UnreadableLabelValues_AreAnsweredWithTheValues_NotWithColumnNameAdvice()
+    {
+        // The message names a label and a column, and says "missing" — each a keyword that sends the reader to the label's name.
+        var ex = new UnreadableLabelException(
+            "Label column 'y' holds values that are not read as numbers: 121 of the 11,500 label values in the file are numbers written for people; each loads as a missing label.");
+
+        var suggestions = ErrorSuggestions.GetSuggestions(ex, "evaluation");
+
+        Assert.Contains(suggestions, s => s.Contains("plain numbers", StringComparison.Ordinal));
+        Assert.DoesNotContain(suggestions, s => s.Contains("label column name matches", StringComparison.Ordinal));
+        Assert.DoesNotContain(suggestions, s => s.Contains("mloop train --label", StringComparison.Ordinal));
+    }
+
 }

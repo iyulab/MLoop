@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
+using MLoop.Core.Training;
 
 namespace MLoop.CLI.Infrastructure.ML;
 
@@ -329,6 +330,12 @@ public class EvaluationEngine
         // here fixed CP949 encoding and index/excluded columns left in place, and closed the
         // flatten/constant gaps that the previous per-engine reimplementation hid.
         string loadPath = InferenceDataPreprocessor.Prepare(testDataPath, labelColumn, trainedSchema, out tempFiles, keepColumns: keepColumns);
+
+        // A label the loader cannot read loads as a missing number, further down the file than it types the column from: every
+        // metric below would be computed on what is left of the rows, with nothing said. Every command that scores a labeled
+        // file loads it here.
+        if (NumericLabelCheck.FileRefusal(loadPath, labelColumn, taskType) is { } labelRefusal)
+            throw new UnreadableLabelException(labelRefusal);
 
         // Infer column types from the data
         // A task without a label (clustering) records an empty one: no column to find, not a column named "".

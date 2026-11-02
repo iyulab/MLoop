@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.Data;
+using MLoop.Core.Models;
 
 namespace MLoop.Core.Training;
 
@@ -31,10 +32,11 @@ public static partial class NumericLabelCheck
 
     /// <summary>
     /// Whether the label of <paramref name="task"/> is a number: it reads a table, needs a label, and that label is neither a class nor
-    /// text — regression, forecasting, ranking, recommendation, sentence similarity. The same distinction the data check makes.
+    /// text — regression, forecasting, ranking, recommendation, sentence similarity — of a task this tool knows (a name nobody knows
+    /// has no label to read). The same distinction the data check makes.
     /// </summary>
     public static bool HasNumericLabel(string task)
-        => TrainingRunner.LabelColumnMustBeNamed(task) && !TrainingRunner.IsClassification(task) && !TrainingRunner.HasTextLabel(task);
+        => TaskTypes.IsValid(task) && TrainingRunner.LabelColumnMustBeNamed(task) && !TrainingRunner.IsClassification(task) && !TrainingRunner.HasTextLabel(task);
 
     /// <summary>
     /// The refusal for <paramref name="labelColumn"/> of <paramref name="data"/>, or <see langword="null"/> when the task
@@ -96,6 +98,80 @@ public static partial class NumericLabelCheck
                (example is null ? "." : $" (for example '{example}').") +
                $" A {task} label has to be numeric. If it names classes, train with --task multiclass-classification or binary-classification instead; " +
                "otherwise fix or empty those values (an empty value, N/A, NA, NaN or ? is read as a missing number).";
+    }
+
+    /// <summary>
+    /// The label cells of a file, counted by what the loader makes of them: a number, a missing number, or a value it cannot
+    /// read. One count for the check before training and the one before a file is scored, so they refuse the same values.
+    /// </summary>
+    public sealed class Census
+    {
+        /// <summary>Label cells that are not empty.</summary>
+        public long Labelled { get; private set; }
+
+        /// <summary>Label cells that read as a number.</summary>
+        public long Numbers { get; private set; }
+
+        /// <summary>Label cells that are neither a number nor a missing number (N/A, NA, NaN, ?).</summary>
+        public long Unreadable { get; private set; }
+
+        /// <summary>The first such cell, as written.</summary>
+        public string? Example { get; private set; }
+
+        /// <summary>Counts one cell.</summary>
+        public void Add(ReadOnlySpan<char> cell)
+        {
+            var value = cell.Trim();
+            if (value.IsEmpty)
+                return;
+            Labelled++;
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
+            {
+                Numbers++;
+                return;
+            }
+            if (ReadsAsNumberOrMissing(value))
+                return;
+            Unreadable++;
+            Example ??= value.ToString();
+        }
+
+        /// <summary>The refusal for what was counted, or <see langword="null"/> when every value reads.</summary>
+        public string? Refusal(string labelColumn, string task) => Unreadable == 0
+            ? null
+            : Message(labelColumn, task, $"{Unreadable:N0} of the {Labelled:N0} label values in the file", Example, columnReadAsText: false);
+    }
+
+    /// <summary>
+    /// The refusal for the label of the table in <paramref name="csvPath"/> (UTF-8, one record per line) read before the file is
+    /// scored — <c>evaluate</c>, <c>explain</c>, <c>threshold</c>, <c>calibrate</c> — or <see langword="null"/>: a task whose label is
+    /// not a number, no such column in the file, or every value reads. A value the loader cannot read loads as a missing number,
+    /// so the metrics would be computed on the rows it left, or on a label it made up, with nothing said.
+    /// </summary>
+    public static string? FileRefusal(string csvPath, string labelColumn, string task)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(csvPath);
+        if (string.IsNullOrEmpty(labelColumn) || !HasNumericLabel(task))
+            return null;
+
+        using var reader = new StreamReader(csvPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        if (reader.ReadLine() is not { } header)
+            return null;
+        var names = Core.Prediction.CsvFieldParser.ParseFields(header);
+        var index = Array.FindIndex(names, n => string.Equals(n.Trim(), labelColumn, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+            return null;
+
+        var census = new Census();
+        while (reader.ReadLine() is { } line)
+        {
+            if (!TableRows.IsRow(line, names.Length))
+                continue;
+            var fields = Core.Prediction.CsvFieldParser.ParseFields(line);
+            if (index < fields.Length)
+                census.Add(fields[index]);
+        }
+        return census.Refusal(labelColumn, task);
     }
 
     /// <summary>The loader's reading of a cell as a float, or as a missing number (<c>ColumnLayoutValues</c>: ?, NA, N/A, NaN in any case).</summary>

@@ -167,6 +167,27 @@ public class EvaluationEngineTests : IDisposable
         Assert.Contains(collected.Warnings, w => w.Contains("label never varies", StringComparison.Ordinal));
     }
 
+    // A label the loader cannot read loads as a missing number; the metrics would be computed on what is left of the rows (or on
+    // a label it made up) with nothing said. Every command that scores a labeled file loads it through this engine.
+    [Fact]
+    public async Task Regression_LabelValuesTheLoaderCannotRead_AreRefusedByEveryScoringPath_NotScored()
+    {
+        var (modelPath, _) = TrainSimpleRegressionModel();
+        var testPath = CreateBomCsv("regression_formatted_label.csv", BuildCsv(
+            "Feature1,Label", ["1,3", "2,5", "3,7", "4,\"1,234.5\"", "5,11", "6,13"]));
+
+        var evaluate = await Assert.ThrowsAsync<MLoop.Core.Training.UnreadableLabelException>(
+            () => _engine.EvaluateAsync(modelPath, testPath, "Label", "regression"));
+        var losses = await Assert.ThrowsAsync<MLoop.Core.Training.UnreadableLabelException>(
+            () => _engine.RowLossesAsync(modelPath, testPath, "Label", "regression", trainedSchema: null));
+
+        foreach (var ex in new[] { evaluate, losses })
+        {
+            Assert.Contains("1 of the 6 label values in the file", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("'1,234.5'", ex.Message, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public async Task EvaluateAsync_Regression_ReturnsRegressionMetrics()
     {

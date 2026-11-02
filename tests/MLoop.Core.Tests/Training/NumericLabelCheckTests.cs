@@ -163,4 +163,71 @@ public class NumericLabelCheckTests : IDisposable
         Assert.Contains("Label column 'y' is read as text", ex.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("Schema mismatch", ex.Message, StringComparison.Ordinal);
     }
+
+    // The same question asked of a file about to be scored (evaluate, explain, threshold, calibrate): there is no run that
+    // typed the column from its first lines, so the values are counted over every row of the file itself.
+    [Fact]
+    public void AFileAboutToBeScored_IsRefused_WithTheCountOverEveryRow()
+    {
+        var path = Write("scored.csv", _ => "\"1,234.5\"");
+
+        var refusal = NumericLabelCheck.FileRefusal(path, "y", "regression");
+
+        Assert.NotNull(refusal);
+        Assert.Contains("3 of the 300 label values in the file", refusal, StringComparison.Ordinal);
+        Assert.Contains("'1,234.5'", refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain("is read as text", refusal, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("N/A")]
+    [InlineData("NA")]
+    [InlineData("NaN")]
+    [InlineData("?")]
+    [InlineData("")]
+    public void AFileAboutToBeScored_WithMissingNumbers_IsNotRefused(string missing)
+        => Assert.Null(NumericLabelCheck.FileRefusal(Write("missing.csv", _ => missing), "y", "regression"));
+
+    [Fact]
+    public void ATaskNobodyKnows_HasNoLabelToAskAbout()
+    {
+        Assert.False(NumericLabelCheck.HasNumericLabel("nonsense"));
+        Assert.Null(NumericLabelCheck.FileRefusal(Write("unknown.csv", _ => "words"), "y", "nonsense"));
+    }
+
+    [Fact]
+    public void AFileAboutToBeScored_WhoseTaskNeedsNoNumberOrWhoseLabelIsAbsent_IsNotAskedAbout()
+    {
+        var path = Write("other.csv", _ => "unknown");
+
+        Assert.Null(NumericLabelCheck.FileRefusal(path, "y", "multiclass-classification"));
+        Assert.Null(NumericLabelCheck.FileRefusal(path, "no_such_column", "regression"));
+        Assert.Null(NumericLabelCheck.FileRefusal(path, "", "regression"));
+    }
+
+    [Fact]
+    public void AFileAboutToBeScored_WhoseLabelIsOnlyWords_IsRefusedAndPointsToClassification()
+    {
+        var path = Path.Combine(_tmpDir, "words.csv");
+        File.WriteAllLines(path, ["a,y", "1,cat", "2,dog", "3,bird"]);
+
+        var refusal = NumericLabelCheck.FileRefusal(path, "y", "regression");
+
+        Assert.NotNull(refusal);
+        Assert.Contains("3 of the 3 label values in the file", refusal, StringComparison.Ordinal);
+        Assert.Contains("multiclass-classification", refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheCensus_CountsNumbersMissingTokensAndUnreadableValuesApart()
+    {
+        var census = new NumericLabelCheck.Census();
+        foreach (var cell in new[] { "1.5", " 2 ", "", "N/A", "?", "12%", "1,5", "x" })
+            census.Add(cell);
+
+        Assert.Equal(2, census.Numbers);
+        Assert.Equal(7, census.Labelled);
+        Assert.Equal(3, census.Unreadable);
+        Assert.Equal("12%", census.Example);
+    }
 }

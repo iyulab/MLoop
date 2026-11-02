@@ -219,8 +219,7 @@ public class DataQualityValidator
             var textLabelValues = new List<string>();
             var parseErrors = 0;
             // What the loader cannot read as a number or as a missing one (N/A, NA, NaN, ? are the latter) — counted over every row.
-            long unreadable = 0, labelled = 0;
-            string? unreadableExample = null;
+            var census = new NumericLabelCheck.Census();
 
             foreach (var line in dataLines)
             {
@@ -228,15 +227,7 @@ public class DataQualityValidator
                 if (labelColumnIndex < values.Length)
                 {
                     var rawValue = values[labelColumnIndex].Trim();
-                    if (rawValue.Length > 0)
-                    {
-                        labelled++;
-                        if (!NumericLabelCheck.ReadsAsNumberOrMissing(rawValue))
-                        {
-                            unreadable++;
-                            unreadableExample ??= rawValue;
-                        }
-                    }
+                    census.Add(rawValue);
                     if (double.TryParse(rawValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var numericValue))
                     {
                         numericLabelValues.Add(numericValue);
@@ -268,11 +259,11 @@ public class DataQualityValidator
             // from the start of the file, so a value further down loads as a missing number — and a missing label is dropped, the
             // large values (the ones written with a separator) first. The check on the loaded data cannot see them. (A label
             // with no number at all is refused below, with its own sentence.)
-            if (unreadable > 0 && numericLabelValues.Count > 0 && taskType is not null && NumericLabelCheck.HasNumericLabel(taskType))
+            if (census.Numbers > 0 && taskType is not null && NumericLabelCheck.HasNumericLabel(taskType)
+                && census.Refusal(labelColumn, taskType) is { } labelRefusal)
             {
                 result.IsValid = false;
-                result.ErrorMessage = NumericLabelCheck.Message(
-                    labelColumn, taskType, $"{unreadable:N0} of the {labelled:N0} label values in the file", unreadableExample, columnReadAsText: false);
+                result.ErrorMessage = labelRefusal;
                 return result;
             }
 
