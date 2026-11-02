@@ -231,18 +231,19 @@ def run_autogluon(entry, train, test, budget, work):
     import numpy as np
     target, task = entry['target'], entry['task']
     metric = {'binary': 'roc_auc', 'multiclass': 'log_loss', 'regression': 'root_mean_squared_error'}[task]
+    # the problem type is named, not inferred: a regression label of a few whole numbers (wine quality 3-9) is read as classes
     path = os.path.join(work, 'autogluon')
     shutil.rmtree(path, ignore_errors=True)
     started = time.time()
     try:
         if task == 'regression':
-            predictor = TabularPredictor(label=target, eval_metric=metric, path=path, verbosity=0).fit(train, time_limit=budget)
+            predictor = TabularPredictor(label=target, eval_metric=metric, problem_type='regression', path=path, verbosity=0).fit(train, time_limit=budget)
             test_metrics = score(task, test[target].values, pred=predictor.predict(test.drop(columns=[target])).values)
         else:
             # classes are named by their position in sorted order, as `encode_classes` does for the other systems
             classes = sorted(train[target].astype(str).unique())
             fit_frame = train.assign(**{target: train[target].astype(str)})
-            predictor = TabularPredictor(label=target, eval_metric=metric, path=path, verbosity=0).fit(fit_frame, time_limit=budget)
+            predictor = TabularPredictor(label=target, eval_metric=metric, problem_type=task, path=path, verbosity=0).fit(fit_frame, time_limit=budget)
             proba = predictor.predict_proba(test.drop(columns=[target]))
             proba.columns = [str(c) for c in proba.columns]
             proba = proba.reindex(columns=classes, fill_value=0.0)
