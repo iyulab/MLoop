@@ -302,6 +302,10 @@ public partial class TrainingRunner
             mergedColumnGroups = loader.GetMergedColumnGroups();
         }
 
+        // A number-valued label that the loader read as text fails every trainer the same opaque way; say which values did it, now.
+        if (NumericLabelCheck.Refusal(trainSet, config.Task, config.LabelColumn) is { } labelRefusal)
+            throw new InvalidOperationException(labelRefusal);
+
         // Weighted training: the search gives the trainers the weights and scores its folds by them.
         if (!string.IsNullOrEmpty(config.WeightColumn))
             CheckWeightedTask(testSet, config);
