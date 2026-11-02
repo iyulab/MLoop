@@ -17,6 +17,14 @@ public sealed class EnsembleChainTests
         public bool Y { get; set; }
     }
 
+    private sealed class TextRow
+    {
+        public float A { get; set; }
+        public float B { get; set; }
+        public string Note { get; set; } = "";
+        public bool Y { get; set; }
+    }
+
     private sealed class RegressionRow
     {
         public float A { get; set; }
@@ -165,7 +173,7 @@ public sealed class EnsembleChainTests
         var train = ml.Data.LoadFromEnumerable(BinaryRows(300, 1));
         var chain = EnsembleChain.Fit(ml, [new EnsembleMember(Logistic(), 1), new EnsembleMember(Lbfgs(), 1)], train, EnsembleKind.Binary);
 
-        Assert.Contains("ensemble", MLoop.Core.Export.OnnxExport.FindNotExportable(chain), StringComparison.Ordinal);
+        Assert.Contains("ensemble", Assert.Single(MLoop.Core.Export.OnnxExport.FindNotExportable(chain)), StringComparison.Ordinal);
         using var sink = new MemoryStream();
         var ex = Assert.Throws<MLoop.Core.Export.OnnxExportException>(() =>
             MLoop.Core.Export.OnnxExport.Write(ml, chain, train, new TextLoader.Options(), ["A", "B", "Y"], "Y", sink));
@@ -175,12 +183,33 @@ public sealed class EnsembleChainTests
     }
 
     [Fact]
+    public void ABlendOverFreeText_IsRefusedForOnnx_WithBothReasonsAndTheWayOutOfEach()
+    {
+        // Telling only that the model reads free text sends the user through a portable retraining that the blend then refuses again.
+        var ml = new MLContext(seed: 1);
+        var train = ml.Data.LoadFromEnumerable(BinaryRows(300, 1).Select((r, i) => new TextRow { A = r.A, B = r.B, Y = r.Y, Note = i % 2 == 0 ? "good fast" : "slow late" }));
+        var noted = Logistic(m => m.Transforms.Text.FeaturizeText("NoteF", "Note"));
+        var chain = EnsembleChain.Fit(ml, [new EnsembleMember(noted, 1), new EnsembleMember(Lbfgs(), 1)], train, EnsembleKind.Binary);
+
+        Assert.Equal(2, MLoop.Core.Export.OnnxExport.FindNotExportable(chain).Count);
+        using var sink = new MemoryStream();
+        var ex = Assert.Throws<MLoop.Core.Export.OnnxExportException>(() =>
+            MLoop.Core.Export.OnnxExport.Write(ml, chain, train, new TextLoader.Options(), ["A", "B", "Note", "Y"], "Y", sink));
+        Assert.Contains("blend of several models", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("FeaturizeText", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("'Note'", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("single best model", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("portable", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, sink.Length);
+    }
+
+    [Fact]
     public void ASingleModel_IsNotRefusedAsABlend()
     {
         var ml = new MLContext(seed: 1);
         var train = ml.Data.LoadFromEnumerable(BinaryRows(300, 1));
 
-        Assert.Null(MLoop.Core.Export.OnnxExport.FindNotExportable(Logistic()(ml).Fit(train)));
+        Assert.Empty(MLoop.Core.Export.OnnxExport.FindNotExportable(Logistic()(ml).Fit(train)));
     }
 
     private sealed class CategoricalRow

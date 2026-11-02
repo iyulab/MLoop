@@ -243,7 +243,7 @@ public sealed class OnnxExportTests : IDisposable
             .Append(_ml.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression("label"))
             .Fit(data);
 
-        Assert.NotNull(OnnxExport.FindNotExportable(model));
+        Assert.NotEmpty(OnnxExport.FindNotExportable(model));
         using var sink = new MemoryStream();
         var ex = Assert.Throws<OnnxExportException>(() =>
             OnnxExport.Write(_ml, model, data, loader, ["note", "level", "label"], "label", sink));
@@ -290,7 +290,7 @@ public sealed class OnnxExportTests : IDisposable
         _ml.Model.Save(trained, data.Schema, zip);
         var model = _ml.Model.Load(zip, out _);
 
-        Assert.Null(OnnxExport.FindNotExportable(model));
+        Assert.Empty(OnnxExport.FindNotExportable(model));
         var (result, onnx) = Export(model, data, loader, ["text", "label"], "label");
 
         var input = Assert.Single(result.Inputs);

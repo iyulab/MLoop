@@ -100,26 +100,8 @@ public static class OnnxExport
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(destination);
 
-        if (FindNotExportable(model) is { } reason)
-        {
-            if (string.Equals(reason, EnsembleReason, StringComparison.Ordinal))
-                throw new OnnxExportException(
-                    $"This model cannot be exported to ONNX: {reason}. Train without `ensemble` (`ensemble: false` in mloop.yaml, or "
-                    + "leave out `mloop train --ensemble`) to export the single best model.");
-            var stringColumns = input.Schema
-                .Where(c => !c.IsHidden && c.Type is TextDataViewType
-                            && !string.Equals(c.Name, labelColumn, StringComparison.OrdinalIgnoreCase))
-                .Select(c => $"'{c.Name}'")
-                .ToList();
-            var which = stringColumns.Count > 0
-                ? $" Its string columns: {string.Join(", ", stringColumns)}."
-                : "";
-            throw new OnnxExportException(
-                $"This model cannot be exported to ONNX: {reason}.{which} A column that holds a code or a "
-                + "category exports once it is declared `type: categorical` under the model's `columns:` in "
-                + "mloop.yaml (one-hot encoding) and the model is retrained; a column of free text exports when the "
-                + "model is trained portable (`portable: true` in mloop.yaml, or `mloop train --portable`).");
-        }
+        if (FindNotExportable(model) is { Count: > 0 } reasons)
+            throw new OnnxExportException(RefusalMessage(reasons, input, labelColumn));
 
         // The label is a graph input only if the pipeline reads it at scoring time; a model that
         // scores without it does not make a runtime caller invent one. The converter declares the
@@ -189,21 +171,39 @@ public static class OnnxExport
     }
 
     /// <summary>
-    /// Why <paramref name="model"/> cannot be exported, or <c>null</c> when nothing in it is known
-    /// to stop the converter.
+    /// Every reason <paramref name="model"/> cannot be exported — empty when nothing in it is known to stop the
+    /// converter. A blend of models over a free-text column has two: telling only the first sends the user through a
+    /// retraining that the second then refuses.
     /// </summary>
-    public static string? FindNotExportable(ITransformer model)
+    public static IReadOnlyList<string> FindNotExportable(ITransformer model)
     {
-        foreach (var step in Flatten(model))
-        {
-            var typeName = step.GetType().FullName;
-            foreach (var (name, reason) in NotExportable)
-            {
-                if (string.Equals(typeName, name, StringComparison.Ordinal))
-                    return reason;
-            }
-        }
-        return null;
+        var typeNames = Flatten(model).Select(step => step.GetType().FullName).ToHashSet(StringComparer.Ordinal);
+        return [.. NotExportable.Where(entry => typeNames.Contains(entry.TypeName)).Select(entry => entry.Reason)];
+    }
+
+    private static string RefusalMessage(IReadOnlyList<string> reasons, IDataView input, string? labelColumn)
+    {
+        const string singleModel = "Train without `ensemble` (`ensemble: false` in mloop.yaml, or leave out `mloop train --ensemble`) to export the single best model";
+        var isBlend = reasons.Contains(EnsembleReason);
+        var otherReasons = reasons.Where(r => !string.Equals(r, EnsembleReason, StringComparison.Ordinal)).ToList();
+        if (isBlend && otherReasons.Count == 0)
+            return $"This model cannot be exported to ONNX: {EnsembleReason}. {singleModel}.";
+
+        var stringColumns = input.Schema
+            .Where(c => !c.IsHidden && c.Type is TextDataViewType
+                        && !string.Equals(c.Name, labelColumn, StringComparison.OrdinalIgnoreCase))
+            .Select(c => $"'{c.Name}'")
+            .ToList();
+        var which = stringColumns.Count > 0
+            ? $" Its string columns: {string.Join(", ", stringColumns)}."
+            : "";
+        const string wayOut = "column that holds a code or a category exports once it is declared `type: categorical` under the model's "
+            + "`columns:` in mloop.yaml (one-hot encoding) and the model is retrained; a column of free text exports when the "
+            + "model is trained portable (`portable: true` in mloop.yaml, or `mloop train --portable`).";
+        return isBlend
+            ? $"This model cannot be exported to ONNX: {EnsembleReason}, and {string.Join("; ", otherReasons)}.{which} {singleModel}; "
+              + $"its string columns then export as any model's do: a {wayOut}"
+            : $"This model cannot be exported to ONNX: {string.Join("; ", otherReasons)}.{which} A {wayOut}";
     }
 
     private static IEnumerable<ITransformer> Flatten(ITransformer transformer)
