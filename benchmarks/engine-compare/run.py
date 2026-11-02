@@ -202,7 +202,8 @@ def run_flaml(entry, train, test, budget, seed, estimators=None):
     from flaml import AutoML
     target, task = entry['target'], entry['task']
     xtr, xte = feature_frames(train, test, target)
-    options = dict(time_budget=budget, verbose=0, seed=seed, n_jobs=-1)
+    log_path = os.path.join(tempfile.mkdtemp(prefix='flaml-log-'), 'trials.log')
+    options = dict(time_budget=budget, verbose=0, seed=seed, n_jobs=-1, log_file_name=log_path, log_type='all')
     if estimators:
         options['estimator_list'] = estimators
     automl = AutoML()
@@ -219,7 +220,35 @@ def run_flaml(entry, train, test, budget, seed, estimators=None):
             'best_config': _jsonable(automl.best_config), 'best_loss': _jsonable(automl.best_loss),
             'best_config_train_time': _jsonable(automl.best_config_train_time),
             'best_loss_per_learner': _jsonable(automl.best_loss_per_estimator),
-            'best_config_per_learner': _jsonable(automl.best_config_per_estimator)}
+            'best_config_per_learner': _jsonable(automl.best_config_per_estimator),
+            **_trial_summary(log_path)}
+
+
+def _trial_summary(path):
+    """How the search got there: how many configurations it tried (per learner), the time they took, and each improvement of
+    the best validation loss as [seconds into the search, loss, learner] — to set against another searcher's trials."""
+    trials, best, per_learner, trial_seconds = 0, float('inf'), collections.Counter(), 0.0
+    curve = []
+    try:
+        for line in open(path):
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if 'validation_loss' not in entry:
+                continue
+            trials += 1
+            per_learner[entry.get('learner')] += 1
+            trial_seconds += float(entry.get('trial_time') or 0)
+            if entry['validation_loss'] < best:
+                best = entry['validation_loss']
+                curve.append([round(float(entry.get('wall_clock_time') or 0), 2), round(best, 5), entry.get('learner')])
+    except OSError:
+        return {}
+    finally:
+        shutil.rmtree(os.path.dirname(path), ignore_errors=True)
+    return {'flaml_trials': trials, 'flaml_trials_per_learner': dict(per_learner), 'flaml_trial_seconds': round(trial_seconds, 1),
+            'flaml_best_curve': curve}
 
 
 def _jsonable(value):
