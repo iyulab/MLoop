@@ -34,6 +34,8 @@ python benchmarks/engine-compare/run.py summarize results.jsonl
 
 The `Engine compare` workflow (`workflow_dispatch`) runs one job per split seed and writes the summary table to the run.
 
+`summarize` ends with a per-seed table when the rows hold `mloop` and `flaml` or `mloop-ensemble`: the sign of each split seed (`+` the first system is better, `-` worse, `=` the same value) next to the verdict, the number of runs that took longer than the budget plus the larger of 2 s and 20 %, and the held-out expected calibration error of the MLoop rows. `ensemble where run vs flaml` counts a blend where `--ensemble` was run (binary, regression) and the single model where it was not (multiclass), so its tally covers every table.
+
 ## Learner parity and the cost of a large model
 
 `parity/` answers two questions that a gap between systems raises. `parity.py` trains one fixed set of hyperparameters with the LightGBM

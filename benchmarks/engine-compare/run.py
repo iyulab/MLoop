@@ -296,6 +296,8 @@ def summarize(paths):
     meta = {}
     wall = collections.defaultdict(dict)    # dataset -> system -> seed -> seconds the `mloop train` process took
     blend = collections.defaultdict(dict)   # dataset -> seed -> what the blend run came to (system mloop-ensemble)
+    budget = {}                             # dataset -> the time budget the rows were run with
+    ece = collections.defaultdict(dict)     # dataset -> system -> seed -> expected calibration error on the held-out file (MLoop rows only)
     for path in paths:
         for line in open(path):
             r = json.loads(line)
@@ -307,6 +309,9 @@ def summarize(paths):
             meta[r['dataset']] = (r['task'], r['rows'])
             if r.get('wall_s') is not None:
                 wall[r['dataset']].setdefault(r['system'], {})[r['seed']] = r['wall_s']
+            budget[r['dataset']] = r.get('budget')
+            if (r.get('test') or {}).get('ece') is not None:
+                ece[r['dataset']].setdefault(r['system'], {})[r['seed']] = r['test']['ece']
             if r['system'] == 'mloop-ensemble':
                 blend[r['dataset']][r['seed']] = r.get('ensemble') or {}
 
@@ -380,6 +385,62 @@ def summarize(paths):
         print()
         for k, tally in counts.items():
             print(f'{k} vs ens-single: {dict(tally)}')
+
+    if 'mloop' in {s for name in by for s in by[name]} and any(s in by[name] for name in by for s in ('flaml', 'mloop-ensemble')):
+        seed_view(by, meta, wall, budget, ece, verdict)
+
+
+def signs(a, b, direction):
+    """One character per split seed both systems have, in seed order: + the first is better, - worse, = the same value."""
+    return ' '.join('=' if a[s] == b[s] else ('+' if (a[s] - b[s]) * direction > 0 else '-') for s in sorted(set(a) & set(b))) or '—'
+
+
+def over_budget(seconds, budget):
+    """A `mloop train` that took longer than its budget plus the room a trial in flight needs (the larger of 2 s and 20 %)."""
+    return budget is not None and seconds > budget + max(2.0, 0.2 * budget)
+
+
+def seed_view(by, meta, wall, budget, ece, verdict):
+    """What the means hide: the sign of each split seed, runs that overran their budget, and the calibration of the held-out answers."""
+    # the product as asked for: a blend where `--ensemble` was run (binary, regression), the single model where it was not (multiclass)
+    shipped = lambda name: by[name].get('mloop-ensemble') or by[name].get('mloop') or {}
+    pairs = [(label, a, b) for label, a, b in (('mloop vs flaml', lambda n: by[n].get('mloop', {}), lambda n: by[n].get('flaml', {})),
+                                               ('ensemble vs flaml', lambda n: by[n].get('mloop-ensemble', {}), lambda n: by[n].get('flaml', {})),
+                                               ('ensemble where run vs flaml', shipped, lambda n: by[n].get('flaml', {})),
+                                               ('ensemble vs mloop', lambda n: by[n].get('mloop-ensemble', {}), lambda n: by[n].get('mloop', {})))
+             if any(a(name) and b(name) for name in by)]
+    print('\nPer split seed (+ the first system is better, - worse, = the same value; seeds in order):')
+    print('| dataset | task | ' + ' | '.join(f'{label} (verdict)' for label, _, _ in pairs) + ' | over budget mloop | over budget ensemble | test ECE mloop | test ECE ensemble |')
+    print('|---|---|' + '---|' * (len(pairs) + 4))
+    tallies = {label: collections.Counter() for label, _, _ in pairs}
+    overruns = collections.Counter()
+    ran = collections.Counter()
+    for name in sorted(by, key=lambda n: (meta[n][0], meta[n][1])):
+        task, _ = meta[name]
+        direction = PRIMARY[task][1]
+        cells = []
+        for label, a, b in pairs:
+            if a(name) and b(name):
+                v = verdict(a(name), b(name), direction)
+                tallies[label][v] += 1
+                cells.append(f'{signs(a(name), b(name), direction)} ({v})')
+            else:
+                cells.append('—')
+        late = {}
+        for system in ('mloop', 'mloop-ensemble'):
+            seconds = wall[name].get(system, {})
+            late[system] = sum(1 for t in seconds.values() if over_budget(t, budget.get(name)))
+            overruns[system] += late[system]
+            ran[system] += len(seconds)
+        mean = lambda system: ('%.3f' % (sum(ece[name][system].values()) / len(ece[name][system]))) if ece[name].get(system) else '—'
+        over = lambda system: f'{late[system]}/{len(wall[name][system])}' if wall[name].get(system) else '—'
+        print(f'| {name} | {task} | ' + ' | '.join(cells) + f" | {over('mloop')} | {over('mloop-ensemble')} | {mean('mloop')} | {mean('mloop-ensemble')} |")
+    print()
+    for label, tally in tallies.items():
+        print(f'{label}: {dict(tally)}')
+    for system in ('mloop', 'mloop-ensemble'):
+        if ran[system]:
+            print(f'{system} runs over budget + max(2 s, 20 %): {overruns[system]} of {ran[system]}')
 
 
 def main():
