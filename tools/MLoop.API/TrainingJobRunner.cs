@@ -1,3 +1,5 @@
+using MLoop.Core.Data;
+using MLoop.Core.Training;
 using System.Threading.Channels;
 using MLoop.API;
 using MLoop.CLI.Infrastructure.Configuration;
@@ -100,51 +102,61 @@ public class TrainingJobRunner : BackgroundService
                 job.ModelName, job.Task, job.LabelColumn, job.TimeLimitSeconds, job.Metric, job.TestSplit, job.Weight, job.MaxTrials, job.Epochs, stoppingToken);
             if (definition is null)
                 throw new InvalidOperationException(refusal);
-            // The data the job trains on, prepared as `mloop train` prepares its own: more files merged after
-            // the first (a file without the weight column counts 1), then read as a table, sampled to
-            // MaxRows, rows without a label dropped.
             var projectRoot = scope.ServiceProvider.GetRequiredService<ProjectRootPath>().Value;
-            var dataFile = job.DataFile;
-            if (job.AdditionalDataFiles.Count > 0)
-            {
-                var merge = await TrainingDataFiles.MergeAsync(
-                    [Path.GetFullPath(job.DataFile), .. job.AdditionalDataFiles.Select(Path.GetFullPath)],
-                    definition.Weight,
-                    Path.Combine(projectRoot, ".mloop", "merged", $"{job.JobId}.csv"));
-                dataFile = merge.Path ?? throw new InvalidOperationException($"{merge.Error} {merge.Guidance}");
-            }
-            var prepared = await TrainingInput.PrepareAsync(dataFile, definition, job.MaxRows, projectRoot);
             var notes = new List<string>();
-            if (prepared.DroppedMissingLabels > 0)
-                notes.Add($"{prepared.DroppedMissingLabels} rows without a label dropped");
-
-            // The classes, checked and balanced as `mloop train` does: one class refuses, an imbalance is noted,
-            // and --balance splits off the test part before balancing the train part.
-            var trainFile = prepared.DataFile;
-            string? testFile = null;
             var testSplit = definition.Training?.TestSplit ?? ConfigDefaults.DefaultTestSplit;
-            if (MLoop.Core.Training.TrainingRunner.IsClassification(definition.Task) && !string.IsNullOrEmpty(definition.Label))
+            string trainFile;
+            string? testFile = null;
+            if (DataLoaderFactory.IsDirectoryBased(definition.Task))
             {
-                MLoop.Core.Diagnostics.ClassDistributionResult? classes = null;
-                try
+                // A directory of images is read by its task's trainer, as `mloop train` hands it over: no table to
+                // merge, sample or balance up front (the trainer oversamples its own training split).
+                trainFile = Path.GetFullPath(job.DataFile);
+            }
+            else
+            {
+                // The data the job trains on, prepared as `mloop train` prepares its own: more files merged after
+                // the first (a file without the weight column counts 1), then read as a table, sampled to
+                // MaxRows, rows without a label dropped.
+                var dataFile = job.DataFile;
+                if (job.AdditionalDataFiles.Count > 0)
                 {
-                    classes = await TrainingInput.ClassesAsync(trainFile, definition.Label);
+                    var merge = await TrainingDataFiles.MergeAsync(
+                        [Path.GetFullPath(job.DataFile), .. job.AdditionalDataFiles.Select(Path.GetFullPath)],
+                        definition.Weight,
+                        Path.Combine(projectRoot, ".mloop", "merged", $"{job.JobId}.csv"));
+                    dataFile = merge.Path ?? throw new InvalidOperationException($"{merge.Error} {merge.Guidance}");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    notes.Add($"class distribution analysis failed: {ex.Message}");
-                }
-                if (classes is { Error: null, ClassCount: <= 1 })
-                    throw new InvalidOperationException($"{TrainingInput.SingleClassRefusal} {TrainingInput.SingleClassGuidance}");
-                if (classes is { Error: null, NeedsAttention: true })
-                    notes.Add(classes.Summary);
+                var prepared = await TrainingInput.PrepareAsync(dataFile, definition, job.MaxRows, projectRoot);
+                if (prepared.DroppedMissingLabels > 0)
+                    notes.Add($"{prepared.DroppedMissingLabels} rows without a label dropped");
 
-                if (!string.IsNullOrEmpty(job.Balance))
+                // The classes, checked and balanced as `mloop train` does: one class refuses, an imbalance is noted,
+                // and --balance splits off the test part before balancing the train part.
+                trainFile = prepared.DataFile;
+                if (MLoop.Core.Training.TrainingRunner.IsClassification(definition.Task) && !string.IsNullOrEmpty(definition.Label))
                 {
-                    var balanced = TrainingInput.Balance(trainFile, definition.Label, job.Balance, testSplit);
-                    if (!string.IsNullOrEmpty(balanced.Result.Message))
-                        notes.Add($"balance: {balanced.Result.Message}");
-                    (trainFile, testFile) = (balanced.TrainFile, balanced.TestFile);
+                    MLoop.Core.Diagnostics.ClassDistributionResult? classes = null;
+                    try
+                    {
+                        classes = await TrainingInput.ClassesAsync(trainFile, definition.Label);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        notes.Add($"class distribution analysis failed: {ex.Message}");
+                    }
+                    if (classes is { Error: null, ClassCount: <= 1 })
+                        throw new InvalidOperationException($"{TrainingInput.SingleClassRefusal} {TrainingInput.SingleClassGuidance}");
+                    if (classes is { Error: null, NeedsAttention: true })
+                        notes.Add(classes.Summary);
+
+                    if (!string.IsNullOrEmpty(job.Balance))
+                    {
+                        var balanced = TrainingInput.Balance(trainFile, definition.Label, job.Balance, testSplit);
+                        if (!string.IsNullOrEmpty(balanced.Result.Message))
+                            notes.Add($"balance: {balanced.Result.Message}");
+                        (trainFile, testFile) = (balanced.TrainFile, balanced.TestFile);
+                    }
                 }
             }
             if (notes.Count > 0)
@@ -154,6 +166,8 @@ public class TrainingJobRunner : BackgroundService
                 definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
                 testFile is null ? testSplit : 0,
                 testFile is null ? null : Path.GetFullPath(testFile));
+            if (DataLoaderFactory.IsDirectoryBased(config.Task) && ClassBalance.Requested(job.Balance))
+                config = config with { Balance = job.Balance };
 
             var result = await trainingEngine.TrainAsync(config, cancellationToken: stoppingToken);
 

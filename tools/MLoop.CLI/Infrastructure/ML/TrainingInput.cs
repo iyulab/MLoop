@@ -2,6 +2,8 @@ using MLoop.CLI.Commands;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
+using MLoop.Core.Models;
+using MLoop.Core.Storage;
 using MLoop.Core.Prediction;
 using MLoop.Core.Training;
 using MLoop.Extensibility.Preprocessing;
@@ -51,6 +53,87 @@ public static class TrainingInput
             ? $"{message} '{sameLetters}' differs only in case; column names are case-sensitive."
             : message;
     }
+
+    /// <summary>A refusal and, when there is one, the way out.</summary>
+    public sealed record Refusal(string Message, string? Hint = null);
+
+    /// <summary>
+    /// What a model definition lacks or gets wrong before any data is read: the task absent or not one the
+    /// tool knows, a label a supervised task needs, the columns ranking, recommendation and forecasting
+    /// need. One answer for <c>mloop train</c> and <c>POST /train</c> — the server used to check none of it,
+    /// so a misspelled task was answered 202 and trained as whichever task a predicate happened to match.
+    /// </summary>
+    public static Refusal? DefinitionRefusal(ModelDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        // TrainingRunner.RequiresLabel is the single source for which tasks need a label.
+        if (string.IsNullOrEmpty(definition.Task) ||
+            (TrainingRunner.RequiresLabel(definition.Task) && string.IsNullOrEmpty(definition.Label)))
+            return new Refusal("Task is required. Label is required for supervised tasks. Use --task and <label> arguments, or define them in mloop.yaml");
+
+        // The spelling is already canonical by now (ConfigMerger), so a name that fails here is
+        // one no spelling of any known task produces.
+        if (!TaskTypes.IsValid(definition.Task))
+            return new Refusal($"Invalid task type '{definition.Task}'.", $"Valid options: {TaskTypes.Listed}");
+
+        if (definition.Task.Equals("ranking", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(definition.GroupColumn))
+            return new Refusal("Ranking task requires a group column. Use --group-column or set 'group_column' in mloop.yaml");
+
+        if (definition.Task.Equals("recommendation", StringComparison.OrdinalIgnoreCase) &&
+            (string.IsNullOrEmpty(definition.UserColumn) || string.IsNullOrEmpty(definition.ItemColumn)))
+            return new Refusal("Recommendation task requires user_column and item_column. Set them in mloop.yaml");
+
+        if (definition.Task.Equals("forecasting", StringComparison.OrdinalIgnoreCase) && (definition.Horizon ?? 0) <= 0)
+            return new Refusal("Forecasting task requires horizon > 0. Set 'horizon' in mloop.yaml");
+
+        return null;
+    }
+
+    /// <summary>
+    /// The directory a directory-based task trains on (image classification: class subfolders; object
+    /// detection: a COCO annotations file plus its images): the path given, resolved against the project, else
+    /// the task's convention — <c>datasets/coco</c> for object detection, <c>datasets/images</c> otherwise,
+    /// both finally <c>datasets</c>. <c>null</c> when there is none. One answer for <c>mloop train</c> and
+    /// <c>POST /train</c>.
+    /// </summary>
+    public static string? ResolveDirectoryDataset(string task, string? dataFile, string[]? dataPaths, string projectRoot)
+    {
+        if (!string.IsNullOrWhiteSpace(dataFile))
+        {
+            var p = ProjectPaths.Resolve(dataFile, projectRoot);
+            return Directory.Exists(p) ? p : null;
+        }
+
+        if (dataPaths is { Length: > 0 } && !string.IsNullOrWhiteSpace(dataPaths[0]))
+        {
+            var p = ProjectPaths.Resolve(dataPaths[0], projectRoot);
+            return Directory.Exists(p) ? p : null;
+        }
+
+        var conventionDir = task.Equals("object-detection", StringComparison.OrdinalIgnoreCase)
+            ? "coco"
+            : "images";
+
+        foreach (var candidate in new[]
+        {
+            Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory, conventionDir),
+            Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory)
+        })
+        {
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
+    }
+
+    /// <summary>Why no dataset directory was found for a directory-based task, and where to put one.</summary>
+    public static Refusal DirectoryDatasetNotFound(string task) =>
+        task.Equals("object-detection", StringComparison.OrdinalIgnoreCase)
+            ? new Refusal("Object-detection dataset not found.",
+                "Put a COCO annotations.json plus images under datasets/coco/, or pass a directory: mloop train --task object-detection <dir>")
+            : new Refusal("Image dataset directory not found.",
+                "Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
 
     /// <summary>The file a job trains on, and what preparing it did.</summary>
     /// <param name="DataFile">The prepared file.</param>

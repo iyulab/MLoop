@@ -49,10 +49,10 @@ public class TrainingJobStore
         {
             JobId = jobId,
             ModelName = request.ModelName,
-            DataFile = request.DataFile,
+            DataFile = request.DataFile ?? throw new ArgumentException("A job needs its data.", nameof(request)),
             AdditionalDataFiles = request.AdditionalDataFiles ?? [],
-            LabelColumn = request.LabelColumn,
-            Task = request.Task,
+            LabelColumn = request.LabelColumn ?? "",
+            Task = request.Task ?? throw new ArgumentException("A job needs its task.", nameof(request)),
             TimeLimitSeconds = request.TimeLimitSeconds,
             MaxTrials = request.MaxTrials,
             Epochs = request.Epochs,
@@ -229,9 +229,9 @@ public class TrainingJob
 }
 
 /// <summary>A <c>POST /train</c> body.</summary>
-/// <param name="DataFile">The training data, within the project.</param>
-/// <param name="LabelColumn">The label column (the request's, in the place of <c>--label</c>).</param>
-/// <param name="Task">The task (in the place of <c>--task</c>).</param>
+/// <param name="DataFile">The training data, within the project: a file, or for an image task a directory (as <c>mloop train &lt;dir&gt;</c>). Absent for an image task: the task's place under <c>datasets/</c>.</param>
+/// <param name="LabelColumn">The label column (the request's, in the place of <c>--label</c>); absent: mloop.yaml's.</param>
+/// <param name="Task">The task (in the place of <c>--task</c>); absent: mloop.yaml's.</param>
 /// <param name="Name">The model; <c>default</c> when absent.</param>
 /// <param name="Metric">The metric to optimize; <c>auto</c> leaves it to mloop.yaml, then the task.</param>
 /// <param name="MaxRows">Rows to sample the data down to, as <c>--max-rows</c>.</param>
@@ -254,9 +254,9 @@ public class TrainingJob
 /// beats production and passes the gates, as <c>mloop train</c> does.
 /// </param>
 public record TrainingJobRequest(
-    string DataFile,
-    string LabelColumn,
-    string Task,
+    string? DataFile,
+    string? LabelColumn,
+    string? Task,
     string? Name = null,
     int? TimeLimitSeconds = null,
     string Metric = "auto",

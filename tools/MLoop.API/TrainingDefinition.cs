@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.Configuration;
+using MLoop.CLI.Infrastructure.ML;
 
 /// <summary>
 /// The model definition a <c>POST /train</c> job trains under: the project's mloop.yaml for that
@@ -10,7 +11,7 @@ public static class TrainingDefinition
 {
     /// <summary>The definition, or why the request cannot be trained as asked.</summary>
     public static async Task<(ModelDefinition? Definition, string? Error)> ResolveAsync(
-        ConfigLoader configLoader, string modelName, string task, string label, int? timeLimitSeconds,
+        ConfigLoader configLoader, string modelName, string? task, string? label, int? timeLimitSeconds,
         string metric, double? testSplit, string? weight = null, int? maxTrials = null, int? epochs = null, CancellationToken cancellationToken = default)
     {
         var config = await configLoader.LoadUserConfigAsync(cancellationToken);
@@ -46,6 +47,9 @@ public static class TrainingDefinition
             return (null, weightError);
         if (ModelTrainingConfig.PortableConflict(definition) is { } portableError)
             return (null, portableError);
+        // The task, the label and the columns the task needs — as `mloop train` asks them.
+        if (TrainingInput.DefinitionRefusal(definition) is { } refusal)
+            return (null, refusal.Hint is null ? refusal.Message : $"{refusal.Message} {refusal.Hint}");
         return (definition, null);
     }
 }

@@ -39,37 +39,73 @@ public static class TrainingEndpoints
             ConfigLoader configLoader,
             ILogger<Program> logger) =>
         {
-            // Refuse a metric the task cannot optimize now, not minutes later inside the job — the job
-            // would otherwise fail (or, before this, quietly optimize the task default).
-            var metricRejection = MLoop.Core.Evaluation.MetricNames.Rejection(request.Task, request.Metric);
-            if (metricRejection != null)
-                return Results.BadRequest(new { error = metricRejection });
-
-            // Validate every data file exists and is within project root. A relative path is the project's — the
-            // form POST /samples answers with — not the server process's working directory.
-            string InProject(string file) => ProjectPaths.Resolve(file, projectRootPath.Value);
-            foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
-            {
-                var resolvedDataFile = InProject(file);
-                if (!ProjectPaths.IsWithin(resolvedDataFile, projectRootPath.Value))
-                    return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
-                if (!File.Exists(resolvedDataFile))
-                    return Results.BadRequest(new { error = $"Data file not found: {file}" });
-            }
-            request = request with
-            {
-                DataFile = InProject(request.DataFile),
-                AdditionalDataFiles = request.AdditionalDataFiles?.Select(InProject).ToList(),
-            };
-
-            // Refused now, not inside the job: what the project's mloop.yaml asks for that this run could
-            // not honour (a weight on a task it does not reach, prep steps the API does not run).
+            // The definition first: the task decides what the data is (a table, or a directory of images), and the
+            // request may leave the task and the label to mloop.yaml. Refused now, not inside the job: what the
+            // project's mloop.yaml asks for that this run could not honour (a weight on a task it does not reach,
+            // prep steps the API does not run), and what no task could train (an unknown task, a missing label).
             var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
                 request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit, request.Weight, request.MaxTrials, request.Epochs);
             if (definitionError != null)
                 return Results.BadRequest(new { error = definitionError });
             if (TrainingInput.BalanceConflict(trainDefinition!, request.Balance) is { } balanceError)
                 return Results.BadRequest(new { error = balanceError });
+            // Refuse a metric the task cannot optimize now, not minutes later inside the job — the job
+            // would otherwise fail (or, before this, quietly optimize the task default).
+            var metricRejection = MLoop.Core.Evaluation.MetricNames.Rejection(trainDefinition!.Task, request.Metric);
+            if (metricRejection != null)
+                return Results.BadRequest(new { error = metricRejection });
+
+            // Validate every data file exists and is within project root. A relative path is the project's — the
+            // form POST /samples answers with — not the server process's working directory.
+            string InProject(string file) => ProjectPaths.Resolve(file, projectRootPath.Value);
+            string dataFile;
+            if (DataLoaderFactory.IsDirectoryBased(trainDefinition!.Task))
+            {
+                // Images: a directory, as `mloop train` reads it (class subfolders; a COCO annotations file plus
+                // its images) — named, or the task's place under datasets/ when the request names none.
+                if (request.AdditionalDataFiles is { Count: > 0 })
+                    return Results.BadRequest(new { error = $"additionalDataFiles merges tables; '{trainDefinition.Task}' trains on one directory of images." });
+                if (request.MaxRows is not null)
+                    return Results.BadRequest(new { error = $"maxRows samples a table's rows; '{trainDefinition.Task}' trains on a directory of images." });
+                var directory = TrainingInput.ResolveDirectoryDataset(trainDefinition.Task, request.DataFile, null, projectRootPath.Value);
+                if (directory is null)
+                {
+                    var missing = TrainingInput.DirectoryDatasetNotFound(trainDefinition.Task);
+                    var named = string.IsNullOrWhiteSpace(request.DataFile)
+                        ? ""
+                        : File.Exists(InProject(request.DataFile))
+                            ? $" '{request.DataFile}' is a file; {trainDefinition.Task} trains on a directory (not its annotations file)."
+                            : $" Not a directory: {request.DataFile}.";
+                    return Results.BadRequest(new { error = $"{missing.Message}{named} {missing.Hint}" });
+                }
+                if (!ProjectPaths.IsWithin(directory, projectRootPath.Value))
+                    return Results.BadRequest(new { error = $"Data directory must be within the project directory: {request.DataFile}" });
+                dataFile = directory;
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(request.DataFile))
+                    return Results.BadRequest(new { error = "dataFile is required: the training data, within the project." });
+                foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
+                {
+                    var resolvedDataFile = InProject(file);
+                    if (!ProjectPaths.IsWithin(resolvedDataFile, projectRootPath.Value))
+                        return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
+                    if (Directory.Exists(resolvedDataFile))
+                        return Results.BadRequest(new { error = $"Data file is a directory: {file}. '{trainDefinition.Task}' trains on a table (a file)." });
+                    if (!File.Exists(resolvedDataFile))
+                        return Results.BadRequest(new { error = $"Data file not found: {file}" });
+                }
+                dataFile = InProject(request.DataFile);
+            }
+            // The job records what it trains with — the resolved task, label and data — not the blanks the request left.
+            request = request with
+            {
+                DataFile = dataFile,
+                AdditionalDataFiles = request.AdditionalDataFiles?.Select(InProject).ToList(),
+                Task = trainDefinition.Task,
+                LabelColumn = trainDefinition.Label,
+            };
 
             // Create job and enqueue for background processing
             var jobId = jobStore.CreateJob(request);

@@ -135,58 +135,14 @@ public static partial class TrainCommand
             return null;
         }
 
-        // Validate required fields (defensive guard for nullable flow analysis).
-        // TrainingRunner.RequiresLabel is the single source — previously this inline set omitted
-        // time-series-anomaly, so a label-less ts-anomaly project that merge/init accept failed here.
+        // Task, label and the columns a task needs — one answer for this command and POST /train.
+        if (TrainingInput.DefinitionRefusal(effectiveDefinition) is { } definitionRefusal)
+        {
+            ShowRefusal(definitionRefusal);
+            return null;
+        }
+
         var requiresLabel = TrainingRunner.RequiresLabel(effectiveDefinition.Task);
-
-        if (string.IsNullOrEmpty(effectiveDefinition.Task) ||
-            (requiresLabel && string.IsNullOrEmpty(effectiveDefinition.Label)))
-        {
-            ErrorConsole.Error("Task is required. Label is required for supervised tasks. Use --task and <label> arguments, or define them in mloop.yaml");
-            return null;
-        }
-
-        // `train` had never checked the task against the vocabulary — `TaskTypes` was consulted
-        // here only for the --task help text, so a misspelled task reached whichever predicate
-        // asked about it first and was answered "no" by all of them, producing a run that
-        // trained something nobody had asked for. `init` and `validate` have always checked.
-        // The spelling is already canonical by now (ConfigMerger), so a name that fails here is
-        // one no spelling of any known task produces.
-        if (!TaskTypes.IsValid(effectiveDefinition.Task))
-        {
-            ErrorConsole.Error(
-                $"Invalid task type '{effectiveDefinition.Task}'.",
-                $"Valid options: {TaskTypes.Listed}");
-            return null;
-        }
-
-
-        // Ranking requires group column
-        if (effectiveDefinition.Task.Equals("ranking", StringComparison.OrdinalIgnoreCase) &&
-            string.IsNullOrEmpty(effectiveDefinition.GroupColumn))
-        {
-            ErrorConsole.Error("Ranking task requires a group column. Use --group-column or set 'group_column' in mloop.yaml");
-            return null;
-        }
-
-        // Recommendation requires user_column and item_column
-        if (effectiveDefinition.Task.Equals("recommendation", StringComparison.OrdinalIgnoreCase))
-        {
-            if (string.IsNullOrEmpty(effectiveDefinition.UserColumn) || string.IsNullOrEmpty(effectiveDefinition.ItemColumn))
-            {
-                ErrorConsole.Error("Recommendation task requires user_column and item_column. Set them in mloop.yaml");
-                return null;
-            }
-        }
-
-        // Forecasting requires horizon
-        if (effectiveDefinition.Task.Equals("forecasting", StringComparison.OrdinalIgnoreCase) &&
-            (effectiveDefinition.Horizon ?? 0) <= 0)
-        {
-            ErrorConsole.Error("Forecasting task requires horizon > 0. Set 'horizon' in mloop.yaml");
-            return null;
-        }
 
         // Refuse a metric the task's optimizer cannot take before any work starts — the run would
         // otherwise train for minutes on the task default while recording the name given here.
@@ -199,6 +155,14 @@ public static partial class TrainCommand
         }
 
         return new TrainSetup(projectRoot, resolvedModelName, configLoader, userConfig, effectiveDefinition, requiresLabel);
+    }
+
+    private static void ShowRefusal(TrainingInput.Refusal refusal)
+    {
+        if (refusal.Hint is null)
+            ErrorConsole.Error(refusal.Message);
+        else
+            ErrorConsole.Error(refusal.Message, refusal.Hint);
     }
 
     /// <summary>The file or directory the run trains on, named and announced — null after an error was shown.</summary>
@@ -241,21 +205,11 @@ public static partial class TrainCommand
             // Directory-based tasks consume a directory, not a CSV file: image
             // classification reads class subfolders (folder name = label); object
             // detection reads a COCO annotations file plus the referenced images.
-            resolvedDataFile = ResolveDirectoryDataset(effectiveDefinition.Task, dataFile, dataPaths, projectRoot);
+            resolvedDataFile = TrainingInput.ResolveDirectoryDataset(effectiveDefinition.Task, dataFile, dataPaths, projectRoot);
             if (resolvedDataFile == null)
             {
-                if (effectiveDefinition.Task.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
-                {
-                    ErrorConsole.Error(
-                        "Object-detection dataset not found.",
-                        "Put a COCO annotations.json plus images under datasets/coco/, or pass a directory: mloop train --task object-detection <dir>");
-                }
-                else
-                {
-                    ErrorConsole.Error(
-                        "Image dataset directory not found.",
-                        "Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
-                }
+                var missing = TrainingInput.DirectoryDatasetNotFound(effectiveDefinition.Task);
+                ShowRefusal(missing);
                 return null;
             }
         }

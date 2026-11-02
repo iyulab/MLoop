@@ -503,43 +503,6 @@ public static partial class TrainCommand
     }
 
     /// <summary>
-    /// Resolves the dataset directory for directory-based tasks. Prefers an explicit positional
-    /// argument or <c>--data</c> path, then falls back to a task-specific convention:
-    /// object detection uses <c>datasets/coco</c>, image classification uses <c>datasets/images</c>,
-    /// both finally falling back to <c>datasets</c>. Returns null if no directory exists.
-    /// </summary>
-    private static string? ResolveDirectoryDataset(string task, string? dataFile, string[]? dataPaths, string projectRoot)
-    {
-        if (!string.IsNullOrWhiteSpace(dataFile))
-        {
-            var p = ProjectPaths.Resolve(dataFile, projectRoot);
-            return Directory.Exists(p) ? p : null;
-        }
-
-        if (dataPaths is { Length: > 0 } && !string.IsNullOrWhiteSpace(dataPaths[0]))
-        {
-            var p = ProjectPaths.Resolve(dataPaths[0], projectRoot);
-            return Directory.Exists(p) ? p : null;
-        }
-
-        var conventionDir = task.Equals("object-detection", StringComparison.OrdinalIgnoreCase)
-            ? "coco"
-            : "images";
-
-        foreach (var candidate in new[]
-        {
-            Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory, conventionDir),
-            Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory)
-        })
-        {
-            if (Directory.Exists(candidate))
-                return candidate;
-        }
-
-        return null;
-    }
-
-    /// <summary>
     /// Updates mloop.yaml when CLI-specified label, task or ranking group column differs from the
     /// stored config, so the next command reads the columns this model was trained with.
     /// </summary>
