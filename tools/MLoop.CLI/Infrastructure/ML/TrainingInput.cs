@@ -3,8 +3,8 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
-using MLoop.Core.Storage;
 using MLoop.Core.Prediction;
+using MLoop.Core.Storage;
 using MLoop.Core.Training;
 using MLoop.Extensibility.Preprocessing;
 

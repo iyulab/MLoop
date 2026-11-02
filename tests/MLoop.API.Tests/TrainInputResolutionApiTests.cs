@@ -113,12 +113,19 @@ public class TrainInputResolutionApiTests : IClassFixture<TestWebApplicationFact
 
         var merged = await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = "datasets/opt-images", labelColumn = "label", task = "image-classification", name = "img-merge",
+            dataFile = "datasets/opt-images",
+            labelColumn = "label",
+            task = "image-classification",
+            name = "img-merge",
             additionalDataFiles = new[] { "datasets/extra.csv" },
         });
         var sampled = await _client.PostAsJsonAsync("/train", new
         {
-            dataFile = "datasets/opt-images", labelColumn = "label", task = "image-classification", name = "img-rows", maxRows = 10,
+            dataFile = "datasets/opt-images",
+            labelColumn = "label",
+            task = "image-classification",
+            name = "img-rows",
+            maxRows = 10,
         });
 
         merged.StatusCode.Should().Be(HttpStatusCode.BadRequest);

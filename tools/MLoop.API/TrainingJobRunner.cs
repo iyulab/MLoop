@@ -1,12 +1,12 @@
-using MLoop.Core.Data;
-using MLoop.Core.Training;
 using System.Threading.Channels;
 using MLoop.API;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Data;
 using MLoop.Core.Models;
+using MLoop.Core.Training;
 
 /// <summary>
 /// Background service that processes training jobs from a queue.
