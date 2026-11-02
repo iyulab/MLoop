@@ -55,10 +55,10 @@ public sealed class EnsembleChainTests
         => ml => ml.Transforms.Concatenate("Features", "A", "B")
             .Append(ml.BinaryClassification.Trainers.LbfgsLogisticRegression(labelColumnName: "Y"));
 
-    // The chain up to its members' answers (each member and its CopyColumns): the blend's arithmetic is checked against these,
+    // The chain up to its members' answers (everything ahead of the blend's first lambda): the blend's arithmetic is checked against these,
     // not against members fitted again — a context's random state moves with every Fit, so a second fit is a different model.
     private static TransformerChain<ITransformer> MembersOf(TransformerChain<ITransformer> chain, int count)
-        => new(chain.ToArray().Take(2 * count).ToArray());
+        => new(chain.TakeWhile(step => !step.GetType().Name.Contains("Expression", StringComparison.Ordinal)).ToArray());
 
     private static float[] Column(IDataView view, string name) => [.. view.GetColumn<float>(name)];
 
@@ -181,6 +181,52 @@ public sealed class EnsembleChainTests
         var train = ml.Data.LoadFromEnumerable(BinaryRows(300, 1));
 
         Assert.Null(MLoop.Core.Export.OnnxExport.FindNotExportable(Logistic()(ml).Fit(train)));
+    }
+
+    private sealed class CategoricalRow
+    {
+        public string Kind { get; set; } = "";
+        public float A { get; set; }
+        public bool Y { get; set; }
+    }
+
+    [Fact]
+    public void MembersThatEncodeAColumnInPlace_EachReadTheRawColumn()
+    {
+        // Featurizing a string column under its own name turns it into a vector. A member behind such a member must still find
+        // the string — every member reads the raw columns, whatever an earlier one made of them in place.
+        var ml = new MLContext(seed: 1);
+        var random = new Random(5);
+        var kinds = new[] { "red", "green", "blue" };
+        var rows = Enumerable.Range(0, 400).Select(_ =>
+        {
+            var kind = kinds[random.Next(3)];
+            var a = (float)random.NextDouble();
+            return new CategoricalRow { Kind = kind, A = a, Y = (kind == "red") ^ (a > 0.8f) };
+        }).ToList();
+        var data = ml.Data.LoadFromEnumerable(rows);
+        Func<MLContext, IEstimator<ITransformer>> encoded = m => m.Transforms.Text.FeaturizeText("Kind")
+            .Append(m.Transforms.Concatenate("Features", "Kind", "A"))
+            .Append(m.BinaryClassification.Trainers.SingleThreadSdcaLogisticRegression(labelColumnName: "Y"));
+
+        var chain = EnsembleChain.Fit(ml, [new EnsembleMember(encoded, 1), new EnsembleMember(encoded, 1)], data, EnsembleKind.Binary);
+
+        var probability = Column(chain.Transform(ml.Data.LoadFromEnumerable(rows.Take(50))), "Probability");
+        Assert.Equal(50, probability.Length);
+        Assert.All(probability, p => Assert.InRange(p, 0f, 1f));
+        // Scoring rows that arrive as the raw table does — the string column — works the same on a fresh context.
+        var path = Path.Combine(Path.GetTempPath(), $"ensemble-cat-{Guid.NewGuid():N}.zip");
+        try
+        {
+            ml.Model.Save(chain, data.Schema, path);
+            var fresh = new MLContext();
+            var again = Column(fresh.Model.Load(path, out _).Transform(fresh.Data.LoadFromEnumerable(rows.Take(50))), "Probability");
+            Assert.Equal(probability, again);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Fact]

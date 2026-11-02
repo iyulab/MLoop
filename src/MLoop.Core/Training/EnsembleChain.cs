@@ -27,15 +27,17 @@ public sealed record EnsembleMember(Func<MLContext, IEstimator<ITransformer>> Pi
 /// of the probability — for a binary classifier, <c>Score</c> for a regression). Public API only — no format of ML.NET's own is relied on.
 /// </summary>
 /// <remarks>
-/// Each member is fitted on the training rows <em>as the chain before it transforms them</em>, not on the raw rows: a
-/// member whose pipeline begins with a step that rewrites an input column in place (a normalization, a fill of gaps) would
-/// otherwise be fitted on the raw column and then, in the saved chain, read the column an earlier member already rewrote.
-/// Fitting each on what it will be given keeps training and scoring the same function. A blend is not exportable to ONNX
+/// Each member is fitted on the raw training rows and reads the raw columns when the chain scores: the chain keeps the table's
+/// columns under other names ahead of the first member and puts them back under their own after every member. A step that
+/// rewrites a column in place (a normalization, a one-hot or text featurization under the column's own name) would otherwise
+/// leave the next member a vector where it was fitted on a string. A blend is not exportable to ONNX
 /// (<c>Expression</c> has no graph) — that refusal is the caller's. The weights go in as integer counts over their sum, so
 /// no decimal is ever printed into the expression and no culture can change it.
 /// </remarks>
 public static class EnsembleChain
 {
+    private const string RawPrefix = "RawColumn_";
+
     /// <summary>The most members one blend holds: <c>Expression</c> reads at most five columns, and 5 is as far as the blend was measured.</summary>
     public const int MaxMembers = 5;
 
@@ -65,14 +67,27 @@ public static class EnsembleChain
         var answer = kind == EnsembleKind.Binary ? "Probability" : "Score";
         var steps = new List<ITransformer>();
         var names = new List<string>();
+        var backups = new List<string>();
+        IDataView Seen() => steps.Count == 0 ? train : new TransformerChain<ITransformer>(steps.ToArray()).Transform(train);
+        void Add(IEstimator<ITransformer> step) => steps.Add(step.Fit(Seen()));
         for (var i = 0; i < counted.Length; i++)
         {
-            var seen = steps.Count == 0 ? train : new TransformerChain<ITransformer>(steps.ToArray()).Transform(train);
-            steps.Add(counted[i].Pipeline(mlContext).Fit(seen));
+            // Every member reads the raw columns, as it was fitted on them. A step that rewrites a column under its own name (a
+            // normalization, a one-hot or text featurization) leaves the next member a vector where it was fitted on a string, so
+            // the columns this member rewrites are kept under other names ahead of it and put back under their own after it.
+            var seen = Seen();
+            var member = counted[i].Pipeline(mlContext).Fit(seen);
+            var rewritten = RewrittenColumns(seen.Schema, member.GetOutputSchema(seen.Schema));
+            var kept = rewritten.Select(name => $"{RawPrefix}{i}_{name}").ToArray();
+            for (var c = 0; c < rewritten.Length; c++)
+                Add(mlContext.Transforms.CopyColumns(kept[c], rewritten[c]));
+            steps.Add(member);
             var name = $"Member{i}";
             names.Add(name);
-            var scored = new TransformerChain<ITransformer>(steps.ToArray()).Transform(train);
-            steps.Add(mlContext.Transforms.CopyColumns(name, answer).Fit(scored));
+            Add(mlContext.Transforms.CopyColumns(name, answer));
+            for (var c = 0; c < rewritten.Length; c++)
+                Add(mlContext.Transforms.CopyColumns(rewritten[c], kept[c]));
+            backups.AddRange(kept);
         }
 
         var counts = counted.Select(m => m.Count).ToArray();
@@ -86,7 +101,7 @@ public static class EnsembleChain
             steps.Add(mlContext.Transforms.Expression("Score", LogitLambda, "Probability").Fit(blended));
         }
         var finished = new TransformerChain<ITransformer>(steps.ToArray()).Transform(train);
-        steps.Add(mlContext.Transforms.DropColumns([.. names]).Fit(finished));
+        steps.Add(mlContext.Transforms.DropColumns([.. names, .. backups]).Fit(finished));
         return new TransformerChain<ITransformer>(steps.ToArray());
     }
 
@@ -96,6 +111,13 @@ public static class EnsembleChain
     /// off the edge so the score stays finite.
     /// </summary>
     internal const string LogitLambda = "(p) => log(max(p, 0.000001) / max(1 - p, 0.000001))";
+
+    // The visible columns a step left under their own names but made new: the name now points at a later column of the output
+    // schema than it did in the input's (the old one is hidden behind it).
+    private static string[] RewrittenColumns(DataViewSchema input, DataViewSchema output)
+        => [.. input.Where(c => !c.IsHidden)
+            .Where(c => output.GetColumnOrNull(c.Name) is { } after && after.Index != c.Index)
+            .Select(c => c.Name)];
 
     /// <summary>The log-odds of <paramref name="probability"/> as <see cref="LogitLambda"/> computes them, for rows built outside the chain.</summary>
     public static float LogOdds(float probability)
