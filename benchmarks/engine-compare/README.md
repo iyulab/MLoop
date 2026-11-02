@@ -43,6 +43,23 @@ library and with ML.NET's LightGBM regressor (`MlnetLgbm`) on numeric regression
 agree, a gap is a matter of search, not of the learner. `sizeprobe.py` trains ML.NET LightGBM at growing sizes (trees × leaves) and reports the
 model file, the time to save and load it and to score the held-out rows. Both run in the `LightGBM parity` workflow (`workflow_dispatch`).
 
+## Where a forest gap comes from (`forest-probe/`)
+
+When FLAML's winner on a table is a random forest or extra trees, `forest-probe` asks whether MLoop's gap to it is the forest or the settings its search can reach.
+`forest.py` scores each split seed with scikit-learn's RandomForest and ExtraTrees (300 trees, library defaults) and with ML.NET's FastForest at fixed
+configurations, in two groups: `reach-*` set only what the search space exposes (trees, leaves, the per-tree feature fraction) and `open-*` also set the
+minimum examples per leaf, the bagged share of the rows, the per-split feature fraction and the bin count. It prints the mean, the standard error and the paired
+difference to scikit-learn's forest per system. Two things to know when reading it: a configuration with no randomness left (every row bagged, every feature tried at every
+split, every feature in every tree) grows identical trees, so it scores like one tree; and the binary tables' labels are written as 0/1 for the probe.
+
+```bash
+dotnet build benchmarks/engine-compare/forest-probe -c Release
+python benchmarks/engine-compare/forest-probe/forest.py --mlnet "dotnet $PWD/benchmarks/engine-compare/forest-probe/bin/Release/net10.0/MlnetForest.dll" --seeds 0,1,2,3,4 --out forest.jsonl
+```
+
+`flaml` rows also record the winning settings (`best_config`, `best_loss`, `best_config_train_time`, and the per-learner best loss and config), and `flaml-lgbm` / `flaml-forest`
+(named in `--systems`) restrict FLAML to its LightGBM learner or to random forest and extra trees, to attribute a gap to a learner family.
+
 ## Averaging the best trials (`ensemble-probe/`)
 
 `ensemble-probe` answers one question outside the product: how much does an equal-weight average of the search's best distinct trials gain over its best single model? It runs

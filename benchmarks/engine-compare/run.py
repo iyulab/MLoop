@@ -13,6 +13,8 @@ Each (dataset, split seed) gets one stratified 80/20 split; every system receive
                 whether the run answered with a blend or kept the single model (and why), and `summarize` pairs it with `mloop`
   flaml         FLAML AutoML, time_budget=B, its default learners
   flaml-nogbm   FLAML restricted to rf / extra_tree / a linear model (lrl1, lassolars for regression); no gradient boosting
+  flaml-lgbm    FLAML restricted to its LightGBM learner (not in the default `--systems`)
+  flaml-forest  FLAML restricted to rf / extra_tree (not in the default `--systems`)
   lightgbm      LightGBM, library defaults
   xgboost       XGBoost, library defaults
   automl-legacy ML.NET's own AutoML (Microsoft.ML.AutoML 0.23.1, the package MLoop's search replaced), time budget B,
@@ -31,8 +33,9 @@ TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classi
 # metric -> direction (+1: higher is better)
 PRIMARY = {'binary': ('auc', +1), 'multiclass': ('log_loss', -1), 'regression': ('rmse', -1)}
 SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboost', 'automl-legacy']
-# run only when named in --systems: the blend is for binary classification and regression, and costs an extra search's worth of time
-OPTIONAL_SYSTEMS = ['mloop-ensemble']
+# run only when named in --systems: the blend is for binary classification and regression, and costs an extra search's worth of time;
+# the single-family FLAML arms attribute a gap to a learner family
+OPTIONAL_SYSTEMS = ['mloop-ensemble', 'flaml-lgbm', 'flaml-forest']
 # `ensemble` is a probe, not a system: one search yields four rows - its best single model, the equal-weight average of its best 3 and 5 trials,
 # the member the train rows' out-of-fold answers pick (what forward selection collapses to on one member), and a forward-selected blend of its
 # best 5 (weights chosen on those same out-of-fold answers)
@@ -207,7 +210,16 @@ def run_flaml(entry, train, test, budget, seed, estimators=None):
         ytr, yte = encode_classes(train, test, target)
         automl.fit(xtr, ytr, task='classification', metric='roc_auc' if task == 'binary' else 'log_loss', **options)
         test_metrics = score(task, yte.values, proba=automl.predict_proba(xte))
-    return {'learner': automl.best_estimator, 'wall_s': round(time.time() - started, 1), 'test': test_metrics}
+    # what the search settled on, so a gap to another system can be read against the winning settings and not only the learner's name
+    return {'learner': automl.best_estimator, 'wall_s': round(time.time() - started, 1), 'test': test_metrics,
+            'best_config': _jsonable(automl.best_config), 'best_loss': _jsonable(automl.best_loss),
+            'best_config_train_time': _jsonable(automl.best_config_train_time),
+            'best_loss_per_learner': _jsonable(automl.best_loss_per_estimator),
+            'best_config_per_learner': _jsonable(automl.best_config_per_estimator)}
+
+
+def _jsonable(value):
+    return json.loads(json.dumps(value, default=lambda o: o.item() if hasattr(o, 'item') else str(o)))
 
 
 def run_library(kind, entry, train, test):
@@ -275,6 +287,10 @@ def run_all(args):
                         result = run_automl_legacy(shlex.split(args.automl_legacy), entry, work, args.budget)
                     elif system == 'flaml':
                         result = run_flaml(entry, train, test, args.budget, seed)
+                    elif system == 'flaml-lgbm':
+                        result = run_flaml(entry, train, test, args.budget, seed, ['lgbm'])
+                    elif system == 'flaml-forest':
+                        result = run_flaml(entry, train, test, args.budget, seed, ['rf', 'extra_tree'])
                     elif system == 'flaml-nogbm':
                         linear = 'lassolars' if entry['task'] == 'regression' else 'lrl1'
                         result = run_flaml(entry, train, test, args.budget, seed, ['rf', 'extra_tree', linear])
