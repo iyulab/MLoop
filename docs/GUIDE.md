@@ -221,8 +221,10 @@ best trial alone. When one does, the model is that blend — several models in o
 `predict`, `serve` and `evaluate` read as any other; a binary blend's probability is calibrated on the
 blend's own out-of-fold answers. When none does, or the members do not fit in the time left, the single
 best model stands and `metadata.json` says why (`result.ensemble.skippedBecause`). A blend costs: the
-search is given 70 % of the time limit and the rest fits the members, the model takes several times
-as long to load and to score, and `mloop export onnx` refuses it (it names the ensemble; train without
+search is given 70 % of the time limit and the rest fits the members, the model file is several times
+larger and a single-row request to `serve` takes several times as long (measured once: a blend of five
+members answered in about 11 ms against 2.3 ms for the single model; scoring a 200,000-row file with
+`predict` took 1.08 times as long), and `mloop export onnx` refuses it (it names the ensemble; train without
 `--ensemble` to export). `--ensemble` cannot be combined with `--portable`. The experiment records
 `ensemble: true` in `config.json` and, under `result.ensemble` in `metadata.json`, the members, their
 weights and the out-of-fold score of the blend and of the best trial.
