@@ -52,6 +52,12 @@ public static class ObjectDetectionEvaluator
         ArgumentNullException.ThrowIfNull(mlContext);
         ArgumentNullException.ThrowIfNull(scoredData);
 
+        // The library keeps its per-class table from the classes the images' ground truth names and indexes it with the
+        // class of every predicted box: a box of a class none of the evaluated images contains throws "The given key was
+        // not present in the dictionary" — after the training that produced the model has finished. A class without
+        // ground truth has an average precision of 0 and is left out of the mean, so its boxes are removed first and the
+        // score is the one the library means to give.
+        scoredData = Rebuild(mlContext, scoredData, scoreThreshold: null, dropUngroundedClasses: true);
         var schema = scoredData.Schema;
         var labelCol = ResolveColumn(schema, ActualLabelColumn);
         var actualBoxCol = ResolveColumn(schema, ActualBoundingBoxColumn);
@@ -98,6 +104,13 @@ public static class ObjectDetectionEvaluator
     /// of the remaining ones kept in step. The ground-truth columns pass through.
     /// </summary>
     public static IDataView WithScoreAtLeast(MLContext mlContext, IDataView scoredData, double scoreThreshold)
+        => Rebuild(mlContext, scoredData, scoreThreshold, dropUngroundedClasses: false);
+
+    /// <summary>
+    /// The scored data as one row per image under the names the evaluator reads: boxes below <paramref name="scoreThreshold"/> removed
+    /// when one is given, and — when asked — boxes of a class that no image in the data has ground truth for.
+    /// </summary>
+    private static IDataView Rebuild(MLContext mlContext, IDataView scoredData, double? scoreThreshold, bool dropUngroundedClasses)
     {
         var schema = scoredData.Schema;
         var labelCol = ResolveColumn(schema, ActualLabelColumn);
@@ -134,7 +147,7 @@ public static class ObjectDetectionEvaluator
                 var keptScores = new List<float>();
                 for (var i = 0; i < scores.Length; i++)
                 {
-                    if (scores[i] < scoreThreshold)
+                    if (scoreThreshold is { } floor && scores[i] < floor)
                         continue;
 
                     keptScores.Add(scores[i]);
@@ -151,6 +164,20 @@ public static class ObjectDetectionEvaluator
                     PredictedBoundingBoxes = [.. keptBoxes],
                     Score = [.. keptScores],
                 });
+            }
+        }
+
+        if (dropUngroundedClasses)
+        {
+            var grounded = rows.SelectMany(r => r.Label).ToHashSet(StringComparer.Ordinal);
+            foreach (var row in rows)
+            {
+                if (row.PredictedLabel.All(grounded.Contains))
+                    continue;
+                var keep = Enumerable.Range(0, row.PredictedLabel.Length).Where(i => grounded.Contains(row.PredictedLabel[i])).ToArray();
+                row.PredictedBoundingBoxes = [.. keep.SelectMany(i => row.PredictedBoundingBoxes.Skip(i * 4).Take(4))];
+                row.Score = [.. keep.Select(i => row.Score[i])];
+                row.PredictedLabel = [.. keep.Select(i => row.PredictedLabel[i])];
             }
         }
 
