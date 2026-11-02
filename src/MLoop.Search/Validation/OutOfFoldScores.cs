@@ -20,19 +20,27 @@ public sealed class OutOfFoldScores
     private readonly List<bool> _label = [];
     private readonly List<float[]> _classProbabilities = [];
     private readonly List<int> _class = [];
+    private readonly List<float> _target = [];
     private readonly List<float> _weight = [];
 
-    private OutOfFoldScores(bool multiclass, bool hasProbability)
+    private OutOfFoldScores(bool multiclass, bool hasProbability, bool regression = false)
     {
         IsMulticlass = multiclass;
+        IsRegression = regression;
         _probability = hasProbability ? [] : null;
     }
 
     /// <summary>Whether the rows are a multiclass model's (<see cref="ClassProbabilities"/>) rather than a binary one's.</summary>
     public bool IsMulticlass { get; }
 
-    /// <summary>Binary: the model's raw score of each row.</summary>
+    /// <summary>Whether the rows are a regression's (<see cref="Score"/> the predicted value, <see cref="Target"/> the true one).</summary>
+    public bool IsRegression { get; }
+
+    /// <summary>Binary: the model's raw score of each row. Regression: its predicted value.</summary>
     public IReadOnlyList<float> Score => _score;
+
+    /// <summary>Regression: the true value of each row.</summary>
+    public IReadOnlyList<float> Target => _target;
 
     /// <summary>Binary: the model's probability of each row, or <see langword="null"/> when its trainer gives none.</summary>
     public IReadOnlyList<float>? Probability => _probability;
@@ -58,7 +66,16 @@ public sealed class OutOfFoldScores
     /// single-valued <c>Score</c>, or a key label and a <c>Score</c> vector of its width: a regression has nothing to add.
     /// A multiclass row whose label is missing (key 0) is left out.
     /// </summary>
-    public static OutOfFoldScores? Read(IDataView scored, string label, string? weight, OutOfFoldScores? into = null)
+    /// <param name="scored">A validation part, scored by the model fitted without it.</param>
+    /// <param name="label">The label column.</param>
+    /// <param name="weight">The column that weights rows, or <see langword="null"/>.</param>
+    /// <param name="into">The collection the parts of one trial are read into, or <see langword="null"/> to start one.</param>
+    /// <param name="regression">
+    /// Also read a regression — a numeric label and a single-valued <c>Score</c>. Off by default: a classifier's calibration is
+    /// what these answers were kept for, and a ranking's score has the same shape, so only a caller that knows its task is a
+    /// regression asks (an ensemble's weights are fitted on them).
+    /// </param>
+    public static OutOfFoldScores? Read(IDataView scored, string label, string? weight, OutOfFoldScores? into = null, bool regression = false)
     {
         ArgumentNullException.ThrowIfNull(scored);
         var schema = scored.Schema;
@@ -72,7 +89,7 @@ public sealed class OutOfFoldScores
             var probabilityColumn = schema.GetColumnOrNull("Probability") is { } p && p.Type == NumberDataViewType.Single
                 ? p : (DataViewSchema.Column?)null;
             var rows = into ?? new OutOfFoldScores(multiclass: false, hasProbability: probabilityColumn is not null);
-            if (rows.IsMulticlass || (rows._probability is not null) != (probabilityColumn is not null))
+            if (rows.IsMulticlass || rows.IsRegression || (rows._probability is not null) != (probabilityColumn is not null))
                 return null;   // the folds of one pipeline give the same columns; this guards a caller that mixed two
             ReadBinary(scored, labelColumn, scoreColumn, probabilityColumn, weightColumn, rows);
             return rows;
@@ -86,6 +103,15 @@ public sealed class OutOfFoldScores
             if (!rows.IsMulticlass)
                 return null;
             ReadMulticlass(scored, labelColumn, scoreColumn, weightColumn, rows);
+            return rows;
+        }
+
+        if (regression && labelColumn.Type == NumberDataViewType.Single && scoreColumn.Type == NumberDataViewType.Single)
+        {
+            var rows = into ?? new OutOfFoldScores(multiclass: false, hasProbability: false, regression: true);
+            if (!rows.IsRegression)
+                return null;
+            ReadRegression(scored, labelColumn, scoreColumn, weightColumn, rows);
             return rows;
         }
         return null;
@@ -141,6 +167,29 @@ public sealed class OutOfFoldScores
             getScore(ref scores);
             rows._classProbabilities.Add(scores.DenseValues().ToArray());
             rows._class.Add((int)key - 1);
+            rows._weight.Add(rowWeight);
+        }
+    }
+
+    private static void ReadRegression(IDataView scored, DataViewSchema.Column labelColumn, DataViewSchema.Column scoreColumn,
+        DataViewSchema.Column? weightColumn, OutOfFoldScores rows)
+    {
+        var columns = new List<DataViewSchema.Column> { labelColumn, scoreColumn };
+        if (weightColumn is { } wc) columns.Add(wc);
+        using var cursor = scored.GetRowCursor(columns);
+        var getLabel = cursor.GetGetter<float>(labelColumn);
+        var getScore = cursor.GetGetter<float>(scoreColumn);
+        var getWeight = weightColumn is { } wcol ? cursor.GetGetter<float>(wcol) : null;
+        float target = default, score = default, rowWeight = 1;
+        while (cursor.MoveNext())
+        {
+            getLabel(ref target);
+            getWeight?.Invoke(ref rowWeight);
+            if (float.IsNaN(target))
+                continue;   // a missing label
+            getScore(ref score);
+            rows._target.Add(target);
+            rows._score.Add(score);
             rows._weight.Add(rowWeight);
         }
     }

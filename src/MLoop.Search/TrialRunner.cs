@@ -26,6 +26,12 @@ namespace MLoop.Search;
 /// returned (<see cref="SearchResult.OutOfFold"/>) — what a calibration of the refit model is fitted on. Costs one more
 /// pass over each validated part; trials whose score falls well outside the top's standard error drop theirs.
 /// </param>
+/// <param name="KeepTopOutOfFold">
+/// Also keep the answers of the best this-many trials, whatever their distance from the top, and return them with the
+/// pipelines that made them (<see cref="SearchResult.Retained"/>) — what an ensemble of the best trials is chosen and weighted
+/// on. A regression's answers are read too. Needs <see cref="KeepOutOfFold"/>. Costs memory in proportion to the rows and
+/// this number, and nothing when 0 (the default), which keeps only what a calibration of the kept trial needs.
+/// </param>
 public sealed record SearchRequest(
     IReadOnlyList<TrainerCandidate> Candidates,
     IMetricPolicy Metric,
@@ -36,7 +42,14 @@ public sealed record SearchRequest(
     bool Stratify = true,
     int? MaxTrials = null,
     IEstimator<ITransformer>? Preprocess = null,
-    bool KeepOutOfFold = false);
+    bool KeepOutOfFold = false,
+    int KeepTopOutOfFold = 0);
+
+/// <summary>A trial whose answers on its validated parts were kept beyond the winner's (<see cref="SearchRequest.KeepTopOutOfFold"/>).</summary>
+/// <param name="Trial">The trial.</param>
+/// <param name="OutOfFold">Its answers on every row of the partition once, each by the model fitted without that row's fold.</param>
+/// <param name="Pipeline">Builds the trial's pipeline in a context — fit it on the whole partition to get the member's final model.</param>
+public sealed record RetainedTrial(TrialResult Trial, OutOfFoldScores OutOfFold, Func<MLContext, IEstimator<ITransformer>> Pipeline);
 
 /// <summary>A finished search: every trial, the best, and the best refit on the whole partition.</summary>
 /// <param name="Trials">Every trial in the order it finished, failures included.</param>
@@ -52,7 +65,11 @@ public sealed record SearchRequest(
 /// <param name="TopScoring">The trial with the highest score — <see cref="Best"/> itself unless a smaller model scored within its standard error.</param>
 /// <param name="OutOfFold">
 /// <see cref="Best"/>'s answers on its validated parts, when the request kept them (<see cref="SearchRequest.KeepOutOfFold"/>)
-/// and the pipeline is a classifier; <see langword="null"/> otherwise.
+/// and the pipeline is a classifier (or a regression, when <see cref="SearchRequest.KeepTopOutOfFold"/> asked for those too);
+/// <see langword="null"/> otherwise.
+/// </param>
+/// <param name="Retained">
+/// The best <see cref="SearchRequest.KeepTopOutOfFold"/> trials with their answers, best first; <see langword="null"/> when none were asked for.
 /// </param>
 public sealed record SearchResult(
     IReadOnlyList<TrialResult> Trials,
@@ -62,7 +79,8 @@ public sealed record SearchResult(
     string? FallbackReason,
     FoldPlan Folds,
     TrialResult TopScoring,
-    OutOfFoldScores? OutOfFold = null);
+    OutOfFoldScores? OutOfFold = null,
+    IReadOnlyList<RetainedTrial>? Retained = null);
 
 /// <summary>No trial of a search produced a score. <see cref="Trials"/> says why each failed.</summary>
 public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, string message, bool allTrainersRetired = false) : Exception(message)
@@ -148,6 +166,9 @@ public sealed class TrialRunner
         _request = request ?? throw new ArgumentNullException(nameof(request));
         if (request.Candidates.Count == 0)
             throw new ArgumentException("A search needs at least one candidate trainer.", nameof(request));
+        ArgumentOutOfRangeException.ThrowIfNegative(request.KeepTopOutOfFold);
+        if (request.KeepTopOutOfFold > 0 && !request.KeepOutOfFold)
+            throw new ArgumentException("Keeping the best trials' answers needs the answers kept (KeepOutOfFold).", nameof(request));
         _sink = sink;
     }
 
@@ -223,7 +244,7 @@ public sealed class TrialRunner
             var readable = _request.KeepOutOfFold;
             void Keep(IDataView part)
             {
-                if (readable && OutOfFoldScores.Read(part, roles.Label, _request.Weight, outOfFold) is { } rows)
+                if (readable && OutOfFoldScores.Read(part, roles.Label, _request.Weight, outOfFold, regression: _request.KeepTopOutOfFold > 0) is { } rows)
                     outOfFold = rows;
                 else
                     (readable, outOfFold) = (false, null);
@@ -329,7 +350,11 @@ public sealed class TrialRunner
             var fallbackContext = new MLContext(settings.Seed);
             model = winner.Pipeline(fallbackContext).Fit(fallbackContext.Data.FilterRowsByColumn(view, HoldoutView.ColumnName, 0, 0.5));
         }
-        return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial, winner.OutOfFold);
+        IReadOnlyList<RetainedTrial>? retained = _request.KeepTopOutOfFold > 0
+            ? [.. BestFirst(scored).Where(e => e.OutOfFold is not null).Take(_request.KeepTopOutOfFold)
+                .Select(e => new RetainedTrial(e.Trial, e.OutOfFold!, e.Pipeline))]
+            : null;
+        return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial, winner.OutOfFold, retained);
     }
 
     private sealed record Scored(
@@ -342,17 +367,39 @@ public sealed class TrialRunner
     // Out-of-fold answers are a few numbers per row per trial. Only a trial that Choose could keep needs them — the
     // top, or one within its standard error — so a trial further than twice that from the top drops its own. The
     // margin is read from the scores alone, so which trials keep theirs is as repeatable as the search.
+    // A request for the best few trials' answers (KeepTopOutOfFold) spares those whatever their distance from the top.
     private void DropDistantOutOfFold(List<Scored> scored, Scored top)
     {
-        var margin = 2 * Margin(top);
-        var floor = _request.Metric.HigherIsBetter ? top.Value - margin : top.Value + margin;
-        foreach (var entry in scored)
+        var keeps = KeepsOutOfFold([.. scored.Select(e => e.Value)], scored.IndexOf(top), 2 * Margin(top), _request.Metric.HigherIsBetter, _request.KeepTopOutOfFold);
+        for (var i = 0; i < scored.Count; i++)
         {
-            if (entry.OutOfFold is not null && !ReferenceEquals(entry, top)
-                && (_request.Metric.HigherIsBetter ? entry.Value < floor : entry.Value > floor))
-                entry.OutOfFold = null;
+            if (!keeps[i])
+                scored[i].OutOfFold = null;
         }
     }
+
+    /// <summary>
+    /// Which trials keep their answers: the top, any within <paramref name="margin"/> of its score, and the best
+    /// <paramref name="keepTop"/> by score whatever their distance (the earlier trial between two of one score).
+    /// </summary>
+    internal static bool[] KeepsOutOfFold(IReadOnlyList<double> values, int top, double margin, bool higherIsBetter, int keepTop)
+    {
+        var floor = higherIsBetter ? values[top] - margin : values[top] + margin;
+        var keeps = new bool[values.Count];
+        for (var i = 0; i < values.Count; i++)
+            keeps[i] = i == top || (higherIsBetter ? values[i] >= floor : values[i] <= floor);
+        if (keepTop > 0)
+        {
+            var order = Enumerable.Range(0, values.Count);
+            foreach (var i in (higherIsBetter ? order.OrderByDescending(i => values[i]) : order.OrderBy(i => values[i])).Take(keepTop))
+                keeps[i] = true;
+        }
+        return keeps;
+    }
+
+    // Best score first; between two of one score the earlier trial (the sort is stable).
+    private IEnumerable<Scored> BestFirst(List<Scored> scored)
+        => _request.Metric.HigherIsBetter ? scored.OrderByDescending(e => e.Value) : scored.OrderBy(e => e.Value);
 
     private double Margin(Scored top)
         => top.Score.StandardError is { } errors && errors.TryGetValue(_request.Metric.Name, out var se) && double.IsFinite(se) ? se : 0;

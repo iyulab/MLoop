@@ -153,6 +153,101 @@ public sealed class TrialRunnerTests
         Assert.Null(new TrialRunner(regression).Run(x, regressionRoles).OutOfFold);
     }
 
+    // The ensemble's first step: the best few trials keep their answers, a regression's included, and come back with the pipelines
+    // that made them. Asked for nothing, a search keeps what it always kept (the test above).
+    private static (IDataView Data, ColumnRoles Roles, SearchRequest Request) RegressionSearch(MLContext ml, int maxTrials, int keepTop)
+    {
+        var (data, _) = Data(ml);
+        var x = ml.Transforms.CopyColumns("Y", "X").Fit(data).Transform(data);
+        var request = new SearchRequest(
+            CandidateCatalog.Regression(name => name is "FastTree" or "LbfgsPoissonRegression" or "FastForest"),
+            new Auc("rmse", HigherIsBetter: false),
+            scored => new Dictionary<string, double> { ["rmse"] = ml.Regression.Evaluate(scored, "Y").RootMeanSquaredError },
+            TimeSpan.FromMinutes(5), new SearchSettings(Seed: 3), Stratify: false, MaxTrials: maxTrials, KeepOutOfFold: true, KeepTopOutOfFold: keepTop);
+        return (x, new ColumnRoles("Y", [new("Z", ColumnRole.Numeric), new("Colour", ColumnRole.Categorical)]), request);
+    }
+
+    [Fact]
+    public void TheBestFewTrialsOfARegression_KeepTheirAnswers_BestFirst_WithTheirPipelines()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles, request) = RegressionSearch(ml, maxTrials: 6, keepTop: 3);
+
+        var result = new TrialRunner(request).Run(data, roles);
+
+        var retained = Assert.IsAssignableFrom<IReadOnlyList<RetainedTrial>>(result.Retained);
+        Assert.Equal(3, retained.Count);
+        foreach (var kept in retained)
+        {
+            Assert.True(kept.OutOfFold.IsRegression);
+            Assert.Equal(240, kept.OutOfFold.Count);
+            Assert.Equal(240, kept.OutOfFold.Target.Count);
+            Assert.Equal(240, kept.OutOfFold.Score.Count);
+            Assert.NotNull(kept.Pipeline(new MLContext(seed: 1)));
+        }
+        // Best first: the rmse never goes down the list, and the first is the top-scoring trial.
+        var rmse = retained.Select(r => r.Trial.Metrics!["rmse"]).ToArray();
+        Assert.Equal(rmse.OrderBy(v => v), rmse);
+        Assert.Equal(result.TopScoring.Metrics!["rmse"], rmse[0]);
+        // The winner's own answers are among them, and a regression's are read when the best few were asked for.
+        Assert.True(result.OutOfFold!.IsRegression);
+    }
+
+    [Fact]
+    public void ARegression_KeepsNoAnswers_WhenOnlyTheWinnersAreAsked_AsBefore()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles, request) = RegressionSearch(ml, maxTrials: 2, keepTop: 0);
+
+        var result = new TrialRunner(request).Run(data, roles);
+
+        Assert.Null(result.OutOfFold);
+        Assert.Null(result.Retained);
+    }
+
+    [Fact]
+    public void ABinarySearch_KeepsTheAskedNumberOfTrials_EvenFarFromTheTop()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Data(ml);
+
+        var result = new TrialRunner(Request(ml, TimeSpan.FromMinutes(5), maxTrials: 8) with { KeepOutOfFold = true, KeepTopOutOfFold = 4 }).Run(data, roles);
+
+        var retained = result.Retained!;
+        Assert.Equal(Math.Min(4, result.Trials.Count(t => t.Succeeded)), retained.Count);
+        Assert.All(retained, r => Assert.False(r.OutOfFold.IsRegression));
+        var auc = retained.Select(r => r.Trial.Metrics!["auc"]).ToArray();
+        Assert.Equal(auc.OrderByDescending(v => v), auc);
+    }
+
+    [Fact]
+    public void TheRetentionRule_KeepsTheTopAndTheNearOnes_AndTheBestFewWhateverTheirDistance()
+    {
+        double[] values = [0.90, 0.50, 0.88, 0.30, 0.70];   // the top is trial 0; with a margin of 0.02 trial 2 is near it
+
+        // Nothing asked: only what a calibration of the kept trial could need.
+        Assert.Equal([true, false, true, false, false], TrialRunner.KeepsOutOfFold(values, 0, 0.02, higherIsBetter: true, keepTop: 0));
+        // The best three by score: trial 4 (0.70) joins though it is far from the top; trial 1 (0.50) does not.
+        Assert.Equal([true, false, true, false, true], TrialRunner.KeepsOutOfFold(values, 0, 0.02, higherIsBetter: true, keepTop: 3));
+        // More asked than there are trials: all of them.
+        Assert.All(TrialRunner.KeepsOutOfFold(values, 0, 0.02, higherIsBetter: true, keepTop: 9), kept => Assert.True(kept));
+        // A lower-is-better metric ranks the other way round.
+        double[] errors = [1.0, 5.0, 1.1, 9.0, 3.0];
+        Assert.Equal([true, false, true, false, false], TrialRunner.KeepsOutOfFold(errors, 0, 0.2, higherIsBetter: false, keepTop: 0));
+        Assert.Equal([true, false, true, false, true], TrialRunner.KeepsOutOfFold(errors, 0, 0.2, higherIsBetter: false, keepTop: 3));
+        // Between two of one score, far from the top, the earlier trial ranks first.
+        Assert.Equal([true, true, true, false], TrialRunner.KeepsOutOfFold([0.9, 0.5, 0.5, 0.5], 0, 0, higherIsBetter: true, keepTop: 3));
+    }
+
+    [Fact]
+    public void AskingForTheBestTrialsAnswers_NeedsTheAnswersKept_AndANonNegativeNumber()
+    {
+        var ml = new MLContext(seed: 1);
+
+        Assert.Throws<ArgumentException>(() => new TrialRunner(Request(ml, TimeSpan.FromMinutes(1)) with { KeepTopOutOfFold = 2 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new TrialRunner(Request(ml, TimeSpan.FromMinutes(1)) with { KeepOutOfFold = true, KeepTopOutOfFold = -1 }));
+    }
+
     [Fact]
     public void TheFirstTrial_FinishesWhateverTheBudget()
     {

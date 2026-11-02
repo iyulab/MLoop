@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`MLoop.Search` can keep the answers of the best few trials, a regression's included.** `SearchRequest.KeepTopOutOfFold` (default 0; needs `KeepOutOfFold`) keeps the out-of-fold answers of the best N trials whatever their distance from the top, and `SearchResult.Retained` returns them best first with the pipeline that made each (`RetainedTrial`) — what a blend of the best trials is chosen and weighted on. `OutOfFoldScores.Read` reads a regression (`IsRegression`, `Target`, `Score` the predicted value) only when asked (`regression: true`); a request that asks for nothing new keeps and returns exactly what it did.
+
 ### Changed
 
 - **Object detection trains with a learning rate of 0.15, not 0.3, and a longer run no longer makes the detector worse.** At 0.3 the loss of a small set with small, cluttered objects turned up at the third to fifth epoch and ended above where it started to fall (`map_50` 0 in 10 and in 40 epochs), and on an easy set a run past a dozen epochs at the rate before the trainer's step down diverged. At 0.15 the loss fell every epoch on all the sets tried, for 10 and for 40 epochs, and 40 epochs scored at least as well as 10 (`map_50` 0.42 → 0.58 on the cluttered set). The trainer's own step down at epoch 6 is kept, not scaled with `--epochs`: it is what holds a longer run stable. The trainer keeps no best-epoch model and offers no hook to take one, so a rising loss is answered by the rate, not by choosing an epoch. Detectors trained with 0.49.0 can be retrained for a better result; the sets were synthetic, and 0.15 is the best of the rates tried (1.0, 0.3, 0.15, 0.1, 0.03), not a searched optimum.
