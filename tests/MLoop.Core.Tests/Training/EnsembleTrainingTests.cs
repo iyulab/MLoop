@@ -201,35 +201,6 @@ public class EnsembleTrainingTests
     }
 
     [Fact]
-    public async Task ARunTooShortToBlend_KeepsTheSingleModel_AndSaysWhy()
-    {
-        var ctx = new MLContext(seed: 42);
-        var data = ctx.Data.LoadFromEnumerable(NoisyBinary());
-        var config = new TrainingConfig
-        {
-            ModelName = "e",
-            DataFile = "synthetic",
-            LabelColumn = "Label",
-            Task = "binary-classification",
-            TimeLimitSeconds = 1,
-            Metric = "auc",
-            MaxTrials = 4,
-            Ensemble = true,
-        };
-
-        var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
-
-        // Whatever the clock allowed — too few trials, or members that do not fit in what is left — a short run is not a blend
-        // that overran its budget: the single model stands and the outcome names the reason.
-        var outcome = Assert.IsType<EnsembleOutcome>(result.Ensemble);
-        if (!outcome.IsBlend)
-        {
-            Assert.NotEqual("Ensemble", result.Trainer.Name);
-            Assert.False(string.IsNullOrWhiteSpace(outcome.SkippedBecause));
-        }
-    }
-
-    [Fact]
     public async Task WithoutTheRequest_TheRunAnswersWithTheSingleBestModel()
     {
         var ctx = new MLContext(seed: 42);
@@ -250,6 +221,73 @@ public class EnsembleTrainingTests
         var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(Config("multiclass-classification", "macro_accuracy", ensemble: true));
 
         Assert.NotEqual("Ensemble", result.Trainer.Name);
+    }
+
+    // A clock that answers from a script: the first reading is the start of the run, every later one is the next entry (the last
+    // repeats). The blend asks it twice — how much of the budget is left before fitting the members, and, after each member, whether
+    // the budget has run out — so a script says which of those branches a run takes without waiting for any of them.
+    private sealed class ScriptedClock(params double[] seconds) : TimeProvider
+    {
+        private int _readings;
+        public override long TimestampFrequency => 1000;
+        public override long GetTimestamp() => (long)(seconds[Math.Min(_readings++, seconds.Length - 1)] * 1000);
+    }
+
+    [Fact]
+    public async Task AFitTimeThatDoesNotFitInWhatIsLeft_KeepsTheSingleModel_AndNamesTheShortfall()
+    {
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(NoisyBinary());
+        // The run has used far more than its budget by the time the blend would start.
+        var runner = new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data), timeProvider: new ScriptedClock(0, 100_000));
+
+        var result = await runner.RunAsync(Config("binary-classification", "auc", ensemble: true));
+
+        var outcome = Assert.IsType<EnsembleOutcome>(result.Ensemble);
+        Assert.False(outcome.IsBlend);
+        Assert.Contains("of the time budget are left", outcome.SkippedBecause, StringComparison.Ordinal);
+        Assert.NotEqual("Ensemble", result.Trainer.Name);
+        // The blend was weighed before it was given up, so the record still says what it would have scored.
+        Assert.NotNull(outcome.OutOfFoldScore);
+        Assert.NotNull(outcome.BestSingleOutOfFoldScore);
+    }
+
+    [Fact]
+    public async Task ABlendThatRunsPastTheBudgetWhileItsMembersAreFitted_IsGivenUpForTheSingleModel()
+    {
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(NoisyBinary());
+        // Time is left when the members are estimated to fit (readings 1–2), and gone once the first member has been fitted.
+        var runner = new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data), timeProvider: new ScriptedClock(0, 0, 100_000));
+
+        var result = await runner.RunAsync(Config("binary-classification", "auc", ensemble: true));
+
+        var outcome = Assert.IsType<EnsembleOutcome>(result.Ensemble);
+        Assert.False(outcome.IsBlend);
+        Assert.Contains("so the blend was given up", outcome.SkippedBecause, StringComparison.Ordinal);
+        Assert.Contains("time budget ran out", outcome.SkippedBecause, StringComparison.Ordinal);
+        Assert.NotEqual("Ensemble", result.Trainer.Name);
+        Assert.NotNull(result.ScoringModel(ctx));
+    }
+
+    [Fact]
+    public async Task TheBlendsProbabilityMapping_IsFittedOnTheBlendsOwnOutOfFoldAnswers_NotOnTheBestSingleTrials()
+    {
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(NoisyBinary());
+        var provider = new InMemoryDataProvider(ctx, data);
+
+        var single = await new TrainingRunner(ctx, provider).RunAsync(Config("binary-classification", "auc", ensemble: false));
+        var again = await new TrainingRunner(new MLContext(seed: 42), provider).RunAsync(Config("binary-classification", "auc", ensemble: false));
+        var blend = await new TrainingRunner(ctx, provider).RunAsync(Config("binary-classification", "auc", ensemble: true));
+
+        Assert.Equal("Ensemble", blend.Trainer.Name);
+        var (single1, single2, blended) = (Assert.IsType<ProbabilityCalibration>(single.Calibration), Assert.IsType<ProbabilityCalibration>(again.Calibration), Assert.IsType<ProbabilityCalibration>(blend.Calibration));
+        // The control: the same single run twice maps probabilities identically, so a difference below is the blend's and not noise —
+        // and a blend calibrated on the best single trial's answers instead would land on exactly the single run's mapping.
+        foreach (var p in new[] { 0.1, 0.3, 0.5, 0.7, 0.9 })
+            Assert.Equal(single1.Map(p), single2.Map(p), 12);
+        Assert.Contains(new[] { 0.1, 0.3, 0.5, 0.7, 0.9 }, p => Math.Abs(blended.Map(p) - single1.Map(p)) > 1e-6);
     }
 
     private sealed class MulticlassRow

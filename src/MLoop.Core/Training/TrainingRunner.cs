@@ -27,6 +27,7 @@ public partial class TrainingRunner
     private readonly MLContext _mlContext;
     private readonly IDataProvider _dataLoader;
     private readonly SinkLogger _logger;
+    private readonly TimeProvider _time;
 
     // What a run has already said. A run can try more than one search (another metric, then a
     // direct pipeline) and each one states the same column roles; saying it once is enough.
@@ -43,6 +44,10 @@ public partial class TrainingRunner
     /// Where this runner's info and debug lines go. The CLI points this at its own console, so the
     /// scope a <c>--json</c> command installs governs them like every other line it writes.
     /// </param>
+    /// <param name="timeProvider">
+    /// The clock a blend asks about the time left of the run's budget (system time when omitted). The trainer search
+    /// keeps its own clock; this one exists so the blend's two time branches can be tested without waiting for them.
+    /// </param>
     /// <remarks>
     /// Both channels are injected and neither has a console default. An earlier version injected only
     /// the warning channel, on the stated ground that narration "has no host channel to reach because
@@ -56,8 +61,10 @@ public partial class TrainingRunner
         MLContext mlContext,
         IDataProvider dataLoader,
         Action<string>? warningSink = null,
-        Action<string>? narrationSink = null)
+        Action<string>? narrationSink = null,
+        TimeProvider? timeProvider = null)
     {
+        _time = timeProvider ?? TimeProvider.System;
         _mlContext = mlContext ?? throw new ArgumentNullException(nameof(mlContext));
         _dataLoader = dataLoader ?? throw new ArgumentNullException(nameof(dataLoader));
         _logger = new SinkLogger(warningSink, narrationSink);
@@ -689,7 +696,10 @@ public partial class TrainingRunner
         CancellationToken cancellationToken,
         Func<ITransformer, IDataView, OutOfFoldScores?, (ITransformer Model, Dictionary<string, double> Metrics, ITransformer? ResidualModel, ProbabilityCalibration? Calibration)>? finish = null)
     {
-        var clock = Stopwatch.StartNew();
+        // The run's own clock — what a blend asks about the time left. The search keeps its own; this one is injectable so that the
+        // blend's two time branches (members that do not fit, a fit that runs over) can be tested without waiting for them.
+        var started = _time.GetTimestamp();
+        TimeSpan Elapsed() => _time.GetElapsedTime(started);
         var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         ITransformer? portableText = null;
         if (config.Portable)
@@ -737,7 +747,7 @@ public partial class TrainingRunner
         }
 
         (ITransformer? Model, EnsemblePlan? Plan, EnsembleOutcome Outcome)? ensemble = UsesEnsemble(config)
-            ? FitEnsemble(search, request, metric, score, config, trainSet, clock)
+            ? FitEnsemble(search, request, metric, score, config, trainSet, Elapsed)
             : null;
         var bestModel = PortableTextFeaturizer.Prepend(portableText, ensemble?.Model ?? search.Model);
         var predictions = bestModel.Transform(testSet);
@@ -784,7 +794,7 @@ public partial class TrainingRunner
     /// </summary>
     private (ITransformer? Model, EnsemblePlan? Plan, EnsembleOutcome Outcome) FitEnsemble(
         SearchResult search, SearchRequest request, string metric,
-        Func<IDataView, string, Dictionary<string, double>> score, TrainingConfig config, IDataView trainSet, Stopwatch clock)
+        Func<IDataView, string, Dictionary<string, double>> score, TrainingConfig config, IDataView trainSet, Func<TimeSpan> elapsed)
     {
         (ITransformer?, EnsemblePlan?, EnsembleOutcome) Single(string why, EnsemblePlan? weighed = null)
         {
@@ -807,7 +817,7 @@ public partial class TrainingRunner
         // The members are fitted again on the whole partition, one after another: their estimated fit times, summed, have to fit in
         // what is left of the time budget (the search was given a share of it for this).
         var limit = TimeSpan.FromSeconds(config.TimeLimitSeconds);
-        if (EnsembleBudget.Shortfall(plan.Members, limit - clock.Elapsed) is { } shortfall)
+        if (EnsembleBudget.Shortfall(plan.Members, limit - elapsed()) is { } shortfall)
             return Single(shortfall, plan);
         try
         {
@@ -815,7 +825,7 @@ public partial class TrainingRunner
             // The estimate above can be wrong; the clock is asked again after every member, and a blend that has run past the
             // time budget is given up for the single model (what is left of the members is not fitted).
             var chain = EnsembleChain.Fit(
-                _mlContext, members, trainSet, IsBinary(config) ? EnsembleKind.Binary : EnsembleKind.Regression, () => clock.Elapsed > limit);
+                _mlContext, members, trainSet, IsBinary(config) ? EnsembleKind.Binary : EnsembleKind.Regression, () => elapsed() > limit);
             _logger.Info($"Ensemble: {string.Join(" + ", plan.Members.Select((t, i) => $"{t.Trial.Trainer}×{plan.Counts[i]}"))} " +
                 $"({metric} {plan.Score:0.####} out of fold, the best trial alone {plan.BestSingleScore:0.####}).");
             return (chain, plan, new EnsembleOutcome
