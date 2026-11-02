@@ -8,6 +8,9 @@ Each (dataset, split seed) gets one stratified 80/20 split; every system receive
                 nearly all of the train file)
   mloop-defaults  the same without `--metric` / `--test-split`: the shipped defaults (an accuracy-family metric,
                 20% of the train file held back for the model's own test)
+  mloop-ensemble  `mloop` with `--ensemble` (binary and regression only): the product path that answers with a blend of the best
+                trials when one scores better out of fold. Not in the default `--systems`; name it to run it. Its row records
+                whether the run answered with a blend or kept the single model (and why), and `summarize` pairs it with `mloop`
   flaml         FLAML AutoML, time_budget=B, its default learners
   flaml-nogbm   FLAML restricted to rf / extra_tree / a linear model (lrl1, lassolars for regression); no gradient boosting
   lightgbm      LightGBM, library defaults
@@ -28,6 +31,8 @@ TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classi
 # metric -> direction (+1: higher is better)
 PRIMARY = {'binary': ('auc', +1), 'multiclass': ('log_loss', -1), 'regression': ('rmse', -1)}
 SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboost', 'automl-legacy']
+# run only when named in --systems: the blend is for binary classification and regression, and costs an extra search's worth of time
+OPTIONAL_SYSTEMS = ['mloop-ensemble']
 # `ensemble` is a probe, not a system: one search yields four rows - its best single model, the equal-weight average of its best 3 and 5 trials,
 # the member the train rows' out-of-fold answers pick (what forward selection collapses to on one member), and a forward-selected blend of its
 # best 5 (weights chosen on those same out-of-fold answers)
@@ -107,7 +112,20 @@ def read_trials(project, experiment_id):
     return rows
 
 
-def run_mloop(mloop, entry, work, budget, aligned):
+def read_ensemble_outcome(project, experiment_id):
+    """What a run asked for a blend came to: `result.ensemble` in the experiment's metadata.json."""
+    for root, _dirs, files in os.walk(os.path.join(project, 'models')):
+        if os.path.basename(root) == experiment_id and 'metadata.json' in files:
+            try:
+                outcome = (json.load(open(os.path.join(root, 'metadata.json'))).get('result') or {}).get('ensemble') or {}
+            except (OSError, ValueError):
+                return None
+            return {'blend': bool(outcome.get('members')), 'members': outcome.get('members'), 'skipped': outcome.get('skippedBecause'),
+                    'oof': outcome.get('outOfFoldScore'), 'oof_single': outcome.get('bestSingleOutOfFoldScore')}
+    return None
+
+
+def run_mloop(mloop, entry, work, budget, aligned, ensemble=False):
     project = os.path.join(work, 'mloop-project')
     shutil.rmtree(project, ignore_errors=True)
     init = subprocess.run(mloop + ['init', 'mloop-project', '--task', TASK_FLAG[entry['task']]],
@@ -117,7 +135,8 @@ def run_mloop(mloop, entry, work, budget, aligned):
     started = time.time()
     train = subprocess.run(mloop + ['train', os.path.join(work, 'train.csv'), '--label', entry['target'],
                                     '--task', TASK_FLAG[entry['task']], '--time', str(budget), '--no-promote', '--json']
-                           + (['--metric', OPTIMIZE[entry['task']], '--test-split', '0.05'] if aligned else []),
+                           + (['--metric', OPTIMIZE[entry['task']], '--test-split', '0.05'] if aligned else [])
+                           + (['--ensemble'] if ensemble else []),
                            cwd=project, capture_output=True, text=True)
     wall = time.time() - started
     result, trials = None, 0
@@ -138,8 +157,11 @@ def run_mloop(mloop, entry, work, budget, aligned):
         test_metrics = json.loads(evaluated.stdout)['testMetrics']
     except (ValueError, KeyError):
         return {'error': 'evaluate failed: ' + (evaluated.stdout + evaluated.stderr)[-300:]}
-    return {'learner': result.get('bestTrainer'), 'trials': trials, 'wall_s': round(wall, 1), 'test': test_metrics,
-            'trial_log': read_trials(project, result['experimentId'])}
+    row = {'learner': result.get('bestTrainer'), 'trials': trials, 'wall_s': round(wall, 1), 'test': test_metrics,
+           'trial_log': read_trials(project, result['experimentId'])}
+    if ensemble:
+        row['ensemble'] = read_ensemble_outcome(project, result['experimentId'])
+    return row
 
 
 def run_automl_legacy(command, entry, work, budget):
@@ -245,8 +267,10 @@ def run_all(args):
                         print(entry['name'], seed, name, json.dumps(result.get('test') or result.get('error'))[:100], flush=True)
                     continue
                 try:
-                    if system in ('mloop', 'mloop-defaults'):
-                        result = run_mloop(mloop, entry, work, args.budget, aligned=system == 'mloop')
+                    if system == 'mloop-ensemble' and entry['task'] not in ('binary', 'regression'):
+                        continue   # a blend is made for binary classification and regression
+                    if system in ('mloop', 'mloop-defaults', 'mloop-ensemble'):
+                        result = run_mloop(mloop, entry, work, args.budget, aligned=system != 'mloop-defaults', ensemble=system == 'mloop-ensemble')
                     elif system == 'automl-legacy':
                         result = run_automl_legacy(shlex.split(args.automl_legacy), entry, work, args.budget)
                     elif system == 'flaml':
@@ -270,6 +294,8 @@ def summarize(paths):
     import numpy as np
     by = collections.defaultdict(dict)
     meta = {}
+    wall = collections.defaultdict(dict)    # dataset -> system -> seed -> seconds the `mloop train` process took
+    blend = collections.defaultdict(dict)   # dataset -> seed -> what the blend run came to (system mloop-ensemble)
     for path in paths:
         for line in open(path):
             r = json.loads(line)
@@ -279,6 +305,10 @@ def summarize(paths):
                 continue
             by[r['dataset']].setdefault(r['system'], {})[r['seed']] = value
             meta[r['dataset']] = (r['task'], r['rows'])
+            if r.get('wall_s') is not None:
+                wall[r['dataset']].setdefault(r['system'], {})[r['seed']] = r['wall_s']
+            if r['system'] == 'mloop-ensemble':
+                blend[r['dataset']][r['seed']] = r.get('ensemble') or {}
 
     def mean_se(values):
         a = np.array(list(values.values()))
@@ -309,6 +339,27 @@ def summarize(paths):
     for other, tally in tallies.items():
         print(f'mloop vs {other}: {dict(tally)}')
     print('\nA pair counts as equal when the mean paired difference over split seeds is within its standard error.')
+    if any('mloop-ensemble' in by[name] for name in by):
+        # The product with a blend asked for against the product without: only `--ensemble` differs (same split, same budget, same seeds).
+        print('\n| dataset | task | rows | metric | mloop | mloop-ensemble | on vs off | blend chosen | train s off | train s on |')
+        print('|---|---|---|---|---|---|---|---|---|---|')
+        onoff, chosen_total, run_total = collections.Counter(), 0, 0
+        for name in sorted(by, key=lambda n: (meta[n][0], meta[n][1])):
+            if 'mloop-ensemble' not in by[name]:
+                continue
+            task, rows = meta[name]
+            metric, direction = PRIMARY[task]
+            v = verdict(by[name]['mloop-ensemble'], by[name].get('mloop', {}), direction)
+            onoff[v] += 1
+            chosen = sum(1 for o in blend[name].values() if o.get('blend'))
+            chosen_total, run_total = chosen_total + chosen, run_total + len(blend[name])
+            seconds = lambda system: (sum(wall[name].get(system, {}).values()) / len(wall[name][system])) if wall[name].get(system) else float('nan')
+            print(f"| {name} | {task} | {rows} | {metric} | {'%.4f±%.4f' % mean_se(by[name]['mloop']) if 'mloop' in by[name] else '—'} | "
+                  f"{'%.4f±%.4f' % mean_se(by[name]['mloop-ensemble'])} | {v} | {chosen}/{len(blend[name])} | {seconds('mloop'):.0f} | {seconds('mloop-ensemble'):.0f} |")
+        print(f'\nmloop-ensemble vs mloop: {dict(onoff)}; the blend was chosen in {chosen_total} of {run_total} runs')
+        reasons = collections.Counter((o.get('skipped') or '')[:70] for per in blend.values() for o in per.values() if not o.get('blend'))
+        for reason, n in reasons.most_common():
+            print(f'  single model kept ({n}): {reason or "(no reason recorded)"}')
     if any('ens-single' in by[name] for name in by):
         # The average of the search's best trials against that same search's best single model: only the average differs.
         counts = {k: collections.Counter() for k in ('ens-k3', 'ens-k5', 'ens-oofpick', 'ens-fwd')}
@@ -339,7 +390,7 @@ def main():
     r.add_argument('--seeds', default='0,1,2', help='split seeds')
     r.add_argument('--budget', type=int, default=60, help='time budget in seconds for the searching systems')
     r.add_argument('--datasets', default='', help='comma-separated dataset names from datasets.json (default: all)')
-    r.add_argument('--systems', default=','.join(SYSTEMS))
+    r.add_argument('--systems', default=','.join(SYSTEMS), help='comma-separated; ' + ', '.join(OPTIONAL_SYSTEMS) + ' runs only when named')
     r.add_argument('--automl-legacy', default='dotnet ' + os.path.join(HERE, 'automl-legacy', 'bin', 'Release', 'net10.0', 'AutomlLegacy.dll'),
                    help='command that starts the legacy AutoML runner (system automl-legacy)')
     r.add_argument('--ensemble-probe', default='dotnet ' + os.path.join(HERE, 'ensemble-probe', 'bin', 'Release', 'net10.0', 'EnsembleProbe.dll'),
