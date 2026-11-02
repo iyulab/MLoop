@@ -60,6 +60,10 @@ python benchmarks/engine-compare/forest-probe/forest.py --mlnet "dotnet $PWD/ben
 `flaml` rows also record the winning settings (`best_config`, `best_loss`, `best_config_train_time`, and the per-learner best loss and config), and `flaml-lgbm` / `flaml-forest`
 (named in `--systems`) restrict FLAML to its LightGBM learner or to random forest and extra trees, to attribute a gap to a learner family.
 
+`autogluon` (named in `--systems`) runs AutoGluon-Tabular with `time_limit` set to the budget and its default preset. It has no seed of its own, so a table's
+split seed is the only thing that changes between its runs. The workflow installs the package only when it is named, and AutoGluon pins its own
+versions of LightGBM, XGBoost and scikit-learn: read an AutoGluon dispatch against the `flaml` and `mloop` rows of the same dispatch, not against another one.
+
 ## Averaging the best trials (`ensemble-probe/`)
 
 `ensemble-probe` answers one question outside the product: how much does an equal-weight average of the search's best distinct trials gain over its best single model? It runs

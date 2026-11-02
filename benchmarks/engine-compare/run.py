@@ -15,6 +15,8 @@ Each (dataset, split seed) gets one stratified 80/20 split; every system receive
   flaml-nogbm   FLAML restricted to rf / extra_tree / a linear model (lrl1, lassolars for regression); no gradient boosting
   flaml-lgbm    FLAML restricted to its LightGBM learner (not in the default `--systems`)
   flaml-forest  FLAML restricted to rf / extra_tree (not in the default `--systems`)
+  autogluon     AutoGluon-Tabular, `time_limit=B`, its default preset (not in the default `--systems`; the workflow installs the package
+                only when it is named). Its split seed is the table's; AutoGluon takes none of its own
   lightgbm      LightGBM, library defaults
   xgboost       XGBoost, library defaults
   automl-legacy ML.NET's own AutoML (Microsoft.ML.AutoML 0.23.1, the package MLoop's search replaced), time budget B,
@@ -35,7 +37,9 @@ PRIMARY = {'binary': ('auc', +1), 'multiclass': ('log_loss', -1), 'regression': 
 SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboost', 'automl-legacy']
 # run only when named in --systems: the blend is for binary classification and regression, and costs an extra search's worth of time;
 # the single-family FLAML arms attribute a gap to a learner family
-OPTIONAL_SYSTEMS = ['mloop-ensemble', 'flaml-lgbm', 'flaml-forest']
+OPTIONAL_SYSTEMS = ['mloop-ensemble', 'flaml-lgbm', 'flaml-forest', 'autogluon']
+# the optional systems that stand for another searcher (or a restriction of one) and are read against `mloop` in their own table
+OTHER_SYSTEMS = ['flaml-lgbm', 'flaml-forest', 'autogluon']
 # `ensemble` is a probe, not a system: one search yields four rows - its best single model, the equal-weight average of its best 3 and 5 trials,
 # the member the train rows' out-of-fold answers pick (what forward selection collapses to on one member), and a forward-selected blend of its
 # best 5 (weights chosen on those same out-of-fold answers)
@@ -222,6 +226,33 @@ def _jsonable(value):
     return json.loads(json.dumps(value, default=lambda o: o.item() if hasattr(o, 'item') else str(o)))
 
 
+def run_autogluon(entry, train, test, budget, work):
+    from autogluon.tabular import TabularPredictor
+    import numpy as np
+    target, task = entry['target'], entry['task']
+    metric = {'binary': 'roc_auc', 'multiclass': 'log_loss', 'regression': 'root_mean_squared_error'}[task]
+    path = os.path.join(work, 'autogluon')
+    shutil.rmtree(path, ignore_errors=True)
+    started = time.time()
+    try:
+        if task == 'regression':
+            predictor = TabularPredictor(label=target, eval_metric=metric, path=path, verbosity=0).fit(train, time_limit=budget)
+            test_metrics = score(task, test[target].values, pred=predictor.predict(test.drop(columns=[target])).values)
+        else:
+            # classes are named by their position in sorted order, as `encode_classes` does for the other systems
+            classes = sorted(train[target].astype(str).unique())
+            fit_frame = train.assign(**{target: train[target].astype(str)})
+            predictor = TabularPredictor(label=target, eval_metric=metric, path=path, verbosity=0).fit(fit_frame, time_limit=budget)
+            proba = predictor.predict_proba(test.drop(columns=[target]))
+            proba.columns = [str(c) for c in proba.columns]
+            proba = proba.reindex(columns=classes, fill_value=0.0)
+            _, yte = encode_classes(train, test, target)
+            test_metrics = score(task, yte.values, proba=proba.values.astype(np.float64))
+        return {'learner': predictor.model_best, 'wall_s': round(time.time() - started, 1), 'test': test_metrics}
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def run_library(kind, entry, train, test):
     target, task = entry['target'], entry['task']
     xtr, xte = feature_frames(train, test, target)
@@ -287,6 +318,8 @@ def run_all(args):
                         result = run_automl_legacy(shlex.split(args.automl_legacy), entry, work, args.budget)
                     elif system == 'flaml':
                         result = run_flaml(entry, train, test, args.budget, seed)
+                    elif system == 'autogluon':
+                        result = run_autogluon(entry, train, test, args.budget, work)
                     elif system == 'flaml-lgbm':
                         result = run_flaml(entry, train, test, args.budget, seed, ['lgbm'])
                     elif system == 'flaml-forest':
@@ -381,6 +414,25 @@ def summarize(paths):
         reasons = collections.Counter((o.get('skipped') or '')[:70] for per in blend.values() for o in per.values() if not o.get('blend'))
         for reason, n in reasons.most_common():
             print(f'  single model kept ({n}): {reason or "(no reason recorded)"}')
+    others = [o for o in OTHER_SYSTEMS if any(o in by[name] for name in by)]
+    if others:
+        # The restricted FLAML arms and AutoGluon against `mloop` and `flaml` on the tables they ran on.
+        print('\n| dataset | task | rows | metric | mloop | flaml | ' + ' | '.join(others) + ' | ' + ' | '.join(f'mloop vs {o}' for o in others) + ' |')
+        print('|---|---|---|---|---|---|' + '---|' * (2 * len(others)))
+        counts = {o: collections.Counter() for o in others}
+        for name in sorted(by, key=lambda n: (meta[n][0], meta[n][1])):
+            if not any(o in by[name] for o in others):
+                continue
+            task, rows = meta[name]
+            metric, direction = PRIMARY[task]
+            cells = ['%.4f±%.4f' % mean_se(by[name][s]) if s in by[name] else '—' for s in ['mloop', 'flaml', *others]]
+            verdicts = [verdict(by[name].get('mloop', {}), by[name].get(o, {}), direction) for o in others]
+            for o, v in zip(others, verdicts):
+                counts[o][v] += 1
+            print(f'| {name} | {task} | {rows} | {metric} | ' + ' | '.join(cells) + ' | ' + ' | '.join(verdicts) + ' |')
+        print()
+        for o, tally in counts.items():
+            print(f'mloop vs {o}: {dict(tally)}')
     if any('ens-single' in by[name] for name in by):
         # The average of the search's best trials against that same search's best single model: only the average differs.
         counts = {k: collections.Counter() for k in ('ens-k3', 'ens-k5', 'ens-oofpick', 'ens-fwd')}

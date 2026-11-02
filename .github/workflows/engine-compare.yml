@@ -13,7 +13,7 @@ on:
         description: 'Comma-separated dataset names from benchmarks/engine-compare/datasets.json (empty = all)'
         default: ''
       systems:
-        description: 'Comma-separated systems to run (mloop, mloop-defaults, mloop-ensemble, flaml, flaml-nogbm, flaml-lgbm, flaml-forest, lightgbm, xgboost, automl-legacy, ensemble)'
+        description: 'Comma-separated systems to run (mloop, mloop-defaults, mloop-ensemble, flaml, flaml-nogbm, flaml-lgbm, flaml-forest, autogluon, lightgbm, xgboost, automl-legacy, ensemble)'
         default: 'mloop,mloop-defaults,flaml,flaml-nogbm,lightgbm,xgboost,automl-legacy'
       seeds:
         description: 'Comma-separated split seeds, one job each (for example 0,1,2,3,4)'
@@ -70,6 +70,11 @@ jobs:
 
     - name: Install Python packages
       run: pip install flaml lightgbm xgboost scikit-learn pandas numpy
+
+    # AutoGluon pins its own versions of the libraries above, so it is installed only when it is asked for.
+    - name: Install AutoGluon
+      if: contains(inputs.systems, 'autogluon')
+      run: pip install "autogluon.tabular[lightgbm,catboost,xgboost]"
 
     - name: Build the CLI
       run: dotnet build tools/MLoop.CLI --configuration Release
