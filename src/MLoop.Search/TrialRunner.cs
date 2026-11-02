@@ -49,7 +49,12 @@ public sealed record SearchRequest(
 /// <param name="Trial">The trial.</param>
 /// <param name="OutOfFold">Its answers on every row of the partition once, each by the model fitted without that row's fold.</param>
 /// <param name="Pipeline">Builds the trial's pipeline in a context — fit it on the whole partition to get the member's final model.</param>
-public sealed record RetainedTrial(TrialResult Trial, OutOfFoldScores OutOfFold, Func<MLContext, IEstimator<ITransformer>> Pipeline);
+/// <param name="FitSeconds">
+/// About how long fitting <paramref name="Pipeline"/> on the whole partition takes: a fold's fit and scoring scaled up by the
+/// share of the partition a fold leaves out — the estimate the search itself reserves for the refit of its best trial. 0 when unknown.
+/// </param>
+public sealed record RetainedTrial(
+    TrialResult Trial, OutOfFoldScores OutOfFold, Func<MLContext, IEstimator<ITransformer>> Pipeline, double FitSeconds = 0);
 
 /// <summary>A finished search: every trial, the best, and the best refit on the whole partition.</summary>
 /// <param name="Trials">Every trial in the order it finished, failures included.</param>
@@ -352,7 +357,7 @@ public sealed class TrialRunner
         }
         IReadOnlyList<RetainedTrial>? retained = _request.KeepTopOutOfFold > 0
             ? [.. BestFirst(scored).Where(e => e.OutOfFold is not null).Take(_request.KeepTopOutOfFold)
-                .Select(e => new RetainedTrial(e.Trial, e.OutOfFold!, e.Pipeline))]
+                .Select(e => new RetainedTrial(e.Trial, e.OutOfFold!, e.Pipeline, e.FitSeconds * plan.Parts / Math.Max(plan.Parts - 1, 1)))]
             : null;
         return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial, winner.OutOfFold, retained);
     }

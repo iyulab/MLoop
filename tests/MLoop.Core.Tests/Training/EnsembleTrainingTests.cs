@@ -99,6 +99,11 @@ public class EnsembleTrainingTests
 
         Assert.Equal("Ensemble", result.Trainer.Name);
         Assert.Contains("×", result.Trainer.Parameters!.Single(p => p.Key == "members").Value);
+        var outcome = Assert.IsType<EnsembleOutcome>(result.Ensemble);
+        Assert.True(outcome.IsBlend);
+        Assert.Null(outcome.SkippedBecause);
+        Assert.Equal(1.0, outcome.Members!.Sum(m => m.Weight), 6);
+        Assert.True(outcome.OutOfFoldScore > outcome.BestSingleOutOfFoldScore, $"{outcome.OutOfFoldScore} vs {outcome.BestSingleOutOfFoldScore}");
         Assert.NotNull(result.Calibration);
         var scored = result.ScoringModel(ctx).Transform(ctx.Data.TrainTestSplit(data, 0.2, seed: 42).TestSet);
         Assert.Contains(scored.Schema, c => c.Name == "Probability");
@@ -150,6 +155,46 @@ public class EnsembleTrainingTests
         var scored = result.Model.Transform(ctx.Data.TrainTestSplit(data, 0.2, seed: 42).TestSet);
         Assert.Contains(scored.Schema, c => c.Name == "Score");
         Assert.True(double.IsFinite(result.Metrics["rmse"]));
+    }
+
+    [Fact]
+    public async Task WithoutTheRequest_TheRunHasNoEnsembleOutcome()
+    {
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(NoisyBinary(300));
+
+        var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(Config("binary-classification", "auc", ensemble: false));
+
+        Assert.Null(result.Ensemble);
+    }
+
+    [Fact]
+    public async Task ARunTooShortToBlend_KeepsTheSingleModel_AndSaysWhy()
+    {
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(NoisyBinary());
+        var config = new TrainingConfig
+        {
+            ModelName = "e",
+            DataFile = "synthetic",
+            LabelColumn = "Label",
+            Task = "binary-classification",
+            TimeLimitSeconds = 1,
+            Metric = "auc",
+            MaxTrials = 4,
+            Ensemble = true,
+        };
+
+        var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
+
+        // Whatever the clock allowed — too few trials, or members that do not fit in what is left — a short run is not a blend
+        // that overran its budget: the single model stands and the outcome names the reason.
+        var outcome = Assert.IsType<EnsembleOutcome>(result.Ensemble);
+        if (!outcome.IsBlend)
+        {
+            Assert.NotEqual("Ensemble", result.Trainer.Name);
+            Assert.False(string.IsNullOrWhiteSpace(outcome.SkippedBecause));
+        }
     }
 
     [Fact]

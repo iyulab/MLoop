@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.Transforms;
@@ -688,6 +689,7 @@ public partial class TrainingRunner
         CancellationToken cancellationToken,
         Func<ITransformer, IDataView, OutOfFoldScores?, (ITransformer Model, Dictionary<string, double> Metrics, ITransformer? ResidualModel, ProbabilityCalibration? Calibration)>? finish = null)
     {
+        var clock = Stopwatch.StartNew();
         var roles = BuildColumnRoles(trainSet, config.LabelColumn, InfoOnce, config.ColumnOverrides, config.CategoryColumns);
         ITransformer? portableText = null;
         if (config.Portable)
@@ -698,7 +700,8 @@ public partial class TrainingRunner
             candidates,
             RankingPolicy.For(metric),
             scored => ScoreFold(scored, config, score),
-            TimeSpan.FromSeconds(config.TimeLimitSeconds),
+            // A blend is fitted after the search, so the search leaves part of the budget for it.
+            TimeSpan.FromSeconds(config.TimeLimitSeconds * (UsesEnsemble(config) ? EnsembleBudget.SearchShare : 1)),
             config.SearchSettings ?? Settings,
             Weight: string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn,
             Stratify: !IsRegression(config),
@@ -733,17 +736,19 @@ public partial class TrainingRunner
                 "of the top score, the smaller model.");
         }
 
-        var ensemble = UsesEnsemble(config) ? FitEnsemble(search, request, metric, score, config, trainSet) : null;
+        (ITransformer? Model, EnsemblePlan? Plan, EnsembleOutcome Outcome)? ensemble = UsesEnsemble(config)
+            ? FitEnsemble(search, request, metric, score, config, trainSet, TimeSpan.FromSeconds(config.TimeLimitSeconds) - clock.Elapsed)
+            : null;
         var bestModel = PortableTextFeaturizer.Prepend(portableText, ensemble?.Model ?? search.Model);
         var predictions = bestModel.Transform(testSet);
         var (model, metrics, residualModel, calibration) = finish is null
             ? (bestModel, score(predictions, config.LabelColumn), null, null)
-            : finish(bestModel, predictions, ensemble?.Plan.Blended ?? search.OutOfFold);
+            : finish(bestModel, predictions, ensemble?.Plan?.Blended ?? search.OutOfFold);
 
         return new TrainedModel
         {
-            Trainer = ensemble is { } blended
-                ? new TrainerDescriptor { Name = "Ensemble", Parameters = EnsembleParameters(blended.Plan) }
+            Trainer = ensemble is { Plan: { } blended }
+                ? new TrainerDescriptor { Name = "Ensemble", Parameters = EnsembleParameters(blended) }
                 : new TrainerDescriptor
                 {
                     Name = search.Best.Trainer,
@@ -754,6 +759,7 @@ public partial class TrainingRunner
             Metrics = metrics,
             ResidualModel = residualModel,
             Calibration = calibration,
+            Ensemble = ensemble?.Outcome,
             RowCount = RowsIn(trainSet),
             Trials = records,
             RankingMetric = metric,
@@ -767,38 +773,58 @@ public partial class TrainingRunner
 
     /// <summary>
     /// The blend of the search's best few trials (<see cref="EnsembleSelection"/>), fitted on the training partition and
-    /// joined in one chain (<see cref="EnsembleChain"/>) — or <see langword="null"/> when the single model stands: too few
-    /// trials to blend, no blend that scores better out of fold, or a blend that could not be fitted (the single model is
-    /// the answer then, with a warning — an extension never breaks the training it extends).
+    /// joined in one chain (<see cref="EnsembleChain"/>) — or the reason the single model stands: too few trials to blend, no
+    /// blend that scores better out of fold, not enough of the time budget left to fit the members, or a blend that could not
+    /// be fitted (the single model is the answer then, with a warning — an extension never breaks the training it extends).
     /// </summary>
-    private (ITransformer Model, EnsemblePlan Plan)? FitEnsemble(
+    private (ITransformer? Model, EnsemblePlan? Plan, EnsembleOutcome Outcome) FitEnsemble(
         SearchResult search, SearchRequest request, string metric,
-        Func<IDataView, string, Dictionary<string, double>> score, TrainingConfig config, IDataView trainSet)
+        Func<IDataView, string, Dictionary<string, double>> score, TrainingConfig config, IDataView trainSet, TimeSpan timeLeft)
     {
-        if (search.Retained is not { Count: > 1 } retained)
+        (ITransformer?, EnsemblePlan?, EnsembleOutcome) Single(string why, EnsemblePlan? weighed = null)
         {
-            _logger.Info("Ensemble: fewer than two trials left answers to blend; the single best model stands.");
-            return null;
+            _logger.Info($"Ensemble: {why}; the single best model stands.");
+            return (null, null, new EnsembleOutcome
+            {
+                SkippedBecause = why,
+                OutOfFoldScore = weighed?.Score,
+                BestSingleOutOfFoldScore = weighed?.BestSingleScore,
+            });
         }
+
+        if (search.Retained is not { Count: > 1 } retained)
+            return Single("fewer than two trials left answers to blend");
         var plan = EnsembleSelection.Choose(
             retained, (rows, answers) => BlendScore(rows, answers, config, score, metric), request.Metric.HigherIsBetter);
         if (plan is null)
-        {
-            _logger.Info("Ensemble: no blend of the best trials scores better than the best one out of fold; the single best model stands.");
-            return null;
-        }
+            return Single("no blend of the best trials scores better than the best one out of fold");
+
+        // The members are fitted again on the whole partition, one after another: their estimated fit times, summed, have to fit in
+        // what is left of the time budget (the search was given a share of it for this).
+        if (EnsembleBudget.Shortfall(plan.Members, timeLeft) is { } shortfall)
+            return Single(shortfall, plan);
         try
         {
             var members = plan.Members.Select((trial, i) => new EnsembleMember(trial.Pipeline, plan.Counts[i])).ToArray();
             var chain = EnsembleChain.Fit(_mlContext, members, trainSet, IsBinary(config) ? EnsembleKind.Binary : EnsembleKind.Regression);
             _logger.Info($"Ensemble: {string.Join(" + ", plan.Members.Select((t, i) => $"{t.Trial.Trainer}×{plan.Counts[i]}"))} " +
                 $"({metric} {plan.Score:0.####} out of fold, the best trial alone {plan.BestSingleScore:0.####}).");
-            return (chain, plan);
+            return (chain, plan, new EnsembleOutcome
+            {
+                Members = [.. plan.Members.Select((t, i) => new EnsembleMemberRecord(t.Trial.Trainer, plan.Counts[i], (double)plan.Counts[i] / plan.Steps))],
+                OutOfFoldScore = plan.Score,
+                BestSingleOutOfFoldScore = plan.BestSingleScore,
+            });
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
             _logger.Warning($"The blend of the best trials could not be fitted ({ex.GetBaseException().Message}); the single best model stands.");
-            return null;
+            return (null, null, new EnsembleOutcome
+            {
+                SkippedBecause = $"the blend could not be fitted: {ex.GetBaseException().Message}",
+                OutOfFoldScore = plan.Score,
+                BestSingleOutOfFoldScore = plan.BestSingleScore,
+            });
         }
     }
 
@@ -2487,6 +2513,12 @@ public record TrainedModel
     /// where none was fitted. <see cref="Metrics"/> are the calibrated model's.
     /// </summary>
     public ProbabilityCalibration? Calibration { get; init; }
+
+    /// <summary>
+    /// What a run asked for a blend (<see cref="TrainingConfig.Ensemble"/>) came to — the blend it answers with, or why the single
+    /// best model stands. Null where a blend was not asked for (or the task has none).
+    /// </summary>
+    public EnsembleOutcome? Ensemble { get; init; }
 
     /// <summary>
     /// The text columns the model also reads through a text encoder, with the encoders' identities — saved beside it
