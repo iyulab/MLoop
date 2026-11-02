@@ -768,8 +768,13 @@ public partial class TrainingRunner
         };
     }
 
+    /// <summary>Whether a run of <paramref name="task"/> can answer with a blend of its best trials (<see cref="TrainingConfig.Ensemble"/>) — the two tasks the blend was measured on.</summary>
+    public static bool SupportsEnsemble(string? task)
+        => string.Equals(task?.Trim(), "binary-classification", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(task?.Trim(), "regression", StringComparison.OrdinalIgnoreCase);
+
     // A blend is made for the two tasks it was measured on; another task ignores the request.
-    private static bool UsesEnsemble(TrainingConfig config) => config.Ensemble && (IsBinary(config) || IsRegression(config));
+    private static bool UsesEnsemble(TrainingConfig config) => config.Ensemble && SupportsEnsemble(config.Task);
 
     /// <summary>
     /// The blend of the search's best few trials (<see cref="EnsembleSelection"/>), fitted on the training partition and

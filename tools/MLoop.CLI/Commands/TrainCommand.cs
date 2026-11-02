@@ -141,6 +141,10 @@ public static partial class TrainCommand
         {
             Description = "Train only with steps ONNX can express, so 'mloop export onnx' can export the model (text columns use character n-grams). Binary, multiclass and regression"
         };
+        var ensembleOption = new Option<bool>("--ensemble")
+        {
+            Description = "Answer with a weighted blend of the best trials when it scores better out of fold (binary classification and regression). Slower to fit and to score, and cannot be exported to ONNX; the search is given 70 % of the time limit and the rest fits the blend"
+        };
         var groupColumnOption = new Option<string?>("--group-column")
         {
             Description = "Group column for ranking task (groups rows into query contexts)"
@@ -197,6 +201,7 @@ public static partial class TrainCommand
         command.Options.Add(encoderOption);
         command.Options.Add(bankSizeOption);
         command.Options.Add(portableOption);
+        command.Options.Add(ensembleOption);
         command.Options.Add(maxRowsOption);
         command.Options.Add(samplingStrategyOption);
         command.Options.Add(samplingStrategyAliasOption);
@@ -233,7 +238,7 @@ public static partial class TrainCommand
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption), parseResult.GetValue(portableOption), parseResult.GetValue(encoderOption), parseResult.GetValue(bankSizeOption), parseResult.GetValue(maxTrialsOption), parseResult.GetValue(epochsOption));
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption), parseResult.GetValue(portableOption), parseResult.GetValue(encoderOption), parseResult.GetValue(bankSizeOption), parseResult.GetValue(maxTrialsOption), parseResult.GetValue(epochsOption), parseResult.GetValue(ensembleOption));
         });
 
         return command;
@@ -267,7 +272,8 @@ public static partial class TrainCommand
         string? encoder = null,
         int? bankSize = null,
         int? maxTrials = null,
-        int? epochs = null)
+        int? epochs = null,
+        bool ensemble = false)
     {
         // --json reserves stdout for the event stream: every renderer and narrator in the training
         // path is silenced for the duration, and the real stdout is handed to the emitter. Disposed
@@ -293,7 +299,7 @@ public static partial class TrainCommand
             var projectDiscovery = new ProjectDiscovery(fileSystem);
 
             var setup = await ResolveSetupAsync(
-                modelName, label, task, time, maxTrials, epochs, metric, testSplit, groupColumn, weight, balance, portable, encoder, bankSize,
+                modelName, label, task, time, maxTrials, epochs, metric, testSplit, groupColumn, weight, balance, portable, ensemble, encoder, bankSize,
                 fileSystem, projectDiscovery, resolved => failedTask = resolved);
             if (setup is null)
                 return 1;

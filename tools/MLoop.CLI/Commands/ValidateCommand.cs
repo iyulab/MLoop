@@ -266,6 +266,8 @@ public static class ValidateCommand
         // fail later — the same validate↔train parity restored. `init` writes defaults for
         // each (horizon: 10, group_column, user_column/item_column), so a fresh project still passes.
         var taskName = model.Task?.Trim() ?? "";
+        if (MLoop.CLI.Infrastructure.Configuration.ModelTrainingConfig.EnsembleConflict(model) is { } ensembleProblem)
+            errors.Add(new ValidationError($"{prefix}.ensemble", ensembleProblem));
         if (taskName.Equals("forecasting", StringComparison.OrdinalIgnoreCase) && (model.Horizon ?? 0) <= 0)
         {
             errors.Add(new ValidationError($"{prefix}.horizon",

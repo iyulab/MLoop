@@ -109,6 +109,13 @@ public class ModelDefinition
     public bool? Portable { get; set; }
 
     /// <summary>
+    /// Answer with a weighted blend of the trainer search's best few trials when the blend scores better out of fold
+    /// (<c>mloop train --ensemble</c>). The model is several models in one file: it takes longer to fit and to score, and cannot be exported to ONNX.
+    /// Binary classification and regression. The trainer search is given 70 % of the time limit; the rest fits the members.
+    /// </summary>
+    public bool? Ensemble { get; set; }
+
+    /// <summary>
     /// Group column name for ranking task.
     /// Groups rows into query contexts for learning-to-rank.
     /// </summary>

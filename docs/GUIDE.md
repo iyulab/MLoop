@@ -154,6 +154,8 @@ mloop train [data-file] [options]    # the label is --label, or the one in mloop
 #                               never a feature. Same as `weight:` in mloop.yaml
 #   --portable                  Train only with steps ONNX can express, so `mloop export onnx`
 #                               works (binary, multiclass, regression). Same as `portable: true`
+#   --ensemble                  Answer with a weighted blend of the search's best trials when it
+#                               scores better out of fold (binary, regression). Same as `ensemble: true`
 
 # Before and after training:
 #   --analyze-data              Analyze data quality and print preprocessing recommendations
@@ -211,6 +213,19 @@ text normalization do not reproduce exactly in ONNX Runtime. On the UCI SMS spam
 portable model scored accuracy 0.9848, AUC 0.9948 against 0.9865, 0.9874 for the default. Numeric
 and category columns train the same either way. Binary classification, multiclass classification and
 regression; the experiment records `portable: true`.
+
+**Ensemble training** (`--ensemble`, or `ensemble: true` under the model in `mloop.yaml`; binary
+classification and regression) keeps the out-of-fold answers of the search's best ten trials and
+looks for a weighted average of up to five of them that scores better, on the run's metric, than the
+best trial alone. When one does, the model is that blend — several models in one `model.zip`, which
+`predict`, `serve` and `evaluate` read as any other; a binary blend's probability is calibrated on the
+blend's own out-of-fold answers. When none does, or the members do not fit in the time left, the single
+best model stands and `metadata.json` says why (`result.ensemble.skippedBecause`). A blend costs: the
+search is given 70 % of the time limit and the rest fits the members, the model takes several times
+as long to load and to score, and `mloop export onnx` refuses it (it names the ensemble; train without
+`--ensemble` to export). `--ensemble` cannot be combined with `--portable`. The experiment records
+`ensemble: true` in `config.json` and, under `result.ensemble` in `metadata.json`, the members, their
+weights and the out-of-fold score of the blend and of the best trial.
 
 **Automatic Features**:
 - **Data File Formats**: besides CSV, `train`, `predict`, `evaluate`, `info`, `analyze` and `detect`

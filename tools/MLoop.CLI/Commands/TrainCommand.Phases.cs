@@ -44,7 +44,7 @@ public static partial class TrainCommand
     /// <summary>Project, model name, configuration and the validated effective definition — null after an error was shown.</summary>
     private static async Task<TrainSetup?> ResolveSetupAsync(
         string? modelName, string? label, string? task, int? time, int? maxTrials, int? epochs, string? metric, double? testSplit,
-        string? groupColumn, string? weight, string? balance, bool portable, string? encoder, int? bankSize,
+        string? groupColumn, string? weight, string? balance, bool portable, bool ensemble, string? encoder, int? bankSize,
         FileSystemManager fileSystem, ProjectDiscovery projectDiscovery, Action<string?> noteTask)
     {
         // Find project root
@@ -132,6 +132,13 @@ public static partial class TrainCommand
         if (ModelTrainingConfig.PortableConflict(effectiveDefinition) is { } portableError)
         {
             ErrorConsole.Error(portableError);
+            return null;
+        }
+        if (ensemble)
+            effectiveDefinition.Ensemble = true;
+        if (ModelTrainingConfig.EnsembleConflict(effectiveDefinition) is { } ensembleError)
+        {
+            ErrorConsole.Error(ensembleError);
             return null;
         }
 

@@ -289,6 +289,7 @@ public class TrainingEngine : ITrainingEngine
                     ItemColumn = config.ItemColumn,
                     WeightColumn = config.WeightColumn,
                     Portable = config.Portable,
+                    Ensemble = config.Ensemble,
                     Search = trained.Search
                 },
                 Result = new ExperimentResult
@@ -354,7 +355,8 @@ public class TrainingEngine : ITrainingEngine
                     UserColumn = config.UserColumn,
                     ItemColumn = config.ItemColumn,
                     WeightColumn = config.WeightColumn,
-                    Portable = config.Portable
+                    Portable = config.Portable,
+                    Ensemble = config.Ensemble
                 },
                 Result = new ExperimentResult
                 {

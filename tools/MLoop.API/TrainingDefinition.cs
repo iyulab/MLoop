@@ -47,6 +47,8 @@ public static class TrainingDefinition
             return (null, weightError);
         if (ModelTrainingConfig.PortableConflict(definition) is { } portableError)
             return (null, portableError);
+        if (ModelTrainingConfig.EnsembleConflict(definition) is { } ensembleError)
+            return (null, ensembleError);
         // The task, the label and the columns the task needs — as `mloop train` asks them.
         if (TrainingInput.DefinitionRefusal(definition) is { } refusal)
             return (null, refusal.Hint is null ? refusal.Message : $"{refusal.Message} {refusal.Hint}");

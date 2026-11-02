@@ -53,7 +53,24 @@ public static class ModelTrainingConfig
             PreFeaturizerColumns = preFeaturizerColumns ?? [],
             WeightColumn = string.IsNullOrWhiteSpace(definition.Weight) ? null : definition.Weight.Trim(),
             Portable = definition.Portable == true,
+            Ensemble = definition.Ensemble == true,
         };
+
+    /// <summary>
+    /// Why <paramref name="definition"/> cannot be trained as a blend, or <c>null</c>. A setting that silently did nothing would leave
+    /// a single model where the user expects a blend, and a blend cannot be portable: the ONNX graph a portable model promises has no
+    /// form for the weighted average that joins its members.
+    /// </summary>
+    public static string? EnsembleConflict(ModelDefinition definition)
+    {
+        if (definition.Ensemble != true)
+            return null;
+        if (!MLoop.Core.Training.TrainingRunner.SupportsEnsemble(definition.Task))
+            return $"ensemble: a blend is made for binary-classification or regression, not '{definition.Task}'.";
+        return definition.Portable == true
+            ? "ensemble: a blend of several models cannot be exported to ONNX, which a portable model promises; use one of --ensemble and --portable."
+            : null;
+    }
 
     /// <summary>
     /// Why <paramref name="definition"/> cannot be trained portable, or <c>null</c>. A setting that

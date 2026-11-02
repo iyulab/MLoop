@@ -186,6 +186,10 @@ public class ExperimentConfig
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool Portable { get; init; }
 
+    // Asked to answer with a blend of the best trials (TrainingConfig.Ensemble). Absent when false; what the run came to is in Result.Ensemble.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Ensemble { get; init; }
+
     // The seed and threads MLoop's own trainer search ran with — enough to repeat it. Absent when
     // AutoML searched, or the task runs no search.
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
