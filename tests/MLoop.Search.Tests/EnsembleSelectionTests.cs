@@ -86,6 +86,21 @@ public sealed class EnsembleSelectionTests
     }
 
     [Fact]
+    public void ThePlansBlendedRows_AreTheBlendsOwnAnswersOnTheMembersLabelsAndWeights()
+    {
+        var weights = new float[Rows];
+        Array.Fill(weights, 3f);
+        var plan = EnsembleSelection.Choose(
+            [Binary(NoisyProbabilities(1, 0.4), weights: weights), Binary(NoisyProbabilities(2, 0.4), weights: weights)], NegativeBrier, higherIsBetter: true)!;
+
+        var rows = plan.Blended;
+        Assert.Equal(plan.OutOfFold, rows.Probability);
+        Assert.Equal(plan.OutOfFold.Select(p => p - 0.5f), rows.Score);
+        Assert.Equal(Labels, rows.Label);
+        Assert.All(rows.Weight, w => Assert.Equal(3f, w));
+    }
+
+    [Fact]
     public void ATrialThatOnlyHurts_LeavesNoBlend()
     {
         var good = Binary(NoisyProbabilities(1, 0.05));

@@ -117,6 +117,38 @@ public sealed class OutOfFoldScores
         return null;
     }
 
+    /// <summary>
+    /// The rows of a blend: <paramref name="reference"/>'s labels (or targets) and weights, with the blend's own answer for
+    /// every row — a probability (its <see cref="Score"/> that probability less one half, where a binary evaluator splits) or
+    /// a regression's value. What a calibration of the blend is fitted on, in the shape the single trial's rows have.
+    /// </summary>
+    /// <param name="reference">Any member's rows — the truth and the weights are the same for every member.</param>
+    /// <param name="answer">The blend's answer for each row, in the rows' order.</param>
+    /// <exception cref="ArgumentException">A multiclass reference, or an answer that is not one per row.</exception>
+    public static OutOfFoldScores Blended(OutOfFoldScores reference, IReadOnlyList<float> answer)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        ArgumentNullException.ThrowIfNull(answer);
+        if (reference.IsMulticlass)
+            throw new ArgumentException("A multiclass model's rows are not blended.", nameof(reference));
+        if (answer.Count != reference.Count)
+            throw new ArgumentException("The blend must answer every row once.", nameof(answer));
+        var rows = new OutOfFoldScores(multiclass: false, hasProbability: !reference.IsRegression, regression: reference.IsRegression);
+        rows._weight.AddRange(reference._weight);
+        if (reference.IsRegression)
+        {
+            rows._target.AddRange(reference._target);
+            rows._score.AddRange(answer);
+        }
+        else
+        {
+            rows._label.AddRange(reference._label);
+            rows._probability!.AddRange(answer);
+            rows._score.AddRange(answer.Select(p => p - 0.5f));
+        }
+        return rows;
+    }
+
     private static void ReadBinary(IDataView scored, DataViewSchema.Column labelColumn, DataViewSchema.Column scoreColumn,
         DataViewSchema.Column? probabilityColumn, DataViewSchema.Column? weightColumn, OutOfFoldScores rows)
     {

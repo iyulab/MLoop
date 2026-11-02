@@ -234,6 +234,14 @@ public record TrainingConfig
     public int? MaxTrials { get; init; }
 
     /// <summary>
+    /// Answer with a weighted blend of the search's best few trials instead of its single best (<see cref="MLoop.Core.Training.EnsembleChain"/>),
+    /// when the blend scores better out of fold; the single model stands when it does not. Off by default: a blend is several
+    /// models, so fitting, loading and scoring cost a multiple of one, and it cannot be exported to ONNX. Binary
+    /// classification and regression only — another task ignores it.
+    /// </summary>
+    public bool Ensemble { get; init; }
+
+    /// <summary>
     /// How many epochs a deep-learning fit runs; <see langword="null"/> for the module's default (10). A fit
     /// that trains by epochs takes no time budget, so this is the one dial on its cost. A task that does not
     /// count epochs (<c>TrainingRunner.EpochsUnused</c>) has nothing for it to set.

@@ -13,6 +13,7 @@ using MLoop.Extensibility.Hooks;
 using MLoop.Extensibility.Preprocessing;
 using MLoop.Search;
 using MLoop.Search.Candidates;
+using MLoop.Search.Ensemble;
 using MLoop.Search.Validation;
 
 namespace MLoop.Core.Training;
@@ -703,7 +704,8 @@ public partial class TrainingRunner
             Stratify: !IsRegression(config),
             MaxTrials: config.MaxTrials,
             Preprocess: config.PreFeaturizer,
-            KeepOutOfFold: IsBinary(config) || config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase));
+            KeepOutOfFold: IsBinary(config) || config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase) || UsesEnsemble(config),
+            KeepTopOutOfFold: UsesEnsemble(config) ? 2 * EnsembleSelection.DefaultMaxMembers : 0);
 
         SearchResult search;
         try
@@ -731,20 +733,23 @@ public partial class TrainingRunner
                 "of the top score, the smaller model.");
         }
 
-        var bestModel = PortableTextFeaturizer.Prepend(portableText, search.Model);
+        var ensemble = UsesEnsemble(config) ? FitEnsemble(search, request, metric, score, config, trainSet) : null;
+        var bestModel = PortableTextFeaturizer.Prepend(portableText, ensemble?.Model ?? search.Model);
         var predictions = bestModel.Transform(testSet);
         var (model, metrics, residualModel, calibration) = finish is null
             ? (bestModel, score(predictions, config.LabelColumn), null, null)
-            : finish(bestModel, predictions, search.OutOfFold);
+            : finish(bestModel, predictions, ensemble?.Plan.Blended ?? search.OutOfFold);
 
         return new TrainedModel
         {
-            Trainer = new TrainerDescriptor
-            {
-                Name = search.Best.Trainer,
-                FallbackReason = search.FallbackReason,
-                FallbackKind = search.FallbackReason is null ? TrainerFallbackKind.None : TrainerFallbackKind.RefitFailed,
-            },
+            Trainer = ensemble is { } blended
+                ? new TrainerDescriptor { Name = "Ensemble", Parameters = EnsembleParameters(blended.Plan) }
+                : new TrainerDescriptor
+                {
+                    Name = search.Best.Trainer,
+                    FallbackReason = search.FallbackReason,
+                    FallbackKind = search.FallbackReason is null ? TrainerFallbackKind.None : TrainerFallbackKind.RefitFailed,
+                },
             Model = model,
             Metrics = metrics,
             ResidualModel = residualModel,
@@ -755,6 +760,102 @@ public partial class TrainingRunner
             ValidationScore = search.BestValidation.Mean.TryGetValue(metric, out var validation) ? validation : null,
             Search = request.Settings
         };
+    }
+
+    // A blend is made for the two tasks it was measured on; another task ignores the request.
+    private static bool UsesEnsemble(TrainingConfig config) => config.Ensemble && (IsBinary(config) || IsRegression(config));
+
+    /// <summary>
+    /// The blend of the search's best few trials (<see cref="EnsembleSelection"/>), fitted on the training partition and
+    /// joined in one chain (<see cref="EnsembleChain"/>) — or <see langword="null"/> when the single model stands: too few
+    /// trials to blend, no blend that scores better out of fold, or a blend that could not be fitted (the single model is
+    /// the answer then, with a warning — an extension never breaks the training it extends).
+    /// </summary>
+    private (ITransformer Model, EnsemblePlan Plan)? FitEnsemble(
+        SearchResult search, SearchRequest request, string metric,
+        Func<IDataView, string, Dictionary<string, double>> score, TrainingConfig config, IDataView trainSet)
+    {
+        if (search.Retained is not { Count: > 1 } retained)
+        {
+            _logger.Info("Ensemble: fewer than two trials left answers to blend; the single best model stands.");
+            return null;
+        }
+        var plan = EnsembleSelection.Choose(
+            retained, (rows, answers) => BlendScore(rows, answers, config, score, metric), request.Metric.HigherIsBetter);
+        if (plan is null)
+        {
+            _logger.Info("Ensemble: no blend of the best trials scores better than the best one out of fold; the single best model stands.");
+            return null;
+        }
+        try
+        {
+            var members = plan.Members.Select((trial, i) => new EnsembleMember(trial.Pipeline, plan.Counts[i])).ToArray();
+            var chain = EnsembleChain.Fit(_mlContext, members, trainSet, IsBinary(config) ? EnsembleKind.Binary : EnsembleKind.Regression);
+            _logger.Info($"Ensemble: {string.Join(" + ", plan.Members.Select((t, i) => $"{t.Trial.Trainer}×{plan.Counts[i]}"))} " +
+                $"({metric} {plan.Score:0.####} out of fold, the best trial alone {plan.BestSingleScore:0.####}).");
+            return (chain, plan);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            _logger.Warning($"The blend of the best trials could not be fitted ({ex.GetBaseException().Message}); the single best model stands.");
+            return null;
+        }
+    }
+
+    private static List<KeyValuePair<string, string>> EnsembleParameters(EnsemblePlan plan) =>
+    [
+        new("members", string.Join(" + ", plan.Members.Select((t, i) => $"{t.Trial.Trainer}×{plan.Counts[i]}"))),
+        new("out_of_fold_score", plan.Score.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)),
+    ];
+
+    private sealed class BinaryBlendRow
+    {
+        public bool Label { get; set; }
+        public float Score { get; set; }
+        public float Probability { get; set; }
+        public bool PredictedLabel { get; set; }
+        public float Weight { get; set; }
+    }
+
+    private sealed class RegressionBlendRow
+    {
+        public float Label { get; set; }
+        public float Score { get; set; }
+        public float Weight { get; set; }
+    }
+
+    // The run's own metric of a blended answer: the rows are shaped like a scored validation part, so the host's scorer (weights
+    // included) judges the blend as it judges a trial.
+    private double BlendScore(
+        OutOfFoldScores rows, double[] answers, TrainingConfig config,
+        Func<IDataView, string, Dictionary<string, double>> score, string metric)
+    {
+        var weighted = !string.IsNullOrEmpty(config.WeightColumn);
+        IDataView view;
+        if (rows.IsRegression)
+        {
+            var definition = SchemaDefinition.Create(typeof(RegressionBlendRow));
+            definition[nameof(RegressionBlendRow.Label)].ColumnName = config.LabelColumn;
+            definition[nameof(RegressionBlendRow.Weight)].ColumnName = weighted ? config.WeightColumn! : "BlendWeight";
+            view = _mlContext.Data.LoadFromEnumerable(
+                answers.Select((a, i) => new RegressionBlendRow { Label = rows.Target[i], Score = (float)a, Weight = rows.Weight[i] }), definition);
+        }
+        else
+        {
+            var definition = SchemaDefinition.Create(typeof(BinaryBlendRow));
+            definition[nameof(BinaryBlendRow.Label)].ColumnName = config.LabelColumn;
+            definition[nameof(BinaryBlendRow.Weight)].ColumnName = weighted ? config.WeightColumn! : "BlendWeight";
+            view = _mlContext.Data.LoadFromEnumerable(
+                answers.Select((a, i) => new BinaryBlendRow
+                {
+                    Label = rows.Label[i],
+                    Score = (float)a - 0.5f,
+                    Probability = (float)a,
+                    PredictedLabel = a >= 0.5,
+                    Weight = rows.Weight[i],
+                }), definition);
+        }
+        return ScoreFold(view, config, score).TryGetValue(metric, out var value) ? value : double.NaN;
     }
 
     private static bool IsBinary(TrainingConfig config)

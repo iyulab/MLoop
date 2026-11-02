@@ -20,6 +20,9 @@ public sealed record EnsemblePlan(
     float[] OutOfFold,
     OutOfFoldScores Reference)
 {
+    /// <summary>The blend's own rows (<see cref="OutOfFoldScores.Blended"/>) — what its calibration is fitted on.</summary>
+    public OutOfFoldScores Blended { get; } = OutOfFoldScores.Blended(Reference, OutOfFold);
+
     /// <summary>How many additions were kept — the sum of <see cref="Counts"/>.</summary>
     public int Steps => Counts.Sum();
 }
