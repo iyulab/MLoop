@@ -48,6 +48,8 @@ public static class CandidateCatalog
                 NumberOfTrees = p.Int("NumberOfTrees"),
                 NumberOfLeaves = p.Int("NumberOfLeaves"),
                 FeatureFraction = p.Single("FeatureFraction"),
+                MinimumExampleCountPerLeaf = p.Int("MinimumExampleCountPerLeaf"),
+                FeatureFractionPerSplit = p["FeatureFractionPerSplit"],
                 NumberOfThreads = s.Threads,
                 Seed = s.Seed,
                 LabelColumnName = c.Label,
@@ -130,6 +132,8 @@ public static class CandidateCatalog
                     NumberOfTrees = p.Int("NumberOfTrees"),
                     NumberOfLeaves = p.Int("NumberOfLeaves"),
                     FeatureFraction = p.Single("FeatureFraction"),
+                    MinimumExampleCountPerLeaf = p.Int("MinimumExampleCountPerLeaf"),
+                    FeatureFractionPerSplit = p["FeatureFractionPerSplit"],
                     NumberOfThreads = s.Threads,
                     Seed = s.Seed,
                     LabelColumnName = c.Label,
@@ -227,6 +231,8 @@ public static class CandidateCatalog
                 NumberOfTrees = p.Int("NumberOfTrees"),
                 NumberOfLeaves = p.Int("NumberOfLeaves"),
                 FeatureFraction = p.Single("FeatureFraction"),
+                MinimumExampleCountPerLeaf = p.Int("MinimumExampleCountPerLeaf"),
+                FeatureFractionPerSplit = p["FeatureFractionPerSplit"],
                 NumberOfThreads = s.Threads,
                 Seed = s.Seed,
                 LabelColumnName = c.Label,
@@ -330,6 +336,10 @@ public static class CandidateCatalog
         ["NumberOfTrees"] = o.NumberOfTrees,
         ["NumberOfLeaves"] = o.NumberOfLeaves,
         ["FeatureFraction"] = o.FeatureFraction,
+        // A forest grows each tree to purity — scikit-learn's and FLAML's start at one example per leaf, where ML.NET's own
+        // default is ten, which measured a large loss on the tables a forest wins.
+        ["MinimumExampleCountPerLeaf"] = 1,
+        ["FeatureFractionPerSplit"] = o.FeatureFractionPerSplit,
     };
 
     // LightGBM's own defaults (num_leaves 31, min_child_samples 20, learning_rate 0.1, 100 iterations, 255 bins);
@@ -409,6 +419,11 @@ public static class CandidateCatalog
         SearchDimension.Integer("NumberOfTrees", 4, 32768, logBase: true, defaultValue: 4),
         SearchDimension.Integer("NumberOfLeaves", 4, 32768, logBase: true, defaultValue: 4),
         SearchDimension.Single("FeatureFraction", 2e-10f, 1, logBase: false, defaultValue: 1),
+        // What makes a forest a forest, measured on tables where a scikit-learn forest wins: with the minimum examples per leaf
+        // fixed at ML.NET's 10 a forest of the same trees and leaves scores far worse than one grown to purity, and the
+        // fraction of features tried at each split (not the one a tree is given) is the randomness a forest depends on.
+        SearchDimension.Integer("MinimumExampleCountPerLeaf", 1, 128, logBase: true, defaultValue: 10),
+        SearchDimension.Double("FeatureFractionPerSplit", 0.05, 1, logBase: true, defaultValue: 1),
     ]);
 
     /// <summary>L-BFGS (<c>lbfgs_search_space.json</c>).</summary>
