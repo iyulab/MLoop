@@ -13,8 +13,11 @@ on:
         description: 'Comma-separated dataset names from benchmarks/engine-compare/datasets.json (empty = all)'
         default: ''
       systems:
-        description: 'Comma-separated systems to run (mloop, mloop-defaults, flaml, flaml-nogbm, lightgbm, xgboost, automl-legacy, ensemble)'
+        description: 'Comma-separated systems to run (mloop, mloop-defaults, mloop-ensemble, flaml, flaml-nogbm, lightgbm, xgboost, automl-legacy, ensemble)'
         default: 'mloop,mloop-defaults,flaml,flaml-nogbm,lightgbm,xgboost,automl-legacy'
+      seeds:
+        description: 'Comma-separated split seeds, one job each (for example 0,1,2,3,4)'
+        default: '0,1,2'
 
 concurrency:
   group: engine-compare-${{ github.ref }}
@@ -25,12 +28,30 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      seeds: ${{ steps.seeds.outputs.seeds }}
+    steps:
+    - name: Read the split seeds
+      id: seeds
+      env:
+        SEEDS: ${{ inputs.seeds }}
+      run: |
+        if ! [[ "$SEEDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+          echo "seeds must be comma-separated non-negative integers, got: $SEEDS" >&2
+          exit 1
+        fi
+        echo "seeds=[$SEEDS]" >> "$GITHUB_OUTPUT"
+
   sweep:
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 240
     strategy:
       matrix:
-        seed: [0, 1, 2]
+        seed: ${{ fromJson(needs.plan.outputs.seeds) }}
       fail-fast: false
 
     steps:
@@ -75,7 +96,7 @@ jobs:
         retention-days: 30
 
   summary:
-    needs: sweep
+    needs: [plan, sweep]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10

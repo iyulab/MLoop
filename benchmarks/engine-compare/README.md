@@ -32,7 +32,7 @@ python benchmarks/engine-compare/run.py run --mloop "dotnet tools/MLoop.CLI/bin/
 python benchmarks/engine-compare/run.py summarize results.jsonl
 ```
 
-The `Engine compare` workflow (`workflow_dispatch`) runs one job per split seed and writes the summary table to the run.
+The `Engine compare` workflow (`workflow_dispatch`) runs one job per split seed (the `seeds` input, `0,1,2` by default) and writes the summary table to the run.
 
 `summarize` ends with a per-seed table when the rows hold `mloop` and `flaml` or `mloop-ensemble`: the sign of each split seed (`+` the first system is better, `-` worse, `=` the same value) next to the verdict, the number of runs that took longer than the budget plus the larger of 2 s and 20 %, and the held-out expected calibration error of the MLoop rows. `ensemble where run vs flaml` counts a blend where `--ensemble` was run (binary, regression) and the single model where it was not (multiclass), so its tally covers every table.
 
