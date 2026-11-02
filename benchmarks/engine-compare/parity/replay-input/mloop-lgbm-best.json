@@ -1,0 +1,172 @@
+[
+ {
+  "dataset": "airfoil_self_noise",
+  "seed": 0,
+  "params": {
+   "FeatureFraction": "0.9861050407695049",
+   "L1Regularization": "2E-10",
+   "L2Regularization": "0.010556879840027173",
+   "LearningRate": "0.06609772958632441",
+   "MaximumBinCountPerFeature": "313",
+   "MinimumExampleCountPerLeaf": "16",
+   "NumberOfLeaves": "308",
+   "NumberOfTrees": "3706",
+   "SubsampleFraction": "0.25875374681321023"
+  },
+  "cv_rmse": 1.7481519349275108,
+  "test_rmse": 1.3227087144477068
+ },
+ {
+  "dataset": "wine_quality",
+  "seed": 0,
+  "params": {
+   "FeatureFraction": "0.9861050407695049",
+   "L1Regularization": "2E-10",
+   "L2Regularization": "0.005481746704223703",
+   "LearningRate": "0.02803053317719629",
+   "MaximumBinCountPerFeature": "330",
+   "MinimumExampleCountPerLeaf": "15",
+   "NumberOfLeaves": "1497",
+   "NumberOfTrees": "888",
+   "SubsampleFraction": "0.3423784911203118"
+  },
+  "cv_rmse": 0.6267315619919275,
+  "test_rmse": 0.6471625341425818
+ },
+ {
+  "dataset": "airfoil_self_noise",
+  "seed": 1,
+  "params": {
+   "FeatureFraction": "1",
+   "L1Regularization": "2.3305994920036094E-10",
+   "L2Regularization": "0.005654560780903394",
+   "LearningRate": "0.11930030861471203",
+   "MaximumBinCountPerFeature": "303",
+   "MinimumExampleCountPerLeaf": "13",
+   "NumberOfLeaves": "868",
+   "NumberOfTrees": "903",
+   "SubsampleFraction": "0.536223332243935"
+  },
+  "cv_rmse": 1.655932016572028,
+  "test_rmse": 1.3206308858713203
+ },
+ {
+  "dataset": "wine_quality",
+  "seed": 1,
+  "params": {
+   "FeatureFraction": "0.9861050407695049",
+   "L1Regularization": "2E-10",
+   "L2Regularization": "0.005481746704223703",
+   "LearningRate": "0.02803053317719629",
+   "MaximumBinCountPerFeature": "330",
+   "MinimumExampleCountPerLeaf": "15",
+   "NumberOfLeaves": "1497",
+   "NumberOfTrees": "888",
+   "SubsampleFraction": "0.3423784911203118"
+  },
+  "cv_rmse": 0.6269603534965429,
+  "test_rmse": 0.6123867446742629
+ },
+ {
+  "dataset": "airfoil_self_noise",
+  "seed": 2,
+  "params": {
+   "FeatureFraction": "0.9938244625642244",
+   "L1Regularization": "2E-10",
+   "L2Regularization": "0.007970044386003858",
+   "LearningRate": "0.08307539830461426",
+   "MaximumBinCountPerFeature": "266",
+   "MinimumExampleCountPerLeaf": "18",
+   "NumberOfLeaves": "165",
+   "NumberOfTrees": "977",
+   "SubsampleFraction": "0.5857460455957079"
+  },
+  "cv_rmse": 1.6566687548817498,
+  "test_rmse": 1.4109048236663169
+ },
+ {
+  "dataset": "wine_quality",
+  "seed": 2,
+  "params": {
+   "FeatureFraction": "0.9861050407695049",
+   "L1Regularization": "2E-10",
+   "L2Regularization": "0.005481746704223703",
+   "LearningRate": "0.02803053317719629",
+   "MaximumBinCountPerFeature": "330",
+   "MinimumExampleCountPerLeaf": "15",
+   "NumberOfLeaves": "1497",
+   "NumberOfTrees": "888",
+   "SubsampleFraction": "0.3423784911203118"
+  },
+  "cv_rmse": 0.6324895265040572,
+  "test_rmse": 0.6154992115528128
+ },
+ {
+  "dataset": "airfoil_self_noise",
+  "seed": 3,
+  "params": {
+   "FeatureFraction": "1",
+   "L1Regularization": "2E-10",
+   "L2Regularization": "0.010745525506502525",
+   "LearningRate": "0.0777764215386716",
+   "MaximumBinCountPerFeature": "250",
+   "MinimumExampleCountPerLeaf": "15",
+   "NumberOfLeaves": "423",
+   "NumberOfTrees": "964",
+   "SubsampleFraction": "0.788155028575127"
+  },
+  "cv_rmse": 1.7665435203237674,
+  "test_rmse": 1.3867197760018486
+ },
+ {
+  "dataset": "wine_quality",
+  "seed": 3,
+  "params": {
+   "FeatureFraction": "0.9861050407695049",
+   "L1Regularization": "2E-10",
+   "L2Regularization": "0.005481746704223703",
+   "LearningRate": "0.02803053317719629",
+   "MaximumBinCountPerFeature": "330",
+   "MinimumExampleCountPerLeaf": "15",
+   "NumberOfLeaves": "1497",
+   "NumberOfTrees": "888",
+   "SubsampleFraction": "0.3423784911203118"
+  },
+  "cv_rmse": 0.6254498828993809,
+  "test_rmse": 0.6505174130332445
+ },
+ {
+  "dataset": "airfoil_self_noise",
+  "seed": 4,
+  "params": {
+   "FeatureFraction": "0.9861050407695049",
+   "L1Regularization": "2E-10",
+   "L2Regularization": "0.010556879840027173",
+   "LearningRate": "0.06609772958632441",
+   "MaximumBinCountPerFeature": "313",
+   "MinimumExampleCountPerLeaf": "16",
+   "NumberOfLeaves": "308",
+   "NumberOfTrees": "3706",
+   "SubsampleFraction": "0.25875374681321023"
+  },
+  "cv_rmse": 1.5346976402640986,
+  "test_rmse": 1.6802027691025598
+ },
+ {
+  "dataset": "wine_quality",
+  "seed": 4,
+  "params": {
+   "FeatureFraction": "0.9861050407695049",
+   "L1Regularization": "2E-10",
+   "L2Regularization": "0.005481746704223703",
+   "LearningRate": "0.02803053317719629",
+   "MaximumBinCountPerFeature": "330",
+   "MinimumExampleCountPerLeaf": "15",
+   "NumberOfLeaves": "1497",
+   "NumberOfTrees": "888",
+   "SubsampleFraction": "0.3423784911203118"
+  },
+  "cv_rmse": 0.6413762014449909,
+  "test_rmse": 0.5815147005981293
+ }
+]

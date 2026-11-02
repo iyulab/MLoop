@@ -34,6 +34,12 @@ var options = new LightGbmRegressionTrainer.Options
     Seed = 0,
     Deterministic = true,
 };
+// Optional bagging: the fraction of rows each tree sees, and how often (every N iterations) the rows are redrawn. ML.NET's
+// default frequency is 0, which leaves the fraction without effect.
+if (config.TryGetValue("subsample", out var subsample))
+    ((GradientBooster.Options)options.Booster).SubsampleFraction = subsample;
+if (config.TryGetValue("subsampleFreq", out var subsampleFreq))
+    ((GradientBooster.Options)options.Booster).SubsampleFrequency = (int)subsampleFreq;
 var pipeline = ml.Transforms.Concatenate("Features", features).Append(ml.Regression.Trainers.LightGbm(options));
 var model = pipeline.Fit(train);
 var metrics = ml.Regression.Evaluate(model.Transform(test), labelColumnName: label);
