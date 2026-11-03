@@ -95,6 +95,7 @@ public class PairedComparisonTests
     [Theory]
     [InlineData("binary-classification", PairedComparison.ErrorRate)]
     [InlineData("multiclass-classification", PairedComparison.ErrorRate)]
+    [InlineData("text-classification", PairedComparison.ErrorRate)]
     [InlineData("regression", PairedComparison.SquaredError)]
     [InlineData("clustering", null)]
     [InlineData("forecasting", null)]
