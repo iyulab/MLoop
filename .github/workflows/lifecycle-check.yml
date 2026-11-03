@@ -13,6 +13,9 @@ on:
       expected:
         description: 'Steps known to fail (a step that turns green is reported as xpass)'
         default: ''
+      serve:
+        description: 'Also walk the HTTP surface (mloop serve; true or false)'
+        default: 'false'
       trials:
         description: 'Trials of the trainer search per training (0 = the time budget alone)'
         default: '10'
@@ -56,9 +59,10 @@ jobs:
         TASKS: ${{ inputs.tasks }}
         TRIALS: ${{ inputs.trials }}
         EXPECTED: ${{ inputs.expected }}
+        SERVE: ${{ inputs.serve }}
       run: |
         python3 scripts/lifecycle-check.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" \
-          --tasks "$TASKS" --trials "$TRIALS" --time 300 --no-serve --expected-failures "$EXPECTED" --out lifecycle-results.json
+          --tasks "$TASKS" --trials "$TRIALS" --time 300 $([ "$SERVE" = true ] || echo --no-serve) --expected-failures "$EXPECTED" --out lifecycle-results.json
 
     - name: Upload the results
       if: always()

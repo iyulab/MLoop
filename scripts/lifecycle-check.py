@@ -570,7 +570,68 @@ def forecast_error(preds, actual_rows):
     return sum(abs(p['score'] - float(a[0])) for p, a in zip(preds, actual_rows)) / len(actual_rows)
 
 
-def forecast_scenario(mloop, budget, keep, expected):
+def forecast_serve_steps(run, proj, new_a, new_b):
+    """The service half of a series' life: the forecast over HTTP, a candidate forecast beside production, a promotion that the cache sees."""
+    rc, out, err = run.cli('token', '--role', 'admin', '-q', cwd=proj)
+    admin = out.strip()
+    port = free_port()
+    url = f'http://127.0.0.1:{port}'
+    server = subprocess.Popen(run.mloop + ['serve', '--port', str(port), '--host', '127.0.0.1'], cwd=proj,
+                              env={**os.environ, 'Serve__RateLimit__PermitsPerMinute': '0'},
+                              stdout=(open(SERVER_LOG, 'ab') if SERVER_LOG else subprocess.DEVNULL),
+                              stderr=subprocess.STDOUT if SERVER_LOG else subprocess.DEVNULL, start_new_session=True)
+    try:
+        up = False
+        for _ in range(60):
+            code, _ = http('GET', url + '/health', timeout=2)
+            if code == 200:
+                up = True
+                break
+            time.sleep(1)
+        run.check('serve_health', up and bool(admin), f'port={port} up={up}')
+        if not up:
+            return
+        code, info = http('GET', url + '/info?name=default', admin)
+        info = info if isinstance(info, dict) else {}
+        before = info.get('experimentId') or info.get('productionExperimentId')
+
+        code, fc = http('POST', url + '/predict?name=default', admin, {})
+        rows = (fc or {}).get('predictions') if isinstance(fc, dict) else None
+        err_now = forecast_error(rows or [], new_b)
+        run.check('serve_forecast', code == 200 and isinstance(fc, dict) and fc.get('task') == 'forecasting' and fc.get('experimentId') == before
+                  and fc.get('count') == FORECAST_HORIZON and err_now is not None and err_now < 5,
+                  f'code={code} answered_by={fc.get("experimentId") if isinstance(fc, dict) else fc} production={before} error against the values that followed={err_now}')
+
+        code, bad = http('POST', url + '/predict?name=default', admin, {'horizon': FORECAST_HORIZON + 7})
+        run.check('serve_forecast_other_horizon_is_refused', code == 400 and 'horizon' in json.dumps(bad), f'code={code} {json.dumps(bad)[:140]}')
+
+        # a candidate answers beside production, from its own series: the old regime's continuation
+        code, cand = http('POST', url + '/predict?name=default&experiment=exp-001', admin, {})
+        crows = (cand or {}).get('predictions') if isinstance(cand, dict) else None
+        err_cand = forecast_error(crows or [], new_a)
+        run.check('serve_candidate_forecast', code == 200 and isinstance(cand, dict) and cand.get('experimentId') == 'exp-001' and err_cand is not None and err_cand < 6,
+                  f'code={code} answered_by={cand.get("experimentId") if isinstance(cand, dict) else cand} error={err_cand}')
+
+        code, _ = http('POST', url + '/promote', admin, {'name': 'default', 'experimentId': 'exp-001'})
+        code2, pr2 = http('POST', url + '/predict?name=default', admin, {})
+        run.check('serve_promote_reloads_cache', code == 200 and isinstance(pr2, dict) and pr2.get('experimentId') == 'exp-001',
+                  f'promote={code} answered_by={pr2.get("experimentId") if isinstance(pr2, dict) else pr2}')
+        code, _ = http('POST', url + '/rollback', admin, {'name': 'default'})
+        code2, pr3 = http('POST', url + '/predict?name=default', admin, {})
+        run.check('serve_rollback_reloads_cache', code == 200 and isinstance(pr3, dict) and pr3.get('experimentId') == before,
+                  f'rollback={code} answered_by={pr3.get("experimentId") if isinstance(pr3, dict) else pr3} production={before}')
+    finally:
+        try:
+            os.killpg(server.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+
+
+def forecast_scenario(mloop, budget, keep, expected, serve=False):
     base = tempfile.mkdtemp(prefix='lifecycle-forecast-')
     run = Run(mloop, 'forecast', base, budget, expected)
     rng = random.Random(20261103)
@@ -672,6 +733,9 @@ def forecast_scenario(mloop, budget, keep, expected):
         run.check('gap_in_a_series_is_refused_by_training', rc != 0 and 'missing value' in (out + err), f'rc={rc}')
         rc, out, err = run.cli('evaluate', 'exp-001', gap_path, cwd=proj)
         run.check('gap_in_a_series_is_refused_by_evaluate', rc != 0 and 'missing value' in (out + err), f'rc={rc}')
+
+        if serve:
+            forecast_serve_steps(run, proj, new_a, new_b)
     except Exception as ex:
         run.check('scenario', False, f'{type(ex).__name__}: {ex}')
     finally:
@@ -719,7 +783,7 @@ def main():
                 steps.append({'step': 'text/runtime_install', 'status': 'pass' if installed.returncode == 0 else 'FAIL',
                               'detail': (installed.stdout + installed.stderr)[-200:].strip()})
             if task == 'forecast':
-                steps += forecast_scenario(args.mloop, args.time, args.keep, expected)
+                steps += forecast_scenario(args.mloop, args.time, args.keep, expected, not args.no_serve)
                 continue
             steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak, args.trials, args.bench)
     with open(args.out, 'w') as f:
