@@ -27,11 +27,14 @@ public sealed class EciSchemaProposer
     private Dictionary<string, double>? _k1, _k2, _e1, _e2;
     private double _globalBestError;
     private bool _initialized;
+    private readonly bool _measuredCost;
 
     /// <param name="schemas">The schemas and their initial cost estimates, in search order.</param>
     /// <param name="seed">The seed; <see langword="null"/> varies run to run.</param>
-    public EciSchemaProposer(IReadOnlyList<(string Schema, double InitialCost)> schemas, int? seed = null)
+    /// <param name="measuredCost">Whether the costs passed to <see cref="Update"/> are measured seconds rather than the schemas' initial cost units.</param>
+    public EciSchemaProposer(IReadOnlyList<(string Schema, double InitialCost)> schemas, int? seed = null, bool measuredCost = false)
     {
+        _measuredCost = measuredCost;
         ArgumentNullException.ThrowIfNull(schemas);
         if (schemas.Count == 0)
             throw new ArgumentException("At least one schema is needed.", nameof(schemas));
@@ -97,6 +100,12 @@ public sealed class EciSchemaProposer
             _e1 = _schemas.ToDictionary(id => id, _ => loss, StringComparer.Ordinal);
             _e2 = _schemas.ToDictionary(id => id, _ => loss + 0.05 * Math.Abs(loss), StringComparer.Ordinal);
             _globalBestError = loss;
+            if (_measuredCost)
+            {
+                // The costs are now seconds, not the table's units: the schemas not yet tried start from the first trial's seconds scaled by the table's ratios.
+                foreach (var id in _schemas.Where(id => !string.Equals(id, schema, StringComparison.Ordinal)))
+                    _eci[id] = _k1[id];
+            }
         }
         else if (loss >= _e1![schema])
         {

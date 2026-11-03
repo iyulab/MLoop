@@ -195,7 +195,7 @@ public sealed class TrialRunner
         var withMissingValues = Featurizer.ColumnsWithMissingValues(train, roles);
 
         var schemas = _request.Candidates.Select(c => (Id: c.Name, Candidate: c)).ToList();
-        var proposer = new EciSchemaProposer([.. schemas.Select(s => (s.Id, s.Candidate.InitialCost))], settings.Seed);
+        var proposer = new EciSchemaProposer([.. schemas.Select(s => (s.Id, s.Candidate.InitialCost))], settings.Seed, measuredCost: true);
         var tuners = schemas.ToDictionary(s => s.Id, s => new CostFrugalTuner(s.Candidate.Space, settings.Seed, startingPoints: [.. s.Candidate.StartingPoints.Select(s.Candidate.Space.PointOf)]), StringComparer.Ordinal);
 
         var trials = new List<TrialResult>();
@@ -277,7 +277,7 @@ public sealed class TrialRunner
                 {
                     var loss = _request.Metric.HigherIsBetter ? -value : value;
                     tuners[schemaId].Update(trialId, point, loss, schema.Candidate.InitialCost);
-                    proposer.Update(schemaId, loss, schema.Candidate.InitialCost);
+                    proposer.Update(schemaId, loss, seconds);
                     var entry = new Scored(trial, value, score, PipelineIn, seconds / plan.Folds, TrainerCandidate.ModelSize(point))
                     {
                         OutOfFold = outOfFold,
@@ -290,7 +290,7 @@ public sealed class TrialRunner
                 else
                 {
                     tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.InitialCost);
-                    proposer.Update(schemaId, double.NaN, schema.Candidate.InitialCost);
+                    proposer.Update(schemaId, double.NaN, seconds);
                 }
                 _sink?.Completed(trial, _request.Metric.Name);
             }
@@ -314,7 +314,7 @@ public sealed class TrialRunner
                 var failed = new TrialResult { Trainer = schema.Candidate.Name, Parameters = parameters, RuntimeSeconds = seconds, Error = ex.GetBaseException().Message };
                 trials.Add(failed);
                 tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.InitialCost);
-                proposer.Update(schemaId, double.NaN, schema.Candidate.InitialCost);
+                proposer.Update(schemaId, double.NaN, seconds);
                 _sink?.Completed(failed, _request.Metric.Name);
                 // A trainer that has not scored once and keeps failing is retired; one that has scored is not (see FailuresToRetire).
                 if (!scored.Any(t => t.Trial.Trainer == schema.Candidate.Name)
