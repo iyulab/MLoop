@@ -108,7 +108,7 @@ def encode_classes(train, test, target):
 
 
 def read_trials(project, experiment_id):
-    """The trials the search kept, as the experiment recorded them (trainer, settings, metrics, runtime, selected)."""
+    """The trials the search kept, as the experiment recorded them (trainer, settings, metrics, validation[folds · spread · per-fold metrics], runtime, selected)."""
     path = os.path.join(project, 'models', 'default', 'staging', experiment_id, 'trials.ndjson')
     rows = []
     try:
@@ -118,7 +118,7 @@ def read_trials(project, experiment_id):
                     row = json.loads(line)
                 except ValueError:
                     continue
-                rows.append({key: row[key] for key in ('trialNumber', 'trainer', 'metrics', 'runtimeSeconds', 'selected', 'error') if key in row})
+                rows.append({key: row[key] for key in ('trialNumber', 'trainer', 'metrics', 'validation', 'runtimeSeconds', 'selected', 'error') if key in row})
     except OSError:
         pass
     return rows
