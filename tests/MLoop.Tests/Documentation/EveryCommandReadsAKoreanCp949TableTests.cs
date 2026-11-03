@@ -4,8 +4,8 @@ using MLoop.Tests.Commands;
 namespace MLoop.Tests.Documentation;
 
 /// <summary>
-/// The usual Korean spreadsheet export - CP949, Korean column names, Korean class words - is a table every command must read as the table it
-/// holds. Reading the first line of a file as UTF-8 is a one-line habit that works for every table with ASCII names, so a label that is
+/// The usual Korean spreadsheet export - CP949, Korean column names, Korean class words, a dataframe's index in front, a header cell broken
+/// over two lines - is a table every command must read as the table it holds. Reading the first line of a file as UTF-8 is a one-line habit that works for every table with ASCII names, so a label that is
 /// not ASCII was refused as "not found" in a CP949 file (a plain-ASCII label hid it). Each command of
 /// <see cref="EveryCommandRunsContractTests.Runs"/> runs once more in a project trained on such tables, with the columns it names spelled
 /// the way the files spell them, and must show the same effect.
@@ -21,6 +21,13 @@ public sealed class EveryCommandReadsAKoreanCp949TableTests : IClassFixture<Ever
     public sealed class KoreanProject : EveryCommandRunsContractTests.TrainedProject
     {
         public override string[] Names => ["엑스", "제트", "더블유", "결과"];
+
+        // The way these exports are shaped: a dataframe's index in front (empty name), and a header cell broken over two lines.
+        public override string[] HeaderCells => ["", "엑스", "제트", "\"더블\n유\"", "결과"];
+
+        public override string[] ReadNames => ["엑스", "제트", "더블 유", "결과"];
+
+        public override string RowPrefix(int row) => $"{row},";
 
         public override string[] Classes => ["예", "아니오"];
 
@@ -78,7 +85,7 @@ public sealed class EveryCommandReadsAKoreanCp949TableTests : IClassFixture<Ever
         if (name is "info" or "analyze profile")
         {
             // the names come back as the file spells them, not as replacement characters
-            Assert.Equal(_project.Names, ColumnNamesOf(name, seen));
+            Assert.Equal(_project.ReadNames, ColumnNamesOf(name, seen));
         }
         else
         {

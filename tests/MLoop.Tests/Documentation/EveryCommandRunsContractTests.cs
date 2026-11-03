@@ -273,6 +273,15 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
         /// <summary>The columns of the project's tables (three inputs, then the label) as the files spell them.</summary>
         public virtual string[] Names => ["x", "z", "w", "y"];
 
+        /// <summary>The header cells as the files write them (a dataframe's index has an empty name, a cell may be broken over two lines), the label last.</summary>
+        public virtual string[] HeaderCells => Names;
+
+        /// <summary>The names the commands read those cells as (a cell broken over two lines is one name with a space; an index column is none).</summary>
+        public virtual string[] ReadNames => Names;
+
+        /// <summary>What a data row starts with before its values (a dataframe's index).</summary>
+        public virtual string RowPrefix(int row) => "";
+
         /// <summary>The words the label takes: the positive class, then the negative one.</summary>
         public virtual string[] Classes => ["yes", "no"];
 
@@ -345,13 +354,13 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
         // x decides the answer (with some noise); z and w are noise.
         private string Rows(int rows, int seed, bool labelled)
         {
-            var csv = new StringBuilder(labelled ? string.Join(',', Names) + "\n" : string.Join(',', Names.Take(3)) + "\n");
+            var csv = new StringBuilder(string.Join(',', labelled ? HeaderCells : HeaderCells.Take(HeaderCells.Length - 1)) + "\n");
             var rng = new Random(seed);
             for (var i = 0; i < rows; i++)
             {
                 var x = rng.NextDouble();
                 var yes = rng.NextDouble() < (x > 0.5 ? 0.92 : 0.08);
-                csv.Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{rng.NextDouble():F4}");
+                csv.Append(RowPrefix(i)).Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{rng.NextDouble():F4}");
                 if (labelled) csv.Append(',').Append(yes ? Classes[0] : Classes[1]);
                 csv.Append('\n');
             }
