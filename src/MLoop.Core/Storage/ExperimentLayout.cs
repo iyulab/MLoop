@@ -48,6 +48,15 @@ public static class ExperimentLayout
     public const string DriftProfileFileName = "drift-profile.json";
 
     /// <summary>
+    /// A forecasting model's series: the one column it was trained on, header and values, copied at training. The model
+    /// forecasts the points after this series (<c>MLoop.Core.Prediction.ForecastReplayService</c> replays it), so it is the model's
+    /// own data and travels with it — the file it was read from may be moved, edited or never reach the machine that serves the
+    /// model. Beside <see cref="ModelFileName"/>, copied on promote like the calibration. Absent (a model trained before it
+    /// existed): the file named by the experiment's config is replayed.
+    /// </summary>
+    public const string SeriesFileName = "series.csv";
+
+    /// <summary>
     /// A binary classifier's decision threshold, when one was chosen for it
     /// (<c>MLoop.Core.Models.DecisionThreshold</c>) — the probability from which it answers the positive
     /// class. Beside <see cref="ModelFileName"/>, read by every path that loads the model, and copied on

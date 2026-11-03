@@ -728,6 +728,16 @@ def forecast_scenario(mloop, budget, keep, expected, serve=False):
         run.check('retrain_with_paired_gate', rc == 0 and promo.get('promoted') is True and last.get('experimentId') == result.get('experimentId') and last.get('gate') == 'passed',
                   f'{result.get("experimentId")} promoted={promo.get("promoted")} reason={promo.get("keptInStagingReason")} history last={last.get("experimentId")}/{last.get("gate")}')
 
+        # the series a model forecasts after is kept beside it: the files it was trained from go away and the forecast stands
+        for name in ('train_a', 'train_b'):
+            os.rename(os.path.join(base, name + '.csv'), os.path.join(base, name + '.moved'))
+        rc, fm = run.json_of('predict', '--json', cwd=proj)
+        err_moved = forecast_error((fm or {}).get('predictions') or [], new_b)
+        rc2, fc_moved = run.json_of('predict', '--experiment', 'exp-001', '--json', cwd=proj)
+        err_moved_a = forecast_error((fc_moved or {}).get('predictions') or [], new_a)
+        run.check('forecast_survives_the_training_files_going', rc == 0 and err_moved is not None and err_moved < 5 and err_moved_a is not None and err_moved_a < 6,
+                  f'production error={err_moved} exp-001 error={err_moved_a}')
+
         # a missing point is a blank line in a file of one column; it is a gap, and neither a training nor an evaluation reads over it
         gap_path = os.path.join(base, 'gap.csv')
         values = [r[0] for r in a]

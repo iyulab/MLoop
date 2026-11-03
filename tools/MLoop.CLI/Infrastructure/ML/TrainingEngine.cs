@@ -214,6 +214,7 @@ public class TrainingEngine : ITrainingEngine
             trained.ImageAnomaly?.WriteBeside(modelPath);
 
             await SaveDriftProfileAsync(experimentPath, dataFilePath, inputSchema, config, modelPath, cancellationToken);
+            SaveSeries(experimentPath, dataFilePath, config);
 
             // The project's metric scripts, over the rows the run's metrics were measured on — recorded with
             // them, and seen by the post-train hooks below.
@@ -959,6 +960,41 @@ public class TrainingEngine : ITrainingEngine
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException or FormatException)
         {
             WarningConsole.Warn($"Could not write {ExperimentLayout.DriftProfileFileName}: {ex.Message} — drift cannot be measured for this model.");
+        }
+    }
+
+    /// <summary>
+    /// A forecasting model's series, copied beside it (<see cref="ExperimentLayout.SeriesFileName"/>): the model forecasts the points
+    /// after it, so the forecast must not depend on the file it was read from staying where it was and as it was. A failure is a
+    /// warning — the forecast then replays the file the config names, as before.
+    /// </summary>
+    internal static void SaveSeries(string experimentPath, string dataFilePath, TrainingConfig config)
+    {
+        if (!string.Equals(MLoop.Core.Models.TaskTypes.Canonical(config.Task), "forecasting", StringComparison.Ordinal)
+            || !File.Exists(dataFilePath) || string.IsNullOrEmpty(config.LabelColumn))
+            return;
+        try
+        {
+            using var reader = new StreamReader(dataFilePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            if (reader.ReadLine() is not { } header)
+                return;
+            var fields = MLoop.Core.Prediction.CsvFieldParser.ParseFields(header);
+            var column = Array.FindIndex(fields, f => f.Trim().Equals(config.LabelColumn, StringComparison.OrdinalIgnoreCase));
+            if (column < 0)
+                return;
+            using var writer = new StreamWriter(Path.Combine(experimentPath, ExperimentLayout.SeriesFileName), false, new System.Text.UTF8Encoding(true));
+            writer.WriteLine(config.LabelColumn);
+            while (reader.ReadLine() is { } line)
+            {
+                if (line.Length == 0)
+                    continue;
+                var cells = MLoop.Core.Prediction.CsvFieldParser.ParseFields(line);
+                writer.WriteLine(column < cells.Length ? cells[column].Trim() : "");
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            WarningConsole.Warn($"Could not write {ExperimentLayout.SeriesFileName}: {ex.Message} — the forecast will replay the training file, which has to stay where it is.");
         }
     }
 

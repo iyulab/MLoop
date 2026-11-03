@@ -66,6 +66,14 @@ public static class ForecastReplayService
             valueColName = configDoc.RootElement.TryGetProperty("labelColumn", out var lc) ? lc.GetString() : null;
         }
 
+        // The series the model was trained on is kept beside it; a model trained before it was keeps the file the config names.
+        var kept = record is not null ? Path.Combine(record.Directory, ExperimentLayout.SeriesFileName) : null;
+        if (kept is not null && File.Exists(kept))
+        {
+            trainDataPath = kept;
+            valueColName = File.ReadLines(kept).FirstOrDefault()?.TrimStart('\uFEFF').Trim() is { Length: > 0 } keptName ? keptName : valueColName;
+        }
+
         if (string.IsNullOrEmpty(valueColName))
         {
             // Fallback: find from model schema

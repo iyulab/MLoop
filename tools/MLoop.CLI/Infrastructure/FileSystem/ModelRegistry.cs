@@ -107,7 +107,7 @@ public class ModelRegistry : IModelRegistry
         foreach (var layer in new[]
         {
             ExperimentLayout.DecisionThresholdFileName, ExperimentLayout.CalibrationFileName, ExperimentLayout.TextEncodersFileName,
-            ExperimentLayout.ImageAnomalyFileName, ExperimentLayout.PatchBankFileName,
+            ExperimentLayout.ImageAnomalyFileName, ExperimentLayout.PatchBankFileName, ExperimentLayout.SeriesFileName,
         })
         {
             var sourceLayerPath = _fileSystem.CombinePath(experimentPath, layer);

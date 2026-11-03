@@ -1091,8 +1091,9 @@ A series is a file of one column of numbers (or a table whose `label:` column is
 refused by name rather than closed up; fill it first (`mloop prep plan --set fill-missing:forward --columns <series>`).
 
 **Forecasting.** The model forecasts the `horizon` points after the end of the series it was trained on, and
-`mloop predict` (and `POST /predict`) replay that file to read the forecast — keep the training file in place, and retrain
-on the longer series to move the forecast forward. `horizon` is fixed when the model is trained. `mloop evaluate` takes a
+`mloop predict` (and `POST /predict`) replay that series (kept beside the model, `series.csv`; a model trained before
+that replays the training file, which has to stay in place) to read the forecast — retrain on the longer series to move the
+forecast forward. `horizon` is fixed when the model is trained. `mloop evaluate` takes a
 file whose last `horizon` rows are the values that followed: they are scored against the forecast made before them, and
 two forecasters are compared (`evaluate --against`, a project `gate:`) on the squared error of those same steps.
 

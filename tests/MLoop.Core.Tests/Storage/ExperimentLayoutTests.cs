@@ -27,5 +27,6 @@ public class ExperimentLayoutTests
         Assert.Equal("report.md", ExperimentLayout.ReportFileName);
         Assert.Equal("decision-threshold.json", ExperimentLayout.DecisionThresholdFileName);
         Assert.Equal("calibration.json", ExperimentLayout.CalibrationFileName);
+        Assert.Equal("series.csv", ExperimentLayout.SeriesFileName);
     }
 }
