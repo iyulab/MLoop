@@ -29,6 +29,44 @@ public class ClassDistributionAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public async Task ANumericLabelWrittenTwoWays_IsOneClass_AsTheTrainersReadIt()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "spellings.csv");
+        await File.WriteAllTextAsync(csvPath, "Feature,Label\n1,3\n2,3.00\n3,3\n4,3.0");
+
+        var result = await _analyzer.AnalyzeAsync(csvPath, "Label");
+
+        Assert.Equal(1, result.ClassCount);
+        Assert.Equal(4, Assert.Single(result.ClassDistribution).Value);
+        Assert.Equal("3", Assert.Single(result.ClassDistribution).Key);   // the spelling it was most often written with
+    }
+
+    [Fact]
+    public async Task NumericClassesWrittenDifferently_AreCountedByValue()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "numbers.csv");
+        await File.WriteAllTextAsync(csvPath, "Feature,Label\n1,0\n2,1\n3,1.0\n4,0.0\n5,1\n6,");
+
+        var result = await _analyzer.AnalyzeAsync(csvPath, "Label");
+
+        Assert.Equal(3, result.ClassCount);   // 0, 1, and the empty cell
+        Assert.Equal(3, result.ClassDistribution["1"]);
+        Assert.Equal(2, result.ClassDistribution["0"]);
+        Assert.Equal(1, result.ClassDistribution["(empty)"]);
+    }
+
+    [Fact]
+    public async Task ALabelWithAValueThatIsNotANumber_StaysText()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "mixed.csv");
+        await File.WriteAllTextAsync(csvPath, "Feature,Label\n1,3\n2,3.00\n3,high");
+
+        var result = await _analyzer.AnalyzeAsync(csvPath, "Label");
+
+        Assert.Equal(3, result.ClassCount);
+    }
+
+    [Fact]
     public async Task AnalyzeAsync_BalancedBinaryClasses_ReturnsBalanced()
     {
         // Arrange

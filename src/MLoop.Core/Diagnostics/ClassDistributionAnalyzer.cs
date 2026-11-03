@@ -75,6 +75,8 @@ public class ClassDistributionAnalyzer
             };
         }
 
+        classCounts = FoldNumericSpellings(classCounts);
+
         // Calculate distribution metrics
         var classCount = classCounts.Count;
         var classDistribution = classCounts
@@ -150,6 +152,36 @@ public class ClassDistributionAnalyzer
         if (imbalanceRatio <= 20) return ClassBalanceLevel.ModeratelyImbalanced;
         if (imbalanceRatio <= 100) return ClassBalanceLevel.HighlyImbalanced;
         return ClassBalanceLevel.SeverelyImbalanced;
+    }
+
+    /// <summary>
+    /// A label written as numbers is read as numbers: <c>3</c> and <c>3.00</c> are one class, as the trainers see them. Counted as
+    /// text they were two, so a label that holds one value (a column of 3s, some written <c>3.00</c>) passed the one-class refusal and
+    /// the search ran for minutes before it stopped on "all identical values". Each class keeps the spelling it was most often written
+    /// with. A label with a value that is not a number stays as text.
+    /// </summary>
+    internal static Dictionary<string, int> FoldNumericSpellings(Dictionary<string, int> counts)
+    {
+        var numeric = new Dictionary<string, double>();
+        foreach (var key in counts.Keys)
+        {
+            if (key == "(empty)")
+                continue;
+            if (!double.TryParse(key, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)
+                || !double.IsFinite(value))
+                return counts;
+            numeric[key] = value;
+        }
+
+        var folded = new Dictionary<string, int>();
+        foreach (var group in numeric.GroupBy(kv => kv.Value == 0 ? 0 : kv.Value))
+        {
+            var spellings = group.Select(kv => kv.Key).ToList();
+            folded[spellings.OrderByDescending(k => counts[k]).First()] = spellings.Sum(k => counts[k]);
+        }
+        if (counts.TryGetValue("(empty)", out var empty))
+            folded["(empty)"] = empty;
+        return folded;
     }
 
     private static string GenerateVisualization(Dictionary<string, int> distribution, int total)
