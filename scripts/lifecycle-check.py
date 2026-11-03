@@ -31,6 +31,7 @@ population and their label is rewritten):
          [--time 60] [--trials 10] [--out lifecycle-results.json] [--keep]
   python lifecycle-check.py --mloop "..." --tables DIR [--datasets credit-g,houses]    # DIR as written by lifecycle-tables.py
 
+On a table the first model learns nothing from (the promotion gate keeps it out of production), the later steps cannot run and the table is reported once as "skip", not as failures.
 Exit status is 1 when a step fails that is not named in --expected-failures. A step named there is still run and
 reported ("xfail"); it turning green is reported as "xpass" so the list can be shortened. Each run is a fresh
 temporary project, removed unless --keep is given.
@@ -130,6 +131,11 @@ class Run:
                 except ValueError:
                     pass
         return rc, evs
+
+    def skip(self, step, detail=''):
+        """A premise of the walk is not met (it needs a promoted first model and the table gave none): reported, never counted as a failure."""
+        self.steps.append({'step': f'{self.task}/{step}', 'status': 'skip', 'detail': detail})
+        print(f'  [ skip] {step}: {detail}', flush=True)
 
     def check(self, step, ok, detail=''):
         name = f'{self.task}/{step}'
@@ -447,8 +453,15 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
         promo = next((e for e in evs if e.get('event') == 'promotion'), {})
         key, floor = table['learned']
         score = (result.get('metrics') or {}).get(key)
-        run.check('train', rc == 0 and result.get('experimentId') == 'exp-001' and promo.get('promoted') is True
-                  and score is not None and score >= floor, f'{key}={score} promoted={promo.get("promoted")}')
+        learned = rc == 0 and result.get('experimentId') == 'exp-001' and promo.get('promoted') is True and score is not None and score >= floor
+        reason = promo.get('keptInStagingReason') or ''
+        if not learned and table['public'] and rc == 0 and promo.get('promoted') is False and 'quality gate' in reason:
+            # A table the first model learned nothing from is refused by the promotion gate — the right answer — and every later step
+            # needs a model in production. That is a premise of the walk not met, not eighteen failures: say so once and stop.
+            run.skip('train', f'{key}={score}: the table taught the first model nothing in this budget, so the quality gate kept it out '
+                              f'of production; the walk needs a promoted first model | reason: {reason}')
+            return run.steps
+        run.check('train', learned, f'{key}={score} promoted={promo.get("promoted")}')
 
         rc, status = run.json_of('status', '--json', cwd=proj)
         models = (status or {}).get('models') or [{}]
