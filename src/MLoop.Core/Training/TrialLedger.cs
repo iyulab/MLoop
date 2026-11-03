@@ -69,7 +69,8 @@ public static class TrialLedger
             Metrics = trial.Metrics is { } metrics ? OnlyFinite(metrics) : new Dictionary<string, double>(),
             RuntimeSeconds = trial.RuntimeSeconds ?? 0,
             Validation = trial is { Folds: { } folds, StandardDeviation: { } spread }
-                ? new TrialValidation(folds, OnlyFinite(spread), trial.StandardError is { } errors ? OnlyFinite(errors) : null)
+                ? new TrialValidation(folds, OnlyFinite(spread), trial.StandardError is { } errors ? OnlyFinite(errors) : null,
+                    trial.FoldMetrics is { } perFold ? [.. perFold.Select(OnlyFinite)] : null)
                 : null,
             Error = trial.Metrics is null ? trial.Error : null,
         };

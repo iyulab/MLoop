@@ -27,6 +27,12 @@ public sealed record TrialResult
     /// </summary>
     public IReadOnlyDictionary<string, double>? StandardError { get; init; }
 
+    /// <summary>
+    /// Each fold's metrics, in fold order — what <see cref="Metrics"/> is the mean of. Null for a holdout (one part, no folds)
+    /// and for a trial that was not validated over folds.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyDictionary<string, double>>? FoldMetrics { get; init; }
+
     /// <summary>How long the trial ran, when that is known.</summary>
     public double? RuntimeSeconds { get; init; }
 

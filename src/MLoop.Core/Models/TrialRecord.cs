@@ -82,9 +82,12 @@ public sealed class TrialRecord
 /// <summary>
 /// A trial's validation: how many folds, each metric's standard deviation across them, and each metric's standard
 /// error — the folds' spread over √folds, or for a holdout (one fold, no spread) the spread of its slices. The
-/// standard error is what tells two trials' scores apart: the search keeps a smaller model within one of it.
+/// standard error is what tells two trials' scores apart: the search keeps a smaller model within one of it. The metrics of
+/// each fold are kept too (not for a holdout): the mean and the spread do not say whether the first fold already told the trial
+/// from a good one, which is what a rule that skips the rest of a bad trial's folds has to be built on.
 /// </summary>
 public sealed record TrialValidation(
     int Folds,
     IReadOnlyDictionary<string, double> StandardDeviation,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, double>? StandardError = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, double>? StandardError = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<IReadOnlyDictionary<string, double>>? FoldMetrics = null);

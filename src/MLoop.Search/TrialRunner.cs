@@ -270,6 +270,7 @@ public sealed class TrialRunner
                     Folds = score.Folds,
                     StandardDeviation = score.StandardDeviation,
                     StandardError = score.StandardError,
+                    FoldMetrics = score.IsHoldout ? null : score.FoldMetrics,
                     RuntimeSeconds = seconds,
                 };
                 trials.Add(trial);
