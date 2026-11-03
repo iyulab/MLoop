@@ -8,6 +8,9 @@ Each (dataset, split seed) gets one stratified 80/20 split; every system receive
                 nearly all of the train file)
   mloop-defaults  the same without `--metric` / `--test-split`: the shipped defaults (an accuracy-family metric,
                 20% of the train file held back for the model's own test)
+  mloop-refit   `mloop` with the held-out share cut to REFIT_HOLDOUT_ROWS rows (`--test-split`), so the model is fitted on
+                nearly all of the train file, as FLAML and AutoGluon fit theirs (`mloop` fits on 95 %). The fair-footing arm for
+                a gap read against them. Not in the default `--systems`; the held-out rows are the model's own test, unused here
   mloop-ensemble  `mloop` with `--ensemble` (binary and regression only): the product path that answers with a blend of the best
                 trials when one scores better out of fold. Not in the default `--systems`; name it to run it. Its row records
                 whether the run answered with a blend or kept the single model (and why), and `summarize` pairs it with `mloop`
@@ -37,9 +40,11 @@ PRIMARY = {'binary': ('auc', +1), 'multiclass': ('log_loss', -1), 'regression': 
 SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboost', 'automl-legacy']
 # run only when named in --systems: the blend is for binary classification and regression, and costs an extra search's worth of time;
 # the single-family FLAML arms attribute a gap to a learner family
-OPTIONAL_SYSTEMS = ['mloop-ensemble', 'flaml-lgbm', 'flaml-forest', 'autogluon']
+OPTIONAL_SYSTEMS = ['mloop-ensemble', 'mloop-refit', 'flaml-lgbm', 'flaml-forest', 'autogluon']
 # the optional systems that stand for another searcher (or a restriction of one) and are read against `mloop` in their own table
-OTHER_SYSTEMS = ['flaml-lgbm', 'flaml-forest', 'autogluon']
+OTHER_SYSTEMS = ['mloop-refit', 'flaml-lgbm', 'flaml-forest', 'autogluon']
+# rows `mloop-refit` holds back for the model's own test; `mloop` holds back 5 % (the product's own `train` needs a test partition)
+REFIT_HOLDOUT_ROWS = 10
 # `ensemble` is a probe, not a system: one search yields four rows - its best single model, the equal-weight average of its best 3 and 5 trials,
 # the member the train rows' out-of-fold answers pick (what forward selection collapses to on one member), and a forward-selected blend of its
 # best 5 (weights chosen on those same out-of-fold answers)
@@ -132,7 +137,12 @@ def read_ensemble_outcome(project, experiment_id):
     return None
 
 
-def run_mloop(mloop, entry, work, budget, aligned, ensemble=False):
+def test_split(train_rows):
+    """The share of the train file `mloop train` holds back: 5 %, or REFIT_HOLDOUT_ROWS rows when `train_rows` is given (the refit arm)."""
+    return 0.05 if train_rows is None else min(0.05, REFIT_HOLDOUT_ROWS / train_rows)
+
+
+def run_mloop(mloop, entry, work, budget, aligned, ensemble=False, train_rows=None):
     project = os.path.join(work, 'mloop-project')
     shutil.rmtree(project, ignore_errors=True)
     init = subprocess.run(mloop + ['init', 'mloop-project', '--task', TASK_FLAG[entry['task']]],
@@ -142,7 +152,7 @@ def run_mloop(mloop, entry, work, budget, aligned, ensemble=False):
     started = time.time()
     train = subprocess.run(mloop + ['train', os.path.join(work, 'train.csv'), '--label', entry['target'],
                                     '--task', TASK_FLAG[entry['task']], '--time', str(budget), '--no-promote', '--json']
-                           + (['--metric', OPTIMIZE[entry['task']], '--test-split', '0.05'] if aligned else [])
+                           + (['--metric', OPTIMIZE[entry['task']], '--test-split', '%.6f' % test_split(train_rows)] if aligned else [])
                            + (['--ensemble'] if ensemble else []),
                            cwd=project, capture_output=True, text=True)
     wall = time.time() - started
@@ -342,8 +352,9 @@ def run_all(args):
                 try:
                     if system == 'mloop-ensemble' and entry['task'] not in ('binary', 'regression'):
                         continue   # a blend is made for binary classification and regression
-                    if system in ('mloop', 'mloop-defaults', 'mloop-ensemble'):
-                        result = run_mloop(mloop, entry, work, args.budget, aligned=system != 'mloop-defaults', ensemble=system == 'mloop-ensemble')
+                    if system in ('mloop', 'mloop-defaults', 'mloop-ensemble', 'mloop-refit'):
+                        result = run_mloop(mloop, entry, work, args.budget, aligned=system != 'mloop-defaults', ensemble=system == 'mloop-ensemble',
+                                           train_rows=len(train) if system == 'mloop-refit' else None)
                     elif system == 'automl-legacy':
                         result = run_automl_legacy(shlex.split(args.automl_legacy), entry, work, args.budget)
                     elif system == 'flaml':
@@ -463,6 +474,27 @@ def summarize(paths):
         print()
         for o, tally in counts.items():
             print(f'mloop vs {o}: {dict(tally)}')
+        if 'mloop-refit' in others:
+            # The fair-footing read: the model fitted on nearly all of the train file, as FLAML's is, against FLAML - and against the 95 % `mloop`
+            # on the same tables, so the share of the gap the held-out 5 % explains is one number.
+            print('\n| dataset | task | rows | metric | mloop | mloop-refit | flaml | refit vs mloop | refit vs flaml | mloop vs flaml |')
+            print('|---|---|---|---|---|---|---|---|---|---|')
+            fair = {k: collections.Counter() for k in ('refit vs mloop', 'refit vs flaml', 'mloop vs flaml')}
+            for name in sorted(by, key=lambda n: (meta[n][0], meta[n][1])):
+                if 'mloop-refit' not in by[name]:
+                    continue
+                task, rows = meta[name]
+                metric, direction = PRIMARY[task]
+                cells = ['%.4f±%.4f' % mean_se(by[name][s]) if s in by[name] else '—' for s in ('mloop', 'mloop-refit', 'flaml')]
+                v = [verdict(by[name].get('mloop-refit', {}), by[name].get('mloop', {}), direction),
+                     verdict(by[name].get('mloop-refit', {}), by[name].get('flaml', {}), direction),
+                     verdict(by[name].get('mloop', {}), by[name].get('flaml', {}), direction)]
+                for k, x in zip(fair, v):
+                    fair[k][x] += 1
+                print(f'| {name} | {task} | {rows} | {metric} | ' + ' | '.join(cells) + ' | ' + ' | '.join(v) + ' |')
+            print()
+            for k, tally in fair.items():
+                print(f'{k}: {dict(tally)}')
     if any('ens-single' in by[name] for name in by):
         # The average of the search's best trials against that same search's best single model: only the average differs.
         counts = {k: collections.Counter() for k in ('ens-k3', 'ens-k5', 'ens-oofpick', 'ens-fwd')}

@@ -60,6 +60,10 @@ python benchmarks/engine-compare/forest-probe/forest.py --mlnet "dotnet $PWD/ben
 `flaml` rows also record the winning settings (`best_config`, `best_loss`, `best_config_train_time`, and the per-learner best loss and config), and `flaml-lgbm` / `flaml-forest`
 (named in `--systems`) restrict FLAML to its LightGBM learner or to random forest and extra trees, to attribute a gap to a learner family.
 
+`mloop-refit` (named in `--systems`) is `mloop` with the held-out share cut from 5% of the train file to 10 rows, so the model is fitted on nearly all of
+the train file, as FLAML and AutoGluon fit theirs. Read a gap against them on this arm: the `mloop` arm fits on 95%. `summarize` prints it next to
+`mloop` and `flaml` with `refit vs mloop`, `refit vs flaml` and `mloop vs flaml`, so the share of a gap the held-out 5% explains is one number.
+
 `autogluon` (named in `--systems`) runs AutoGluon-Tabular with `time_limit` set to the budget and its default preset. It has no seed of its own, so a table's
 split seed is the only thing that changes between its runs. The workflow installs the package only when it is named, and AutoGluon pins its own
 versions of LightGBM, XGBoost and scikit-learn: read an AutoGluon dispatch against the `flaml` and `mloop` rows of the same dispatch, not against another one.
