@@ -1084,6 +1084,23 @@ about 330 MB (the input checks stream). Wider files grow with the number of colu
 memory allows, profile a sample (`mloop sample create --from <file> --rows 100000`, which streams the file — about
 150 MB for a 2-million-row CSV) — training reads the whole file.
 
+### Time series
+
+A series is a file of one column of numbers (or a table whose `label:` column is the series). `forecasting` and
+`time-series-anomaly` read it in order, so a missing point — an empty cell, or a blank line in a one-column file — is
+refused by name rather than closed up; fill it first (`mloop prep plan --set fill-missing:forward --columns <series>`).
+
+**Forecasting.** The model forecasts the `horizon` points after the end of the series it was trained on, and
+`mloop predict` (and `POST /predict`) replay that file to read the forecast — keep the training file in place, and retrain
+on the longer series to move the forecast forward. `horizon` is fixed when the model is trained. `mloop evaluate` takes a
+file whose last `horizon` rows are the values that followed: they are scored against the forecast made before them, and
+two forecasters are compared (`evaluate --against`, a project `gate:`) on the squared error of those same steps.
+
+**Time-series anomaly.** The detector judges a point against a window of the points before it (up to 64), so the first
+rows of any file or request have no verdict: `isAnomaly` and `anomalyScore` are `null` in `--json` and `POST /predict`,
+the `PredictedLabel` and `Score` cells are empty in the prediction file, and a warning says how many. Send the series with
+at least that many earlier rows in front of the ones you ask about.
+
 ### Image anomaly
 
 `image-anomaly` is for the case where only normal pictures are plentiful: a surface, a part, a screen that is normal
