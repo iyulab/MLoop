@@ -93,6 +93,19 @@ public class SchemaValidator
 
 
     /// <summary>
+    /// The column names of a CSV file's first record, <c>null</c> for an empty file. A name written over two lines (a spreadsheet
+    /// cell broken with Alt+Enter, quoted) is one name, read as training recorded it: the break is a space, the way the loader
+    /// flattens it. Read as lines, such a header was cut in two and every column after the break was "missing".
+    /// </summary>
+    internal static string[]? HeaderOf(string path)
+    {
+        var record = TableRows.ReadRecords(path, maxRecords: 0, includeHeader: true).FirstOrDefault();
+        return record is not { Length: > 0 }
+            ? null
+            : [.. record.Select(name => System.Text.RegularExpressions.Regex.Replace(name, @"\r\n|\r|\n", " "))];
+    }
+
+    /// <summary>
     /// Validates using saved schema information from training
     /// </summary>
     private SchemaValidationResult ValidateWithSavedSchema(InputSchemaInfo savedSchema, string inputDataPath)
@@ -102,20 +115,14 @@ public class SchemaValidator
         try
         {
             // inputDataPath is already UTF-8 (caller ran EncodingDetector.ConvertToUtf8WithBom)
-            string? firstLine;
-            using (var reader = new StreamReader(inputDataPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
-            {
-                firstLine = reader.ReadLine();
-            }
-
-            if (string.IsNullOrEmpty(firstLine))
+            var inputColumns = HeaderOf(inputDataPath);
+            if (inputColumns is null)
             {
                 result.IsValid = false;
                 result.ErrorMessage = "Input file is empty";
                 return result;
             }
 
-            var inputColumns = CsvFieldParser.ParseFields(firstLine);
             var missingColumns = new List<string>();
             var extraColumns = new List<string>();
             var potentialEncodingIssues = new List<(string expected, string found)>();

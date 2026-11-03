@@ -44,6 +44,20 @@ public class SchemaValidatorTests : IDisposable
     }
 
     [Fact]
+    public void HeaderOf_AQuotedNameOverTwoLines_IsOneNameWithASpace()
+    {
+        var path = CreateCsv("multiline.csv", "번호,\"허용오차\n(상한값)\",\"A\r\nB\",결과\n1,0.5,2,통과\n");
+
+        Assert.Equal(["번호", "허용오차 (상한값)", "A B", "결과"], SchemaValidator.HeaderOf(path)!);
+    }
+
+    [Fact]
+    public void HeaderOf_AnEmptyFile_IsNull()
+    {
+        Assert.Null(SchemaValidator.HeaderOf(CreateCsv("empty2.csv", "")));
+    }
+
+    [Fact]
     public async Task ValidateAsync_NoSavedSchema_SkipsAndSaysSo_RatherThanInventingAFinding()
     {
         // An experiment with no recorded input schema is not a data problem, and there is nothing to
