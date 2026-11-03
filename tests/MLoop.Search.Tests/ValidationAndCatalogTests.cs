@@ -84,13 +84,13 @@ public sealed class ValidationAndCatalogTests
             return new Dictionary<string, double> { ["accuracy"] = m.Accuracy, ["auc"] = m.AreaUnderRocCurve };
         });
 
-        Assert.Equal(5, score.Folds);
+        Assert.Equal(FoldPlan.DefaultFolds, score.Folds);
         Assert.False(score.IsHoldout);
         Assert.Equal(200, scoredRows);                         // every row validated exactly once
         Assert.Equal(score.FoldMetrics.Average(f => f["auc"]), score.Mean["auc"], 12);
         Assert.True(score.Mean["auc"] > 0.7, $"auc {score.Mean["auc"]}");
         Assert.True(score.StandardDeviation["auc"] >= 0);
-        Assert.Equal(score.StandardDeviation["auc"] / Math.Sqrt(5), score.StandardError!["auc"], 12);
+        Assert.Equal(score.StandardDeviation["auc"] / Math.Sqrt(FoldPlan.DefaultFolds), score.StandardError!["auc"], 12);
     }
 
     /// <summary>

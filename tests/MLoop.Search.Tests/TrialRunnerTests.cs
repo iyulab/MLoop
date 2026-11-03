@@ -2,6 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Search.Candidates;
 using MLoop.Search.Tuning;
+using MLoop.Search.Validation;
 
 namespace MLoop.Search.Tests;
 
@@ -67,7 +68,7 @@ public sealed class TrialRunnerTests
         Assert.All(result.Trials, t => Assert.Contains(t.Trainer, new[] { "FastTree", "LbfgsLogisticRegression" }));
         // A schema is a trainer: the categories' encoding follows from their counts, it is not searched.
         Assert.All(result.Trials, t => Assert.DoesNotContain(t.Parameters!, p => p.Key == "CategoricalEncoding"));
-        Assert.Equal(5, result.BestValidation.Folds);
+        Assert.Equal(FoldPlan.DefaultFolds, result.BestValidation.Folds);
         // Each scored trial carries the standard error its folds give — what tells two trials' scores apart.
         Assert.All(result.Trials.Where(t => t.Succeeded), t => Assert.True(t.StandardError!["auc"] > 0));
         Assert.Equal(result.BestValidation.StandardError!["auc"], result.Best.StandardError!["auc"]);
