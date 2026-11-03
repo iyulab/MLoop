@@ -167,6 +167,38 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
     }
 
     [Fact]
+    public async Task ALabelWrittenWithThousandsSeparators_IsTheCallersError_NotAServerError()
+    {
+        // `mloop evaluate` refuses this file before it measures anything (a label the loader cannot read loads as missing, and the
+        // metrics would be those of what is left); the endpoint answered 500 "Evaluation failed" for the caller's own file.
+        const string model = "amounts";
+        var datasets = Path.Combine(_factory.TestProjectRoot, "datasets");
+        var plain = Path.Combine(datasets, "amounts.csv");
+        var rng = new Random(5);
+        var rows = Enumerable.Range(0, 200).Select(_ => { var x = rng.NextDouble(); return (X: x, Y: Math.Round(1000 + 9000 * x + rng.NextDouble() * 300)); }).ToList();
+        await File.WriteAllLinesAsync(plain, new[] { "x,y" }.Concat(rows.Select(r => string.Create(CultureInfo.InvariantCulture, $"{r.X:F4},{r.Y:F0}"))));
+        var fs = _factory.Services.GetRequiredService<IFileSystemManager>();
+        var store = _factory.Services.GetRequiredService<IExperimentStore>();
+        await new TrainingEngine(fs, store).TrainAsync(new TrainingConfig
+        {
+            ModelName = model,
+            DataFile = plain,
+            LabelColumn = "y",
+            Task = "regression",
+            TimeLimitSeconds = 60,
+            MaxTrials = 6,
+        }, progress: null, CancellationToken.None);
+
+        var written = Path.Combine(datasets, "amounts-written.csv");
+        await File.WriteAllLinesAsync(written, new[] { "x,y" }.Concat(rows.Select(r => string.Create(CultureInfo.InvariantCulture, $"{r.X:F4},\"{r.Y:N0}\""))));
+
+        var (status, body) = await EvaluateAsync(new { name = model, experimentId = "exp-001", testDataPath = written });
+
+        status.Should().Be(HttpStatusCode.BadRequest, body.ToString());
+        body.GetProperty("error").GetString().Should().Contain("numbers written for people");
+    }
+
+    [Fact]
     public async Task TheProjectsMetricScripts_AreComputedOverTheEvaluatedRows()
     {
         var scripts = Directory.CreateDirectory(Path.Combine(_factory.TestProjectRoot, ".mloop", "scripts", "metrics")).FullName;

@@ -476,6 +476,13 @@ public static class ExperimentEndpoints
                     warnings = warnings.Count == 0 ? null : warnings,
                 });
             }
+            catch (Exception ex) when (ex is MLoop.Core.Training.UnreadableLabelException or MLoop.Core.Data.ColumnLayoutException)
+            {
+                // The file's own fault, as the schema check above: a label written as numbers for people, a file that does not split into
+                // columns. `mloop evaluate` says the same and exits 1; a 500 told the caller the server was broken.
+                logger.LogInformation("Evaluation refused the test file after {ElapsedMs}ms: {Reason}", stopwatch.ElapsedMilliseconds, ex.Message);
+                return Results.BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Evaluation failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
