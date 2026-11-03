@@ -190,7 +190,7 @@ public sealed class TrialRunner
         // more trials in the same minute. Kept in memory when they fit (about four bytes a numeric cell, a kilobyte a text one); a table past the limit is
         // read from its source as before.
         if (KeepsRowsInMemory(plan.FoldOf.Count, train.Schema.Count, roles.Of(ColumnRole.Text).Count))
-            train = new MLContext(settings.Seed).Data.Cache(train);
+            train = RowCache.Of(new MLContext(settings.Seed), train);
         var columns = new TrainerColumns(roles.Label, "Features", _request.Weight);
         var withMissingValues = Featurizer.ColumnsWithMissingValues(train, roles);
 

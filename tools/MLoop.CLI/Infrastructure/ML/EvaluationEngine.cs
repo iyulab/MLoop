@@ -113,7 +113,7 @@ public class EvaluationEngine
                 // memory rather than read from the file and scored a second time.
                 var classifier = MLoop.Core.Models.TaskTypes.Canonical(taskType) is "binary-classification" or "multiclass-classification";
                 if (classifier)
-                    predictions = _mlContext.Data.Cache(predictions);
+                    predictions = MLoop.Search.RowCache.Of(_mlContext, predictions);
 
                 // Evaluate based on task type using the original label column name
                 // After model.Transform, classification labels are in Key type (via MapValueToKey)

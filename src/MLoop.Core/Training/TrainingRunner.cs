@@ -338,8 +338,8 @@ public partial class TrainingRunner
             }
             var layer = new TextEncodingLayer(_mlContext, opened);
             _logger.Info($"Embedding {string.Join(", ", encoders.Select(e => $"'{e.Key}' with {e.Value}"))}...");
-            trainSet = _mlContext.Data.Cache(layer.Transform(trainSet));
-            testSet = ReferenceEquals(testSet, schemaSource) ? trainSet : _mlContext.Data.Cache(layer.Transform(testSet));
+            trainSet = MLoop.Search.RowCache.Of(_mlContext, layer.Transform(trainSet));
+            testSet = ReferenceEquals(testSet, schemaSource) ? trainSet : MLoop.Search.RowCache.Of(_mlContext, layer.Transform(testSet));
             textEncodings = layer.Encodings;
         }
 

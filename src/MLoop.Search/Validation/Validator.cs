@@ -70,7 +70,7 @@ public static class Validator
             // again costs a pass of the whole pipeline per fold, measured as two to three fewer trials in a minute
             // on 87,000 rows, and a different model kept.
             if (scoredPart is not null)
-                scored = mlContext.Data.Cache(scored);
+                scored = RowCache.Of(mlContext, scored);
             folds.Add(score(scored));
             scoredPart?.Invoke(scored);
             if (plan.IsHoldout)
