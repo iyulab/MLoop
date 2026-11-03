@@ -45,6 +45,14 @@ public static class EncodingDetector
     }
 
     /// <summary>
+    /// A reader over a text file in the encoding it is written in (a byte-order mark wins). Reading the first line of a file the
+    /// way <c>new StreamReader(path)</c> does assumes UTF-8, which is right for every table with ASCII names and wrong for the
+    /// usual Korean spreadsheet export - a column or label with Korean letters is then "not found".
+    /// </summary>
+    public static StreamReader OpenReader(string filePath) =>
+        new(filePath, DetectEncoding(filePath).Encoding, detectEncodingFromByteOrderMarks: true);
+
+    /// <summary>
     /// Converts a file to UTF-8 with BOM if needed (ML.NET's TextLoader reads UTF-8 reliably only
     /// with the BOM present). Returns the original path untouched when it is already UTF-8.
     /// </summary>

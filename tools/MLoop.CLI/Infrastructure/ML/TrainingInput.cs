@@ -43,7 +43,11 @@ public static class TrainingInput
         string? header;
         // Read in the file's own encoding: a Korean label against a CP949 file (the usual spreadsheet export) is no column
         // when the header is read as UTF-8, and the refusal listed the columns as replacement characters.
-        try { header = File.ReadLines(dataFile, EncodingDetector.DetectEncoding(dataFile).Encoding).FirstOrDefault()?.TrimStart('\uFEFF'); }
+        try
+        {
+            using var reader = EncodingDetector.OpenReader(dataFile);
+            header = reader.ReadLine()?.TrimStart('\uFEFF');
+        }
         catch (IOException) { return null; }
         if (string.IsNullOrEmpty(header))
             return null;

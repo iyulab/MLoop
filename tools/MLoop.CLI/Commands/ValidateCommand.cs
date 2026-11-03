@@ -5,6 +5,7 @@ using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.CLI.Infrastructure.ML;
+using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
 using MLoop.Core.Models;
 using MLoop.Core.Preprocessing;
@@ -579,7 +580,7 @@ public static class ValidateCommand
                 BadDataFound = null
             };
 
-            using var reader = new StreamReader(csvPath);
+            using var reader = EncodingDetector.OpenReader(csvPath);
             using var csv = new CsvReader(reader, csvConfig);
             csv.Read();
             csv.ReadHeader();

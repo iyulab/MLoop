@@ -268,8 +268,22 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
     }
 
     /// <summary>A binary project with a promoted model and four hundred logged predictions, built once for the class.</summary>
-    public sealed class TrainedProject : IAsyncLifetime
+    public class TrainedProject : IAsyncLifetime
     {
+        /// <summary>The columns of the project's tables (three inputs, then the label) as the files spell them.</summary>
+        public virtual string[] Names => ["x", "z", "w", "y"];
+
+        /// <summary>The words the label takes: the positive class, then the negative one.</summary>
+        public virtual string[] Classes => ["yes", "no"];
+
+        /// <summary>The encoding the data files are written in.</summary>
+        public virtual Encoding FileEncoding => new UTF8Encoding(false);
+
+        public string Label => Names[3];
+
+        /// <summary>Whether the data files are also written as workbooks (the workbook runs read them).</summary>
+        public virtual bool Workbooks => true;
+
         private readonly string _originalDirectory = Directory.GetCurrentDirectory();
         private readonly string _workspace = Path.Combine(Path.GetTempPath(), "mloop-every-" + Guid.NewGuid().ToString("N"));
 
@@ -283,17 +297,17 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
             {
                 Check(await CliRunner.RunAsync("init", "p", "--task", "binary-classification"));
                 Directory.SetCurrentDirectory(Root);
-                await System.IO.File.WriteAllTextAsync("datasets/train.csv", Rows(300, 1, labelled: true));
-                await System.IO.File.WriteAllTextAsync("datasets/test.csv", Rows(150, 2, labelled: true));
-                await System.IO.File.WriteAllTextAsync("datasets/predict.csv", Rows(400, 3, labelled: false));
-                Check(await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "60", "--max-trials", "10"));
+                await System.IO.File.WriteAllTextAsync("datasets/train.csv", Rows(300, 1, labelled: true), FileEncoding);
+                await System.IO.File.WriteAllTextAsync("datasets/test.csv", Rows(150, 2, labelled: true), FileEncoding);
+                await System.IO.File.WriteAllTextAsync("datasets/predict.csv", Rows(400, 3, labelled: false), FileEncoding);
+                Check(await CliRunner.RunAsync("train", "datasets/train.csv", "--label", Label, "--time", "60", "--max-trials", "10"));
                 Check(await CliRunner.RunAsync("promote", "exp-001"));
                 Check(await CliRunner.RunAsync("predict", "datasets/predict.csv", "--log"));
                 Assert.True(Directory.EnumerateFiles(Path.Combine(Root, ".mloop", "logs"), "*.jsonl", SearchOption.AllDirectories).Any(),
                     "predict --log wrote no log");
 
                 // The same two tables as workbooks - made last, so the runs above never see them.
-                foreach (var name in DataFiles)
+                foreach (var name in Workbooks ? DataFiles : [])
                     WorkbookFile.FromCsv(Path.Combine("datasets", name + ".csv"), Path.Combine("datasets", name + ".xlsx"));
             }
             finally
@@ -329,16 +343,16 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
             Assert.True(result.ExitCode == 0, result.Stdout + Environment.NewLine + result.Stderr);
 
         // x decides the answer (with some noise); z and w are noise.
-        private static string Rows(int rows, int seed, bool labelled)
+        private string Rows(int rows, int seed, bool labelled)
         {
-            var csv = new StringBuilder(labelled ? "x,z,w,y\n" : "x,z,w\n");
+            var csv = new StringBuilder(labelled ? string.Join(',', Names) + "\n" : string.Join(',', Names.Take(3)) + "\n");
             var rng = new Random(seed);
             for (var i = 0; i < rows; i++)
             {
                 var x = rng.NextDouble();
                 var yes = rng.NextDouble() < (x > 0.5 ? 0.92 : 0.08);
                 csv.Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{rng.NextDouble():F4}");
-                if (labelled) csv.Append(yes ? ",yes" : ",no");
+                if (labelled) csv.Append(',').Append(yes ? Classes[0] : Classes[1]);
                 csv.Append('\n');
             }
             return csv.ToString();
