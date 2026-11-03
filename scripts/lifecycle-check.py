@@ -95,7 +95,8 @@ def write_table(path, rows, header=('x1', 'x2', 'x3', 'cat', 'y')):
 class Run:
     def __init__(self, mloop, task, work, budget, expected, trials=0):
         self.mloop, self.task, self.work, self.budget, self.expected = shlex.split(mloop), task, work, budget, expected
-        self.trials = trials
+        # a deep-learning task trains by epochs and refuses a trial count
+        self.trials = 0 if task == 'text' else trials
         self.metric = []   # extra `train` arguments that name what the table is judged on
         self.last_output = ''   # the tail of the last command's output, shown with a failed step
         self.steps = []
