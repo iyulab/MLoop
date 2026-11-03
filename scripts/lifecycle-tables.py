@@ -11,11 +11,11 @@ Each table becomes a directory: train_a.csv, new_a.csv (regime A, in-regime rows
 new_b.csv (regime B), and manifest.json. Needs pandas and numpy.
 
   python lifecycle-tables.py --source <openml-benchmarks dir> --out <dir> [--datasets credit-g,houses] [--per-task 4] [--shape korean-export]
-  python lifecycle-tables.py --synthetic wide,many-classes,spelling,duplicate-name --out <dir>
+  python lifecycle-tables.py --synthetic wide,many-classes,spelling,duplicate-name,unique-label --out <dir>
 
 --synthetic needs no source: it writes tables of the shapes real exports have and a small public table does not — a hundred and
-fifty columns, a label with a hundred classes, one class spelled two ways (3 and 3.00), two columns of one name. The last is
-refused by training, and the manifest says so (expect: refused): the walk asserts the refusal and stops there.
+fifty columns, a label with a hundred classes, one class spelled two ways (3 and 3.00), two columns of one name, a label that is a measurement
+(every value its own). The last two are refused by training, and the manifest says so (expect: refused): the walk asserts the refusal and stops there.
 
 --source is a folder holding MANIFEST.csv and data/<id>_<name>.csv (OpenML suites as downloaded by the benchmark
 fetcher). Without --datasets, each task kind contributes the first --per-task tables (by name) of 1,500 to 50,000
@@ -161,13 +161,13 @@ def cut(row, source, out, shape='plain'):
     return f'{name}: {task} label={label} moves={col} rows={manifest["rows"]}'
 
 
-SYNTHETIC = ('wide', 'many-classes', 'spelling', 'duplicate-name')
+SYNTHETIC = ('wide', 'many-classes', 'spelling', 'duplicate-name', 'unique-label')
 
 
 def synthetic_table(kind, regime_b, n, rng):
     """n rows of a synthetic table: a label that follows the moving column f0 (and a few more) as it sits in regime A. In regime B f0
     is shifted by 3, which reads as another answer to a model that learned A."""
-    width = {'wide': 150, 'many-classes': 12, 'spelling': 8, 'duplicate-name': 6}[kind]
+    width = {'wide': 150, 'many-classes': 12, 'spelling': 8, 'duplicate-name': 6, 'unique-label': 6}[kind]
     x = rng.normal(0, 1, size=(n, width))
     if regime_b:
         x[:, 0] += 3.0
@@ -177,6 +177,9 @@ def synthetic_table(kind, regime_b, n, rng):
         # score is not a signal, and a table the first model learns nothing from is refused by the promotion gate and ends the walk
         edges = np.quantile(np.random.default_rng(1).normal(size=200000), np.linspace(0, 1, 11)[1:-1])
         y = pd.Series([f'class_{10 * i + j:03d}' for i, j in zip(np.searchsorted(edges, x[:, 0] - (3.0 if regime_b else 0.0)), np.searchsorted(edges, x[:, 1]))])
+    elif kind == 'unique-label':
+        # a measurement given as the label of a classifier: every row its own value
+        y = pd.Series([f'{v:.6f}' for v in z])
     elif kind == 'spelling':
         k = np.digitize(z, [-1.0, 1.0])
         # the same three numbers, spelled two ways: 0 / 0.00, 1 / 1.00, 2 / 2.00 — one class each
@@ -193,7 +196,7 @@ def synthetic_table(kind, regime_b, n, rng):
 
 def synthetic(kind, out):
     rng = np.random.default_rng(SEED)
-    sizes = {'wide': (3000, 1000, 300), 'many-classes': (12000, 2400, 300), 'spelling': (3000, 1000, 300), 'duplicate-name': (1500, 400, 300)}[kind]
+    sizes = {'wide': (3000, 1000, 300), 'many-classes': (12000, 2400, 300), 'spelling': (3000, 1000, 300), 'duplicate-name': (1500, 400, 300), 'unique-label': (1500, 400, 300)}[kind]
     n_a, n_b, n_new = sizes
     n_test = 400 if kind == 'many-classes' else 300   # the paired comparison of the walk needs rows enough to tell two models apart
     task = 'binary' if kind in ('wide', 'duplicate-name') else 'multiclass'
@@ -218,6 +221,9 @@ def synthetic(kind, out):
     if kind == 'duplicate-name':
         manifest['expect'] = 'refused'
         manifest['refusal_mentions'] = a.columns[-1]
+    if kind == 'unique-label':
+        manifest['expect'] = 'refused'
+        manifest['refusal_mentions'] = 'appears nowhere else'
     with open(os.path.join(d, 'manifest.json'), 'w') as f:
         json.dump(manifest, f, indent=2)
     return f'synthetic-{kind}: {task} rows={manifest["rows"]} classes={k}'
