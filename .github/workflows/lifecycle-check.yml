@@ -11,7 +11,7 @@ on:
         default: 'text'
       expected:
         description: 'Steps known to fail (a step that turns green is reported as xpass)'
-        default: 'paired_evaluation,retrain_with_paired_gate'
+        default: ''
       trials:
         description: 'Trials of the trainer search per training (0 = the time budget alone)'
         default: '10'
