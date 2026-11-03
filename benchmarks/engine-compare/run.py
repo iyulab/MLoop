@@ -520,6 +520,53 @@ def summarize(paths):
         seed_view(by, meta, wall, budget, ece, verdict)
 
 
+def pair(base_paths, variant_paths, system='mloop'):
+    """A variant of the search read against a baseline run of the same system: the two result sets share dataset, seed, budget and harness, differ
+    in the build. Per table the verdict (the variant's mean paired difference within its standard error = equal), the trials each ran, the runs
+    that overran their budget, and the trainers that took most of the trial seconds."""
+    import numpy as np
+
+    def load(paths):
+        rows = collections.defaultdict(dict)
+        for path in paths:
+            for line in open(path):
+                r = json.loads(line)
+                if r['system'] == system and (r.get('test') or {}).get(PRIMARY[r['task']][0]) is not None:
+                    rows[r['dataset']][r['seed']] = r
+        return rows
+
+    def shares(runs):
+        seconds = collections.Counter()
+        for r in runs:
+            for t in r.get('trial_log') or []:
+                seconds[(t.get('trainer') or {}).get('name')] += t.get('runtimeSeconds') or 0
+        total = sum(seconds.values()) or 1
+        return ', '.join(f'{name} {100 * v / total:.0f}%' for name, v in seconds.most_common(2))
+
+    base, variant = load(base_paths), load(variant_paths)
+    print(f'| dataset | task | rows | metric | base | variant | variant vs base | signs | trials base | trials variant | over budget base | over budget variant | trial seconds base | trial seconds variant |')
+    print('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|')
+    tally = collections.Counter()
+    for name in sorted(set(base) & set(variant), key=lambda n: (next(iter(base[n].values()))['task'], next(iter(base[n].values()))['rows'])):
+        any_row = next(iter(base[name].values()))
+        task, rows = any_row['task'], any_row['rows']
+        metric, direction = PRIMARY[task]
+        seeds = sorted(set(base[name]) & set(variant[name]))
+        a = np.array([base[name][s]['test'][metric] for s in seeds])
+        b = np.array([variant[name][s]['test'][metric] for s in seeds])
+        diffs = (b - a) * direction   # > 0: the variant is better
+        se = diffs.std(ddof=1) / math.sqrt(len(diffs)) if len(diffs) > 1 else float('nan')
+        v = 'n/a' if len(diffs) < 2 else ('equal' if abs(diffs.mean()) <= se else ('better' if diffs.mean() > 0 else 'worse'))
+        tally[v] += 1
+        signs = ' '.join('=' if x == 0 else ('+' if x > 0 else '-') for x in diffs)
+        over = lambda runs: sum(over_budget(r.get('wall_s'), r.get('budget')) for r in runs if r.get('wall_s') is not None)
+        runs_a, runs_b = [base[name][s] for s in seeds], [variant[name][s] for s in seeds]
+        print(f'| {name} | {task} | {rows} | {metric} | {a.mean():.4f} | {b.mean():.4f} | {v} | {signs} | {np.mean([r["trials"] for r in runs_a]):.1f} | {np.mean([r["trials"] for r in runs_b]):.1f} '
+              f'| {over(runs_a)}/{len(runs_a)} | {over(runs_b)}/{len(runs_b)} | {shares(runs_a)} | {shares(runs_b)} |')
+    print(f'\nvariant vs base ({system}): {dict(tally)}')
+    print('A pair counts as equal when the mean paired difference over split seeds is within its standard error; the runs are separate CI executions, so a time-budget search carries clock noise.')
+
+
 def signs(a, b, direction):
     """One character per split seed both systems have, in seed order: + the first is better, - worse, = the same value."""
     return ' '.join('=' if a[s] == b[s] else ('+' if (a[s] - b[s]) * direction > 0 else '-') for s in sorted(set(a) & set(b))) or '—'
@@ -590,9 +637,15 @@ def main():
     r.add_argument('--work', default=os.path.join(tempfile.gettempdir(), 'engine-compare'))
     s = sub.add_parser('summarize')
     s.add_argument('results', nargs='+')
+    q = sub.add_parser('pair', help='read a variant build against a baseline run of the same system')
+    q.add_argument('--base', nargs='+', required=True, help='result files of the baseline')
+    q.add_argument('--variant', nargs='+', required=True, help='result files of the variant')
+    q.add_argument('--system', default='mloop')
     args = parser.parse_args()
     if args.cmd == 'run':
         run_all(args)
+    elif args.cmd == 'pair':
+        pair(args.base, args.variant, args.system)
     else:
         summarize(args.results)
 

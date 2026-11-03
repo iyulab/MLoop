@@ -60,6 +60,9 @@ python benchmarks/engine-compare/forest-probe/forest.py --mlnet "dotnet $PWD/ben
 `flaml` rows also record the winning settings (`best_config`, `best_loss`, `best_config_train_time`, and the per-learner best loss and config), and `flaml-lgbm` / `flaml-forest`
 (named in `--systems`) restrict FLAML to its LightGBM learner or to random forest and extra trees, to attribute a gap to a learner family.
 
+`python run.py pair --base a.jsonl --variant b.jsonl` reads a variant build of the search against a baseline run of the same system (both from the same harness, seeds and
+budget): per table the paired verdict and signs, the trials each ran, the runs over budget, and the trainers that took most of the trial seconds.
+
 `mloop-refit` (named in `--systems`) is `mloop` with the held-out share cut from 5% of the train file to 10 rows, so the model is fitted on nearly all of
 the train file, as FLAML and AutoGluon fit theirs. Read a gap against them on this arm: the `mloop` arm fits on 95%. `summarize` prints it next to
 `mloop` and `flaml` with `refit vs mloop`, `refit vs flaml` and `mloop vs flaml`, so the share of a gap the held-out 5% explains is one number.
