@@ -63,7 +63,7 @@ public class ClassifierCalibrationTrainingTests
             Task = "binary-classification",
             TimeLimitSeconds = 30,
             Metric = "accuracy",
-            MaxTrials = 3,
+            MaxTrials = 1,   // the first trial is the cheapest schema (FastTree), whose own probabilities are off; more trials may pick a well-calibrated trainer, and then there is nothing to fix
         };
 
         var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
