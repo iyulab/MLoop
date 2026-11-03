@@ -740,6 +740,24 @@ def forecast_scenario(mloop, budget, keep, expected, serve=False):
         run.check('forecast_survives_the_training_files_going', rc == 0 and err_moved is not None and err_moved < 5 and err_moved_a is not None and err_moved_a < 6,
                   f'production error={err_moved} exp-001 error={err_moved_a}')
 
+        # a series arrives most often with its dates beside it: the other columns are read and left alone
+        import datetime
+        day0 = datetime.date(2024, 1, 1)
+        dated = lambda rows, t0: [[(day0 + datetime.timedelta(days=t0 + i)).isoformat(), r[0]] for i, r in enumerate(rows)]
+        for name, rows, t0 in [('dated_a', a, 0), ('dated_test_a', a + new_a, 0)]:
+            write_table(os.path.join(base, name + '.csv'), dated(rows, t0), ('date', 'value'))
+        rc, out, err = run.cli('init', 'datedproj', '--task', 'forecasting', '--label', 'value')
+        dproj = os.path.join(base, 'datedproj')
+        rc, evs = run.events('train', os.path.join(base, 'dated_a.csv'), '--label', 'value', *run.budget_args(), '--json', cwd=dproj)
+        result = next((e for e in evs if e.get('event') == 'result'), {})
+        mae_d = (result.get('metrics') or {}).get('mae')
+        run.check('dated_series_train', rc == 0 and mae_d is not None and mae_d < 3, f'mae={mae_d}')
+        rc, fd = run.json_of('predict', '--json', cwd=dproj)
+        err_d = forecast_error((fd or {}).get('predictions') or [], new_a)
+        run.check('dated_series_forecast', rc == 0 and err_d is not None and err_d < 6, f'error against the values that followed={err_d}')
+        rc, ev = run.json_of('evaluate', 'exp-001', os.path.join(base, 'dated_test_a.csv'), '--json', cwd=dproj)
+        run.check('dated_series_evaluate', rc == 0 and ((ev or {}).get('testMetrics') or {}).get('mae') is not None, f'mae={((ev or {}).get("testMetrics") or {}).get("mae")}')
+
         # a missing point is a blank line in a file of one column; it is a gap, and neither a training nor an evaluation reads over it
         gap_path = os.path.join(base, 'gap.csv')
         values = [r[0] for r in a]
