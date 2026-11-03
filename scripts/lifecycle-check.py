@@ -612,7 +612,12 @@ def forecast_serve_steps(run, proj, new_a, new_b):
         run.check('serve_candidate_forecast', code == 200 and isinstance(cand, dict) and cand.get('experimentId') == 'exp-001' and err_cand is not None and err_cand < 6,
                   f'code={code} answered_by={cand.get("experimentId") if isinstance(cand, dict) else cand} error={err_cand}')
 
-        code, _ = http('POST', url + '/promote', admin, {'name': 'default', 'experimentId': 'exp-001'})
+        # the project's gate judges on the stretch production serves now: the old regime's model is worse there and is refused
+        code, refusal = http('POST', url + '/promote', admin, {'name': 'default', 'experimentId': 'exp-001'})
+        code1, pr1 = http('POST', url + '/predict?name=default', admin, {})
+        run.check('serve_gate_refuses_the_stale_candidate', code == 422 and isinstance(pr1, dict) and pr1.get('experimentId') == before,
+                  f'promote={code} answered_by={pr1.get("experimentId") if isinstance(pr1, dict) else pr1} {json.dumps(refusal)[:120]}')
+        code, _ = http('POST', url + '/promote', admin, {'name': 'default', 'experimentId': 'exp-001', 'force': True})
         code2, pr2 = http('POST', url + '/predict?name=default', admin, {})
         run.check('serve_promote_reloads_cache', code == 200 and isinstance(pr2, dict) and pr2.get('experimentId') == 'exp-001',
                   f'promote={code} answered_by={pr2.get("experimentId") if isinstance(pr2, dict) else pr2}')
