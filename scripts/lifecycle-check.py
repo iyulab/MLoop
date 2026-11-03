@@ -27,7 +27,7 @@ population and their label is rewritten):
                            --soak SECONDS holds a steady load and compares the server's memory at the start and the end, and
                            --bench SECONDS prints a throughput / latency table by clients and rows per request
 
-  python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression]
+  python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression,text,forecast]
          [--time 60] [--trials 10] [--out lifecycle-results.json] [--keep]
   python lifecycle-check.py --mloop "..." --tables DIR [--datasets credit-g,houses]    # DIR as written by lifecycle-tables.py
 
@@ -38,7 +38,7 @@ temporary project, removed unless --keep is given.
 import argparse, csv, json, math, os, random, shlex, shutil, signal, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression', 'text': 'text-classification'}
+TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression', 'text': 'text-classification', 'forecast': 'forecasting'}
 # the metric a first model must reach to count as having learned the table (loose: this checks the wiring, not accuracy)
 LEARNED = {'binary': ('accuracy', 0.8), 'multiclass': ('macro_accuracy', 0.6), 'regression': ('r_squared', 0.7), 'text': ('macro_accuracy', 0.6)}
 SHIFT = 2.5
@@ -96,7 +96,7 @@ class Run:
     def __init__(self, mloop, task, work, budget, expected, trials=0):
         self.mloop, self.task, self.work, self.budget, self.expected = shlex.split(mloop), task, work, budget, expected
         # a deep-learning task trains by epochs and refuses a trial count
-        self.trials = 0 if task == 'text' else trials
+        self.trials = 0 if task in ('text', 'forecast') else trials
         self.metric = []   # extra `train` arguments that name what the table is judged on
         self.last_output = ''   # the tail of the last command's output, shown with a failed step
         self.steps = []
@@ -551,6 +551,104 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
     return run.steps
 
 
+# A series has one column and no rows to ask about, so its walk is its own: the model replays the file it was trained on and answers with the
+# horizon after the file's last row. Two regimes follow one another on one clock (t): the second has another level and another swing, so a
+# model trained on the first forecasts the second's continuation badly.
+FORECAST_HORIZON = 10
+
+
+def make_series(t0, n, regime, rng):
+    level, swing, noise = (100.0, 10.0, 1.0) if regime == 'a' else (140.0, 25.0, 2.0)
+    return [[round(level + 0.05 * t + swing * math.sin(2 * math.pi * t / 12) + rng.gauss(0, noise), 4)] for t in range(t0, t0 + n)]
+
+
+def forecast_error(preds, actual_rows):
+    """Mean absolute error of a horizon forecast (the rows of `predict --json`) against the values that followed."""
+    return sum(abs(p['score'] - float(a[0])) for p, a in zip(preds, actual_rows)) / max(1, len(actual_rows))
+
+
+def forecast_scenario(mloop, budget, keep, expected):
+    base = tempfile.mkdtemp(prefix='lifecycle-forecast-')
+    run = Run(mloop, 'forecast', base, budget, expected)
+    rng = random.Random(20261103)
+    a, new_a = make_series(0, 240, 'a', rng), None
+    new_a = make_series(240, FORECAST_HORIZON, 'a', rng)
+    b, new_b = make_series(240, 240, 'b', rng), None
+    new_b = make_series(480, FORECAST_HORIZON, 'b', rng)
+    header = ('value',)
+    for name, rows in [('train_a', a), ('new_a', new_a), ('test_a', a + new_a), ('train_b', b), ('new_b', new_b), ('test_b', b + new_b)]:
+        write_table(os.path.join(base, name + '.csv'), rows, header)
+    print(f'== forecast  ({base})', flush=True)
+    try:
+        proj = os.path.join(base, 'proj')
+        rc, init = run.json_of('init', 'proj', '--task', 'forecasting', '--label', 'value', '--json')
+        run.check('init', rc == 0 and init and init.get('task') == 'forecasting', f'rc={rc}')
+
+        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', 'value', *run.budget_args(), '--json', cwd=proj)
+        result = next((e for e in evs if e.get('event') == 'result'), {})
+        promo = next((e for e in evs if e.get('event') == 'promotion'), {})
+        mae = (result.get('metrics') or {}).get('mae')
+        # the swing is 10 and the noise 1: a model that learned the season misses by far less than the swing
+        run.check('train', rc == 0 and result.get('experimentId') == 'exp-001' and promo.get('promoted') is True and mae is not None and mae < 6,
+                  f'mae={mae} promoted={promo.get("promoted")}')
+
+        rc, status = run.json_of('status', '--json', cwd=proj)
+        models = (status or {}).get('models') or [{}]
+        run.check('status', models[0].get('productionExperimentId') == 'exp-001', f'production={models[0].get("productionExperimentId")}')
+
+        rc, fa = run.json_of('predict', '--json', cwd=proj)
+        preds = (fa or {}).get('predictions') or []
+        err_a = forecast_error(preds, new_a) if preds else None
+        run.check('forecast', rc == 0 and len(preds) == FORECAST_HORIZON and all(p.get('scoreLowerBound') is not None and p['scoreLowerBound'] <= p['score'] <= p['scoreUpperBound'] for p in preds)
+                  and err_a is not None and err_a < 6, f'{len(preds)} steps, error against the values that followed={err_a}')
+
+        rc, ev = run.json_of('evaluate', 'exp-001', os.path.join(base, 'test_a.csv'), '--json', cwd=proj)
+        run.check('evaluate_in_regime', rc == 0 and ((ev or {}).get('metrics') or {}).get('mae') is not None, f'metrics={(ev or {}).get("metrics")}')
+
+        rc, drift = run.json_of('drift', '--json', cwd=proj)
+        run.check('drift_reads_a_series', rc == 0 and (drift or {}).get('drift') is not None, f'rc={rc} drift={json.dumps(drift)[:200] if drift else None}')
+
+        rc, trig = run.json_of('trigger', 'check', '--json', cwd=proj)
+        run.check('trigger', rc == 0 and trig is not None, f'rc={rc} trigger={json.dumps(trig)[:200] if trig else None}')
+
+        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'value', *run.budget_args(), '--json', cwd=proj)
+        result = next((e for e in evs if e.get('event') == 'result'), {})
+        promo = next((e for e in evs if e.get('event') == 'promotion'), {})
+        candidate = result.get('experimentId')
+        run.check('retrain', rc == 0 and candidate == 'exp-002', f'{candidate} promoted={promo.get("promoted")} reason={(promo.get("keptInStagingReason") or "")[:90]}')
+
+        # the same question put to both models: what comes next in the new regime
+        rc, fc = run.json_of('predict', '--experiment', candidate or 'exp-002', '--json', cwd=proj)
+        err_candidate = forecast_error((fc or {}).get('predictions') or [], new_b) if fc else None
+        rc, fp = run.json_of('predict', '--json', cwd=proj)
+        err_production = forecast_error((fp or {}).get('predictions') or [], new_b) if fp else None
+        # production replays train_a: its forecast continues the old regime, so it misses the new one by about the shift
+        run.check('retrained_forecasts_the_new_regime', err_candidate is not None and err_production is not None and err_candidate < 8 and err_candidate < err_production,
+                  f'candidate error={err_candidate} production error={err_production}')
+
+        rc, ev = run.json_of('evaluate', candidate or 'exp-002', os.path.join(base, 'test_b.csv'), '--against', 'production', '--json', cwd=proj)
+        verdict = (((ev or {}).get('comparison') or {}).get('paired') or {}).get('verdict')
+        run.check('paired_evaluation', rc == 0 and verdict == 'CandidateBetter', f'rc={rc} verdict={verdict} comparison={json.dumps((ev or {}).get("comparison"))[:160]}')
+
+        rc, pr = run.json_of('promote', candidate or 'exp-002', '--json', cwd=proj)
+        rc2, hist = run.json_of('promote', '--history', '--json', cwd=proj)
+        changes = (hist or {}).get('promotions') or []
+        last = changes[-1] if changes else {}
+        run.check('explicit_promote', (pr or {}).get('status') in ('promoted', 'already-production') and last.get('experimentId') == candidate,
+                  f'status={(pr or {}).get("status")} history={len(changes)} last={last.get("experimentId")}/{last.get("gate")}')
+
+        rc, rb = run.json_of('rollback', '--json', cwd=proj)
+        run.check('rollback', (rb or {}).get('status') == 'rolled-back' and (rb or {}).get('experimentId') == 'exp-001', f'status={(rb or {}).get("status")} to={(rb or {}).get("experimentId")}')
+    except Exception as ex:
+        run.check('scenario', False, f'{type(ex).__name__}: {ex}')
+    finally:
+        if keep:
+            print(f'   kept {base}')
+        else:
+            shutil.rmtree(base, ignore_errors=True)
+    return run.steps
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--mloop', required=True, help='command that starts the mloop CLI, e.g. "dotnet path/to/mloop.dll"')
@@ -587,6 +685,9 @@ def main():
                 installed = subprocess.run(shlex.split(args.mloop) + ['runtime', 'install', 'torch'], capture_output=True, text=True)
                 steps.append({'step': 'text/runtime_install', 'status': 'pass' if installed.returncode == 0 else 'FAIL',
                               'detail': (installed.stdout + installed.stderr)[-200:].strip()})
+            if task == 'forecast':
+                steps += forecast_scenario(args.mloop, args.time, args.keep, expected)
+                continue
             steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak, args.trials, args.bench)
     with open(args.out, 'w') as f:
         json.dump(steps, f, indent=2)
