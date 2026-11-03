@@ -942,7 +942,8 @@ public class TrainingEngine : ITrainingEngine
         string experimentPath, string dataFilePath, InputSchemaInfo? inputSchema, TrainingConfig config, string modelPath,
         CancellationToken cancellationToken)
     {
-        if (inputSchema is null || !File.Exists(dataFilePath) || !TrainingRunner.ReadsFeatureColumns(config.Task))
+        if (inputSchema is null || !File.Exists(dataFilePath)
+            || !(TrainingRunner.ReadsFeatureColumns(config.Task) || MLoop.Core.Monitoring.DriftProfile.ProfilesTableText(config.Task)))
             return;
         try
         {

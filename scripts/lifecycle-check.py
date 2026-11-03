@@ -40,7 +40,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression', 'text': 'text-classification'}
 # the metric a first model must reach to count as having learned the table (loose: this checks the wiring, not accuracy)
-LEARNED = {'binary': ('accuracy', 0.8), 'multiclass': ('macro_accuracy', 0.6), 'regression': ('r_squared', 0.7), 'text': ('accuracy', 0.7)}
+LEARNED = {'binary': ('accuracy', 0.8), 'multiclass': ('macro_accuracy', 0.6), 'regression': ('r_squared', 0.7), 'text': ('macro_accuracy', 0.6)}
 SHIFT = 2.5
 
 

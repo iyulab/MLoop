@@ -55,6 +55,14 @@ public sealed record DriftProfile
             : FeatureProfile.Numeric(PredictionColumn, values);
     }
 
+    /// <summary>
+    /// Whether <paramref name="task"/> is a deep-learning task that reads free text from a table (text classification, sentence similarity,
+    /// NER, question answering). It reads no other feature columns (<see cref="Training.TrainingRunner.ReadsFeatureColumns"/>), but its
+    /// text columns are profiled like any other table's, so a vocabulary that moves away from the training one is seen.
+    /// </summary>
+    public static bool ProfilesTableText(string? task)
+        => TaskTypes.Canonical(task) is "text-classification" or "sentence-similarity" or "ner" or "question-answering";
+
     /// <summary>Whether <paramref name="task"/>'s answer is a class or a value — the answers an answer profile describes.</summary>
     public static bool HasAnswerProfile(string? task)
         => Training.TrainingRunner.IsClassification(task) || TaskTypes.Canonical(task) == "regression";
