@@ -2,7 +2,8 @@ name: Lifecycle check
 
 # Walks a model through its operating life with the real CLI (scripts/lifecycle-check.py): train, promote, predict with logs, drift,
 # feedback, retraining trigger, retrain, paired evaluation, promote, rollback, retrain through a paired gate. The generated text
-# scenario needs the libtorch runtime, which CI installs nowhere else, so it runs here on request. Linux x64.
+# scenario needs the libtorch runtime, which CI installs nowhere else, so it runs here on request; the forecasting scenario needs
+# ML.NET's MKL native, whose OpenMP runtime this workflow installs. Linux x64.
 on:
   workflow_dispatch:
     inputs:
