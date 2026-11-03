@@ -68,7 +68,7 @@ public static class PairedComparison
         => Models.TaskTypes.Canonical(task) switch
         {
             "binary-classification" or "multiclass-classification" or "text-classification" => ErrorRate,
-            "regression" => SquaredError,
+            "regression" or "forecasting" => SquaredError,
             _ => null,
         };
 
@@ -85,6 +85,7 @@ public static class PairedComparison
             ErrorRate when Models.TaskTypes.Canonical(task) == "binary-classification" => BinaryMisses(scored, labelColumn),
             ErrorRate when Models.TaskTypes.Canonical(task) == "text-classification" => NamedClassMisses(scored, labelColumn),
             ErrorRate => MulticlassMisses(scored, labelColumn),
+            SquaredError when Models.TaskTypes.Canonical(task) == "forecasting" => ForecastSquaredErrors(scored, labelColumn),
             SquaredError => SquaredErrors(scored, labelColumn),
             _ => null,
         };
@@ -214,6 +215,48 @@ public static class PairedComparison
             losses.Add(float.IsFinite(y) && float.IsFinite(s) ? (double)(y - s) * (y - s) : double.NaN);
         }
         return [.. losses];
+    }
+
+    /// <summary>
+    /// The squared errors of a forecaster over its held-out stretch — the last <c>horizon</c> rows of the file, scored against the
+    /// forecast made at the row before them (what <c>evaluate</c> scores a forecaster by); every earlier row is NaN, so two
+    /// models are compared on the same steps. <c>null</c> when the file is no longer than the horizon or the columns are missing.
+    /// </summary>
+    private static double[]? ForecastSquaredErrors(IDataView scored, string labelColumn)
+    {
+        var label = scored.Schema.GetColumnOrNull(labelColumn);
+        var forecast = scored.Schema.GetColumnOrNull("ForecastedValues");
+        if (label is null || forecast is null || label.Value.Type != NumberDataViewType.Single)
+            return null;
+        var actual = new List<float>();
+        var forecasts = new List<float[]>();
+        using (var cursor = scored.GetRowCursor([label.Value, forecast.Value]))
+        {
+            var getLabel = cursor.GetGetter<float>(label.Value);
+            var getForecast = cursor.GetGetter<VBuffer<float>>(forecast.Value);
+            float y = default;
+            VBuffer<float> f = default;
+            while (cursor.MoveNext())
+            {
+                getLabel(ref y);
+                getForecast(ref f);
+                actual.Add(y);
+                forecasts.Add(f.DenseValues().ToArray());
+            }
+        }
+
+        var horizon = forecasts.Count > 0 ? forecasts[^1].Length : 0;
+        if (horizon == 0 || actual.Count <= horizon)
+            return null;
+        var losses = Enumerable.Repeat(double.NaN, actual.Count).ToArray();
+        var made = forecasts[actual.Count - horizon - 1];
+        for (var step = 0; step < horizon; step++)
+        {
+            var y = actual[actual.Count - horizon + step];
+            losses[actual.Count - horizon + step] = float.IsFinite(y) && float.IsFinite(made[step]) ? (double)(y - made[step]) * (y - made[step]) : double.NaN;
+        }
+
+        return losses;
     }
 
     /// <summary>

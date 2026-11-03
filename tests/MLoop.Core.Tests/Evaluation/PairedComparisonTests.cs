@@ -123,8 +123,9 @@ public class PairedComparisonTests
     [InlineData("multiclass-classification", PairedComparison.ErrorRate)]
     [InlineData("text-classification", PairedComparison.ErrorRate)]
     [InlineData("regression", PairedComparison.SquaredError)]
+    [InlineData("forecasting", PairedComparison.SquaredError)]
     [InlineData("clustering", null)]
-    [InlineData("forecasting", null)]
+    [InlineData("time-series-anomaly", null)]
     public void EachTaskIsComparedByItsOwnRowLoss(string task, string? measure)
         => Assert.Equal(measure, PairedComparison.MeasureOf(task));
 

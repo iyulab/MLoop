@@ -605,10 +605,12 @@ def forecast_scenario(mloop, budget, keep, expected):
                   and err_a is not None and err_a < 6, f'{len(preds)} steps, error against the values that followed={err_a}')
 
         rc, ev = run.json_of('evaluate', 'exp-001', os.path.join(base, 'test_a.csv'), '--json', cwd=proj)
-        run.check('evaluate_in_regime', rc == 0 and ((ev or {}).get('metrics') or {}).get('mae') is not None, f'metrics={(ev or {}).get("metrics")}')
+        mae_a = ((ev or {}).get('testMetrics') or {}).get('mae')
+        run.check('evaluate_in_regime', rc == 0 and mae_a is not None and mae_a < 3, f'test mae={mae_a} (the values that followed the series)')
 
         rc, drift = run.json_of('drift', '--json', cwd=proj)
-        run.check('drift_reads_a_series', rc == 0 and (drift or {}).get('drift') is not None, f'rc={rc} drift={json.dumps(drift)[:200] if drift else None}')
+        # a series has no feature columns to profile: drift says so, and exits cleanly
+        run.check('drift_names_a_series_without_a_profile', rc == 0 and (drift or {}).get('status') == 'NoProfile', f'rc={rc} status={(drift or {}).get("status")}')
 
         rc, trig = run.json_of('trigger', 'check', '--json', cwd=proj)
         run.check('trigger', rc == 0 and trig is not None, f'rc={rc} trigger={json.dumps(trig)[:200] if trig else None}')
@@ -641,6 +643,23 @@ def forecast_scenario(mloop, budget, keep, expected):
 
         rc, rb = run.json_of('rollback', '--json', cwd=proj)
         run.check('rollback', (rb or {}).get('status') == 'rolled-back' and (rb or {}).get('experimentId') == 'exp-001', f'status={(rb or {}).get("status")} to={(rb or {}).get("experimentId")}')
+
+        # the project says how a challenger is judged: against production, on the stretch it has to forecast
+        config_path = os.path.join(proj, 'mloop.yaml')
+        text = open(config_path).read()
+        marker = '    description: '
+        at = text.index(marker)
+        eol = text.index('\n', at) + 1
+        gate = f'    gate:\n      data: {os.path.join(base, "test_b.csv")}\n      no_worse_than_production: true\n'
+        open(config_path, 'w').write(text[:eol] + gate + text[eol:])
+        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'value', *run.budget_args(), '--json', cwd=proj)
+        result = next((e for e in evs if e.get('event') == 'result'), {})
+        promo = next((e for e in evs if e.get('event') == 'promotion'), {})
+        rc2, hist = run.json_of('promote', '--history', '--json', cwd=proj)
+        changes = (hist or {}).get('promotions') or []
+        last = changes[-1] if changes else {}
+        run.check('retrain_with_paired_gate', rc == 0 and promo.get('promoted') is True and last.get('experimentId') == result.get('experimentId') and last.get('gate') == 'passed',
+                  f'{result.get("experimentId")} promoted={promo.get("promoted")} reason={promo.get("keptInStagingReason")} history last={last.get("experimentId")}/{last.get("gate")}')
     except Exception as ex:
         run.check('scenario', False, f'{type(ex).__name__}: {ex}')
     finally:

@@ -43,12 +43,17 @@ public static class ForecastReplayService
         var model = Models.ScoringModel.Load(mlContext, modelPath, out var modelSchema);
 
         // SSA model needs data with the correct value column to transform.
-        // Read config to find original training data and value column.
-        // Config is in staging/{experimentId}/config.json
+        // The record the model was trained under says which file and column: it is found from the model file itself
+        // (the experiment's own folder, or the one a production slot points at) — the folder two levels above a
+        // candidate's model.zip is `staging`, and building the record's path from there looked for it in
+        // `staging/staging/<id>`, so a candidate could not be forecast with at all.
+        var record = await ExperimentRecordLocation.FindAsync(modelPath).ConfigureAwait(false);
         var modelBaseDir = Path.GetDirectoryName(Path.GetDirectoryName(modelPath))!; // models/default/
-        var configPath = experimentId != null
-            ? Path.Combine(modelBaseDir, ExperimentLayout.StagingDirectory, experimentId, ExperimentLayout.ConfigFileName)
-            : Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.ConfigFileName);
+        var configPath = record is not null
+            ? Path.Combine(record.Directory, ExperimentLayout.ConfigFileName)
+            : experimentId != null
+                ? Path.Combine(modelBaseDir, ExperimentLayout.StagingDirectory, experimentId, ExperimentLayout.ConfigFileName)
+                : Path.Combine(Path.GetDirectoryName(modelPath)!, ExperimentLayout.ConfigFileName);
         string? trainDataPath = null;
         string? valueColName = null;
 
@@ -63,7 +68,8 @@ public static class ForecastReplayService
         if (string.IsNullOrEmpty(valueColName))
         {
             // Fallback: find from model schema
-            valueColName = modelSchema
+            // a model saved without its input schema (the trainer saves none) has no columns to name
+            valueColName = modelSchema?
                 .Where(c => !c.IsHidden && c.Type == NumberDataViewType.Single)
                 .Select(c => c.Name)
                 .FirstOrDefault(n => n != ForecastOutput.ForecastColumnName
