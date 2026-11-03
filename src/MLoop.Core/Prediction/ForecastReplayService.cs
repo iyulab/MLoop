@@ -122,8 +122,11 @@ public static class ForecastReplayService
             var lowerGetter = lowerCol.HasValue ? cursor.GetGetter<VBuffer<float>>(lowerCol.Value) : null;
             var upperGetter = upperCol.HasValue ? cursor.GetGetter<VBuffer<float>>(upperCol.Value) : null;
 
+            // The forecast of the series is the one made at its last row: the SSA forecast is a recurrence over the last
+            // window of values read, so only the end of the replay can say what comes after the series. The first row's
+            // forecast looked ahead from the series' first point joined to whatever the saved state held.
             VBuffer<float> f = default, l = default, u = default;
-            if (cursor.MoveNext())
+            while (cursor.MoveNext())
             {
                 forecastGetter(ref f);
                 lowerGetter?.Invoke(ref l);

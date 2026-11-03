@@ -552,14 +552,15 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
 
 
 # A series has one column and no rows to ask about, so its walk is its own: the model replays the file it was trained on and answers with the
-# horizon after the file's last row. Two regimes follow one another on one clock (t): the second has another level and another swing, so a
+# horizon after the file's last row. Two regimes follow one another on one clock (t): the second has another level, swing and period, so a
 # model trained on the first forecasts the second's continuation badly.
 FORECAST_HORIZON = 10
 
 
 def make_series(t0, n, regime, rng):
-    level, swing, noise = (100.0, 10.0, 1.0) if regime == 'a' else (140.0, 25.0, 2.0)
-    return [[round(level + 0.05 * t + swing * math.sin(2 * math.pi * t / 12) + rng.gauss(0, noise), 4)] for t in range(t0, t0 + n)]
+    # the second regime has another period: the recurrence a season of 12 teaches does not forecast a season of 7
+    level, swing, noise, period = (100.0, 10.0, 1.0, 12) if regime == 'a' else (140.0, 25.0, 2.0, 7)
+    return [[round(level + 0.05 * t + swing * math.sin(2 * math.pi * t / period) + rng.gauss(0, noise), 4)] for t in range(t0, t0 + n)]
 
 
 def forecast_error(preds, actual_rows):
@@ -627,7 +628,7 @@ def forecast_scenario(mloop, budget, keep, expected):
         rc, fp = run.json_of('predict', '--json', cwd=proj)
         err_production = forecast_error((fp or {}).get('predictions') or [], new_b)
         # production replays train_a: its forecast continues the old regime, so it misses the new one by about the shift
-        run.check('retrained_forecasts_the_new_regime', err_candidate is not None and err_production is not None and err_candidate < 8 and err_candidate < err_production,
+        run.check('retrained_forecasts_the_new_regime', err_candidate is not None and err_production is not None and err_candidate < 5 and err_candidate < err_production,
                   f'candidate error={err_candidate} production error={err_production} candidate answered={json.dumps(fc)[:200] if fc else None}')
 
         rc, ev = run.json_of('evaluate', candidate or 'exp-002', os.path.join(base, 'test_b.csv'), '--against', 'production', '--json', cwd=proj)
