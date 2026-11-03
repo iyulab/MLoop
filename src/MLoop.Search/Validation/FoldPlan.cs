@@ -12,7 +12,7 @@ namespace MLoop.Search.Validation;
 public sealed class FoldPlan
 {
     /// <summary>Rows from which a single holdout replaces the averaged folds.</summary>
-    public const int HoldoutThreshold = 15_000;
+    public const int HoldoutThreshold = 4_000;
 
     /// <summary>Folds averaged below <see cref="HoldoutThreshold"/>.</summary>
     public const int DefaultFolds = 5;
