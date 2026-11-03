@@ -51,6 +51,38 @@ public class SchemaValidatorTests : IDisposable
         Assert.Equal(["번호", "허용오차 (상한값)", "A B", "결과"], SchemaValidator.HeaderOf(path)!);
     }
 
+    private static MLoop.Core.Models.InputSchemaInfo Schema(params (string Name, string Purpose)[] columns) => new()
+    {
+        CapturedAt = DateTime.UtcNow,
+        Columns = [.. columns.Select(c => new MLoop.Core.Models.ColumnSchema { Name = c.Name, Purpose = c.Purpose, DataType = "Numeric" })],
+    };
+
+    [Fact]
+    public void AFeatureTheFileHasTwice_IsNamedWithItsPositions_AndAnExtraColumnMayBeRepeated()
+    {
+        var schema = Schema(("a", "Feature"), ("v", "Feature"), ("y", "Label"));
+
+        var twice = SchemaValidator.FeatureColumnsNamedTwice(schema, ["a", "v", "v", "junk", "junk"]);
+
+        var only = Assert.Single(twice);
+        Assert.Equal("v", only.Name);
+        Assert.Equal([2, 3], only.Positions);
+        Assert.Empty(SchemaValidator.FeatureColumnsNamedTwice(schema, ["a", "v", "junk", "junk"]));
+        // the label is not a model input in a prediction file: a repeated label column is not this finding
+        Assert.Empty(SchemaValidator.FeatureColumnsNamedTwice(schema, ["a", "v", "y", "y"]));
+    }
+
+    [Fact]
+    public void TheSameKoreanWordInTwoCompositions_IsTheSameColumn()
+    {
+        var composed = "한글";
+        var schema = Schema((composed, "Feature"));
+
+        var twice = SchemaValidator.FeatureColumnsNamedTwice(schema, [composed, composed.Normalize(System.Text.NormalizationForm.FormD)]);
+
+        Assert.Equal([1, 2], Assert.Single(twice).Positions);
+    }
+
     [Fact]
     public void HeaderOf_AnEmptyFile_IsNull()
     {

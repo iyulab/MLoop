@@ -106,6 +106,19 @@ public class SchemaValidator
     }
 
     /// <summary>
+    /// The columns the model reads (its saved features) that the file has more than once, with the 1-based positions. Names are
+    /// compared as the same text however composed; an extra column the model does not read may be repeated freely.
+    /// </summary>
+    internal static List<(string Name, List<int> Positions)> FeatureColumnsNamedTwice(InputSchemaInfo savedSchema, string[] inputColumns) =>
+        [.. savedSchema.Columns.Where(c => c.Purpose == "Feature")
+            .Select(c => (c.Name, Positions: inputColumns
+                .Select((name, index) => (name, position: index + 1))
+                .Where(t => string.Equals(MLoop.Core.Data.CanonicalText.Nfc(t.name), MLoop.Core.Data.CanonicalText.Nfc(c.Name), StringComparison.Ordinal))
+                .Select(t => t.position)
+                .ToList()))
+            .Where(t => t.Positions.Count > 1)];
+
+    /// <summary>
     /// Validates using saved schema information from training
     /// </summary>
     private SchemaValidationResult ValidateWithSavedSchema(InputSchemaInfo savedSchema, string inputDataPath)
@@ -120,6 +133,17 @@ public class SchemaValidator
             {
                 result.IsValid = false;
                 result.ErrorMessage = "Input file is empty";
+                return result;
+            }
+
+            // A column the model reads is found by its name; a file with two of that name is read as its last, and nothing said so.
+            if (FeatureColumnsNamedTwice(savedSchema, inputColumns) is { Count: > 0 } twice)
+            {
+                result.IsValid = false;
+                result.ErrorMessage = "The file has more than one column with the name of a column the model reads: "
+                    + string.Join("; ", twice.Select(t => $"'{t.Name}' is columns {string.Join(", ", t.Positions)}"))
+                    + ". Only one of them could be the model's input, and which would be a guess.";
+                result.Suggestions.Add("Rename one of them in the file, or delete the one that is not the model's input.");
                 return result;
             }
 

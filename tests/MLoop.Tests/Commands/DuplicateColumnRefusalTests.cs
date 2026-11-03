@@ -128,4 +128,39 @@ public class DuplicateColumnRefusalTests : IDisposable
             Directory.SetCurrentDirectory(original);
         }
     }
+
+    [Fact]
+    public async Task APredictionFile_WithTwoColumnsOfAFeatureName_IsRefused_NotAnsweredFromTheLastOfThem()
+    {
+        var original = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(_dir);
+            Assert.Equal(0, (await CliRunner.RunAsync("init", "q", "--task", "binary-classification")).ExitCode);
+            Directory.SetCurrentDirectory(Path.Combine(_dir, "q"));
+
+            var rng = new Random(6);
+            var train = new StringBuilder("a,v,y\n");
+            for (var i = 0; i < 200; i++)
+            {
+                var v = rng.NextDouble();
+                train.Append(CultureInfo.InvariantCulture, $"{rng.NextDouble():F3},{v:F3},{(v > 0.5 ? "yes" : "no")}\n");
+            }
+            await File.WriteAllTextAsync("datasets/train.csv", train.ToString());
+            var trained = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "10", "--max-trials", "3");
+            Assert.True(trained.ExitCode == 0, trained.Stdout + trained.Stderr);
+
+            await File.WriteAllTextAsync("datasets/new.csv", "a,v,v\n0.1,0.1,0.9\n0.2,0.9,0.1\n");
+            var (exit, stdout, stderr) = await CliRunner.RunAsync("predict", "datasets/new.csv");
+
+            Assert.Equal(1, exit);
+            var all = string.Join(' ', (stdout + " " + stderr).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            Assert.Contains("'v' is columns 2, 3", all, StringComparison.Ordinal);
+            Assert.Contains("Rename one of them", all, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(original);
+        }
+    }
 }
