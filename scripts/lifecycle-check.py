@@ -767,7 +767,7 @@ def anomaly_scenario(mloop, budget, keep, expected):
             rows[at][0] = round(rows[at][0] + ANOMALY_SPIKE, 4)
         return rows
 
-    train_a, new_a = series(0, 300, [100, 200]), series(300, 100, [30, 70])
+    train_a, new_a = series(0, 300, [100, 200]), series(300, 200, [30, 70, 150])
     train_b = series(400, 300, [150])
     for name, rows in [('train_a', train_a), ('new_a', new_a), ('train_b', train_b)]:
         write_table(os.path.join(base, name + '.csv'), rows, ('value',))
@@ -790,10 +790,12 @@ def anomaly_scenario(mloop, budget, keep, expected):
         rc, pa = run.json_of('predict', os.path.join(base, 'new_a.csv'), '--log', '--json', cwd=proj)
         preds = (pa or {}).get('predictions') or []
         flagged = [i for i, p in enumerate(preds) if p.get('isAnomaly')]
-        found = [at for at in (30, 70) if any(abs(i - at) <= 2 for i in flagged)]
-        run.check('predict_finds_the_spikes', rc == 0 and len(preds) == 100 and len(found) == 2 and len(flagged) <= 15,
-                  f'{len(preds)} rows, flagged={flagged[:20]} found={found}')
-        run.check('predict_log', all(p.get('predictionId') for p in preds) and len(preds) == 100, f'ids on {sum(1 for p in preds if p.get("predictionId"))} rows')
+        found = [at for at in (30, 70, 150) if any(abs(i - at) <= 2 for i in flagged)]
+        early = [(i, preds[i].get('isAnomaly'), preds[i].get('anomalyScore')) for i in (0, 1, 30, 63, 64, 65)]
+        run.check('predict_finds_the_spikes', rc == 0 and len(preds) == 200 and {70, 150} <= set(found) and len(flagged) <= 20,
+                  f'{len(preds)} rows, flagged={flagged[:20]} found={found} rows (index, flag, score)={early}')
+        run.check('predict_judges_every_row', 30 in found, f'the spike at row 30 is {"" if 30 in found else "not "}found; rows (index, flag, score)={early}')
+        run.check('predict_log', all(p.get('predictionId') for p in preds) and len(preds) == 200, f'ids on {sum(1 for p in preds if p.get("predictionId"))} rows')
 
         rc, drift = run.json_of('drift', '--json', cwd=proj)
         run.check('drift_names_a_series_without_a_profile', rc == 0 and (drift or {}).get('status') == 'NoProfile', f'rc={rc} status={(drift or {}).get("status")}')
