@@ -1588,8 +1588,12 @@ public partial class TrainingRunner
             // the two together, so it reads the loaded columns as every other task's model does — yes/no
             // columns included, which no prediction path folds into "Features" on its own.
             var featurizer = FeatureVector(trainSet.Schema, featureColumns).Fit(trainSet);
-            var featurizedTrainSet = featurizer.Transform(trainSet);
-            var featurizedTestSet = featurizer.Transform(testSet);
+            // In memory, once: the k search fits nine models and K-means goes over its rows many times for each, and over the lazy view
+            // each pass read and parsed the file again (100,000 rows: 66 s; 300,000: 394 s — with the rows in memory a fit takes a second).
+            var featurizedTrainSet = MLoop.Search.RowCache.Of(_mlContext, featurizer.Transform(trainSet));
+            var featurizedTestSet = ReferenceEquals(testSet, trainSet)
+                ? featurizedTrainSet
+                : MLoop.Search.RowCache.Of(_mlContext, featurizer.Transform(testSet));
 
             // Determine K values to try
             int[] kValues;

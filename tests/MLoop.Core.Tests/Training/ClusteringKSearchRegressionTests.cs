@@ -120,4 +120,48 @@ public class ClusteringKSearchRegressionTests : IDisposable
         // The consequence: the DBI-driven search finds the natural K=3, not the search ceiling.
         Assert.Equal(3, (int)result.Metrics["num_clusters"]);
     }
+
+    private sealed class CountingRows(List<Point> rows) : IEnumerable<Point>
+    {
+        public int Enumerations;
+
+        public IEnumerator<Point> GetEnumerator()
+        {
+            Interlocked.Increment(ref Enumerations);
+            return rows.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    [Fact]
+    public async Task ClusteringAutoK_ReadsItsRowsAFewTimes_NotOncePerPassOfEachFit()
+    {
+        // The k search fits nine models and K-means goes over its rows many times for each. Over the lazy view each pass read the
+        // source again — a CSV file parsed again and again (100,000 rows took 66 s, 300,000 took 394 s). With the rows kept in
+        // memory the source is read a number of times that does not depend on how many passes the fits make.
+        var ctx = new MLContext(seed: 42);
+        var rng = new Random(7);
+        (float, float)[] centers = [(0f, 0f), (30f, 30f), (60f, 0f)];
+        var rows = new List<Point>();
+        for (int c = 0; c < centers.Length; c++)
+            for (int i = 0; i < 400; i++)
+                rows.Add(new Point { F1 = centers[c].Item1 + (float)(rng.NextDouble() - 0.5), F2 = centers[c].Item2 + (float)(rng.NextDouble() - 0.5) });
+        var source = new CountingRows(rows);
+
+        var config = new TrainingConfig
+        {
+            ModelName = "test",
+            DataFile = "synthetic",
+            LabelColumn = "",
+            Task = "clustering",
+            TimeLimitSeconds = 30,
+            NumClusters = 0
+        };
+        var runner = new TrainingRunner(ctx, new InMemoryDataProvider(ctx, ctx.Data.LoadFromEnumerable(source)));
+        var result = await runner.RunAsync(config, cancellationToken: CancellationToken.None);
+
+        Assert.Equal(3, (int)result.Metrics["num_clusters"]);
+        Assert.True(source.Enumerations <= 12, $"the source was read {source.Enumerations} times");
+    }
 }
