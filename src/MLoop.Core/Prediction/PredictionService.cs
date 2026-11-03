@@ -171,6 +171,17 @@ public class PredictionService
         var result = ExtractResults(predictions, taskType, interval, perRowSigma,
             BinaryLabelVocabulary.Of(schema));
 
+        // the rows a series detector had no window for are not "normal" rows; they say they were not judged
+        if (Models.TaskTypes.Canonical(taskType) == "time-series-anomaly")
+        {
+            var (judged, notJudged) = TimeSeriesAnomalyWarmup.Mark(result.Rows);
+            if (notJudged is not null)
+            {
+                warnings.Add(notJudged);
+                result = new PredictionResult { TaskType = result.TaskType, Rows = judged, Metadata = result.Metadata, Warnings = result.Warnings };
+            }
+        }
+
         if (warnings.Count > 0)
         {
             result = new PredictionResult

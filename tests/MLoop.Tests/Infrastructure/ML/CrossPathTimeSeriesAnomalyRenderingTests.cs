@@ -86,4 +86,42 @@ public class CrossPathTimeSeriesAnomalyRenderingTests : IDisposable
         Assert.Equal(structured.Select(r => r.IsAnomaly?.ToString()), csv.Select(r => (string?)r.Alert));
         Assert.Equal(structured.Select(r => r.AnomalyScore), csv.Select(r => (double?)r.Score));
     }
+
+    [Fact]
+    public async Task The_rows_the_detector_had_no_window_for_say_so_in_the_csv_and_in_the_structured_answer()
+    {
+        var ml = new MLContext(seed: 0);
+        var data = ml.Data.LoadFromEnumerable([new Row { s = "a b c", t = "x" }]);
+        var model = ml.Transforms.Text.ProduceWordBags("bag", "s", ngramLength: 1)
+            .Append(ml.Transforms.Conversion.ConvertType(TimeSeriesAnomalyOutput.PredictionColumnName, "bag", DataKind.Double))
+            .Fit(data);
+        var modelPath = Path.Combine(_dir, "model.zip");
+        ml.Model.Save(model, data.Schema, modelPath);
+
+        // "z" and "zz" hold no word of the vocabulary: alert 0, score exactly 0 - the detector's answer for a row it had no window for
+        var input = Path.Combine(_dir, "series.csv");
+        await File.WriteAllLinesAsync(input, ["s,t", "z,x", "zz,x", "b,y"]);
+        var output = Path.Combine(_dir, "out.csv");
+
+        await new PredictionEngine().PredictAsync(
+            modelPath, input, output, Schema, CategoricalMapper.UnknownValueStrategy.Auto,
+            taskType: "time-series-anomaly");
+
+        var lines = (await File.ReadAllLinesAsync(output)).Where(l => l.Length > 0).ToList();
+        var header = lines[0].TrimStart('\uFEFF').Split(',');
+        var cells = lines.Skip(1).Select(l => l.Split(',')).ToList();
+        var label = Array.IndexOf(header, "PredictedLabel");
+        var score = Array.IndexOf(header, "Score");
+
+        Assert.Equal(["", "", "False"], cells.Select(c => c[label]));
+        Assert.Equal(["", "", "1"], cells.Select(c => c[score]));
+        Assert.Equal(2, PredictionEngine.CountUnjudgedRows(output));
+
+        var structured = new PredictionService(ml).Predict(
+            [new Dictionary<string, object> { ["s"] = "z", ["t"] = "x" }, new Dictionary<string, object> { ["s"] = "zz", ["t"] = "x" },
+             new Dictionary<string, object> { ["s"] = "b", ["t"] = "y" }],
+            Schema, modelPath, "time-series-anomaly", "s");
+        Assert.Equal([null, null, false], structured.Rows.Select(r => r.IsAnomaly));
+        Assert.Contains(structured.Warnings!, w => w.StartsWith("The first 2 of 3 rows were not judged", StringComparison.Ordinal));
+    }
 }

@@ -288,6 +288,11 @@ public class PredictionEngine
             // SaveAsText outputs empty column names for VBuffer columns
             FixVectorColumnHeaders(outputPath, outputData.Schema);
 
+            // The rows a series detector had no window of earlier points for were not judged: the file says so with empty
+            // cells, as the structured paths say it with null (TimeSeriesAnomalyWarmup).
+            if (isTimeSeriesAnomaly)
+                BlankUnjudgedRows(outputPath);
+
             // Append the additive Confidence column only when the task exposes a real signal (all rows null
             // for clustering/ranking/recommendation/regression-without-band/time-series-anomaly → omitted).
             if (confidences != null && confidences.Any(c => c.HasValue))
@@ -621,6 +626,66 @@ public class PredictionEngine
     /// prediction was readable in one output and in the other said only that the second class scored
     /// 0.97 — without saying which class that was.
     /// </remarks>
+    /// <summary>
+    /// Empties the verdict cells (<c>PredictedLabel</c> and <c>Score</c>) of the rows that open a time-series anomaly prediction file
+    /// without an alert and with a score of exactly 0 — the rows the detector had no window of earlier points to judge
+    /// (<see cref="TimeSeriesAnomalyWarmup"/> reads the structured answer the same way). Returns how many rows it emptied.
+    /// </summary>
+    internal static int BlankUnjudgedRows(string filePath)
+    {
+        var lines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+        if (lines.Length < 2)
+            return 0;
+        var header = lines[0].TrimStart('\uFEFF').Split(',');
+        var label = Array.IndexOf(header, "PredictedLabel");
+        var score = Array.IndexOf(header, "Score");
+        if (label < 0 || score < 0)
+            return 0;
+
+        var blanked = 0;
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var fields = lines[i].Split(',');
+            if (fields.Length != header.Length
+                || !string.Equals(fields[label], "False", StringComparison.Ordinal)
+                || !double.TryParse(fields[score], NumberStyles.Float, CultureInfo.InvariantCulture, out var raw) || raw != 0)
+                break;
+            fields[label] = "";
+            fields[score] = "";
+            lines[i] = string.Join(',', fields);
+            blanked++;
+        }
+
+        if (blanked > 0)
+            File.WriteAllLines(filePath, lines, new System.Text.UTF8Encoding(true));
+        return blanked;
+    }
+
+    /// <summary>The number of rows that open a prediction file with an empty verdict (see <see cref="BlankUnjudgedRows"/>).</summary>
+    internal static int CountUnjudgedRows(string filePath)
+    {
+        if (!File.Exists(filePath))
+            return 0;
+        var lines = File.ReadAllLines(filePath, System.Text.Encoding.UTF8);
+        if (lines.Length < 2)
+            return 0;
+        var header = lines[0].TrimStart('\uFEFF').Split(',');
+        var label = Array.IndexOf(header, "PredictedLabel");
+        var score = Array.IndexOf(header, "Score");
+        if (label < 0 || score < 0)
+            return 0;
+        var count = 0;
+        foreach (var line in lines.Skip(1))
+        {
+            var fields = line.Split(',');
+            if (fields.Length != header.Length || fields[label].Length != 0 || fields[score].Length != 0)
+                break;
+            count++;
+        }
+
+        return count;
+    }
+
     internal static void FixVectorColumnHeaders(string filePath, DataViewSchema schema)
     {
         // Build expected header names from schema

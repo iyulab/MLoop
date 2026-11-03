@@ -326,6 +326,14 @@ public static partial class PredictCommand
                     ctx.Status("[green]Predictions complete![/]");
                 });
 
+            // The rows a series detector had no window of earlier points for carry no verdict: say how many, and what to do.
+            if (taskType != null && taskType.Equals("time-series-anomaly", StringComparison.OrdinalIgnoreCase)
+                && PredictionEngine.CountUnjudgedRows(resolvedOutputPath) is > 0 and var notJudged)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[yellow]![/] The first {notJudged} of {predictedCount} rows were not judged: the detector needs a window of earlier points before it can say whether a point belongs to the series, so their verdict is empty. Send the series with at least {notJudged} earlier rows in front of the ones you ask about.");
+            }
+
             // Merge original features with predictions if requested
             if (includeFeatures)
             {

@@ -794,7 +794,10 @@ def anomaly_scenario(mloop, budget, keep, expected):
         early = [(i, preds[i].get('isAnomaly'), preds[i].get('anomalyScore')) for i in (0, 1, 30, 63, 64, 65)]
         run.check('predict_finds_the_spikes', rc == 0 and len(preds) == 200 and {70, 150} <= set(found) and len(flagged) <= 20,
                   f'{len(preds)} rows, flagged={flagged[:20]} found={found} rows (index, flag, score)={early}')
-        run.check('predict_judges_every_row', 30 in found, f'the spike at row 30 is {"" if 30 in found else "not "}found; rows (index, flag, score)={early}')
+        notes = ' '.join((pa or {}).get('warnings') or [])
+        # the detector reads a window of earlier points: the rows before the window carry no verdict, and the answer says so
+        run.check('predict_says_which_rows_it_did_not_judge', all(preds[i].get('isAnomaly') is None for i in (0, 1, 30)) and preds[150].get('isAnomaly') is not None
+                  and 'were not judged' in notes, f'rows 0/1/30 flag={[preds[i].get("isAnomaly") for i in (0, 1, 30)]} warnings={notes[:140]}')
         run.check('predict_log', all(p.get('predictionId') for p in preds) and len(preds) == 200, f'ids on {sum(1 for p in preds if p.get("predictionId"))} rows')
 
         rc, drift = run.json_of('drift', '--json', cwd=proj)
