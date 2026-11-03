@@ -38,9 +38,9 @@ temporary project, removed unless --keep is given.
 import argparse, csv, json, math, os, random, shlex, shutil, signal, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression'}
+TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression', 'text': 'text-classification'}
 # the metric a first model must reach to count as having learned the table (loose: this checks the wiring, not accuracy)
-LEARNED = {'binary': ('accuracy', 0.8), 'multiclass': ('macro_accuracy', 0.6), 'regression': ('r_squared', 0.7)}
+LEARNED = {'binary': ('accuracy', 0.8), 'multiclass': ('macro_accuracy', 0.6), 'regression': ('r_squared', 0.7), 'text': ('accuracy', 0.7)}
 SHIFT = 2.5
 
 
@@ -61,15 +61,34 @@ def make_table(task, n, rng, shift=0.0):
     return rows
 
 
+# a text table's two regimes use different words for the same two answers: a model that learned the first regime reads the second as noise
+TEXT_FILLER = ['the', 'a', 'it', 'this', 'was', 'is', 'very', 'product', 'item', 'really', 'and', 'but']
+TEXT_WORDS = {False: {'pos': ['great', 'love', 'excellent', 'fast', 'works', 'happy', 'recommend'], 'neg': ['broken', 'slow', 'refund', 'bad', 'late', 'awful', 'waste']},
+              True: {'pos': ['superb', 'delightful', 'flawless', 'sturdy', 'pleased', 'bargain', 'reliable'], 'neg': ['faulty', 'cracked', 'overpriced', 'flimsy', 'defective', 'useless', 'regret']}}
+
+
+def make_text_table(n, rng, shifted=False):
+    """Rows of a review and its answer; the shifted regime says it with other words."""
+    rows = []
+    for _ in range(n):
+        positive = rng.random() < 0.5
+        vocabulary = TEXT_WORDS[shifted]
+        signal = [rng.choice(vocabulary['pos'] if (positive if rng.random() < 0.85 else not positive) else vocabulary['neg']) for _ in range(3)]
+        words = [rng.choice(TEXT_FILLER) for _ in range(5)] + signal
+        rng.shuffle(words)
+        rows.append([' '.join(words), 'pos' if positive else 'neg'])
+    return rows
+
+
 def to_number(text):
     """A cell as a JSON number; an empty cell is a missing value (null), as the loaders read it."""
     return float(text) if text.strip() else None
 
 
-def write_table(path, rows):
+def write_table(path, rows, header=('x1', 'x2', 'x3', 'cat', 'y')):
     with open(path, 'w', newline='') as f:
         w = csv.writer(f)
-        w.writerow(['x1', 'x2', 'x3', 'cat', 'y'])
+        w.writerow(list(header))
         w.writerows(rows)
 
 
@@ -376,6 +395,12 @@ def serve_steps(run, proj, base, task, budget, table, soak=0, bench=0):
 def generated_tables(task, base):
     """The standard-library tables: a label that depends on x1 as it sits in the training regime. Returns the table's description."""
     rng = random.Random(20261029)
+    if task == 'text':
+        for name, rows in [('train_a', make_text_table(1500, rng)), ('new_a', make_text_table(300, rng)), ('train_b', make_text_table(1500, rng, True)),
+                           ('test_b', make_text_table(500, rng, True)), ('new_b', make_text_table(300, rng, True))]:
+            write_table(os.path.join(base, name + '.csv'), rows, ('review', 'y'))
+        return {'name': task, 'task': task, 'label': 'y', 'shift_column': 'review', 'numeric_columns': [], 'n_new_a': 300, 'n_new_b': 300,
+                'learned': list(LEARNED[task]), 'public': False}
     for name, rows in [('train_a', make_table(task, 2000, rng)), ('new_a', make_table(task, 300, rng)),
                        ('train_b', make_table(task, 2000, rng, SHIFT)), ('test_b', make_table(task, 600, rng, SHIFT)),
                        ('new_b', make_table(task, 300, rng, SHIFT))]:
@@ -551,6 +576,11 @@ def main():
             steps += [{**st, 'table': name, 'task': task} for st in found]
     else:
         for task in args.tasks.split(','):
+            if task == 'text':
+                # the libtorch runtime is installed on demand; the scenario trains a text model, so it is part of the walk
+                installed = subprocess.run(shlex.split(args.mloop) + ['runtime', 'install', 'torch'], capture_output=True, text=True)
+                steps.append({'step': 'text/runtime_install', 'status': 'pass' if installed.returncode == 0 else 'FAIL',
+                              'detail': (installed.stdout + installed.stderr)[-200:].strip()})
             steps += scenario(args.mloop, task, args.time, args.keep, expected, not args.no_serve, args.soak, args.trials, args.bench)
     with open(args.out, 'w') as f:
         json.dump(steps, f, indent=2)
