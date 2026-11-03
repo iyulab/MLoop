@@ -1752,7 +1752,8 @@ public class CsvDataLoader : DataProviderBase
     /// Flattens multi-line quoted fields in CSV data by replacing newlines with spaces.
     /// ML.NET's TextLoader treats physical newlines as record boundaries even inside
     /// RFC 4180 quoted fields. This normalizes such fields to single-line representation.
-    /// Uses a quick-check scan: if no unbalanced quotes found, returns the original path.
+    /// Uses a quick-check scan: if no unbalanced quotes found, returns the original path. The file is read in the encoding it is
+    /// written in (a CP949 export keeps its Korean) and the copy is UTF-8.
     /// </summary>
     public static string FlattenMultiLineQuotedFields(string filePath, Action<string>? log = null)
     {
@@ -1761,7 +1762,7 @@ public class CsvDataLoader : DataProviderBase
         // Quick check: scan for any line with unbalanced quotes.
         // If every physical line has balanced quotes, there are no multiline quoted fields.
         bool hasMultiLine = false;
-        using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        using (var reader = EncodingDetector.OpenReader(filePath))
         {
             string? line;
             while ((line = reader.ReadLine()) != null)
@@ -1785,7 +1786,7 @@ public class CsvDataLoader : DataProviderBase
         var tempPath = ScratchFiles.New("mloop_flatdata_", Path.GetExtension(filePath));
         int flattenedCount = 0;
 
-        using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        using (var reader = EncodingDetector.OpenReader(filePath))
         using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
         {
             var lineBuilder = new System.Text.StringBuilder();
@@ -1856,7 +1857,7 @@ public class CsvDataLoader : DataProviderBase
         var write = log ?? NoLog;
         // Quick check: read first line and see if quotes are unbalanced
         string? firstLine;
-        using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        using (var reader = EncodingDetector.OpenReader(filePath))
         {
             firstLine = reader.ReadLine();
         }
@@ -1876,7 +1877,7 @@ public class CsvDataLoader : DataProviderBase
         // Multi-line header detected - need to flatten
         var tempPath = ScratchFiles.New("mloop_flat_", Path.GetExtension(filePath));
 
-        using (var reader = new StreamReader(filePath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+        using (var reader = EncodingDetector.OpenReader(filePath))
         using (var writer = new StreamWriter(tempPath, false, new System.Text.UTF8Encoding(true)))
         {
             // Read and flatten the header (may span multiple physical lines)

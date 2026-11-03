@@ -885,6 +885,40 @@ public class CsvDataLoaderTests : IDisposable
 
     #endregion
 
+    #region Flatten in the file's own encoding
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_ACp949File_KeepsItsKoreanInTheUtf8Copy()
+    {
+        // A header written with a line break in a cell (Alt+Enter in a spreadsheet) is the usual reason a Korean export is flattened;
+        // the copy read the file as UTF-8, so every Korean name in it became replacement characters.
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var csvPath = Path.Combine(_tempDirectory, "flatten_cp949.csv");
+        File.WriteAllText(csvPath, "번호,\"허용오차\n(상한값)\",결과\n1,0.5,통과\n2,0.7,불량\n", System.Text.Encoding.GetEncoding(949));
+
+        var flattened = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.NotEqual(csvPath, flattened);
+        Assert.Equal("번호,\"허용오차 (상한값)\",결과\n1,0.5,통과\n2,0.7,불량\n".ReplaceLineEndings("\n"),
+            File.ReadAllText(flattened, new System.Text.UTF8Encoding(true)).ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void FlattenMultiLineHeaders_ACp949File_KeepsItsKoreanInTheUtf8Copy()
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var csvPath = Path.Combine(_tempDirectory, "flatten_header_cp949.csv");
+        File.WriteAllText(csvPath, "번호,\"허용오차\n(상한값)\",결과\n1,0.5,통과\n2,0.7,불량\n", System.Text.Encoding.GetEncoding(949));
+
+        var flattened = CsvDataLoader.FlattenMultiLineHeaders(csvPath);
+
+        Assert.NotEqual(csvPath, flattened);
+        Assert.Contains("허용오차", File.ReadAllText(flattened, new System.Text.UTF8Encoding(true)), StringComparison.Ordinal);
+        Assert.Contains("통과", File.ReadAllText(flattened, new System.Text.UTF8Encoding(true)), StringComparison.Ordinal);
+    }
+
+    #endregion
+
     #region DetectMonotonicColumns
 
     [Theory]
