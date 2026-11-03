@@ -12,6 +12,19 @@ public class DriftProfileTests
     private static string?[][] Rows(int n, Func<int, string?> x, Func<int, string?> kind)
         => Enumerable.Range(0, n).Select(i => new[] { x(i), kind(i) }).ToArray();
 
+    [Theory]
+    [InlineData("text-classification", true)]
+    [InlineData("TextClassification", true)]
+    [InlineData("sentence-similarity", true)]
+    [InlineData("ner", true)]
+    [InlineData("question-answering", true)]
+    [InlineData("object-detection", false)]     // a COCO file, not a table
+    [InlineData("image-classification", false)]
+    [InlineData("binary-classification", false)] // a table task: profiled by the ordinary path
+    [InlineData(null, false)]
+    public void ATextTaskThatReadsATablesTextColumns_RecordsAProfile(string? task, bool expected)
+        => Assert.Equal(expected, DriftProfile.ProfilesTableText(task));
+
     [Fact]
     public void ANumericColumn_IsCutAtItsDeciles()
     {
