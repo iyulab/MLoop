@@ -124,6 +124,7 @@ public class PairedComparisonTests
     [InlineData("text-classification", PairedComparison.ErrorRate)]
     [InlineData("regression", PairedComparison.SquaredError)]
     [InlineData("forecasting", PairedComparison.SquaredError)]
+    [InlineData("recommendation", PairedComparison.SquaredError)]
     [InlineData("clustering", null)]
     [InlineData("time-series-anomaly", null)]
     public void EachTaskIsComparedByItsOwnRowLoss(string task, string? measure)

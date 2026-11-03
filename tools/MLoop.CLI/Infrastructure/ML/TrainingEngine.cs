@@ -949,7 +949,15 @@ public class TrainingEngine : ITrainingEngine
         try
         {
             var sample = await MLoop.Core.Monitoring.DriftProfile.SampleCsvAsync(dataFilePath, cancellationToken: cancellationToken);
-            var profile = MLoop.Core.Monitoring.DriftProfile.Of(sample, inputSchema)
+            // The columns that name a group of rows (a ranking's query, a recommendation's user and item) are identifiers: new
+            // batches bring new ids, so profiled as inputs they read as the largest drift there is on every batch.
+            var identifiers = new[] { config.GroupColumn, config.UserColumn, config.ItemColumn }.Where(c => !string.IsNullOrEmpty(c)).ToList();
+            var profiled = new InputSchemaInfo
+            {
+                CapturedAt = inputSchema.CapturedAt,
+                Columns = [.. inputSchema.Columns.Where(c => !identifiers.Contains(c.Name, StringComparer.OrdinalIgnoreCase))],
+            };
+            var profile = MLoop.Core.Monitoring.DriftProfile.Of(sample, profiled)
                 with
             { Prediction = AnswerProfile(sample, inputSchema, config, modelPath) };
             if (profile.Features.Count == 0 && profile.Texts is not { Count: > 0 } && profile.Prediction is null)

@@ -150,8 +150,11 @@ public class CsvDataLoader : DataProviderBase
         // numeric (Single) labels. Boolean 0/1 should become Single, not String.
         var isBinaryTask = string.Equals(taskType, "binary-classification", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(taskType, "BinaryClassification", StringComparison.OrdinalIgnoreCase);
+        // Every task whose label is a number — regression, forecasting, ranking, recommendation, sentence similarity —
+        // reads a 0/1 column as numbers; only a task that maps the label to classes reads it as a string.
         var isRegressionTask = string.Equals(taskType, "regression", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(taskType, "Regression", StringComparison.OrdinalIgnoreCase);
+                            || string.Equals(taskType, "Regression", StringComparison.OrdinalIgnoreCase)
+                            || (taskType is not null && Training.NumericLabelCheck.HasNumericLabel(taskType));
 
         if (!isBinaryTask && !isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
         {

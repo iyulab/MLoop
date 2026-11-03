@@ -27,7 +27,7 @@ population and their label is rewritten):
                            --soak SECONDS holds a steady load and compares the server's memory at the start and the end, and
                            --bench SECONDS prints a throughput / latency table by clients and rows per request
 
-  python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression,text,forecast,anomaly,clustering,outliers]
+  python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression,text,forecast,anomaly,clustering,outliers,ranking,recommendation]
          [--time 60] [--trials 10] [--out lifecycle-results.json] [--keep]
   python lifecycle-check.py --mloop "..." --tables DIR [--datasets credit-g,houses]    # DIR as written by lifecycle-tables.py
 
@@ -39,7 +39,8 @@ import argparse, csv, json, math, os, random, shlex, shutil, signal, socket, sub
 from concurrent.futures import ThreadPoolExecutor
 
 TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression', 'text': 'text-classification', 'forecast': 'forecasting', 'anomaly': 'time-series-anomaly',
-             'clustering': 'clustering', 'outliers': 'anomaly-detection'}
+             'clustering': 'clustering', 'outliers': 'anomaly-detection',
+             'ranking': 'ranking', 'recommendation': 'recommendation'}
 # the metric a first model must reach to count as having learned the table (loose: this checks the wiring, not accuracy)
 LEARNED = {'binary': ('accuracy', 0.8), 'multiclass': ('macro_accuracy', 0.6), 'regression': ('r_squared', 0.7), 'text': ('macro_accuracy', 0.6)}
 SHIFT = 2.5
@@ -97,7 +98,7 @@ class Run:
     def __init__(self, mloop, task, work, budget, expected, trials=0):
         self.mloop, self.task, self.work, self.budget, self.expected = shlex.split(mloop), task, work, budget, expected
         # a deep-learning task trains by epochs and refuses a trial count
-        self.trials = 0 if task in ('text', 'forecast', 'anomaly', 'clustering', 'outliers') else trials
+        self.trials = 0 if task in ('text', 'forecast', 'anomaly', 'clustering', 'outliers', 'ranking', 'recommendation') else trials
         self.metric = []   # extra `train` arguments that name what the table is judged on
         self.last_output = ''   # the tail of the last command's output, shown with a failed step
         self.steps = []
@@ -886,6 +887,91 @@ def unlabeled_scenario(mloop, task, budget, keep, expected):
     return run.steps
 
 
+def grouped_scenario(mloop, task, budget, keep, expected):
+    """Rows that belong to a group - the documents of a query, the ratings of a user - scored per row. A ranking's relevance is judged
+    only relevant or not (0 and 1), as it is in most data; a recommendation's rating runs 1 to 5. The second regime reverses what is liked."""
+    base = tempfile.mkdtemp(prefix=f'lifecycle-{task}-')
+    run = Run(mloop, task, base, budget, expected)
+    rng = random.Random(20261103)
+    if task == 'ranking':
+        header, label = ('query_id', 'f1', 'f2', 'relevance'), 'relevance'
+
+        def table(n_queries, q0, flip=False):
+            rows = []
+            for q in range(q0, q0 + n_queries):
+                for _ in range(10):
+                    f1, f2 = rng.random(), rng.random()
+                    s = (-f1 * 2 + f2 + 1.0) if flip else (f1 * 2 + f2 - 1.0)
+                    rows.append([q, round(f1, 3), round(f2, 3), 1 if s + rng.gauss(0, 0.15) > 0.6 else 0])
+            return rows
+        files = {'train_a': table(80, 0), 'new_a': table(30, 100), 'train_b': table(80, 200, True), 'test_b': table(30, 300, True)}
+    else:
+        header, label = ('user_id', 'item_id', 'rating'), 'rating'
+
+        def table(n, flip=False):
+            rows = []
+            for _ in range(n):
+                u, i = rng.randrange(40), rng.randrange(40)
+                like = 3.5 if (u % 4) == (i % 4) else 1.5
+                rows.append([f'u{u}', f'i{i}', round(min(5, max(1, (5 - like + 1 if flip else like) + rng.gauss(0, 0.3))), 2)])
+            return rows
+        files = {'train_a': table(3000), 'new_a': table(300), 'train_b': table(3000, True), 'test_b': table(1000, True)}
+    for name, rows in files.items():
+        write_table(os.path.join(base, name + '.csv'), rows, header)
+    print(f'== {task}  ({base})', flush=True)
+    try:
+        proj = os.path.join(base, 'proj')
+        rc, init = run.json_of('init', 'proj', '--task', TASK_FLAG[task], '--label', label, '--json')
+        run.check('init', rc == 0 and init and init.get('task') == TASK_FLAG[task], f'rc={rc}')
+        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', label, *run.budget_args(), '--json', cwd=proj)
+        result = next((e for e in evs if e.get('event') == 'result'), {})
+        promo = next((e for e in evs if e.get('event') == 'promotion'), {})
+        run.check('train', rc == 0 and result.get('experimentId') == 'exp-001' and promo.get('promoted') is True, f'metrics={json.dumps(result.get("metrics"))[:120]}')
+        rc, pa = run.json_of('predict', os.path.join(base, 'new_a.csv'), '--log', '--json', cwd=proj)
+        preds = (pa or {}).get('predictions') or []
+        run.check('predict_log', rc == 0 and len(preds) == len(files['new_a']) and all(p.get('predictionId') and p.get('score') is not None for p in preds), f'{len(preds)} rows')
+        rc, ev = run.json_of('evaluate', 'exp-001', os.path.join(base, 'new_a.csv'), '--json', cwd=proj)
+        run.check('evaluate', rc == 0 and bool((ev or {}).get('testMetrics')), f'rc={rc}')
+        rc, drift = run.json_of('drift', '--json', cwd=proj)
+        if task == 'ranking':
+            # a query id is a name for a group, not an input: new queries bring new ids and must not read as drift
+            lvl = ((drift or {}).get('drift') or {}).get('level')
+            cols = [f.get('column') for f in ((drift or {}).get('drift') or {}).get('features', [])]
+            run.check('drift_control', rc == 0 and lvl == 'None' and 'query_id' not in cols, f'level={lvl} columns={cols}')
+        else:
+            run.check('drift_names_a_model_without_a_profile', rc == 0 and (drift or {}).get('status') == 'NoProfile', f'status={(drift or {}).get("status")}')
+        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', label, *run.budget_args(), '--json', cwd=proj)
+        result = next((e for e in evs if e.get('event') == 'result'), {})
+        promo = next((e for e in evs if e.get('event') == 'promotion'), {})
+        candidate = result.get('experimentId')
+        run.check('retrain', rc == 0 and candidate == 'exp-002', f'{candidate} promoted={promo.get("promoted")}')
+        if promo.get('promoted') is True:
+            # the new regime can score higher on its own rows than the old model did on its: promoted by its recorded score, which is the
+            # rule working as written; the slot goes back so the paired step has a production to compare against
+            rc, rb = run.json_of('rollback', '--json', cwd=proj)
+            run.check('rollback_of_auto_promotion', (rb or {}).get('status') == 'rolled-back' and (rb or {}).get('experimentId') == 'exp-001', f'status={(rb or {}).get("status")}')
+        rc, ev = run.json_of('evaluate', candidate or 'exp-002', os.path.join(base, 'test_b.csv'), '--against', 'production', '--json', cwd=proj)
+        comparison = (ev or {}).get('comparison') or {}
+        if task == 'recommendation':
+            verdict = (comparison.get('paired') or {}).get('verdict')
+            run.check('paired_evaluation', rc == 0 and verdict == 'CandidateBetter', f'verdict={verdict}')
+        else:
+            # a ranking is judged per query, which has no row-wise measure: the comparison says so rather than guessing
+            run.check('paired_evaluation_says_what_it_cannot_pair', rc == 0 and comparison.get('paired') is None and bool(comparison.get('notPaired')), f'notPaired={comparison.get("notPaired")}')
+        rc, pr = run.json_of('promote', candidate or 'exp-002', '--json', '--force', cwd=proj)
+        run.check('explicit_promote', (pr or {}).get('status') in ('promoted', 'already-production'), f'status={(pr or {}).get("status")}')
+        rc, rb = run.json_of('rollback', '--json', cwd=proj)
+        run.check('rollback', (rb or {}).get('status') == 'rolled-back' and (rb or {}).get('experimentId') == 'exp-001', f'status={(rb or {}).get("status")}')
+    except Exception as ex:
+        run.check('scenario', False, f'{type(ex).__name__}: {ex}')
+    finally:
+        if keep:
+            print(f'   kept {base}')
+        else:
+            shutil.rmtree(base, ignore_errors=True)
+    return run.steps
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--mloop', required=True, help='command that starts the mloop CLI, e.g. "dotnet path/to/mloop.dll"')
@@ -922,6 +1008,9 @@ def main():
                 installed = subprocess.run(shlex.split(args.mloop) + ['runtime', 'install', 'torch'], capture_output=True, text=True)
                 steps.append({'step': 'text/runtime_install', 'status': 'pass' if installed.returncode == 0 else 'FAIL',
                               'detail': (installed.stdout + installed.stderr)[-200:].strip()})
+            if task in ('ranking', 'recommendation'):
+                steps += grouped_scenario(args.mloop, task, args.time, args.keep, expected)
+                continue
             if task in ('clustering', 'outliers'):
                 steps += unlabeled_scenario(args.mloop, task, args.time, args.keep, expected)
                 continue

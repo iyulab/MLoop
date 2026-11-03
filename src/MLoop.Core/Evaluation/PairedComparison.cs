@@ -68,7 +68,7 @@ public static class PairedComparison
         => Models.TaskTypes.Canonical(task) switch
         {
             "binary-classification" or "multiclass-classification" or "text-classification" => ErrorRate,
-            "regression" or "forecasting" => SquaredError,
+            "regression" or "forecasting" or "recommendation" => SquaredError,
             _ => null,
         };
 

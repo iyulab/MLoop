@@ -314,6 +314,30 @@ public class CsvDataLoaderTests : IDisposable
         Assert.Equal(typeof(float), labelCol.Type.RawType);
     }
 
+    [Theory]
+    [InlineData("ranking")]
+    [InlineData("recommendation")]
+    [InlineData("forecasting")]
+    [InlineData("sentence-similarity")]
+    public void LoadData_AnyTaskWithANumericLabel_ReadsAZeroOneLabelAsNumbers(string task)
+    {
+        // A relevance judged only relevant / not (0 and 1) or an implicit-feedback rating is the common case of these tasks: read as a
+        // yes/no column and turned into a string it was refused as "read as text" with "0 of N values are not numbers".
+        var csvPath = CreateTestCsv(new[]
+        {
+            "feature1,feature2,Label",
+            "1.0,2.0,0",
+            "3.0,4.0,1",
+            "5.0,6.0,0",
+            "7.0,8.0,1",
+            "9.0,10.0,0"
+        });
+
+        var dataView = _loader.LoadData(csvPath, "Label", task);
+
+        Assert.Equal(typeof(float), dataView.Schema["Label"].Type.RawType);
+    }
+
     [Fact]
     public void LoadData_MulticlassWithBooleanLabel_InfersAsString()
     {
