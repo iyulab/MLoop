@@ -92,6 +92,32 @@ public class PairedComparisonTests
                      PairedComparison.Compare(PairedComparison.SquaredError, c, b));
     }
 
+    private sealed class Answered
+    {
+        public string Label { get; set; } = "";
+        public string Predicted { get; set; } = "";
+    }
+
+    [Theory]
+    [InlineData(false)]   // the answer as text
+    [InlineData(true)]    // the answer as a key over the class names
+    public void ATextClassifier_IsPairedByItsMissesOnTheClassNames(bool predictedAsKey)
+    {
+        var ml = new MLContext(seed: 1);
+        var rows = new[] { ("pos", "pos"), ("neg", "pos"), ("neg", "neg"), ("pos", "neg"), ("", "pos") }
+            .Select(r => new Answered { Label = r.Item1, Predicted = r.Item2 });
+        IDataView scored = ml.Data.LoadFromEnumerable(rows);
+        scored = ml.Transforms.CopyColumns("PredictedLabel", nameof(Answered.Predicted)).Fit(scored).Transform(scored);
+        if (predictedAsKey)
+            scored = ml.Transforms.Conversion.MapValueToKey("PredictedLabel").Fit(scored).Transform(scored);
+
+        var losses = PairedComparison.RowLosses(scored, "text-classification", nameof(Answered.Label));
+
+        Assert.NotNull(losses);
+        Assert.Equal([0.0, 1.0, 0.0, 1.0], losses!.Take(4));
+        Assert.True(double.IsNaN(losses[4]));      // a row without a label is left out
+    }
+
     [Theory]
     [InlineData("binary-classification", PairedComparison.ErrorRate)]
     [InlineData("multiclass-classification", PairedComparison.ErrorRate)]

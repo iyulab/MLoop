@@ -83,6 +83,7 @@ public static class PairedComparison
         return MeasureOf(task) switch
         {
             ErrorRate when Models.TaskTypes.Canonical(task) == "binary-classification" => BinaryMisses(scored, labelColumn),
+            ErrorRate when Models.TaskTypes.Canonical(task) == "text-classification" => NamedClassMisses(scored, labelColumn),
             ErrorRate => MulticlassMisses(scored, labelColumn),
             SquaredError => SquaredErrors(scored, labelColumn),
             _ => null,
@@ -213,6 +214,44 @@ public static class PairedComparison
             losses.Add(float.IsFinite(y) && float.IsFinite(s) ? (double)(y - s) * (y - s) : double.NaN);
         }
         return [.. losses];
+    }
+
+    /// <summary>
+    /// The misses of a classifier whose label and answer are read as class names — a text classifier keeps its label column as the
+    /// file's text and answers <c>PredictedLabel</c> as text or as a key over the class names. A row without a label is NaN.
+    /// </summary>
+    private static double[]? NamedClassMisses(IDataView scored, string labelColumn)
+    {
+        var label = scored.Schema.GetColumnOrNull(labelColumn);
+        var predicted = scored.Schema.GetColumnOrNull("PredictedLabel");
+        if (label is null || predicted is null)
+            return null;
+        using var cursor = scored.GetRowCursor([label.Value, predicted.Value]);
+        var read = (NamesOf(cursor, label.Value), NamesOf(cursor, predicted.Value));
+        if (read.Item1 is null || read.Item2 is null)
+            return null;
+        var losses = new List<double>();
+        while (cursor.MoveNext())
+        {
+            var truth = read.Item1();
+            losses.Add(string.IsNullOrWhiteSpace(truth) ? double.NaN : string.Equals(truth, read.Item2(), StringComparison.Ordinal) ? 0 : 1);
+        }
+        return [.. losses];
+    }
+
+    // A text column as it is; a key column as the class name its key stands for (the column's key values); null for anything else.
+    private static Func<string?>? NamesOf(DataViewRowCursor cursor, DataViewSchema.Column column)
+    {
+        if (column.Type is TextDataViewType)
+            return Getter<ReadOnlyMemory<char>, string?>(cursor, column, v => v.ToString().Trim());
+        if (column.Type is KeyDataViewType key && key.RawType == typeof(uint) && column.HasKeyValues())
+        {
+            VBuffer<ReadOnlyMemory<char>> names = default;
+            column.GetKeyValues(ref names);
+            var classes = names.DenseValues().Select(v => v.ToString().Trim()).ToArray();
+            return Getter<uint, string?>(cursor, column, k => k >= 1 && k <= classes.Length ? classes[k - 1] : null);
+        }
+        return null;
     }
 
     private static Func<TOut> Getter<TIn, TOut>(DataViewRowCursor cursor, DataViewSchema.Column column, Func<TIn, TOut> map)
