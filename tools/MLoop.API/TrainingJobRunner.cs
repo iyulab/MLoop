@@ -147,6 +147,8 @@ public class TrainingJobRunner : BackgroundService
                     }
                     if (classes is { Error: null, ClassCount: <= 1 })
                         throw new InvalidOperationException($"{TrainingInput.SingleClassRefusal} {TrainingInput.SingleClassGuidance}");
+                    if (classes is { Error: null } && TrainingInput.BinaryLabelRefusal(definition.Task, definition.Label, classes.ClassDistribution.Keys) is { } binaryRefusal)
+                        throw new InvalidOperationException($"{binaryRefusal} {TrainingInput.BinaryLabelGuidance}");
                     if (classes is { Error: null, NeedsAttention: true })
                         notes.Add(classes.Summary);
 

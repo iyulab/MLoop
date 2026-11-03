@@ -503,6 +503,12 @@ public static partial class TrainCommand
                     ErrorConsole.Error(TrainingInput.SingleClassRefusal, TrainingInput.SingleClassGuidance);
                     return PreparedData.Exit(1);
                 }
+
+                if (TrainingInput.BinaryLabelRefusal(effectiveDefinition.Task, effectiveDefinition.Label, distributionResult.ClassDistribution.Keys) is { } binaryRefusal)
+                {
+                    ErrorConsole.Error(binaryRefusal, TrainingInput.BinaryLabelGuidance);
+                    return PreparedData.Exit(1);
+                }
             }
             catch (Exception ex)
             {

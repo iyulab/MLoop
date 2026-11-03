@@ -204,6 +204,29 @@ public static class TrainingInput
         "Check if the correct label column is specified, or if the data contains only one category.";
 
     /// <summary>
+    /// The refusal when a binary-classification task is given a label of more than two values, or null. Every trainer of the
+    /// search fails on such a label ("Schema mismatch for label column: expected Boolean"), and the run said so only after the
+    /// whole first round of trials had failed. Values are compared the way the binary label is read: ignoring case, and as
+    /// the same text however it is composed.
+    /// </summary>
+    public static string? BinaryLabelRefusal(string? task, string label, IEnumerable<string> classNames)
+    {
+        ArgumentNullException.ThrowIfNull(classNames);
+        if (!string.Equals(MLoop.Core.Models.TaskTypes.Canonical(task), "binary-classification", StringComparison.Ordinal))
+            return null;
+        var values = classNames.Select(MLoop.Core.Data.CanonicalText.Nfc).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (values.Count <= 2)
+            return null;
+        var examples = string.Join(", ", values.Take(3).Select(v => $"'{v}'"));
+        return $"A binary-classification model chooses between two classes, but the label '{label}' holds {values.Count} different values ({examples}{(values.Count > 3 ? ", …" : "")}).";
+    }
+
+    /// <summary>What to do when <see cref="BinaryLabelRefusal"/> is the answer.</summary>
+    public const string BinaryLabelGuidance =
+        "Train it as multiclass-classification if each value is a class, as regression if the label is a number to estimate " +
+        "(the task is set by `mloop init --task` or `task:` in mloop.yaml), or reduce the label to two values.";
+
+    /// <summary>
     /// Why <paramref name="balance"/> cannot be honoured for <paramref name="definition"/>, or null: not a balance
     /// option, a task that is not classification, or a weight column that already decides how often rows count. An
     /// option the run silently ignored would train a model its user believes balanced.
