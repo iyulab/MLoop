@@ -887,6 +887,22 @@ public class CsvDataLoaderTests : IDisposable
 
     #region DetectMonotonicColumns
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("Unnamed: 0")]
+    public void DetectMonotonicColumns_AnIndexColumnOfADataframe_IsNotNamed(string indexName)
+    {
+        // The loader removes it before training, so it is not "read as a feature": the warning named an empty column and advised
+        // dropping it.
+        var csv = $"{indexName},ID,Feature1,Label\n0,10,0.5,A\n1,20,0.6,B\n2,30,0.7,A\n3,40,0.8,B\n4,50,0.9,A\n";
+        var csvPath = Path.Combine(_tempDirectory, "mono_index.csv");
+        File.WriteAllText(csvPath, csv);
+
+        var result = CsvDataLoader.DetectMonotonicColumns(csvPath, "Label");
+
+        Assert.Equal(["ID"], result);
+    }
+
     [Fact]
     public void DetectMonotonicColumns_ConsecutiveIntegers_ReturnsColumn()
     {

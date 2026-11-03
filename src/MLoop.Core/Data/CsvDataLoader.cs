@@ -1704,6 +1704,11 @@ public class CsvDataLoader : DataProviderBase
             {
                 var colName = headers[col].Trim();
 
+                // An index column of a dataframe (empty name, "Unnamed: 0") is removed before training, so it is not read as a feature -
+                // naming it with advice to drop it said the opposite of what the run then did, and printed an empty name.
+                if (IsLikelyIndexColumn(colName))
+                    continue;
+
                 // Skip label column
                 if (!string.IsNullOrEmpty(labelColumn) &&
                     colName.Equals(labelColumn, StringComparison.OrdinalIgnoreCase))

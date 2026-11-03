@@ -1029,7 +1029,10 @@ public class TrainingEngine : ITrainingEngine
         var dropped = schema.Columns.Where(c => c.Purpose == "Exclude").Select(c => c.Name)
             .Append(config.LabelColumn)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var kept = sample.Header.Select((name, i) => (Name: name.Trim(), Index: i)).Where(h => !dropped.Contains(h.Name)).ToList();
+        // The loader removes an index column (a dataframe's, with an empty name or "Unnamed: 0") before it trains; the sample is read
+        // from the file itself, and a row that kept it could not be scored ("Name cannot be null or white space").
+        var kept = sample.Header.Select((name, i) => (Name: name.Trim(), Index: i))
+            .Where(h => !dropped.Contains(h.Name) && !CsvDataLoader.IsLikelyIndexColumn(h.Name)).ToList();
         var rows = sample.Rows.Take(AnswerProfileRows)
             .Select(r => kept.ToDictionary(h => h.Name, h => (object)(h.Index < r.Length ? r[h.Index] ?? "" : ""), StringComparer.OrdinalIgnoreCase))
             .ToArray();
@@ -1103,6 +1106,11 @@ public class TrainingEngine : ITrainingEngine
 
             foreach (var colName in columnNames)
             {
+                // An index column of a dataframe (an empty name, "Unnamed: 0") is removed before the model is trained and again before a
+                // file is scored, so the model has no such input. Recorded as a feature, a column named "" could not be given to the
+                // model's schema at all - every prediction of a model trained on such a file failed with "Name cannot be null or white space".
+                if (CsvDataLoader.IsLikelyIndexColumn(colName))
+                    continue;
                 var colIndex = Array.IndexOf(columnNames, colName);
                 var purpose = GetColumnPurposeEnhanced(colName, labelColumn, layout);
                 var (dataType, categoricalValues, uniqueCount) = InferColumnTypeFromData(

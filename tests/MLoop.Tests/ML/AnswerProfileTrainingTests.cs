@@ -81,6 +81,33 @@ public class AnswerProfileTrainingTests : IDisposable
     }
 
     /// <summary>
+    /// A file saved from a dataframe with its index (the first column has an empty name, or "Unnamed: 0") is trained with that column
+    /// removed. The answer profile scored the sample's rows by the file's own header, so a row carried the unnamed column and the
+    /// scoring failed ("Name cannot be null or white space"): the model had no answer profile and said so as a warning on every run.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("Unnamed: 0")]
+    public async Task A_file_with_an_unnamed_index_column_still_profiles_the_answers(string indexName)
+    {
+        var csv = Path.Combine(_tempDir, "indexed.csv");
+        var rnd = new Random(13);
+        var lines = new List<string> { $"{indexName},size,rooms,price" };
+        for (var i = 0; i < 300; i++)
+        {
+            var size = rnd.Next(30, 200);
+            var rooms = rnd.Next(1, 6);
+            lines.Add(string.Create(CultureInfo.InvariantCulture, $"{i},{size},{rooms},{size * 3.5 + rooms * 10 + rnd.NextDouble() * 5:F2}"));
+        }
+        await File.WriteAllLinesAsync(csv, lines);
+
+        var (profile, _, _) = await TrainAsync(csv, "price", "regression");
+
+        Assert.NotNull(profile.Prediction);
+        Assert.True(profile.Prediction!.IsNumeric);
+    }
+
+    /// <summary>
     /// A model whose only input is free text has no column to profile; its answers are still recorded,
     /// since they are the one drift signal such a model has. The profile used to be skipped whole.
     /// </summary>
