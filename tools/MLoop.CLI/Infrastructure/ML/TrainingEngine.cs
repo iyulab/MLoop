@@ -965,8 +965,10 @@ public class TrainingEngine : ITrainingEngine
             await _fileSystem.WriteJsonAsync(
                 _fileSystem.CombinePath(experimentPath, ExperimentLayout.DriftProfileFileName), profile, cancellationToken);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException or FormatException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Whatever goes wrong in this side artifact, the model it describes is trained: a run that took minutes is not thrown away
+            // for a profile (a table with a column the profile cannot name once failed here, after the search, with a dictionary error).
             WarningConsole.Warn($"Could not write {ExperimentLayout.DriftProfileFileName}: {ex.Message} — drift cannot be measured for this model.");
         }
     }

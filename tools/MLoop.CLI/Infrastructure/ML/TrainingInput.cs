@@ -60,6 +60,57 @@ public static class TrainingInput
             : message;
     }
 
+    /// <summary>
+    /// Why a table cannot be trained on because two of its columns share a name, or <c>null</c>. A column is found by its name - by the
+    /// loader, the saved schema, a prediction's input - so the second of two columns named alike either shadows the first or fails
+    /// after the whole search ("An item with the same key has already been added"), and the model it would have made is lost. Empty
+    /// names are not counted: an index column has none and is removed. A name written over two lines is read with the break as a space,
+    /// and names are compared as the same text however composed, ignoring nothing else - column names are case-sensitive.
+    /// </summary>
+    public static string? DuplicateColumnRefusal(string dataFile, string? task)
+    {
+        if (DataLoaderFactory.IsDirectoryBased(task))
+            return null;
+        var delimiter = dataFile.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase) ? "\t"
+            : dataFile.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? ","
+            : null;
+        if (delimiter is null)
+            return null;
+        string[]? header;
+        try
+        {
+            using var reader = EncodingDetector.OpenReader(dataFile);
+            using var csv = new CsvHelper.CsvReader(reader, new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.InvariantCulture)
+            {
+                Delimiter = delimiter,
+                HasHeaderRecord = false,
+                BadDataFound = null,
+                MissingFieldFound = null,
+            });
+            header = csv.Read() ? csv.Parser.Record : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException)
+        {
+            return null;
+        }
+        if (header is null)
+            return null;
+
+        var named = header
+            .Select((name, index) => (Name: MLoop.Core.Data.CanonicalText.Nfc(System.Text.RegularExpressions.Regex.Replace(name.TrimStart('\uFEFF'), @"\r\n|\r|\n", " ")), Position: index + 1))
+            .Where(c => c.Name.Length > 0)
+            .GroupBy(c => c.Name, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .ToList();
+        if (named.Count == 0)
+            return null;
+        var said = string.Join("; ", named.Take(3).Select(g => $"'{g.Key}' is columns {string.Join(", ", g.Select(c => c.Position))}"));
+        return $"{Path.GetFileName(dataFile)} has columns that share a name: {said}{(named.Count > 3 ? "; …" : "")}. A column is found by its name, so each name must be its own.";
+    }
+
+    /// <summary>What to do when <see cref="DuplicateColumnRefusal"/> is the answer.</summary>
+    public const string DuplicateColumnGuidance = "Rename one of them in the file, or delete the column you do not need.";
+
     /// <summary>A refusal and, when there is one, the way out.</summary>
     public sealed record Refusal(string Message, string? Hint = null);
 

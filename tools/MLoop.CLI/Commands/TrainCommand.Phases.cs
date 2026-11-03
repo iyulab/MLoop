@@ -427,6 +427,12 @@ public static partial class TrainCommand
             return PreparedData.Exit(1);
         }
 
+        if (TrainingInput.DuplicateColumnRefusal(resolvedDataFile, effectiveDefinition.Task) is { } duplicateRefusal)
+        {
+            ErrorConsole.Error(duplicateRefusal, TrainingInput.DuplicateColumnGuidance);
+            return PreparedData.Exit(1);
+        }
+
         // Handle missing label values (T4.2)
         // Default behavior: drop rows without a target wherever the label is one (DropsMissingLabelsByDefault)
         // The legacy spellings this used to list are folded before they get here

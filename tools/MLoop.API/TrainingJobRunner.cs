@@ -127,6 +127,8 @@ public class TrainingJobRunner : BackgroundService
                         Path.Combine(projectRoot, ".mloop", "merged", $"{job.JobId}.csv"));
                     dataFile = merge.Path ?? throw new InvalidOperationException($"{merge.Error} {merge.Guidance}");
                 }
+                if (TrainingInput.DuplicateColumnRefusal(dataFile, definition.Task) is { } duplicateRefusal)
+                    throw new InvalidOperationException($"{duplicateRefusal} {TrainingInput.DuplicateColumnGuidance}");
                 var prepared = await TrainingInput.PrepareAsync(dataFile, definition, job.MaxRows, projectRoot);
                 if (prepared.DroppedMissingLabels > 0)
                     notes.Add($"{prepared.DroppedMissingLabels} rows without a label dropped");
