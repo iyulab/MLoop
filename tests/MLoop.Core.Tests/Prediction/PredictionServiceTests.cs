@@ -966,11 +966,18 @@ public class PredictionServiceTests : IDisposable
 
         Assert.Equal("time-series-anomaly", result.TaskType);
         Assert.Equal(series.Count, result.Rows.Count);
-        Assert.All(result.Rows, r =>
+        // The detector judges a point against a window of earlier points, so the rows that open the series carry no
+        // verdict (null, with one warning) — see TimeSeriesAnomalyWarmup. Every row after that run is judged.
+        var unjudged = result.Rows.TakeWhile(r => r.IsAnomaly is null).Count();
+        Assert.InRange(unjudged, 1, 8);   // a leading run, never longer than the detector window
+        Assert.All(result.Rows.Take(unjudged), r => Assert.Null(r.AnomalyScore));
+        Assert.All(result.Rows.Skip(unjudged), r =>
         {
             Assert.NotNull(r.IsAnomaly);      // alert slot surfaced
             Assert.NotNull(r.AnomalyScore);   // raw-score slot surfaced
         });
+        Assert.NotNull(result.Warnings);
+        Assert.Contains(result.Warnings!, w => w.Contains($"first {unjudged} of {series.Count} rows", StringComparison.Ordinal));
         Assert.Contains(result.Rows, r => r.IsAnomaly == true);   // the spike alerts
         // The raw score is NOT a [0,1] boundary-0.5 probability — no confidence may be fabricated
         // from it until the TS-anomaly signal mapping is designed (P3-3).
