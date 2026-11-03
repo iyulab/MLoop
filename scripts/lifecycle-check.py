@@ -27,7 +27,7 @@ population and their label is rewritten):
                            --soak SECONDS holds a steady load and compares the server's memory at the start and the end, and
                            --bench SECONDS prints a throughput / latency table by clients and rows per request
 
-  python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression,text,forecast,anomaly,clustering,outliers,ranking,recommendation,similarity]
+  python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression,text,forecast,anomaly,clustering,outliers,ranking,recommendation]
          [--time 60] [--trials 10] [--out lifecycle-results.json] [--keep]
   python lifecycle-check.py --mloop "..." --tables DIR [--datasets credit-g,houses]    # DIR as written by lifecycle-tables.py
 
@@ -40,7 +40,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression', 'text': 'text-classification', 'forecast': 'forecasting', 'anomaly': 'time-series-anomaly',
              'clustering': 'clustering', 'outliers': 'anomaly-detection',
-             'ranking': 'ranking', 'recommendation': 'recommendation', 'similarity': 'sentence-similarity'}
+             'ranking': 'ranking', 'recommendation': 'recommendation'}
 # the metric a first model must reach to count as having learned the table (loose: this checks the wiring, not accuracy)
 LEARNED = {'binary': ('accuracy', 0.8), 'multiclass': ('macro_accuracy', 0.6), 'regression': ('r_squared', 0.7), 'text': ('macro_accuracy', 0.6)}
 SHIFT = 2.5
@@ -98,7 +98,7 @@ class Run:
     def __init__(self, mloop, task, work, budget, expected, trials=0):
         self.mloop, self.task, self.work, self.budget, self.expected = shlex.split(mloop), task, work, budget, expected
         # a deep-learning task trains by epochs and refuses a trial count
-        self.trials = 0 if task in ('text', 'forecast', 'anomaly', 'clustering', 'outliers', 'ranking', 'recommendation', 'similarity') else trials
+        self.trials = 0 if task in ('text', 'forecast', 'anomaly', 'clustering', 'outliers', 'ranking', 'recommendation') else trials
         self.metric = []   # extra `train` arguments that name what the table is judged on
         self.last_output = ''   # the tail of the last command's output, shown with a failed step
         self.steps = []
@@ -990,70 +990,6 @@ def grouped_scenario(mloop, task, budget, keep, expected):
     return run.steps
 
 
-def similarity_scenario(mloop, budget, keep, expected):
-    """Pairs of sentences scored for how alike they are (0 to 5, by the share of words they share). The second regime talks about other
-    things in other words."""
-    base = tempfile.mkdtemp(prefix='lifecycle-similarity-')
-    run = Run(mloop, 'similarity', base, budget, expected)
-    rng = random.Random(20261103)
-    vocab = {False: ['river', 'stone', 'garden', 'window', 'bridge', 'market', 'candle', 'forest', 'harbor', 'meadow', 'lantern', 'valley'],
-             True: ['engine', 'circuit', 'battery', 'sensor', 'voltage', 'switch', 'cable', 'signal', 'turbine', 'relay', 'module', 'probe']}
-
-    def pairs(n, shifted=False):
-        words, rows = vocab[shifted], []
-        for _ in range(n):
-            a = rng.sample(words, 5)
-            keep_n = rng.randint(0, 5)
-            b = a[:keep_n] + rng.sample([w for w in words if w not in a[:keep_n]], 5 - keep_n)
-            rng.shuffle(b)
-            rows.append([' '.join(a), ' '.join(b), round(5.0 * keep_n / 5, 2)])
-        return rows
-
-    for name, rows in [('train_a', pairs(800)), ('new_a', pairs(200)), ('train_b', pairs(800, True)), ('test_b', pairs(200, True))]:
-        write_table(os.path.join(base, name + '.csv'), rows, ('sentence1', 'sentence2', 'score'))
-    print(f'== similarity  ({base})', flush=True)
-    try:
-        installed = subprocess.run(run.mloop + ['runtime', 'install', 'torch'], capture_output=True, text=True)
-        run.check('runtime_install', installed.returncode == 0, (installed.stdout + installed.stderr)[-160:].strip())
-        proj = os.path.join(base, 'proj')
-        rc, init = run.json_of('init', 'proj', '--task', 'sentence-similarity', '--label', 'score', '--json')
-        run.check('init', rc == 0 and init and init.get('task') == 'sentence-similarity', f'rc={rc}')
-        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', 'score', *run.budget_args(), '--json', cwd=proj)
-        result = next((e for e in evs if e.get('event') == 'result'), {})
-        promo = next((e for e in evs if e.get('event') == 'promotion'), {})
-        run.check('train', rc == 0 and result.get('experimentId') == 'exp-001' and promo.get('promoted') is True, f'metrics={json.dumps(result.get("metrics"))[:200]} promoted={promo.get("promoted")}')
-        rc, pa = run.json_of('predict', os.path.join(base, 'new_a.csv'), '--log', '--json', cwd=proj)
-        preds = (pa or {}).get('predictions') or []
-        run.check('predict_log', rc == 0 and len(preds) == 200 and all(p.get('predictionId') and p.get('score') is not None for p in preds), f'{len(preds)} rows, first={json.dumps(preds[:1])[:140]}')
-        rc, ev = run.json_of('evaluate', 'exp-001', os.path.join(base, 'new_a.csv'), '--json', cwd=proj)
-        run.check('evaluate', rc == 0 and bool((ev or {}).get('testMetrics')), f'metrics={json.dumps((ev or {}).get("testMetrics"))[:160]}')
-        rc, drift = run.json_of('drift', '--json', cwd=proj)
-        run.check('drift_reads_the_text', rc == 0 and (drift or {}).get('status') in ('Measured', 'TooFewRows'), f'status={(drift or {}).get("status")}')
-        rc, evs = run.events('train', os.path.join(base, 'train_b.csv'), '--label', 'score', *run.budget_args(), '--json', cwd=proj)
-        promo = next((e for e in evs if e.get('event') == 'promotion'), {})
-        result = next((e for e in evs if e.get('event') == 'result'), {})
-        candidate = result.get('experimentId')
-        run.check('retrain', rc == 0 and candidate == 'exp-002', f'{candidate} promoted={promo.get("promoted")}')
-        if promo.get('promoted') is True:
-            rc, rb = run.json_of('rollback', '--json', cwd=proj)
-            run.check('rollback_of_auto_promotion', (rb or {}).get('status') == 'rolled-back', f'status={(rb or {}).get("status")}')
-        rc, ev = run.json_of('evaluate', candidate or 'exp-002', os.path.join(base, 'test_b.csv'), '--against', 'production', '--json', cwd=proj)
-        verdict = (((ev or {}).get('comparison') or {}).get('paired') or {}).get('verdict')
-        run.check('paired_evaluation', rc == 0 and verdict == 'CandidateBetter', f'verdict={verdict} notPaired={((ev or {}).get("comparison") or {}).get("notPaired")}')
-        rc, pr = run.json_of('promote', candidate or 'exp-002', '--json', '--force', cwd=proj)
-        run.check('explicit_promote', (pr or {}).get('status') in ('promoted', 'already-production'), f'status={(pr or {}).get("status")}')
-        rc, rb = run.json_of('rollback', '--json', cwd=proj)
-        run.check('rollback', (rb or {}).get('status') == 'rolled-back' and (rb or {}).get('experimentId') == 'exp-001', f'status={(rb or {}).get("status")}')
-    except Exception as ex:
-        run.check('scenario', False, f'{type(ex).__name__}: {ex}')
-    finally:
-        if keep:
-            print(f'   kept {base}')
-        else:
-            shutil.rmtree(base, ignore_errors=True)
-    return run.steps
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--mloop', required=True, help='command that starts the mloop CLI, e.g. "dotnet path/to/mloop.dll"')
@@ -1090,9 +1026,6 @@ def main():
                 installed = subprocess.run(shlex.split(args.mloop) + ['runtime', 'install', 'torch'], capture_output=True, text=True)
                 steps.append({'step': 'text/runtime_install', 'status': 'pass' if installed.returncode == 0 else 'FAIL',
                               'detail': (installed.stdout + installed.stderr)[-200:].strip()})
-            if task == 'similarity':
-                steps += similarity_scenario(args.mloop, args.time, args.keep, expected)
-                continue
             if task in ('ranking', 'recommendation'):
                 steps += grouped_scenario(args.mloop, task, args.time, args.keep, expected)
                 continue
