@@ -15,7 +15,7 @@ public sealed class FoldPlan
     public const int HoldoutThreshold = 15_000;
 
     /// <summary>Folds averaged below <see cref="HoldoutThreshold"/>.</summary>
-    public const int DefaultFolds = 5;
+    public const int DefaultFolds = 3;
 
     /// <summary>The holdout's share at and above the threshold: one in ten rows.</summary>
     public const int HoldoutParts = 10;
