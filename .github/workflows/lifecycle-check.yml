@@ -54,12 +54,18 @@ jobs:
         sudo ln -sf "$omp" "$(dirname "$omp")/libiomp5.so"
         sudo ldconfig
 
+    - name: Build the API
+      # `mloop serve` starts the API assembly beside the CLI or the one MLOOP_API_PATH names
+      if: inputs.serve == 'true'
+      run: dotnet build tools/MLoop.API -c Release
+
     - name: Walk
       env:
         TASKS: ${{ inputs.tasks }}
         TRIALS: ${{ inputs.trials }}
         EXPECTED: ${{ inputs.expected }}
         SERVE: ${{ inputs.serve }}
+        MLOOP_API_PATH: ${{ github.workspace }}/tools/MLoop.API/bin/Release/net10.0/MLoop.API.dll
       run: |
         python3 scripts/lifecycle-check.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" \
           --tasks "$TASKS" --trials "$TRIALS" --time 300 $([ "$SERVE" = true ] || echo --no-serve) --expected-failures "$EXPECTED" --server-log server.log --out lifecycle-results.json
