@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  # A run on request (any branch) validates on ubuntu only, like a pull request.
+  workflow_dispatch:
   # Documentation is not skipped. Two of this repository's guards assert about published text
   # rather than about code — one checks that every command example in the README still parses,
   # the other that no internal work-item id, machine path or private-workspace link reaches a
@@ -33,7 +35,7 @@ jobs:
         # Cost diet: PRs validate on ubuntu only (fast, cheap feedback); pushes to
         # main/develop run the full 3-OS matrix (windows=2x, macOS=10x billing) to keep
         # cross-OS ML.NET native validation on the integration branch before release.
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+        os: ${{ github.event_name != 'push' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
         dotnet-version: ['10.0.x']
       fail-fast: false
 
@@ -60,6 +62,16 @@ jobs:
         # GitHub evicts caches (7-day / 10GB) so stale extras don't accumulate.
         restore-keys: |
           ${{ runner.os }}-nuget-
+
+    - name: Time-series prerequisite (Linux)
+      # ML.NET's MKL native links an Intel-ABI OpenMP runtime that Linux leaves to the system
+      # (TimeSeriesNativeSupport); without it every time-series test is skipped on this leg.
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get install -y libomp5
+        omp=$(find /usr/lib -name 'libomp.so.5' | head -n 1)
+        sudo ln -sf "$omp" "$(dirname "$omp")/libiomp5.so"
+        sudo ldconfig
 
     - name: Restore dependencies
       run: dotnet restore MLoop.slnx

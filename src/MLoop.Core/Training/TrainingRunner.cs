@@ -1906,18 +1906,24 @@ public partial class TrainingRunner
                     using var forecastCursor = predictions.GetRowCursor(new[] { forecastCol.Value });
                     var forecastGetter = forecastCursor.GetGetter<VBuffer<float>>(forecastCol.Value);
 
-                    // The forecast made at the last training row is the one that looks at the held-out points. The row
-                    // after it is the end of the held-out stretch, whose forecast is of the points beyond the file —
-                    // scored against the held-out points it reported a phase error as a model error (a noiseless
+                    // The forecast made at the last training row is the one that looks at the held-out points. The forecast
+                    // of the file's last row is of the points beyond the file — scored against the held-out points it reported a phase error as a model error (a noiseless
                     // season of period 12 at horizon 5 read a mean absolute error of about 6 where the true one is near 0).
+                    //
+                    // The whole series is still read through the model: the SSA transformer is stateful, and the state it
+                    // leaves is what the model is saved with — the forecast of a saved model (predict replays the series on
+                    // it) is of the points after the series only if the training pass has read the series to its end.
+                    // Stopping at the held-out stretch moved a saved model's forecast by the rows left unread.
                     VBuffer<float> forecastBuffer = default;
+                    VBuffer<float> heldOutForecast = default;
                     var forecastRow = 0;
                     while (forecastCursor.MoveNext())
                     {
                         forecastGetter(ref forecastBuffer);
                         if (++forecastRow == trainSize)
-                            break;
+                            forecastBuffer.CopyTo(ref heldOutForecast);
                     }
+                    forecastBuffer = heldOutForecast;
 
                     var forecastedValues = forecastBuffer.DenseValues().ToArray();
                     var holdoutActual = actualValues.Skip(trainSize).Take(horizon).ToArray();
