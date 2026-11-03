@@ -97,6 +97,7 @@ class Run:
         self.mloop, self.task, self.work, self.budget, self.expected = shlex.split(mloop), task, work, budget, expected
         self.trials = trials
         self.metric = []   # extra `train` arguments that name what the table is judged on
+        self.last_output = ''   # the tail of the last command's output, shown with a failed step
         self.steps = []
 
     def budget_args(self):
@@ -105,6 +106,7 @@ class Run:
 
     def cli(self, *args, cwd=None):
         p = subprocess.run(self.mloop + list(args), cwd=cwd or self.work, capture_output=True, text=True)
+        self.last_output = (p.stdout + p.stderr)[-600:].strip()
         return p.returncode, p.stdout, p.stderr
 
     def json_of(self, *args, cwd=None):
@@ -128,6 +130,8 @@ class Run:
 
     def check(self, step, ok, detail=''):
         name = f'{self.task}/{step}'
+        if not ok and self.last_output:
+            detail = f'{detail} | last output: {self.last_output}'
         known = step in self.expected
         status = ('xpass' if ok else 'xfail') if known else ('pass' if ok else 'FAIL')
         self.steps.append({'step': name, 'status': status, 'detail': detail})
