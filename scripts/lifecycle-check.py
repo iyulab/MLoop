@@ -564,7 +564,9 @@ def make_series(t0, n, regime, rng):
 
 def forecast_error(preds, actual_rows):
     """Mean absolute error of a horizon forecast (the rows of `predict --json`) against the values that followed."""
-    return sum(abs(p['score'] - float(a[0])) for p, a in zip(preds, actual_rows)) / max(1, len(actual_rows))
+    if len(preds) != len(actual_rows):
+        return None   # an empty or short forecast is not a good one
+    return sum(abs(p['score'] - float(a[0])) for p, a in zip(preds, actual_rows)) / len(actual_rows)
 
 
 def forecast_scenario(mloop, budget, keep, expected):
@@ -598,7 +600,7 @@ def forecast_scenario(mloop, budget, keep, expected):
 
         rc, fa = run.json_of('predict', '--json', cwd=proj)
         preds = (fa or {}).get('predictions') or []
-        err_a = forecast_error(preds, new_a) if preds else None
+        err_a = forecast_error(preds, new_a)
         run.check('forecast', rc == 0 and len(preds) == FORECAST_HORIZON and all(p.get('scoreLowerBound') is not None and p['scoreLowerBound'] <= p['score'] <= p['scoreUpperBound'] for p in preds)
                   and err_a is not None and err_a < 6, f'{len(preds)} steps, error against the values that followed={err_a}')
 
@@ -619,12 +621,12 @@ def forecast_scenario(mloop, budget, keep, expected):
 
         # the same question put to both models: what comes next in the new regime
         rc, fc = run.json_of('predict', '--experiment', candidate or 'exp-002', '--json', cwd=proj)
-        err_candidate = forecast_error((fc or {}).get('predictions') or [], new_b) if fc else None
+        err_candidate = forecast_error((fc or {}).get('predictions') or [], new_b)
         rc, fp = run.json_of('predict', '--json', cwd=proj)
-        err_production = forecast_error((fp or {}).get('predictions') or [], new_b) if fp else None
+        err_production = forecast_error((fp or {}).get('predictions') or [], new_b)
         # production replays train_a: its forecast continues the old regime, so it misses the new one by about the shift
         run.check('retrained_forecasts_the_new_regime', err_candidate is not None and err_production is not None and err_candidate < 8 and err_candidate < err_production,
-                  f'candidate error={err_candidate} production error={err_production}')
+                  f'candidate error={err_candidate} production error={err_production} candidate answered={json.dumps(fc)[:200] if fc else None}')
 
         rc, ev = run.json_of('evaluate', candidate or 'exp-002', os.path.join(base, 'test_b.csv'), '--against', 'production', '--json', cwd=proj)
         verdict = (((ev or {}).get('comparison') or {}).get('paired') or {}).get('verdict')

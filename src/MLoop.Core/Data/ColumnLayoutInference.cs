@@ -125,6 +125,9 @@ public static class ColumnLayoutInference
     /// <exception cref="ArgumentException">No column is named <paramref name="label"/>.</exception>
     public static ColumnLayout Infer(MLContext mlContext, string path, string? label, char separator = ',')
     {
+        if (separator == ',' && OneColumnSeries(path, label) is { } series)
+            return series;
+
         var sample = ColumnLayoutSample.Read(path);
         Split split;
         try
@@ -163,6 +166,57 @@ public static class ColumnLayoutInference
         };
         return new ColumnLayout(options, label, [.. groups.Select(g => new ColumnLayoutColumn(g.Name, g.Purpose))],
             [.. columns.Select((c, i) => new ColumnLayoutFileColumn(c.Name, c.Kind, purposes[i]))]);
+    }
+
+    /// <summary>
+    /// The layout of a file of one column of numbers — a series, which has no other column to split it from. A file
+    /// whose header is one field is otherwise one that is not comma-separated, so the column must be numbers all
+    /// the way for it to be read as a series. <c>null</c> for a file
+    /// that is not one. One authority for every reader of a series (training, <c>evaluate</c>, <c>predict</c>): before
+    /// it only training read one, and <c>evaluate</c> refused the file the model was trained on.
+    /// </summary>
+    public static ColumnLayout? OneColumnSeries(string path, string? label)
+    {
+        string name;
+        try
+        {
+            using var reader = new StreamReader(path, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            if (reader.ReadLine() is not { } header || CsvFieldParser.ParseFields(header) is not [var only] || only.Trim().Length == 0)
+                return null;
+            name = only.Trim();
+            var rows = 0;
+            while (reader.ReadLine() is { } line)
+            {
+                if (line.Length == 0)
+                    continue;   // a blank line is no row (TableRows); the series commands read gaps from the loader
+                if (CsvFieldParser.ParseFields(line) is not [var cell]
+                    || (cell.Trim().Length > 0 && !double.TryParse(cell, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)))
+                    return null;
+                rows++;
+            }
+
+            if (rows == 0)
+                return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+
+        if (label is { Length: > 0 } && !label.Equals(name, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var purpose = label is { Length: > 0 } ? ColumnLayoutPurpose.Label : ColumnLayoutPurpose.Numeric;
+        var options = new TextLoader.Options
+        {
+            Columns = [new TextLoader.Column(name, DataKind.Single, 0)],
+            Separators = [','],
+            HasHeader = true,
+            AllowQuoting = true,
+            MissingRealsAsNaNs = true,
+        };
+        return new ColumnLayout(options, label is { Length: > 0 } ? label : null, [new ColumnLayoutColumn(name, purpose)],
+            [new ColumnLayoutFileColumn(name, DataKind.Single, purpose)]);
     }
 
     /// <summary>

@@ -564,26 +564,31 @@ public class EvaluationEngine
 
             if (forecastCol.HasValue && actualCol.HasValue)
             {
-                // Get actual values and last forecast
-                var actualValues = new List<float>();
-                VBuffer<float> lastForecast = default;
+                // The last `horizon` rows are the held-out stretch, and the forecast that looks at them is the one made at the
+                // row before them: the last row's forecast is of the points beyond the file (see TrainingRunner's holdout).
 
                 using var cursor = predictions.GetRowCursor(new[] { forecastCol.Value, actualCol.Value });
                 var forecastGetter = cursor.GetGetter<VBuffer<float>>(forecastCol.Value);
                 var actualGetter = cursor.GetGetter<float>(actualCol.Value);
 
+                VBuffer<float> forecastBuffer = default;
+                var forecastsByRow = new List<float[]>();
+                var actualValues = new List<float>();
                 while (cursor.MoveNext())
                 {
                     float val = 0;
                     actualGetter(ref val);
                     actualValues.Add(val);
-                    forecastGetter(ref lastForecast);
+                    forecastGetter(ref forecastBuffer);
+                    forecastsByRow.Add(forecastBuffer.DenseValues().ToArray());
                 }
 
-                var forecastedValues = lastForecast.DenseValues().ToArray();
+                var horizon = forecastsByRow.Count > 0 ? forecastsByRow[^1].Length : 0;
+                var forecastedValues = actualValues.Count > horizon && horizon > 0
+                    ? forecastsByRow[actualValues.Count - horizon - 1]
+                    : [];
                 if (forecastedValues.Length > 0 && actualValues.Count > forecastedValues.Length)
                 {
-                    var horizon = forecastedValues.Length;
                     var holdoutStart = actualValues.Count - horizon;
                     var holdoutActual = actualValues.Skip(holdoutStart).Take(horizon).ToArray();
 

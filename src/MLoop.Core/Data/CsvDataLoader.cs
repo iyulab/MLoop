@@ -112,21 +112,8 @@ public class CsvDataLoader : DataProviderBase
         // InferColumns may classify these as Text, causing TF-IDF featurization and schema mismatches.
         WarnMixedTypeColumns(mlnetCompatiblePath, labelColumn, _log);
 
-        // Handle single-column CSV (e.g., univariate time series)
-        // InferColumns cannot determine delimiter for single-column files
+        // A file of one column of numbers (a univariate series) is read by the layout authority like every other file.
         var csvHeaders = ReadCsvHeaders(mlnetCompatiblePath);
-        if (csvHeaders.Length == 1)
-        {
-            var singleColName = csvHeaders[0];
-            return _mlContext.Data.CreateTextLoader(new TextLoader.Options
-            {
-                Columns = [new TextLoader.Column(singleColName, DataKind.Single, 0)],
-                Separators = [','],
-                HasHeader = true,
-                AllowQuoting = true,
-                MissingRealsAsNaNs = true,
-            }).Load(mlnetCompatiblePath);
-        }
 
         // Infer columns from the file
         TextLoader.Options loaderOptions;

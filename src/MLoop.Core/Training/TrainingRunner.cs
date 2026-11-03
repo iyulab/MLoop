@@ -1906,11 +1906,17 @@ public partial class TrainingRunner
                     using var forecastCursor = predictions.GetRowCursor(new[] { forecastCol.Value });
                     var forecastGetter = forecastCursor.GetGetter<VBuffer<float>>(forecastCol.Value);
 
-                    // Move to last row to get the final forecast
+                    // The forecast made at the last training row is the one that looks at the held-out points. The row
+                    // after it is the end of the held-out stretch, whose forecast is of the points beyond the file —
+                    // scored against the held-out points it reported a phase error as a model error (a noiseless
+                    // season of period 12 at horizon 5 read a mean absolute error of about 6 where the true one is near 0).
                     VBuffer<float> forecastBuffer = default;
+                    var forecastRow = 0;
                     while (forecastCursor.MoveNext())
                     {
                         forecastGetter(ref forecastBuffer);
+                        if (++forecastRow == trainSize)
+                            break;
                     }
 
                     var forecastedValues = forecastBuffer.DenseValues().ToArray();
