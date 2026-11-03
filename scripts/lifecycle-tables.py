@@ -11,6 +11,11 @@ Each table becomes a directory: train_a.csv, new_a.csv (regime A, in-regime rows
 new_b.csv (regime B), and manifest.json. Needs pandas and numpy.
 
   python lifecycle-tables.py --source <openml-benchmarks dir> --out <dir> [--datasets credit-g,houses] [--per-task 4] [--shape korean-export]
+  python lifecycle-tables.py --synthetic wide,many-classes,spelling,duplicate-name --out <dir>
+
+--synthetic needs no source: it writes tables of the shapes real exports have and a small public table does not — a hundred and
+fifty columns, a label with a hundred classes, one class spelled two ways (3 and 3.00), two columns of one name. The last is
+refused by training, and the manifest says so (expect: refused): the walk asserts the refusal and stops there.
 
 --source is a folder holding MANIFEST.csv and data/<id>_<name>.csv (OpenML suites as downloaded by the benchmark
 fetcher). Without --datasets, each task kind contributes the first --per-task tables (by name) of 1,500 to 50,000
@@ -156,15 +161,87 @@ def cut(row, source, out, shape='plain'):
     return f'{name}: {task} label={label} moves={col} rows={manifest["rows"]}'
 
 
+SYNTHETIC = ('wide', 'many-classes', 'spelling', 'duplicate-name')
+
+
+def synthetic_table(kind, regime_b, n, rng):
+    """n rows of a synthetic table: a label that follows the moving column f0 (and a few more) as it sits in regime A. In regime B f0
+    is shifted by 3, which reads as another answer to a model that learned A."""
+    width = {'wide': 150, 'many-classes': 12, 'spelling': 8, 'duplicate-name': 6}[kind]
+    x = rng.normal(0, 1, size=(n, width))
+    if regime_b:
+        x[:, 0] += 3.0
+    z = 1.5 * (x[:, 0] - (3.0 if regime_b else 0.0)) - x[:, 1] + 0.5 * x[:, 2] + rng.normal(0, 0.6, size=n)
+    if kind == 'many-classes':
+        # 100 classes a tree can learn: the tenth of f0 (as it sits in regime A) times the tenth of f1 — a label cut finer from one noisy
+        # score is not a signal, and a table the first model learns nothing from is refused by the promotion gate and ends the walk
+        edges = np.quantile(np.random.default_rng(1).normal(size=200000), np.linspace(0, 1, 11)[1:-1])
+        y = pd.Series([f'class_{10 * i + j:03d}' for i, j in zip(np.searchsorted(edges, x[:, 0] - (3.0 if regime_b else 0.0)), np.searchsorted(edges, x[:, 1]))])
+    elif kind == 'spelling':
+        k = np.digitize(z, [-1.0, 1.0])
+        # the same three numbers, spelled two ways: 0 / 0.00, 1 / 1.00, 2 / 2.00 — one class each
+        y = pd.Series([f'{v}.00' if rng.random() < 0.4 else str(v) for v in k])
+    else:
+        y = pd.Series((z > 0).astype(int))
+    cols = [f'f{i}' for i in range(width)]
+    if kind == 'duplicate-name':
+        cols[-1] = cols[-2]
+    df = pd.DataFrame(x.round(4), columns=cols)
+    df['y'] = y.values
+    return df
+
+
+def synthetic(kind, out):
+    rng = np.random.default_rng(SEED)
+    sizes = {'wide': (3000, 1000, 300), 'many-classes': (12000, 2400, 300), 'spelling': (3000, 1000, 300), 'duplicate-name': (1500, 400, 300)}[kind]
+    n_a, n_b, n_new = sizes
+    n_test = 400 if kind == 'many-classes' else 300   # the paired comparison of the walk needs rows enough to tell two models apart
+    task = 'binary' if kind in ('wide', 'duplicate-name') else 'multiclass'
+    a, b = synthetic_table(kind, False, n_a + n_new, rng), synthetic_table(kind, True, n_b + n_new + n_test, rng)
+    classes = sorted(a['y'].astype(str).unique())
+    if task == 'multiclass':
+        # concept shift in B, as the public tables get: a class becomes the next class
+        nxt = {c: classes[(i + 1) % len(classes)] for i, c in enumerate(classes)}
+        b['y'] = b['y'].astype(str).map(lambda c: nxt.get(c, c))
+    else:
+        b['y'] = 1 - b['y']
+    parts = {'new_a': a.iloc[:n_new], 'train_a': a.iloc[n_new:], 'new_b': b.iloc[:n_new], 'test_b': b.iloc[n_new:n_new + n_test], 'train_b': b.iloc[n_new + n_test:]}
+    d = os.path.join(out, 'synthetic-' + kind)
+    os.makedirs(d, exist_ok=True)
+    for key, part in parts.items():
+        write_part(part, os.path.join(d, key + '.csv'), 'plain')
+    k = len({str(float(c)) for c in classes}) if kind == 'spelling' else len(classes)
+    learned = {'binary': ['auc', 0.6], 'multiclass': ['macro_accuracy', round(1 / k + 0.05, 3)]}[task]
+    manifest = {'name': 'synthetic-' + kind, 'task': task, 'label': 'y', 'shift_column': 'f0',
+                'numeric_columns': [c for c in a.columns if c != 'y' and c != a.columns[-2]] if kind == 'duplicate-name' else [c for c in a.columns if c != 'y'],
+                'n_new_a': n_new, 'n_new_b': n_new, 'learned': learned, 'classes': k, 'rows': {key: len(part) for key, part in parts.items()}}
+    if kind == 'duplicate-name':
+        manifest['expect'] = 'refused'
+        manifest['refusal_mentions'] = a.columns[-1]
+    with open(os.path.join(d, 'manifest.json'), 'w') as f:
+        json.dump(manifest, f, indent=2)
+    return f'synthetic-{kind}: {task} rows={manifest["rows"]} classes={k}'
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--source', required=True)
+    ap.add_argument('--source', default='')
+    ap.add_argument('--synthetic', default='', help=f'comma-separated shapes made without a source: {", ".join(SYNTHETIC)}')
     ap.add_argument('--out', required=True)
     ap.add_argument('--datasets', default='')
     ap.add_argument('--per-task', type=int, default=4)
     ap.add_argument('--shape', choices=['plain', 'korean-export'], default='plain',
                     help='korean-export writes the files as a Korean spreadsheet export does: CP949, Hangul names and words, the dataframe index in front, one header cell broken over two lines')
     args = ap.parse_args()
+    if args.synthetic:
+        os.makedirs(args.out, exist_ok=True)
+        for kind in args.synthetic.split(','):
+            if kind not in SYNTHETIC:
+                sys.exit(f'unknown shape {kind!r}: {", ".join(SYNTHETIC)}')
+            print(synthetic(kind, args.out), flush=True)
+        return
+    if not args.source:
+        sys.exit('--source or --synthetic is required')
     rows = load_manifest(args.source)
     if args.datasets:
         wanted = set(args.datasets.split(','))

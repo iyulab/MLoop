@@ -455,6 +455,16 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
         rc, init = run.json_of('init', 'proj', '--task', TASK_FLAG[task], '--label', label, '--json')
         run.check('init', rc == 0 and init and init.get('task') == TASK_FLAG[task], f'rc={rc}')
 
+        if table.get('expect') == 'refused':
+            # a table the right answer to which is a refusal (lifecycle-tables.py --synthetic duplicate-name): training says why, by
+            # the name of the column, before it spends the search, and leaves no experiment behind — nothing later has a model to walk
+            rc, out, err = run.cli('train', os.path.join(base, 'train_a.csv'), '--label', label, *run.budget_args(), cwd=proj)
+            run.check('train_is_refused', rc != 0 and table.get('refusal_mentions', '') in out + err, f'rc={rc} {(out + err).strip()[-160:]}')
+            rc, status = run.json_of('status', '--json', cwd=proj)
+            models = (status or {}).get('models') or [{}]
+            run.check('refusal_leaves_no_model', not models[0].get('productionExperimentId'), f'production={models[0].get("productionExperimentId")}')
+            return run.steps
+
         rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', label, *run.budget_args(), '--json', cwd=proj)
         result = next((e for e in evs if e.get('event') == 'result'), {})
         promo = next((e for e in evs if e.get('event') == 'promotion'), {})
