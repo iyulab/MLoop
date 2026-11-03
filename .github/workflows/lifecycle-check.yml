@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tasks:
-        description: 'Comma-separated scenarios (binary, multiclass, regression, text, forecast)'
+        description: 'Comma-separated scenarios (binary, multiclass, regression, text, forecast, anomaly)'
         default: 'text'
       expected:
         description: 'Steps known to fail (a step that turns green is reported as xpass)'
@@ -46,7 +46,7 @@ jobs:
       run: dotnet build tools/MLoop.CLI -c Release
 
     - name: Time-series prerequisite
-      if: contains(inputs.tasks, 'forecast')
+      if: contains(inputs.tasks, 'forecast') || contains(inputs.tasks, 'anomaly')
       # ML.NET's MKL native links an Intel-ABI OpenMP runtime that Linux leaves to the system (TimeSeriesNativeSupport)
       run: |
         sudo apt-get install -y libomp5
