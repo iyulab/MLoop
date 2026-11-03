@@ -106,6 +106,10 @@ public static class CandidateCatalog
     /// </summary>
     public static IReadOnlyList<TrainerCandidate> Multiclass(Func<string, bool>? isAvailable = null)
     {
+        // The cost each trainer starts from is its measured fit time relative to FastTreeOva's (3.701), on 200,000 rows of six numeric
+        // columns at 5, 50 and 200 classes: SDCA maximum entropy is a tenth of it or less at every class count, L-BFGS maximum entropy
+        // and SDCA one-versus-all about 0.8 and 0.6 of it, L-BFGS one-versus-all 1.5 to 3 times — not the binary table's ranking that
+        // put the SDCA and L-BFGS trainers last. Every trainer's fit grows with the class count; the order between them does not.
         TrainerCandidate[] all =
         [
             new("FastTreeOva", FastTreeSpace, 3.701, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.OneVersusAll(
@@ -157,7 +161,7 @@ public static class CandidateCatalog
                 FeatureColumnName = c.Features,
                 ExampleWeightColumnName = c.Weight,
             }))),
-            new("LbfgsMaximumEntropy", LbfgsSpace, 7.980, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.LbfgsMaximumEntropy(new LbfgsMaximumEntropyMulticlassTrainer.Options
+            new("LbfgsMaximumEntropy", LbfgsSpace, 3.0, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.LbfgsMaximumEntropy(new LbfgsMaximumEntropyMulticlassTrainer.Options
             {
                 L1Regularization = p.Single("L1Regularization"),
                 L2Regularization = p.Single("L2Regularization"),
@@ -166,7 +170,7 @@ public static class CandidateCatalog
                 FeatureColumnName = c.Features,
                 ExampleWeightColumnName = c.Weight,
             }))),
-            new("SdcaMaximumEntropy", SdcaSpace, 10.129, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.SdcaMaximumEntropy(new SdcaMaximumEntropyMulticlassTrainer.Options
+            new("SdcaMaximumEntropy", SdcaSpace, 0.26, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.SdcaMaximumEntropy(new SdcaMaximumEntropyMulticlassTrainer.Options
             {
                 L1Regularization = p.Single("L1Regularization"),
                 L2Regularization = p.Single("L2Regularization"),
@@ -175,7 +179,7 @@ public static class CandidateCatalog
                 FeatureColumnName = c.Features,
                 ExampleWeightColumnName = c.Weight,
             }))),
-            new("LbfgsLogisticRegressionOva", LbfgsSpace, 11.513, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.OneVersusAll(
+            new("LbfgsLogisticRegressionOva", LbfgsSpace, 7.4, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.OneVersusAll(
                 ml.BinaryClassification.Trainers.LbfgsLogisticRegression(new LbfgsLogisticRegressionBinaryTrainer.Options
                 {
                     L1Regularization = p.Single("L1Regularization"),
@@ -185,7 +189,7 @@ public static class CandidateCatalog
                     FeatureColumnName = c.Features,
                     ExampleWeightColumnName = c.Weight,
                 }), c.Label))),
-            new("SdcaLogisticRegressionOva", SdcaSpace, 13.16, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.OneVersusAll(
+            new("SdcaLogisticRegressionOva", SdcaSpace, 2.2, (ml, p, c, s) => KeyedLabel(ml, c, ml.MulticlassClassification.Trainers.OneVersusAll(
                 ml.BinaryClassification.Trainers.SdcaLogisticRegression(new SdcaLogisticRegressionBinaryTrainer.Options
                 {
                     L1Regularization = p.Single("L1Regularization"),
