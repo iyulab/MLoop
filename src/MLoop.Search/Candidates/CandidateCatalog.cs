@@ -391,7 +391,7 @@ public static class CandidateCatalog
         SearchDimension.Integer("MaximumBinCountPerFeature", 8, 1024, logBase: true, defaultValue: 256),
         SearchDimension.Double("FeatureFraction", 2e-10, 1, logBase: false, defaultValue: 1),
         SearchDimension.Double("L1Regularization", 2e-10, 1, logBase: true, defaultValue: 2e-10),
-        SearchDimension.Double("L2Regularization", 2e-10, 1, logBase: true, defaultValue: 1),
+        SearchDimension.Double("L2Regularization", 2e-10, 1024, logBase: true, defaultValue: 1),
     ]);
 
     /// <summary>FastTree (<c>fast_tree_search_space.json</c>).</summary>
