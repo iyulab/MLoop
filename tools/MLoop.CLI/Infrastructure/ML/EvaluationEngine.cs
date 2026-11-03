@@ -334,6 +334,16 @@ public class EvaluationEngine
         // is what makes the test feature vector reproduce the model's training-time width. Converging
         // here fixed CP949 encoding and index/excluded columns left in place, and closed the
         // flatten/constant gaps that the previous per-engine reimplementation hid.
+        // A file with two columns of a name the model reads has no single input of that name; the load below would take the last of
+        // them, and explain, threshold, calibrate and evaluate would each answer from a column nobody chose.
+        if (trainedSchema is not null && TrainingInput.HeaderRecord(testDataPath) is { } header
+            && SchemaValidator.FeatureColumnsNamedTwice(trainedSchema, header) is { Count: > 0 } twice)
+            throw new MLoop.Core.Data.ColumnLayoutException(
+                "The file has more than one column with the name of a column the model reads: "
+                + string.Join("; ", twice.Select(t => $"'{t.Name}' is columns {string.Join(", ", t.Positions)}"))
+                + ". Only one of them could be the model's input, and which would be a guess. "
+                + TrainingInput.DuplicateColumnGuidance);
+
         string loadPath = InferenceDataPreprocessor.Prepare(testDataPath, labelColumn, trainedSchema, out tempFiles, keepColumns: keepColumns);
 
         // A label the loader cannot read loads as a missing number, further down the file than it types the column from: every

@@ -71,12 +71,33 @@ public static class TrainingInput
     {
         if (DataLoaderFactory.IsDirectoryBased(task))
             return null;
+        var header = HeaderRecord(dataFile);
+        if (header is null)
+            return null;
+
+        var named = header
+            .Select((name, index) => (Name: MLoop.Core.Data.CanonicalText.Nfc(name), Position: index + 1))
+            .Where(c => c.Name.Length > 0)
+            .GroupBy(c => c.Name, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .ToList();
+        if (named.Count == 0)
+            return null;
+        var said = string.Join("; ", named.Take(3).Select(g => $"'{g.Key}' is columns {string.Join(", ", g.Select(c => c.Position))}"));
+        return $"{Path.GetFileName(dataFile)} has columns that share a name: {said}{(named.Count > 3 ? "; …" : "")}. A column is found by its name, so each name must be its own.";
+    }
+
+    /// <summary>
+    /// The names in the first record of a CSV or TSV file, read in the file's own encoding, a name broken over two lines as one name with
+    /// a space; <c>null</c> for another format, a missing or an empty file.
+    /// </summary>
+    internal static string[]? HeaderRecord(string dataFile)
+    {
         var delimiter = dataFile.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase) ? "\t"
             : dataFile.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ? ","
             : null;
         if (delimiter is null)
             return null;
-        string[]? header;
         try
         {
             using var reader = EncodingDetector.OpenReader(dataFile);
@@ -87,25 +108,14 @@ public static class TrainingInput
                 BadDataFound = null,
                 MissingFieldFound = null,
             });
-            header = csv.Read() ? csv.Parser.Record : null;
+            return csv.Read() && csv.Parser.Record is { } record
+                ? [.. record.Select(name => System.Text.RegularExpressions.Regex.Replace(name.TrimStart('\uFEFF'), @"\r\n|\r|\n", " "))]
+                : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException)
         {
             return null;
         }
-        if (header is null)
-            return null;
-
-        var named = header
-            .Select((name, index) => (Name: MLoop.Core.Data.CanonicalText.Nfc(System.Text.RegularExpressions.Regex.Replace(name.TrimStart('\uFEFF'), @"\r\n|\r|\n", " ")), Position: index + 1))
-            .Where(c => c.Name.Length > 0)
-            .GroupBy(c => c.Name, StringComparer.Ordinal)
-            .Where(g => g.Count() > 1)
-            .ToList();
-        if (named.Count == 0)
-            return null;
-        var said = string.Join("; ", named.Take(3).Select(g => $"'{g.Key}' is columns {string.Join(", ", g.Select(c => c.Position))}"));
-        return $"{Path.GetFileName(dataFile)} has columns that share a name: {said}{(named.Count > 3 ? "; …" : "")}. A column is found by its name, so each name must be its own.";
     }
 
     /// <summary>What to do when <see cref="DuplicateColumnRefusal"/> is the answer.</summary>

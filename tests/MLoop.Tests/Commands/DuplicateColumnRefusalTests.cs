@@ -157,6 +157,20 @@ public class DuplicateColumnRefusalTests : IDisposable
             var all = string.Join(' ', (stdout + " " + stderr).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
             Assert.Contains("'v' is columns 2, 3", all, StringComparison.Ordinal);
             Assert.Contains("Rename one of them", all, StringComparison.Ordinal);
+
+            // the commands that score a labeled file load it in one place: each is refused the same way
+            await File.WriteAllTextAsync("datasets/labeled.csv", "a,v,v,y\n0.1,0.9,0.1,yes\n0.2,0.1,0.9,no\n0.3,0.8,0.2,yes\n0.4,0.2,0.7,no\n");
+            foreach (var args in new[]
+            {
+                new[] { "explain", "exp-001", "--data", "datasets/labeled.csv" },
+                new[] { "threshold", "exp-001", "--precision", "0.9", "--data", "datasets/labeled.csv" },
+                new[] { "calibrate", "exp-001", "--data", "datasets/labeled.csv", "--method", "platt" },
+            })
+            {
+                var seen = await CliRunner.RunAsync(args);
+                var text = string.Join(' ', (seen.Stdout + " " + seen.Stderr).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+                Assert.True(seen.ExitCode == 1 && text.Contains("'v' is columns 2, 3", StringComparison.Ordinal), $"{args[0]}: {seen.ExitCode} {text}");
+            }
         }
         finally
         {
