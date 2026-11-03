@@ -76,6 +76,11 @@ public sealed class CostFrugalTuner
             }
         }
 
+        // Experiment (BlendSearch-like): one proposal in five, from the ninth trial on, is drawn anywhere in the box the search has explored
+        // instead of next to the incumbent; a draw that beats the incumbent moves it there.
+        if (_initUsed && trialId >= 8 && _rng.Uniform(0, 1) < 0.2)
+            return _space.PointAt([.. _boundMin.Select((min, i) => _rng.Uniform(min, _boundMax[i]))]);
+
         return _initUsed
             ? _threads[_currentThread].Suggest()
             : _space.PointAt([.. _boundMin.Select((min, i) => _rng.Uniform(min, _boundMax[i]))]);
