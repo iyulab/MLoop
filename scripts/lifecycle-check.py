@@ -342,7 +342,7 @@ def serve_steps(run, proj, base, task, budget, table, soak=0, bench=0):
         code, info = http('GET', url + '/info?name=default', admin)
         info = info if isinstance(info, dict) else {}
         before = info.get('experimentId') or info.get('productionExperimentId')
-        rows = list(csv.DictReader(open(os.path.join(base, 'new_a.csv'))))[:5]
+        rows = read_rows(os.path.join(base, 'new_a.csv'), table)[:5]
         feats = [{k: (to_number(v) if k in table['numeric_columns'] else v) for k, v in r.items() if k != table['label']} for r in rows]
         code, pr = http('POST', url + '/predict?name=default', admin, feats)
         preds = pr.get('predictions') if isinstance(pr, dict) else None
@@ -422,6 +422,13 @@ def generated_tables(task, base):
             'n_new_a': 300, 'n_new_b': 300, 'learned': list(LEARNED[task]), 'public': False}
 
 
+def read_rows(path, table):
+    """The rows of one of the table's files as the commands read them: in the table's encoding, without the unnamed index column
+    of a spreadsheet export, a header cell broken over two lines as one name with a space."""
+    with open(path, newline='', encoding=table.get('encoding', 'utf-8')) as f:
+        return [{k.replace('\r\n', ' ').replace('\n', ' '): v for k, v in r.items() if k} for r in csv.DictReader(f)]
+
+
 def public_tables(src, base):
     """One table cut by lifecycle-tables.py: copy its five files and read its description."""
     for name in ('train_a', 'new_a', 'train_b', 'test_b', 'new_b'):
@@ -442,7 +449,7 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
         run.metric = ['--metric', 'auc']
     print(f'== {table["name"]}  ({base})', flush=True)
     try:
-        new_b = list(csv.DictReader(open(os.path.join(base, 'new_b.csv'))))
+        new_b = read_rows(os.path.join(base, 'new_b.csv'), table)
         proj = os.path.join(base, 'proj')
 
         rc, init = run.json_of('init', 'proj', '--task', TASK_FLAG[task], '--label', label, '--json')

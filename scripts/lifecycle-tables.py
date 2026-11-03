@@ -10,7 +10,7 @@ world followed in A no longer holds in B. The input shift is real; the concept s
 Each table becomes a directory: train_a.csv, new_a.csv (regime A, in-regime rows to predict), train_b.csv, test_b.csv,
 new_b.csv (regime B), and manifest.json. Needs pandas and numpy.
 
-  python lifecycle-tables.py --source <openml-benchmarks dir> --out <dir> [--datasets credit-g,houses] [--per-task 4]
+  python lifecycle-tables.py --source <openml-benchmarks dir> --out <dir> [--datasets credit-g,houses] [--per-task 4] [--shape korean-export]
 
 --source is a folder holding MANIFEST.csv and data/<id>_<name>.csv (OpenML suites as downloaded by the benchmark
 fetcher). Without --datasets, each task kind contributes the first --per-task tables (by name) of 1,500 to 50,000
@@ -24,6 +24,36 @@ import pandas as pd
 SEED = 20261030
 REGIME_CAP = 6000   # rows per regime; the time a lifecycle takes should not turn on the size of the table
 SHIFT_QUANTILE = 0.6
+
+
+def hangul(text):
+    """The same text spelled in Hangul syllables, one syllable for each printable ASCII character (injective, so two names never meet)."""
+    return ''.join(chr(0xAC00 + (ord(c) - 32) * 37) if 32 < ord(c) < 127 and c not in '_-.' else c for c in str(text))
+
+
+def export_shape(part, label, task, shift_col, numeric):
+    """A part of a table as the usual Korean spreadsheet export writes it: Hangul column names and words (a table that is read as
+    ASCII everywhere hides what a name outside ASCII does), one header cell broken over two lines. Returns the part and the
+    names the commands will read (a broken cell reads as one name with a space). The file is written in CP949 with the dataframe's
+    index in front by write_part."""
+    renamed = {c: hangul(c) for c in part.columns}
+    breakable = [c for c in numeric if c not in (shift_col, label) and len(renamed[c]) >= 2]
+    broken = breakable[0] if breakable else None
+    out = part.copy()
+    for c in out.columns:
+        if c != label or task != 'regression':
+            if not pd.api.types.is_numeric_dtype(out[c]):
+                out[c] = out[c].map(lambda v: v if v != v else hangul(v))
+    cells = {c: (renamed[c][:len(renamed[c]) // 2] + '\n' + renamed[c][len(renamed[c]) // 2:] if c == broken else renamed[c]) for c in part.columns}
+    read = {c: renamed[c] if c != broken else renamed[c][:len(renamed[c]) // 2] + ' ' + renamed[c][len(renamed[c]) // 2:] for c in part.columns}
+    return out.rename(columns=cells), read
+
+
+def write_part(part, path, shape):
+    if shape == 'korean-export':
+        part.to_csv(path, index=True, encoding='cp949')   # the index has no name: the header starts with an empty cell
+    else:
+        part.to_csv(path, index=False)
 
 
 def load_manifest(source):
@@ -74,7 +104,7 @@ def cut_at(df, c):
     return None if len(a) == 0 or (a == a.max()).mean() > 0.2 else at
 
 
-def cut(row, source, out):
+def cut(row, source, out, shape='plain'):
     name, task, label = row['name'], row['task_type'], row['target']
     df = pd.read_csv(os.path.join(source, 'data', row['file']), low_memory=False)
     df = df.dropna(subset=[label]).reset_index(drop=True)
@@ -106,13 +136,21 @@ def cut(row, source, out):
              'new_b': b.iloc[:n_new_b], 'test_b': b.iloc[n_new_b:n_new_b + n_test_b], 'train_b': b.iloc[n_new_b + n_test_b:]}
     d = os.path.join(out, name)
     os.makedirs(d, exist_ok=True)
+    read = {c: c for c in df.columns}
+    if shape == 'korean-export':
+        shaped = {}
+        for key, part in parts.items():
+            shaped[key], read = export_shape(part, label, task, col, numeric)
+        parts = shaped
     for key, part in parts.items():
-        part.to_csv(os.path.join(d, key + '.csv'), index=False)
+        write_part(part, os.path.join(d, key + '.csv'), shape)
     k = df[label].nunique()
     learned = {'binary': ['auc', 0.6], 'multiclass': ['macro_accuracy', round(1 / k + 0.05, 3)], 'regression': ['r_squared', 0.1]}[task]
-    manifest = {'name': name, 'task': task, 'label': label, 'shift_column': col, 'numeric_columns': numeric,
+    manifest = {'name': name, 'task': task, 'label': read[label], 'shift_column': read[col], 'numeric_columns': [read[c] for c in numeric],
                 'n_new_a': n_new_a, 'n_new_b': n_new_b, 'learned': learned, 'regime_cut': float(at),
                 'rows': {key: len(part) for key, part in parts.items()}}
+    if shape == 'korean-export':
+        manifest['encoding'] = 'cp949'   # lifecycle-check reads the files in this encoding, drops the unnamed index column, and reads a broken header cell with a space
     with open(os.path.join(d, 'manifest.json'), 'w') as f:
         json.dump(manifest, f, indent=2)
     return f'{name}: {task} label={label} moves={col} rows={manifest["rows"]}'
@@ -124,6 +162,8 @@ def main():
     ap.add_argument('--out', required=True)
     ap.add_argument('--datasets', default='')
     ap.add_argument('--per-task', type=int, default=4)
+    ap.add_argument('--shape', choices=['plain', 'korean-export'], default='plain',
+                    help='korean-export writes the files as a Korean spreadsheet export does: CP949, Hangul names and words, the dataframe index in front, one header cell broken over two lines')
     args = ap.parse_args()
     rows = load_manifest(args.source)
     if args.datasets:
@@ -136,7 +176,7 @@ def main():
         chosen = pick(rows, args.per_task)
     os.makedirs(args.out, exist_ok=True)
     for r in chosen:
-        print(cut(r, args.source, args.out), flush=True)
+        print(cut(r, args.source, args.out, args.shape), flush=True)
 
 
 if __name__ == '__main__':
