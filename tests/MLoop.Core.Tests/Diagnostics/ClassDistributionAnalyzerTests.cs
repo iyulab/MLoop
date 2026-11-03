@@ -216,6 +216,29 @@ public class ClassDistributionAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void GenerateVisualization_DrawsTheLargestClassesAndCountsTheRest()
+    {
+        // a label of 50,000 values: every one of them is a class, and the picture is a screenful — not 50,000 lines
+        var distribution = Enumerable.Range(0, 50_000).ToDictionary(i => $"value{i:D5}", i => 50_000 - i);
+
+        var picture = ClassDistributionAnalyzer.GenerateVisualization(distribution, distribution.Values.Sum());
+
+        var lines = picture.Split(Environment.NewLine);
+        Assert.Equal(ClassDistributionAnalyzer.MaxClassesDrawn + 1, lines.Length);
+        Assert.Contains("value00000", lines[0], StringComparison.Ordinal);
+        Assert.Contains("… and 49,980 more classes (1 to 49,980 rows each)", lines[^1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GenerateVisualization_FewClasses_AreAllDrawnWithNoRemainderLine()
+    {
+        var picture = ClassDistributionAnalyzer.GenerateVisualization(new Dictionary<string, int> { ["a"] = 3, ["b"] = 1 }, 4);
+
+        Assert.Equal(2, picture.Split(Environment.NewLine).Length);
+        Assert.DoesNotContain("more classes", picture, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AnalyzeAsync_GeneratesVisualization()
     {
         // Arrange

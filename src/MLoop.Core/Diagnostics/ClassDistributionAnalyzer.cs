@@ -184,21 +184,30 @@ public class ClassDistributionAnalyzer
         return folded;
     }
 
-    private static string GenerateVisualization(Dictionary<string, int> distribution, int total)
+    /// <summary>Most classes the picture draws: a label of thousands of values shows its largest classes and counts the rest.</summary>
+    internal const int MaxClassesDrawn = 20;
+
+    internal static string GenerateVisualization(Dictionary<string, int> distribution, int total)
     {
         const int barWidth = 30;
         var lines = new List<string>();
-        var maxLabelLength = distribution.Keys.Max(k => k.Length);
-        maxLabelLength = Math.Min(maxLabelLength, 20); // Cap label display length
+        var drawn = distribution.Take(MaxClassesDrawn).ToList();
+        var maxLabelLength = Math.Min(drawn.Max(kv => kv.Key.Length), 20); // Cap label display length
+        var largest = distribution.Values.Max();   // once: inside the loop it made the picture cost classes squared
 
-        foreach (var (className, count) in distribution)
+        foreach (var (className, count) in drawn)
         {
             var percentage = (double)count / total * 100;
-            var barLength = (int)Math.Round((double)count / distribution.Values.Max() * barWidth);
+            var barLength = (int)Math.Round((double)count / largest * barWidth);
             var bar = new string('█', barLength);
             var displayName = className.Length > 20 ? className[..17] + "..." : className;
 
             lines.Add($"  {displayName.PadRight(maxLabelLength)} │ {bar.PadRight(barWidth)} {count,6} ({percentage,5:F1}%)");
+        }
+        if (distribution.Count > drawn.Count)
+        {
+            var rest = distribution.Skip(drawn.Count).Select(kv => kv.Value).ToList();
+            lines.Add($"  … and {rest.Count:N0} more classes ({rest.Min():N0} to {rest.Max():N0} rows each)");
         }
 
         return string.Join(Environment.NewLine, lines);

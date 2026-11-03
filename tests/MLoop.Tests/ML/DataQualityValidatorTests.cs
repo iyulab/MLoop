@@ -612,4 +612,60 @@ public class DataQualityValidatorTests : IDisposable
     }
 
     #endregion
+
+    #region A label of thousands of values
+
+    // A column of readings or timestamps given as the label of a multiclass task: every value its own class. The check counted each
+    // class by scanning every row (classes x rows — minutes at two hundred thousand rows) and then named all of them.
+    private string TableWithLabel(int rows, Func<int, string> label)
+        => CreateCsv("x,y\n" + string.Join("\n", Enumerable.Range(0, rows).Select(i => $"{i % 7},{label(i)}")) + "\n");
+
+    [Fact]
+    public void ValidateTrainingData_ALabelWhoseValuesAlmostNeverRepeat_IsRefusedAsNotAClassColumn()
+    {
+        var path = TableWithLabel(5_000, i => (i * 0.000193).ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture));
+
+        var result = _validator.ValidateTrainingData(path, "y", "multiclass-classification");
+
+        Assert.False(result.IsValid);
+        Assert.Contains("5,000 different values in 5,000 rows", result.ErrorMessage!, StringComparison.Ordinal);
+        Assert.Contains("appears nowhere else", result.ErrorMessage!, StringComparison.Ordinal);
+        Assert.Contains(result.Suggestions, s => s.Contains("regression", StringComparison.Ordinal));
+        // thousands of classes are counted, not listed
+        Assert.True(result.Suggestions.Count < 10, $"{result.Suggestions.Count} suggestions");
+        Assert.True(result.Warnings.Count < 10, $"{result.Warnings.Count} warnings");
+    }
+
+    [Fact]
+    public void ValidateTrainingData_AFewRowsOfOneRepeatedClassAmongSingletons_IsNotRefusedAsMeasurements()
+    {
+        // 30 classes of 20 rows and 10 rows that are alone: the singletons are a small share of the rows
+        var path = TableWithLabel(610, i => i < 600 ? $"c{i % 30}" : $"alone{i}");
+
+        var result = _validator.ValidateTrainingData(path, "y", "multiclass-classification");
+
+        Assert.True(result.IsValid, result.ErrorMessage);
+    }
+
+    [Fact]
+    public void ValidateTrainingData_ThousandsOfThinClasses_ListsFiveAndCountsTheRest()
+    {
+        // 2,000 classes of three rows: none is a single row, all are below the five a fold needs
+        var path = TableWithLabel(6_000, i => $"class{i % 2_000}");
+
+        var result = _validator.ValidateTrainingData(path, "y", "multiclass-classification");
+
+        Assert.Equal(DataQualityValidator.MaxClassesListed, result.Warnings.Count(w => w.StartsWith("   Class '", StringComparison.Ordinal)));
+        Assert.Contains(result.Warnings, w => w.Contains("… and 1995 more", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CountClasses_AnswersInTheOrderOfTheClassesGiven()
+    {
+        var counts = DataQualityValidator.CountClasses(["b", "a", "b", "c", "b"], ["c", "b", "a"]);
+
+        Assert.Equal([("c", 1), ("b", 3), ("a", 1)], counts);
+    }
+
+    #endregion
 }

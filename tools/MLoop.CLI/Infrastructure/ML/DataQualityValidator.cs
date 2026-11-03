@@ -403,8 +403,7 @@ public class DataQualityValidator
         }
 
         // Count each class
-        var classCounts = uniqueClasses
-            .Select(c => new { Class = c, Count = labelValues.Count(v => v == c) })
+        var classCounts = CountClasses(labelValues, uniqueClasses)
             .OrderByDescending(x => x.Count)
             .ToList();
 
@@ -464,6 +463,33 @@ public class DataQualityValidator
         }
     }
 
+    /// <summary>Most classes a message names; a label with thousands of values lists a few and counts the rest.</summary>
+    internal const int MaxClassesListed = 5;
+
+    /// <summary>Each class with the rows it holds, in the order of <paramref name="uniqueClasses"/> — one pass over the rows, not one per class.</summary>
+    internal static List<(string Class, int Count)> CountClasses(IReadOnlyList<string> labelValues, IReadOnlyList<string> uniqueClasses)
+    {
+        var counts = new Dictionary<string, int>(uniqueClasses.Count, StringComparer.Ordinal);
+        foreach (var value in labelValues)
+        {
+            counts.TryGetValue(value, out var n);
+            counts[value] = n + 1;
+        }
+        return [.. uniqueClasses.Select(c => (c, counts.GetValueOrDefault(c)))];
+    }
+
+    private static string ListSome(IEnumerable<string> items, int total)
+    {
+        var shown = string.Join(", ", items.Take(MaxClassesListed));
+        return total > MaxClassesListed ? $"{shown}, … and {total - MaxClassesListed} more" : shown;
+    }
+
+    /// <summary>The refusal when most rows carry a label value that no other row has.</summary>
+    internal static string SingleRowClassesRefusal(int singletonRows, int totalRows, int classCount) =>
+        $"The label holds {classCount:N0} different values in {totalRows:N0} rows, and {singletonRows:N0} of the rows carry a value that appears nowhere else — " +
+        "that is not a set of classes but a measurement, a time or an identifier. A class needs a row in the training set and another to be scored on, " +
+        "so a classifier cannot be trained or tested on it.";
+
     /// <summary>
     /// Checks whether every class has enough samples for the train/test split and cross-validation
     /// to be meaningful. Rejects the provably untrainable case and warns about the merely risky ones.
@@ -484,14 +510,30 @@ public class DataQualityValidator
         if (!countsClassesInAColumn || uniqueClasses.Count < 2)
             return;
 
-        var classCounts = uniqueClasses
-            .Select(c => new { Class = c, Count = labelValues.Count(v => v == c) })
+        var classCounts = CountClasses(labelValues, uniqueClasses)
             .OrderBy(x => x.Count)
             .ToList();
 
         var totalSamples = labelValues.Count;
         var classCount = uniqueClasses.Count;
         var smallestClass = classCounts.First();
+
+        // A label whose values almost never repeat is not a class column: a measurement, a timestamp or an identifier. Every
+        // class a stratified split sees once leaves the test partition without it, so the model could be scored on nothing
+        // it was trained for — and listing the classes one by one (as the next check does) would fill a screen with them.
+        var singletonRows = classCounts.Count(c => c.Count == 1);
+        if (classCount >= 2 && singletonRows * 2 > totalSamples)
+        {
+            result.IsValid = false;
+            result.Suggestions.Clear();
+            result.Warnings.Clear();
+            result.ErrorMessage = SingleRowClassesRefusal(singletonRows, totalSamples, classCount);
+            result.Suggestions.Add("🔧 Options:");
+            result.Suggestions.Add("   1. If the label is a number to estimate, train it as regression (`mloop init --task regression`, or `task:` in mloop.yaml)");
+            result.Suggestions.Add("   2. If it is a category, check that --label names the column that holds it, not a time or an identifier");
+            result.Suggestions.Add("   3. Group the values into classes before training");
+            return;
+        }
 
         // Below this a class cannot exist in the train and test partitions at the same time: a
         // stratified split has to keep at least one row in train, so a single-sample class leaves the
@@ -515,7 +557,7 @@ public class DataQualityValidator
             // healthy classes. Rejecting the second case would remove working capability, so the
             // rejection is scoped to "fewer than two classes survive", not "some class is starved".
             var viableClassCount = classCount - untrainableClasses.Count;
-            var starved = string.Join(", ", untrainableClasses.Select(c => $"'{c.Class}' ({c.Count} sample)"));
+            var starved = ListSome(untrainableClasses.Select(c => $"'{c.Class}' ({c.Count} sample)"), untrainableClasses.Count);
 
             if (viableClassCount < 2)
             {
@@ -534,10 +576,12 @@ public class DataQualityValidator
                     "single sample it can only be in one of them, so the model cannot be evaluated on it — " +
                     "and here that leaves no second class to classify against.";
                 result.Suggestions.Add("Class distribution:");
-                foreach (var c in classCounts)
+                foreach (var c in classCounts.Take(MaxClassesListed))
                 {
                     result.Suggestions.Add($"   '{c.Class}': {c.Count} samples ({(double)c.Count / totalSamples:P1})");
                 }
+                if (classCounts.Count > MaxClassesListed)
+                    result.Suggestions.Add($"   … and {classCounts.Count - MaxClassesListed} more classes");
                 result.Suggestions.Add("");
                 result.Suggestions.Add("🔧 Options:");
                 result.Suggestions.Add($"   1. Collect more samples for the rare class (target: ≥{RECOMMENDED_PER_CLASS})");
@@ -559,10 +603,12 @@ public class DataQualityValidator
         if (classesBelow5.Count > 0)
         {
             result.Warnings.Add($"🔴 Training at risk: {classesBelow5.Count} of {classCount} classes have fewer than {MINIMUM_PER_CLASS} samples");
-            foreach (var c in classesBelow5)
+            foreach (var c in classesBelow5.Take(MaxClassesListed))
             {
                 result.Warnings.Add($"   Class '{c.Class}': {c.Count} samples");
             }
+            if (classesBelow5.Count > MaxClassesListed)
+                result.Warnings.Add($"   … and {classesBelow5.Count - MaxClassesListed} more");
             result.Warnings.Add($"   Total dataset: {totalSamples} rows, {classCount} classes");
             result.Warnings.Add("");
             result.Warnings.Add("   Cross-validation folds will likely have empty classes; metrics that need both (AUC) go undefined there");
