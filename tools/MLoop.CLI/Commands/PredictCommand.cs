@@ -765,7 +765,7 @@ public static partial class PredictCommand
             predictions = ForecastReplayService.BuildForecastRows(forecast),
             warnings = JsonOutputScope.Warnings ?? [],
         };
-        Console.Out.WriteLine(JsonSerializer.Serialize(payload, PredictJsonOptions));
+        StreamedJson.WriteLine(Console.Out, payload, PredictJsonOptions);
         return 0;
     }
 

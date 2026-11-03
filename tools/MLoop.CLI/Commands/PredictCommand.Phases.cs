@@ -412,7 +412,7 @@ public static partial class PredictCommand
             predictions = jsonPredictions,
             warnings = JsonOutputScope.Warnings is { } reported ? [.. reported, .. jsonResult.Warnings ?? []] : jsonResult.Warnings,
         };
-        Console.Out.WriteLine(JsonSerializer.Serialize(payload, PredictJsonOptions));
+        StreamedJson.WriteLine(Console.Out, payload, PredictJsonOptions);
         return 0;
     }
 }
