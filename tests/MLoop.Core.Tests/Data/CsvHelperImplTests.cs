@@ -60,23 +60,27 @@ Charlie,35,Incheon";
     }
 
     [Fact]
-    public async Task ReadAsync_WithCommaFormattedNumbers_CleansNumbers()
+    public async Task ReadAsync_ReturnsNumbersWrittenForPeopleAsWritten()
     {
-        // Arrange - Korean-style number formatting with commas (quoted to preserve)
+        // A field is read as written. Cleaning some of these only when a step happened to rewrite the file made the same data train
+        // or be refused by what else it held, and read the decimal comma of 3,14 as 314 (FormattedNumbers names them; the file says
+        // its numbers plainly).
         var csvPath = Path.Combine(_tempDirectory, "numbers.csv");
         var csvContent = @"Product,Price,Quantity
 Laptop,""1,500,000"",10
 Phone,""800,000"",20
-Tablet,""500,000.50"",15";
+Tablet,""500,000.50"",15
+Ratio,""3,14"",1
+Odd,""1,2,3"",2";
         await File.WriteAllTextAsync(csvPath, csvContent);
 
-        // Act
         var data = await _csvHelper.ReadAsync(csvPath);
 
-        // Assert
-        Assert.Equal("1500000", data[0]["Price"]);  // Commas removed
-        Assert.Equal("800000", data[1]["Price"]);
-        Assert.Equal("500000.50", data[2]["Price"]);  // Decimal preserved
+        Assert.Equal("1,500,000", data[0]["Price"]);
+        Assert.Equal("800,000", data[1]["Price"]);
+        Assert.Equal("500,000.50", data[2]["Price"]);
+        Assert.Equal("3,14", data[3]["Price"]);
+        Assert.Equal("1,2,3", data[4]["Price"]);
         Assert.Equal("10", data[0]["Quantity"]);
     }
 

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using CsvHelper;
 using CsvHelper.Configuration;
 using MLoop.Extensibility;
@@ -88,8 +87,11 @@ public class CsvHelperImpl : ICsvHelper
                 var values = new string[headers.Length];
                 for (var i = 0; i < headers.Length; i++)
                 {
-                    // Automatically clean comma-formatted numbers (e.g., "2,000" → "2000")
-                    values[i] = CleanNumericString(csv.GetField(headers[i]) ?? string.Empty);
+                    // A field is returned as written (trimmed): a number written for people (1,234 · 3,14 · 12%) is not rewritten here -
+                    // a reader that cleaned some of them only when a step happened to rewrite the file made the same data train or be
+                    // refused by what else it held, turned the decimal comma of 3,14 into 314, and left every file that was not
+                    // rewritten (what `predict` and `evaluate` read) unread. FormattedNumbers names them; the file says its numbers plainly.
+                    values[i] = csv.GetField(headers[i]) ?? string.Empty;
                 }
                 yield return values;
             }
@@ -102,30 +104,6 @@ public class CsvHelperImpl : ICsvHelper
                 try { File.Delete(tempFile); } catch (IOException) { /* Ignore cleanup errors */ }
             }
         }
-    }
-
-    /// <summary>
-    /// Cleans numeric strings by removing thousand separators (commas).
-    /// This enables ML.NET to correctly infer numeric types from Korean-formatted numbers.
-    /// Examples: "1,000" → "1000", "2,000.5" → "2000.5"
-    /// </summary>
-    private static string CleanNumericString(string input)
-    {
-        if (string.IsNullOrWhiteSpace(input))
-        {
-            return input;
-        }
-
-        var trimmed = input.Trim();
-
-        // Detect comma-formatted numbers: "1,000", "2,000.5", "-1,000"
-        // Pattern: optional sign, digits with optional commas, optional decimal part
-        if (Regex.IsMatch(trimmed, @"^-?[\d,]+\.?\d*$"))
-        {
-            return trimmed.Replace(",", "");
-        }
-
-        return trimmed;
     }
 
     /// <summary>
