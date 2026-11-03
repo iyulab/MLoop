@@ -27,7 +27,7 @@ population and their label is rewritten):
                            --soak SECONDS holds a steady load and compares the server's memory at the start and the end, and
                            --bench SECONDS prints a throughput / latency table by clients and rows per request
 
-  python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression,text,forecast,anomaly]
+  python lifecycle-check.py --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" [--tasks binary,multiclass,regression,text,forecast,anomaly,clustering,outliers]
          [--time 60] [--trials 10] [--out lifecycle-results.json] [--keep]
   python lifecycle-check.py --mloop "..." --tables DIR [--datasets credit-g,houses]    # DIR as written by lifecycle-tables.py
 
@@ -38,7 +38,8 @@ temporary project, removed unless --keep is given.
 import argparse, csv, json, math, os, random, shlex, shutil, signal, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression', 'text': 'text-classification', 'forecast': 'forecasting', 'anomaly': 'time-series-anomaly'}
+TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression', 'text': 'text-classification', 'forecast': 'forecasting', 'anomaly': 'time-series-anomaly',
+             'clustering': 'clustering', 'outliers': 'anomaly-detection'}
 # the metric a first model must reach to count as having learned the table (loose: this checks the wiring, not accuracy)
 LEARNED = {'binary': ('accuracy', 0.8), 'multiclass': ('macro_accuracy', 0.6), 'regression': ('r_squared', 0.7), 'text': ('macro_accuracy', 0.6)}
 SHIFT = 2.5
@@ -96,7 +97,7 @@ class Run:
     def __init__(self, mloop, task, work, budget, expected, trials=0):
         self.mloop, self.task, self.work, self.budget, self.expected = shlex.split(mloop), task, work, budget, expected
         # a deep-learning task trains by epochs and refuses a trial count
-        self.trials = 0 if task in ('text', 'forecast', 'anomaly') else trials
+        self.trials = 0 if task in ('text', 'forecast', 'anomaly', 'clustering', 'outliers') else trials
         self.metric = []   # extra `train` arguments that name what the table is judged on
         self.last_output = ''   # the tail of the last command's output, shown with a failed step
         self.steps = []
@@ -832,6 +833,59 @@ def anomaly_scenario(mloop, budget, keep, expected):
     return run.steps
 
 
+def unlabeled_scenario(mloop, task, budget, keep, expected):
+    """A task without a label: two groups of points, rows in, a group or an outlier verdict out. What moves is the inputs, so drift
+    and the retraining trigger are the walk's questions (a feedback has no actual value to carry)."""
+    base = tempfile.mkdtemp(prefix=f'lifecycle-{task}-')
+    run = Run(mloop, task, base, budget, expected)
+    rng = random.Random(20261103)
+
+    def points(n, shift=0.0, outliers=()):
+        rows = []
+        for _ in range(n):
+            c = rng.choice([0, 1])
+            rows.append([round(rng.gauss(5 * c, 1) + shift, 3), round(rng.gauss(5 * c, 1), 3)])
+        for at in outliers:
+            rows[at] = [40.0, -40.0]
+        return rows
+
+    for name, rows in [('train_a', points(300)), ('new_a', points(400, 0, (10, 50))), ('new_b', points(400, 6.0))]:
+        write_table(os.path.join(base, name + '.csv'), rows, ('x', 'y'))
+    print(f'== {task}  ({base})', flush=True)
+    try:
+        proj = os.path.join(base, 'proj')
+        rc, init = run.json_of('init', 'proj', '--task', TASK_FLAG[task], '--json')
+        run.check('init', rc == 0 and init and init.get('task') == TASK_FLAG[task], f'rc={rc}')
+        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), *run.budget_args(), '--json', cwd=proj)
+        result = next((e for e in evs if e.get('event') == 'result'), {})
+        promo = next((e for e in evs if e.get('event') == 'promotion'), {})
+        run.check('train', rc == 0 and result.get('experimentId') == 'exp-001' and promo.get('promoted') is True, f'metrics={json.dumps(result.get("metrics"))[:140]}')
+        rc, pa = run.json_of('predict', os.path.join(base, 'new_a.csv'), '--log', '--json', cwd=proj)
+        preds = (pa or {}).get('predictions') or []
+        run.check('predict_log', rc == 0 and len(preds) == 400 and all(p.get('predictionId') for p in preds), f'{len(preds)} rows')
+        if task == 'outliers':
+            far = [i for i in (10, 50) if preds and preds[i].get('isAnomaly')]
+            run.check('predict_finds_the_far_points', far == [10, 50], f'flagged among the two planted={far}')
+        else:
+            groups = {p.get('clusterId') for p in preds}
+            run.check('predict_names_the_groups', groups == {0, 1}, f'clusterIds={sorted(g for g in groups if g is not None)}')
+        rc, drift = run.json_of('drift', '--json', cwd=proj)
+        run.check('drift_control', rc == 0 and ((drift or {}).get('drift') or {}).get('level') == 'None', f'level={((drift or {}).get("drift") or {}).get("level")}')
+        rc, pb = run.json_of('predict', os.path.join(base, 'new_b.csv'), '--log', '--json', cwd=proj)
+        rc, drift = run.json_of('drift', '--json', cwd=proj)
+        run.check('drift_shifted', rc == 0 and ((drift or {}).get('drift') or {}).get('level') == 'Significant', f'level={((drift or {}).get("drift") or {}).get("level")}')
+        rc, trig = run.json_of('trigger', 'check', '--json', cwd=proj)
+        run.check('trigger', rc == 0 and (trig or {}).get('shouldRetrain') is True, f'shouldRetrain={(trig or {}).get("shouldRetrain")}')
+    except Exception as ex:
+        run.check('scenario', False, f'{type(ex).__name__}: {ex}')
+    finally:
+        if keep:
+            print(f'   kept {base}')
+        else:
+            shutil.rmtree(base, ignore_errors=True)
+    return run.steps
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--mloop', required=True, help='command that starts the mloop CLI, e.g. "dotnet path/to/mloop.dll"')
@@ -868,6 +922,9 @@ def main():
                 installed = subprocess.run(shlex.split(args.mloop) + ['runtime', 'install', 'torch'], capture_output=True, text=True)
                 steps.append({'step': 'text/runtime_install', 'status': 'pass' if installed.returncode == 0 else 'FAIL',
                               'detail': (installed.stdout + installed.stderr)[-200:].strip()})
+            if task in ('clustering', 'outliers'):
+                steps += unlabeled_scenario(args.mloop, task, args.time, args.keep, expected)
+                continue
             if task == 'anomaly':
                 steps += anomaly_scenario(args.mloop, args.time, args.keep, expected)
                 continue
