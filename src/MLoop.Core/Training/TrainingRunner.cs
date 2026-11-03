@@ -731,6 +731,9 @@ public partial class TrainingRunner
             throw new NoSuccessfulTrialException(config.TimeLimitSeconds, ex);
         }
 
+        if (FirstTrialOverrun(search.Trials, config.TimeLimitSeconds * (UsesEnsemble(config) ? EnsembleBudget.SearchShare : 1)) is { } overrun)
+            _logger.Warning(overrun);
+
         // The model is the smallest within one standard error of the top score (TrialRunner); when that is not the
         // top-scoring trial, say so here and mark it in the trial records, where the leaderboard ranks by score.
         var records = channel.Records;
@@ -784,6 +787,21 @@ public partial class TrainingRunner
            || string.Equals(task?.Trim(), "regression", StringComparison.OrdinalIgnoreCase);
 
     // A blend is made for the two tasks it was measured on; another task ignores the request.
+    /// <summary>
+    /// The sentence to warn with when the first trial alone took longer than the search's whole time budget, or null. A search
+    /// always finishes its first trial — it returns a model — so on a table where one trial costs more than the budget the run takes
+    /// as long as that trial, and without this the only sign is a clock that ran past <c>--time</c>.
+    /// </summary>
+    internal static string? FirstTrialOverrun(IReadOnlyList<TrialResult> trials, double budgetSeconds)
+    {
+        var first = trials.FirstOrDefault(t => t.RuntimeSeconds is not null);
+        if (first?.RuntimeSeconds is not { } took || took <= budgetSeconds)
+            return null;
+        return $"The first trial ({first.Trainer}) took {took:0} s, longer than the {budgetSeconds:0} s time budget. A search always finishes its first trial so that it " +
+            "returns a model, so the run lasted as long as that trial and stopped there. The cost of a trial grows with the rows and, for a one-versus-all " +
+            "trainer, with the number of classes: train on a sample of the rows (`mloop sample create`), with fewer classes, or give --time room for more than one trial.";
+    }
+
     private static bool UsesEnsemble(TrainingConfig config) => config.Ensemble && SupportsEnsemble(config.Task);
 
     /// <summary>
