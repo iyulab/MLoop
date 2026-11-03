@@ -57,6 +57,9 @@ public static class InferenceDataPreprocessor
         // 3. Index columns (pandas index / "Unnamed: N"). Data-independent, safe at any size.
         current = Step(CsvDataLoader.RemoveIndexColumns(current, log), current, tempFiles);
 
+        // A blank line in a file of one column is a missing point, which the loader would skip and close the time up over
+        current = Step(ColumnLayoutInference.WithGapsMarked(current), current, tempFiles);
+
         // 4. Column exclusion. With a trained schema this is deterministic — applying the DateTime /
         //    sparse / constant / identifier columns training marked "Exclude". Without one, fall back to the same
         //    data-dependent removals training runs, so predict and evaluate stay identical.

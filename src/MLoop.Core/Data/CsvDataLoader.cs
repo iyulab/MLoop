@@ -65,6 +65,9 @@ public class CsvDataLoader : DataProviderBase
         // Remove unnamed/index columns (e.g., pandas default index, "Unnamed: 0")
         mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, RemoveIndexColumns(mlnetCompatiblePath, _log), filePath);
 
+        // A blank line in a file of one column is a missing point, which the loader would skip and close the time up over
+        mlnetCompatiblePath = ScratchFiles.Advance(mlnetCompatiblePath, ColumnLayoutInference.WithGapsMarked(mlnetCompatiblePath), filePath);
+
         // Warn if CSV appears to have no header row
         WarnIfHeaderless(mlnetCompatiblePath);
 

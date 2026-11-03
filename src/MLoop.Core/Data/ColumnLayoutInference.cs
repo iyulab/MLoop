@@ -220,6 +220,29 @@ public static class ColumnLayoutInference
     }
 
     /// <summary>
+    /// A series whose gaps are written as <c>NaN</c> where the file left a blank line, as a copy in the temp directory — or
+    /// <paramref name="path"/> itself when it is no series or has no gap. In a file of one column a missing point is a blank
+    /// line (<see cref="TableRows"/>), and ML.NET's <c>TextLoader</c> skips blank lines: the points on either side close up, which is
+    /// the one thing a time series must not do to the time. Blank lines after the last point are the file's end, not gaps.
+    /// </summary>
+    public static string WithGapsMarked(string path)
+    {
+        if (OneColumnSeries(path, null) is null)
+            return path;
+
+        var lines = File.ReadAllLines(path, new System.Text.UTF8Encoding(false, throwOnInvalidBytes: false));
+        var last = lines.Length - 1;
+        while (last > 0 && lines[last].Length == 0)
+            last--;
+        if (!lines.Take(last + 1).Skip(1).Any(l => l.Length == 0))
+            return path;
+
+        var copy = ScratchFiles.New("mloop_gaps_", Path.GetExtension(path));
+        File.WriteAllLines(copy, lines.Take(last + 1).Select((l, i) => i > 0 && l.Length == 0 ? "NaN" : l), new System.Text.UTF8Encoding(true));
+        return copy;
+    }
+
+    /// <summary>
     /// The first line whose number of fields is not the header's, said as the reason a file does not split, or
     /// <c>null</c> when no line plainly is. A line that opens, continues or closes a quoted field spread over
     /// several lines is left alone — its fields are not countable one line at a time — and so is a blank line,

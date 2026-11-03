@@ -74,4 +74,36 @@ public sealed class ColumnLayoutOneColumnSeriesTests : IDisposable
     {
         Assert.Null(ColumnLayoutInference.OneColumnSeries(Write("value"), "value"));
     }
+
+    [Fact]
+    public void ABlankLineInsideASeries_IsAGapTheLoaderSeesAsNaN()
+    {
+        var path = Write("value", "1", "2", "", "4", "5", "");
+
+        var marked = ColumnLayoutInference.WithGapsMarked(path);
+
+        Assert.NotEqual(path, marked);
+        var layout = ColumnLayoutInference.Infer(new MLContext(seed: 1), marked, "value");
+        var values = new MLContext(seed: 1).Data.CreateTextLoader(layout.Options).Load(marked).GetColumn<float>("value").ToArray();
+        Assert.Equal(5, values.Length);   // the blank line at the end of the file is no point
+        Assert.True(float.IsNaN(values[2]));
+        Assert.Equal(1, MLoop.Core.Data.MissingNumbers.CountIn(new MLContext(seed: 1).Data.CreateTextLoader(layout.Options).Load(marked), "value"));
+        MLoop.Core.Data.ScratchFiles.Release(marked);
+    }
+
+    [Fact]
+    public void ASeriesWithoutAGap_IsLeftAlone()
+    {
+        var path = Write("value", "1", "2", "3", "");   // a blank line at the end only
+        Assert.Equal(path, ColumnLayoutInference.WithGapsMarked(path));
+    }
+
+    [Fact]
+    public void ATableOrATextColumn_IsLeftAlone()
+    {
+        var table = Write("a,b", "1,2", "", "3,4");
+        var text = Write("review", "great", "", "broken");
+        Assert.Equal(table, ColumnLayoutInference.WithGapsMarked(table));
+        Assert.Equal(text, ColumnLayoutInference.WithGapsMarked(text));
+    }
 }

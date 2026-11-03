@@ -661,6 +661,17 @@ def forecast_scenario(mloop, budget, keep, expected):
         last = changes[-1] if changes else {}
         run.check('retrain_with_paired_gate', rc == 0 and promo.get('promoted') is True and last.get('experimentId') == result.get('experimentId') and last.get('gate') == 'passed',
                   f'{result.get("experimentId")} promoted={promo.get("promoted")} reason={promo.get("keptInStagingReason")} history last={last.get("experimentId")}/{last.get("gate")}')
+
+        # a missing point is a blank line in a file of one column; it is a gap, and neither a training nor an evaluation reads over it
+        gap_path = os.path.join(base, 'gap.csv')
+        values = [r[0] for r in a]
+        values[100] = ''
+        open(gap_path, 'w').write('value\n' + '\n'.join(map(str, values)) + '\n')
+        rc, out, err = run.cli('init', 'gapproj', '--task', 'forecasting', '--label', 'value')
+        rc, out, err = run.cli('train', gap_path, '--label', 'value', *run.budget_args(), cwd=os.path.join(base, 'gapproj'))
+        run.check('gap_in_a_series_is_refused_by_training', rc != 0 and 'missing value' in (out + err), f'rc={rc}')
+        rc, out, err = run.cli('evaluate', 'exp-001', gap_path, cwd=proj)
+        run.check('gap_in_a_series_is_refused_by_evaluate', rc != 0 and 'missing value' in (out + err), f'rc={rc}')
     except Exception as ex:
         run.check('scenario', False, f'{type(ex).__name__}: {ex}')
     finally:

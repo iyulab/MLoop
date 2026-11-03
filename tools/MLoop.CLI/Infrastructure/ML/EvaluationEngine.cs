@@ -85,6 +85,11 @@ public class EvaluationEngine
                 var testData = LoadTestData(testDataPath, labelColumn, taskType, trainedSchema, preserveColumns, out tempFiles,
                     keepColumns: string.IsNullOrEmpty(weightColumn) ? null : [weightColumn]);
 
+                // A series with a gap is not scored: its values would reach the model as NaN, and every metric is NaN with them
+                if (MLoop.Core.Training.TrainingRunner.IsTimeSeriesTask(taskType) && !string.IsNullOrEmpty(labelColumn)
+                    && testData.Schema.GetColumnOrNull(labelColumn) is not null)
+                    MLoop.Core.Data.MissingNumbers.RefuseGapsInSeries(testData, labelColumn);
+
                 // Make predictions on test data
                 // Model pipeline transforms the label column (e.g. MapValueToKey for classification)
                 IDataView predictions;

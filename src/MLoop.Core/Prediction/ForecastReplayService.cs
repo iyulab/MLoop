@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using MLoop.Core.Data;
 using MLoop.Core.Detection;
 using MLoop.Core.Storage;
 using MLoop.Core.Training;
@@ -100,7 +101,18 @@ public static class ForecastReplayService
         };
 
         var textLoader = mlContext.Data.CreateTextLoader(columnOptions);
-        var trainData = textLoader.Load(trainDataPath);
+        // a series is replayed with its gaps where training saw them (a blank line of a one-column file is skipped by the loader)
+        var trainData = textLoader.Load(ColumnLayoutInference.WithGapsMarked(trainDataPath));
+        try
+        {
+            MissingNumbers.RefuseGapsInSeries(trainData, valueColName);
+        }
+        catch (InvalidOperationException gap)
+        {
+            // the file the model was trained on has changed under it: a replay over a gap would answer NaN
+            return (null, gap.Message);
+        }
+
 
         // SSA replay runs the FFT native; without it this is where forecasting predict fails.
         var predictions = TimeSeriesNativeSupport.Guard(() => model.Transform(trainData));
