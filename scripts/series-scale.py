@@ -13,7 +13,7 @@ Linux and macOS (peak memory comes from getrusage of a wrapper's child: kilobyte
 import argparse, csv, json, math, os, platform, random, shlex, subprocess, sys, tempfile, time
 
 WRAPPER = ("import json,resource,subprocess,sys;p=subprocess.run(sys.argv[1:],capture_output=True,text=True);"
-           "print(json.dumps({'rc':p.returncode,'maxrss':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,'out':p.stdout[-4000:],'err':p.stderr[-2000:]}))")
+           "print(json.dumps({'rc':p.returncode,'maxrss':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,'out':p.stdout[-60000:],'err':p.stderr[-2000:]}))")
 STEP_TIMEOUT = 1800
 HEAD = 500
 
@@ -25,16 +25,17 @@ HORIZON = 10
 SHAPES = ('monthly', 'daily', 'trend', 'walk', 'growth', 'noise')
 
 
-def write_series(path, n, spikes, seed, shape='monthly', horizon=HORIZON):
-    """Writes one series and returns (reference, naive): the mean absolute error over the last `horizon` points of a forecaster that knew the signal
-    exactly (the noise it still misses), and of one that repeats the last value before them.
+def write_series(path, n, spikes, seed, shape='monthly', horizon=HORIZON, future=0):
+    """Writes one series of n points and returns (reference, naive, ahead): the mean absolute error over the last `horizon` points of a forecaster
+    that knew the signal exactly (the noise it still misses), of one that repeats the last value before them, and the `future` points that follow
+    the n written (the truth a forecast of the series is held to).
 
     monthly: a season of 12. daily: a yearly season of 365 (two harmonics) and a weekly pattern, the shape on which a window shorter than the season
     is in question. trend: a straight line. walk: a random walk with drift (nothing to learn but the drift; its reference is the naive one).
     growth: an exponential trend with a season of 12. noise: a constant level."""
     rng = random.Random(seed)
     tail, values, level = [], [], 100.0
-    for t in range(n):
+    for t in range(n + future):
         noise = rng.gauss(0, 1.0)
         if shape == 'daily':
             signal = (100.0 + 0.01 * t + 40.0 * math.sin(2 * math.pi * t / 365) + 10.0 * math.sin(4 * math.pi * t / 365 + 1.0) + WEEKDAYS[t % 7])
@@ -52,16 +53,18 @@ def write_series(path, n, spikes, seed, shape='monthly', horizon=HORIZON):
         v = signal + noise
         if spikes and t % 1000 == 500:
             v += 40.0
-        if t >= n - horizon:
+        if n - horizon <= t < n:
             tail.append(abs(noise))
         values.append(round(v, 4))
+    ahead = values[n:]
+    values = values[:n]
     with open(path, 'w', newline='') as f:
         w = csv.writer(f)
         w.writerow(['value'])
         for v in values:
             w.writerow([v])
     naive = sum(abs(values[n - horizon + i] - values[n - horizon - 1]) for i in range(horizon)) / horizon
-    return (round(naive if shape == 'walk' else sum(tail) / len(tail), 3), round(naive, 3))
+    return (round(naive if shape == 'walk' else sum(tail) / len(tail), 3), round(naive, 3), ahead)
 
 
 def step(mloop, name, args, cwd, log, timeout=None):
@@ -80,11 +83,29 @@ def step(mloop, name, args, cwd, log, timeout=None):
     return info
 
 
+def score_future(out, ahead):
+    """The forecast `predict --json` printed against the points that really followed the series: its mean absolute error, and the share of those
+    points inside the interval it gave (None where the output does not parse)."""
+    try:
+        doc = next(json.loads(l) for l in out.splitlines() if l.startswith('{') and '"predictions"' in l)
+        rows = doc['predictions']
+        get = lambda r, k: next(v for key, v in r.items() if key.lower() == k)
+        forecast = [get(r, 'score') for r in rows]
+        lower = [get(r, 'scorelowerbound') for r in rows]
+        upper = [get(r, 'scoreupperbound') for r in rows]
+        k = min(len(forecast), len(ahead))
+        inside = [lower[i] <= ahead[i] <= upper[i] for i in range(k)]
+        return {'future_mae': round(sum(abs(forecast[i] - ahead[i]) for i in range(k)) / k, 3), 'interval_coverage': round(sum(inside) / k, 3),
+                'interval_halfwidth': round(sum((upper[i] - lower[i]) / 2 for i in range(k)) / k, 3)}
+    except Exception as e:  # a missing or unparsable forecast is a result too
+        return {'future_error': repr(e)[:120]}
+
+
 def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='monthly', horizon=HORIZON):
     base = tempfile.mkdtemp(prefix=f'series-scale-{task}-')
     log = []
     spikes = task == 'anomaly'
-    oracle, naive = write_series(os.path.join(base, 'train.csv'), n, spikes, seed * 2 - 1, shape, horizon)
+    oracle, naive, ahead = write_series(os.path.join(base, 'train.csv'), n, spikes, seed * 2 - 1, shape, horizon, horizon if task == 'forecast' else 0)
     write_series(os.path.join(base, 'test.csv'), n, spikes, seed * 2, shape, horizon)
     flag = 'forecasting' if task == 'forecast' else 'time-series-anomaly'
     print(f'== {task} n={n:,} window={window or "default"} seed={seed}  ({base})', flush=True)
@@ -94,14 +115,16 @@ def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='
         yaml_path = os.path.join(proj, 'mloop.yaml')
         text = open(yaml_path).read().replace('    horizon: 10\n', f'    horizon: {horizon}\n' + (f'    window_size: {window}\n' if window else ''), 1)
         open(yaml_path, 'w').write(text)
+    future = {}
     tr = step(mloop, 'train', ['train', os.path.join(base, 'train.csv'), '--label', 'value', '--time', str(time_budget), '--json'], proj, log, timeout)
     if tr['rc'] == 0:
         if task == 'forecast':
-            step(mloop, 'predict', ['predict', '--json'], proj, log)
+            pr = step(mloop, 'predict', ['predict', '--json'], proj, log)
+            future = score_future(pr.get('out', ''), ahead)
         else:
             step(mloop, 'predict', ['predict', os.path.join(base, 'test.csv'), '--json'], proj, log)
         step(mloop, 'evaluate', ['evaluate', 'exp-001', os.path.join(base, 'test.csv'), '--json'], proj, log)
-    return {'task': task, 'rows': n, 'window': window, 'seed': seed, 'shape': shape, 'horizon': horizon, 'oracle_mae': oracle, 'naive_mae': naive, 'steps': log}
+    return {'task': task, 'rows': n, 'window': window, 'seed': seed, 'shape': shape, 'horizon': horizon, 'oracle_mae': oracle, 'naive_mae': naive, **future, 'steps': log}
 
 
 def main():
