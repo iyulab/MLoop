@@ -1879,7 +1879,10 @@ public partial class TrainingRunner
 
             _logger.Info($"Forecasting: series='{valueColumn}', {totalRows} rows, horizon={horizon}, window={windowSize}, seriesLength={seriesLength}");
 
-            // Build SSA forecasting pipeline
+            // Build SSA forecasting pipeline. The stabilization is off: it finds the roots of the recurrence's polynomial
+            // (as many as the window is long) and moves those outside the unit circle in, and for a series with a trend
+            // those roots crowd at one, where the root finding is wrong by an amount that follows the noise. See
+            // ForecastingStabilizationTests for the measurement.
             var pipeline = _mlContext.Forecasting.ForecastBySsa(
                 outputColumnName: ForecastOutput.ForecastColumnName,
                 inputColumnName: valueColumn,
@@ -1887,6 +1890,7 @@ public partial class TrainingRunner
                 seriesLength: seriesLength,
                 trainSize: trainSize,
                 horizon: horizon,
+                shouldStabilize: false,
                 confidenceLowerBoundColumn: ForecastOutput.LowerBoundColumnName,
                 confidenceUpperBoundColumn: ForecastOutput.UpperBoundColumnName,
                 confidenceLevel: (float)ForecastOutput.ConfidenceLevel);
