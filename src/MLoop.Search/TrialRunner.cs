@@ -228,10 +228,12 @@ public sealed class TrialRunner
         SamplingOutcome? sampling = null;
         if (_request.SampleLargeTables && keys.Length >= SearchSample.ProbeRows)
         {
-            var probeSeconds = ProbeSeconds(train, roles, keys, schemas, classes, withMissingValues, columns, trainInMemory, clock, cancellationToken);
-            var searchRows = probeSeconds is { } took
-                ? SearchSample.RowsToSearch(keys.Length, _request.Budget.TotalSeconds, took, SearchSample.ProbeSample)
-                : keys.Length;
+            var probe = ProbeSeconds(train, roles, keys, schemas, classes, withMissingValues, columns, trainInMemory, clock, cancellationToken);
+            var probeSeconds = probe?.Seconds;
+            // A probe cut short says even the smallest sample's first trial is over the allowance: the search runs on that sample.
+            var searchRows = probe is not { } timed ? keys.Length
+                : timed.Cut ? Math.Min(SearchSample.ProbeSample, keys.Length)
+                : SearchSample.RowsToSearch(keys.Length, _request.Budget.TotalSeconds, timed.Seconds, SearchSample.ProbeSample);
             if (searchRows < keys.Length)
             {
                 var keep = SearchSample.Stratified(keys, _request.Stratify, searchRows, settings.Seed);
@@ -427,8 +429,10 @@ public sealed class TrialRunner
 
     // The search's own first trial — the cheapest schema at its starting setting — on a stratified sample of SearchSample.ProbeSample rows,
     // timed; null when the trial fails (the search then runs on all the rows and records the failure itself). Made from a twin of the
-    // proposer and the tuner, so the search proposes exactly what it would have; the probe's time is on the search's clock.
-    private double? ProbeSeconds(
+    // proposer and the tuner, so the search proposes exactly what it would have; the probe's time is on the search's clock. A probe
+    // is stopped at SearchSample.ProbeCutShare of the allowance for a first trial — a table so wide or a trainer so slow that 10,000 rows
+    // already pass the allowance would otherwise spend the budget on measuring it — and reports that it was cut.
+    private (double Seconds, bool Cut)? ProbeSeconds(
         IDataView train, ColumnRoles roles, string[] keys, List<(string Id, TrainerCandidate Candidate)> schemas, int classes,
         IReadOnlySet<string> withMissingValues, TrainerColumns columns, bool trainInMemory, Stopwatch clock, CancellationToken cancellationToken)
     {
@@ -446,8 +450,19 @@ public sealed class TrialRunner
             var context = new MLContext(settings.Seed);
             var pipeline = PipelineFor(context, train.Schema, roles, withMissingValues, columns, schema.Candidate, point, probeKeys.Length);
             var fitStarted = clock.Elapsed;
-            Validator.Validate(context, data, probePlan, pipeline, _request.Score, cancellationToken);
-            return (clock.Elapsed - fitStarted).TotalSeconds;
+            var cutAfter = SearchSample.ProbeCutShare * SearchSample.FirstTrialShare * _request.Budget.TotalSeconds;
+            using var cut = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cut.CancelAfter(TimeSpan.FromSeconds(cutAfter));
+            try
+            {
+                Validator.Validate(context, data, probePlan, pipeline, _request.Score, cut.Token);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && !cancellationToken.IsCancellationRequested && cut.IsCancellationRequested)
+            {
+                return ((clock.Elapsed - fitStarted).TotalSeconds, true);   // stopped inside its fit (or failed because it was)
+            }
+            var seconds = (clock.Elapsed - fitStarted).TotalSeconds;
+            return (seconds, seconds >= cutAfter);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {

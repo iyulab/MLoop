@@ -193,4 +193,32 @@ public sealed class SearchSampleTests
         Assert.Null(result.Sampling);
         Assert.Equal(SearchSample.ProbeRows, result.Folds.FoldOf.Count);
     }
+
+    private sealed class SlowFit(IEstimator<ITransformer> inner, TimeSpan delay) : IEstimator<ITransformer>
+    {
+        public ITransformer Fit(IDataView input)
+        {
+            Thread.Sleep(delay);
+            return inner.Fit(input);
+        }
+
+        public SchemaShape GetOutputSchema(SchemaShape inputSchema) => inner.GetOutputSchema(inputSchema);
+    }
+
+    [Fact]
+    public void AProbeThatPassesItsCut_SizesTheSearchAtTheSmallestSample()
+    {
+        var ml = new MLContext(seed: 1);
+        var (data, roles) = Table(ml, SearchSample.ProbeRows + 5_000);
+        // Every fit takes 400 ms, so the probe's three folds take 1.2 s — over the cut of 1.5 × a tenth of a 4 s budget (0.6 s).
+        var logistic = CandidateCatalog.Binary(name => name == "LbfgsLogisticRegression").Single();
+        var slow = logistic with { Build = (context, point, columns, settings) => new SlowFit(logistic.Build(context, point, columns, settings), TimeSpan.FromMilliseconds(400)) };
+        var request = Request(ml, TimeSpan.FromSeconds(4), sample: true) with { Candidates = [slow] };
+
+        var result = new TrialRunner(request).Run(data, roles);
+
+        var sampling = Assert.IsType<SamplingOutcome>(result.Sampling);
+        Assert.Equal(SearchSample.ProbeSample, sampling.SearchRows);
+        Assert.True(sampling.ProbeSeconds >= SearchSample.ProbeCutShare * SearchSample.FirstTrialShare * 4);   // a lower bound: holds on any machine
+    }
 }

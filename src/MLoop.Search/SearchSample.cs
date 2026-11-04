@@ -27,6 +27,13 @@ public static class SearchSample
     /// <summary>The share of the time budget the first trial may take; a larger first trial is run on a sample.</summary>
     public const double FirstTrialShare = 0.1;
 
+    /// <summary>
+    /// A probe is stopped after this many times the allowance for a first trial (<see cref="FirstTrialShare"/> of the budget): a probe that
+    /// long means even <see cref="ProbeSample"/> rows are over the allowance — any probe above about 1.1 allowances sizes the sample at its
+    /// floor — so measuring it further would only spend the budget.
+    /// </summary>
+    public const double ProbeCutShare = 1.5;
+
     /// <summary>The share of the time budget a refit on all the rows may take; a larger refit is made on the sample instead.</summary>
     public const double RefitShare = 0.5;
 
