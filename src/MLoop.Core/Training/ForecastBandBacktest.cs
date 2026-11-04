@@ -21,7 +21,7 @@ internal static class ForecastBandBacktest
     /// (a million points took minutes), and eight of them on the full series would multiply the run; the recent points are
     /// the ones the forecast is made from.
     /// </summary>
-    internal static int SeriesCap => int.TryParse(Environment.GetEnvironmentVariable("MLOOP_BAND_CAP"), out var c) ? c : 20_000;
+    internal static int SeriesCap => int.TryParse(Environment.GetEnvironmentVariable("MLOOP_BAND_CAP"), out var c) ? c : 5_120;
 
     private sealed class Point
     {
