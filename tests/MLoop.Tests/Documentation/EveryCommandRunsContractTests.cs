@@ -171,6 +171,10 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
     internal static string[] OnWorkbooks(string[] args) =>
         [.. args.Select((a, i) => !IsOutputPath(args, i) && DataFiles.Any(f => a == $"datasets/{f}.csv") ? Path.ChangeExtension(a, ".xlsx") : a)];
 
+    /// <summary>The command line with each data file it reads named by its semicolon-delimited copy (<c>train.semi.csv</c>), the form Excel writes in many locales; an output path is left as it is.</summary>
+    internal static string[] OnSemicolonCopies(string[] args) =>
+        [.. args.Select((a, i) => !IsOutputPath(args, i) && DataFiles.Any(f => a == $"datasets/{f}.csv") ? Path.ChangeExtension(a, ".semi.csv") : a)];
+
     /// <summary>The cases that read a data file named on their command line.</summary>
     internal static List<string> DataFileCases() =>
         [.. Runs.OrderBy(r => r.Key, StringComparer.Ordinal).Where(r => !OnWorkbooks(r.Value.Args).SequenceEqual(r.Value.Args)).Select(r => r.Key)];
@@ -194,6 +198,26 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
     {
         var plan = Runs[name];
         var args = OnWorkbooks(plan.Args);
+        Assert.NotEqual(plan.Args, args);
+
+        var seen = await _project.RunAsync(args);
+
+        Assert.True(seen.Exit == plan.Exit, $"mloop {string.Join(' ', args)} exited {seen.Exit}\n{seen.Out}\n{seen.Err}");
+        (plan.OnWorkbook ?? plan.Effect)(seen, _project.Root);
+        if (plan.Then is { } undo) await _project.RunAsync(undo);
+    }
+
+    /// <summary>
+    /// A file named <c>.csv</c> that holds semicolons (Excel in many locales) was one column headed by its whole first line: <c>validate</c>,
+    /// <c>info</c> and <c>train</c> answered "column not found" with the columns listed as one string. Each command that reads a data file named on
+    /// its command line runs here once more with a semicolon copy of the same table, and must do what it does with the comma file.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(DataFileCommandNames))]
+    public async Task TheCommandReadsASemicolonFileAsTheTableItHolds(string name)
+    {
+        var plan = Runs[name];
+        var args = OnSemicolonCopies(plan.Args);
         Assert.NotEqual(plan.Args, args);
 
         var seen = await _project.RunAsync(args);
@@ -317,7 +341,12 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
 
                 // The same two tables as workbooks - made last, so the runs above never see them.
                 foreach (var name in Workbooks ? DataFiles : [])
+                {
                     WorkbookFile.FromCsv(Path.Combine("datasets", name + ".csv"), Path.Combine("datasets", name + ".xlsx"));
+                    // ... and as the semicolon-delimited text Excel writes as .csv in many locales (the fixture's fields hold no comma or semicolon)
+                    var table = await System.IO.File.ReadAllTextAsync(Path.Combine("datasets", name + ".csv"));
+                    await System.IO.File.WriteAllTextAsync(Path.Combine("datasets", name + ".semi.csv"), table.Replace(',', ';'));
+                }
             }
             finally
             {

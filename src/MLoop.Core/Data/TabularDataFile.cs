@@ -13,9 +13,10 @@ namespace MLoop.Core.Data;
 /// <remarks>
 /// <para>MLoop reads data in many places, all of them as CSV. Rather than teach each of them other
 /// formats, a command passes its data path through <see cref="AsCsvAsync"/> as soon as the path is
-/// known, and everything after sees CSV. Delimited text (<c>.csv</c>, and any extension FilePrepper
+/// known, and everything after sees CSV. Comma-separated text (<c>.csv</c>, and any extension FilePrepper
 /// does not claim) is returned as it is — unless its Hangul is decomposed (see <see cref="CanonicalText"/>), when it is a
-/// temporary copy with the text composed; Excel, Parquet, JSON, SVMlight and TSV are written to a temporary
+/// temporary copy with the text composed; Excel, Parquet, JSON, SVMlight, TSV and a file that is not comma-separated whatever its name (a semicolon file Excel
+/// writes as <c>.csv</c> — the delimiter its own lines prove, <see cref="DataFileFormats.DelimiterFor"/>) are written to a temporary
 /// <c>.csv</c> — the extension matters, because readers downstream route on it.</para>
 /// <para>A folder is a table when it holds data files FilePrepper reads: their rows, in file-name
 /// order (<see cref="DataPipeline.FromDirectoryAsync"/>). That is the shape of exports that write a
@@ -56,7 +57,8 @@ public static class TabularDataFile
     /// <summary>Whether <paramref name="path"/> is in a format that needs converting before MLoop reads it.</summary>
     public static bool NeedsConversion(string path) =>
         IsTableFolder(path)
-        || (DataFileFormats.IsReadable(path) && DataFileFormats.FromPath(path) != DataFileFormat.Csv);
+        || (DataFileFormats.IsReadable(path) && DataFileFormats.FromPath(path) != DataFileFormat.Csv)
+        || (File.Exists(path) && DataFileFormats.FromPath(path) == DataFileFormat.Csv && DataFileFormats.DelimiterFor(path) != ",");
 
     /// <summary>
     /// <paramref name="path"/> itself when it is delimited text, otherwise a temporary CSV holding the

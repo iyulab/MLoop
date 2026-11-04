@@ -46,6 +46,35 @@ public class TabularDataFileTests : IDisposable
         Assert.Equal(csv, await TabularDataFile.AsCsvAsync(csv));
     }
 
+    [Theory]
+    [InlineData("a;b\n1;2\n3;4\n", "a,b")]
+    [InlineData("a\tb\n1\t2\n3\t4\n", "a,b")]
+    [InlineData("a|b\n1|2\n3|4\n", "a,b")]
+    public async Task A_delimited_file_named_csv_that_is_not_comma_separated_becomes_a_comma_csv(string text, string header)
+    {
+        var path = Path.Combine(_dir, "excel.csv");
+        await File.WriteAllTextAsync(path, text);
+
+        var converted = await TabularDataFile.AsCsvAsync(path);
+
+        Assert.NotEqual(path, converted);
+        Assert.Equal(".csv", Path.GetExtension(converted));
+        var lines = (await File.ReadAllLinesAsync(converted)).Select(l => l.TrimStart('\uFEFF')).ToArray();
+        Assert.Equal(header, lines[0]);
+        Assert.Equal("3,4", lines[2]);
+        Assert.True(TabularDataFile.NeedsConversion(path));
+    }
+
+    [Fact]
+    public async Task A_comma_table_holding_semicolons_in_its_cells_is_returned_as_it_is()
+    {
+        var csv = Path.Combine(_dir, "cells.csv");
+        await File.WriteAllTextAsync(csv, "a,b\nx;y,1\nx;y;z,2\n");
+
+        Assert.Equal(csv, await TabularDataFile.AsCsvAsync(csv));
+        Assert.False(TabularDataFile.NeedsConversion(csv));
+    }
+
     [Fact]
     public async Task A_parquet_file_becomes_a_csv_with_its_struct_leaves_as_dotted_columns()
     {
