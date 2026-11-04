@@ -396,6 +396,23 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task PromoteAsync_ForecastBand_MovesWithTheModel_AndIsNotLeftBehindByTheNext()
+    {
+        var withBand = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.80 });
+        var withoutBand = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double> { ["r_squared"] = 0.90 });
+        var staging = Path.Combine(MLoop.Core.Storage.ExperimentLayout.ModelsDirectory, DefaultModelName, MLoop.Core.Storage.ExperimentLayout.StagingDirectory);
+        var production = Path.Combine(MLoop.Core.Storage.ExperimentLayout.ModelsDirectory, DefaultModelName, MLoop.Core.Storage.ExperimentLayout.ProductionDirectory);
+        var bandFile = MLoop.Core.Storage.ExperimentLayout.ForecastBandFileName;
+        File.WriteAllText(Path.Combine(staging, withBand, bandFile), "{}");
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, withBand, CancellationToken.None);
+        Assert.True(File.Exists(Path.Combine(production, bandFile)), "the band fitted for the promoted model is beside the production model");
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, withoutBand, CancellationToken.None);
+        Assert.False(File.Exists(Path.Combine(production, bandFile)), "a promoted model without a band does not keep the previous model's");
+    }
+
+    [Fact]
     public async Task ListAsync_NoModels_ReturnsEmptyList()
     {
         // Act
