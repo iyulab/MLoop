@@ -733,6 +733,8 @@ public partial class TrainingRunner
 
         if (FirstTrialOverrun(search.Trials, config.TimeLimitSeconds * (UsesEnsemble(config) ? EnsembleBudget.SearchShare : 1)) is { } overrun)
             _logger.Warning(overrun);
+        if (SampledSearchNotice(search.Sampling, config.TimeLimitSeconds) is { } sampled)
+            _logger.Warning(sampled);
 
         // The model is the smallest within one standard error of the top score (TrialRunner); when that is not the
         // top-scoring trial, say so here and mark it in the trial records, where the leaderboard ranks by score.
@@ -787,6 +789,21 @@ public partial class TrainingRunner
            || string.Equals(task?.Trim(), "regression", StringComparison.OrdinalIgnoreCase);
 
     // A blend is made for the two tasks it was measured on; another task ignores the request.
+    /// <summary>
+    /// The sentence to warn with when a large table was searched on a sample of its rows (<see cref="SearchSample"/>), or null. Saying so
+    /// matters: the trials' scores are on the sample, and a model fitted on the sample is not the model all the rows would give.
+    /// </summary>
+    internal static string? SampledSearchNotice(SamplingOutcome? sampling, double timeLimitSeconds)
+    {
+        if (sampling is not { Sampled: true } s)
+            return null;
+        var fitted = s.RefitRows == s.Rows
+            ? "the chosen settings were then fitted on all of them"
+            : $"the model was fitted on the same {s.RefitRows:N0} rows too, because a fit on all of them would take more than half of the time budget";
+        return $"The table has {s.Rows:N0} rows, and one trial on all of them would not leave the {timeLimitSeconds:0} s time budget room to search, " +
+               $"so the search ran on a stratified sample of {s.SearchRows:N0} rows; {fitted}. A longer --time lets the search use more of the rows.";
+    }
+
     /// <summary>
     /// The sentence to warn with when the first trial alone took longer than the search's whole time budget, or null. A search
     /// always finishes its first trial — it returns a model — so on a table where one trial costs more than the budget the run takes

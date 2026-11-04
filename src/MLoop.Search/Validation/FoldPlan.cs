@@ -63,8 +63,15 @@ public sealed class FoldPlan
         ArgumentNullException.ThrowIfNull(data);
         if (folds < 2)
             throw new ArgumentOutOfRangeException(nameof(folds), "At least two folds.");
-        var keys = LabelKeys(data, labelColumn);
-        var holdout = keys.Length >= HoldoutThreshold;
+        return ForKeys(LabelKeys(data, labelColumn), stratify, seed, folds);
+    }
+
+    /// <summary>The plan for rows whose label keys (<see cref="LabelKeys"/>) are already read — the same plan <see cref="For"/> makes from the data.</summary>
+    internal static FoldPlan ForKeys(IReadOnlyList<string> keys, bool stratify, int seed, int folds = DefaultFolds)
+    {
+        if (folds < 2)
+            throw new ArgumentOutOfRangeException(nameof(folds), "At least two folds.");
+        var holdout = keys.Count >= HoldoutThreshold;
         var parts = holdout ? HoldoutParts : folds;
         var (foldOf, dealt) = Deal(keys, stratify, parts, seed);
         return new FoldPlan(foldOf, parts, holdout ? [0] : [.. Enumerable.Range(0, parts)], holdout ? Slices(foldOf, dealt) : null);
@@ -119,7 +126,7 @@ public sealed class FoldPlan
         return (foldOf, [.. order]);
     }
 
-    private static string[] LabelKeys(IDataView data, string labelColumn)
+    internal static string[] LabelKeys(IDataView data, string labelColumn)
     {
         var column = data.Schema.GetColumnOrNull(labelColumn)
             ?? throw new ArgumentException($"The data has no label column '{labelColumn}'.", nameof(labelColumn));

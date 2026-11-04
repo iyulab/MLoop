@@ -196,7 +196,7 @@ public static class CandidateCatalog
                     ExampleWeightColumnName = c.Weight,
                 }), c.Label))),
         ];
-        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true).Select(ScaledIfLinear).Select(WithStartingPoints)];
+        return [.. all.Where(t => isAvailable?.Invoke(t.Name) ?? true).Select(ScaledIfLinear).Select(WithStartingPoints).Select(c => c.Name.EndsWith("Ova", StringComparison.Ordinal) ? c with { FitsPerClass = true } : c)];
     }
 
     /// <summary>
