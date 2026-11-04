@@ -35,7 +35,8 @@ jobs:
         # Cost diet: PRs validate on ubuntu only (fast, cheap feedback); pushes to
         # main/develop run the full 3-OS matrix (windows=2x, macOS=10x billing) to keep
         # cross-OS ML.NET native validation on the integration branch before release.
-        os: ${{ github.event_name != 'push' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+        # TEMPORARY (feat/csvhelper-34 only; restore main's ci.yml with the merge): a run on request also covers the three systems.
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
         dotnet-version: ['10.0.x']
       fail-fast: false
 
@@ -49,6 +50,20 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ matrix.dotnet-version }}
+
+    # TEMPORARY (feat/csvhelper-34 only): this branch pins a FilePrepper that is not on nuget.org yet, so a run on request
+    # packs it from FilePrepper's main as the pinned version and restores from that folder.
+    - name: Checkout FilePrepper (unpublished pin)
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/checkout@v4
+      with:
+        repository: iyulab/FilePrepper
+        path: _filepreper
+
+    - name: Pack the unpublished FilePrepper
+      if: github.event_name == 'workflow_dispatch'
+      shell: bash
+      run: dotnet pack _filepreper/src/FilePrepper -c Release -p:Version=0.13.3 -o "${GITHUB_WORKSPACE}/_feed"
 
     - name: Cache NuGet packages
       uses: actions/cache@v4
@@ -74,7 +89,8 @@ jobs:
         sudo ldconfig
 
     - name: Restore dependencies
-      run: dotnet restore MLoop.slnx
+      shell: bash
+      run: dotnet restore MLoop.slnx ${{ github.event_name == 'workflow_dispatch' && '-p:RestoreAdditionalProjectSources="${GITHUB_WORKSPACE}/_feed"' || '' }}
 
     - name: Build
       run: dotnet build MLoop.slnx --configuration Release --no-restore
@@ -99,6 +115,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' # TEMPORARY (feat/csvhelper-34 only): cannot restore the unpublished pin
     timeout-minutes: 15
 
     steps:
@@ -128,6 +145,7 @@ jobs:
 
   security-scan:
     runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' # TEMPORARY (feat/csvhelper-34 only): cannot restore the unpublished pin
     timeout-minutes: 15
     permissions:
       security-events: write
