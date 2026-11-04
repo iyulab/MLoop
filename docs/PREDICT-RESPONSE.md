@@ -136,6 +136,17 @@ signal.
 
 Both bounds are absent for a model trained before conformal bands, or for any non-regression task.
 
+### Forecast bands
+
+A forecasting model's `scoreLowerBound`/`scoreUpperBound` come from ML.NET's singular spectrum analysis, which sets
+the band from the spread of the model's own fit at the requested level (`intervalConfidence`, 0.95). That spread is
+smaller than the model's error on points it has not seen, so **the band covers fewer of the points that follow the
+series than it says**. On generated series (a constant level, a season of 12 and a straight line, each with noise of
+standard deviation 1, forecast 100 points ahead, 48 series) a band asked for at 0.90, 0.95, 0.975 and 0.99 held
+0.80, 0.88, 0.92 and 0.96 of the points that followed; its half-width was 0.88 of what a normal band for the
+noise would be at the stated level. Read the band as a guide to how the spread grows with the horizon, not as a
+guarantee of the level; the bands of a regression model (above) are the ones calibrated on held-out rows.
+
 ### Object detection — boxes per image
 
 An object-detection model answers each image with the objects it found, so its rows are images, not table rows.
