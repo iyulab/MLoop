@@ -22,29 +22,46 @@ WEEKDAYS = (0.0, 0.0, 0.0, 0.0, 0.0, -4.0, -6.0)
 HORIZON = 10
 
 
-def write_series(path, n, spikes, seed, shape='monthly'):
-    """Writes one series and returns the mean absolute noise over its last HORIZON points: what a forecaster that knew the signal exactly would still miss.
+SHAPES = ('monthly', 'daily', 'trend', 'walk', 'growth', 'noise')
 
-    'monthly' is a season of 12; 'daily' is a daily series with a yearly season of 365 (two harmonics) and a weekly pattern, the shape on which a
-    window shorter than the season is in question."""
+
+def write_series(path, n, spikes, seed, shape='monthly', horizon=HORIZON):
+    """Writes one series and returns (reference, naive): the mean absolute error over the last `horizon` points of a forecaster that knew the signal
+    exactly (the noise it still misses), and of one that repeats the last value before them.
+
+    monthly: a season of 12. daily: a yearly season of 365 (two harmonics) and a weekly pattern, the shape on which a window shorter than the season
+    is in question. trend: a straight line. walk: a random walk with drift (nothing to learn but the drift; its reference is the naive one).
+    growth: an exponential trend with a season of 12. noise: a constant level."""
     rng = random.Random(seed)
-    tail = []
+    tail, values, level = [], [], 100.0
+    for t in range(n):
+        noise = rng.gauss(0, 1.0)
+        if shape == 'daily':
+            signal = (100.0 + 0.01 * t + 40.0 * math.sin(2 * math.pi * t / 365) + 10.0 * math.sin(4 * math.pi * t / 365 + 1.0) + WEEKDAYS[t % 7])
+        elif shape == 'trend':
+            signal = 100.0 + 0.05 * t
+        elif shape == 'walk':
+            level += 0.05 + noise
+            signal, noise = level, 0.0
+        elif shape == 'growth':
+            signal = 100.0 * math.exp(0.0008 * t) + 10.0 * math.sin(2 * math.pi * t / 12)
+        elif shape == 'noise':
+            signal = 100.0
+        else:
+            signal = 100.0 + 0.00005 * t + 10.0 * math.sin(2 * math.pi * t / 12)
+        v = signal + noise
+        if spikes and t % 1000 == 500:
+            v += 40.0
+        if t >= n - horizon:
+            tail.append(abs(noise))
+        values.append(round(v, 4))
     with open(path, 'w', newline='') as f:
         w = csv.writer(f)
         w.writerow(['value'])
-        for t in range(n):
-            noise = rng.gauss(0, 1.0)
-            if shape == 'daily':
-                signal = (100.0 + 0.01 * t + 40.0 * math.sin(2 * math.pi * t / 365) + 10.0 * math.sin(4 * math.pi * t / 365 + 1.0) + WEEKDAYS[t % 7])
-            else:
-                signal = 100.0 + 0.00005 * t + 10.0 * math.sin(2 * math.pi * t / 12)
-            v = signal + noise
-            if spikes and t % 1000 == 500:
-                v += 40.0
-            if t >= n - HORIZON:
-                tail.append(abs(noise))
-            w.writerow([round(v, 4)])
-    return round(sum(tail) / len(tail), 3)
+        for v in values:
+            w.writerow([v])
+    naive = sum(abs(values[n - horizon + i] - values[n - horizon - 1]) for i in range(horizon)) / horizon
+    return (round(naive if shape == 'walk' else sum(tail) / len(tail), 3), round(naive, 3))
 
 
 def step(mloop, name, args, cwd, log, timeout=None):
@@ -63,19 +80,19 @@ def step(mloop, name, args, cwd, log, timeout=None):
     return info
 
 
-def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='monthly'):
+def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='monthly', horizon=HORIZON):
     base = tempfile.mkdtemp(prefix=f'series-scale-{task}-')
     log = []
     spikes = task == 'anomaly'
-    oracle = write_series(os.path.join(base, 'train.csv'), n, spikes, seed * 2 - 1, shape)
-    write_series(os.path.join(base, 'test.csv'), n, spikes, seed * 2, shape)
+    oracle, naive = write_series(os.path.join(base, 'train.csv'), n, spikes, seed * 2 - 1, shape, horizon)
+    write_series(os.path.join(base, 'test.csv'), n, spikes, seed * 2, shape, horizon)
     flag = 'forecasting' if task == 'forecast' else 'time-series-anomaly'
     print(f'== {task} n={n:,} window={window or "default"} seed={seed}  ({base})', flush=True)
     step(mloop, 'init', ['init', 'proj', '--task', flag, '--label', 'value', '--json'], base, log)
     proj = os.path.join(base, 'proj')
-    if window:
+    if window or horizon != HORIZON:
         yaml_path = os.path.join(proj, 'mloop.yaml')
-        text = open(yaml_path).read().replace('    horizon: 10\n', f'    horizon: 10\n    window_size: {window}\n', 1)
+        text = open(yaml_path).read().replace('    horizon: 10\n', f'    horizon: {horizon}\n' + (f'    window_size: {window}\n' if window else ''), 1)
         open(yaml_path, 'w').write(text)
     tr = step(mloop, 'train', ['train', os.path.join(base, 'train.csv'), '--label', 'value', '--time', str(time_budget), '--json'], proj, log, timeout)
     if tr['rc'] == 0:
@@ -84,7 +101,7 @@ def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='
         else:
             step(mloop, 'predict', ['predict', os.path.join(base, 'test.csv'), '--json'], proj, log)
         step(mloop, 'evaluate', ['evaluate', 'exp-001', os.path.join(base, 'test.csv'), '--json'], proj, log)
-    return {'task': task, 'rows': n, 'window': window, 'seed': seed, 'shape': shape, 'oracle_mae': oracle, 'steps': log}
+    return {'task': task, 'rows': n, 'window': window, 'seed': seed, 'shape': shape, 'horizon': horizon, 'oracle_mae': oracle, 'naive_mae': naive, 'steps': log}
 
 
 def main():
@@ -96,7 +113,8 @@ def main():
     ap.add_argument('--windows', default='', help='forecast only: comma-separated SSA window sizes to try at every length (window_size in mloop.yaml); empty = the default')
     ap.add_argument('--seeds', default='1', help='comma-separated series seeds (the noise differs)')
     ap.add_argument('--step-timeout', type=int, default=0, help='seconds per step (0 = 1800)')
-    ap.add_argument('--shape', default='monthly', choices=['monthly', 'daily'], help='monthly = a season of 12; daily = a yearly season of 365 and a weekly pattern')
+    ap.add_argument('--shape', default='monthly', help='comma-separated series shapes: ' + ', '.join(SHAPES) + ' (see write_series)')
+    ap.add_argument('--horizon', default=str(HORIZON), help='comma-separated forecast horizons')
     ap.add_argument('--vary', default='', help='NAME=v1,v2,...: runs every cell once per value with that environment variable set (recorded as variant)')
     ap.add_argument('--out', default='series-scale-results.json')
     a = ap.parse_args()
@@ -104,15 +122,16 @@ def main():
     var_name, _, var_values = a.vary.partition('=')
     variants = var_values.split(',') if var_name else [None]
 
-    def cell(v, t, n, w, sd):
+    def cell(v, t, n, w, sd, shape, h):
         if var_name:
             os.environ[var_name] = v
-        r = walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), a.shape)
+        r = walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), shape, int(h))
         r['variant'] = v
         return r
 
-    results = [cell(v, t, n, w, sd)
-               for v in variants for t in a.tasks.split(',') for n in a.rows.split(',') for w in (windows if t == 'forecast' else [None]) for sd in a.seeds.split(',')]
+    results = [cell(v, t, n, w, sd, shape, h)
+               for v in variants for shape in a.shape.split(',') for h in a.horizon.split(',') for t in a.tasks.split(',') for n in a.rows.split(',')
+               for w in (windows if t == 'forecast' else [None]) for sd in a.seeds.split(',')]
     json.dump(results, open(a.out, 'w'), indent=1)
     print('\n| task | rows | window | seed | step | rc | wall s | peak MB | mae | oracle mae |\n|---|---|---|---|---|---|---|---|---|---|')
     for r in results:

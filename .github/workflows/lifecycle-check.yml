@@ -38,8 +38,11 @@ on:
         description: 'NAME=v1,v2,... runs the series walk once per value with that environment variable set'
         default: ''
       series_shape:
-        description: 'Shape of the walked series (monthly = a season of 12, daily = a yearly season of 365 and a weekly pattern)'
+        description: 'Comma-separated shapes of the walked series (monthly, daily, trend, walk, growth, noise; see scripts/series-scale.py)'
         default: 'monthly'
+      series_horizon:
+        description: 'Comma-separated forecast horizons for the series walk'
+        default: '10'
 
 concurrency:
   group: lifecycle-check-${{ github.ref }}
@@ -101,9 +104,10 @@ jobs:
         STEP_TIMEOUT: ${{ inputs.series_timeout }}
         SEEDS: ${{ inputs.series_seeds }}
         SHAPE: ${{ inputs.series_shape }}
+        HORIZON: ${{ inputs.series_horizon }}
         VARY: ${{ inputs.series_vary }}
       run: |
-        python3 scripts/series-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --windows "$WINDOWS" --step-timeout "$STEP_TIMEOUT" --seeds "$SEEDS" --shape "$SHAPE" --vary "$VARY" --out series-scale-results.json | tee series-scale.log
+        python3 scripts/series-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --windows "$WINDOWS" --step-timeout "$STEP_TIMEOUT" --seeds "$SEEDS" --shape "$SHAPE" --horizon "$HORIZON" --vary "$VARY" --out series-scale-results.json | tee series-scale.log
         echo '```' >> "$GITHUB_STEP_SUMMARY"; tail -n 60 series-scale.log >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload the results
