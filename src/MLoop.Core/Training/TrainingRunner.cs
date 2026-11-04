@@ -1882,7 +1882,12 @@ public partial class TrainingRunner
             // Build SSA forecasting pipeline
             // EXPERIMENT (not for main): rank selection named by MLOOP_SSA_RANK = auto | exact:<maxRank> | fast:<maxRank> | fixed:<r>
             var rankSpec = (Environment.GetEnvironmentVariable("MLOOP_SSA_RANK") ?? "auto").Split(':');
-            var rankMethod = rankSpec[0] == "fast" ? Microsoft.ML.Transforms.TimeSeries.RankSelectionMethod.Fast : Microsoft.ML.Transforms.TimeSeries.RankSelectionMethod.Exact;
+            var rankMethod = rankSpec[0] switch
+            {
+                "fast" => Microsoft.ML.Transforms.TimeSeries.RankSelectionMethod.Fast,
+                "fixed" => Microsoft.ML.Transforms.TimeSeries.RankSelectionMethod.Fixed,
+                _ => Microsoft.ML.Transforms.TimeSeries.RankSelectionMethod.Exact,
+            };
             int? fixedRank = rankSpec[0] == "fixed" ? int.Parse(rankSpec[1]) : null;
             int? maxRank = rankSpec[0] is "exact" or "fast" ? int.Parse(rankSpec[1]) : null;
             var pipeline = _mlContext.Forecasting.ForecastBySsa(
