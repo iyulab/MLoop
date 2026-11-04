@@ -230,7 +230,7 @@ public sealed class TrialRunner
                 var featurizer = Featurizer.Build(context, train.Schema, roles, withMissingValues, columns.Features)
                     ?? throw new InvalidOperationException("No column is a feature: every column is the label or ignored.");
                 var featurized = _request.Preprocess is { } preprocess ? preprocess.Append(featurizer) : featurizer;
-                return featurized.Append(schema.Candidate.Build(context, point, columns, settings));
+                return featurized.Append(schema.Candidate.Build(context, TrainerCandidate.FittedToRows(point, plan.FoldOf.Count), columns, settings));
             }
 
             // Past the first success, a trial that would eat the refit's time stops inside its fit

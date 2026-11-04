@@ -113,6 +113,13 @@ public sealed class SearchPoint
     /// <summary>The value of <paramref name="name"/> (a choice: its index).</summary>
     public double this[string name] => _values[name];
 
+    /// <summary>This point with <paramref name="name"/> set to <paramref name="value"/> (not checked against the dimension's range).</summary>
+    internal SearchPoint With(string name, double value)
+    {
+        var values = new Dictionary<string, double>(_values, StringComparer.Ordinal) { [name] = value };
+        return new SearchPoint(Space, values);
+    }
+
     /// <summary>A whole-number hyperparameter.</summary>
     public int Int(string name) => (int)_values[name];
 

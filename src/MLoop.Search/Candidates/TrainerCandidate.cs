@@ -36,6 +36,22 @@ public sealed record TrainerCandidate(
     public IReadOnlyList<IReadOnlyDictionary<string, double>> StartingPoints { get; init; } = [];
 
     /// <summary>
+    /// The point a trainer is built from when it will be fitted on <paramref name="rows"/> rows: its leaf count, where it has one,
+    /// is at most the rows. A tree cannot have more leaves than rows, so the tree is the same whatever the leaf count above that —
+    /// but the trainer sizes its tree storage by the setting, and a forest of 78 trees of 32,768 leaves took 1.4 GB to fit three
+    /// thousand rows. The trial still records the point the tuner proposed; only what is built is bounded.
+    /// </summary>
+    public static SearchPoint FittedToRows(SearchPoint point, long rows)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+        const string leaves = "NumberOfLeaves";
+        if (point.Space.Dimensions.All(d => d.Name != leaves))
+            return point;
+        var limit = Math.Max(rows, 4);   // the dimensions start at 4 leaves
+        return point[leaves] > limit ? point.With(leaves, limit) : point;
+    }
+
+    /// <summary>
     /// The size of the model a point of a space builds, read from the point alone: trees × leaves for a tree
     /// ensemble, 1 for a linear model. What a larger model costs is time to fit, save, load and score, and room
     /// on disk — a forest of a thousand trees of a thousand leaves is a model.zip of hundreds of megabytes.
